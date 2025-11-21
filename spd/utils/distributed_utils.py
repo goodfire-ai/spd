@@ -1,16 +1,23 @@
-"""Utilities for distributed data parallel training with MPI support."""
+"""Utilities for distributed data parallel training (torchrun or MPI)."""
 
+import json
 import os
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Literal, cast
+from hashlib import sha256
+from pathlib import Path
+from typing import Any, ClassVar, Literal, cast, override
 
 import torch
 import torch.distributed as dist
 from torch import Tensor
 from torch.distributed import ReduceOp
 from torch.types import Number
+
+from spd.configs import Config
+from spd.utils.command import Command
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +56,6 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
     global _state
     """Initialize distributed process group using MPI.
 
-    Supports OpenMPI only.
-
     Args:
         backend: Distributed backend to use ('nccl' or 'gloo'). If None, uses 'nccl' if CUDA is
             available, otherwise 'gloo'.
@@ -60,8 +65,13 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
     """
     assert not is_distributed(), "Already in a distributed process group"
     backend = backend if backend is not None else _infer_default_backend()
-    # Check if running under MPI (OpenMPI)
-    if "OMPI_COMM_WORLD_SIZE" in os.environ:
+
+    # Prefer torchrun/torch.distributed default env vars; fall back to OpenMPI.
+    if "WORLD_SIZE" in os.environ and "RANK" in os.environ:
+        world_size = int(os.environ["WORLD_SIZE"])
+        rank = int(os.environ["RANK"])
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    elif "OMPI_COMM_WORLD_SIZE" in os.environ:
         world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
         rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
         local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
@@ -265,3 +275,213 @@ def gather_all_tensors(tensor: Tensor, group: Any = None) -> list[Tensor]:
     gathered[current_rank] = tensor
 
     return gathered
+
+
+def get_config_json(config: Config) -> str:
+    return f"json:{json.dumps(config.model_dump(mode='json'))}"
+
+
+class ComputeStrategy(ABC):
+    @abstractmethod
+    def n_gpus_per_node(self) -> int: ...
+
+    @abstractmethod
+    def n_nodes(self) -> int: ...
+
+    @abstractmethod
+    def get_command(
+        self,
+        run_id: str,
+        idx: int,
+        script_path: Path,
+        config: Config,
+        experiment: str,
+        sweep_params: dict[str, Any] | None = None,
+    ) -> Command: ...
+
+
+class Cpu(ComputeStrategy):
+    @override
+    def n_gpus_per_node(self) -> int:
+        return 0
+
+    @override
+    def n_nodes(self) -> int:
+        return 1
+
+    @override
+    def get_command(
+        self,
+        run_id: str,
+        idx: int,
+        script_path: Path,
+        config: Config,
+        experiment: str,
+        sweep_params: dict[str, Any] | None = None,
+    ) -> Command:
+        command = (
+            f"python {script_path} "
+            f"--config_json '{get_config_json(config)}' "
+            f"--sweep_id {run_id} "
+            f"--evals_id {experiment} "
+        )
+        if sweep_params is not None:
+            command += f"--sweep_params_json '{json.dumps(sweep_params)}' "
+        return Command(command=command)
+
+
+class SingleGpu(ComputeStrategy):
+    @override
+    def n_gpus_per_node(self) -> int:
+        return 1
+
+    @override
+    def n_nodes(self) -> int:
+        return 1
+
+    @override
+    def get_command(
+        self,
+        run_id: str,
+        idx: int,
+        script_path: Path,
+        config: Config,
+        experiment: str,
+        sweep_params: dict[str, Any] | None = None,
+    ) -> Command:
+        command = (
+            f"python {script_path} "
+            f"--config_json '{get_config_json(config)}' "
+            f"--sweep_id {run_id} "
+            f"--evals_id {experiment} "
+        )
+        if sweep_params is not None:
+            command += f"--sweep_params_json '{json.dumps(sweep_params)}' "
+        return Command(command=command)
+
+
+class SingleNode(ComputeStrategy):
+    def __init__(self, n_gpus_per_node: int):
+        self._n_gpus_per_node = n_gpus_per_node
+
+    @override
+    def n_gpus_per_node(self) -> int:
+        return self._n_gpus_per_node
+
+    @override
+    def n_nodes(self) -> int:
+        return 1
+
+    @override
+    def get_command(
+        self,
+        run_id: str,
+        idx: int,
+        script_path: Path,
+        config: Config,
+        experiment: str,
+        sweep_params: dict[str, Any] | None = None,
+    ) -> Command:
+        port = _choose_master_port(run_id, idx)
+        rendezvous_id = f"{run_id}_{idx}"
+        env = {
+            "NCCL_DEBUG": "WARN",
+            "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
+            "MASTER_ADDR": "127.0.0.1",
+            "MASTER_PORT": str(port),
+        }
+        command = (
+            f"torchrun --standalone --nproc_per_node={self._n_gpus_per_node} --master_port={port} "
+            f"--rdzv_id={rendezvous_id} "
+            f"{script_path} "
+            f"--config_json '{get_config_json(config)}' "
+            f"--sweep_id {run_id} "
+            f"--evals_id {experiment} "
+        )
+        if sweep_params is not None:
+            command += f" --sweep_params_json '{json.dumps(sweep_params)}'"
+        return Command(env_vars=env, command=command)
+
+
+class MultiNode(ComputeStrategy):
+    N_GPUS_PER_NODE: ClassVar[int] = 8
+
+    def __init__(self, n_nodes: int):
+        self._n_nodes = n_nodes
+
+    @override
+    def n_gpus_per_node(self) -> int:
+        return self.N_GPUS_PER_NODE
+
+    @override
+    def n_nodes(self) -> int:
+        return self._n_nodes
+
+    @override
+    def get_command(
+        self,
+        run_id: str,
+        idx: int,
+        script_path: Path,
+        config: Config,
+        experiment: str,
+        sweep_params: dict[str, Any] | None = None,
+    ) -> Command:
+        env = {
+            "NCCL_DEBUG": "WARN",
+            "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
+            "MASTER_PORT": str(_choose_master_port(run_id, idx)),
+            "MASTER_ADDR": '$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)',
+        }
+
+        # Build the torchrun command that will run on each node
+        torchrun_cmd = (
+            "torchrun "
+            f"--nnodes={self._n_nodes} "
+            f"--nproc_per_node={self.N_GPUS_PER_NODE} "
+            "--node_rank=$SLURM_PROCID "  # Will be expanded by bash on each node
+            "--rdzv_backend=c10d "
+            "--rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} "  # Will be expanded by bash on each node
+            f"--rdzv_id={run_id}_{idx} "
+            f"{script_path} "
+            f"--config_json '{get_config_json(config)}' "
+            f"--sweep_id {run_id} "
+            f"--evals_id {experiment}"
+        )
+        if sweep_params is not None:
+            torchrun_cmd += f" --sweep_params_json '{json.dumps(sweep_params)}'"
+
+        # Pipe the script to bash via heredoc to avoid file creation issues
+        # Each srun task receives the script on stdin and executes it
+        # The heredoc with 'EOF' (quoted) prevents expansion in the main script
+        # Variables like $SLURM_PROCID, ${MASTER_ADDR}, ${MASTER_PORT} will be expanded by bash on each node
+        command = f"""srun --ntasks={self._n_nodes} --ntasks-per-node=1 bash <<'SRUN_SCRIPT_EOF'
+{torchrun_cmd}
+SRUN_SCRIPT_EOF"""
+
+        return Command(env_vars=env, command=command)
+
+
+def _choose_master_port(run_id_local: str, idx: int) -> int:
+    """Choose a unique port per command.
+
+    Uses a stable hash of (run_id, idx) mapped into a high, unprivileged port range so that we can
+    run multiple DDP processes on the same machine.
+    """
+    base: int = 20000
+    span: int = 20000  # ports in [20000, 40000)
+    h: int = int(sha256(f"{run_id_local}:{idx}".encode()).hexdigest(), 16)
+    return base + (h % span)
+
+
+@dataclass()
+class SlurmPartition:
+    name: str
+
+
+class Local: ...
+
+
+ComputeEnvironment = (
+    tuple[SlurmPartition, ComputeStrategy] | tuple[Local, Cpu | SingleGpu | SingleNode]
+)

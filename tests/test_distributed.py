@@ -149,23 +149,22 @@ class TestDistributedDeterminicity:
         n_processes: int,
         port: int = 29500,
     ) -> None:
-        """Run the experiment using mpirun."""
+        """Run the experiment using torchrun."""
         script_path = REPO_ROOT / "spd" / "experiments" / "lm" / "lm_decomposition.py"
         assert script_path.exists(), f"{script_path} not found"
 
         env = {
             "CUDA_VISIBLE_DEVICES": "",
             "OMP_NUM_THREADS": "1",
-            "MASTER_PORT": str(port),
+            "MASTER_ADDR": "127.0.0.1",
         }
 
         cmd = [
-            "mpirun",
-            "--bind-to",  # avoid trying to bind to cores that aren't available.
-            "none",  #  See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
-            "-np",
-            str(n_processes),
-            "python",
+            "torchrun",
+            "--standalone",
+            f"--nproc_per_node={n_processes}",
+            "--master_port",
+            str(port),
             str(script_path),
             str(config_path),
         ]
@@ -177,7 +176,7 @@ class TestDistributedDeterminicity:
         if result.returncode != 0:
             print(f"STDOUT: {result.stdout}")
             print(f"STDERR: {result.stderr}")
-            raise RuntimeError(f"mpirun failed with code {result.returncode}")
+            raise RuntimeError(f"torchrun failed with code {result.returncode}")
 
     def _load_metrics(self, metrics_file: Path) -> list[dict[str, float]]:
         """Load eval metrics from the metrics.jsonl file."""

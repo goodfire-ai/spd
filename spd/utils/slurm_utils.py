@@ -1,11 +1,12 @@
 """Shared utilities for SLURM job management."""
 
 import subprocess
-import textwrap
 from pathlib import Path
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
+from spd.utils.command import Command
+from spd.utils.distributed_utils import ComputeStrategy
 
 
 def format_runtime_str(runtime_minutes: int) -> str:
@@ -23,15 +24,13 @@ def format_runtime_str(runtime_minutes: int) -> str:
 
 
 def create_slurm_array_script(
-    script_path: Path,
     job_name: str,
-    commands: list[str],
+    commands: list[Command],
     snapshot_branch: str,
-    n_gpus_per_job: int,
+    job_strategy: ComputeStrategy,
     partition: str,
-    time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
-) -> None:
+) -> str:
     """Create a SLURM job array script with git snapshot for consistent code.
 
     Args:
@@ -39,8 +38,6 @@ def create_slurm_array_script(
         job_name: Name for the SLURM job array
         commands: List of commands to execute in each array job
         snapshot_branch: Git branch to checkout.
-        n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
-        time_limit: Time limit for each job (default: 72:00:00)
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
 
@@ -56,54 +53,60 @@ def create_slurm_array_script(
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
-        case_statements.append(f"{i}) {command} ;;")
+        if len(command.env_vars) > 0:
+            # Export environment variables on separate lines before the command
+            # so they're available when the shell expands ${VAR} references in the command
+            env_exports = "\n        ".join([f"export {k}={v}" for k, v in command.env_vars.items()])
+            case_statements.append(f"    {i})\n        {env_exports}\n        {command.command}\n        ;;")
+        else:
+            case_statements.append(f"    {i})\n        {command.command}\n        ;;")
 
-    case_block = "\n        ".join(case_statements)
+    case_block = "\n".join(case_statements)
 
-    script_content = textwrap.dedent(f"""
-        #!/bin/bash
-        #SBATCH --nodes=1
-        #SBATCH --gres=gpu:{n_gpus_per_job}
-        #SBATCH --partition={partition}
-        #SBATCH --time={time_limit}
-        #SBATCH --job-name={job_name}
-        #SBATCH --array={array_range}
-        #SBATCH --distribution=pack
-        #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
+    script_content = f"""\
+#!/bin/bash
+#SBATCH --nodes={job_strategy.n_nodes()}
+#SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
+#SBATCH --partition={partition}
+#SBATCH --time=72:00:00
+#SBATCH --job-name={job_name}
+#SBATCH --array={array_range}
+#SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 
-        # Create job-specific working directory
-        WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+# Create job-specific working directory
+WORK_DIR="$HOME/slurm_workspaces/{job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+mkdir -p "$WORK_DIR"
+# Clean up the workspace when the script exits
+trap 'rm -rf "$WORK_DIR"' EXIT
 
-        # Clone the repository to the job-specific directory
-        git clone {REPO_ROOT} $WORK_DIR
+# Clone the repository to the job-specific directory
+git clone {REPO_ROOT} "$WORK_DIR"
 
-        # Change to the cloned repository directory
-        cd $WORK_DIR
+# Change to the cloned repository directory
+cd "$WORK_DIR"
 
-        # Copy the .env file from the original repository for WandB authentication
-        cp {REPO_ROOT}/.env .env
+# Copy the .env file from the original repository for WandB authentication
+cp {REPO_ROOT}/.env .env
 
-        # Checkout the snapshot branch to ensure consistent code
-        git checkout {snapshot_branch}
+# Checkout the snapshot branch to ensure consistent code
+git checkout "{snapshot_branch}"
 
-        # Ensure that dependencies are using the snapshot branch. SLURM might inherit the
-        # parent environment, so we need to deactivate and unset the virtual environment.
-        deactivate 2>/dev/null || true
-        unset VIRTUAL_ENV
-        uv sync --no-dev --link-mode copy -q
-        source .venv/bin/activate
+# Ensure that dependencies are using the snapshot branch. SLURM might inherit the
+# parent environment, so we need to deactivate and unset the virtual environment.
+deactivate 2>/dev/null || true
+unset VIRTUAL_ENV
+uv sync --no-dev --link-mode copy -q
+source .venv/bin/activate
 
-        # Execute the appropriate command based on array task ID
-        case $SLURM_ARRAY_TASK_ID in
-        {case_block}
-        esac
-    """).strip()
 
-    with open(script_path, "w") as f:
-        f.write(script_content)
+# Execute the appropriate command based on array task ID
+case $SLURM_ARRAY_TASK_ID in
+{case_block}
+esac
+"""
+# {statements_block or ""}
 
-    # Make script executable
-    script_path.chmod(0o755)
+    return script_content
 
 
 def submit_slurm_array(script_path: Path) -> str:
