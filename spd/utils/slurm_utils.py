@@ -50,25 +50,16 @@ def create_slurm_array_script(
     else:
         array_range = f"1-{len(commands)}"
 
-    # For multi-node, use srun to launch torchrun on each node
-    if job_strategy.n_nodes() == 1:
-        command_prefix = None
-    else:
-        # Launch one task per node, each running torchrun
-        command_prefix = f"srun --ntasks={job_strategy.n_nodes()} --ntasks-per-node=1 "
-
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
-        command_to_run = f"{command_prefix or ''}{command.command}"
-
         if len(command.env_vars) > 0:
             # Export environment variables on separate lines before the command
             # so they're available when the shell expands ${VAR} references in the command
             env_exports = "\n        ".join([f"export {k}={v}" for k, v in command.env_vars.items()])
-            case_statements.append(f"    {i})\n        {env_exports}\n        {command_to_run}\n        ;;")
+            case_statements.append(f"    {i})\n        {env_exports}\n        {command.command}\n        ;;")
         else:
-            case_statements.append(f"    {i})\n        {command_to_run}\n        ;;")
+            case_statements.append(f"    {i})\n        {command.command}\n        ;;")
 
     case_block = "\n".join(case_statements)
 

@@ -433,20 +433,32 @@ class MultiNode(ComputeStrategy):
             "MASTER_PORT": str(_choose_master_port(run_id, idx)),
             "MASTER_ADDR": '$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)',
         }
-        command = (
+
+        # Build the torchrun command that will run on each node
+        torchrun_cmd = (
             "torchrun "
             f"--nnodes={self._n_nodes} "
             f"--nproc_per_node={self.N_GPUS_PER_NODE} "
+            "--node_rank=$SLURM_PROCID "  # Will be expanded by bash on each node
             "--rdzv_backend=c10d "
-            f"--rdzv_endpoint=${{MASTER_ADDR}}:${{MASTER_PORT}} "
-            f"--rdzv_id={f"{run_id}_{idx}"} "
+            "--rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} "  # Will be expanded by bash on each node
+            f"--rdzv_id={run_id}_{idx} "
             f"{script_path} "
             f"--config_json '{get_config_json(config)}' "
             f"--sweep_id {run_id} "
             f"--evals_id {experiment}"
         )
         if sweep_params is not None:
-            command += f" --sweep_params_json '{json.dumps(sweep_params)}'"
+            torchrun_cmd += f" --sweep_params_json '{json.dumps(sweep_params)}'"
+
+        # Pipe the script to bash via heredoc to avoid file creation issues
+        # Each srun task receives the script on stdin and executes it
+        # The heredoc with 'EOF' (quoted) prevents expansion in the main script
+        # Variables like $SLURM_PROCID, ${MASTER_ADDR}, ${MASTER_PORT} will be expanded by bash on each node
+        command = f"""srun --ntasks={self._n_nodes} --ntasks-per-node=1 bash <<'SRUN_SCRIPT_EOF'
+{torchrun_cmd}
+SRUN_SCRIPT_EOF"""
+
         return Command(env_vars=env, command=command)
 
 
