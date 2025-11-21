@@ -9,7 +9,9 @@ For full CLI usage and examples, see the bottom of this file (or run `spd-run --
 
 import argparse
 import copy
+from dataclasses import dataclass
 import json
+import os
 import shlex
 import subprocess
 import tempfile
@@ -26,13 +28,72 @@ from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
-from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
+from spd.utils.slurm_utils import ArrayCommand, create_slurm_array_script, submit_slurm_array
 from spd.utils.wandb_utils import wandb_setup
 
 
 def generate_run_id() -> str:
     """Generate a unique run ID based on timestamp."""
     return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+
+@dataclass(frozen=True, slots=True)
+class DPLaunchConfig:
+    """Normalized view of CLI-provided data parallel settings."""
+
+    world_size: int
+    nodes: int
+    gpus_per_node: int
+
+    @property
+    def enabled(self) -> bool:
+        return self.world_size > 1
+
+
+def _resolve_dp_config(
+    dp_world_size: int | None,
+    dp_nodes: int,
+    dp_gpus_per_node: int | None,
+) -> DPLaunchConfig:
+    """Normalize data-parallel CLI inputs into a concrete launch configuration."""
+
+    if dp_nodes < 1:
+        raise ValueError(f"--dp-nodes must be >= 1 (got {dp_nodes})")
+
+    if dp_gpus_per_node is not None and dp_gpus_per_node < 1:
+        raise ValueError(f"--dp-gpus-per-node must be >= 1 (got {dp_gpus_per_node})")
+
+    if dp_world_size is not None and dp_world_size < 1:
+        raise ValueError(f"--dp-world-size must be >= 1 (got {dp_world_size})")
+
+    resolved_world_size = dp_world_size if dp_world_size is not None else 1
+    resolved_gpus_per_node: int | None = dp_gpus_per_node
+
+    if resolved_world_size == 1:
+        return DPLaunchConfig(world_size=1, nodes=1, gpus_per_node=1)
+
+    if resolved_gpus_per_node is None:
+        if resolved_world_size % dp_nodes != 0:
+            raise ValueError(
+                "Unable to infer --dp-gpus-per-node. Provide it explicitly when "
+                f"--dp-nodes ({dp_nodes}) does not evenly divide --dp-world-size ({resolved_world_size})."
+            )
+        resolved_gpus_per_node = resolved_world_size // dp_nodes
+    else:
+        inferred_world_size = resolved_gpus_per_node * dp_nodes
+        if dp_world_size is None:
+            resolved_world_size = inferred_world_size
+        elif inferred_world_size != resolved_world_size:
+            raise ValueError(
+                "Mismatch between --dp-world-size and (--dp-nodes * --dp-gpus-per-node). "
+                f"Got world_size={resolved_world_size}, nodes={dp_nodes}, gpus_per_node={resolved_gpus_per_node}."
+            )
+
+    return DPLaunchConfig(
+        world_size=resolved_world_size,
+        nodes=dp_nodes,
+        gpus_per_node=resolved_gpus_per_node,
+    )
 
 
 def resolve_sweep_params_path(sweep_params_file: str) -> Path:
@@ -114,10 +175,30 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
     return base + (h % span)
 
 
-def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
-    """Build an MPI prefix for a command."""
-    port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} --bind-to none "
+def _build_launch_prefix(
+    dp_config: DPLaunchConfig,
+    run_id: str,
+    cmd_idx: int,
+) -> tuple[str, int | None]:
+    """Return the launcher prefix and optional rendezvous port for a command."""
+
+    if not dp_config.enabled:
+        return ("NCCL_DEBUG=WARN TORCH_NCCL_ASYNC_ERROR_HANDLING=1 python ", None)
+
+    port = _choose_master_port(run_id, cmd_idx)
+    nnodes_expr = f"${{SLURM_NNODES:-{dp_config.nodes}}}"
+    nproc_expr = f"${{SPD_GPUS_PER_NODE:-{dp_config.gpus_per_node}}}"
+    launcher = (
+        "NCCL_DEBUG=WARN "
+        "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
+        "torchrun "
+        f"--nnodes {nnodes_expr} "
+        f"--nproc_per_node {nproc_expr} "
+        "--rdzv_backend=c10d "
+        "--rdzv_endpoint ${MASTER_ADDR}:${MASTER_PORT} "
+        f"--rdzv_id {run_id}-{cmd_idx} "
+    )
+    return launcher, port
 
 
 def generate_commands(
@@ -125,15 +206,17 @@ def generate_commands(
     run_id: str,
     sweep_params_file: str | None = None,
     project: str = "spd",
-    dp: int = 1,
-) -> list[str]:
+    dp_config: DPLaunchConfig | None = None,
+) -> list[ArrayCommand]:
     """Generate commands for all experiment runs and print task counts.
 
-    NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
-    we add a prefix to prevent Fire parsing with ast.literal_eval
+    NOTE: When we convert parameter settings into JSON strings to pass to our decomposition
+    scripts, we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
-    commands: list[str] = []
+    resolved_dp_config = dp_config or DPLaunchConfig(world_size=1, nodes=1, gpus_per_node=1)
+
+    commands: list[ArrayCommand] = []
 
     logger.info("Task breakdown by experiment:")
     task_breakdown: dict[str, str] = {}
@@ -151,36 +234,32 @@ def generate_commands(
         base_config = Config.from_file(exp_config.config_path)
 
         if sweep_params_path is None:
-            # Fixed configuration run - still use JSON to ensure project override works
             base_config_dict = base_config.model_dump(mode="json")
             base_config_dict["wandb_project"] = project
             config_with_overrides = Config(**base_config_dict)
 
             config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
 
-            mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
-
+            launcher_prefix, rendezvous_port = _build_launch_prefix(
+                resolved_dp_config, run_id, cmd_idx
+            )
             command = (
-                "NCCL_DEBUG=WARN "
-                "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
-                f"{mpi_prefix}"
-                f"python {exp_config.decomp_script} "
+                f"{launcher_prefix}"
+                f"{exp_config.decomp_script} "
                 f"--config_json '{config_json}' "
                 f"--sweep_id {run_id} "
                 f"--evals_id {experiment}"
             )
 
-            commands.append(command)
+            commands.append(ArrayCommand(command=command, rendezvous_port=rendezvous_port))
             task_breakdown[experiment] = "1 task"
             cmd_idx += 1
 
         else:
-            # Parameter sweep run
             sweep_params = load_sweep_params(experiment, sweep_params_path)
             combinations = generate_grid_combinations(sweep_params)
 
             for i, param_combo in enumerate(combinations):
-                # Apply parameter overrides
                 base_config_dict = base_config.model_dump(mode="json")
                 config_dict_with_overrides = apply_nested_updates(base_config_dict, param_combo)
                 config_dict_with_overrides["wandb_project"] = project
@@ -191,22 +270,21 @@ def generate_commands(
                 config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
                 sweep_params_json = f"json:{json.dumps(sweep_params)}"
 
-                mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
+                launcher_prefix, rendezvous_port = _build_launch_prefix(
+                    resolved_dp_config, run_id, cmd_idx
+                )
                 command = (
-                    "NCCL_DEBUG=WARN "
-                    "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
-                    f"{mpi_prefix}"
-                    f"python {exp_config.decomp_script} "
+                    f"{launcher_prefix}"
+                    f"{exp_config.decomp_script} "
                     f"--config_json '{config_json}' "
                     f"--sweep_id {run_id} "
                     f"--evals_id {experiment} "
                     f"--sweep_params_json '{sweep_params_json}'"
                 )
 
-                commands.append(command)
+                commands.append(ArrayCommand(command=command, rendezvous_port=rendezvous_port))
                 cmd_idx += 1
 
-                # Print first combination as example
                 if i == 0:
                     logger.info(f"  {experiment}: {len(combinations)} tasks")
                     logger.info(f"    Example param overrides: {param_combo}")
@@ -217,7 +295,7 @@ def generate_commands(
     return commands
 
 
-def run_commands_locally(commands: list[str]) -> None:
+def run_commands_locally(commands: list[ArrayCommand]) -> None:
     """Execute commands locally in sequence.
 
     Args:
@@ -226,17 +304,27 @@ def run_commands_locally(commands: list[str]) -> None:
 
     logger.section(f"LOCAL EXECUTION: Running {len(commands)} tasks")
 
-    for i, command in enumerate(commands, 1):
-        # Parse command into arguments
-        args = shlex.split(command)
+    base_env = os.environ.copy()
+
+    for i, command_spec in enumerate(commands, 1):
+        args = shlex.split(command_spec.command)
 
         # Extract experiment name from script path for cleaner output
-        # Skip environment variables (VAR=value format) to find the python script
-        script_path = next(arg for arg in args if "=" not in arg and arg.endswith(".py"))
+        script_path = next(arg for arg in args if arg.endswith(".py"))
         script_name = script_path.split("/")[-1]
         logger.section(f"[{i}/{len(commands)}] Executing: {script_name}...")
 
-        result = subprocess.run(args)
+        env = base_env.copy()
+        if command_spec.rendezvous_port is not None:
+            env.setdefault("MASTER_ADDR", "127.0.0.1")
+            env["MASTER_PORT"] = str(command_spec.rendezvous_port)
+
+        result = subprocess.run(
+            command_spec.command,
+            shell=True,
+            executable="/bin/bash",
+            env=env,
+        )
 
         if result.returncode != 0:
             logger.warning(
@@ -279,25 +367,32 @@ def get_experiments(
     return experiments_list
 
 
-def _validate_dp(dp: int, experiments_list: list[str], local: bool, cpu: bool) -> None:
-    if dp < 1 or dp > 8:
-        raise ValueError(f"dp must be between 1 and 8, got {dp}")
+def _validate_dp(
+    dp_config: DPLaunchConfig,
+    experiments_list: list[str],
+    local: bool,
+    cpu: bool,
+) -> None:
+    if dp_config.world_size < 1:
+        raise ValueError(f"Invalid data parallel world size: {dp_config.world_size}")
 
-    if dp > 1 and local:
-        raise ValueError("DDP (dp > 1) is not supported in local mode")
+    if not dp_config.enabled:
+        return
 
-    if dp > 1:
-        non_lm_experiments = [
-            exp for exp in experiments_list if EXPERIMENT_REGISTRY[exp].task_name != "lm"
-        ]
-        if non_lm_experiments:
-            raise ValueError(
-                f"DDP (dp > 1) is only supported for lm experiments. "
-                f"Non-lm experiments found: {non_lm_experiments}"
-            )
+    if local:
+        raise ValueError("DDP (--dp-world-size > 1) is not supported in local mode")
 
-    if dp > 1 and cpu:
-        raise ValueError("Can't have both dp > 1 and cpu")
+    non_lm_experiments = [
+        exp for exp in experiments_list if EXPERIMENT_REGISTRY[exp].task_name != "lm"
+    ]
+    if non_lm_experiments:
+        raise ValueError(
+            "DDP (--dp-world-size > 1) is only supported for lm experiments. "
+            f"Non-lm experiments found: {non_lm_experiments}"
+        )
+
+    if cpu:
+        raise ValueError("Can't enable data parallelism and --cpu simultaneously")
 
 
 def main(
@@ -308,7 +403,9 @@ def main(
     job_suffix: str | None = None,
     cpu: bool = False,
     partition: str = DEFAULT_PARTITION_NAME,
-    dp: int = 1,
+    dp_world_size: int | None = None,
+    dp_nodes: int = 1,
+    dp_gpus_per_node: int | None = None,
     project: str = "spd",
     local: bool = False,
     log_format: LogFormat = "default",
@@ -329,8 +426,11 @@ def main(
         job_suffix: Optional suffix for SLURM job names
         cpu: Use CPU instead of GPU (default: False)
         partition: SLURM partition to use (default: "h200-reserved")
-        dp: Number of GPUs for data parallelism (1-8). Only supported for lm experiments.
-            Cannot be used with local mode (default: 1)
+        dp_world_size: Total data-parallel world size. Defaults to
+            `dp_nodes * dp_gpus_per_node` when omitted (default: None -> 1).
+        dp_nodes: Number of nodes to request when running with data parallelism (default: 1).
+        dp_gpus_per_node: Number of GPUs per node dedicated to data parallelism. Required when
+            `dp_world_size` does not evenly divide `dp_nodes`.
         project: W&B project name (default: "spd"). Will be created if it doesn't exist.
         local: Run locally instead of submitting to SLURM (default: False)
         log_format: Logging format for the script output.
@@ -361,7 +461,12 @@ def main(
     experiments_list: list[str] = get_experiments(experiments)
     logger.info(f"Experiments: {', '.join(experiments_list)}")
 
-    _validate_dp(dp, experiments_list=experiments_list, local=local, cpu=cpu)
+    dp_config = _resolve_dp_config(
+        dp_world_size=dp_world_size,
+        dp_nodes=dp_nodes,
+        dp_gpus_per_node=dp_gpus_per_node,
+    )
+    _validate_dp(dp_config, experiments_list=experiments_list, local=local, cpu=cpu)
 
     # Agent count
     if n_agents is None:
@@ -412,12 +517,12 @@ def main(
 
     # generate and run commands
     # ==========================================================================================
-    commands: list[str] = generate_commands(
+    commands = generate_commands(
         experiments_list=experiments_list,
         run_id=run_id,
         sweep_params_file=sweep_params_file,
         project=project,
-        dp=dp,
+        dp_config=dp_config,
     )
 
     if local:
@@ -433,7 +538,6 @@ def main(
             else:
                 job_name = f"spd-{job_suffix}"
 
-            n_gpus_per_job = dp if not cpu else 0
             create_slurm_array_script(
                 script_path=array_script,
                 job_name=job_name,
@@ -441,7 +545,12 @@ def main(
                 # again -- local is false, so snapshot_branch will exist
                 snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
                 max_concurrent_tasks=n_agents,
-                n_gpus_per_job=n_gpus_per_job,
+                nodes=(
+                    dp_config.nodes if dp_config.enabled and not cpu else 1
+                ),
+                gpus_per_node=(
+                    dp_config.gpus_per_node if dp_config.enabled and not cpu else (0 if cpu else 1)
+                ),
                 partition=partition,
             )
 
@@ -484,8 +593,8 @@ Examples:
     # Run all experiments on CPU
     spd-run --experiments tms_5-2 --cpu
 
-    # Run with data parallelism over 4 GPUs (only supported for lm experiments)
-    spd-run --experiments ss_llama_simple --dp 4
+    # Run with data parallelism over 2 nodes x 4 GPUs (only supported for lm experiments)
+    spd-run --experiments ss_llama_simple --dp-nodes 2 --dp-gpus-per-node 4
 """
 
 
@@ -567,11 +676,28 @@ def cli():
 
     parser.add_argument(
         "--dp",
-        "--data-parallelism",
+        "--dp-world-size",
+        dest="dp_world_size",
+        type=int,
+        default=None,
+        help=(
+            "Total data-parallel world size. Defaults to --dp-nodes * --dp-gpus-per-node when omitted."
+        ),
+    )
+    parser.add_argument(
+        "--dp-nodes",
         type=int,
         default=1,
-        help="Number of GPUs for data parallelism (1-8). Only supported for lm experiments. "
-        "Cannot be used with local mode (default: 1)",
+        help="Number of nodes to request for data-parallel runs (default: 1).",
+    )
+    parser.add_argument(
+        "--dp-gpus-per-node",
+        type=int,
+        default=None,
+        help=(
+            "Number of GPUs per node participating in data parallelism. "
+            "Required when --dp-world-size is not divisible by --dp-nodes."
+        ),
     )
 
     parser.add_argument(
@@ -623,7 +749,9 @@ def cli():
         job_suffix=args.job_suffix,
         cpu=args.cpu,
         partition=args.partition,
-        dp=args.dp,
+        dp_world_size=args.dp_world_size,
+        dp_nodes=args.dp_nodes,
+        dp_gpus_per_node=args.dp_gpus_per_node,
         project=args.project,
         local=args.local,
         log_format=args.log_format,

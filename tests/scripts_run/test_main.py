@@ -88,15 +88,16 @@ class TestSPDRun:
 
         # Verify command structure
         for cmd in commands:
-            assert "python" in cmd
-            assert "_decomposition.py" in cmd
-            assert "json:" in cmd
-            assert "--sweep_id" in cmd
-            assert "--evals_id" in cmd
+            assert "_decomposition.py" in cmd.command
+            assert "json:" in cmd.command
+            assert "--sweep_id" in cmd.command
+            assert "--evals_id" in cmd.command
 
         # Check other parameters
         assert call_kwargs["snapshot_branch"] == repo_current_branch()
         assert call_kwargs["max_concurrent_tasks"] == (n_agents or len(experiments.split(",")))
+        assert call_kwargs["nodes"] == 1
+        assert call_kwargs["gpus_per_node"] == 1
 
     @pytest.mark.parametrize(
         "experiments,sweep",
@@ -142,23 +143,19 @@ class TestSPDRun:
 
         # Verify each subprocess call
         for call in mock_subprocess.call_args_list:
-            args = call[0][0]  # Get the command list
-
-            # Should be a list of arguments
-            assert isinstance(args, list)
-            assert args[0] == "NCCL_DEBUG=WARN"
-            assert args[1] == "TORCH_NCCL_ASYNC_ERROR_HANDLING=1"
-            assert args[2] == "python"
-            assert "_decomposition.py" in args[3]
-
-            # Check for required arguments in the command
-            cmd_str = " ".join(args)
-            assert "json:" in cmd_str
-            assert "--sweep_id" in cmd_str
-            assert "--evals_id" in cmd_str
-
+            command_str = call.args[0]
+            assert isinstance(command_str, str)
+            assert "NCCL_DEBUG=WARN" in command_str
+            assert "TORCH_NCCL_ASYNC_ERROR_HANDLING=1" in command_str
+            assert "_decomposition.py" in command_str
+            assert "json:" in command_str
+            assert "--sweep_id" in command_str
+            assert "--evals_id" in command_str
             if sweep:
-                assert "--sweep_params_json" in cmd_str
+                assert "--sweep_params_json" in command_str
+            assert call.kwargs["shell"] is True
+            assert call.kwargs["executable"] == "/bin/bash"
+            assert isinstance(call.kwargs["env"], dict)
 
         # No wandb functions should be called since use_wandb=False
 
@@ -203,7 +200,6 @@ class TestSPDRun:
 
         # Check that sweep parameters are in the commands
         for call in mock_subprocess.call_args_list:
-            args = call[0][0]
-            cmd_str = " ".join(args)
+            cmd_str = call.args[0]
             assert "--sweep_params_json" in cmd_str
             assert "json:" in cmd_str
