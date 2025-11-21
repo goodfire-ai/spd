@@ -350,13 +350,13 @@ class SingleGpu(ComputeStrategy):
         return base
 
 
-@dataclass(frozen=True, slots=True)
 class SingleNode(ComputeStrategy):
-    gpus_per_node: int
+    def __init__(self, n_gpus_per_node: int):
+        self._n_gpus_per_node = n_gpus_per_node
 
     @override
     def n_gpus_per_node(self) -> int:
-        return self.gpus_per_node
+        return self._n_gpus_per_node
 
     @override
     def n_nodes(self) -> int:
@@ -378,7 +378,7 @@ class SingleNode(ComputeStrategy):
             "NCCL_DEBUG=WARN "
             "TORCH_NCCL_ASYNC_ERROR_HANDLING=1 "
             f"MASTER_ADDR=127.0.0.1 MASTER_PORT={port} "
-            f"torchrun --standalone --nproc_per_node={self.gpus_per_node} --master_port={port} "
+            f"torchrun --standalone --nproc_per_node={self._n_gpus_per_node} --master_port={port} "
             f"--rdzv_id={rendezvous_id} "
             f"{script_path} "
             f"--config_json '{get_config_json(config)}' "
@@ -390,9 +390,9 @@ class SingleNode(ComputeStrategy):
         return base
 
 
-@dataclass(frozen=True, slots=True)
 class MultiNode(ComputeStrategy):
-    nodes: int
+    def __init__(self, n_nodes: int):
+        self._n_nodes = n_nodes
 
     @override
     def n_gpus_per_node(self) -> int:
@@ -400,7 +400,7 @@ class MultiNode(ComputeStrategy):
 
     @override
     def n_nodes(self) -> int:
-        return self.nodes
+        return self._n_nodes
 
     @override
     def get_command(
@@ -425,7 +425,7 @@ class MultiNode(ComputeStrategy):
             f"MASTER_PORT={port} "
             f"MASTER_ADDR={master_addr_expr} "
             "torchrun "
-            f"--nnodes={self.nodes} "
+            f"--nnodes={self.n_nodes} "
             f"--nproc_per_node={self.n_gpus_per_node()} "
             "--rdzv_backend=c10d "
             f"--rdzv_endpoint=${{MASTER_ADDR}}:{port} "

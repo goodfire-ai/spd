@@ -246,25 +246,40 @@ def get_experiments(
     return experiments_list
 
 
-def build_compute_strategy(cpu: bool, dp: int | None, nodes: int | None) -> ComputeStrategy:
+def build_compute_strategy(
+    cpu: bool,
+    local: bool,
+    dp_per_node: int | None,
+    num_nodes: int | None,
+) -> ComputeStrategy:
     """Construct a compute strategy from CLI arguments."""
-    match cpu, nodes, dp:
+    if local:
+        assert dp_per_node is None and num_nodes is None, (
+            "cannot specify both local and dp or num_nodes"
+        )
+        return Cpu()
+
+    match cpu, num_nodes, dp_per_node:
         case True, _, _:
-            assert dp is None and nodes is None, "cannot specify both cpu and dp or nodes"
+            assert dp_per_node is None and num_nodes is None, (
+                "cannot specify both cpu and dp or num_nodes"
+            )
             return Cpu()
         case False, None, None:
-            return SingleNode(gpus_per_node=1)
+            return SingleNode(n_gpus_per_node=1)
         case False, None, _:
-            assert dp > 1, "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
-            return SingleNode(gpus_per_node=dp)
-        case False, _, None:
-            assert nodes > 1, (
-                "for multi-node runs, nodes must be at least 2. Otherwise, pass nodes=None."
+            assert dp_per_node > 1, (
+                "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
             )
-            return MultiNode(nodes=nodes)
+            return SingleNode(n_gpus_per_node=dp_per_node)
+        case False, _, None:
+            assert num_nodes > 1, (
+                "for multi-node runs, num_nodes must be at least 2. Otherwise, pass num_nodes=None."
+            )
+            return MultiNode(n_nodes=num_nodes)
         case False, _, _:
             raise ValueError(
-                "Do not specifiy both nodes and dp. for multi-node runs, assume 8 GPUs per node."
+                "Do not specifiy both num_nodes and dp. for multi-node runs, assume 8 GPUs per node."
             )
 
 
@@ -274,10 +289,7 @@ def main(
     n_agents: int | None = None,
     create_report: bool = True,
     job_suffix: str | None = None,
-    cpu: bool = False,
     partition: str = DEFAULT_PARTITION_NAME,
-    dp: int | None = None,
-    nodes: int | None = None,
     project: str = "spd",
     local: bool = False,
     log_format: LogFormat = "default",
@@ -285,35 +297,6 @@ def main(
     use_wandb: bool = True,
     report_title: str | None = None,
 ) -> None:
-    """SPD runner for experiments with optional parameter sweeps.
-
-    Args:
-        experiments: Comma-separated list of experiment names. If None, runs all experiments.
-        sweep: Enable parameter sweep. If True, uses default sweep_params.yaml.
-            If a string, uses that as the sweep parameters file path.
-        n_agents: Maximum number of concurrent SLURM tasks. If None and sweep is enabled,
-            raise an error (unless running with --local). If None and sweep is not enabled,
-            use the number of experiments. Not used for local execution.
-        create_report: Create W&B report for aggregated view (default: True)
-        job_suffix: Optional suffix for SLURM job names
-        cpu: Use CPU instead of GPU (default: False)
-        partition: SLURM partition to use (default: "h200-reserved")
-        dp: Number of GPUs per node for data parallelism if desired. Only supported for lm experiments.
-            Cannot be used with local mode. If nodes is provided, this must be None and we assume 8 GPUs per node.
-        nodes: Number of nodes for distributed training if desired. If provided, uses torchrun with
-            SLURM rendezvous, requires non-local execution. If dp is provided, this must be None.
-        project: W&B project name (default: "spd"). Will be created if it doesn't exist.
-        local: Run locally instead of submitting to SLURM (default: False)
-        log_format: Logging format for the script output.
-            Options are "terse" (no timestamps/level) or "default".
-        create_snapshot: Create a git snapshot branch for the run.
-            if False, uses the current branch, as determined by `repo_current_branch`
-            (default: True).
-        use_wandb: Use W&B for logging and tracking (default: True).
-            If set to false, `create_report` must also be false.
-        report_title: Title for the W&B report (default: None). Will be generated if not provided.
-
-    """
     # setup
     # ==========================================================================================
 
@@ -331,8 +314,6 @@ def main(
     # get the experiments to run -- run all of them if not specified
     experiments_list: list[str] = get_experiments(experiments)
     logger.info(f"Experiments: {', '.join(experiments_list)}")
-
-    compute_strategy = build_compute_strategy(cpu=cpu, dp=dp, nodes=nodes)
 
     # Agent count
     if n_agents is None:
@@ -427,6 +408,58 @@ def main(
                 }
             )
 
+def cli(
+    experiments: str | None = None,
+    sweep: str | bool = False,
+    n_agents: int | None = None,
+    create_report: bool = True,
+    job_suffix: str | None = None,
+    cpu: bool = False,
+    partition: str = DEFAULT_PARTITION_NAME,
+    num_nodes: int | None = None,
+    dp_per_node: int | None = None,
+    project: str = "spd",
+    local: bool = False,
+    log_format: LogFormat = "default",
+    create_snapshot: bool = True,
+    use_wandb: bool = True,
+    report_title: str | None = None,
+) -> None:
+    """SPD runner for experiments with optional parameter sweeps.
+
+    Args:
+        experiments: Comma-separated list of experiment names. If None, runs all experiments.
+        sweep: Enable parameter sweep. If True, uses default sweep_params.yaml.
+            If a string, uses that as the sweep parameters file path.
+        n_agents: Maximum number of concurrent SLURM tasks. If None and sweep is enabled,
+            raise an error (unless running with --local). If None and sweep is not enabled,
+            use the number of experiments. Not used for local execution.
+        create_report: Create W&B report for aggregated view (default: True)
+        job_suffix: Optional suffix for SLURM job names
+        cpu: Use CPU instead of GPU (default: False)
+        partition: SLURM partition to use (default: "h200-reserved")
+        num_nodes: Number of nodes for distributed training if desired. If provided, uses torchrun with
+            SLURM rendezvous, requires non-local execution. If dp_per_node is provided, this must be None.
+        dp_per_node: Number of GPUs per node for data parallelism if desired. Only supported for lm experiments.
+            Cannot be used with local mode. If num_nodes is provided, this must be None and we assume 8 GPUs per node.
+        project: W&B project name (default: "spd"). Will be created if it doesn't exist.
+        local: Run locally instead of submitting to SLURM (default: False)
+        log_format: Logging format for the script output.
+            Options are "terse" (no timestamps/level) or "default".
+        create_snapshot: Create a git snapshot branch for the run.
+            if False, uses the current branch, as determined by `repo_current_branch`
+            (default: True).
+        use_wandb: Use W&B for logging and tracking (default: True).
+            If set to false, `create_report` must also be false.
+        report_title: Title for the W&B report (default: None). Will be generated if not provided.
+
+    """
+    compute_strategy = build_compute_strategy(
+        cpu=cpu, local=local, dp_per_node=dp_per_node, num_nodes=num_nodes
+    )
+
+
+
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    fire.Fire(cli)
