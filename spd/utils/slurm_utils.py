@@ -6,6 +6,7 @@ from pathlib import Path
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
+from spd.utils.distributed_utils import ComputeStrategy
 
 
 def format_runtime_str(runtime_minutes: int) -> str:
@@ -23,15 +24,13 @@ def format_runtime_str(runtime_minutes: int) -> str:
 
 
 def create_slurm_array_script(
-    script_path: Path,
     job_name: str,
     commands: list[str],
     snapshot_branch: str,
-    n_gpus_per_job: int,
+    job_strategy: ComputeStrategy,
     partition: str,
-    time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
-) -> None:
+) -> str:
     """Create a SLURM job array script with git snapshot for consistent code.
 
     Args:
@@ -39,8 +38,6 @@ def create_slurm_array_script(
         job_name: Name for the SLURM job array
         commands: List of commands to execute in each array job
         snapshot_branch: Git branch to checkout.
-        n_gpus_per_job: Number of GPUs per job. If 0, use CPU jobs.
-        time_limit: Time limit for each job (default: 72:00:00)
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
 
@@ -53,19 +50,30 @@ def create_slurm_array_script(
     else:
         array_range = f"1-{len(commands)}"
 
+    if job_strategy.n_nodes() == 1:
+        statements_block = ""
+        command_prefix = ""
+    else:
+        extra_statements = [
+            'export MASTER_ADDR=${MASTER_ADDR:-$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)}',
+            "export MASTER_PORT=${MASTER_PORT:-29500}",
+        ]
+        statements_block = "\n        ".join(extra_statements)
+        command_prefix = f"srun --ntasks={job_strategy.n_nodes()} --ntasks-per-node=1"
+
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
-        case_statements.append(f"{i}) {command} ;;")
-
+        case_statements.append(f"{i}) {command_prefix} {command} ;;")
     case_block = "\n        ".join(case_statements)
 
     script_content = textwrap.dedent(f"""
         #!/bin/bash
-        #SBATCH --nodes=1
-        #SBATCH --gres=gpu:{n_gpus_per_job}
+        #SBATCH --nodes={job_strategy.n_nodes()}
+        #SBATCH --ntasks-per-node=1
+        #SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
         #SBATCH --partition={partition}
-        #SBATCH --time={time_limit}
+        #SBATCH --time=72:00:00
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
         #SBATCH --distribution=pack
@@ -93,17 +101,15 @@ def create_slurm_array_script(
         uv sync --no-dev --link-mode copy -q
         source .venv/bin/activate
 
+        {statements_block}
+
         # Execute the appropriate command based on array task ID
         case $SLURM_ARRAY_TASK_ID in
         {case_block}
         esac
     """).strip()
 
-    with open(script_path, "w") as f:
-        f.write(script_content)
-
-    # Make script executable
-    script_path.chmod(0o755)
+    return script_content
 
 
 def submit_slurm_array(script_path: Path) -> str:

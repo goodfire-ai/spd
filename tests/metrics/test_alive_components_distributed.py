@@ -1,6 +1,6 @@
 """Distributed tests for AliveComponentsTracker metric.
 
-Run with: mpirun -np 2 python tests/metrics/test_alive_components_distributed.py
+Run with: torchrun --standalone --nproc_per_node=2 --master_port=29504 tests/metrics/test_alive_components_distributed.py
 Or via pytest (slower): pytest tests/metrics/test_alive_components_distributed.py --runslow
 """
 
@@ -183,7 +183,7 @@ def _test_multiple_modules():
 
 @with_distributed_cleanup
 def run_all_tests():
-    """Run all distributed tests when called directly with mpirun."""
+    """Run all distributed tests when called directly with torchrun."""
     init_distributed(backend="gloo")
     rank = get_rank()
     world_size = get_world_size()
@@ -224,22 +224,23 @@ class TestDistributedAliveComponentsTracker:
     """Pytest wrapper for distributed AliveComponentsTracker tests."""
 
     def test_distributed_alive_components(self):
-        """Run distributed tests via mpirun in subprocess."""
+        """Run distributed tests via torchrun in subprocess."""
         script_path = Path(__file__).resolve()
 
         # ports should be globally unique in tests to allow test parallelization
         # see discussion at: https://github.com/goodfire-ai/spd/pull/186
         env = {
+            "MASTER_ADDR": "127.0.0.1",
             "MASTER_PORT": "29504",
             "OMP_NUM_THREADS": "1",
         }
 
         cmd = [
-            "mpirun",
-            "--bind-to",  # avoid trying to bind to cores that aren't available.
-            "none",  #  See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
-            "-np",
-            "2",
+            "torchrun",
+            "--standalone",
+            "--nproc_per_node=2",
+            "--master_port",
+            "29504",
             sys.executable,
             str(script_path),
         ]

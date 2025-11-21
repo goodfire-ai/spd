@@ -2,13 +2,10 @@
 
 This file can be run in two ways:
 
-1. Directly with mpirun (fastest):
-   mpirun --bind-to none -np 2 python tests/test_gather_all_tensors_distributed.py
-   (see:
-   https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
-   for why we need to bind to none)
+1. Directly with torchrun (fastest):
+   torchrun --standalone --nproc_per_node=2 --master_port=29503 tests/test_gather_all_tensors_distributed.py
 
-2. Via pytest (runs mpirun in subprocess):
+2. Via pytest (runs torchrun in subprocess):
    pytest tests/test_gather_all_tensors_distributed.py
 """
 
@@ -169,7 +166,7 @@ def _test_gather_preserves_autograd():
 
 
 def run_all_tests():
-    """Run all distributed tests when called directly with mpirun."""
+    """Run all distributed tests when called directly with torchrun."""
     # Initialize distributed once for all tests
     init_distributed(backend="gloo")
     try:
@@ -207,28 +204,29 @@ def run_all_tests():
 
 
 # ===== Pytest wrapper =====
-# This allows running via pytest, which will spawn mpirun in a subprocess
+# This allows running via pytest, which will spawn torchrun in a subprocess
 @pytest.mark.slow
 class TestGatherAllTensors:
     """Pytest wrapper for gather_all_tensors tests."""
 
     def testgather_all_tensors_distributed(self):
-        """Run distributed tests via mpirun in subprocess."""
+        """Run distributed tests via torchrun in subprocess."""
         script_path = Path(__file__).resolve()
 
         # ports should be globally unique in tests to allow test parallelization
         # see discussion at: https://github.com/goodfire-ai/spd/pull/186
         env = {
+            "MASTER_ADDR": "127.0.0.1",
             "MASTER_PORT": "29503",
             "OMP_NUM_THREADS": "1",
         }
 
         cmd = [
-            "mpirun",
-            "--bind-to",  # avoid trying to bind to cores that aren't available.
-            "none",  #  See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
-            "-np",
-            "2",
+            "torchrun",
+            "--standalone",
+            "--nproc_per_node=2",
+            "--master_port",
+            "29503",
             sys.executable,
             str(script_path),
         ]
@@ -247,5 +245,5 @@ class TestGatherAllTensors:
 
 
 if __name__ == "__main__":
-    # When run directly with mpirun, execute all tests
+    # When run directly with torchrun, execute all tests
     run_all_tests()
