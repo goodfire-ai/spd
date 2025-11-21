@@ -70,6 +70,7 @@ def create_slurm_array_script(
         #SBATCH --array={array_range}
         #SBATCH --distribution=pack
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
+        #SBATCH --nodelist=h200-dev-145-042
 
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
@@ -116,8 +117,11 @@ def submit_slurm_array(script_path: Path) -> str:
         Array job ID from submitted job array
     """
     result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+        ["sbatch", str(script_path)], capture_output=True, text=True, check=False
     )
+    if result.returncode != 0:
+        logger.error(f"Failed to submit job array: {result.stderr=} {result.stdout=}")
+        raise RuntimeError("Failed to submit job array")
     # Extract job ID from sbatch output (format: "Submitted batch job 12345")
     job_id = result.stdout.strip().split()[-1]
     return job_id
