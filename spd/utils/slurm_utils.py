@@ -51,33 +51,38 @@ def create_slurm_array_script(
         array_range = f"1-{len(commands)}"
 
     if job_strategy.n_nodes() == 1:
-        statements_block = None
+        # statements_block = None
         command_prefix = None
     else:
-        extra_statements = [
-            'export MASTER_ADDR=${MASTER_ADDR:-$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)}',
-            "export MASTER_PORT=${MASTER_PORT:-29500}",
-        ]
-        statements_block = "\n".join(extra_statements)
-        command_prefix = f"srun --ntasks={job_strategy.n_nodes()} --ntasks-per-node=1 "
+        # extra_statements = [
+        #     'echo "[spd-run] MASTER_ADDR=${MASTER_ADDR} MASTER_PORT=${MASTER_PORT}"',
+        # ]
+        # statements_block = "\n".join(extra_statements)
+        command_prefix = (
+            f"srun --ntasks={job_strategy.n_nodes()} "
+            f"--ntasks-per-node=1 --distribution=block:block "
+        )
 
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
+        if len(command.env_vars) > 0:
+            env_vars_str = " ".join([f"{k}={v}" for k, v in command.env_vars.items()])
+            command_prefix_ = f"{command_prefix} /usr/bin/env {env_vars_str} "
+        else:
+            command_prefix_ = command_prefix
 
-        case_statements.append(f"{i}) {command_prefix} {command.command}".rstrip() + " ;;")
+        case_statements.append(f"{i}) {command_prefix_} {command.command}".rstrip() + " ;;")
     case_block = "\n".join(case_statements)
 
     script_content = f"""\
 #!/bin/bash
 #SBATCH --nodes={job_strategy.n_nodes()}
-#SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
 #SBATCH --partition={partition}
 #SBATCH --time=72:00:00
 #SBATCH --job-name={job_name}
 #SBATCH --array={array_range}
-#SBATCH --distribution=pack
 #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 
 # Create job-specific working directory
@@ -105,13 +110,13 @@ unset VIRTUAL_ENV
 uv sync --no-dev --link-mode copy -q
 source .venv/bin/activate
 
-{statements_block or ""}
 
 # Execute the appropriate command based on array task ID
 case $SLURM_ARRAY_TASK_ID in
 {case_block}
 esac
 """
+# {statements_block or ""}
 
     return script_content
 
