@@ -11,6 +11,28 @@ from spd.settings import REPO_ROOT
 EXCLUDED_NODE = "h200-dev-145-040"
 
 
+def _node_exists(node_name: str) -> bool:
+    """Check if a SLURM node exists in the cluster.
+
+    Args:
+        node_name: Name of the node to check
+
+    Returns:
+        True if the node exists, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["sinfo", "-N", "-h", "-n", node_name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0 and node_name in result.stdout
+    except Exception:
+        # If sinfo fails for any reason, assume node doesn't exist
+        return False
+
+
 def format_runtime_str(runtime_minutes: int) -> str:
     """Format runtime in minutes to a human-readable string like '2h30m' or '45m'.
 
@@ -63,17 +85,24 @@ def create_slurm_array_script(
 
     case_block = "\n        ".join(case_statements)
 
+    # Only include GPU resource request if GPUs are needed
+    gpu_directive = f"#SBATCH --gres=gpu:{n_gpus_per_job}\n        " if n_gpus_per_job > 0 else ""
+
+    # Only include exclude directive if the node exists
+    exclude_directive = ""
+    if EXCLUDED_NODE and _node_exists(EXCLUDED_NODE):
+        exclude_directive = f"#SBATCH --exclude={EXCLUDED_NODE}\n        "
+
     script_content = textwrap.dedent(f"""
         #!/bin/bash
         #SBATCH --nodes=1
-        #SBATCH --gres=gpu:{n_gpus_per_job}
-        #SBATCH --partition={partition}
+        {gpu_directive}#SBATCH --partition={partition}
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
         #SBATCH --distribution=pack
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
-        #SBATCH --exclude={EXCLUDED_NODE}
+        {exclude_directive}
 
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
@@ -118,13 +147,33 @@ def submit_slurm_array(script_path: Path) -> str:
 
     Returns:
         Array job ID from submitted job array
+
+    Raises:
+        RuntimeError: If sbatch fails, includes the error message from sbatch
     """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
-    )
-    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
-    job_id = result.stdout.strip().split()[-1]
-    return job_id
+    try:
+        result = subprocess.run(
+            ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+        )
+        # Extract job ID from sbatch output (format: "Submitted batch job 12345")
+        job_id = result.stdout.strip().split()[-1]
+        return job_id
+    except subprocess.CalledProcessError as e:
+        error_msg = f"sbatch failed with exit code {e.returncode}"
+        if e.stdout:
+            error_msg += f"\nstdout: {e.stdout}"
+        if e.stderr:
+            error_msg += f"\nstderr: {e.stderr}"
+        logger.error(error_msg)
+        logger.error(f"Script path: {script_path}")
+        # Log first few lines of script for debugging
+        try:
+            with open(script_path) as f:
+                script_lines = f.readlines()
+                logger.error(f"First 20 lines of script:\n{''.join(script_lines[:20])}")
+        except Exception:
+            pass
+        raise RuntimeError(error_msg) from e
 
 
 def submit_slurm_job(script_path: Path) -> str:
@@ -135,13 +184,33 @@ def submit_slurm_job(script_path: Path) -> str:
 
     Returns:
         Job ID from submitted job
+
+    Raises:
+        RuntimeError: If sbatch fails, includes the error message from sbatch
     """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
-    )
-    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
-    job_id = result.stdout.strip().split()[-1]
-    return job_id
+    try:
+        result = subprocess.run(
+            ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+        )
+        # Extract job ID from sbatch output (format: "Submitted batch job 12345")
+        job_id = result.stdout.strip().split()[-1]
+        return job_id
+    except subprocess.CalledProcessError as e:
+        error_msg = f"sbatch failed with exit code {e.returncode}"
+        if e.stdout:
+            error_msg += f"\nstdout: {e.stdout}"
+        if e.stderr:
+            error_msg += f"\nstderr: {e.stderr}"
+        logger.error(error_msg)
+        logger.error(f"Script path: {script_path}")
+        # Log first few lines of script for debugging
+        try:
+            with open(script_path) as f:
+                script_lines = f.readlines()
+                logger.error(f"First 20 lines of script:\n{''.join(script_lines[:20])}")
+        except Exception:
+            pass
+        raise RuntimeError(error_msg) from e
 
 
 def print_job_summary(job_info_list: list[str]) -> None:
