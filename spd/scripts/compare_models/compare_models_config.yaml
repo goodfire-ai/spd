@@ -3,8 +3,12 @@
 # Model paths (supports both wandb: and local paths)
 
 # TMS 5-2-id example models:
-current_model_path: "wandb:goodfire/spd/runs/667z2n1b"
-reference_model_path: "wandb:goodfire/spd/runs/vh4yszsd"
+# current_model_path: "wandb:goodfire/spd/runs/667z2n1b"
+# reference_model_path: "wandb:goodfire/spd/runs/vh4yszsd"
+
+# Resid MLP 2 example models:
+current_model_path: "wandb:goodfire/spd/runs/81fp1o68"
+reference_model_path: "wandb:goodfire/spd/runs/8enb584j"
 
 # SS LLAMA example models:
 # current_model_path: "wandb:goodfire/spd/runs/4r8yn2zt"
@@ -12,10 +16,10 @@ reference_model_path: "wandb:goodfire/spd/runs/vh4yszsd"
 
 
 # Analysis parameters
-density_threshold: 0.001  # Minimum activation density for components to be included in comparison
-n_eval_steps: 5  # Number of evaluation steps to compute activation densities
+density_threshold: 0.005  # Minimum activation density for components to be included in comparison
+n_eval_steps: 32  # Number of evaluation steps to compute activation densities
 
 # Data loading parameters
-eval_batch_size: 32  # Batch size for evaluation data loading
+eval_batch_size: 256  # Batch size for evaluation data loading
 shuffle_data: false  # Whether to shuffle the evaluation data
-ci_alive_threshold: 0.0  # Threshold for considering components as "alive"
+ci_alive_threshold: 0.01  # Threshold for considering components as "alive"
