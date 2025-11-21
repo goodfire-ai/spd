@@ -462,7 +462,7 @@ def try_wandb[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> 
     global _n_try_wandb_comm_errors
     try:
         return fn(*args, **kwargs)
-    except wandb.errors.CommError as e:
+    except (wandb.errors.CommError, wandb.errors.AuthenticationError) as e:
         _n_try_wandb_comm_errors += 1
         logger.error(
             f"wandb communication error, skipping log (total comm errors: {_n_try_wandb_comm_errors}): {e}"
