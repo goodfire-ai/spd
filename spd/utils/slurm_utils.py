@@ -57,9 +57,13 @@ def create_slurm_array_script(
         extra_statements = [
             'export MASTER_ADDR=${MASTER_ADDR:-$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)}',
             "export MASTER_PORT=${MASTER_PORT:-29500}",
+            'echo "[spd-run] MASTER_ADDR=${MASTER_ADDR} MASTER_PORT=${MASTER_PORT}"',
         ]
         statements_block = "\n".join(extra_statements)
-        command_prefix = f"srun --ntasks={job_strategy.n_nodes()} --ntasks-per-node=1 "
+        command_prefix = (
+            f"srun --ntasks={job_strategy.n_nodes()} "
+            f"--ntasks-per-node=1 --distribution=block:block env"
+        )
 
     # Create case statement for commands
     case_statements = []
