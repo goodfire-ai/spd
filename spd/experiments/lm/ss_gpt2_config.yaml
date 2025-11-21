@@ -33,6 +33,7 @@ lr_schedule: cosine
 lr_warmup_pct: 0.01
 lr_exponential_halflife: null
 gradient_accumulation_steps: 1
+grad_clip_norm: 1.0
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
