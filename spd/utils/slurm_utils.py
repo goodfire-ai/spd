@@ -63,11 +63,13 @@ def create_slurm_array_script(
 
     case_block = "\n        ".join(case_statements)
 
+    # Only include GPU resource request if GPUs are needed
+    gpu_directive = f"#SBATCH --gres=gpu:{n_gpus_per_job}\n        " if n_gpus_per_job > 0 else ""
+
     script_content = textwrap.dedent(f"""
         #!/bin/bash
         #SBATCH --nodes=1
-        #SBATCH --gres=gpu:{n_gpus_per_job}
-        #SBATCH --partition={partition}
+        {gpu_directive}#SBATCH --partition={partition}
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
@@ -118,13 +120,33 @@ def submit_slurm_array(script_path: Path) -> str:
 
     Returns:
         Array job ID from submitted job array
+
+    Raises:
+        RuntimeError: If sbatch fails, includes the error message from sbatch
     """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
-    )
-    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
-    job_id = result.stdout.strip().split()[-1]
-    return job_id
+    try:
+        result = subprocess.run(
+            ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+        )
+        # Extract job ID from sbatch output (format: "Submitted batch job 12345")
+        job_id = result.stdout.strip().split()[-1]
+        return job_id
+    except subprocess.CalledProcessError as e:
+        error_msg = f"sbatch failed with exit code {e.returncode}"
+        if e.stdout:
+            error_msg += f"\nstdout: {e.stdout}"
+        if e.stderr:
+            error_msg += f"\nstderr: {e.stderr}"
+        logger.error(error_msg)
+        logger.error(f"Script path: {script_path}")
+        # Log first few lines of script for debugging
+        try:
+            with open(script_path) as f:
+                script_lines = f.readlines()
+                logger.error(f"First 20 lines of script:\n{''.join(script_lines[:20])}")
+        except Exception:
+            pass
+        raise RuntimeError(error_msg) from e
 
 
 def submit_slurm_job(script_path: Path) -> str:
@@ -135,13 +157,33 @@ def submit_slurm_job(script_path: Path) -> str:
 
     Returns:
         Job ID from submitted job
+
+    Raises:
+        RuntimeError: If sbatch fails, includes the error message from sbatch
     """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
-    )
-    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
-    job_id = result.stdout.strip().split()[-1]
-    return job_id
+    try:
+        result = subprocess.run(
+            ["sbatch", str(script_path)], capture_output=True, text=True, check=True
+        )
+        # Extract job ID from sbatch output (format: "Submitted batch job 12345")
+        job_id = result.stdout.strip().split()[-1]
+        return job_id
+    except subprocess.CalledProcessError as e:
+        error_msg = f"sbatch failed with exit code {e.returncode}"
+        if e.stdout:
+            error_msg += f"\nstdout: {e.stdout}"
+        if e.stderr:
+            error_msg += f"\nstderr: {e.stderr}"
+        logger.error(error_msg)
+        logger.error(f"Script path: {script_path}")
+        # Log first few lines of script for debugging
+        try:
+            with open(script_path) as f:
+                script_lines = f.readlines()
+                logger.error(f"First 20 lines of script:\n{''.join(script_lines[:20])}")
+        except Exception:
+            pass
+        raise RuntimeError(error_msg) from e
 
 
 def print_job_summary(job_info_list: list[str]) -> None:
