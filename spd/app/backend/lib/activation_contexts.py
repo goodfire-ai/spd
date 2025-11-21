@@ -35,6 +35,28 @@ class SubcomponentExample:
         return self.token_ci_values[self.active_pos_in_window]
 
 
+def get_clean_token_string(tok_str: str) -> str:
+    return " " + (
+        tok_str.replace("Ġ", " ")
+        .replace("Ċ", "\n")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("âĢĻ", "'")
+        .replace("âĢľ", '"')
+        .replace("âĢĿ", '"')
+        .replace("âĢĵ", "-")
+        .replace("âĢĶ", "...")
+        .replace("âĢĭ", "")
+        .replace("âĢį", "")
+        .replace("##", "")
+    )
+
+
+def get_clean_token_strings(tok: PreTrainedTokenizer, ids: list[int]) -> list[str]:
+    tokens = tok.convert_ids_to_tokens(ids)  # pyright: ignore[reportAttributeAccessIssue]
+    return [get_clean_token_string(t) for t in tokens]
+
+
 class _TopKExamples:
     def __init__(self, k: int):
         self.k = k
@@ -55,7 +77,7 @@ class _TopKExamples:
     def as_activation_contexts(self, tok: PreTrainedTokenizer) -> list[ActivationContext]:
         return [
             ActivationContext(
-                token_strings=tok.convert_ids_to_tokens(ex.window_token_ids),  # pyright: ignore[reportAttributeAccessIssue]
+                token_strings=get_clean_token_strings(tok, ex.window_token_ids),
                 token_ci_values=ex.token_ci_values,
                 active_position=ex.active_pos_in_window,
                 ci_value=ex.active_pos_ci,
