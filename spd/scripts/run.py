@@ -260,6 +260,10 @@ def main(
                     max_concurrent_tasks=max_concurrent_tasks,
                 )
 
+                print('='*100)
+                print(array_script_content)
+                print('='*100)
+
                 with open(array_script_path, "w") as f:
                     f.write(array_script_content)
 
