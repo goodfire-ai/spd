@@ -7,31 +7,6 @@ from pathlib import Path
 from spd.log import logger
 from spd.settings import REPO_ROOT
 
-# unsolved, but this node seems to have a very high error rate
-EXCLUDED_NODE = "h200-dev-145-040"
-
-
-def _node_exists(node_name: str) -> bool:
-    """Check if a SLURM node exists in the cluster.
-
-    Args:
-        node_name: Name of the node to check
-
-    Returns:
-        True if the node exists, False otherwise
-    """
-    try:
-        result = subprocess.run(
-            ["sinfo", "-N", "-h", "-n", node_name],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        return result.returncode == 0 and node_name in result.stdout
-    except Exception:
-        # If sinfo fails for any reason, assume node doesn't exist
-        return False
-
 
 def format_runtime_str(runtime_minutes: int) -> str:
     """Format runtime in minutes to a human-readable string like '2h30m' or '45m'.
@@ -88,11 +63,6 @@ def create_slurm_array_script(
     # Only include GPU resource request if GPUs are needed
     gpu_directive = f"#SBATCH --gres=gpu:{n_gpus_per_job}\n        " if n_gpus_per_job > 0 else ""
 
-    # Only include exclude directive if the node exists
-    exclude_directive = ""
-    if EXCLUDED_NODE and _node_exists(EXCLUDED_NODE):
-        exclude_directive = f"#SBATCH --exclude={EXCLUDED_NODE}\n        "
-
     script_content = textwrap.dedent(f"""
         #!/bin/bash
         #SBATCH --nodes=1
@@ -102,7 +72,6 @@ def create_slurm_array_script(
         #SBATCH --array={array_range}
         #SBATCH --distribution=pack
         #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
-        {exclude_directive}
 
         # Create job-specific working directory
         WORK_DIR="/tmp/spd-gf-copy-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
