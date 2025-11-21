@@ -11,9 +11,10 @@ import copy
 import shlex
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar, Literal, cast
 
 import fire
 import yaml
@@ -22,11 +23,11 @@ from spd.configs import Config
 from spd.log import LogFormat, logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
-from spd.utils.distributed_utils import ComputeStrategy, Cpu, MultiNode, SingleNode
+from spd.utils.distributed_utils import ComputeStrategy, Cpu, MultiNode, SingleGpu, SingleNode
 from spd.utils.git_utils import create_git_snapshot, repo_current_branch
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_array
-from spd.utils.wandb_utils import wandb_setup
+from spd.utils.wandb_utils import ReportCfg, WandbReportConfig, wandb_setup
 
 
 def generate_run_id() -> str:
@@ -34,51 +35,40 @@ def generate_run_id() -> str:
     return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
-def resolve_sweep_params_path(sweep_params_file: str) -> Path:
-    """Resolve the full path to the sweep parameters file."""
-    if "/" not in sweep_params_file:
-        # Look in scripts directory by default
-        return REPO_ROOT / "spd/scripts" / sweep_params_file
-    else:
-        return REPO_ROOT / sweep_params_file
+def apply_sweep_params(experiment_name: str, sweep_params: dict[str, Any]) -> dict[str, Any]:
+    # """Load sweep parameters for an experiment.
 
+    # Supports YAML file with global parameters and experiment-specific overrides:
 
-def load_sweep_params(experiment_name: str, sweep_params_path: Path) -> dict[str, Any]:
-    """Load sweep parameters for an experiment.
+    # ```yaml
+    # global:
+    #   seed:
+    #     values: [0, 1, 2]
+    #   loss:
+    #     faithfulness_weight:
+    #       values: [0.1, 0.5]
 
-    Supports YAML file with global parameters and experiment-specific overrides:
+    # tms_5-2:
+    #   seed:
+    #     values: [100, 200]  # Overrides global seed
+    #   n_components:
+    #     values: [5, 10]     # Adds experiment-specific parameter
 
-    ```yaml
-    global:
-      seed:
-        values: [0, 1, 2]
-      loss:
-        faithfulness_weight:
-          values: [0.1, 0.5]
+    # resid_mlp1:
+    #   loss:
+    #     faithfulness_weight:
+    #       values: [1.0, 2.0]  # Overrides nested global parameter
+    # ```
 
-    tms_5-2:
-      seed:
-        values: [100, 200]  # Overrides global seed
-      n_components:
-        values: [5, 10]     # Adds experiment-specific parameter
-
-    resid_mlp1:
-      loss:
-        faithfulness_weight:
-          values: [1.0, 2.0]  # Overrides nested global parameter
-    ```
-
-    Experiment-specific parameters override global parameters at any nesting level.
-    """
-    with open(sweep_params_path) as f:
-        all_params = yaml.safe_load(f)
+    # Experiment-specific parameters override global parameters at any nesting level.
+    # """
 
     # Start with global parameters if they exist
-    params = copy.deepcopy(all_params["global"]) if "global" in all_params else {}
+    params = copy.deepcopy(sweep_params["global"]) if "global" in sweep_params else {}
 
     # Merge experiment-specific parameters if they exist
-    if experiment_name in all_params and experiment_name != "global":
-        experiment_params = all_params[experiment_name]
+    if experiment_name in sweep_params and experiment_name != "global":
+        experiment_params = sweep_params[experiment_name]
         _merge_sweep_params(params, experiment_params)
 
     if not params:
@@ -102,11 +92,11 @@ def _merge_sweep_params(base: dict[str, Any], override: dict[str, Any]) -> None:
 
 
 def generate_commands(
-    experiments_list: list[str],
     run_id: str,
+    experiments: list[str],
     compute_strategy: ComputeStrategy,
-    sweep_params_file: str | None = None,
-    project: str = "spd",
+    project: str,
+    sweep_params: dict[str, Any] | None,
 ) -> list[str]:
     """Generate commands for all experiment runs and print task counts.
 
@@ -119,19 +109,15 @@ def generate_commands(
     logger.info("Task breakdown by experiment:")
     task_breakdown: dict[str, str] = {}
 
-    sweep_params_path: Path | None = (
-        resolve_sweep_params_path(sweep_params_file) if sweep_params_file else None
-    )
-
     cmd_idx: int = 0
 
-    for experiment in experiments_list:
+    for experiment in experiments:
         exp_config = EXPERIMENT_REGISTRY[experiment]
 
         # Load base config
         base_config = Config.from_file(exp_config.config_path)
 
-        if sweep_params_path is None:
+        if sweep_params is None:
             # Fixed configuration run - still use JSON to ensure project override works
             base_config_dict = base_config.model_dump(mode="json")
             base_config_dict["wandb_project"] = project
@@ -150,8 +136,9 @@ def generate_commands(
 
         else:
             # Parameter sweep run
-            sweep_params = load_sweep_params(experiment, sweep_params_path)
-            combinations = generate_grid_combinations(sweep_params)
+            exp_sweep_params = apply_sweep_params(experiment, sweep_params)
+
+            combinations = generate_grid_combinations(exp_sweep_params)
 
             for i, param_combo in enumerate(combinations):
                 # Apply parameter overrides
@@ -216,7 +203,7 @@ def run_commands_locally(commands: list[str]) -> None:
 
 
 def get_experiments(
-    experiments: str | None = None,
+    experiments_list_str: str | None = None,
 ) -> list[str]:
     """Get and validate the list of experiments to run based on the input string.
 
@@ -227,23 +214,21 @@ def get_experiments(
         List of experiment names to run.
     """
     # Determine experiment list
-    experiments_list: list[str]
-    if experiments is None:
-        experiments_list = list(EXPERIMENT_REGISTRY.keys())
+    experiments: list[str]
+    if experiments_list_str is None:
+        experiments = list(EXPERIMENT_REGISTRY.keys())
     else:
-        experiments_list = [exp.strip() for exp in experiments.split(",")]
+        experiments = [exp.strip() for exp in experiments_list_str.split(",")]
 
     # Validate experiment names
-    invalid_experiments: list[str] = [
-        exp for exp in experiments_list if exp not in EXPERIMENT_REGISTRY
-    ]
+    invalid_experiments: list[str] = [exp for exp in experiments if exp not in EXPERIMENT_REGISTRY]
     if invalid_experiments:
         available: str = ", ".join(EXPERIMENT_REGISTRY.keys())
         raise ValueError(
             f"Invalid experiments: {invalid_experiments}. Available experiments: {available}"
         )
 
-    return experiments_list
+    return experiments
 
 
 def build_compute_strategy(
@@ -251,125 +236,102 @@ def build_compute_strategy(
     local: bool,
     dp_per_node: int | None,
     num_nodes: int | None,
+    partition: str,
 ) -> ComputeStrategy:
     """Construct a compute strategy from CLI arguments."""
-    if local:
+    if local or cpu:
         assert dp_per_node is None and num_nodes is None, (
             "cannot specify both local and dp or num_nodes"
         )
-        return Cpu()
+        return Cpu(partition=partition)
 
-    match cpu, num_nodes, dp_per_node:
-        case True, _, _:
-            assert dp_per_node is None and num_nodes is None, (
-                "cannot specify both cpu and dp or num_nodes"
-            )
-            return Cpu()
-        case False, None, None:
-            return SingleNode(n_gpus_per_node=1)
-        case False, None, _:
+    match num_nodes, dp_per_node:
+        case None, None:
+            return SingleNode(n_gpus_per_node=1, partition=partition)
+        case None, _:
             assert dp_per_node > 1, (
                 "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
             )
-            return SingleNode(n_gpus_per_node=dp_per_node)
-        case False, _, None:
+            return SingleNode(n_gpus_per_node=dp_per_node, partition=partition)
+        case _, None:
             assert num_nodes > 1, (
                 "for multi-node runs, num_nodes must be at least 2. Otherwise, pass num_nodes=None."
             )
-            return MultiNode(n_nodes=num_nodes)
-        case False, _, _:
+            return MultiNode(n_nodes=num_nodes, partition=partition)
+        case _, _:
             raise ValueError(
                 "Do not specifiy both num_nodes and dp. for multi-node runs, assume 8 GPUs per node."
             )
 
 
+def resolve_sweep_params_path(sweep_params_file: str) -> Path:
+    """Resolve the full path to the sweep parameters file."""
+    if "/" not in sweep_params_file:
+        # Look in scripts directory by default
+        return REPO_ROOT / "spd/scripts" / sweep_params_file
+    else:
+        return REPO_ROOT / sweep_params_file
+
+
+def get_sweep_params(sweep: str | bool) -> dict[str, Any] | None:
+    sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
+    sweep_params_path = resolve_sweep_params_path(sweep_params_file)
+    with open(sweep_params_path) as f:
+        sweep_params = yaml.safe_load(f)
+    return sweep_params
+
+
+@dataclass
+class ReportAndViewConfig:
+    create_report: bool | str
+    """If True, create a report. If a string, use it as the report title."""
+
+
 def main(
-    experiments: str | None = None,
-    sweep: str | bool = False,
-    n_agents: int | None = None,
-    create_report: bool = True,
-    job_suffix: str | None = None,
-    partition: str = DEFAULT_PARTITION_NAME,
-    project: str = "spd",
-    local: bool = False,
-    log_format: LogFormat = "default",
-    create_snapshot: bool = True,
-    use_wandb: bool = True,
-    report_title: str | None = None,
+    experiments: list[str],
+    local: bool,
+    compute_strategy: ComputeStrategy,
+    max_concurrent_tasks: int | None,
+    sweep_params: dict[str, Any] | None,
+    report_and_view_config: ReportAndViewConfig | None,
+    wandb_project: str,
+    job_suffix: str | None,
 ) -> None:
-    # setup
-    # ==========================================================================================
-
-    logger.set_format("console", log_format)
-
-    # Determine run id
     run_id: str = generate_run_id()
     logger.info(f"Run ID: {run_id}")
 
-    # Determine the sweep parameters file
-    sweep_params_file: str | None = None
-    if sweep:
-        sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
+    snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
+    logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
 
-    # get the experiments to run -- run all of them if not specified
-    experiments_list: list[str] = get_experiments(experiments)
-    logger.info(f"Experiments: {', '.join(experiments_list)}")
-
-    # Agent count
-    if n_agents is None:
-        if sweep_params_file is None:
-            n_agents = len(experiments_list)
-        else:
-            assert local, (
-                "n-agents must be provided if sweep is enabled (unless running with --local)"
+    # set up wandb
+    if report_and_view_config:
+        report_cfg = None
+        if report_and_view_config.create_report is not False:
+            report_title = (
+                report_and_view_config.create_report
+                if isinstance(report_and_view_config.create_report, str)
+                else None
             )
-
-    # wandb and snapshot setup
-    # ==========================================================================================
-
-    if not local or use_wandb:
-        # set up snapshot branch and commit hash
-        snapshot_branch: str
-        commit_hash: str
-
-        if create_snapshot:
-            snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
-            logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
-        else:
-            snapshot_branch = repo_current_branch()
-            commit_hash = "none"
-            logger.info(f"Using current branch: {snapshot_branch}")
-
-        # set up wandb
-        if use_wandb:
-            wandb_setup(
-                project=project,
-                run_id=run_id,
-                experiments_list=experiments_list,
-                create_report=create_report,
-                # if `create_report == False`, the rest of the arguments don't matter
+            report_cfg = ReportCfg(
                 report_title=report_title,
                 snapshot_branch=snapshot_branch,
                 commit_hash=commit_hash,
-                include_run_comparer=sweep_params_file is not None,
-            )
-        else:
-            assert not create_report, (
-                f"can't create report if use_wandb is false: {create_report = }"
-            )
-            logger.warning(
-                "W&B logging is disabled. No workspace views or reports will be created. "
-                "Set `use_wandb=True` to enable."
+                include_run_comparer=True,
             )
 
-    # generate and run commands
-    # ==========================================================================================
+        wandb_setup(
+            project=wandb_project,
+            run_id=run_id,
+            experiments=experiments,
+            report_cfg=report_cfg,
+        )
+
     commands: list[str] = generate_commands(
-        experiments_list=experiments_list,
+        experiments=experiments,
         run_id=run_id,
         compute_strategy=compute_strategy,
-        sweep_params_file=sweep_params_file,
-        project=project,
+        sweep_params=sweep_params,
+        project=wandb_project,
     )
 
     if local:
@@ -378,41 +340,43 @@ def main(
         # Submit to SLURM
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            array_script = temp_path / f"run_array_{run_id}.sh"
-            if job_suffix is None:
-                expected_time_str = get_max_expected_runtime(experiments_list)
-                job_name = f"spd-{expected_time_str}"
-            else:
-                job_name = f"spd-{job_suffix}"
+            array_script_path = temp_path / f"run_array_{run_id}.sh"
+            job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments)}"
 
-            create_slurm_array_script(
-                script_path=array_script,
+            array_script_content = create_slurm_array_script(
                 job_name=job_name,
                 commands=commands,
-                # again -- local is false, so snapshot_branch will exist
-                snapshot_branch=snapshot_branch,  # pyright: ignore[reportPossiblyUnboundVariable]
+                snapshot_branch=snapshot_branch,
                 job_strategy=compute_strategy,
-                max_concurrent_tasks=n_agents,
-                partition=partition,
+                max_concurrent_tasks=max_concurrent_tasks,
             )
 
-            array_job_id = submit_slurm_array(array_script)
+            with open(array_script_path, "w") as f:
+                f.write(array_script_content)
+
+            # Make script executable
+            array_script_path.chmod(0o755)
+
+            array_job_id = submit_slurm_array(array_script_path)
 
             logger.section("Job submitted successfully!")
             logger.values(
                 {
                     "Array Job ID": array_job_id,
                     "Total tasks": len(commands),
-                    "Max concurrent tasks": n_agents,
+                    "Max concurrent tasks": max_concurrent_tasks,
                     "View logs in": f"~/slurm_logs/slurm-{array_job_id}_*.out",
                 }
             )
+
 
 def cli(
     experiments: str | None = None,
     sweep: str | bool = False,
     n_agents: int | None = None,
+    use_wandb: bool = True,
     create_report: bool = True,
+    report_title: str | None = None,
     job_suffix: str | None = None,
     cpu: bool = False,
     partition: str = DEFAULT_PARTITION_NAME,
@@ -421,10 +385,7 @@ def cli(
     project: str = "spd",
     local: bool = False,
     log_format: LogFormat = "default",
-    create_snapshot: bool = True,
-    use_wandb: bool = True,
-    report_title: str | None = None,
-) -> None:
+):
     """SPD runner for experiments with optional parameter sweeps.
 
     Args:
@@ -437,7 +398,7 @@ def cli(
         create_report: Create W&B report for aggregated view (default: True)
         job_suffix: Optional suffix for SLURM job names
         cpu: Use CPU instead of GPU (default: False)
-        partition: SLURM partition to use (default: "h200-reserved")
+        partition: SLURM partition to use
         num_nodes: Number of nodes for distributed training if desired. If provided, uses torchrun with
             SLURM rendezvous, requires non-local execution. If dp_per_node is provided, this must be None.
         dp_per_node: Number of GPUs per node for data parallelism if desired. Only supported for lm experiments.
@@ -454,11 +415,56 @@ def cli(
         report_title: Title for the W&B report (default: None). Will be generated if not provided.
 
     """
-    compute_strategy = build_compute_strategy(
-        cpu=cpu, local=local, dp_per_node=dp_per_node, num_nodes=num_nodes
+    logger.set_format("console", log_format)
+
+    experiments_list: list[str] = get_experiments(experiments)
+    logger.info(f"Experiments: {', '.join(experiments_list)}")
+
+    sweep_params = get_sweep_params(sweep)
+
+    compute_strategy: ComputeStrategy = build_compute_strategy(
+        cpu=cpu, local=local, dp_per_node=dp_per_node, num_nodes=num_nodes, partition=partition
     )
 
+    # Agent count
+    if n_agents is None:
+        if sweep_params is None:
+            n_agents = len(experiments_list)
+        else:
+            assert local, (
+                "n-agents must be provided if sweep is enabled (unless running with --local)"
+            )
 
+    if local:
+        assert isinstance(compute_strategy, Cpu | SingleGpu | SingleNode), (
+            f"Cannot use compute strategy type {type(compute_strategy)} for local execution"
+        )
+
+    match use_wandb, create_report, report_title:
+        case True, True, title:
+            report_and_view_config = ReportAndViewConfig(create_report=title or True)
+        case True, False, str(title):
+            raise ValueError(
+                f"got report_title='{title}' but create_report=False. did you intend to create a report? if so, set create_report=True"
+            )
+        case True, False, None:
+            report_and_view_config = ReportAndViewConfig(create_report=False)
+        case False, _, _:
+            logger.warning(
+                "No workspace views or reports will be created. set `use_wandb=True` and optionally `create_report=True` to enable."
+            )
+            report_and_view_config = None
+
+    main(
+        experiments=experiments_list,
+        local=local,
+        compute_strategy=compute_strategy,
+        sweep_params=sweep_params,
+        max_concurrent_tasks=n_agents,
+        report_and_view_config=report_and_view_config,
+        wandb_project=project,
+        job_suffix=job_suffix,
+    )
 
 
 if __name__ == "__main__":

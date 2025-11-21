@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from functools import wraps
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, ClassVar, Final, Literal, cast, override
+from typing import Any, ClassVar, Literal, cast, override
 
 import torch
 import torch.distributed as dist
@@ -288,6 +288,9 @@ class ComputeStrategy(ABC):
     def n_nodes(self) -> int: ...
 
     @abstractmethod
+    def partition(self) -> str: ...
+
+    @abstractmethod
     def get_command(
         self,
         run_id: str,
@@ -300,6 +303,9 @@ class ComputeStrategy(ABC):
 
 
 class Cpu(ComputeStrategy):
+    def __init__(self, partition: str):
+        self._partition = partition
+
     @override
     def n_gpus_per_node(self) -> int:
         return 0
@@ -307,6 +313,10 @@ class Cpu(ComputeStrategy):
     @override
     def n_nodes(self) -> int:
         return 1
+
+    @override
+    def partition(self) -> str:
+        return self._partition
 
     @override
     def get_command(
@@ -324,8 +334,11 @@ class Cpu(ComputeStrategy):
         return base
 
 
-@dataclass(frozen=True, slots=True)
 class SingleGpu(ComputeStrategy):
+    def __init__(self, partition: str, local: bool):
+        self._partition = partition
+        self._local = local
+
     @override
     def n_gpus_per_node(self) -> int:
         return 1
@@ -333,6 +346,10 @@ class SingleGpu(ComputeStrategy):
     @override
     def n_nodes(self) -> int:
         return 1
+
+    @override
+    def partition(self) -> str:
+        return self._partition
 
     @override
     def get_command(
@@ -351,8 +368,9 @@ class SingleGpu(ComputeStrategy):
 
 
 class SingleNode(ComputeStrategy):
-    def __init__(self, n_gpus_per_node: int):
+    def __init__(self, n_gpus_per_node: int, partition: str):
         self._n_gpus_per_node = n_gpus_per_node
+        self._partition = partition
 
     @override
     def n_gpus_per_node(self) -> int:
@@ -361,6 +379,10 @@ class SingleNode(ComputeStrategy):
     @override
     def n_nodes(self) -> int:
         return 1
+
+    @override
+    def partition(self) -> str:
+        return self._partition
 
     @override
     def get_command(
@@ -391,16 +413,23 @@ class SingleNode(ComputeStrategy):
 
 
 class MultiNode(ComputeStrategy):
-    def __init__(self, n_nodes: int):
+    N_GPUS_PER_NODE: ClassVar[int] = 8
+
+    def __init__(self, n_nodes: int, partition: str):
         self._n_nodes = n_nodes
+        self._partition = partition
 
     @override
     def n_gpus_per_node(self) -> int:
-        return 8
+        return self.N_GPUS_PER_NODE
 
     @override
     def n_nodes(self) -> int:
         return self._n_nodes
+
+    @override
+    def partition(self) -> str:
+        return self._partition
 
     @override
     def get_command(
@@ -425,8 +454,8 @@ class MultiNode(ComputeStrategy):
             f"MASTER_PORT={port} "
             f"MASTER_ADDR={master_addr_expr} "
             "torchrun "
-            f"--nnodes={self.n_nodes} "
-            f"--nproc_per_node={self.n_gpus_per_node()} "
+            f"--nnodes={self._n_nodes} "
+            f"--nproc_per_node={self.N_GPUS_PER_NODE} "
             "--rdzv_backend=c10d "
             f"--rdzv_endpoint=${{MASTER_ADDR}}:{port} "
             f"--master_addr=${{MASTER_ADDR}} "

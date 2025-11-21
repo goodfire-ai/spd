@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import os
 from enum import Enum
 from pathlib import Path
@@ -221,8 +222,8 @@ def create_wandb_report(
     report_title: str,
     run_id: str,
     branch_name: str,
-    commit_hash: str,
-    experiments_list: list[str],
+    commit_hash: str | None,
+    experiments: list[str],
     include_run_comparer: bool,
     project: str = "spd",
     report_total_width: int = 24,
@@ -231,14 +232,16 @@ def create_wandb_report(
     report = wr.Report(
         project=project,
         title=report_title,
-        description=f"Experiments: {', '.join(experiments_list)}",
+        description=f"Experiments: {', '.join(experiments)}",
         width="fluid",
     )
 
-    report.blocks.append(wr.MarkdownBlock(text=f"Branch: `{branch_name}`\nCommit: `{commit_hash}`"))
+    report.blocks.append(
+        wr.MarkdownBlock(text=f"Branch: `{branch_name}`\nCommit: `{commit_hash or 'none'}`")
+    )
 
     # Create separate panel grids for each experiment
-    for experiment in experiments_list:
+    for experiment in experiments:
         task_name: str = EXPERIMENT_REGISTRY[experiment].task_name
 
         # Use run_id and experiment name tags for filtering
@@ -390,25 +393,27 @@ def create_wandb_report(
     return report.url
 
 
+@dataclass
+class ReportCfg:
+    report_title: str | None
+    snapshot_branch: str
+    commit_hash: str
+    include_run_comparer: bool
+
+
 def wandb_setup(
     project: str,
     run_id: str,
-    experiments_list: list[str],
-    # only used in report generation
-    create_report: bool,
-    # passed to create_wandb_report as-is
-    report_title: str | None,
-    snapshot_branch: str,
-    commit_hash: str,
-    include_run_comparer: bool,
+    experiments: list[str],
+    report_cfg: ReportCfg | None,
 ) -> None:
     """set up wandb, creating workspace views and optionally creating a report
 
     Args:
         project: W&B project name
         run_id: Unique run identifier
-        experiments_list: List of experiment names to create views for
-        create_report: Whether to create a W&B report for the run. if False, no report will be created and the rest of the arguments don't matter
+        experiments: List of experiment names to create views for
+        report_cfg: Whether to create a W&B report for the run. if False, no report will be created and the rest of the arguments don't matter
         report_title: Title for the W&B report, if created. If None, will be
             generated as "SPD Run Report - {run_id}".
         snapshot_branch: Git branch name for the snapshot created by this run.
@@ -422,20 +427,20 @@ def wandb_setup(
     # Create workspace views for each experiment
     logger.section("Creating workspace views...")
     workspace_urls: dict[str, str] = {}
-    for experiment in experiments_list:
+    for experiment in experiments:
         workspace_url = create_workspace_view(run_id, experiment, project)
         workspace_urls[experiment] = workspace_url
 
     # Create report if requested
     report_url: str | None = None
-    if create_report and len(experiments_list) > 1:
+    if report_cfg is not None and len(experiments) > 1:
         report_url = create_wandb_report(
-            report_title=report_title or f"SPD Run Report - {run_id}",
+            report_title=report_cfg.report_title or f"SPD Run Report - {run_id}",
             run_id=run_id,
-            branch_name=snapshot_branch,
-            commit_hash=commit_hash,
-            experiments_list=experiments_list,
-            include_run_comparer=include_run_comparer,
+            branch_name=report_cfg.snapshot_branch,
+            commit_hash=report_cfg.commit_hash,
+            experiments=experiments,
+            include_run_comparer=report_cfg.include_run_comparer,
             project=project,
         )
 

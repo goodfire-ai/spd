@@ -24,15 +24,13 @@ def format_runtime_str(runtime_minutes: int) -> str:
 
 
 def create_slurm_array_script(
-    script_path: Path,
     job_name: str,
     commands: list[str],
     snapshot_branch: str,
     job_strategy: ComputeStrategy,
-    partition: str,
     time_limit: str = "72:00:00",
     max_concurrent_tasks: int | None = None,
-) -> None:
+) -> str:
     """Create a SLURM job array script with git snapshot for consistent code.
 
     Args:
@@ -65,7 +63,7 @@ def create_slurm_array_script(
         #SBATCH --nodes={job_strategy.n_nodes()}
         #SBATCH --ntasks-per-node=1
         #SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
-        #SBATCH --partition={partition}
+        #SBATCH --partition={job_strategy.partition()}
         #SBATCH --time={time_limit}
         #SBATCH --job-name={job_name}
         #SBATCH --array={array_range}
@@ -110,12 +108,7 @@ def create_slurm_array_script(
         esac
     """).strip()
 
-    with open(script_path, "w") as f:
-        f.write(script_content)
-
-    # Make script executable
-    script_path.chmod(0o755)
-
+    return script_content
 
 def submit_slurm_array(script_path: Path) -> str:
     """Submit a SLURM job array and return the array job ID.
