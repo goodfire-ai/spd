@@ -428,10 +428,5 @@ def main(
             )
 
 
-def cli():
-    """Command line interface powered by Fire."""
-    fire.Fire(main)
-
-
 if __name__ == "__main__":
-    cli()
+    fire.Fire(main)
