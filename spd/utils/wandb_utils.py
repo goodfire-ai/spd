@@ -454,14 +454,14 @@ def wandb_setup(
 _n_try_wandb_comm_errors = 0
 
 
-def try_wandb[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T | None:
-    """Attempts to call `fn` and if it fails with a wandb CommError, logs a warning and returns
+def try_wandb[**P, T](wandb_fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T | None:
+    """Attempts to call `wandb_fn` and if it fails with a wandb CommError, logs a warning and returns
     None. The choice of wandb CommError is to catch issues communicating with the wandb server but
     not legitimate logging errors, for example not passing a dict to wandb.log, or the wrong
     arguments to wandb.save."""
     global _n_try_wandb_comm_errors
     try:
-        return fn(*args, **kwargs)
+        return wandb_fn(*args, **kwargs)
     except wandb.errors.CommError as e:
         _n_try_wandb_comm_errors += 1
         logger.error(
