@@ -7,8 +7,11 @@
 # reference_model_path: "wandb:goodfire/spd/runs/vh4yszsd"
 
 # SS LLAMA example models:
-current_model_path: "wandb:goodfire/spd/runs/ifg7jmm2"
-reference_model_path: "wandb:goodfire/spd/runs/9i4u2kqa"
+current_model_path: "wandb:goodfire/spd/runs/i34voxar"
+reference_model_path: "wandb:goodfire/spd/runs/kmbxfuxf"
+
+# current_model_path: "wandb:goodfire/spd/runs/herzjd8m"
+# reference_model_path: "wandb:goodfire/spd/runs/b1tpxh9p"
 
 
 # Analysis parameters
