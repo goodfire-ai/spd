@@ -7,13 +7,13 @@
 # reference_model_path: "wandb:goodfire/spd/runs/vh4yszsd"
 
 # SS LLAMA example models:
-current_model_path: "wandb:goodfire/spd/runs/ifg7jmm2"
-reference_model_path: "wandb:goodfire/spd/runs/9i4u2kqa"
+current_model_path: "wandb:goodfire/spd/runs/k5osh6jd"
+reference_model_path: "wandb:goodfire/spd/runs/gid1s787"
 
 
 # Analysis parameters
-mean_ci_threshold: 1e-5 # Minimum mean causal importance (0-1) for components to be included
-n_eval_steps: 5  # Number of evaluation steps to compute mean causal importances
+mean_ci_threshold: 1e-4 # Minimum mean causal importance (0-1) for components to be included
+n_eval_steps: 1  # Number of evaluation steps to compute mean causal importances
 
 # Data loading parameters
 eval_batch_size: 128  # Batch size for evaluation data loading
