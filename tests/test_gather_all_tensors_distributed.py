@@ -20,8 +20,7 @@ import torch
 from spd.utils.distributed_utils import (
     cleanup_distributed,
     gather_all_tensors,
-    get_rank,
-    get_world_size,
+    get_distributed_state,
     init_distributed,
     sync_across_processes,
 )
@@ -29,8 +28,10 @@ from spd.utils.distributed_utils import (
 
 def _test_gather_identical_shapes():
     """Test gathering tensors with identical shapes across ranks."""
-    rank = get_rank()
-    world_size = get_world_size()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
+    world_size = state.world_size
 
     # Each rank has a different tensor with same shape
     tensor = torch.tensor([rank * 1.0, rank * 2.0])
@@ -59,8 +60,10 @@ def _test_gather_identical_shapes():
 
 def _test_gather_scalar_tensors():
     """Test gathering scalar tensors."""
-    rank = get_rank()
-    world_size = get_world_size()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
+    world_size = state.world_size
 
     # Scalar tensor with rank-specific value
     tensor = torch.tensor(rank * 10.0)
@@ -82,8 +85,10 @@ def _test_gather_scalar_tensors():
 
 def _test_gather_multidimensional_tensors():
     """Test gathering multidimensional tensors."""
-    rank = get_rank()
-    world_size = get_world_size()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
+    world_size = state.world_size
 
     # 2D tensor with rank-specific values
     tensor = torch.full((3, 4), fill_value=float(rank))
@@ -109,7 +114,9 @@ def _test_gather_multidimensional_tensors():
 
 def _test_gather_empty_tensor():
     """Test gathering empty tensors."""
-    rank = get_rank()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
 
     # Empty tensor with consistent shape
     tensor = torch.tensor([])
@@ -128,8 +135,10 @@ def _test_gather_empty_tensor():
 
 def _test_gather_float_tensor():
     """Test gathering tensors."""
-    rank = get_rank()
-    world_size = get_world_size()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
+    world_size = state.world_size
 
     # Tensor with rank-specific pattern
     tensor = torch.arange(10, dtype=torch.float32) + rank * 10
@@ -149,7 +158,9 @@ def _test_gather_float_tensor():
 
 def _test_gather_preserves_autograd():
     """Test that gathered tensor for current rank preserves autograd."""
-    rank = get_rank()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
 
     # Tensor with gradient tracking
     tensor = torch.tensor([rank * 1.0, rank * 2.0], requires_grad=True)
@@ -170,8 +181,10 @@ def run_all_tests():
     # Initialize distributed once for all tests
     init_distributed(backend="gloo")
     try:
-        rank = get_rank()
-        world_size = get_world_size()
+        state = get_distributed_state()
+        assert state is not None
+        rank = state.rank
+        world_size = state.world_size
 
         assert world_size == 2, f"Tests require exactly 2 ranks, got {world_size}"
 

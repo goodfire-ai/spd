@@ -37,8 +37,6 @@ from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
     get_distributed_state,
-    # get_world_size,
-    is_distributed,
     is_main_process,
     sync_across_processes,
 )
@@ -299,9 +297,8 @@ def optimize(
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
-            if is_distributed():
-                avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
-                microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
+            avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
+            microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
             alive_counts = alive_tracker.compute()
             for target_module_path, n_alive_count in alive_counts.items():

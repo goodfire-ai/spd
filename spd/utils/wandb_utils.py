@@ -395,13 +395,20 @@ def create_wandb_report(
 
 @dataclass
 class ReportCfg:
-    report_title: str | None
-    snapshot_branch: str
+    """metadata for setting up a wandb view and optionally a report for the run.
+
+    Args:
+        snapshot_branch: Git branch name for the snapshot created by this run.
+        commit_hash: Commit hash of the snapshot created by this run.
+        report_title: Title for the W&B report. If None, will be generated
+    """
+
+    branch: str
     commit_hash: str
-    include_run_comparer: bool
+    report_title: str | None
 
 
-def wandb_setup(
+def create_view_and_report(
     project: str,
     run_id: str,
     experiments: list[str],
@@ -413,13 +420,7 @@ def wandb_setup(
         project: W&B project name
         run_id: Unique run identifier
         experiments: List of experiment names to create views for
-        report_cfg: Whether to create a W&B report for the run. if False, no report will be created and the rest of the arguments don't matter
-        report_title: Title for the W&B report, if created. If None, will be
-            generated as "SPD Run Report - {run_id}".
-        snapshot_branch: Git branch name for the snapshot created by this run.
-        commit_hash: Commit hash of the snapshot created by this run.
-        include_run_comparer: Whether to include the run comparer in the report.
-
+        report_cfg: How to set up a wandb view, and optionally a report for the run, if at all.
     """
     # Ensure the W&B project exists
     ensure_project_exists(project)
@@ -437,10 +438,10 @@ def wandb_setup(
         report_url = create_wandb_report(
             report_title=report_cfg.report_title or f"SPD Run Report - {run_id}",
             run_id=run_id,
-            branch_name=report_cfg.snapshot_branch,
+            branch_name=report_cfg.branch,
             commit_hash=report_cfg.commit_hash,
             experiments=experiments,
-            include_run_comparer=report_cfg.include_run_comparer,
+            include_run_comparer=True,  # report_cfg.include_run_comparer,
             project=project,
         )
 

@@ -5,7 +5,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 import pytest
 import torch
@@ -13,14 +13,7 @@ import yaml
 
 from spd.settings import REPO_ROOT
 from spd.utils import distributed_utils
-from spd.utils.distributed_utils import (
-    DistributedState,
-    get_local_rank,
-    get_rank,
-    get_world_size,
-    is_distributed,
-    is_main_process,
-)
+from spd.utils.distributed_utils import DistributedState, get_distributed_state
 
 TEST_CONFIG = {
     # --- General ---
@@ -289,16 +282,8 @@ class TestDistributedDeterminicity:
 class TestDistributedUtilities:
     """Test distributed utilities in non-distributed mode."""
 
-    def test_non_distributed_getters(self):
-        """Test getter functions in non-distributed mode."""
-        assert not is_distributed()
-        assert get_rank() == 0
-        assert get_world_size() == 1
-        assert get_local_rank() == 0
-        assert is_main_process()
-
     @pytest.mark.parametrize(
-        "cuda_available, distributed, local_rank, backend, expected",
+        "cuda_available, distributed, local_rank, backend, expected_device",
         [
             (False, False, 0, "gloo", "cpu"),
             (False, True, 1, "gloo", "cpu"),
@@ -316,18 +301,19 @@ class TestDistributedUtilities:
         cuda_available: bool,
         distributed: bool,
         local_rank: int,
-        backend: str,
-        expected: str,
+        backend: Literal["nccl", "gloo"],
+        expected_device: str,
     ) -> None:
         monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available, raising=False)
         monkeypatch.setattr(distributed_utils, "is_distributed", lambda: distributed)
-        monkeypatch.setattr(distributed_utils, "get_local_rank", lambda: local_rank)
         # Mock get_distributed_state to return the expected backend
         mock_state = DistributedState(
-            global_rank=0,
+            rank=0,
             world_size=2 if distributed else 1,
             local_rank=local_rank,
-            backend=cast(Literal["nccl", "gloo"], backend),
+            backend=backend,
         )
         monkeypatch.setattr(distributed_utils, "get_distributed_state", lambda: mock_state)
-        assert distributed_utils.get_device() == expected
+        dist_state = get_distributed_state()
+        assert dist_state is not None
+        assert dist_state.device() == expected_device
