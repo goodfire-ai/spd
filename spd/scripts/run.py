@@ -260,9 +260,9 @@ def main(
                     max_concurrent_tasks=max_concurrent_tasks,
                 )
 
-                print('='*100)
+                print("=" * 100)
                 print(array_script_content)
-                print('='*100)
+                print("=" * 100)
 
                 with open(array_script_path, "w") as f:
                     f.write(array_script_content)
@@ -305,9 +305,7 @@ def _build_compute_env(
         case None, None:
             strategy = SingleNode(n_gpus_per_node=1)
         case None, _:
-            assert dp > 1, (
-                "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
-            )
+            assert dp > 1, "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
             strategy = SingleNode(n_gpus_per_node=dp)
         case _, None:
             assert num_nodes > 1, (
@@ -472,15 +470,7 @@ def _cli(
         job_suffix=job_suffix,
     )
 
+
 def cli():
-    print('via entrypoint')
+    print("via entrypoint")
     fire.Fire(_cli)
-
-
-# if __name__ == "__main__":
-    # print('via main')
-    # _cli(
-    #  experiments="ss_gpt2_simple",
-    #  num_nodes=2,
-    # )
-
