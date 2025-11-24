@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from spd.scripts.run import cli
+from spd.scripts.run import main
 
 
 @pytest.mark.parametrize(
@@ -221,7 +221,7 @@ def test_cli_argument_parsing(
         mock_main.return_value = None
 
         # Run the CLI
-        cli()
+        main()
 
         # Check that main was called once with the expected arguments (subset)
         assert mock_main.call_count == 1
@@ -237,7 +237,7 @@ def test_help_flag():
     """Test that --help flag works and exits cleanly."""
     with patch.object(sys, "argv", ["spd-run", "--help"]):
         with pytest.raises(SystemExit) as exc_info:
-            cli()
+            main()
         # Help should exit with code 0
         assert exc_info.value.code == 0
 
@@ -256,7 +256,7 @@ def test_sweep_params_file_path_handling():
             patch("spd.scripts.run.main") as mock_main,
         ):
             mock_main.return_value = None
-            cli()
+            main()
             # Check the sweep argument specifically
             called_kwargs = mock_main.call_args[1]
             assert called_kwargs["sweep"] == expected_sweep_value, (
