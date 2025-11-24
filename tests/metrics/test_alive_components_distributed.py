@@ -15,8 +15,7 @@ import torch
 from spd.metrics.alive_components import AliveComponentsTracker
 from spd.utils.distributed_utils import (
     cleanup_distributed,
-    get_rank,
-    get_world_size,
+    get_distributed_state,
     init_distributed,
     sync_across_processes,
     with_distributed_cleanup,
@@ -25,7 +24,8 @@ from spd.utils.distributed_utils import (
 
 def _test_min_reduction():
     """Test that compute() uses min reduction correctly."""
-    rank = get_rank()
+    dist_state = get_distributed_state()
+    assert dist_state is not None
 
     metric = AliveComponentsTracker(
         target_module_paths=["layer1"],
@@ -42,7 +42,7 @@ def _test_min_reduction():
     metric.update(ci={"layer1": torch.tensor([0.0, 0.0, 0.0])})
 
     # Set different counter values on each rank
-    if rank == 0:
+    if dist_state.rank == 0:
         metric.n_batches_since_fired["layer1"] = torch.tensor([5, 2, 8])
     else:
         metric.n_batches_since_fired["layer1"] = torch.tensor([3, 4, 1])
@@ -53,13 +53,14 @@ def _test_min_reduction():
     result = metric.compute()
     assert result["layer1"] == 3
 
-    if rank == 0:
+    if dist_state.rank == 0:
         print("✓ Min reduction test passed")
 
 
 def _test_different_firing_patterns():
     """Test that components firing on any rank are considered alive globally."""
-    rank = get_rank()
+    dist_state = get_distributed_state()
+    assert dist_state is not None
 
     metric = AliveComponentsTracker(
         target_module_paths=["layer1"],
@@ -72,7 +73,7 @@ def _test_different_firing_patterns():
 
     # Run 3 batches with different firing on each rank
     for _ in range(3):
-        if rank == 0:
+        if dist_state.rank == 0:
             # Rank 0: only component 0 fires
             ci = {"layer1": torch.tensor([0.2, 0.0, 0.0])}
         else:
@@ -81,7 +82,7 @@ def _test_different_firing_patterns():
         metric.update(ci=ci)
 
     # Before compute: each rank has different local state
-    if rank == 0:
+    if dist_state.rank == 0:
         assert metric.n_batches_since_fired["layer1"][0] == 0  # fired locally
         assert metric.n_batches_since_fired["layer1"][1] == 3  # didn't fire locally
         assert metric.n_batches_since_fired["layer1"][2] == 3  # didn't fire locally
@@ -99,13 +100,14 @@ def _test_different_firing_patterns():
     result = metric.compute()
     assert result["layer1"] == 3  # all components alive
 
-    if rank == 0:
+    if dist_state.rank == 0:
         print(f"✓ Different firing patterns test passed (n_alive={result['layer1']})")
 
 
 def _test_dead_components():
     """Test that components are correctly marked as dead after threshold."""
-    rank = get_rank()
+    dist_state = get_distributed_state()
+    assert dist_state is not None
 
     metric = AliveComponentsTracker(
         target_module_paths=["layer1"],
@@ -120,7 +122,7 @@ def _test_dead_components():
     # CI shape is (3,) which is [C], so 1 local example * 2 ranks = 2 global examples per batch
     # n_batches_until_dead = 5 // 2 = 2
     for _ in range(3):  # Need 3 batches to exceed threshold (3*2=6 > 5)
-        if rank == 0:
+        if dist_state.rank == 0:
             ci = {"layer1": torch.tensor([0.2, 0.0, 0.0])}
         else:
             ci = {"layer1": torch.tensor([0.0, 0.2, 0.0])}
@@ -130,18 +132,19 @@ def _test_dead_components():
     # Component 0: min(0, 3) = 0 (alive)
     # Component 1: min(3, 0) = 0 (alive)
     # Component 2: min(3, 3) = 3 (dead, >= 2)
-    print(f"Rank {rank} n_batches_since_fired: {metric.n_batches_since_fired['layer1']}")
+    print(f"Rank {dist_state.rank} n_batches_since_fired: {metric.n_batches_since_fired['layer1']}")
     result = metric.compute()
     # only components 0 and 1 alive
     assert result["layer1"] == 2, f"Expected 2 alive components, got {result['layer1']}"
 
-    if rank == 0:
+    if dist_state.rank == 0:
         print(f"✓ Dead components test passed (n_alive={result['layer1']})")
 
 
 def _test_multiple_modules():
     """Test tracking across multiple modules in distributed setting."""
-    rank = get_rank()
+    dist_state = get_distributed_state()
+    assert dist_state is not None
 
     metric = AliveComponentsTracker(
         target_module_paths=["layer1", "layer2"],
@@ -153,7 +156,7 @@ def _test_multiple_modules():
     )
 
     # Each rank fires different components in different modules
-    if rank == 0:
+    if dist_state.rank == 0:
         ci = {
             "layer1": torch.tensor([0.2, 0.0]),
             "layer2": torch.tensor([0.0, 0.0]),
@@ -175,7 +178,7 @@ def _test_multiple_modules():
     assert result["layer1"] == 2
     assert result["layer2"] == 2
 
-    if rank == 0:
+    if dist_state.rank == 0:
         print(
             f"✓ Multiple modules test passed (layer1={result['layer1']}, layer2={result['layer2']})"
         )
@@ -185,8 +188,10 @@ def _test_multiple_modules():
 def run_all_tests():
     """Run all distributed tests when called directly with torchrun."""
     init_distributed(backend="gloo")
-    rank = get_rank()
-    world_size = get_world_size()
+    dist_state = get_distributed_state()
+    assert dist_state is not None
+    rank = dist_state.rank
+    world_size = dist_state.world_size
 
     if world_size != 2:
         if rank == 0:
