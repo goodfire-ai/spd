@@ -26,10 +26,10 @@ from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
 from spd.utils.command import Command
 from spd.utils.distributed_utils import (
     ComputeEnvironment,
-    ComputeStrategy,
     Cpu,
     Local,
     MultiNode,
+    Run,
     SingleNode,
     SlurmPartition,
 )
@@ -80,17 +80,16 @@ def _merge_sweep_params(base: dict[str, Any], override: dict[str, Any]) -> None:
 def _generate_commands(
     run_id: str,
     experiments: list[str],
-    compute_strategy: ComputeStrategy,
     project: str,
     sweep_params: dict[str, Any] | None,
-) -> list[Command]:
+) -> list[Run]:
     """Generate commands for all experiment runs and print task counts.
 
     NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
     we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
-    commands: list[Command] = []
+    runs: list[Run] = []
 
     logger.info("Task breakdown by experiment:")
     task_breakdown: dict[str, str] = {}
@@ -109,14 +108,16 @@ def _generate_commands(
             base_config_dict["wandb_project"] = project
             config_with_overrides = Config(**base_config_dict)
 
-            command = compute_strategy.get_command(
-                run_id=run_id,
-                idx=cmd_idx,
-                script_path=exp_config.decomp_script,
-                config=config_with_overrides,
-                experiment=experiment,
+            runs.append(
+                Run(
+                    run_id=run_id,
+                    idx=cmd_idx,
+                    script_path=exp_config.decomp_script,
+                    config=config_with_overrides,
+                    experiment=experiment,
+                    sweep_params=sweep_params,
+                )
             )
-            commands.append(command)
             task_breakdown[experiment] = "1 task"
             cmd_idx += 1
 
@@ -135,15 +136,16 @@ def _generate_commands(
                 config_dict_with_overrides["wandb_run_name"] = wandb_run_name
                 config_with_overrides = Config(**config_dict_with_overrides)
 
-                command = compute_strategy.get_command(
-                    run_id=run_id,
-                    idx=cmd_idx,
-                    script_path=exp_config.decomp_script,
-                    config=config_with_overrides,
-                    experiment=experiment,
-                    sweep_params=sweep_params,
+                runs.append(
+                    Run(
+                        run_id=run_id,
+                        idx=cmd_idx,
+                        script_path=exp_config.decomp_script,
+                        config=config_with_overrides,
+                        experiment=experiment,
+                        sweep_params=sweep_params,
+                    )
                 )
-                commands.append(command)
                 cmd_idx += 1
 
                 # Print first combination as example
@@ -154,10 +156,10 @@ def _generate_commands(
     if task_breakdown:
         logger.values(task_breakdown)
 
-    return commands
+    return runs
 
 
-def run_commands_locally(commands: list[Command]) -> None:
+def _run_commands_locally(commands: list[Command]) -> None:
     """Execute commands locally in sequence.
 
     Args:
@@ -232,17 +234,16 @@ def main(
             report_cfg=report_cfg,
         )
 
+    runs = _generate_commands(
+        run_id=run_id,
+        experiments=experiments,
+        sweep_params=sweep_params,
+        project=wandb_project,
+    )
 
     match compute_env:
         case Local(), compute_strategy:
-            commands = _generate_commands(
-                run_id=run_id,
-                experiments=experiments,
-                compute_strategy=compute_env[1],
-                sweep_params=sweep_params,
-                project=wandb_project,
-            )
-            run_commands_locally(commands)
+            _run_commands_locally([compute_strategy.get_command(run) for run in runs])
 
         case SlurmPartition(name=partition_name), compute_strategy:
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -252,7 +253,7 @@ def main(
 
                 array_script_content = create_slurm_array_script(
                     job_name=job_name,
-                    commands=commands,
+                    runs=runs,
                     snapshot_branch=snapshot_branch,
                     job_strategy=compute_strategy,
                     partition=partition_name,
@@ -275,7 +276,7 @@ def main(
                 logger.values(
                     {
                         "Array Job ID": array_job_id,
-                        "Total tasks": len(commands),
+                        "Total tasks": len(runs),
                         "Max concurrent tasks": max_concurrent_tasks,
                         "View logs in": f"~/slurm_logs/slurm-{array_job_id}_*.out",
                     }
@@ -302,10 +303,10 @@ def _build_compute_env(
 
     match num_nodes, dp:
         case None, None:
-            strategy = SingleNode(n_gpus_per_node=1)
+            strategy = SingleNode(n_gpus=1)
         case None, _:
             assert dp > 1, "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
-            strategy = SingleNode(n_gpus_per_node=dp)
+            strategy = SingleNode(n_gpus=dp)
         case _, None:
             assert num_nodes > 1, (
                 "for multi-node runs, num_nodes must be at least 2. Otherwise, pass num_nodes=None."
