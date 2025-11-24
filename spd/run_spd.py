@@ -162,7 +162,7 @@ def optimize(
     # Wrap model with DDP if distributed
     world_size = get_world_size()
     wrapped_model: nn.Module = model
-    if world_size > 1:
+    if world_size is not None:
         if device.startswith("cuda"):
             # Parse device string to get device id for GPU
             device_id = int(device.split(":")[1]) if ":" in device else 0
@@ -178,6 +178,7 @@ def optimize(
         component_model = wrapped_model.module  # type: ignore[attr-defined]
     else:
         component_model = model
+    assert isinstance(component_model, ComponentModel), "component_model is not a ComponentModel"
 
     if tied_weights is not None:
         # Tie component weights. Assume that the first element is a transpose of the second element
