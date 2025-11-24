@@ -239,7 +239,7 @@ def main(config_path: Path | str) -> None:
     logger.info("Starting model comparison over time...")
     similarities = comparator.run_time_comparison(eval_iterator)
 
-    save_file(similarities, results_file)
+    save_file(similarities, results_file, indent=2)
     logger.info(f"Comparison complete! Results saved to {results_file}")
     # --- End Computation ---
 
