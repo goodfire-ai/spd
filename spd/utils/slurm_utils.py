@@ -53,13 +53,18 @@ def create_slurm_array_script(
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
-        if len(command.env_vars) > 0:
+        IND = "    "
+        if command.env_vars is not None:
             # Export environment variables on separate lines before the command
             # so they're available when the shell expands ${VAR} references in the command
-            env_exports = "\n        ".join([f"export {k}={v}" for k, v in command.env_vars.items()])
-            case_statements.append(f"    {i})\n        {env_exports}\n        {command.command}\n        ;;")
+            env_exports = f"\n{IND}{IND}".join(
+                [f"export {k}={v}" for k, v in command.env_vars.items()]
+            )
+            case_statements.append(
+                f"{IND}{i})\n{IND}{IND}{env_exports}\n{IND}{IND}{command.command}\n{IND}{IND};;"
+            )
         else:
-            case_statements.append(f"    {i})\n        {command.command}\n        ;;")
+            case_statements.append(f"{IND}{i})\n{IND}{IND}{command.command}\n{IND}{IND};;")
 
     case_block = "\n".join(case_statements)
 
@@ -104,7 +109,6 @@ case $SLURM_ARRAY_TASK_ID in
 {case_block}
 esac
 """
-# {statements_block or ""}
 
     return script_content
 
