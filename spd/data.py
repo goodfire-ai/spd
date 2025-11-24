@@ -147,7 +147,7 @@ def create_data_loader(
     dataset_config: DatasetConfig,
     batch_size: int,
     buffer_size: int,
-    dist_state: DistributedState | None,
+    dist_state: DistributedState | None = None,
     global_seed: int = 0,
     to_lower: bool = True,
 ) -> tuple[DataLoader[Any], PreTrainedTokenizer]:

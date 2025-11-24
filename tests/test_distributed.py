@@ -5,15 +5,12 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Literal
 
 import pytest
 import torch
 import yaml
 
 from spd.settings import REPO_ROOT
-from spd.utils import distributed_utils
-from spd.utils.distributed_utils import DistributedState, get_distributed_state
 
 TEST_CONFIG = {
     # --- General ---
