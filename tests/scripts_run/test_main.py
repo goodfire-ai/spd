@@ -7,97 +7,21 @@ calls either create_slurm_array_script (for SLURM submission) or subprocess.run
 
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnusedParameter=false
 
-from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
 
-from spd.scripts.run import main
-from spd.utils.git_utils import repo_current_branch
+from spd.scripts.run import main, make_launch_configs
 
 
 class TestSPDRun:
     """Test spd-run command execution."""
 
-    _DEFAULT_MAIN_KWARGS: dict[str, str | bool] = dict(
-        create_snapshot=False,
+    _DEFAULT_CLI_KWARGS: dict[str, str | bool] = dict(
         use_wandb=False,
         create_report=False,
     )
-
-    @pytest.mark.parametrize(
-        "experiments,sweep,n_agents,expected_command_count",
-        [
-            # Single experiment, no sweep
-            ("tms_5-2", False, None, 1),
-            # Multiple experiments, no sweep
-            ("tms_5-2,resid_mlp1", False, None, 2),
-            # Single experiment with sweep (assuming default sweep params with 2-3 combinations)
-            ("tms_5-2", True, 4, None),  # Command count depends on sweep params
-        ],
-    )
-    @patch("spd.scripts.run.submit_slurm_array")
-    @patch("spd.scripts.run.create_slurm_array_script")
-    @patch("spd.scripts.run.load_sweep_params")
-    def test_spd_run_not_local_no_sweep(
-        self,
-        mock_load_sweep_params,
-        mock_create_script,
-        mock_submit,
-        experiments,
-        sweep,
-        n_agents,
-        expected_command_count,
-    ):
-        """Test that spd-run correctly calls create_slurm_array_script for SLURM submission."""
-        # Setup mocks
-        mock_submit.return_value = "12345"
-        if sweep:
-            # Mock sweep params to generate predictable number of commands
-            mock_load_sweep_params.return_value = {"C": {"values": [5, 10]}}
-
-        # Call main with standard arguments
-        main(
-            experiments=experiments,
-            sweep=sweep,
-            local=False,
-            n_agents=n_agents,
-            **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
-        )
-
-        # Assert create_slurm_array_script was called
-        assert mock_create_script.call_count == 1
-
-        # Verify the arguments passed to create_slurm_array_script
-        call_kwargs = mock_create_script.call_args[1]
-
-        # Check script_path is a temporary file
-        assert isinstance(call_kwargs["script_path"], Path)
-        assert "run_array_" in str(call_kwargs["script_path"])
-
-        # Check job_name
-        assert call_kwargs["job_name"].startswith("spd")
-
-        # Check commands list
-        commands = call_kwargs["commands"]
-        if expected_command_count is not None:
-            assert len(commands) == expected_command_count
-        else:
-            # For sweep tests, just verify we have multiple commands
-            assert len(commands) > 1
-
-        # Verify command structure
-        for cmd in commands:
-            assert "python" in cmd
-            assert "_decomposition.py" in cmd
-            assert "json:" in cmd
-            assert "--sweep_id" in cmd
-            assert "--evals_id" in cmd
-
-        # Check other parameters
-        assert call_kwargs["snapshot_branch"] == repo_current_branch()
-        assert call_kwargs["max_concurrent_tasks"] == (n_agents or len(experiments.split(",")))
-        assert call_kwargs["nodes_per_job"] == 1
 
     @pytest.mark.parametrize(
         "experiments,sweep",
@@ -131,7 +55,7 @@ class TestSPDRun:
             experiments=experiments,
             sweep=sweep,
             local=True,
-            **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
+            **self._DEFAULT_CLI_KWARGS,  # pyright: ignore[reportArgumentType]
         )
 
         # Calculate expected number of subprocess calls
@@ -171,13 +95,13 @@ class TestSPDRun:
         """
         fake_exp_name = "nonexistent_experiment_please_dont_name_your_experiment_this"
         with pytest.raises(ValueError, match=f"Invalid experiments.*{fake_exp_name}"):
-            main(experiments=fake_exp_name, local=True, **self._DEFAULT_MAIN_KWARGS)  # pyright: ignore[reportArgumentType]
+            main(experiments=fake_exp_name, local=True, **self._DEFAULT_CLI_KWARGS)  # pyright: ignore[reportArgumentType]
 
         with pytest.raises(ValueError, match=f"Invalid experiments.*{fake_exp_name}"):
             main(
                 experiments=f"{fake_exp_name},tms_5-2",
                 local=True,
-                **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
+                **self._DEFAULT_CLI_KWARGS,  # pyright: ignore[reportArgumentType]
             )
 
     @patch("spd.scripts.run.subprocess.run")
@@ -195,7 +119,7 @@ class TestSPDRun:
             # we use the example here bc in CI we don't want to rely on the copy step having run
             sweep="sweep_params.yaml.example",
             local=True,
-            **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
+            **self._DEFAULT_CLI_KWARGS,  # pyright: ignore[reportArgumentType]
         )
 
         # Verify multiple commands were generated (sweep should create multiple runs)
@@ -207,13 +131,80 @@ class TestSPDRun:
             assert "--sweep_params_json" in cmd_str
             assert "json:" in cmd_str
 
-    def test_multi_node_requires_eight_gpus_per_node(self):
-        """Ensure multi-node requests enforce 8 GPUs per node."""
-        with pytest.raises(ValueError, match="Multi-node runs require exactly 8 GPUs per node"):
+    def test_multi_node_precludes_dp(self):
+        """Ensure multi-node requests exclude data parallelism."""
+        with pytest.raises(AssertionError, match="cannot specify both local and dp or num_nodes"):
             main(
                 experiments="tms_5-2",
-                nodes=2,
+                num_nodes=2,
                 dp=4,
                 local=True,
-                **self._DEFAULT_MAIN_KWARGS,  # pyright: ignore[reportArgumentType]
+                **self._DEFAULT_CLI_KWARGS,  # pyright: ignore[reportArgumentType]
             )
+
+    def test_make_launch_configs_sweep(self):
+        """when given sweep params, make_launch_configs should generate the correct number of
+        launch configs. with params swept correctly"""
+
+        sweep_params = {
+            "global": {"lr": {"values": [1, 2]}},
+            "tms_5-2": {"C": {"values": [10, 20]}, "steps": {"values": [100, 200]}},
+        }
+
+        launch_configs = make_launch_configs(
+            run_id="test",
+            experiments=["tms_5-2"],
+            project="test",
+            sweep_params=sweep_params,
+        )
+
+        configs = [j.config for j in launch_configs]
+
+        def there_is_one_with(props: dict[str, Any]):
+            matching = []
+            for config in configs:
+                if all(config.__dict__[k] == v for k, v in props.items()):
+                    matching.append(config)
+            return len(matching) == 1
+
+        assert len(configs) == 8
+
+        assert there_is_one_with({"lr": 1, "C": 10, "steps": 100})
+        assert there_is_one_with({"lr": 1, "C": 20, "steps": 100})
+        assert there_is_one_with({"lr": 1, "C": 10, "steps": 200})
+        assert there_is_one_with({"lr": 1, "C": 20, "steps": 200})
+        assert there_is_one_with({"lr": 2, "C": 10, "steps": 100})
+        assert there_is_one_with({"lr": 2, "C": 20, "steps": 100})
+        assert there_is_one_with({"lr": 2, "C": 10, "steps": 200})
+        assert there_is_one_with({"lr": 2, "C": 20, "steps": 200})
+
+    def test_make_launch_configs_sweep_2(self):
+        """when given sweep params, make_launch_configs should generate the correct number of
+        launch configs. with params swept correctly"""
+
+        sweep_params = {
+            "tms_5-2": {"C": {"values": [10]}},
+            "tms_40-10": {"steps": {"values": [100, 200]}},
+        }
+
+        launch_configs = make_launch_configs(
+            run_id="test",
+            experiments=["tms_5-2", "tms_40-10"],
+            project="test",
+            sweep_params=sweep_params,
+        )
+
+        configs = [j.config for j in launch_configs]
+
+        def there_is_one_with(props: dict[str, Any]):
+            matching = []
+            for config in configs:
+                if all(config.__dict__[k] == v for k, v in props.items()):
+                    matching.append(config)
+            return len(matching) == 1
+
+        assert len(configs) == 3
+
+        assert there_is_one_with({"C": 10})
+        assert there_is_one_with({"steps": 100})
+        assert there_is_one_with({"steps": 200})
