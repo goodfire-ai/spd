@@ -1,7 +1,7 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class Command:
     command: str
-    env_vars: dict[str, str] = field(default_factory=dict)
+    env_vars: dict[str, str] | None = None

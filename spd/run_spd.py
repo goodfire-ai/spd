@@ -36,7 +36,8 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
-    get_world_size,
+    get_distributed_state,
+    # get_world_size,
     is_distributed,
     is_main_process,
     sync_across_processes,
@@ -160,12 +161,11 @@ def optimize(
     model.to(device)
 
     # Wrap model with DDP if distributed
-    world_size = get_world_size()
+    dist_state = get_distributed_state()
     wrapped_model: nn.Module = model
-    if world_size > 1:
+    if dist_state is not None:
         if device.startswith("cuda"):
-            # Parse device string to get device id for GPU
-            device_id = int(device.split(":")[1]) if ":" in device else 0
+            device_id = dist_state.local_rank
             wrapped_model = torch.nn.parallel.DistributedDataParallel(
                 model,
                 device_ids=[device_id],
@@ -178,6 +178,7 @@ def optimize(
         component_model = wrapped_model.module  # type: ignore[attr-defined]
     else:
         component_model = model
+    assert isinstance(component_model, ComponentModel), "component_model is not a ComponentModel"
 
     if tied_weights is not None:
         # Tie component weights. Assume that the first element is a transpose of the second element

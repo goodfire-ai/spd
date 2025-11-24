@@ -232,20 +232,19 @@ def main(
             report_cfg=report_cfg,
         )
 
-    commands = _generate_commands(
-        run_id=run_id,
-        experiments=experiments,
-        compute_strategy=compute_env[1],
-        sweep_params=sweep_params,
-        project=wandb_project,
-    )
 
     match compute_env:
         case Local(), compute_strategy:
+            commands = _generate_commands(
+                run_id=run_id,
+                experiments=experiments,
+                compute_strategy=compute_env[1],
+                sweep_params=sweep_params,
+                project=wandb_project,
+            )
             run_commands_locally(commands)
 
         case SlurmPartition(name=partition_name), compute_strategy:
-            # Submit to SLURM
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_path = Path(temp_dir)
                 array_script_path = temp_path / f"run_array_{run_id}.sh"
@@ -260,9 +259,9 @@ def main(
                     max_concurrent_tasks=max_concurrent_tasks,
                 )
 
-                print('='*100)
+                print("=" * 100)
                 print(array_script_content)
-                print('='*100)
+                print("=" * 100)
 
                 with open(array_script_path, "w") as f:
                     f.write(array_script_content)
@@ -305,9 +304,7 @@ def _build_compute_env(
         case None, None:
             strategy = SingleNode(n_gpus_per_node=1)
         case None, _:
-            assert dp > 1, (
-                "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
-            )
+            assert dp > 1, "for single-node runs, dp must be at least 2. Otherwise, pass dp=None."
             strategy = SingleNode(n_gpus_per_node=dp)
         case _, None:
             assert num_nodes > 1, (
@@ -472,15 +469,7 @@ def _cli(
         job_suffix=job_suffix,
     )
 
+
 def cli():
-    print('via entrypoint')
+    print("via entrypoint")
     fire.Fire(_cli)
-
-
-# if __name__ == "__main__":
-    # print('via main')
-    # _cli(
-    #  experiments="ss_gpt2_simple",
-    #  num_nodes=2,
-    # )
-
