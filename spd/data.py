@@ -196,7 +196,7 @@ def create_data_loader(
             "WARNING: Streaming is currently quite slow and not well tested. In general, we suggest"
             " setting streaming=False and having the dataset download (and cache)."
         )
-        if isinstance(dist_state, DistributedState):
+        if dist_state is not None:
             logger.warning("WARNING: Streaming with ddp has not been well tested. Use at own risk.")
             ds_num_shards = getattr(dataset, "num_shards", None)
             if isinstance(ds_num_shards, int) and ds_num_shards >= dist_state.world_size:
@@ -237,7 +237,7 @@ def create_data_loader(
         )
 
     sampler = None
-    if not dataset_config.streaming and isinstance(dist_state, DistributedState):
+    if not dataset_config.streaming and dist_state is not None:
         sampler = DistributedSampler(
             torch_dataset,  # pyright: ignore[reportArgumentType]
             num_replicas=dist_state.world_size,

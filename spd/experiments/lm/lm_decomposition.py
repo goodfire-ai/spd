@@ -78,7 +78,7 @@ def main(
             out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
         logger.info(f"Output directory: {out_dir}")
         logger.info(config)
-        if isinstance(dist_state, DistributedState):
+        if dist_state is not None:
             logger.info(f"Running distributed training with {dist_state.world_size} processes")
     else:
         out_dir = None
@@ -138,13 +138,10 @@ def main(
         seed=None,
     )
 
-    # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
-    # them across processes.
-    # world_size = dist_state.world_size if isinstance(dist_state, DistributedState) else None
-    # rank = dist_state.rank if isinstance(dist_state, DistributedState) else None
-
     match dist_state:
         case DistributedState(world_size=world_size):
+            # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
+            # them across processes.
             assert config.microbatch_size % world_size == 0 and config.microbatch_size > 0, (
                 f"Microbatch size {config.microbatch_size} is not divisible by world size {world_size}. "
             )
