@@ -53,13 +53,18 @@ def create_slurm_array_script(
     # Create case statement for commands
     case_statements = []
     for i, command in enumerate(commands, 1):
-        if len(command.env_vars) > 0:
+        IND = "    "
+        if command.env_vars is not None:
             # Export environment variables on separate lines before the command
             # so they're available when the shell expands ${VAR} references in the command
-            env_exports = "\n        ".join([f"export {k}={v}" for k, v in command.env_vars.items()])
-            case_statements.append(f"    {i})\n        {env_exports}\n        {command.command}\n        ;;")
+            env_exports = f"\n{IND}{IND}".join(
+                [f"export {k}={v}" for k, v in command.env_vars.items()]
+            )
+            case_statements.append(
+                f"{IND}{i})\n{IND}{IND}{env_exports}\n{IND}{IND}{command.command}\n{IND}{IND};;"
+            )
         else:
-            case_statements.append(f"    {i})\n        {command.command}\n        ;;")
+            case_statements.append(f"{IND}{i})\n{IND}{IND}{command.command}\n{IND}{IND};;")
 
     case_block = "\n".join(case_statements)
 
@@ -74,37 +79,43 @@ def create_slurm_array_script(
 #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 
 # Create job-specific working directory
-WORK_DIR="$HOME/slurm_workspaces/{job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
-mkdir -p "$WORK_DIR"
+# WORK_DIR="$HOME/slurm_workspaces/{job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+# mkdir -p "$WORK_DIR"
 # Clean up the workspace when the script exits
-trap 'rm -rf "$WORK_DIR"' EXIT
+# trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Clone the repository to the job-specific directory
-git clone {REPO_ROOT} "$WORK_DIR"
+# git clone {REPO_ROOT} "$WORK_DIR"
 
 # Change to the cloned repository directory
-cd "$WORK_DIR"
+# cd "$WORK_DIR"
 
 # Copy the .env file from the original repository for WandB authentication
-cp {REPO_ROOT}/.env .env
+# cp {REPO_ROOT}/.env .env
 
 # Checkout the snapshot branch to ensure consistent code
-git checkout "{snapshot_branch}"
+# git checkout "{snapshot_branch}"
 
 # Ensure that dependencies are using the snapshot branch. SLURM might inherit the
 # parent environment, so we need to deactivate and unset the virtual environment.
-deactivate 2>/dev/null || true
-unset VIRTUAL_ENV
-uv sync --no-dev --link-mode copy -q
+# echo "Deactivating virtual environment"
+# deactivate 2>/dev/null || true
+# unset VIRTUAL_ENV
+
+# echo "Syncing dependencies"
+# uv sync --no-dev --link-mode copy -q
+
+# WORK_DIR="$HOME/spd/"
+
+echo "Activating virtual environment"
 source .venv/bin/activate
 
-
+echo "Running..."
 # Execute the appropriate command based on array task ID
 case $SLURM_ARRAY_TASK_ID in
 {case_block}
 esac
 """
-# {statements_block or ""}
 
     return script_content
 
