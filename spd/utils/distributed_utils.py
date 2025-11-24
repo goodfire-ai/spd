@@ -71,10 +71,6 @@ def init_distributed(backend: Literal["nccl", "gloo"] | None = None) -> Distribu
         world_size = int(os.environ["WORLD_SIZE"])
         rank = int(os.environ["RANK"])
         local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    elif "OMPI_COMM_WORLD_SIZE" in os.environ:
-        world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
-        rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
-        local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
     else:
         # Not distributed - return single process values
         world_size = 1
@@ -391,7 +387,10 @@ class SingleNode(ComputeStrategy):
             "MASTER_PORT": str(port),
         }
         command = (
-            f"torchrun --standalone --nproc_per_node={self._n_gpus_per_node} --master_port={port} "
+            f"torchrun "
+            "--standalone "
+            f"--nproc_per_node={self._n_gpus_per_node} "
+            f"--master_port={port} "
             f"--rdzv_id={rendezvous_id} "
             f"{script_path} "
             f"--config_json '{get_config_json(config)}' "
@@ -430,34 +429,26 @@ class MultiNode(ComputeStrategy):
         env = {
             "NCCL_DEBUG": "WARN",
             "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
-            "MASTER_PORT": str(_choose_master_port(run_id, idx)),
-            "MASTER_ADDR": '$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)',
         }
 
-        # Build the torchrun command that will run on each node
-        torchrun_cmd = (
-            "torchrun "
+        master_port = _choose_master_port(run_id, idx)
+
+        command = (
+            f"srun "
+            f"--ntasks-per-node=1 "
+            f"torchrun "
             f"--nnodes={self._n_nodes} "
             f"--nproc_per_node={self.N_GPUS_PER_NODE} "
-            "--node_rank=$SLURM_PROCID "  # Will be expanded by bash on each node
-            "--rdzv_backend=c10d "
-            "--rdzv_endpoint=${MASTER_ADDR}:${MASTER_PORT} "  # Will be expanded by bash on each node
             f"--rdzv_id={run_id}_{idx} "
+            f"--rdzv_backend=c10d "
+            f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{master_port} '
             f"{script_path} "
             f"--config_json '{get_config_json(config)}' "
             f"--sweep_id {run_id} "
             f"--evals_id {experiment}"
         )
         if sweep_params is not None:
-            torchrun_cmd += f" --sweep_params_json '{json.dumps(sweep_params)}'"
-
-        # Pipe the script to bash via heredoc to avoid file creation issues
-        # Each srun task receives the script on stdin and executes it
-        # The heredoc with 'EOF' (quoted) prevents expansion in the main script
-        # Variables like $SLURM_PROCID, ${MASTER_ADDR}, ${MASTER_PORT} will be expanded by bash on each node
-        command = f"""srun --ntasks={self._n_nodes} --ntasks-per-node=1 bash <<'SRUN_SCRIPT_EOF'
-{torchrun_cmd}
-SRUN_SCRIPT_EOF"""
+            command += f" --sweep_params_json '{json.dumps(sweep_params)}'"
 
         return Command(env_vars=env, command=command)
 
@@ -485,3 +476,5 @@ class Local: ...
 ComputeEnvironment = (
     tuple[SlurmPartition, ComputeStrategy] | tuple[Local, Cpu | SingleGpu | SingleNode]
 )
+
+# "--node_rank=$SLURM_PROCID "  # Will be expanded by bash on each node

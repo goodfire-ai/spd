@@ -263,6 +263,7 @@ def main(
                 print('='*100)
                 print(array_script_content)
                 print('='*100)
+                return
 
                 with open(array_script_path, "w") as f:
                     f.write(array_script_content)
@@ -478,9 +479,9 @@ def cli():
 
 
 # if __name__ == "__main__":
-    # print('via main')
-    # _cli(
-    #  experiments="ss_gpt2_simple",
-    #  num_nodes=2,
-    # )
+#     print('via main')
+#     _cli(
+#      experiments="ss_gpt2_simple",
+#      num_nodes=2,
+#     )
 
