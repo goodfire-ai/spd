@@ -1,12 +1,69 @@
-"""Shared utilities for SLURM job management."""
+"""Shared utilities for orchestrating jobs in various compute environments."""
 
+import json
 import subprocess
+from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
+from spd.configs import Config
 from spd.log import logger
 from spd.settings import REPO_ROOT
-from spd.utils.command import Command
-from spd.utils.distributed_utils import ComputeStrategy
+
+CUDA_FLAGS = {
+    "NCCL_DEBUG": "WARN",
+    "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
+}
+N_GPUS_PER_NODE_MULTINODE = 8
+
+
+def get_config_json(config: Config) -> str:
+    return f"json:{json.dumps(config.model_dump(mode='json'))}"
+
+
+@dataclass
+class Command:
+    command: str
+    env_vars: dict[str, str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LaunchConfig:
+    run_id: str
+    idx: int
+    script_path: Path
+    config: Config
+    experiment: str
+    sweep_params: dict[str, Any] | None
+
+
+class Cpu: ...
+
+
+class SingleGpu: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SingleNode:
+    n_gpus: int
+
+
+@dataclass(frozen=True, slots=True)
+class MultiNode:
+    n_nodes: int
+
+
+def _choose_master_port(run_id_local: str, idx: int) -> int:
+    """Choose a unique port per command.
+
+    Uses a stable hash of (run_id, idx) mapped into a high, unprivileged port range so that we can
+    run multiple DDP processes on the same machine.
+    """
+    base: int = 20000
+    span: int = 20000  # ports in [20000, 40000)
+    h: int = int(sha256(f"{run_id_local}:{idx}".encode()).hexdigest(), 16)
+    return base + (h % span)
 
 
 def format_runtime_str(runtime_minutes: int) -> str:
@@ -23,11 +80,46 @@ def format_runtime_str(runtime_minutes: int) -> str:
     return f"{hours}h{minutes}m" if hours > 0 else f"{minutes}m"
 
 
+def get_command(
+    run_cfg: LaunchConfig, compute_strategy: Cpu | SingleGpu | SingleNode | MultiNode
+) -> Command:
+    port = _choose_master_port(run_cfg.run_id, run_cfg.idx)
+
+    match compute_strategy:
+        case Cpu() | SingleGpu():
+            command = f"python {run_cfg.script_path} "
+        case SingleNode(n_gpus=n_gpus):
+            command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {run_cfg.script_path} "
+        case MultiNode(n_nodes=n_nodes):
+            master_port = _choose_master_port(run_cfg.run_id, run_cfg.idx)
+            command = (
+                f"srun "
+                f"torchrun "
+                f"--nnodes={n_nodes} "
+                f"--nproc_per_node={N_GPUS_PER_NODE_MULTINODE} "
+                f"--rdzv_id={run_cfg.run_id}_{run_cfg.idx} "
+                f"--rdzv_backend=c10d "
+                f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{master_port} '
+                f"{run_cfg.script_path} "
+            )
+
+    command += (
+        f"--config_json '{get_config_json(run_cfg.config)}' "
+        f"--sweep_id {run_cfg.run_id} "
+        f"--evals_id {run_cfg.experiment} "
+    )
+
+    if run_cfg.sweep_params is not None:
+        command += f"--sweep_params_json '{json.dumps(run_cfg.sweep_params)}' "
+
+    return Command(env_vars=CUDA_FLAGS, command=command)
+
+
 def create_slurm_array_script(
     job_name: str,
-    commands: list[Command],
+    runs: list[LaunchConfig],
     snapshot_branch: str,
-    job_strategy: ComputeStrategy,
+    compute_strategy: Cpu | SingleGpu | SingleNode | MultiNode,
     partition: str,
     max_concurrent_tasks: int | None = None,
 ) -> str:
@@ -46,36 +138,39 @@ def create_slurm_array_script(
 
     # Create array range (SLURM arrays are 1-indexed)
     if max_concurrent_tasks is not None:
-        array_range = f"1-{len(commands)}%{max_concurrent_tasks}"
+        array_range = f"1-{len(runs)}%{max_concurrent_tasks}"
     else:
-        array_range = f"1-{len(commands)}"
+        array_range = f"1-{len(runs)}"
 
     # Create case statement for commands
-    case_statements = []
-    for i, command in enumerate(commands, 1):
-        IND = "    "
+    case_block_lines = []
+    for i, run in enumerate(runs, 1):
+        command = get_command(run, compute_strategy)
+        case_block_lines.append(f"{i})\n")
         if command.env_vars is not None:
-            # Export environment variables on separate lines before the command
-            # so they're available when the shell expands ${VAR} references in the command
-            env_exports = f"\n{IND}{IND}".join(
-                [f"export {k}={v}" for k, v in command.env_vars.items()]
-            )
-            case_statements.append(
-                f"{IND}{i})\n{IND}{IND}{env_exports}\n{IND}{IND}{command.command}\n{IND}{IND};;"
-            )
-        else:
-            case_statements.append(f"{IND}{i})\n{IND}{IND}{command.command}\n{IND}{IND};;")
+            for k, v in command.env_vars.items():
+                case_block_lines.append(f"    export {k}={v}")
+        case_block_lines.append(f"    {command.command}")
+        case_block_lines.append("    ;;")
+    case_block = "\n".join(case_block_lines)
 
-    case_block = "\n".join(case_statements)
+    match compute_strategy:
+        case SingleGpu() | Cpu():
+            n_nodes = 1
+            gpus_per_task = 1
+        case SingleNode(n_gpus=n):
+            n_nodes = 1
+            gpus_per_task = n
+        case MultiNode(n_nodes=n):
+            n_nodes = n
+            gpus_per_task = 8
 
-    # SBATCH --ntasks-per-node=1
-    # SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
     script_content = f"""\
 #!/bin/bash
-#SBATCH --nodes={job_strategy.n_nodes()}
-#SBATCH --ntasks={job_strategy.n_nodes()}
-#SBATCH --gpus-per-task=1
-#SBATCH --cpus-per-task=4
+#SBATCH --nodes={n_nodes}
+#SBATCH --ntasks={n_nodes}
+#SBATCH --gpus-per-task={gpus_per_task}
+#SBATCH --cpus-per-task={gpus_per_task * 4}  # 4 CPUs per GPU
 
 #SBATCH --partition={partition}
 #SBATCH --time=72:00:00
