@@ -324,7 +324,7 @@ class TestDistributedUtilities:
         monkeypatch.setattr(distributed_utils, "get_local_rank", lambda: local_rank)
         # Mock get_distributed_state to return the expected backend
         mock_state = DistributedState(
-            rank=0,
+            global_rank=0,
             world_size=2 if distributed else 1,
             local_rank=local_rank,
             backend=cast(Literal["nccl", "gloo"], backend),
