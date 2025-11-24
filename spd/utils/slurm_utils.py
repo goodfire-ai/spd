@@ -5,8 +5,7 @@ from pathlib import Path
 
 from spd.log import logger
 from spd.settings import REPO_ROOT
-from spd.utils.command import Command
-from spd.utils.distributed_utils import ComputeStrategy
+from spd.utils.distributed_utils import Cpu, MultiNode, Run, SingleGpu, SingleNode
 
 
 def format_runtime_str(runtime_minutes: int) -> str:
@@ -25,9 +24,9 @@ def format_runtime_str(runtime_minutes: int) -> str:
 
 def create_slurm_array_script(
     job_name: str,
-    commands: list[Command],
+    runs: list[Run],
     snapshot_branch: str,
-    job_strategy: ComputeStrategy,
+    compute_strategy: Cpu | SingleGpu | SingleNode | MultiNode,
     partition: str,
     max_concurrent_tasks: int | None = None,
 ) -> str:
@@ -46,36 +45,39 @@ def create_slurm_array_script(
 
     # Create array range (SLURM arrays are 1-indexed)
     if max_concurrent_tasks is not None:
-        array_range = f"1-{len(commands)}%{max_concurrent_tasks}"
+        array_range = f"1-{len(runs)}%{max_concurrent_tasks}"
     else:
-        array_range = f"1-{len(commands)}"
+        array_range = f"1-{len(runs)}"
 
     # Create case statement for commands
-    case_statements = []
-    for i, command in enumerate(commands, 1):
-        IND = "    "
+    case_block_lines = []
+    for i, run in enumerate(runs, 1):
+        command = compute_strategy.get_command(run)
+        case_block_lines.append(f"{i})\n")
         if command.env_vars is not None:
-            # Export environment variables on separate lines before the command
-            # so they're available when the shell expands ${VAR} references in the command
-            env_exports = f"\n{IND}{IND}".join(
-                [f"export {k}={v}" for k, v in command.env_vars.items()]
-            )
-            case_statements.append(
-                f"{IND}{i})\n{IND}{IND}{env_exports}\n{IND}{IND}{command.command}\n{IND}{IND};;"
-            )
-        else:
-            case_statements.append(f"{IND}{i})\n{IND}{IND}{command.command}\n{IND}{IND};;")
+            for k, v in command.env_vars.items():
+                case_block_lines.append(f"    export {k}={v}")
+        case_block_lines.append(f"    {command.command}")
+        case_block_lines.append("    ;;")
+    case_block = "\n".join(case_block_lines)
 
-    case_block = "\n".join(case_statements)
+    match compute_strategy:
+        case SingleGpu() | Cpu():
+            n_nodes = 1
+            gpus_per_task = 1
+        case SingleNode(n_gpus=n):
+            n_nodes = 1
+            gpus_per_task = n
+        case MultiNode(n_nodes=n):
+            n_nodes = n
+            gpus_per_task = 8
 
-    # SBATCH --ntasks-per-node=1
-    # SBATCH --gres=gpu:{job_strategy.n_gpus_per_node()}
     script_content = f"""\
 #!/bin/bash
-#SBATCH --nodes={job_strategy.n_nodes()}
-#SBATCH --ntasks={job_strategy.n_nodes()}
-#SBATCH --gpus-per-task=1
-#SBATCH --cpus-per-task=4
+#SBATCH --nodes={n_nodes}
+#SBATCH --ntasks={n_nodes}
+#SBATCH --gpus-per-task={gpus_per_task}
+#SBATCH --cpus-per-task={gpus_per_task * 4}  # 4 CPUs per GPU
 
 #SBATCH --partition={partition}
 #SBATCH --time=72:00:00

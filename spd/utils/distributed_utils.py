@@ -35,7 +35,6 @@ class DistributedState:
         return f"cuda:{self.local_rank}"
 
 
-
 # Module-level cached state used as a single source of truth
 _state: DistributedState | None = None
 
@@ -286,187 +285,136 @@ def get_config_json(config: Config) -> str:
     return f"json:{json.dumps(config.model_dump(mode='json'))}"
 
 
-class ComputeStrategy(ABC):
-    @abstractmethod
-    def n_gpus_per_node(self) -> int: ...
-
-    @abstractmethod
-    def n_nodes(self) -> int: ...
-
-    @abstractmethod
-    def get_command(
-        self,
-        run_id: str,
-        idx: int,
-        script_path: Path,
-        config: Config,
-        experiment: str,
-        sweep_params: dict[str, Any] | None = None,
-    ) -> Command: ...
+@dataclass(frozen=True, slots=True)
+class Run:
+    run_id: str
+    idx: int
+    script_path: Path
+    config: Config
+    experiment: str
+    sweep_params: dict[str, Any] | None
 
 
-class Cpu(ComputeStrategy):
-    @override
-    def n_gpus_per_node(self) -> int:
-        return 0
+# class ComputeStrategy(ABC):
+#     @abstractmethod
+#     def n_gpus_per_node(self) -> int: ...
 
-    @override
-    def n_nodes(self) -> int:
-        return 1
+#     @abstractmethod
+#     def n_nodes(self) -> int: ...
 
-    @override
-    def get_command(
-        self,
-        run_id: str,
-        idx: int,
-        script_path: Path,
-        config: Config,
-        experiment: str,
-        sweep_params: dict[str, Any] | None = None,
-    ) -> Command:
+#     @abstractmethod
+#     def get_command( self, run: Run) -> Command: ...
+
+
+# @override
+# def get_command(self, run: Run) -> Command:
+#     command = (
+#         f"python {run.script_path} "
+#         f"--config_json '{get_config_json(run.config)}' "
+#         f"--sweep_id {run.run_id} "
+#         f"--evals_id {run.experiment} "
+#     )
+#     if run.sweep_params is not None:
+#         command += f"--sweep_params_json '{json.dumps(run.sweep_params)}' "
+#     return Command(command=command)
+
+
+class Cpu:
+    def get_command(self, run: Run) -> Command:
         command = (
-            f"python {script_path} "
-            f"--config_json '{get_config_json(config)}' "
-            f"--sweep_id {run_id} "
-            f"--evals_id {experiment} "
+            f"python {run.script_path} "
+            f"--config_json '{get_config_json(run.config)}' "
+            f"--sweep_id {run.run_id} "
+            f"--evals_id {run.experiment} "
         )
-        if sweep_params is not None:
-            command += f"--sweep_params_json '{json.dumps(sweep_params)}' "
+        if run.sweep_params is not None:
+            command += f"--sweep_params_json '{json.dumps(run.sweep_params)}' "
         return Command(command=command)
 
 
-class SingleGpu(ComputeStrategy):
-    @override
-    def n_gpus_per_node(self) -> int:
-        return 1
-
-    @override
-    def n_nodes(self) -> int:
-        return 1
-
-    @override
-    def get_command(
-        self,
-        run_id: str,
-        idx: int,
-        script_path: Path,
-        config: Config,
-        experiment: str,
-        sweep_params: dict[str, Any] | None = None,
-    ) -> Command:
+class SingleGpu:
+    def get_command(self, run: Run) -> Command:
         command = (
-            f"python {script_path} "
-            f"--config_json '{get_config_json(config)}' "
-            f"--sweep_id {run_id} "
-            f"--evals_id {experiment} "
+            f"python {run.script_path} "
+            f"--config_json '{get_config_json(run.config)}' "
+            f"--sweep_id {run.run_id} "
+            f"--evals_id {run.experiment} "
         )
-        if sweep_params is not None:
-            command += f"--sweep_params_json '{json.dumps(sweep_params)}' "
+        if run.sweep_params is not None:
+            command += f"--sweep_params_json '{json.dumps(run.sweep_params)}' "
         return Command(command=command)
 
 
-class SingleNode(ComputeStrategy):
-    def __init__(self, n_gpus_per_node: int):
-        self._n_gpus_per_node = n_gpus_per_node
+@dataclass(frozen=True, slots=True)
+class SingleNode:
+    n_gpus: int
 
-    @override
-    def n_gpus_per_node(self) -> int:
-        return self._n_gpus_per_node
-
-    @override
-    def n_nodes(self) -> int:
-        return 1
-
-    @override
-    def get_command(
-        self,
-        run_id: str,
-        idx: int,
-        script_path: Path,
-        config: Config,
-        experiment: str,
-        sweep_params: dict[str, Any] | None = None,
-    ) -> Command:
-        port = _choose_master_port(run_id, idx)
-        rendezvous_id = f"{run_id}_{idx}"
+    def get_command(self, run: Run) -> Command:
         env = {
             "NCCL_DEBUG": "WARN",
             "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
-            "MASTER_ADDR": "127.0.0.1",
-            "MASTER_PORT": str(port),
+            # "MASTER_ADDR": "127.0.0.1",
+            # "MASTER_PORT": str(port),
         }
+
+        port = _choose_master_port(run.run_id, run.idx)
+
         command = (
             f"torchrun "
             "--standalone "
-            f"--nproc_per_node={self._n_gpus_per_node} "
+            f"--nproc_per_node={self.n_gpus} "
             f"--master_port={port} "
-            f"--rdzv_id={rendezvous_id} "
-            f"{script_path} "
-            f"--config_json '{get_config_json(config)}' "
-            f"--sweep_id {run_id} "
-            f"--evals_id {experiment} "
+            # f"--rdzv_id={run.run_id}_{run.idx} "
+            f"{run.script_path} "
+            f"--config_json '{get_config_json(run.config)}' "
+            f"--sweep_id {run.run_id} "
+            f"--evals_id {run.experiment} "
         )
-        if sweep_params is not None:
-            command += f" --sweep_params_json '{json.dumps(sweep_params)}'"
+        if run.sweep_params is not None:
+            command += f" --sweep_params_json '{json.dumps(run.sweep_params)}'"
         return Command(env_vars=env, command=command)
 
 
-class MultiNode(ComputeStrategy):
+@dataclass(frozen=True, slots=True)
+class MultiNode:
     N_GPUS_PER_NODE: ClassVar[int] = 8
+    n_nodes: int
 
-    def __init__(self, n_nodes: int):
-        self._n_nodes = n_nodes
-
-    @override
-    def n_gpus_per_node(self) -> int:
-        return self.N_GPUS_PER_NODE
-
-    @override
-    def n_nodes(self) -> int:
-        return self._n_nodes
-
-    @override
     def get_command(
         self,
-        run_id: str,
-        idx: int,
-        script_path: Path,
-        config: Config,
-        experiment: str,
-        sweep_params: dict[str, Any] | None = None,
+        run: Run,
     ) -> Command:
         env = {
             "NCCL_DEBUG": "WARN",
             "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
         }
 
-        master_port = _choose_master_port(run_id, idx)
+        master_port = _choose_master_port(run.run_id, run.idx)
 
         command = (
             f"srun "
             f"torchrun "
-            f"--nnodes={self._n_nodes} "
+            f"--nnodes={self.n_nodes} "
             f"--nproc_per_node={self.N_GPUS_PER_NODE} "
-            f"--rdzv_id={run_id}_{idx} "
+            f"--rdzv_id={run.run_id}_{run.idx} "
             f"--rdzv_backend=c10d "
             f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{master_port} '
-            f"{script_path} "
-            f"--config_json '{get_config_json(config)}' "
-            f"--sweep_id {run_id} "
-            f"--evals_id {experiment}"
+            f"{run.script_path} "
+            f"--config_json '{get_config_json(run.config)}' "
+            f"--sweep_id {run.run_id} "
+            f"--evals_id {run.experiment}"
         )
-        if sweep_params is not None:
-            command += f" --sweep_params_json '{json.dumps(sweep_params)}'"
+        if run.sweep_params is not None:
+            command += f" --sweep_params_json '{json.dumps(run.sweep_params)}'"
 
         return Command(env_vars=env, command=command)
-    
-    def get_sbatch_script
 
 
-#SBATCH --nodes=2
-#SBATCH --ntasks=2
-#SBATCH --gpus-per-task=8
-#SBATCH --cpus-per-task=4
+# SBATCH --nodes=2
+# SBATCH --ntasks=2
+# SBATCH --gpus-per-task=8
+# SBATCH --cpus-per-task=4
+
 
 def _choose_master_port(run_id_local: str, idx: int) -> int:
     """Choose a unique port per command.
@@ -489,5 +437,6 @@ class Local: ...
 
 
 ComputeEnvironment = (
-    tuple[SlurmPartition, ComputeStrategy] | tuple[Local, Cpu | SingleGpu | SingleNode]
+    tuple[SlurmPartition, Cpu | SingleGpu | SingleNode | MultiNode]
+    | tuple[Local, Cpu | SingleGpu | SingleNode]
 )
