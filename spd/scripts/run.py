@@ -379,8 +379,12 @@ def _build_compute_env(
     """Construct a compute strategy from CLI arguments."""
     if local or cpu:
         assert dp is None, "dp should not be specified when running locally or on cpu."
-        assert num_nodes is None, "num_nodes should not be specified when running locally or on cpu."
-        assert partition_name is None, "partition_name should not be specified when running locally or on cpu."
+        assert num_nodes is None, (
+            "num_nodes should not be specified when running locally or on cpu."
+        )
+        assert partition_name is None, (
+            "partition_name should not be specified when running locally or on cpu."
+        )
         return (Local(), Cpu())
 
     partition = SlurmPartition(

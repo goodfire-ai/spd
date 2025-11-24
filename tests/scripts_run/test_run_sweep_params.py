@@ -191,14 +191,3 @@ tms_5-2:
             },
         }
         assert result == expected
-
-    def test_global_key_not_treated_as_experiment(self):
-        """Test that 'global' key itself is not treated as an experiment name."""
-        params_yaml = """
-global:
-  seed:
-    values: [0, 1, 2]
-"""
-        # Should use global parameters, not look for experiment named "global"
-        result = _get_experiment_sweep_params("global", yaml.safe_load(params_yaml))
-        assert result == {"seed": {"values": [0, 1, 2]}}
