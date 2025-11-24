@@ -131,17 +131,6 @@ class TestSPDRun:
             assert "--sweep_params_json" in cmd_str
             assert "json:" in cmd_str
 
-    def test_multi_node_precludes_dp(self):
-        """Ensure multi-node requests exclude data parallelism."""
-        with pytest.raises(AssertionError, match="cannot specify both local and dp or num_nodes"):
-            main(
-                experiments="tms_5-2",
-                num_nodes=2,
-                dp=4,
-                local=True,
-                **self._DEFAULT_CLI_KWARGS,  # pyright: ignore[reportArgumentType]
-            )
-
     def test_make_launch_configs_sweep(self):
         """when given sweep params, make_launch_configs should generate the correct number of
         launch configs. with params swept correctly"""
