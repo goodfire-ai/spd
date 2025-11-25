@@ -70,6 +70,7 @@ As you work through this checklist, you might notice something and then get dist
 ## Git & Version Control
 
 ### Before Committing
+- [ ] **Checked existing patterns** - If adding new files (docs, configs, tests, etc.), looked at similar existing files for formatting/structure conventions to follow
 - [ ] **Reviewed every line of the diff** - Understand every change being committed
 - [ ] **Only relevant files staged** - Don't commit unrelated changes or all files
 - [ ] **No secrets committed** - No `.env`, `credentials.json`, or similar files
@@ -99,7 +100,7 @@ As you work through this checklist, you might notice something and then get dist
 
 ### PR Quality
 - [ ] **All CI checks pass** - GitHub Actions successful
-- [ ] **Merged latest from dev** - Branch is up to date
+- [ ] **Merged latest from main** - Branch is up to date
 - [ ] **Only relevant files** - No unrelated changes included
 - [ ] **Self-reviewed** - Went through diff yourself first
 
@@ -112,6 +113,7 @@ If running experiments on the cluster:
 
 ## Final Self-Review
 
+- [ ] **Restarted checklist after any changes** - If you made ANY changes while going through this checklist, you MUST restart from the beginning. Did you restart? If not, STOP and restart now.
 - [ ] **Code is simple** - Straightforward for researchers with varying experience
 - [ ] **No over-engineering** - Only made changes directly requested or clearly necessary
 - [ ] **No unnecessary features** - Didn't add extra functionality beyond the task

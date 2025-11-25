@@ -573,7 +573,7 @@ class DistributedState:
 
 - Review every line of the diff
 - All CI checks pass
-- Merge latest changes from dev branch
+- Merge latest changes from main branch
 - Use "Closes #XX" format for issue linking
 - Only commit files that include relevant changes, don't commit all files
 
