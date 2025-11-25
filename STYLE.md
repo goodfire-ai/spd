@@ -57,5 +57,3 @@ causal_mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1)
 The point of tests in this codebase is to ensure that the code is working as expected, not to prevent production outages - there's no deployment here.
 Therefore, don't worry about lots of larger integration/end-to-end tests. These often require too much overhead for what it's worth in our case, and
 this codebase is interactively run so often that issues will likely be caught by the user at very little cost.
-
-Unit test tricky logic, not stuff a CS grad could simulate in their head. If you're testing very obvious things you can literally read or manually test (especially if you're often running the script yourself), you don't need to test it. Simple validation, basic branching, dict lookups - these don't need tests.
