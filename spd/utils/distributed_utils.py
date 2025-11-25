@@ -40,10 +40,13 @@ _HAS_WORLD_SIZE: bool = os.environ.get("WORLD_SIZE") is not None
 
 
 def get_distributed_state() -> DistributedState | None:
-    """Return the cached distributed state. If not initialized, returns None.
+    """If in a distributed setting, assert that the distributed state is initialized and return the
+    cached distributed state. If not initialized, assert that the distributed state is not
+    initialized and returns None.
 
     Returns:
-        DistributedState: The current process's distributed state snapshot.
+        DistributedState | None: The current process's distributed state snapshot, or None if not in a
+        distributed setting.
     """
     if _HAS_WORLD_SIZE:
         assert _state is not None

@@ -160,14 +160,14 @@ def create_data_loader(
     - No data is duplicated across ranks
 
     For shuffling datasets between epochs:
-    - When dp>1 and streaming=True, we shard the dataset across ranks and use the default sampler.
+    - When dist_state.world_size>1 and streaming=True, we shard the dataset across ranks and use the default sampler.
         If the dataset has fewer dataset shards than we have ddp ranks, we split up the dataset
         by example. We also use dataset.set_epoch(epoch) during training.
-    - When dp>1 and streaming=False, we use a DistributedSampler and run
+    - When dist_state.world_size>1 and streaming=False, we use a DistributedSampler and run
         sampler.set_epoch(epoch) during training.
-    - When dp=1 and streaming=True, we use the default sampler and run
+    - When dist_state.world_size==1 and streaming=True, we use the default sampler and run
         dataset.set_epoch(epoch) during training.
-    - When dp=1 and streaming=False, we use the default sampler and set shuffle=True on the
+    - When dist_state.world_size==1 and streaming=False, we use the default sampler and set shuffle=True on the
         DataLoader.
 
     Args:
@@ -175,8 +175,8 @@ def create_data_loader(
         batch_size: The batch size.
         buffer_size: The buffer size for streaming datasets.
         global_seed: Used for shuffling if dataset_config.seed is None.
-        ddp_rank: The rank of the current process in DDP.
-        ddp_world_size: The world size in DDP.
+        dist_state: The distributed state or None if not in a distributed setting.
+        to_lower: Whether to convert the text to lowercase.
 
     Returns:
         A tuple of the DataLoader and the tokenizer.
