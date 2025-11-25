@@ -20,7 +20,6 @@ from spd.utils.distributed_utils import (
     sync_across_processes,
     with_distributed_cleanup,
 )
-from tests.metrics.fixtures import PORT_TEST_ALIVE_COMPONENTS
 
 
 def _test_min_reduction():
@@ -233,12 +232,14 @@ class TestDistributedAliveComponentsTracker:
         """Run distributed tests via torchrun in subprocess."""
         script_path = Path(__file__).resolve()
 
+        # ports should be globally unique in tests to allow test parallelization
+        # see discussion at: https://github.com/goodfire-ai/spd/pull/186
         cmd = [
             "torchrun",
             "--standalone",
             "--nproc_per_node=2",
             "--master_port",
-            str(PORT_TEST_ALIVE_COMPONENTS),
+            "29504",
             str(script_path),
         ]
 

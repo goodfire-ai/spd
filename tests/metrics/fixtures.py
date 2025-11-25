@@ -99,9 +99,5 @@ def make_two_layer_component_model(
 
     return comp_model
 
-# ports should be globally unique in tests to allow test parallelization
+
 # see discussion at: https://github.com/goodfire-ai/spd/pull/186
-PORT_TEST_DISTRIBUTED_1 = 29501
-PORT_TEST_DISTRIBUTED_2 = 29502
-PORT_TEST_GATHER_ALL_TENSORS = 29503
-PORT_TEST_ALIVE_COMPONENTS = 29504

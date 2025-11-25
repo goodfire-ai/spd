@@ -11,7 +11,6 @@ import torch
 import yaml
 
 from spd.settings import REPO_ROOT
-from tests.metrics.fixtures import PORT_TEST_DISTRIBUTED_1, PORT_TEST_DISTRIBUTED_2
 
 TEST_CONFIG = {
     # --- General ---
@@ -108,7 +107,9 @@ class TestDistributedDeterminicity:
             with open(config_path_dp1, "w") as f:
                 yaml.dump(config_dp1, f)
 
-            self._run_experiment(config_path_dp1, n_processes=1, port=PORT_TEST_DISTRIBUTED_1)
+            # ports should be globally unique in tests to allow test parallelization
+            # see discussion at: https://github.com/goodfire-ai/spd/pull/186
+            self._run_experiment(config_path_dp1, n_processes=1, port=29501)
 
             # Run with dp=2
             config_dp2 = TEST_CONFIG.copy()
@@ -118,7 +119,9 @@ class TestDistributedDeterminicity:
             with open(config_path_dp2, "w") as f:
                 yaml.dump(config_dp2, f)
 
-            self._run_experiment(config_path_dp2, n_processes=2, port=PORT_TEST_DISTRIBUTED_2)
+            # ports should be globally unique in tests to allow test parallelization
+            # see discussion at: https://github.com/goodfire-ai/spd/pull/186
+            self._run_experiment(config_path_dp2, n_processes=2, port=29502)
 
             # Load and compare metrics from metrics.jsonl files
             dp1_metrics = self._load_metrics(dp1_out_dir / "metrics.jsonl")
