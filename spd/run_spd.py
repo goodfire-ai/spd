@@ -14,6 +14,7 @@ import wandb
 from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
+from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -199,7 +200,8 @@ def optimize(
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
-    optimizer = optim.AdamW(component_params + ci_fn_params, lr=config.lr, weight_decay=0)
+    optimized_params = component_params + ci_fn_params
+    optimizer = optim.AdamW(optimized_params, lr=config.lr, weight_decay=0)
 
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
@@ -393,6 +395,8 @@ def optimize(
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
             sync_across_processes()
+            if config.grad_clip_norm is not None:
+                clip_grad_norm_(optimized_params, config.grad_clip_norm)
             optimizer.step()
 
     if is_main_process():
