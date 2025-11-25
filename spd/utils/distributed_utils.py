@@ -36,7 +36,7 @@ class DistributedState:
 # Module-level cached state used as a single source of truth
 _state: DistributedState | None = None
 
-has_world_size: bool = os.environ.get("WORLD_SIZE") is not None
+_HAS_WORLD_SIZE: bool = os.environ.get("WORLD_SIZE") is not None
 
 
 def get_distributed_state() -> DistributedState | None:
@@ -45,7 +45,7 @@ def get_distributed_state() -> DistributedState | None:
     Returns:
         DistributedState: The current process's distributed state snapshot.
     """
-    if has_world_size:
+    if _HAS_WORLD_SIZE:
         assert _state is not None
         return _state
     else:
