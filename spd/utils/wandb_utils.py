@@ -1,10 +1,12 @@
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 import wandb
+import wandb.errors
 import wandb_workspaces.reports.v2 as wr
 import wandb_workspaces.workspaces as ws
 from dotenv import load_dotenv
@@ -14,10 +16,7 @@ from wandb.apis.public import File, Run
 from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import (
-    _fetch_latest_checkpoint_name,
-    replace_pydantic_model,
-)
+from spd.utils.general_utils import fetch_latest_checkpoint_name, replace_pydantic_model
 from spd.utils.run_utils import METRIC_CONFIG_SHORT_NAMES
 
 WORKSPACE_TEMPLATES = {
@@ -88,7 +87,7 @@ def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
 def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
     """Fetch the latest checkpoint from a wandb run."""
     filenames = [file.name for file in run.files() if file.name.endswith((".pth", ".pt"))]
-    latest_checkpoint_name = _fetch_latest_checkpoint_name(filenames, prefix)
+    latest_checkpoint_name = fetch_latest_checkpoint_name(filenames, prefix)
     latest_checkpoint_remote = run.file(latest_checkpoint_name)
     return latest_checkpoint_remote
 
@@ -453,3 +452,21 @@ def create_view_and_report(
             **({"Aggregated Report": report_url} if report_url else {}),
         },
     )
+
+
+_n_try_wandb_comm_errors = 0
+
+
+def try_wandb[**P, T](wandb_fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T | None:
+    """Attempts to call `wandb_fn` and if it fails with a wandb CommError, logs a warning and returns
+    None. The choice of wandb CommError is to catch issues communicating with the wandb server but
+    not legitimate logging errors, for example not passing a dict to wandb.log, or the wrong
+    arguments to wandb.save."""
+    global _n_try_wandb_comm_errors
+    try:
+        return wandb_fn(*args, **kwargs)
+    except wandb.errors.CommError as e:
+        _n_try_wandb_comm_errors += 1
+        logger.error(
+            f"wandb communication error, skipping log (total comm errors: {_n_try_wandb_comm_errors}): {e}"
+        )
