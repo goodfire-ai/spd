@@ -4,8 +4,10 @@ from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
 import torch
 from jaxtyping import Float, Int
+from numpy.typing import NDArray
 from transformers import PreTrainedTokenizer
 
 from spd.app.backend.schemas import (
@@ -36,6 +38,8 @@ class SubcomponentExample:
 
 
 class _TopKExamples:
+    """Maintains top-k examples by CI value using a min-heap."""
+
     def __init__(self, k: int):
         self.k = k
         # Min-heap of tuples (importance, counter, example)
@@ -52,6 +56,60 @@ class _TopKExamples:
         if self.heap[0][0] < example.active_pos_ci:
             heapq.heapreplace(self.heap, key)
 
+    def add_batch(
+        self,
+        window_token_ids: NDArray[np.int64],
+        window_ci_values: NDArray[np.float32],
+        active_positions: NDArray[np.int64],
+        ci_at_active: NDArray[np.float32],
+        pad_token_id: int,
+    ) -> None:
+        """Add a batch of examples, keeping only top-k overall.
+
+        This is more efficient than calling maybe_add() repeatedly because:
+        1. We pre-sort by CI value and only process candidates that could make top-k
+        2. We use numpy arrays directly instead of Python lists where possible
+        """
+        n_examples = len(ci_at_active)
+        if n_examples == 0:
+            return
+
+        # Sort by CI descending - we only need to consider examples that could make top-k
+        sorted_indices = np.argsort(ci_at_active)[::-1]
+
+        # Early termination threshold: if heap is full, we can skip examples below min
+        min_threshold = self.heap[0][0] if len(self.heap) >= self.k else float("-inf")
+
+        for idx in sorted_indices:
+            ci_val = float(ci_at_active[idx])
+
+            # Early termination: since sorted descending, if we're below threshold, stop
+            if len(self.heap) >= self.k and ci_val <= min_threshold:
+                break
+
+            # Trim padding from this example
+            tokens = window_token_ids[idx]
+            ci_vals = window_ci_values[idx]
+            active_pos = int(active_positions[idx])
+
+            start_idx, end_idx = _get_pad_indices_numpy(tokens, pad_token_id)
+
+            ex = SubcomponentExample(
+                active_pos_in_window=active_pos - start_idx,
+                window_token_ids=tokens[start_idx:end_idx].tolist(),
+                token_ci_values=ci_vals[start_idx:end_idx].tolist(),
+            )
+
+            key = (ci_val, self._counter, ex)
+            self._counter += 1
+
+            if len(self.heap) < self.k:
+                heapq.heappush(self.heap, key)
+                min_threshold = self.heap[0][0]
+            elif ci_val > self.heap[0][0]:
+                heapq.heapreplace(self.heap, key)
+                min_threshold = self.heap[0][0]
+
     def as_activation_contexts(self, tok: PreTrainedTokenizer) -> list[ActivationContext]:
         return [
             ActivationContext(
@@ -62,6 +120,15 @@ class _TopKExamples:
             )
             for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)
         ]
+
+
+def _get_pad_indices_numpy(arr: NDArray[np.int64], pad_val: int) -> tuple[int, int]:
+    """Find start/end indices excluding padding. Vectorized version."""
+    non_pad = arr != pad_val
+    if not non_pad.any():
+        return 0, 0
+    non_pad_indices = np.where(non_pad)[0]
+    return int(non_pad_indices[0]), int(non_pad_indices[-1]) + 1
 
 
 def roll_batch_size_1_into_x(
@@ -203,32 +270,42 @@ def get_activations_data_streaming(
                 batch_idx_expanded, window_indices, comp_idx_expanded
             ]
 
-            # Move everything to CPU for final processing
-            comp_idx_list: list[int] = comp_idx.tolist()
-            window_token_ids_list: list[list[int]] = window_token_ids.tolist()
-            window_ci_values_list: list[list[float]] = window_ci_values.tolist()
+            # Get CI values at active position (center of window) for sorting
+            ci_at_active = window_ci_values[:, n_tokens_either_side]
 
-            # Now iterate to create examples
-            for firing_idx in range(n_firings):
-                # Get the actual start and end indices of the window, ignoring padding
-                start_idx, end_idx = get_pad_indices(
-                    window_token_ids_list[firing_idx], pad_token_id
+            # Move to CPU/numpy once (faster than .tolist())
+            comp_idx_np = comp_idx.cpu().numpy()
+            window_token_ids_np = window_token_ids.cpu().numpy()
+            window_ci_values_np = window_ci_values.cpu().numpy()
+            ci_at_active_np = ci_at_active.cpu().numpy()
+
+            # Get token IDs at active position for token counting
+            active_token_ids = window_token_ids_np[:, n_tokens_either_side]
+
+            # Process by component - group firings and use batch add
+            unique_components = np.unique(comp_idx_np)
+            for c_idx in unique_components:
+                c_idx_int = int(c_idx)
+                mask_c = comp_idx_np == c_idx
+
+                # Update activation counts
+                n_firings_for_component = int(mask_c.sum())
+                component_activation_counts[module_name][c_idx_int] += n_firings_for_component
+
+                # Update token counts for this component
+                tokens_for_component = active_token_ids[mask_c]
+                unique_tokens, token_counts = np.unique(tokens_for_component, return_counts=True)
+                for tok_id, count in zip(unique_tokens, token_counts, strict=True):
+                    component_activation_tokens[module_name][c_idx_int][int(tok_id)] += int(count)
+
+                # Add examples in batch (with early termination optimization)
+                examples[module_name][c_idx_int].add_batch(
+                    window_token_ids=window_token_ids_np[mask_c],
+                    window_ci_values=window_ci_values_np[mask_c],
+                    active_positions=np.full(n_firings_for_component, n_tokens_either_side),
+                    ci_at_active=ci_at_active_np[mask_c],
+                    pad_token_id=pad_token_id,
                 )
-                this_window_token_ids = window_token_ids_list[firing_idx]
-                this_window_ci_vals = window_ci_values_list[firing_idx]
-
-                ex = SubcomponentExample(
-                    active_pos_in_window=n_tokens_either_side - start_idx,
-                    window_token_ids=this_window_token_ids[start_idx:end_idx],
-                    token_ci_values=this_window_ci_vals[start_idx:end_idx],
-                )
-
-                component_idx = comp_idx_list[firing_idx]
-                token_id = this_window_token_ids[n_tokens_either_side]
-
-                examples[module_name][component_idx].maybe_add(ex)
-                component_activation_counts[module_name][component_idx] += 1
-                component_activation_tokens[module_name][component_idx][token_id] += 1
 
         # Yield progress update
         logger.info(f"Processed batch {i + 1}/{n_batches}")
@@ -299,13 +376,3 @@ def _get_component_token_pr(
     # sort by recall descending
     token_prs.sort(key=lambda x: x.recall, reverse=True)
     return token_prs
-
-
-def get_pad_indices(lst: list[int], pad_val: int) -> tuple[int, int]:
-    start_idx = 0
-    end_idx = len(lst) - 1
-    while start_idx <= end_idx and lst[start_idx] == pad_val:
-        start_idx += 1
-    while start_idx <= end_idx and lst[end_idx] == pad_val:
-        end_idx -= 1
-    return start_idx, end_idx + 1
