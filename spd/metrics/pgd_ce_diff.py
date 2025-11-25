@@ -28,7 +28,11 @@ def pgd_ce_diff_loss_update(
     """PGD optimization for CE difference metric.
 
     Optimizes adversarial stochastic masks to maximize CE loss against true labels.
+    Only applicable for language model tasks with 3D outputs (batch, seq_len, vocab).
     """
+    if target_out.ndim != 3:
+        return torch.tensor(0.0, device=batch.device), 0
+
     assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
 
     C = model.C
