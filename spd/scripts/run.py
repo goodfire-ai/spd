@@ -1,10 +1,10 @@
-"""Team SPD runner for experiments with sweeps and SLURM orchestration.
+"""SPD run script for experiments with sweeps and SLURM orchestration.
 
 This script provides a full-featured entry point for running SPD experiments on the
 cluster, supporting parameter sweeps, multi-node training, git snapshots, and W&B
 workspace views/reports.
 
-For simpler local execution without SLURM, use `spd-simple` instead.
+For simpler local execution without SLURM, use simple.py instead.
 """
 
 import copy
@@ -21,19 +21,17 @@ from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
 from spd.utils.compute_utils import (
-    Cpu,
-    LaunchConfig,
+    ComputeStrategy,
+    CpuOrSingleGpu,
+    MultiGpu,
     MultiNode,
-    SingleGpu,
-    SingleNode,
+    TrainingJob,
     create_slurm_array_script,
     submit_slurm_array,
 )
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.wandb_utils import ReportCfg, create_view_and_report
-
-ComputeStrategy = Cpu | SingleGpu | SingleNode | MultiNode
 
 
 def main(
@@ -77,11 +75,10 @@ def main(
     if sweep_params is not None:
         assert n_agents is not None, "n_agents must be provided when sweep is enabled"
 
-    job_configs = make_launch_configs(
-        run_id=run_id,
+    training_jobs = _create_training_jobs(
         experiments=experiments_list,
-        sweep_params=sweep_params,
         project=project,
+        sweep_params=sweep_params,
     )
 
     snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
@@ -97,11 +94,13 @@ def main(
         commit_hash=commit_hash,
     )
 
-    job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
+    slurm_job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
 
     array_script_content = create_slurm_array_script(
-        job_name=job_name,
-        runs=job_configs,
+        slurm_job_name=slurm_job_name,
+        run_id=run_id,
+        training_jobs=training_jobs,
+        sweep_params=sweep_params,
         snapshot_branch=snapshot_branch,
         compute_strategy=compute_strategy,
         partition=partition,
@@ -120,7 +119,7 @@ def main(
     logger.values(
         {
             "Array Job ID": array_job_id,
-            "Total tasks": len(job_configs),
+            "Total training jobs": len(training_jobs),
             "Max concurrent tasks": n_agents,
             "View logs in": f"~/slurm_logs/slurm-{array_job_id}_*.out",
         }
@@ -132,24 +131,21 @@ def _generate_run_id() -> str:
     return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
-def make_launch_configs(
-    run_id: str,
+def _create_training_jobs(
     experiments: list[str],
     project: str,
     sweep_params: dict[str, Any] | None,
-) -> list[LaunchConfig]:
-    """Generate commands for all experiment runs and print task counts.
+) -> list[TrainingJob]:
+    """Build a Run containing jobs for all experiments.
 
     NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
     we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
-    jobs: list[LaunchConfig] = []
+    training_jobs: list[TrainingJob] = []
 
     logger.info("Task breakdown by experiment:")
     task_breakdown: dict[str, str] = {}
-
-    cmd_idx: int = 0
 
     for experiment in experiments:
         exp_config = EXPERIMENT_REGISTRY[experiment]
@@ -163,18 +159,14 @@ def make_launch_configs(
             base_config_dict["wandb_project"] = project
             config_with_overrides = Config(**base_config_dict)
 
-            jobs.append(
-                LaunchConfig(
-                    run_id=run_id,
-                    idx=cmd_idx,
+            training_jobs.append(
+                TrainingJob(
+                    experiment=experiment,
                     script_path=exp_config.decomp_script,
                     config=config_with_overrides,
-                    experiment=experiment,
-                    sweep_params=sweep_params,
                 )
             )
-            task_breakdown[experiment] = "1 task"
-            cmd_idx += 1
+            task_breakdown[experiment] = "1 job"
 
         else:
             # Parameter sweep run
@@ -191,27 +183,23 @@ def make_launch_configs(
                 config_dict_with_overrides["wandb_run_name"] = wandb_run_name
                 config_with_overrides = Config(**config_dict_with_overrides)
 
-                jobs.append(
-                    LaunchConfig(
-                        run_id=run_id,
-                        idx=cmd_idx,
+                training_jobs.append(
+                    TrainingJob(
+                        experiment=experiment,
                         script_path=exp_config.decomp_script,
                         config=config_with_overrides,
-                        experiment=experiment,
-                        sweep_params=sweep_params,
                     )
                 )
-                cmd_idx += 1
 
                 # Print first combination as example
                 if i == 0:
-                    logger.info(f"  {experiment}: {len(combinations)} tasks")
+                    logger.info(f"  {experiment}: {len(combinations)} jobs")
                     logger.info(f"    Example param overrides: {param_combo}")
 
     if task_breakdown:
         logger.values(task_breakdown)
 
-    return jobs
+    return training_jobs
 
 
 def _get_experiment_sweep_params(
@@ -281,14 +269,14 @@ def _build_compute_strategy(
     if cpu:
         assert dp is None, "dp should not be specified when running on cpu"
         assert num_nodes is None, "num_nodes should not be specified when running on cpu"
-        return Cpu()
+        return CpuOrSingleGpu()
 
     match num_nodes, dp:
         case None, None:
-            return SingleGpu()
+            return CpuOrSingleGpu()
         case None, dp:
             assert dp >= 2, "if given, dp must be at least 2. pass dp=None to use a single GPU."
-            return SingleNode(n_gpus=dp)
+            return MultiGpu(n_gpus=dp)
         case num_nodes, None:
             assert num_nodes >= 2, (
                 "if given, num_nodes must be at least 2. pass num_nodes=None to use a single node."
@@ -337,20 +325,22 @@ def _wandb_setup(
                 experiments=experiments_list,
                 report_cfg=None,
             )
-        case True, report_title:
+        case True, title:
             create_view_and_report(
                 project=project,
                 run_id=run_id,
                 experiments=experiments_list,
                 report_cfg=ReportCfg(
-                    report_title=report_title,
+                    report_title=title,
                     branch=snapshot_branch,
                     commit_hash=commit_hash,
                 ),
             )
-        case False, report_title:
+        case False, None:
+            pass  # No report requested, nothing to do
+        case False, title:
             raise ValueError(
-                f"got report_title='{report_title}' but create_report=False. "
+                f"got report_title='{title}' but create_report=False. "
                 "did you intend to create a report? if so, set create_report=True"
             )
 

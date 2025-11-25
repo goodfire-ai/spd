@@ -29,29 +29,26 @@ class Command:
 
 
 @dataclass(frozen=True, slots=True)
-class LaunchConfig:
-    run_id: str
-    idx: int
+class TrainingJob:
+    experiment: str
     script_path: Path
     config: Config
-    experiment: str
-    sweep_params: dict[str, Any] | None
 
 
-class Cpu: ...
-
-
-class SingleGpu: ...
+class CpuOrSingleGpu: ...
 
 
 @dataclass(frozen=True, slots=True)
-class SingleNode:
+class MultiGpu:
     n_gpus: int
 
 
 @dataclass(frozen=True, slots=True)
 class MultiNode:
     n_nodes: int
+
+
+ComputeStrategy = CpuOrSingleGpu | MultiGpu | MultiNode
 
 
 def _choose_master_port(run_id_local: str, idx: int) -> int:
@@ -81,72 +78,79 @@ def format_runtime_str(runtime_minutes: int) -> str:
 
 
 def get_command(
-    run_cfg: LaunchConfig, compute_strategy: Cpu | SingleGpu | SingleNode | MultiNode
+    run_id: str,
+    job: TrainingJob,
+    job_idx: int,
+    compute_strategy: ComputeStrategy,
+    sweep_params: dict[str, Any] | None,
 ) -> Command:
-    port = _choose_master_port(run_cfg.run_id, run_cfg.idx)
+    port = _choose_master_port(run_id, job_idx)
 
     match compute_strategy:
-        case Cpu() | SingleGpu():
-            command = f"python {run_cfg.script_path} "
-        case SingleNode(n_gpus=n_gpus):
-            command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {run_cfg.script_path} "
+        case CpuOrSingleGpu():
+            command = f"python {job.script_path} "
+        case MultiGpu(n_gpus=n_gpus):
+            command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {job.script_path} "
         case MultiNode(n_nodes=n_nodes):
-            master_port = _choose_master_port(run_cfg.run_id, run_cfg.idx)
             command = (
                 f"srun "
                 f"torchrun "
                 f"--nnodes={n_nodes} "
                 f"--nproc_per_node={N_GPUS_PER_NODE_MULTINODE} "
-                f"--rdzv_id={run_cfg.run_id}_{run_cfg.idx} "
+                f"--rdzv_id={run_id}_{job_idx} "
                 f"--rdzv_backend=c10d "
-                f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{master_port} '
-                f"{run_cfg.script_path} "
+                f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{port} '
+                f"{job.script_path} "
             )
 
     command += (
-        f"--config_json '{get_config_json(run_cfg.config)}' "
-        f"--sweep_id {run_cfg.run_id} "
-        f"--evals_id {run_cfg.experiment} "
+        f"--config_json '{get_config_json(job.config)}' "
+        f"--sweep_id {run_id} "
+        f"--evals_id {job.experiment} "
     )
 
-    if run_cfg.sweep_params is not None:
-        command += f"--sweep_params_json '{json.dumps(run_cfg.sweep_params)}' "
+    if sweep_params is not None:
+        command += f"--sweep_params_json '{json.dumps(sweep_params)}' "
 
     return Command(env_vars=CUDA_FLAGS, command=command)
 
 
 def create_slurm_array_script(
-    job_name: str,
-    runs: list[LaunchConfig],
+    slurm_job_name: str,
+    run_id: str,
+    training_jobs: list[TrainingJob],
+    sweep_params: dict[str, Any] | None,
     snapshot_branch: str,
-    compute_strategy: Cpu | SingleGpu | SingleNode | MultiNode,
+    compute_strategy: ComputeStrategy,
     partition: str,
     max_concurrent_tasks: int | None = None,
 ) -> str:
     """Create a SLURM job array script with git snapshot for consistent code.
 
     Args:
-        script_path: Path where the script should be written
-        job_name: Name for the SLURM job array
-        commands: List of commands to execute in each array job
+        slurm_job_name: Name for the SLURM job array
+        run: Run containing jobs to execute
         snapshot_branch: Git branch to checkout.
+        compute_strategy: Compute strategy for the jobs.
+        partition: SLURM partition to use.
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
-
     slurm_logs_dir = Path.home() / "slurm_logs"
     slurm_logs_dir.mkdir(exist_ok=True)
 
+    n_jobs = len(training_jobs)
+
     # Create array range (SLURM arrays are 1-indexed)
     if max_concurrent_tasks is not None:
-        array_range = f"1-{len(runs)}%{max_concurrent_tasks}"
+        array_range = f"1-{n_jobs}%{max_concurrent_tasks}"
     else:
-        array_range = f"1-{len(runs)}"
+        array_range = f"1-{n_jobs}"
 
-    # Create case statement for commands
+    # Create case statement for commands (SLURM is 1-indexed, but we pass 0-indexed to get_command)
     case_block_lines = []
-    for i, run in enumerate(runs, 1):
-        command = get_command(run, compute_strategy)
-        case_block_lines.append(f"{i})\n")
+    for i, training_job in enumerate(training_jobs):
+        command = get_command(run_id, training_job, i, compute_strategy, sweep_params)
+        case_block_lines.append(f"{i + 1})\n")
         if command.env_vars is not None:
             for k, v in command.env_vars.items():
                 case_block_lines.append(f"    export {k}={v}")
@@ -155,10 +159,10 @@ def create_slurm_array_script(
     case_block = "\n".join(case_block_lines)
 
     match compute_strategy:
-        case SingleGpu() | Cpu():
+        case CpuOrSingleGpu():
             n_nodes = 1
             gpus_per_task = 1
-        case SingleNode(n_gpus=n):
+        case MultiGpu(n_gpus=n):
             n_nodes = 1
             gpus_per_task = n
         case MultiNode(n_nodes=n):
@@ -174,12 +178,12 @@ def create_slurm_array_script(
 
 #SBATCH --partition={partition}
 #SBATCH --time=72:00:00
-#SBATCH --job-name={job_name}
+#SBATCH --job-name={slurm_job_name}
 #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 #SBATCH --array={array_range}
 
 # Create job-specific working directory
-# WORK_DIR="$HOME/slurm_workspaces/{job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+# WORK_DIR="$HOME/slurm_workspaces/{slurm_job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
 # mkdir -p "$WORK_DIR"
 # Clean up the workspace when the script exits
 # trap 'rm -rf "$WORK_DIR"' EXIT

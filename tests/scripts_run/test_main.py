@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from spd.scripts.run import _get_experiments, make_launch_configs
+from spd.scripts.run import _create_training_jobs, _get_experiments
 
 
 class TestSPDRun:
@@ -29,8 +29,10 @@ class TestSPDRun:
     @patch("spd.scripts.run.submit_slurm_array")
     @patch("spd.scripts.run.create_slurm_array_script")
     @patch("spd.scripts.run.create_git_snapshot")
+    @patch("spd.scripts.run._wandb_setup")
     def test_sweep_creates_slurm_array(
         self,
+        mock_wandb_setup,
         mock_create_git_snapshot,
         mock_create_slurm_array_script,
         mock_submit_slurm_array,
@@ -51,30 +53,29 @@ class TestSPDRun:
         # Verify SLURM array script was created
         mock_create_slurm_array_script.assert_called_once()
 
-        # Verify the runs have sweep params
+        # Verify the run has sweep params and multiple jobs
         call_kwargs = mock_create_slurm_array_script.call_args.kwargs
-        runs = call_kwargs["runs"]
-        assert len(runs) > 1  # Sweep should create multiple runs
-        for run in runs:
-            assert run.sweep_params is not None
+        training_jobs = call_kwargs["training_jobs"]
+        sweep_params = call_kwargs["sweep_params"]
+        assert len(training_jobs) > 1  # Sweep should create multiple jobs
+        assert sweep_params is not None
 
-    def test_make_launch_configs_sweep(self):
-        """when given sweep params, make_launch_configs should generate the correct number of
-        launch configs. with params swept correctly"""
+    def test_create_training_jobs_sweep(self):
+        """when given sweep params, _create_training_jobs should generate the correct number of
+        jobs with params swept correctly"""
 
         sweep_params = {
             "global": {"lr": {"values": [1, 2]}},
             "tms_5-2": {"C": {"values": [10, 20]}, "steps": {"values": [100, 200]}},
         }
 
-        launch_configs = make_launch_configs(
-            run_id="test",
+        training_jobs = _create_training_jobs(
             experiments=["tms_5-2"],
             project="test",
             sweep_params=sweep_params,
         )
 
-        configs = [j.config for j in launch_configs]
+        configs = [j.config for j in training_jobs]
 
         def there_is_one_with(props: dict[str, Any]):
             matching = []
@@ -94,23 +95,22 @@ class TestSPDRun:
         assert there_is_one_with({"lr": 2, "C": 10, "steps": 200})
         assert there_is_one_with({"lr": 2, "C": 20, "steps": 200})
 
-    def test_make_launch_configs_sweep_2(self):
-        """when given sweep params, make_launch_configs should generate the correct number of
-        launch configs. with params swept correctly"""
+    def test_create_training_jobs_sweep_multi_experiment(self):
+        """when given sweep params, _create_training_jobs should generate the correct number of
+        jobs with params swept correctly across multiple experiments"""
 
         sweep_params = {
             "tms_5-2": {"C": {"values": [10]}},
             "tms_40-10": {"steps": {"values": [100, 200]}},
         }
 
-        launch_configs = make_launch_configs(
-            run_id="test",
+        training_jobs = _create_training_jobs(
             experiments=["tms_5-2", "tms_40-10"],
             project="test",
             sweep_params=sweep_params,
         )
 
-        configs = [j.config for j in launch_configs]
+        configs = [j.config for j in training_jobs]
 
         def there_is_one_with(props: dict[str, Any]):
             matching = []

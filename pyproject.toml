@@ -44,7 +44,7 @@ dev = [
 
 [project.scripts]
 spd-run = "spd.scripts.run:cli"
-spd-simple = "spd.scripts.simple:cli"
+spd-simple = "spd.scripts.run_simple:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]
