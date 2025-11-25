@@ -204,7 +204,7 @@ def create_data_loader(
             else:
                 # Fallback: example-level partitioning before shuffle
                 dataset = dataset.filter(
-                    lambda _ex, idx, r=dist_state.rank, ws=dist_state.world_size: idx % ws == r,
+                    lambda _ex, idx: idx % dist_state.world_size == dist_state.rank,
                     with_indices=True,
                 )
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
