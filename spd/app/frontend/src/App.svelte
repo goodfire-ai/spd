@@ -11,17 +11,31 @@
     let trainWandbRunEntry = $state<string | null>(null);
 
     let status = $state<Status>({ train_run: null });
+    let backendError = $state<string | null>(null);
 
     async function loadStatus() {
         if (loadingTrainRun) return;
-        console.log("getting status");
         try {
-            status = await api.getStatus();
+            const newStatus = await api.getStatus();
             loadingTrainRun = false;
+
+            // if we have a run, but the backend says null, then we're out of sync (backend likely restarted)
+            // in this case, we keep the local state so the user can still see what they were looking at
+            if (status.train_run && !newStatus.train_run) {
+                backendError = "Backend state lost (restarted). Showing cached view.";
+                return;
+            }
+
+            // otherwise, we update the status
+            status = newStatus;
+            backendError = null;
+
             if (!status.train_run) return;
             trainWandbRunEntry = status.train_run.wandb_path;
         } catch (error) {
             console.error("error loading status", error);
+            // if the backend is down, we keep the local state
+            backendError = "Backend unreachable. Showing cached view.";
         }
     }
 
@@ -94,6 +108,11 @@
     </aside>
 
     <div class="main-content">
+        {#if backendError}
+            <div class="warning-banner">
+                ⚠️ {backendError}
+            </div>
+        {/if}
         {#if status.train_run && activeTab === "activation-contexts"}
             <ActivationContextsTab />
         {/if}
@@ -126,6 +145,16 @@
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
+    }
+
+    .warning-banner {
+        background: #fff3cd;
+        color: #856404;
+        padding: 0.75rem 1rem;
+        border: 1px solid #ffeeba;
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
     }
 
     .tab-navigation {
