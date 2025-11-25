@@ -1,74 +1,62 @@
 """Tests for the main() function in spd/scripts/run.py.
 
-This file contains minimal tests focusing on verifying that spd-run correctly
-calls either create_slurm_array_script (for SLURM submission) or subprocess.run
-(for local execution) with the expected arguments.
+This file contains tests for spd-run, which always submits jobs to SLURM.
+For local execution tests, see tests/scripts_simple/.
 """
 
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnusedParameter=false
 
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
-from spd.scripts.run import main, make_launch_configs
+from spd.scripts.run import _get_experiments, make_launch_configs
 
 
 class TestSPDRun:
     """Test spd-run command execution."""
 
-    _DEFAULT_CLI_KWARGS: dict[str, str | bool] = dict(
-        use_wandb=False,
-        create_report=False,
-    )
-
     def test_invalid_experiment_name(self):
-        """Test that invalid experiment names raise an error.
-
-        I'm keeping this test because it provides valuable validation coverage
-        that isn't duplicated elsewhere, and it's a simple unit test that
-        doesn't involve complex mocking.
-        """
+        """Test that invalid experiment names raise an error."""
         fake_exp_name = "nonexistent_experiment_please_dont_name_your_experiment_this"
         with pytest.raises(ValueError, match=f"Invalid experiments.*{fake_exp_name}"):
-            main(experiments=fake_exp_name, local=True, **self._DEFAULT_CLI_KWARGS)  # pyright: ignore[reportArgumentType]
+            _get_experiments(fake_exp_name)
 
         with pytest.raises(ValueError, match=f"Invalid experiments.*{fake_exp_name}"):
-            main(
-                experiments=f"{fake_exp_name},tms_5-2",
-                local=True,
-                **self._DEFAULT_CLI_KWARGS,  # pyright: ignore[reportArgumentType]
-            )
+            _get_experiments(f"{fake_exp_name},tms_5-2")
 
-    @patch("spd.scripts.run.subprocess.run")
+    @patch("spd.scripts.run.submit_slurm_array")
+    @patch("spd.scripts.run.create_slurm_array_script")
     @patch("spd.scripts.run.create_git_snapshot")
-    def test_sweep_params_integration(self, mock_create_git_snapshot, mock_subprocess):
-        """Test that sweep parameters are correctly integrated into commands.
+    def test_sweep_creates_slurm_array(
+        self,
+        mock_create_git_snapshot,
+        mock_create_slurm_array_script,
+        mock_submit_slurm_array,
+    ):
+        """Test that sweep runs create SLURM array jobs with sweep params."""
+        from spd.scripts.run import main
 
-        This test verifies the integration between sweep parameter loading and
-        command generation, which is important functionality not covered by
-        the unit tests in other files.
-        """
         mock_create_git_snapshot.return_value = ("test-branch", "12345678")
-        mock_subprocess.return_value = Mock(returncode=0)
+        mock_create_slurm_array_script.return_value = "#!/bin/bash\necho test"
+        mock_submit_slurm_array.return_value = "12345"
 
         main(
             experiments="tms_5-2",
-            # we use the example here bc in CI we don't want to rely on the copy step having run
             sweep="sweep_params.yaml.example",
-            local=True,
-            **self._DEFAULT_CLI_KWARGS,  # pyright: ignore[reportArgumentType]
+            n_agents=2,
         )
 
-        # Verify multiple commands were generated (sweep should create multiple runs)
-        assert mock_subprocess.call_count > 1
+        # Verify SLURM array script was created
+        mock_create_slurm_array_script.assert_called_once()
 
-        # Check that sweep parameters are in the commands
-        for call in mock_subprocess.call_args_list:
-            cmd_str = call[0][0]
-            assert "--sweep_params_json" in cmd_str
-            assert "json:" in cmd_str
+        # Verify the runs have sweep params
+        call_kwargs = mock_create_slurm_array_script.call_args.kwargs
+        runs = call_kwargs["runs"]
+        assert len(runs) > 1  # Sweep should create multiple runs
+        for run in runs:
+            assert run.sweep_params is not None
 
     def test_make_launch_configs_sweep(self):
         """when given sweep params, make_launch_configs should generate the correct number of
