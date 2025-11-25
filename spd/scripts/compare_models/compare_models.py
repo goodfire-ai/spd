@@ -375,7 +375,6 @@ class ModelComparator:
             ref_U = reference_components.U
             ref_V = reference_components.V
 
-            # Filter out components that aren't active enough in the current model
             alive_mask = mean_component_cis[layer_name] > self.mean_ci_threshold
             C_curr_alive = int(alive_mask.sum().item())
             logger.info(
