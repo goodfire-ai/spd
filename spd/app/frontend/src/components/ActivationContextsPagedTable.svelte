@@ -1,17 +1,23 @@
 <script lang="ts">
-    import type { ActivationContext } from "../lib/api";
     import ActivationContextComponent from "./ActivationContext.svelte";
 
     interface Props {
-        examples: ActivationContext[];
+        // Columnar data
+        exampleTokens: string[][];      // [n_examples][window_size]
+        exampleCi: number[][];          // [n_examples][window_size]
+        exampleActivePos: number[];     // [n_examples]
+        // Unique activating tokens (from pr_tokens, already sorted by recall)
+        activatingTokens: string[];
     }
 
-    let { examples }: Props = $props();
+    let { exampleTokens, exampleCi, exampleActivePos, activatingTokens }: Props = $props();
 
     let currentPage = $state(0);
-    let pageSize = $state(100);
+    let pageSize = $state(20);
     let tokenFilter = $state("");
 
+    // Number of examples (guard against null during transitions)
+    let nExamples = $derived(exampleTokens?.length ?? 0);
 
     // Update currentPage when page input changes
     function handlePageInput(event: Event) {
@@ -25,31 +31,62 @@
         }
     }
 
-    // Get unique tokens from all examples
-    let allActivatingTokens = $derived.by(() => {
-        const tokenSet = new Set<string>(
-            examples.flatMap((example) =>
-                example.token_strings.filter((_, idx) => example.token_ci_values[idx] > 0.01),
-            ),
-        );
-        return Array.from(tokenSet).sort();
+    // Filter example indices by token
+    let filteredIndices = $derived.by(() => {
+        const startTime = performance.now();
+        const indices: number[] = [];
+        for (let i = 0; i < nExamples; i++) {
+            if (!tokenFilter) {
+                indices.push(i);
+            } else {
+                const tokens = exampleTokens[i];
+                const ci = exampleCi[i];
+                for (let j = 0; j < tokens.length; j++) {
+                    if (tokens[j] === tokenFilter && ci[j] > 0) {
+                        indices.push(i);
+                        break;
+                    }
+                }
+            }
+        }
+        console.log(`[timing] filteredIndices: ${(performance.now() - startTime).toFixed(2)}ms (${nExamples} examples)`);
+        return indices;
     });
 
-    // Filter examples by token
-    let filteredExamples = $derived.by(() => {
-        if (!tokenFilter) return examples;
-        return examples.filter((example) =>
-            example.token_strings.some((token, idx) => token === tokenFilter && example.token_ci_values[idx] > 0),
-        );
-    });
-
-    let paginatedExamples = $derived.by(() => {
+    let paginatedIndices = $derived.by(() => {
+        const startTime = performance.now();
         const start = currentPage * pageSize;
         const end = start + pageSize;
-        return filteredExamples.slice(start, end);
+        const result = filteredIndices.slice(start, end);
+        console.log(`[timing] paginatedIndices: ${(performance.now() - startTime).toFixed(2)}ms (${result.length} items)`);
+        return result;
     });
 
-    let totalPages = $derived(Math.ceil(filteredExamples.length / pageSize));
+    // Debug: inspect reactive values
+    $inspect("PagedTable", { nExamples, pageSize, currentPage, paginatedCount: paginatedIndices.length });
+
+    // Measure render time using $effect.pre (before DOM) and $effect (after DOM)
+    let renderStart = 0;
+    let renderCount = 0;
+    $effect.pre(() => {
+        // Track dependencies - runs before DOM update
+        exampleTokens;
+        paginatedIndices;
+        renderStart = performance.now();
+        renderCount++;
+        console.log(`[timing] PagedTable pre-render #${renderCount}`);
+    });
+
+    $effect(() => {
+        // Runs after DOM update
+        exampleTokens;
+        paginatedIndices;
+        if (renderStart > 0) {
+            console.log(`[timing] PagedTable render #${renderCount}: ${(performance.now() - renderStart).toFixed(2)}ms (${paginatedIndices.length} items)`);
+        }
+    });
+
+    let totalPages = $derived(Math.ceil(filteredIndices.length / pageSize));
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -59,9 +96,9 @@
         if (currentPage < totalPages - 1) currentPage++;
     }
 
-    // Reset to page 0 when examples, page size, or filter changes
+    // Reset to page 0 when data, page size, or filter changes
     $effect(() => {
-        if (examples) currentPage = 0;
+        if (exampleTokens) currentPage = 0;
     });
 
     $effect(() => {
@@ -102,15 +139,19 @@
             <label for="token-filter">Filter by token:</label>
             <select id="token-filter" bind:value={tokenFilter}>
                 <option value="">All tokens</option>
-                {#each allActivatingTokens as token (token)}
+                {#each activatingTokens as token (token)}
                     <option value={token}>{token}</option>
                 {/each}
             </select>
         </div>
     </div>
     <div class="examples">
-        {#each paginatedExamples as example (example.__id)}
-            <ActivationContextComponent {example} />
+        {#each paginatedIndices as idx (idx)}
+            <ActivationContextComponent
+                tokenStrings={exampleTokens[idx]}
+                tokenCi={exampleCi[idx]}
+                activePosition={exampleActivePos[idx]}
+            />
         {/each}
     </div>
 </div>

@@ -1,4 +1,5 @@
 import json
+import time
 import traceback
 import uuid
 from collections.abc import Generator
@@ -11,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
+from spd.app.backend.lib.timing import clear_timing_file, log_timing, timed
 from spd.app.backend.schemas import (
     HarvestMetadata,
     ModelActivationContexts,
@@ -21,6 +23,7 @@ from spd.app.backend.schemas import (
 from spd.app.backend.services.run_context_service import RunContextService
 
 run_context_service = RunContextService()
+run_context_service.load_run("goodfire/spd/jyo9duz5")
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -58,7 +61,8 @@ def get_status() -> Status:
 @app.post("/runs/load")
 @handle_errors
 def load_run(wandb_run_path: str):
-    run_context_service.load_run(unquote(wandb_run_path))
+    with timed("load_run", wandb_path=unquote(wandb_run_path)):
+        run_context_service.load_run(unquote(wandb_run_path))
 
 
 @app.get("/activation_contexts/subcomponents")
@@ -74,6 +78,7 @@ def get_subcomponent_activation_contexts(
         raise HTTPException(status_code=400, detail="No training run loaded")
 
     def generate() -> Generator[str]:
+        harvest_start = time.perf_counter()
         for res in get_activations_data_streaming(
             run_context,
             importance_threshold,
@@ -87,27 +92,39 @@ def get_subcomponent_activation_contexts(
                     progress_data = {"type": "progress", "current": data, "total": n_batches}
                     yield f"data: {json.dumps(progress_data)}\n\n"
                 case ("complete", data):
+                    harvest_duration = (time.perf_counter() - harvest_start) * 1000
+                    log_timing(
+                        "harvest_complete",
+                        harvest_duration,
+                        n_batches=n_batches,
+                        batch_size=batch_size,
+                    )
+
                     # Generate harvest ID and cache the full result
                     harvest_id = str(uuid.uuid4())
                     harvest_cache[harvest_id] = data
 
                     # Build lightweight metadata response using Pydantic
-                    metadata = HarvestMetadata(
-                        harvest_id=harvest_id,
-                        layers={
-                            layer_name: [
-                                SubcomponentMetadata(
-                                    subcomponent_idx=subcomp.subcomponent_idx,
-                                    mean_ci=subcomp.mean_ci,
-                                )
-                                for subcomp in subcomponents
-                            ]
-                            for layer_name, subcomponents in data.layers.items()
-                        },
-                    )
+                    with timed("build_metadata"):
+                        metadata = HarvestMetadata(
+                            harvest_id=harvest_id,
+                            layers={
+                                layer_name: [
+                                    SubcomponentMetadata(
+                                        subcomponent_idx=subcomp.subcomponent_idx,
+                                        mean_ci=subcomp.mean_ci,
+                                    )
+                                    for subcomp in subcomponents
+                                ]
+                                for layer_name, subcomponents in data.layers.items()
+                            },
+                        )
 
-                    complete_data = {"type": "complete", "result": metadata.model_dump()}
-                    yield f"data: {json.dumps(complete_data)}\n\n"
+                    with timed("serialize_metadata"):
+                        complete_data = {"type": "complete", "result": metadata.model_dump()}
+                        payload = f"data: {json.dumps(complete_data)}\n\n"
+
+                    yield payload
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -122,25 +139,34 @@ def get_component_detail(
     harvest_id: str, layer: str, component_idx: int
 ) -> SubcomponentActivationContexts:
     """Lazy-load endpoint for single component data"""
-    if (cached_data := harvest_cache.get(harvest_id)) is None:
-        raise HTTPException(status_code=404, detail="Harvest ID not found")
+    with timed("get_component_detail", layer=layer, component_idx=component_idx):
+        if (cached_data := harvest_cache.get(harvest_id)) is None:
+            raise HTTPException(status_code=404, detail="Harvest ID not found")
 
-    if (layer_data := cached_data.layers.get(layer)) is None:
-        raise HTTPException(status_code=404, detail=f"Layer '{layer}' not found")
+        if (layer_data := cached_data.layers.get(layer)) is None:
+            raise HTTPException(status_code=404, detail=f"Layer '{layer}' not found")
 
-    # Find the component by index
-    component = None
-    for subcomp in layer_data:
-        if subcomp.subcomponent_idx == component_idx:
-            component = subcomp
-            break
+        # Find the component by index
+        component = None
+        for subcomp in layer_data:
+            if subcomp.subcomponent_idx == component_idx:
+                component = subcomp
+                break
 
-    if component is None:
-        raise HTTPException(
-            status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
-        )
+        if component is None:
+            raise HTTPException(
+                status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
+            )
 
-    return component
+        return component
+
+
+@app.post("/timing/clear")
+@handle_errors
+def clear_timing():
+    """Clear the timing log file"""
+    clear_timing_file()
+    return {"status": "cleared"}
 
 
 @app.get("/")

@@ -1,20 +1,17 @@
 <script lang="ts">
-    import type { ActivationContext } from "../lib/api";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
-        example: ActivationContext;
+        tokenStrings: string[];
+        tokenCi: number[];  // CI values scaled by 100
+        activePosition: number;
     }
 
-    let { example }: Props = $props();
+    let { tokenStrings, tokenCi, activePosition }: Props = $props();
 </script>
 
 <div class="example-item">
-    <TokenHighlights
-        tokenStrings={example.token_strings}
-        tokenCiValues={example.token_ci_values}
-        activePosition={example.active_position}
-    />
+    <TokenHighlights {tokenStrings} {tokenCi} {activePosition} />
 </div>
 
 <style>

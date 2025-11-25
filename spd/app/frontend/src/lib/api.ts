@@ -1,3 +1,5 @@
+import { logTiming } from "./timing";
+
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export type TrainRun = {
@@ -25,29 +27,23 @@ export async function loadRun(wandbRunPath: string): Promise<void> {
     }
 }
 
-export type ActivationContext = {
-    token_strings: string[];
-    token_ci_values: number[];
-    active_position: number;
-    ci_value: number;
-    __id: string;
-};
-
+// Columnar data structure for efficiency
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
-    examples: ActivationContext[];
-    token_prs: TokenPR[];
     mean_ci: number;
+    // Examples - columnar arrays (n_examples, window_size)
+    example_tokens: string[][];      // [n_examples][window_size]
+    example_ci: number[][];          // [n_examples][window_size]
+    example_active_pos: number[];    // [n_examples]
+    example_active_ci: number[];     // [n_examples]
+    // Token precision/recall - columnar arrays sorted by recall descending
+    pr_tokens: string[];             // [n_unique_tokens]
+    pr_recalls: number[];            // [n_unique_tokens]
+    pr_precisions: number[];         // [n_unique_tokens]
 };
 
 export type ModelActivationContexts = {
     layers: Record<string, SubcomponentActivationContexts[]>;
-};
-
-export type TokenPR = {
-    token: string;
-    recall: number;
-    precision: number;
 };
 
 export type ActivationContextsConfig = {
@@ -75,12 +71,7 @@ export type HarvestMetadata = {
 };
 
 // Full component detail (matches SubcomponentActivationContexts on backend)
-export type ComponentDetail = {
-    subcomponent_idx: number;
-    examples: ActivationContext[];
-    token_prs: TokenPR[];
-    mean_ci: number;
-};
+export type ComponentDetail = SubcomponentActivationContexts;
 
 // Streaming version with lazy-loading support
 export async function getSubcomponentActivationContexts(
@@ -148,19 +139,21 @@ export async function getComponentDetail(
     layer: string,
     componentIdx: number,
 ): Promise<ComponentDetail> {
+    const fetchStart = performance.now();
     const url = `${API_URL}/activation_contexts/${encodeURIComponent(harvestId)}/${encodeURIComponent(layer)}/${componentIdx}`;
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || `Failed to get component ${componentIdx} for layer ${layer}`);
     }
+    const fetchDuration = performance.now() - fetchStart;
 
-    const detail = (await response.json()) as ComponentDetail;
+    const parseStart = performance.now();
+    const result = (await response.json()) as ComponentDetail;
+    const parseDuration = performance.now() - parseStart;
 
-    // Add IDs to examples
-    for (const example of detail.examples) {
-        example.__id = crypto.randomUUID();
-    }
+    logTiming("fe_fetch_component", fetchDuration, { layer, componentIdx });
+    logTiming("fe_parse_component", parseDuration, { layer, componentIdx, n_examples: result.example_tokens.length });
 
-    return detail;
+    return result;
 }

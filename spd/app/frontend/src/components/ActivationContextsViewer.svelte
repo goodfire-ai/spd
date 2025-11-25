@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { ComponentDetail, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
+    import { logTiming } from "../lib/timing";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
 
     interface Props {
@@ -52,6 +53,14 @@
         return componentCache[cacheKey] ?? null;
     });
 
+    // Debug: inspect when currentItem changes
+    $inspect("Viewer", {
+        selectedLayer,
+        currentPage,
+        hasCurrentItem: !!currentItem,
+        nExamples: currentItem?.example_tokens.length ?? 0,
+    });
+
     function previousPage() {
         if (currentPage > 0) currentPage--;
     }
@@ -82,11 +91,15 @@
         loadingComponent = true;
 
         const load = async () => {
+            const loadStart = performance.now();
             try {
                 const detail = await api.getComponentDetail(harvestMetadata.harvest_id, layer, meta.subcomponent_idx);
 
                 if (cancelled) return;
+                const updateStart = performance.now();
                 componentCache[cacheKey] = detail; // writes to $state
+                logTiming("fe_cache_update", performance.now() - updateStart);
+                logTiming("fe_load_component_total", performance.now() - loadStart);
             } catch (error) {
                 if (!cancelled) console.error("Failed to load component:", error);
             } finally {
@@ -102,12 +115,23 @@
         };
     });
 
-    let densities = $derived(
-        currentItem?.token_prs
-            ?.slice()
-            .sort((a, b) => b[metricMode] - a[metricMode])
-            .slice(0, LIMIT),
-    );
+    // Build sorted token densities from columnar data
+    let densities = $derived.by(() => {
+        if (!currentItem) return null;
+        const n = currentItem.pr_tokens.length;
+        // Build array of indices and sort by metric
+        const indices = Array.from({ length: n }, (_, i) => i);
+        indices.sort((a, b) => {
+            const valA = metricMode === "recall" ? currentItem.pr_recalls[a] : currentItem.pr_precisions[a];
+            const valB = metricMode === "recall" ? currentItem.pr_recalls[b] : currentItem.pr_precisions[b];
+            return valB - valA;
+        });
+        return indices.slice(0, LIMIT).map((i) => ({
+            token: currentItem.pr_tokens[i],
+            recall: currentItem.pr_recalls[i],
+            precision: currentItem.pr_precisions[i],
+        }));
+    });
 </script>
 
 <div class="layer-select-section">
@@ -140,8 +164,8 @@
                 <div class="token-densities-header">
                     <h5>
                         Tokens
-                        {currentItem.token_prs.length > LIMIT
-                            ? `(top ${LIMIT} of ${currentItem.token_prs.length})`
+                        {currentItem.pr_tokens.length > LIMIT
+                            ? `(top ${LIMIT} of ${currentItem.pr_tokens.length})`
                             : ""}
                     </h5>
                     <div class="metric-toggle">
@@ -175,7 +199,12 @@
             </div>
         {/if}
 
-        <ActivationContextsPagedTable examples={currentItem.examples} />
+        <ActivationContextsPagedTable
+            exampleTokens={currentItem.example_tokens}
+            exampleCi={currentItem.example_ci}
+            exampleActivePos={currentItem.example_active_pos}
+            activatingTokens={currentItem.pr_tokens}
+        />
     </div>
 {/if}
 

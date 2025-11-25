@@ -16,6 +16,49 @@ from spd.utils.general_utils import runtime_cast
 
 DEVICE = get_device()
 
+# Tokenizer name -> decode strategy
+# "wordpiece": ## = continuation (strip ##), punctuation = no space, others = space prefix
+# "bpe": spaces encoded in token via Ġ, just decode directly
+TOKENIZER_STRATEGIES: dict[str, str] = {
+    "SimpleStories/test-SimpleStories-gpt2-1.25M": "wordpiece",
+    "openai-community/gpt2": "bpe",
+}
+
+# Characters that don't get a space prefix in wordpiece
+_PUNCT_NO_SPACE = set(".,!?;:'\")-]}>/")
+
+
+def _build_token_lookup(
+    tokenizer: PreTrainedTokenizer,
+    tokenizer_name: str | None,
+) -> dict[int, str]:
+    """Build token ID -> string lookup.
+
+    Uses tokenizer-specific strategy to produce strings that concatenate correctly.
+    """
+    strategy = TOKENIZER_STRATEGIES.get(tokenizer_name or "", "bpe")
+    lookup: dict[int, str] = {}
+
+    for tid in range(tokenizer.vocab_size):  # pyright: ignore[reportAttributeAccessIssue]
+        decoded = tokenizer.decode([tid], skip_special_tokens=False)  # pyright: ignore[reportAttributeAccessIssue]
+
+        if strategy == "wordpiece":
+            # WordPiece handling:
+            if decoded.startswith("##"):
+                # Continuation token - strip ## prefix, no space
+                lookup[tid] = decoded[2:]
+            elif decoded and decoded[0] in _PUNCT_NO_SPACE:
+                # Punctuation - no space prefix
+                lookup[tid] = decoded
+            else:
+                # Regular token - add space prefix
+                lookup[tid] = " " + decoded
+        else:
+            # BPE (GPT-2 style): spaces encoded in token via Ġ -> space
+            lookup[tid] = decoded
+
+    return lookup
+
 
 @dataclass
 class TrainRunContext:
@@ -25,6 +68,7 @@ class TrainRunContext:
     cm: ComponentModel
     tokenizer: PreTrainedTokenizer
     train_loader: DataLoader[Any]
+    token_strings: dict[int, str]  # Pre-built lookup for fast token stringification
 
 
 class RunContextService:
@@ -83,6 +127,11 @@ class RunContextService:
         cm.to(DEVICE)
         logger.info(f"Component model created on device: {DEVICE}")
 
+        # Pre-build token string lookup for fast stringification
+        vocab_size: int = tokenizer.vocab_size  # pyright: ignore[reportAttributeAccessIssue]
+        logger.info(f"Building token lookup table for vocab size {vocab_size}")
+        token_strings = _build_token_lookup(tokenizer, run_info.config.tokenizer_name)
+
         return TrainRunContext(
             wandb_id=wandb_path,
             wandb_path=wandb_path,
@@ -90,4 +139,5 @@ class RunContextService:
             cm=cm,
             tokenizer=tokenizer,
             train_loader=train_loader,
+            token_strings=token_strings,
         )
