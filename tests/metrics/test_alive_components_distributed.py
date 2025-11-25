@@ -20,6 +20,7 @@ from spd.utils.distributed_utils import (
     sync_across_processes,
     with_distributed_cleanup,
 )
+from tests.metrics.fixtures import PORT_TEST_ALIVE_COMPONENTS
 
 
 def _test_min_reduction():
@@ -232,27 +233,20 @@ class TestDistributedAliveComponentsTracker:
         """Run distributed tests via torchrun in subprocess."""
         script_path = Path(__file__).resolve()
 
-        # ports should be globally unique in tests to allow test parallelization
-        # see discussion at: https://github.com/goodfire-ai/spd/pull/186
-        env = {
-            "MASTER_ADDR": "127.0.0.1",
-            "MASTER_PORT": "29504",
-            "OMP_NUM_THREADS": "1",
-        }
-
         cmd = [
             "torchrun",
             "--standalone",
             "--nproc_per_node=2",
             "--master_port",
-            "29504",
-            sys.executable,
+            str(PORT_TEST_ALIVE_COMPONENTS),
             str(script_path),
         ]
 
-        result = subprocess.run(
-            cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=120
-        )
+        # disable cuda so we run on cpu:
+        new_env = os.environ.copy()
+        new_env["CUDA_VISIBLE_DEVICES"] = ""
+
+        result = subprocess.run(cmd, env=new_env, capture_output=True, text=True, timeout=120)
 
         if result.returncode != 0:
             print(f"STDOUT:\n{result.stdout}")

@@ -23,6 +23,7 @@ from spd.utils.distributed_utils import (
     init_distributed,
     sync_across_processes,
 )
+from tests.metrics.fixtures import PORT_TEST_GATHER_ALL_TENSORS
 
 
 def _test_gather_identical_shapes():
@@ -232,7 +233,7 @@ class TestGatherAllTensors:
             "--standalone",
             "--nproc_per_node=2",
             "--master_port",
-            "29503",
+            str(PORT_TEST_GATHER_ALL_TENSORS),
             str(script_path),
         ]
 
