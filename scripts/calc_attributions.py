@@ -327,6 +327,7 @@ n_blocks = 2
 batch_size = 512
 n_attribution_batches = 10
 n_alive_calc_batches = 200
+ci_mean_alive_threshold = 1e-6
 dataset_seed = 0
 
 out_dir = Path(__file__).parent / "out"
@@ -385,7 +386,7 @@ mean_cis, alive_indices, (img_linear, img_log) = compute_alive_components(
     device=device,
     config=config,
     max_batches=n_alive_calc_batches,
-    threshold=1e-6,
+    threshold=ci_mean_alive_threshold,
 )
 
 # Print summary
