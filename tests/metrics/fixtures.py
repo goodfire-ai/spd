@@ -98,6 +98,3 @@ def make_two_layer_component_model(
     )
 
     return comp_model
-
-
-# see discussion at: https://github.com/goodfire-ai/spd/pull/186
