@@ -53,29 +53,21 @@ def get_distributed_state() -> DistributedState | None:
         return None
 
 
-# todo handle cpu gloo cases here
-def init_distributed(backend: Literal["nccl", "gloo"]) -> DistributedState | None:
-    """Initialize distributed process group.
-
-    Args:
-        backend: Distributed backend to use ('nccl' or 'gloo'). If None, uses 'nccl' if CUDA is
-            available, otherwise 'gloo'.
-
-    Returns:
-        DistributedState
-    """
+def init_distributed() -> DistributedState | None:
     global _state
     assert _state is None, "Distributed state already initialized"
+    assert not dist.is_initialized()
+
+    backend = "nccl" if torch.cuda.is_available() else "gloo"
+    logger.info(f"init_distributed: using {backend=}")
 
     world_size = int(runtime_cast(str, os.environ.get("WORLD_SIZE")))
     rank = int(runtime_cast(str, os.environ.get("RANK")))
     local_rank = int(runtime_cast(str, os.environ.get("LOCAL_RANK")))
     device = torch.device(f"cuda:{local_rank}")
-    logger.info(f"init_distributed: {world_size=}, {rank=}, {local_rank=}, {device=}, {backend=}")
+    logger.info(f"init_distributed: {world_size=}, {rank=}, {local_rank=}, {device=}")
 
-    assert not dist.is_initialized()
     if backend == "nccl":
-        assert torch.cuda.is_available(), "CUDA is required for NCCL ddp backend"
         torch.cuda.set_device(device)
 
     assert (master_addr := os.environ.get("MASTER_ADDR")) is not None

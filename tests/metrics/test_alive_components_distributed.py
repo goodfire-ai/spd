@@ -187,7 +187,7 @@ def _test_multiple_modules():
 @with_distributed_cleanup
 def run_all_tests():
     """Run all distributed tests when called directly with torchrun."""
-    init_distributed(backend="gloo")
+    init_distributed()
     dist_state = get_distributed_state()
     assert dist_state is not None
     rank = dist_state.rank

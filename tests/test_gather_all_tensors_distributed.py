@@ -11,7 +11,6 @@ This file can be run in two ways:
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -179,7 +178,7 @@ def _test_gather_preserves_autograd():
 def run_all_tests():
     """Run all distributed tests when called directly with torchrun."""
     # Initialize distributed once for all tests
-    init_distributed(backend="gloo")
+    init_distributed()
     try:
         state = get_distributed_state()
         assert state is not None
@@ -222,39 +221,34 @@ def run_all_tests():
 class TestGatherAllTensors:
     """Pytest wrapper for gather_all_tensors tests."""
 
-    def testgather_all_tensors_distributed(self):
+    def test_gather_all_tensors_distributed(self):
         """Run distributed tests via torchrun in subprocess."""
         script_path = Path(__file__).resolve()
 
         # ports should be globally unique in tests to allow test parallelization
         # see discussion at: https://github.com/goodfire-ai/spd/pull/186
-        env = {
-            "MASTER_ADDR": "127.0.0.1",
-            "MASTER_PORT": "29503",
-            "OMP_NUM_THREADS": "1",
-        }
-
         cmd = [
             "torchrun",
             "--standalone",
             "--nproc_per_node=2",
             "--master_port",
             "29503",
-            sys.executable,
             str(script_path),
         ]
 
-        result = subprocess.run(
-            cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=120
-        )
+        # disable cuda so we run on cpu:
+        new_env = os.environ.copy()
+        new_env["CUDA_VISIBLE_DEVICES"] = ""
+
+        result = subprocess.run(cmd, env=new_env, capture_output=True, text=True, timeout=120)
 
         if result.returncode != 0:
             print(f"STDOUT:\n{result.stdout}")
             print(f"STDERR:\n{result.stderr}")
             raise RuntimeError(f"Distributed test failed with code {result.returncode}")
 
-        # Print output for visibility
-        print(result.stdout)
+        # Print output for visibility (torchrun outputs to stderr)
+        print(result.stderr)
 
 
 if __name__ == "__main__":

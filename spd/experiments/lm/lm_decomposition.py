@@ -44,7 +44,7 @@ def main(
         assert config_json is not None
         config = Config(**json.loads(config_json.removeprefix("json:")))
 
-    dist_state = init_distributed(backend="nccl")
+    dist_state = init_distributed()
     logger.info(f"Distributed state: {dist_state}")
 
     sweep_params = (
@@ -78,8 +78,6 @@ def main(
             out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
         logger.info(f"Output directory: {out_dir}")
         logger.info(config)
-        if dist_state is not None:
-            logger.info(f"Running distributed training with {dist_state.world_size} processes")
     else:
         out_dir = None
 

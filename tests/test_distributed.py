@@ -143,12 +143,6 @@ class TestDistributedDeterminicity:
         script_path = REPO_ROOT / "spd" / "experiments" / "lm" / "lm_decomposition.py"
         assert script_path.exists(), f"{script_path} not found"
 
-        env = {
-            "CUDA_VISIBLE_DEVICES": "",
-            "OMP_NUM_THREADS": "1",
-            "MASTER_ADDR": "127.0.0.1",
-        }
-
         cmd = [
             "torchrun",
             "--standalone",
@@ -159,9 +153,11 @@ class TestDistributedDeterminicity:
             str(config_path),
         ]
 
-        result = subprocess.run(
-            cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=300
-        )
+        # disable cuda so we run on cpu:
+        new_env = os.environ.copy()
+        new_env["CUDA_VISIBLE_DEVICES"] = ""
+
+        result = subprocess.run(cmd, env=new_env, capture_output=True, text=True, timeout=300)
 
         if result.returncode != 0:
             print(f"STDOUT: {result.stdout}")
