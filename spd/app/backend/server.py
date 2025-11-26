@@ -21,7 +21,6 @@ from spd.app.backend.schemas import (
 from spd.app.backend.services.run_context_service import RunContextService
 
 run_context_service = RunContextService()
-run_context_service.load_run("goodfire/spd/jyo9duz5")
 
 
 def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
@@ -70,13 +69,11 @@ def get_subcomponent_activation_contexts(
     n_tokens_either_side: int,
     topk_examples: int,
 ) -> StreamingResponse:
-    print("received request")
     run_context = run_context_service.train_run_context
     if run_context is None:
         raise HTTPException(status_code=400, detail="No training run loaded")
 
     def generate() -> Generator[str]:
-        print("starting generation")
         for res in get_activations_data_streaming(
             run_context,
             importance_threshold,
@@ -87,7 +84,6 @@ def get_subcomponent_activation_contexts(
         ):
             match res:
                 case ("progress", progress):
-                    print("progress", progress)
                     progress_data = {"type": "progress", "progress": progress}
                     yield f"data: {json.dumps(progress_data)}\n\n"
                 case ("complete", data):
@@ -111,10 +107,7 @@ def get_subcomponent_activation_contexts(
                     )
 
                     complete_data = {"type": "complete", "result": metadata.model_dump()}
-                    payload = f"data: {json.dumps(complete_data)}\n\n"
-
-                    yield payload
-        print("done")
+                    yield f"data: {json.dumps(complete_data)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

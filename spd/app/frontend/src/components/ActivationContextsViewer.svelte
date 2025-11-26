@@ -1,7 +1,6 @@
 <script lang="ts">
     import type { ComponentDetail, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
-    import { logTiming } from "../lib/timing";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
 
     interface Props {
@@ -73,15 +72,11 @@
         loadingComponent = true;
 
         const load = async () => {
-            const loadStart = performance.now();
             try {
                 const detail = await api.getComponentDetail(harvestMetadata.harvest_id, layer, meta.subcomponent_idx);
 
                 if (cancelled) return;
-                const updateStart = performance.now();
-                componentCache[cacheKey] = detail; // writes to $state
-                logTiming("fe_cache_update", performance.now() - updateStart);
-                logTiming("fe_load_component_total", performance.now() - loadStart);
+                componentCache[cacheKey] = detail;
             } catch (error) {
                 if (!cancelled) console.error("Failed to load component:", error);
             } finally {

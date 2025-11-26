@@ -1,5 +1,3 @@
-import { logTiming } from "./timing";
-
 export const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:8000";
 
 export type TrainRun = {
@@ -79,8 +77,6 @@ export async function getSubcomponentActivationContexts(
     onProgress?: (progress: ProgressUpdate) => void,
 ): Promise<HarvestMetadata> {
     const url = new URL(`${API_URL}/activation_contexts/subcomponents`);
-    console.log('fetching subcomponent activation contexts');
-    console.log(config);
     for (const [key, value] of Object.entries(config)) {
         url.searchParams.set(key, String(value));
     }
@@ -141,21 +137,11 @@ export async function getComponentDetail(
     layer: string,
     componentIdx: number,
 ): Promise<ComponentDetail> {
-    const fetchStart = performance.now();
     const url = `${API_URL}/activation_contexts/${encodeURIComponent(harvestId)}/${encodeURIComponent(layer)}/${componentIdx}`;
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || `Failed to get component ${componentIdx} for layer ${layer}`);
     }
-    const fetchDuration = performance.now() - fetchStart;
-
-    const parseStart = performance.now();
-    const result = (await response.json()) as ComponentDetail;
-    const parseDuration = performance.now() - parseStart;
-
-    logTiming("fe_fetch_component", fetchDuration, { layer, componentIdx });
-    logTiming("fe_parse_component", parseDuration, { layer, componentIdx, n_examples: result.example_tokens.length });
-
-    return result;
+    return (await response.json()) as ComponentDetail;
 }
