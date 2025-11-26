@@ -1,8 +1,5 @@
 """Simple timing utility that writes to a shared JSONL file."""
 
-import json
-import time
-from contextlib import contextmanager
 from pathlib import Path
 
 TIMING_FILE = Path(__file__).parent.parent.parent / "timing.jsonl"

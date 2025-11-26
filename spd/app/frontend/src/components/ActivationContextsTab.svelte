@@ -131,11 +131,9 @@
         <div class="loading">Loading...</div>
     {/if}
 
-    {#key harvestMetadata}
-        {#if harvestMetadata}
-            <ActivationContextsViewer {harvestMetadata} />
-        {/if}
-    {/key}
+    {#if harvestMetadata}
+        <ActivationContextsViewer {harvestMetadata} />
+    {/if}
 </div>
 
 <style>

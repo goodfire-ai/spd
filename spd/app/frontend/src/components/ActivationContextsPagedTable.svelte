@@ -14,7 +14,7 @@
 
     let currentPage = $state(0);
     let pageSize = $state(20);
-    let tokenFilter = $state("");
+    let tokenFilter = $state<string | null>(null);
 
     // Number of examples (guard against null during transitions)
     let nExamples = $derived(exampleTokens?.length ?? 0);
@@ -34,7 +34,7 @@
 
     // Filter example indices by token
     let filteredIndices = $derived.by(() => {
-        if (tokenFilter === "") {
+        if (tokenFilter === null) {
             return Array.from({ length: nExamples }, (_, i) => i);
         }
 
