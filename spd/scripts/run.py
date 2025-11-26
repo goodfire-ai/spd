@@ -9,7 +9,6 @@ The actual cli entry point is in run_cli.py. this is to speed up --help.
 """
 
 import copy
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -103,13 +102,19 @@ def launch_slurm_run(
         max_concurrent_tasks=n_agents,
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        array_script_path = temp_path / f"run_array_{run_id}.sh"
-        with open(array_script_path, "w") as f:
-            f.write(array_script_content)
-        array_script_path.chmod(0o755)
-        array_job_id = submit_slurm_array(array_script_path)
+    # Save script to permanent location for debugging
+    sbatch_scripts_dir = Path.home() / "sbatch_scripts"
+    sbatch_scripts_dir.mkdir(exist_ok=True)
+
+    array_script_path = sbatch_scripts_dir / f"run_array_{run_id}.sh"
+    with open(array_script_path, "w") as f:
+        f.write(array_script_content)
+    array_script_path.chmod(0o755)
+    array_job_id = submit_slurm_array(array_script_path)
+
+    # Rename script to include job ID for easier correlation with logs
+    final_script_path = sbatch_scripts_dir / f"{array_job_id}.sh"
+    array_script_path.rename(final_script_path)
 
     logger.section("Job submitted successfully!")
     logger.values(
@@ -118,6 +123,7 @@ def launch_slurm_run(
             "Total training jobs": len(training_jobs),
             "Max concurrent tasks": n_agents,
             "View logs in": f"~/slurm_logs/slurm-{array_job_id}_*.out",
+            "Script": str(final_script_path),
         }
     )
 
