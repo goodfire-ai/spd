@@ -21,6 +21,23 @@ from spd.plotting import plot_mean_component_cis_both_scales
 from spd.utils.general_utils import extract_batch_data
 
 
+def is_qkv_to_o_pair(in_layer: str, out_layer: str) -> bool:
+    """Check if pair requires per-sequence-position gradient computation.
+
+    For q/k/v → o_proj within the same attention block, output at s_out
+    has gradients w.r.t. inputs at all s_in ≤ s_out (causal attention).
+    """
+    in_is_qkv = any(x in in_layer for x in ["q_proj", "k_proj", "v_proj"])
+    out_is_o = "o_proj" in out_layer
+    if not (in_is_qkv and out_is_o):
+        return False
+
+    # Check same attention block: "h.{idx}.attn.{proj}"
+    in_block = in_layer.split(".")[1]
+    out_block = out_layer.split(".")[1]
+    return in_block == out_block
+
+
 # %%
 def compute_mean_ci_per_component(
     model: ComponentModel,
@@ -204,6 +221,7 @@ def get_valid_pairs(
     return valid_pairs
 
 
+# @profile
 def compute_global_attributions(
     model: ComponentModel,
     data_loader: Iterable[dict[str, Any]],
@@ -212,7 +230,7 @@ def compute_global_attributions(
     valid_pairs: list[tuple[str, str]],
     max_batches: int,
     alive_indices: dict[str, list[int]],
-    ci_threshold: float,
+    ci_attribution_threshold: float,
 ) -> dict[tuple[str, str], Tensor]:
     """Compute global attributions accumulated over the dataset.
 
@@ -228,14 +246,16 @@ def compute_global_attributions(
         valid_pairs: List of (in_layer, out_layer) pairs to compute attributions for.
         max_batches: Maximum number of batches to process.
         alive_indices: Dictionary mapping module path -> list of alive component indices.
-        ci_threshold: Threshold for considering a component for the attribution calculation.
+        ci_attribution_threshold: Threshold for considering a component for the attribution calculation.
     Returns:
         Dictionary mapping (in_layer, out_layer) -> attribution tensor of shape [n_alive_in, n_alive_out]
         where attribution[i, j] is the mean absolute gradient from the i-th alive input component to the j-th alive output component.
     """
 
     # Initialize accumulators for each valid pair
+    # Track samples separately per pair since attention pairs aggregate differently
     attribution_sums: dict[tuple[str, str], Float[Tensor, "n_alive_in n_alive_out"]] = {}
+    samples_per_pair: dict[tuple[str, str], int] = {}
     for pair in valid_pairs:
         in_layer, out_layer = pair
         n_alive_in = len(alive_indices[in_layer])
@@ -243,8 +263,7 @@ def compute_global_attributions(
         attribution_sums[(in_layer, out_layer)] = torch.zeros(
             n_alive_in, n_alive_out, device=device
         )
-
-    total_samples = 0  # Track total (batch * seq) samples processed
+        samples_per_pair[(in_layer, out_layer)] = 0
 
     batch_pbar = tqdm(enumerate(data_loader), desc="Batches", total=max_batches)
     for batch_idx, batch_raw in batch_pbar:
@@ -254,7 +273,6 @@ def compute_global_attributions(
         batch: Float[Tensor, "b s C"] = extract_batch_data(batch_raw).to(device)
 
         batch_size, n_seq = batch.shape
-        total_samples += batch_size * n_seq
 
         # Forward pass to get pre-weight activations
         with torch.no_grad():
@@ -287,49 +305,91 @@ def compute_global_attributions(
         # Compute attributions for each valid pair
         for in_layer, out_layer in tqdm(valid_pairs, desc="Layer pairs", leave=False):
             out_pre_detach: Float[Tensor, "b s C"] = cache[f"{out_layer}_pre_detach"]
-            weighted_out_pre_detach = out_pre_detach * ci.lower_leaky[out_layer].detach()
             in_post_detach: Float[Tensor, "b s C"] = cache[f"{in_layer}_post_detach"]
 
-            batch_attribution = torch.zeros(
-                len(alive_indices[in_layer]), len(alive_indices[out_layer]), device=device
-            )
-
             alive_out: list[int] = alive_indices[out_layer]
-            c_pbar = tqdm(
+            alive_in: list[int] = alive_indices[in_layer]
+            batch_attribution = torch.zeros(len(alive_in), len(alive_out), device=device)
+
+            ci_out = ci.lower_leaky[out_layer]
+            ci_in = ci.lower_leaky[in_layer]
+
+            ci_weighted_in_post_detach = in_post_detach * ci_in
+
+            is_attention_pair = is_qkv_to_o_pair(in_layer, out_layer)
+            tqdm.write(f"Attention pair: {in_layer} -> {out_layer}")
+
+            grad_outputs: Float[Tensor, "b s C"] = torch.zeros_like(out_pre_detach)
+
+            for c_enum, c_idx in tqdm(
                 enumerate(alive_out), desc="Components", leave=False, total=len(alive_out)
-            )
-            for c, c_idx in c_pbar:
-                n_grads_computed = 0
-                for s in range(n_seq):
-                    for b in range(batch_size):
-                        if ci.lower_leaky[out_layer][b, s, c_idx] <= ci_threshold:
+            ):
+                if is_attention_pair:
+                    # Attention pair: loop over output sequence positions because
+                    # output at s_out has gradients w.r.t. inputs at all s_in <= s_out
+                    for s_out in range(n_seq):
+                        torch.cuda.synchronize()
+                        if ci_out[:, s_out, c_idx].sum() <= ci_attribution_threshold:
                             continue
-                        # TODO: Handle the case with o_proj in numerator and other attn in denominator
-                        out_value = weighted_out_pre_detach[b, s, c_idx]
-                        grads: Float[Tensor, " C"] = torch.autograd.grad(
-                            outputs=out_value,
+                        torch.cuda.synchronize()
+                        grad_outputs.zero_()
+                        grad_outputs[:, s_out, c_idx] = ci_out[:, s_out, c_idx].detach()
+
+                        torch.cuda.synchronize()
+                        grads = torch.autograd.grad(
+                            outputs=out_pre_detach,
                             inputs=in_post_detach,
+                            grad_outputs=grad_outputs,
                             retain_graph=True,
                             allow_unused=True,
                         )[0]
+                        torch.cuda.synchronize()
                         assert grads is not None, "Gradient is None"
+
                         with torch.no_grad():
-                            act_weighted_grads: Float[Tensor, " C"] = (
-                                grads[b, s, :]
-                                * in_post_detach[b, s, :]
-                                * ci.lower_leaky[in_layer][b, s, :]
-                            )[alive_indices[in_layer]].pow(2)
-                            batch_attribution[:, c] += act_weighted_grads
-                        n_grads_computed += 1
-                tqdm.write(f"Computed {n_grads_computed} gradients for {in_layer} -> {out_layer}")
+                            weighted = grads * ci_weighted_in_post_detach
+                            # Only sum contributions from positions s_in <= s_out (causal)
+                            weighted_alive = weighted[:, : s_out + 1, alive_in]
+                            batch_attribution[:, c_enum] += weighted_alive.pow(2).sum(dim=(0, 1))
+                        torch.cuda.synchronize()
+                else:
+                    if ci_out[:, :, c_idx].sum() <= ci_attribution_threshold:
+                        continue
+                    # Standard case: vectorize over all (b, s) positions
+                    grad_outputs.zero_()
+                    grad_outputs[:, :, c_idx] = ci_out[:, :, c_idx].detach()
+
+                    grads = torch.autograd.grad(
+                        outputs=out_pre_detach,
+                        inputs=in_post_detach,
+                        grad_outputs=grad_outputs,
+                        retain_graph=True,
+                        allow_unused=True,
+                    )[0]
+                    assert grads is not None, "Gradient is None"
+
+                    with torch.no_grad():
+                        weighted = grads * in_post_detach * ci_in
+                        weighted_alive = weighted[:, :, alive_in]
+                        batch_attribution[:, c_enum] += weighted_alive.pow(2).sum(dim=(0, 1))
 
             attribution_sums[(in_layer, out_layer)] += batch_attribution
 
+            # Track samples: for attention pairs, we have batch_size * (1+2+...+n_seq) = batch_size * n_seq*(n_seq+1)/2
+            # input positions per batch (triangular sum due to causal masking).
+            # For standard pairs, we have batch_size * n_seq positions.
+            if is_attention_pair:
+                samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq * (n_seq + 1) // 2
+            else:
+                samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq
+
     global_attributions = {
-        pair: (attr_sum / total_samples).sqrt() for pair, attr_sum in attribution_sums.items()
+        pair: (attr_sum / samples_per_pair[pair]).sqrt()
+        for pair, attr_sum in attribution_sums.items()
     }
 
-    print(f"Computed global attributions over {total_samples} samples")
+    total_samples = sum(samples_per_pair.values()) // len(valid_pairs) if valid_pairs else 0
+    print(f"Computed global attributions over ~{total_samples} samples per pair")
     return global_attributions
 
 
@@ -339,13 +399,13 @@ def compute_global_attributions(
 # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
 wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L
 n_blocks = 1
-batch_size = 20
+batch_size = 32
 # n_attribution_batches = 20
 n_attribution_batches = 2
 n_alive_calc_batches = 5
 # n_alive_calc_batches = 200
 ci_mean_alive_threshold = 1e-6
-ci_attribution_threshold = 1e-3
+ci_attribution_threshold = 1e-6
 dataset_seed = 0
 
 out_dir = Path(__file__).parent / "out"
@@ -430,7 +490,7 @@ global_attributions = compute_global_attributions(
     valid_pairs=valid_pairs,
     max_batches=n_attribution_batches,
     alive_indices=alive_indices,
-    ci_threshold=ci_mean_alive_threshold,
+    ci_attribution_threshold=ci_attribution_threshold,
 )
 
 # Print summary statistics
