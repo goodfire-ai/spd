@@ -87,16 +87,17 @@ def get_command(
         # Single-node DDP
         command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {job.script_path} "
     else:
-        # Multi-node DDP
+        # Multi-node DDP via srun + torchrun (static launch)
+        # Each node runs torchrun with its node_rank from SLURM_NODEID
         n_nodes = n_gpus // GPUS_PER_NODE
         command = (
             f"srun "
             f"torchrun "
             f"--nnodes={n_nodes} "
+            f'--node_rank=$SLURM_NODEID '
             f"--nproc_per_node={GPUS_PER_NODE} "
-            f"--rdzv_id={run_id}_{job_idx} "
-            f"--rdzv_backend=c10d "
-            f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{port} '
+            f'--master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1) '
+            f"--master_port={port} "
             f"{job.script_path} "
         )
 
@@ -192,27 +193,32 @@ def create_slurm_array_script(
 # git clone {REPO_ROOT} "$WORK_DIR"
 
 # Change to the cloned repository directory
-# cd "$WORK_DIR"
+ cd "$WORK_DIR"
 
 # Copy the .env file from the original repository for WandB authentication
-# cp {REPO_ROOT}/.env .env
+ cp {REPO_ROOT}/.env .env
 
 # Checkout the snapshot branch to ensure consistent code
-# git checkout "{snapshot_branch}"
+ git checkout "{snapshot_branch}"
 
 # Ensure that dependencies are using the snapshot branch. SLURM might inherit the
 # parent environment, so we need to deactivate and unset the virtual environment.
-# echo "Deactivating virtual environment"
-# deactivate 2>/dev/null || true
-# unset VIRTUAL_ENV
+ echo "Deactivating virtual environment"
+ deactivate 2>/dev/null || true
+ unset VIRTUAL_ENV
 
 # echo "Syncing dependencies"
-# uv sync --no-dev --link-mode copy -q
+ uv sync --no-dev --link-mode copy -q
 
-# WORK_DIR="$HOME/spd/"
+ WORK_DIR="$HOME/spd/"
 
 echo "Activating virtual environment"
 source .venv/bin/activate
+
+echo "Debug: SLURM_NODEID=$SLURM_NODEID"
+echo "Debug: SLURM_PROCID=$SLURM_PROCID"
+echo "Debug: SLURM_JOB_NODELIST=$SLURM_JOB_NODELIST"
+echo "Debug: Master node=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)"
 
 echo "Running..."
 # Execute the appropriate command based on array task ID
