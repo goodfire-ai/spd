@@ -21,10 +21,7 @@ from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import REPO_ROOT
 from spd.utils.compute_utils import (
-    ComputeStrategy,
-    CpuOrSingleGpu,
-    MultiGpu,
-    MultiNode,
+    GPUS_PER_NODE,
     TrainingJob,
     create_slurm_array_script,
     submit_slurm_array,
@@ -43,7 +40,6 @@ def launch_slurm_run(
     job_suffix: str | None,
     cpu: bool,
     partition: str,
-    num_nodes: int | None,
     dp: int | None,
     project: str,
 ) -> None:
@@ -58,8 +54,7 @@ def launch_slurm_run(
         job_suffix: Suffix for SLURM job names
         cpu: Run on CPU instead of GPU
         partition: SLURM partition name (default: h200-reserved)
-        num_nodes: Number of nodes for multi-node training (requires 2+)
-        dp: Number of GPUs for single-node data parallelism (requires 2+)
+        dp: Number of GPUs for data parallelism. For multi-node, dp > 8 (must be divisible by 8).
         project: W&B project name
     """
 
@@ -69,8 +64,8 @@ def launch_slurm_run(
     experiments_list = _get_experiments(experiments)
     logger.info(f"Experiments: {', '.join(experiments_list)}")
 
-    compute_strategy = _build_compute_strategy(cpu=cpu, dp=dp, num_nodes=num_nodes)
-    logger.info(f"Running on {compute_strategy}")
+    n_gpus = _validate_and_get_n_gpus(cpu=cpu, dp=dp)
+    logger.info(f"Running on {_format_compute_info(n_gpus)}")
 
     sweep_params = _get_sweep_params(sweep)
     if sweep_params is not None:
@@ -103,7 +98,7 @@ def launch_slurm_run(
         training_jobs=training_jobs,
         sweep_params=sweep_params,
         snapshot_branch=snapshot_branch,
-        compute_strategy=compute_strategy,
+        n_gpus=n_gpus,
         partition=partition,
         max_concurrent_tasks=n_agents,
     )
@@ -263,32 +258,34 @@ def _get_experiments(
     return experiments
 
 
-def _build_compute_strategy(
-    cpu: bool,
-    dp: int | None,
-    num_nodes: int | None,
-) -> ComputeStrategy:
-    """Construct a compute strategy from CLI arguments."""
+def _validate_and_get_n_gpus(cpu: bool, dp: int | None) -> int | None:
+    """Validate dp argument and return the number of GPUs to use.
+
+    Returns None for CPU-only runs, otherwise returns the validated number of GPUs.
+    """
     if cpu:
         assert dp is None, "dp should not be specified when running on cpu"
-        assert num_nodes is None, "num_nodes should not be specified when running on cpu"
-        return CpuOrSingleGpu()
+        return None
 
-    match num_nodes, dp:
-        case None, None:
-            return CpuOrSingleGpu()
-        case None, dp:
-            assert dp >= 2, "if given, dp must be at least 2. pass dp=None to use a single GPU."
-            return MultiGpu(n_gpus=dp)
-        case num_nodes, None:
-            assert num_nodes >= 2, (
-                "if given, num_nodes must be at least 2. pass num_nodes=None to use a single node."
-            )
-            return MultiNode(n_nodes=num_nodes)
-        case _, _:
-            raise ValueError(
-                "Do not specify both num_nodes and dp. for multi-node runs, assume 8 GPUs per node."
-            )
+    if dp is None:
+        return None
+
+    assert dp >= 2, "if given, dp must be at least 2. pass dp=None to use a single GPU."
+    assert dp <= GPUS_PER_NODE or dp % GPUS_PER_NODE == 0, (
+        f"dp must be <= {GPUS_PER_NODE} (single node) or divisible by {GPUS_PER_NODE} (multi-node), "
+        f"got {dp}"
+    )
+    return dp
+
+
+def _format_compute_info(n_gpus: int | None) -> str:
+    """Format compute configuration for logging."""
+    if n_gpus is None:
+        return "single GPU"
+    if n_gpus <= GPUS_PER_NODE:
+        return f"{n_gpus} GPUs (single node)"
+    n_nodes = n_gpus // GPUS_PER_NODE
+    return f"{n_gpus} GPUs ({n_nodes} nodes x {GPUS_PER_NODE} GPUs)"
 
 
 def _get_sweep_params(sweep: str | bool) -> dict[str, Any] | None:

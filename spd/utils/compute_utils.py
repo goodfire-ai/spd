@@ -15,7 +15,7 @@ CUDA_FLAGS = {
     "NCCL_DEBUG": "WARN",
     "TORCH_NCCL_ASYNC_ERROR_HANDLING": "1",
 }
-N_GPUS_PER_NODE_MULTINODE = 8
+GPUS_PER_NODE = 8
 
 
 def get_config_json(config: Config) -> str:
@@ -33,22 +33,6 @@ class TrainingJob:
     experiment: str
     script_path: Path
     config: Config
-
-
-class CpuOrSingleGpu: ...
-
-
-@dataclass(frozen=True, slots=True)
-class MultiGpu:
-    n_gpus: int
-
-
-@dataclass(frozen=True, slots=True)
-class MultiNode:
-    n_nodes: int
-
-
-ComputeStrategy = CpuOrSingleGpu | MultiGpu | MultiNode
 
 
 def _choose_master_port(run_id_local: str, idx: int) -> int:
@@ -81,27 +65,40 @@ def get_command(
     run_id: str,
     job: TrainingJob,
     job_idx: int,
-    compute_strategy: ComputeStrategy,
+    n_gpus: int | None,
     sweep_params: dict[str, Any] | None,
 ) -> Command:
+    """Build the command to run a training job.
+
+    Args:
+        run_id: Unique identifier for the run.
+        job: The training job to run.
+        job_idx: Index of the job in the run.
+        n_gpus: Number of GPUs. None or 1 means single GPU/CPU. 2-8 means single-node DDP.
+                >8 means multi-node DDP (must be divisible by 8).
+        sweep_params: Optional sweep parameters to pass to the job.
+    """
     port = _choose_master_port(run_id, job_idx)
 
-    match compute_strategy:
-        case CpuOrSingleGpu():
-            command = f"python {job.script_path} "
-        case MultiGpu(n_gpus=n_gpus):
-            command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {job.script_path} "
-        case MultiNode(n_nodes=n_nodes):
-            command = (
-                f"srun "
-                f"torchrun "
-                f"--nnodes={n_nodes} "
-                f"--nproc_per_node={N_GPUS_PER_NODE_MULTINODE} "
-                f"--rdzv_id={run_id}_{job_idx} "
-                f"--rdzv_backend=c10d "
-                f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{port} '
-                f"{job.script_path} "
-            )
+    if n_gpus is None or n_gpus == 1:
+        # Single GPU or CPU
+        command = f"python {job.script_path} "
+    elif n_gpus <= GPUS_PER_NODE:
+        # Single-node DDP
+        command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {job.script_path} "
+    else:
+        # Multi-node DDP
+        n_nodes = n_gpus // GPUS_PER_NODE
+        command = (
+            f"srun "
+            f"torchrun "
+            f"--nnodes={n_nodes} "
+            f"--nproc_per_node={GPUS_PER_NODE} "
+            f"--rdzv_id={run_id}_{job_idx} "
+            f"--rdzv_backend=c10d "
+            f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{port} '
+            f"{job.script_path} "
+        )
 
     command += (
         f"--config_json '{get_config_json(job.config)}' "
@@ -121,7 +118,7 @@ def create_slurm_array_script(
     training_jobs: list[TrainingJob],
     sweep_params: dict[str, Any] | None,
     snapshot_branch: str,
-    compute_strategy: ComputeStrategy,
+    n_gpus: int | None,
     partition: str,
     max_concurrent_tasks: int | None = None,
 ) -> str:
@@ -129,9 +126,12 @@ def create_slurm_array_script(
 
     Args:
         slurm_job_name: Name for the SLURM job array
-        run: Run containing jobs to execute
+        run_id: Unique identifier for the run.
+        training_jobs: List of training jobs to execute.
+        sweep_params: Optional sweep parameters to pass to the jobs.
         snapshot_branch: Git branch to checkout.
-        compute_strategy: Compute strategy for the jobs.
+        n_gpus: Number of GPUs. None or 1 means single GPU. 2-8 means single-node DDP.
+                >8 means multi-node DDP (must be divisible by 8).
         partition: SLURM partition to use.
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
@@ -149,7 +149,7 @@ def create_slurm_array_script(
     # Create case statement for commands (SLURM is 1-indexed, but we pass 0-indexed to get_command)
     case_block_lines = []
     for i, training_job in enumerate(training_jobs):
-        command = get_command(run_id, training_job, i, compute_strategy, sweep_params)
+        command = get_command(run_id, training_job, i, n_gpus, sweep_params)
         case_block_lines.append(f"{i + 1})\n")
         if command.env_vars is not None:
             for k, v in command.env_vars.items():
@@ -158,16 +158,16 @@ def create_slurm_array_script(
         case_block_lines.append("    ;;")
     case_block = "\n".join(case_block_lines)
 
-    match compute_strategy:
-        case CpuOrSingleGpu():
-            n_nodes = 1
-            gpus_per_task = 1
-        case MultiGpu(n_gpus=n):
-            n_nodes = 1
-            gpus_per_task = n
-        case MultiNode(n_nodes=n):
-            n_nodes = n
-            gpus_per_task = 8
+    # Compute SLURM resource allocation
+    if n_gpus is None or n_gpus == 1:
+        n_nodes = 1
+        gpus_per_task = 1
+    elif n_gpus <= GPUS_PER_NODE:
+        n_nodes = 1
+        gpus_per_task = n_gpus
+    else:
+        n_nodes = n_gpus // GPUS_PER_NODE
+        gpus_per_task = GPUS_PER_NODE
 
     script_content = f"""\
 #!/bin/bash

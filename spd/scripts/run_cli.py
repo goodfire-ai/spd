@@ -12,7 +12,6 @@ def main(
     job_suffix: str | None = None,
     cpu: bool = False,
     partition: str = DEFAULT_PARTITION_NAME,
-    nodes: int | None = None,
     dp: int | None = None,
     project: str = DEFAULT_PROJECT_NAME,
 ) -> None:
@@ -53,11 +52,11 @@ def main(
     # Run all experiments on CPU
     spd-run --experiments tms_5-2 --cpu
 
-    # Run with data parallelism over 4 GPUs (only supported for lm experiments)
+    # Run with data parallelism over 4 GPUs (single node)
     spd-run --experiments ss_llama_simple --dp 4
 
-    # Run with multi-node training over 2 nodes (only supported for lm experiments)
-    spd-run --experiments ss_llama_simple --nodes 2
+    # Run with multi-node training over 16 GPUs (2 nodes x 8 GPUs each)
+    spd-run --experiments ss_llama_simple --dp 16
 
     """
     from spd.scripts.run import launch_slurm_run
@@ -71,7 +70,6 @@ def main(
         job_suffix=job_suffix,
         cpu=cpu,
         partition=partition,
-        num_nodes=nodes,
         dp=dp,
         project=project,
     )

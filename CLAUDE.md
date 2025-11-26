@@ -199,11 +199,12 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
 
 ### Multi-Node Training
 
-For large-scale experiments, use multi-node DDP:
+For large-scale experiments, use multi-node DDP via the `--dp` flag. When dp > 8, multiple nodes are used automatically (dp must be divisible by 8 for multi-node):
 
 ```bash
-spd-run --experiments ss_llama_simple --num_nodes 2    # 2 nodes, 8 GPUs each
-spd-run --experiments gpt2 --dp 4                      # Single node, 4 GPUs
+spd-run --experiments gpt2 --dp 4                       # Single node, 4 GPUs
+spd-run --experiments ss_llama_simple --dp 16           # 2 nodes x 8 GPUs each
+spd-run --experiments ss_llama_simple --dp 24           # 3 nodes x 8 GPUs each
 ```
 
 ### Additional Options
