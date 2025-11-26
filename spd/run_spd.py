@@ -164,7 +164,7 @@ def optimize(
     dist_state = get_distributed_state()
     wrapped_model: nn.Module = model
     if dist_state is not None:
-        if device.startswith("cuda"):
+        if dist_state.backend == "nccl":
             device_id = dist_state.local_rank
             wrapped_model = torch.nn.parallel.DistributedDataParallel(
                 model,
