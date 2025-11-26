@@ -51,7 +51,7 @@
 
     // Reset page when layer changes
     $effect(() => {
-        selectedLayer; // dependency
+        selectedLayer; // eslint-disable-line @typescript-eslint/no-unused-expressions
         currentPage = 0;
     });
 

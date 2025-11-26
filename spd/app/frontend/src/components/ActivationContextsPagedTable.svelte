@@ -70,9 +70,9 @@
 
     // Reset to page 0 when data, page size, or filter changes
     $effect(() => {
-        exampleTokens;
-        pageSize;
-        tokenFilter;
+        exampleTokens; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        pageSize; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        tokenFilter; // eslint-disable-line @typescript-eslint/no-unused-expressions
         currentPage = 0;
     });
 </script>
