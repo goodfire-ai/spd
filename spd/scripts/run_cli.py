@@ -18,30 +18,47 @@ def main(
 ) -> None:
     """Run SPD experiments on SLURM cluster with optional sweeps.
 
+    Available experiments:
+    - tms_5-2
+    - tms_5-2-id
+    - tms_40-10
+    - tms_40-10-id
+    - resid_mlp1
+    - resid_mlp2
+    - resid_mlp3
+    - ss_llama_simple
+    - ss_gpt2
+    - ss_gpt2_simple
+    - ss_gpt2_simple_noln
+    - gpt2
+    - ts
+
     Examples:
-        # Run subset of experiments (no sweep)
-        spd-run --experiments tms_5-2,resid_mlp1
 
-        # Run parameter sweep on a subset of experiments with default sweep_params.yaml
-        spd-run --experiments tms_5-2,resid_mlp2 --sweep
+    # Run subset of experiments (no sweep)
+    spd-run --experiments tms_5-2,resid_mlp1
 
-        # Run parameter sweep on an experiment with custom sweep params at spd/scripts/my_sweep.yaml
-        spd-run --experiments tms_5-2 --sweep my_sweep.yaml
+    # Run parameter sweep on a subset of experiments with default sweep_params.yaml
+    spd-run --experiments tms_5-2,resid_mlp2 --sweep
 
-        # Run all experiments (no sweep)
-        spd-run
+    # Run parameter sweep on an experiment with custom sweep params at spd/scripts/my_sweep.yaml
+    spd-run --experiments tms_5-2 --sweep my_sweep.yaml
 
-        # Use custom W&B project
-        spd-run --experiments tms_5-2 --project my-spd-project
+    # Run all experiments (no sweep)
+    spd-run
 
-        # Run all experiments on CPU
-        spd-run --experiments tms_5-2 --cpu
+    # Use custom W&B project
+    spd-run --experiments tms_5-2 --project my-spd-project
 
-        # Run with data parallelism over 4 GPUs (only supported for lm experiments)
-        spd-run --experiments ss_llama_simple --dp 4
+    # Run all experiments on CPU
+    spd-run --experiments tms_5-2 --cpu
 
-        # Run with multi-node training over 2 nodes (only supported for lm experiments)
-        spd-run --experiments ss_llama_simple --nodes 2
+    # Run with data parallelism over 4 GPUs (only supported for lm experiments)
+    spd-run --experiments ss_llama_simple --dp 4
+
+    # Run with multi-node training over 2 nodes (only supported for lm experiments)
+    spd-run --experiments ss_llama_simple --nodes 2
+
     """
     from spd.scripts.run import launch_slurm_run
 
