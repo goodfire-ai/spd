@@ -301,6 +301,10 @@ class Config(BaseConfig):
         default=1,
         description="Number of steps to accumulate gradients over before updating parameters",
     )
+    grad_clip_norm: PositiveFloat | None = Field(
+        default=None,
+        description="If set, clip gradient norm to this value before each optimiser step",
+    )
 
     # --- Faithfulness Warmup ---
     faithfulness_warmup_steps: NonNegativeInt = Field(
