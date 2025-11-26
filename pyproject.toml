@@ -43,7 +43,7 @@ dev = [
 ]
 
 [project.scripts]
-spd-run = "spd.scripts.run:cli"
+spd-run = "spd.scripts.run_cli:cli"
 spd-local = "spd.scripts.run_local:cli"
 
 [build-system]
