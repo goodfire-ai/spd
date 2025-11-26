@@ -221,7 +221,6 @@ def get_valid_pairs(
     return valid_pairs
 
 
-# @profile
 def compute_global_attributions(
     model: ComponentModel,
     data_loader: Iterable[dict[str, Any]],
@@ -328,14 +327,11 @@ def compute_global_attributions(
                     # Attention pair: loop over output sequence positions because
                     # output at s_out has gradients w.r.t. inputs at all s_in <= s_out
                     for s_out in range(n_seq):
-                        torch.cuda.synchronize()
                         if ci_out[:, s_out, c_idx].sum() <= ci_attribution_threshold:
                             continue
-                        torch.cuda.synchronize()
                         grad_outputs.zero_()
                         grad_outputs[:, s_out, c_idx] = ci_out[:, s_out, c_idx].detach()
 
-                        torch.cuda.synchronize()
                         grads = torch.autograd.grad(
                             outputs=out_pre_detach,
                             inputs=in_post_detach,
@@ -343,7 +339,6 @@ def compute_global_attributions(
                             retain_graph=True,
                             allow_unused=True,
                         )[0]
-                        torch.cuda.synchronize()
                         assert grads is not None, "Gradient is None"
 
                         with torch.no_grad():
@@ -351,7 +346,6 @@ def compute_global_attributions(
                             # Only sum contributions from positions s_in <= s_out (causal)
                             weighted_alive = weighted[:, : s_out + 1, alive_in]
                             batch_attribution[:, c_enum] += weighted_alive.pow(2).sum(dim=(0, 1))
-                        torch.cuda.synchronize()
                 else:
                     if ci_out[:, :, c_idx].sum() <= ci_attribution_threshold:
                         continue
