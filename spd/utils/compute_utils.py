@@ -87,16 +87,17 @@ def get_command(
         # Single-node DDP
         command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {job.script_path} "
     else:
-        # Multi-node DDP
+        # Multi-node DDP via srun + torchrun (static launch)
+        # Each node runs torchrun with its node_rank from SLURM_NODEID
         n_nodes = n_gpus // GPUS_PER_NODE
         command = (
             f"srun "
             f"torchrun "
             f"--nnodes={n_nodes} "
+            f'--node_rank=$SLURM_NODEID '
             f"--nproc_per_node={GPUS_PER_NODE} "
-            f"--rdzv_id={run_id}_{job_idx} "
-            f"--rdzv_backend=c10d "
-            f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{port} '
+            f'--master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1) '
+            f"--master_port={port} "
             f"{job.script_path} "
         )
 
