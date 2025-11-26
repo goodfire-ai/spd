@@ -3,8 +3,8 @@ from unittest.mock import patch
 import torch
 from torch import Tensor
 
+from spd.configs import UniformKSubsetRoutingConfig
 from spd.metrics import ci_masked_recon_subset_loss
-from spd.routing import UniformKSubsetRouter
 from tests.metrics.fixtures import make_one_layer_component_model
 
 
@@ -81,7 +81,7 @@ class TestCIMaskedReconSubsetLoss:
                     batch=batch,
                     target_out=target_out,
                     ci=ci,
-                    router=UniformKSubsetRouter(device=batch.device),
+                    routing=UniformKSubsetRoutingConfig(),
                 )
                 actual_losses.append(actual_loss.item())
 

@@ -9,7 +9,7 @@ from spd.configs import SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
-from spd.routing import Router, StaticProbabilityRouter, UniformKSubsetRouter, get_subset_router
+from spd.routing import Router, get_subset_router
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
@@ -72,15 +72,11 @@ class CIMaskedReconSubsetLoss(Metric):
         model: ComponentModel,
         device: str,
         output_loss_type: Literal["mse", "kl"],
-        routing: Literal["uniform_k_subset"] | float,
+        routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        self.router = (
-            UniformKSubsetRouter(device=device)
-            if routing == "uniform_k_subset"
-            else StaticProbabilityRouter(device=device, p=routing)
-        )
+        self.router = get_subset_router(routing, device)
 
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)

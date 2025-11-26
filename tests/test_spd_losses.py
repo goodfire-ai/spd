@@ -5,6 +5,7 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.configs import UniformKSubsetRoutingConfig
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
@@ -16,7 +17,6 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import ComponentModel
-from spd.routing import UniformKSubsetRouter
 
 
 class TinyLinearModel(nn.Module):
@@ -384,7 +384,7 @@ class TestCIMaskedReconSubsetLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
-            router=UniformKSubsetRouter(device=batch.device),
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         # Subset routing should produce a valid loss
@@ -407,7 +407,7 @@ class TestCIMaskedReconSubsetLoss:
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
-                router=UniformKSubsetRouter(device=batch.device),
+                routing=UniformKSubsetRoutingConfig(),
             )
             for _ in range(3)
         ]
@@ -592,7 +592,7 @@ class TestStochasticReconSubsetLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
-            router=UniformKSubsetRouter(device=batch.device),
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         assert result >= 0.0
@@ -616,7 +616,7 @@ class TestStochasticReconSubsetLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
-            router=UniformKSubsetRouter(device=batch.device),
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         assert result >= 0.0
@@ -641,7 +641,7 @@ class TestStochasticReconSubsetLoss:
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=weight_deltas,
-                router=UniformKSubsetRouter(device=batch.device),
+                routing=UniformKSubsetRoutingConfig(),
             )
             for _ in range(3)
         ]

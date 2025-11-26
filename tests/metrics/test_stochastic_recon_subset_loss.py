@@ -3,10 +3,10 @@ from unittest.mock import patch
 import torch
 from torch import Tensor
 
-from spd.configs import SamplingType
+from spd.configs import SamplingType, UniformKSubsetRoutingConfig
 from spd.metrics import stochastic_recon_subset_loss
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.routing import Router, UniformKSubsetRouter
+from spd.routing import Router
 from tests.metrics.fixtures import make_one_layer_component_model
 
 
@@ -97,7 +97,7 @@ class TestStochasticReconSubsetLoss:
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=None,
-                router=UniformKSubsetRouter(device=batch.device),
+                routing=UniformKSubsetRoutingConfig(),
             )
 
             assert torch.allclose(actual_loss, torch.tensor(expected_loss), rtol=1e-5), (

@@ -119,6 +119,7 @@ class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
 
 class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
