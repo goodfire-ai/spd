@@ -38,7 +38,7 @@ class TestSPDRun:
         mock_submit_slurm_array,
     ):
         """Test that sweep runs create SLURM array jobs with sweep params."""
-        from spd.scripts.run import main
+        from spd.scripts.run_cli import main
 
         mock_create_git_snapshot.return_value = ("test-branch", "12345678")
         mock_create_slurm_array_script.return_value = "#!/bin/bash\necho test"

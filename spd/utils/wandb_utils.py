@@ -192,7 +192,7 @@ def ensure_project_exists(project: str) -> None:
         logger.info(f"Project '{project}' created successfully")
 
 
-def create_workspace_view(run_id: str, experiment_name: str, project: str = "spd") -> str:
+def create_workspace_view(run_id: str, experiment_name: str, project: str) -> str:
     """Create a wandb workspace view for an experiment."""
     # Use experiment-specific template if available
     template_url: str = WORKSPACE_TEMPLATES.get(experiment_name, WORKSPACE_TEMPLATES["default"])
@@ -224,7 +224,7 @@ def create_wandb_report(
     commit_hash: str | None,
     experiments: list[str],
     include_run_comparer: bool,
-    project: str = "spd",
+    project: str,
     report_total_width: int = 24,
 ) -> str:
     """Create a W&B report for the run."""
@@ -440,7 +440,7 @@ def create_view_and_report(
             branch_name=report_cfg.branch,
             commit_hash=report_cfg.commit_hash,
             experiments=experiments,
-            include_run_comparer=True,  # report_cfg.include_run_comparer,
+            include_run_comparer=True,
             project=project,
         )
 
