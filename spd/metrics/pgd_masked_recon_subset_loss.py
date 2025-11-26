@@ -5,11 +5,11 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import PGDConfig
+from spd.configs import PGDConfig, SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.routing import Router
+from spd.routing import get_subset_router
 from spd.utils.distributed_utils import all_reduce
 
 
@@ -22,7 +22,7 @@ def pgd_recon_subset_loss(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
-    router: Router,
+    routing: SubsetRoutingType,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = pgd_masked_recon_loss_update(
         model=model,
@@ -31,7 +31,7 @@ def pgd_recon_subset_loss(
         weight_deltas=weight_deltas,
         target_out=target_out,
         output_loss_type=output_loss_type,
-        router=router,
+        router=get_subset_router(routing, batch.device),
         pgd_config=pgd_config,
     )
     return sum_loss / n_examples
@@ -50,13 +50,13 @@ class PGDReconSubsetLoss(Metric):
         output_loss_type: Literal["mse", "kl"],
         use_delta_component: bool,
         pgd_config: PGDConfig,
-        router: Router,
+        routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
         self.use_delta_component: bool = use_delta_component
-        self.router = router
+        self.router = get_subset_router(routing, device)
 
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)

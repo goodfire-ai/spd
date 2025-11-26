@@ -36,7 +36,7 @@ def calc_stochastic_component_mask_info(
                 torch.rand(leading_dims, device=device, dtype=dtype),
             )
 
-    routing_masks = router.route(
+    routing_masks = router.get_masks(
         module_names=list(causal_importances.keys()),
         mask_shape=leading_dims,
     )

@@ -28,7 +28,7 @@ def pgd_masked_recon_loss_update(
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
     """
-    routing_masks = router.route(
+    routing_masks = router.get_masks(
         module_names=list(ci.keys()),
         mask_shape=next(iter(ci.values())).shape[:-1],
     )

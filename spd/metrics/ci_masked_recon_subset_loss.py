@@ -5,10 +5,11 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
-from spd.routing import Router
+from spd.routing import Router, StaticProbabilityRouter, UniformKSubsetRouter, get_subset_router
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
@@ -21,7 +22,7 @@ def _ci_masked_recon_subset_loss_update(
     ci: dict[str, Float[Tensor, "... C"]],
     router: Router,
 ) -> tuple[Float[Tensor, ""], int]:
-    subset_routing_masks = router.route(
+    subset_routing_masks = router.get_masks(
         module_names=model.target_module_paths,
         mask_shape=next(iter(ci.values())).shape[:-1],
     )
@@ -48,7 +49,7 @@ def ci_masked_recon_subset_loss(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
-    router: Router,
+    routing: SubsetRoutingType,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
         model=model,
@@ -56,7 +57,7 @@ def ci_masked_recon_subset_loss(
         batch=batch,
         target_out=target_out,
         ci=ci,
-        router=router,
+        router=get_subset_router(routing, batch.device),
     )
     return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
 
@@ -71,11 +72,15 @@ class CIMaskedReconSubsetLoss(Metric):
         model: ComponentModel,
         device: str,
         output_loss_type: Literal["mse", "kl"],
-        router: Router,
+        routing: Literal["uniform_k_subset"] | float,
     ) -> None:
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
-        self.router = router
+        self.router = (
+            UniformKSubsetRouter(device=device)
+            if routing == "uniform_k_subset"
+            else StaticProbabilityRouter(device=device, p=routing)
+        )
 
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)

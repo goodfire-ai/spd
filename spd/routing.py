@@ -5,12 +5,17 @@ import torch
 from jaxtyping import Bool, Int
 from torch import Tensor
 
+from spd.configs import (
+    StaticProbabilityRoutingConfig,
+    SubsetRoutingType,
+    UniformKSubsetRoutingConfig,
+)
 from spd.models.components import RoutingMasks
 
 
 class Router(ABC):
     @abstractmethod
-    def route(self, module_names: list[str], mask_shape: tuple[int, ...]) -> RoutingMasks:
+    def get_masks(self, module_names: list[str], mask_shape: tuple[int, ...]) -> RoutingMasks:
         pass
 
 
@@ -22,7 +27,7 @@ class UniformKSubsetRouter(Router):
         self.device = device
 
     @override
-    def route(
+    def get_masks(
         self, module_names: list[str], mask_shape: tuple[int, ...]
     ) -> dict[str, Bool[Tensor, "..."]]:
         return sample_uniform_k_subset_routing_masks(mask_shape, module_names, self.device)
@@ -30,7 +35,7 @@ class UniformKSubsetRouter(Router):
 
 class AllLayersRouter(Router):
     @override
-    def route(self, module_names: list[str], mask_shape: tuple[int, ...]) -> Literal["all"]:
+    def get_masks(self, module_names: list[str], mask_shape: tuple[int, ...]) -> Literal["all"]:
         return "all"
 
 
@@ -40,7 +45,7 @@ class StaticProbabilityRouter(Router):
         self.device = device
 
     @override
-    def route(
+    def get_masks(
         self, module_names: list[str], mask_shape: tuple[int, ...]
     ) -> dict[str, Bool[Tensor, "..."]]:
         """returns a { <layer>: [batch, seq] } dict of tensors, where each batch (batch_idx,
@@ -54,7 +59,7 @@ class LayerRouter(Router):
         self.layer_name = layer_name
 
     @override
-    def route(
+    def get_masks(
         self, module_names: list[str], mask_shape: tuple[int, ...]
     ) -> dict[str, Bool[Tensor, "..."]]:
         out = {}
@@ -127,10 +132,9 @@ def sample_uniform_k_subset_routing_masks(
     return {mod: perms[i] < k_modules_to_route for i, mod in enumerate(module_names)}
 
 
-def get_router(routing: Literal["uniform_k_subset"] | float, device: str) -> Router:
+def get_subset_router(routing: SubsetRoutingType, device: torch.device | str) -> Router:
     match routing:
-        case "uniform_k_subset":
+        case UniformKSubsetRoutingConfig():
             return UniformKSubsetRouter(device=device)
-        case float() | int():
-            assert 0 <= routing <= 1, "p must be between 0 and 1"
-            return StaticProbabilityRouter(p=float(routing), device=device)
+        case StaticProbabilityRoutingConfig(p=p):
+            return StaticProbabilityRouter(p=p, device=device)
