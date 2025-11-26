@@ -121,19 +121,21 @@
     {#if loading && progress}
         <div class="progress-container">
             <div class="progress-text">
-                Processing batch {progress.current + 1} of {progress.total}
+                Processing... {(progress.progress * 100).toFixed(1)}%
             </div>
             <div class="progress-bar">
-                <div class="progress-fill" style="width: {((progress.current + 1) / progress.total) * 100}%"></div>
+                <div class="progress-fill" style="width: {progress.progress * 100}%"></div>
             </div>
         </div>
     {:else if loading}
         <div class="loading">Loading...</div>
     {/if}
 
-    {#if harvestMetadata}
-        <ActivationContextsViewer {harvestMetadata} />
-    {/if}
+    {#key harvestMetadata}
+        {#if harvestMetadata}
+            <ActivationContextsViewer {harvestMetadata} />
+        {/if}
+    {/key}
 </div>
 
 <style>

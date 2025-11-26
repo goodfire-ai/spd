@@ -1,6 +1,6 @@
 import { logTiming } from "./timing";
 
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+export const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:8000";
 
 export type TrainRun = {
     wandb_path: string;
@@ -55,8 +55,8 @@ export type ActivationContextsConfig = {
 };
 
 export type ProgressUpdate = {
-    current: number;
-    total: number;
+    /** Progress as a float from 0.0 to 1.0 */
+    progress: number;
 };
 
 // New types for lazy-loading
@@ -79,6 +79,8 @@ export async function getSubcomponentActivationContexts(
     onProgress?: (progress: ProgressUpdate) => void,
 ): Promise<HarvestMetadata> {
     const url = new URL(`${API_URL}/activation_contexts/subcomponents`);
+    console.log('fetching subcomponent activation contexts');
+    console.log(config);
     for (const [key, value] of Object.entries(config)) {
         url.searchParams.set(key, String(value));
     }
@@ -113,7 +115,7 @@ export async function getSubcomponentActivationContexts(
             const data = JSON.parse(line.substring(6)); // Remove "data: " prefix
 
             if (data.type === "progress" && onProgress) {
-                onProgress({ current: data.current, total: data.total });
+                onProgress({ progress: data.progress });
             } else if (data.type === "complete") {
                 result = data.result as HarvestMetadata;
                 // Close the reader early - we got what we need

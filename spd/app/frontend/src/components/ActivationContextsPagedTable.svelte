@@ -1,11 +1,11 @@
 <script lang="ts">
-    import ActivationContextComponent from "./ActivationContext.svelte";
+    import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
         // Columnar data
-        exampleTokens: string[][];      // [n_examples][window_size]
-        exampleCi: number[][];          // [n_examples][window_size]
-        exampleActivePos: number[];     // [n_examples]
+        exampleTokens: string[][]; // [n_examples, window_size]
+        exampleCi: number[][]; // [n_examples, window_size]
+        exampleActivePos: number[]; // [n_examples]
         // Unique activating tokens (from pr_tokens, already sorted by recall)
         activatingTokens: string[];
     }
@@ -21,10 +21,11 @@
 
     // Update currentPage when page input changes
     function handlePageInput(event: Event) {
-        const target = event.target as HTMLInputElement;
-        const value = parseInt(target.value);
-        if (!isNaN(value) && value >= 1 && value <= totalPages) {
-            currentPage = value - 1;
+        const { value } = event.target as HTMLInputElement;
+        if (value === "") return;
+        const valueNum = parseInt(value);
+        if (!isNaN(valueNum) && valueNum >= 1 && valueNum <= totalPages) {
+            currentPage = valueNum - 1;
         } else {
             alert("something went wrong");
             currentPage = 0;
@@ -33,57 +34,28 @@
 
     // Filter example indices by token
     let filteredIndices = $derived.by(() => {
-        const startTime = performance.now();
+        if (tokenFilter === "") {
+            return Array.from({ length: nExamples }, (_, i) => i);
+        }
+
         const indices: number[] = [];
         for (let i = 0; i < nExamples; i++) {
-            if (!tokenFilter) {
-                indices.push(i);
-            } else {
-                const tokens = exampleTokens[i];
-                const ci = exampleCi[i];
-                for (let j = 0; j < tokens.length; j++) {
-                    if (tokens[j] === tokenFilter && ci[j] > 0) {
-                        indices.push(i);
-                        break;
-                    }
+            const tokens = exampleTokens[i];
+            const ci = exampleCi[i];
+            for (let j = 0; j < tokens.length; j++) {
+                if (tokens[j] === tokenFilter && ci[j] > 0) {
+                    indices.push(i);
+                    break;
                 }
             }
         }
-        console.log(`[timing] filteredIndices: ${(performance.now() - startTime).toFixed(2)}ms (${nExamples} examples)`);
         return indices;
     });
 
     let paginatedIndices = $derived.by(() => {
-        const startTime = performance.now();
         const start = currentPage * pageSize;
         const end = start + pageSize;
-        const result = filteredIndices.slice(start, end);
-        console.log(`[timing] paginatedIndices: ${(performance.now() - startTime).toFixed(2)}ms (${result.length} items)`);
-        return result;
-    });
-
-    // Debug: inspect reactive values
-    $inspect("PagedTable", { nExamples, pageSize, currentPage, paginatedCount: paginatedIndices.length });
-
-    // Measure render time using $effect.pre (before DOM) and $effect (after DOM)
-    let renderStart = 0;
-    let renderCount = 0;
-    $effect.pre(() => {
-        // Track dependencies - runs before DOM update
-        exampleTokens;
-        paginatedIndices;
-        renderStart = performance.now();
-        renderCount++;
-        console.log(`[timing] PagedTable pre-render #${renderCount}`);
-    });
-
-    $effect(() => {
-        // Runs after DOM update
-        exampleTokens;
-        paginatedIndices;
-        if (renderStart > 0) {
-            console.log(`[timing] PagedTable render #${renderCount}: ${(performance.now() - renderStart).toFixed(2)}ms (${paginatedIndices.length} items)`);
-        }
+        return filteredIndices.slice(start, end);
     });
 
     let totalPages = $derived(Math.ceil(filteredIndices.length / pageSize));
@@ -98,15 +70,10 @@
 
     // Reset to page 0 when data, page size, or filter changes
     $effect(() => {
-        if (exampleTokens) currentPage = 0;
-    });
-
-    $effect(() => {
-        if (pageSize) currentPage = 0;
-    });
-
-    $effect(() => {
-        if (tokenFilter !== undefined) currentPage = 0;
+        exampleTokens;
+        pageSize;
+        tokenFilter;
+        currentPage = 0;
     });
 </script>
 
@@ -147,11 +114,13 @@
     </div>
     <div class="examples">
         {#each paginatedIndices as idx (idx)}
-            <ActivationContextComponent
-                tokenStrings={exampleTokens[idx]}
-                tokenCi={exampleCi[idx]}
-                activePosition={exampleActivePos[idx]}
-            />
+            <div class="example-item">
+                <TokenHighlights
+                    tokenStrings={exampleTokens[idx]}
+                    tokenCi={exampleCi[idx]}
+                    activePosition={exampleActivePos[idx]}
+                />
+            </div>
         {/each}
     </div>
 </div>
@@ -250,5 +219,17 @@
     .page-input::-webkit-outer-spin-button {
         appearance: none;
         margin: 0;
+    }
+
+    .example-item {
+        font-family: monospace;
+        font-size: 14px;
+        line-height: 1.8;
+        color: #333;
+        padding: 0.5rem;
+        /* background: white; */
+        /* border-radius: 4px;
+        border: 1px solid #e9ecef; */
+        overflow: visible;
     }
 </style>

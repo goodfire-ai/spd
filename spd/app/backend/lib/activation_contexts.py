@@ -1,4 +1,6 @@
 import heapq
+import itertools
+import time
 from collections import defaultdict
 from collections.abc import Generator, Iterable
 from dataclasses import dataclass
@@ -6,6 +8,7 @@ from typing import Literal
 
 import numpy as np
 import torch
+import tqdm
 from jaxtyping import Float, Int
 from numpy.typing import NDArray
 
@@ -164,6 +167,9 @@ def roll_batch_size_1_into_x(
 
 DEFAULT_PAD_TOKEN_ID = 0
 
+# Minimum interval between progress updates (seconds)
+PROGRESS_THROTTLE_INTERVAL = 0.1
+
 
 def get_activations_data_streaming(
     run_context: TrainRunContext,
@@ -173,8 +179,13 @@ def get_activations_data_streaming(
     batch_size: int,
     topk_examples: int,
 ) -> Generator[
-    tuple[Literal["progress"], int] | tuple[Literal["complete"], ModelActivationContexts],
+    tuple[Literal["progress"], float] | tuple[Literal["complete"], ModelActivationContexts],
 ]:
+    logger.info(
+        f"Getting activations data: {n_batches=}, {importance_threshold=}, "
+        f"{n_tokens_either_side=}, {batch_size=}, {topk_examples=}"
+    )
+
     device = next(run_context.cm.parameters()).device
 
     # for each (module_name, component_idx), track:
@@ -205,6 +216,11 @@ def get_activations_data_streaming(
         batch_size=batch_size,
     )
 
+    last_progress_time = 0.0
+    n_modules = len(run_context.cm.target_module_paths)
+
+    pbar = tqdm.tqdm(total=n_batches * n_modules, desc="Processing batches", unit="batch,layer")
+
     for i in range(n_batches):
         batch: Int[torch.Tensor, "B S"] = next(batches)
         assert not batch.requires_grad, "Batch tensors with requires_grad are not supported"
@@ -223,7 +239,8 @@ def get_activations_data_streaming(
             run_context.cm, batch, run_context.config
         )
 
-        for module_name, ci in importances_by_module.items():
+        for module_idx, (module_name, ci) in enumerate(importances_by_module.items()):
+            pbar.update(1)
             assert ci.shape == (B, S, C), "Expected (B,S,C) per module"
 
             component_sum_cis[module_name] += ci.sum(dim=(0, 1))
@@ -323,9 +340,13 @@ def get_activations_data_streaming(
                     pad_token_id=pad_token_id,
                 )
 
-        # Yield progress update
-        logger.info(f"Processed batch {i + 1}/{n_batches}")
-        yield ("progress", i)
+            # Yield progress update within batch (throttled)
+            current_time = time.monotonic()
+            if current_time - last_progress_time >= PROGRESS_THROTTLE_INTERVAL:
+                # Progress: batch progress + fractional module progress within batch
+                progress = (i + (module_idx + 1) / n_modules) / n_batches
+                yield ("progress", progress)
+                last_progress_time = current_time
 
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
     for module_name in component_activation_tokens:

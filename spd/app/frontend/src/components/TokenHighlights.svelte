@@ -1,11 +1,11 @@
 <script lang="ts">
     interface Props {
         tokenStrings: string[];
-        tokenCi: number[];  // CI values (0-1 floats)
-        activePosition?: number;
+        tokenCi: number[]; // CI values (0-1 floats)
+        activePosition: number;
     }
 
-    let { tokenStrings, tokenCi, activePosition = -1 }: Props = $props();
+    let { tokenStrings, tokenCi, activePosition }: Props = $props();
 </script>
 
 <span class="token-highlights"
@@ -13,8 +13,7 @@
             class="token-highlight"
             class:active-token={i === activePosition}
             style="background-color:rgba(0,200,0,{tokenCi[i] * 0.5})"
-            data-ci="CI: {tokenCi[i].toFixed(3)}"
-            >{tok.startsWith("##") ? tok.slice(2) : ` ${tok}`}</span
+            data-ci="CI: {tokenCi[i].toFixed(3)}">{tok.startsWith("##") ? tok.slice(2) : ` ${tok}`}</span
         >{/each}</span
 >
 

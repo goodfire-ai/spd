@@ -5,17 +5,18 @@
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
 
     interface Props {
-        harvestMetadata: HarvestMetadata;
+        harvestMetadata: HarvestMetadata | undefined;
     }
 
     let { harvestMetadata }: Props = $props();
-    if (Object.keys(harvestMetadata.layers).length === 0) {
-        throw new Error("No layers data");
-    }
+
     const LIMIT = 20;
 
+    // let availableLayers = $derived(harvestMetadata ? Object.keys(harvestMetadata.layers) : []);
+    let availableLayers = $derived(Object.keys(harvestMetadata.layers));
     let currentPage = $state(0);
-    let selectedLayer = $derived(Object.keys(harvestMetadata.layers)[0]);
+    // let selectedLayer = $state<string | null>(harvestMetadata ? Object.keys(harvestMetadata.layers)[0] : null);
+    let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
     let metricMode = $state<"recall" | "precision">("recall");
 
     // Display page (1-indexed)
@@ -35,31 +36,30 @@
     let componentCache = $state<Record<string, ComponentDetail>>({});
     let loadingComponent = $state(false);
 
-    // Derive available layers from the data
-    let availableComponentLayers = $derived(Object.keys(harvestMetadata.layers));
-
     // Derive current metadata from selections
+    // let currentLayerMetadata = $derived(harvestMetadata && selectedLayer ? harvestMetadata.layers[selectedLayer] : []);
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
 
     // current page isn't reset to 0 instantly when layer changes, so we must handle the case when,
     // for a brief moment, the current page is out of bounds.
-    let currentMetadata = $derived<api.SubcomponentMetadata | null>(currentLayerMetadata.at(currentPage) ?? null);
+    // let currentMetadata = $derived<api.SubcomponentMetadata | null>(currentLayerMetadata.at(currentPage) ?? null);
+    let currentMetadata = $derived<api.SubcomponentMetadata>(currentLayerMetadata[currentPage]);
 
     // Get current component data from cache
     let currentItem = $derived.by(() => {
-        if (!currentMetadata) return null;
+        // if (!currentMetadata || !selectedLayer) return null;
         const cacheKey = `${selectedLayer}:${currentMetadata.subcomponent_idx}`;
         return componentCache[cacheKey] ?? null;
     });
 
-    // Debug: inspect when currentItem changes
-    $inspect("Viewer", {
-        selectedLayer,
-        currentPage,
-        hasCurrentItem: !!currentItem,
-        nExamples: currentItem?.example_tokens.length ?? 0,
-    });
+    // // Debug: inspect when currentItem changes
+    // $inspect("Viewer", {
+    //     selectedLayer,
+    //     currentPage,
+    //     hasCurrentItem: !!currentItem,
+    //     nExamples: currentItem?.example_tokens.length ?? 0,
+    // });
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -71,7 +71,8 @@
 
     // Reset page when layer changes
     $effect(() => {
-        if (selectedLayer) currentPage = 0;
+        selectedLayer; // dependency
+        currentPage = 0;
     });
 
     // Lazy-load component data when page or layer changes
@@ -137,7 +138,7 @@
 <div class="layer-select-section">
     <label for="layer-select">Layer:</label>
     <select id="layer-select" bind:value={selectedLayer}>
-        {#each availableComponentLayers as layer (layer)}
+        {#each availableLayers as layer (layer)}
             <option value={layer}>{layer}</option>
         {/each}
     </select>

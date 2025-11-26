@@ -1,0 +1,44 @@
+{"ts": 1764168253.2950606, "source": "backend", "event": "harvest_complete", "duration_ms": 1812.65, "n_batches": 1, "batch_size": 1}
+{"ts": 1764168253.3046994, "source": "backend", "event": "build_metadata", "duration_ms": 5.3}
+{"ts": 1764168253.3090959, "source": "backend", "event": "serialize_metadata", "duration_ms": 1.65}
+{"ts": 1764168253.9776402, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.0.attn.q_proj", "component_idx": 221}
+{"ts": 1764168839.5802612, "source": "backend", "event": "harvest_complete", "duration_ms": 24314.97, "n_batches": 1, "batch_size": 32}
+{"ts": 1764168839.5863144, "source": "backend", "event": "build_metadata", "duration_ms": 3.39}
+{"ts": 1764168839.5911274, "source": "backend", "event": "serialize_metadata", "duration_ms": 2.32}
+{"ts": 1764168840.1341183, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.0.attn.q_proj", "component_idx": 221}
+{"ts": 1764168879.3160517, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.0.attn.q_proj", "component_idx": 596}
+{"ts": 1764168880.088291, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.k_proj", "component_idx": 488}
+{"ts": 1764168881.8413286, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.k_proj", "component_idx": 323}
+{"ts": 1764168882.6866987, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.k_proj", "component_idx": 103}
+{"ts": 1764168882.9149158, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.k_proj", "component_idx": 470}
+{"ts": 1764168884.0930262, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.k_proj", "component_idx": 93}
+{"ts": 1764168885.169092, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.0.attn.k_proj", "component_idx": 589}
+{"ts": 1764168891.7056105, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.0.attn.k_proj", "component_idx": 17}
+{"ts": 1764168893.2529583, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.0.attn.k_proj", "component_idx": 550}
+{"ts": 1764168940.730001, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.1.attn.q_proj", "component_idx": 108}
+{"ts": 1764169058.0230846, "source": "backend", "event": "harvest_complete", "duration_ms": 2074.78, "n_batches": 1, "batch_size": 1}
+{"ts": 1764169058.0321815, "source": "backend", "event": "build_metadata", "duration_ms": 6.55}
+{"ts": 1764169058.0358055, "source": "backend", "event": "serialize_metadata", "duration_ms": 1.61}
+{"ts": 1764169058.5163472, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.q_proj", "component_idx": 221}
+{"ts": 1764169060.8468614, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.1.attn.v_proj", "component_idx": 316}
+{"ts": 1764169064.8131883, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.1.attn.v_proj", "component_idx": 658}
+{"ts": 1764170523.9451916, "source": "backend", "event": "harvest_complete", "duration_ms": 1797.14, "n_batches": 1, "batch_size": 1}
+{"ts": 1764170523.9539914, "source": "backend", "event": "build_metadata", "duration_ms": 5.37}
+{"ts": 1764170523.9580984, "source": "backend", "event": "serialize_metadata", "duration_ms": 1.61}
+{"ts": 1764170524.4155033, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.q_proj", "component_idx": 221}
+{"ts": 1764170565.6787572, "source": "backend", "event": "harvest_complete", "duration_ms": 1664.72, "n_batches": 1, "batch_size": 1}
+{"ts": 1764170565.991386, "source": "backend", "event": "build_metadata", "duration_ms": 310.29}
+{"ts": 1764170565.995413, "source": "backend", "event": "serialize_metadata", "duration_ms": 1.63}
+{"ts": 1764170566.3332543, "source": "backend", "event": "get_component_detail", "duration_ms": 0.01, "layer": "h.0.attn.q_proj", "component_idx": 221}
+{"ts": 1764170824.8046498, "source": "backend", "event": "harvest_complete", "duration_ms": 8083.73, "n_batches": 5, "batch_size": 1}
+{"ts": 1764170824.812932, "source": "backend", "event": "build_metadata", "duration_ms": 5.37}
+{"ts": 1764170824.8171198, "source": "backend", "event": "serialize_metadata", "duration_ms": 2.07}
+{"ts": 1764170825.265074, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.q_proj", "component_idx": 221}
+{"ts": 1764170976.2047591, "source": "backend", "event": "harvest_complete", "duration_ms": 1855.48, "n_batches": 1, "batch_size": 1}
+{"ts": 1764170976.2125437, "source": "backend", "event": "build_metadata", "duration_ms": 5.48}
+{"ts": 1764170976.2162294, "source": "backend", "event": "serialize_metadata", "duration_ms": 1.61}
+{"ts": 1764170976.7276068, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.q_proj", "component_idx": 221}
+{"ts": 1764171305.5858192, "source": "backend", "event": "harvest_complete", "duration_ms": 1811.83, "n_batches": 1, "batch_size": 1}
+{"ts": 1764171305.5935278, "source": "backend", "event": "build_metadata", "duration_ms": 5.5}
+{"ts": 1764171305.5976229, "source": "backend", "event": "serialize_metadata", "duration_ms": 1.61}
+{"ts": 1764171306.0392354, "source": "backend", "event": "get_component_detail", "duration_ms": 0.0, "layer": "h.0.attn.q_proj", "component_idx": 221}
