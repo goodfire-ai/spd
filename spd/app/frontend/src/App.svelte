@@ -5,7 +5,7 @@
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import { parseWandbRunPath } from "./lib";
 
-    let loadingTrainRun = $state<boolean | null>(null);
+    let loadingTrainRun = $state(false);
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>(null);
