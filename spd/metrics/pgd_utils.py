@@ -1,3 +1,5 @@
+from collections.abc import Callable, Iterator
+from functools import partial
 from typing import Literal
 
 import torch
@@ -5,16 +7,16 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import PGDConfig, PGDInitStrategy
-from spd.models.component_model import ComponentModel
-from spd.models.components import make_mask_infos
+from spd.configs import PGDConfig, PGDInitStrategy, PGDMultiBatchConfig, SamplingType
+from spd.log import logger
+from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
 
 
 def pgd_masked_recon_loss_update(
-    *,
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -28,71 +30,235 @@ def pgd_masked_recon_loss_update(
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
     """
-    routing_masks = router.get_masks(
-        module_names=list(ci.keys()),
-        mask_shape=next(iter(ci.values())).shape[:-1],
-    )
-
-    *batch_dims, C = next(iter(ci.values())).shape
+    C = model.C
+    batch_dims = next(iter(ci.values())).shape[:-1]
     n_layers = len(ci)
     # C2 represents the total number of components including the optional weight delta
     C2 = C if weight_deltas is None else C + 1
 
-    def objective_fn(
-        adv_sources: Float[Tensor, "n_layers *batch_dims C2"],
-    ) -> tuple[Float[Tensor, ""], int]:
-        adv_sources_components: Float[Tensor, "n_layers *batch_dims C"]
-        match weight_deltas:
-            case None:
-                weight_deltas_and_masks = None
-                adv_sources_components = adv_sources
-            case dict():
-                assert adv_sources.shape[-1] == C + 1
-                weight_deltas_and_masks = {
-                    k: (weight_deltas[k], adv_sources[i, ..., -1])
-                    for i, k in enumerate(weight_deltas)
-                }
-                adv_sources_components = adv_sources[..., :-1]
-
-        mask_infos = make_mask_infos(
-            component_masks=_interpolate_component_mask(ci, adv_sources_components),
-            weight_deltas_and_masks=weight_deltas_and_masks,
-            routing_masks=routing_masks,
-        )
-        out = model(batch, mask_infos=mask_infos)
-        total_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-        n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-        return total_loss, n_examples
+    routing_masks = router.get_masks(module_names=model.target_module_paths, mask_shape=batch_dims)
 
     # We create a single adv_sources tensor and index into it for each layer
     match pgd_config.mask_scope:
         case "unique_per_datapoint":
             adv_source_shape = torch.Size([n_layers, *batch_dims, C2])
         case "shared_across_batch":
-            adv_source_shape = torch.Size([n_layers] + [1 for _ in batch_dims] + [C2])
+            singleton_batch_dims = [1 for _ in batch_dims]
+            adv_source_shape = torch.Size([n_layers, *singleton_batch_dims, C2])
 
     adv_sources: Float[Tensor, "n_layers *batch_dims C2"] | Float[Tensor, "n_layers *1 C2"] = (
         _get_pgd_init_tensor(pgd_config.init, adv_source_shape, batch.device).requires_grad_(True)
     )
 
-    # PGD ascent
-    for _ in range(int(pgd_config.n_steps)):
+    fwd_pass = partial(
+        _forward_with_adv_sources,
+        model=model,
+        batch=batch,
+        adv_sources=adv_sources,
+        ci=ci,
+        weight_deltas=weight_deltas,
+        routing_masks=routing_masks,
+        target_out=target_out,
+        output_loss_type=output_loss_type,
+        batch_dims=batch_dims,
+    )
+
+    for _ in range(pgd_config.n_steps):
         assert adv_sources.grad is None
-
         with torch.enable_grad():
-            total_loss, _ = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
-            adv_sources_grads = torch.autograd.grad(total_loss, adv_sources)
-
-        assert isinstance(adv_sources_grads, tuple) and len(adv_sources_grads) == 1
-        reduced_adv_sources_grads = all_reduce(adv_sources_grads[0].clone(), op=ReduceOp.SUM)
+            sum_loss, n_examples = fwd_pass()
+            loss = sum_loss / n_examples
+        (adv_sources_grads,) = torch.autograd.grad(loss, adv_sources)
+        adv_sources_grads = all_reduce(adv_sources_grads, op=ReduceOp.SUM)
         with torch.no_grad():
-            adv_sources.add_(pgd_config.step_size * reduced_adv_sources_grads.sign())
+            adv_sources.add_(pgd_config.step_size * adv_sources_grads.sign())
             adv_sources.clamp_(0.0, 1.0)
 
-    total_loss, n_examples = objective_fn(adv_sources=adv_sources.expand(n_layers, *batch_dims, C2))
+    return fwd_pass()
 
-    # no need to all-reduce total_loss or n_examples bc consumers handle this
-    return total_loss, n_examples
+
+CreateDataIter = Callable[
+    [],
+    Iterator[Int[Tensor, "..."]] | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+]
+
+
+def calc_multibatch_pgd_masked_recon_loss(
+    pgd_config: PGDMultiBatchConfig,
+    model: ComponentModel,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    create_data_iter: CreateDataIter,
+    output_loss_type: Literal["mse", "kl"],
+    router: Router,
+    sampling: SamplingType,
+    use_delta_component: bool,
+    batch_dims: tuple[int, ...],
+    device: str,
+) -> Float[Tensor, ""]:
+    """PGD masked reconstruction loss with gradient accumulation over multiple batches.
+
+    This function optimizes adversarial masks by accumulating gradients over pgd_config.n_batches
+    batches before each PGD update step.
+
+    Args:
+        pgd_config: Multibatch PGD configuration
+        model: The ComponentModel to evaluate
+        create_data_iter: Function to create an iterator over batches. This function should return
+            an iterator which behaves identically each time. Specifically in terms of data ordering
+            and shuffling.
+        output_loss_type: Loss type for reconstruction ("mse" or "kl")
+        router: Router to use for routing masks
+        sampling: Sampling mode for causal importance calculation
+        use_delta_component: Whether to include weight delta component
+        batch_dims: Dimensions of batch (e.g., (batch_size,) or (batch_size, seq_len))
+    Returns:
+        Final reconstruction loss after PGD optimization
+    """
+    # C2 represents the total number of components including the optional weight delta
+    C2 = model.C if not use_delta_component else model.C + 1
+    n_layers = len(model.target_module_paths)
+    singleton_batch_dims = [1 for _ in batch_dims]
+    adv_source_shape = torch.Size([n_layers] + singleton_batch_dims + [C2])
+
+    adv_sources: Float[Tensor, "n_layers *ones C2"] = _get_pgd_init_tensor(
+        init=pgd_config.init, shape=adv_source_shape, device=device
+    ).requires_grad_(True)
+
+    fwd_bwd_fn = partial(
+        _multibatch_pgd_fwd_bwd,
+        adv_sources=adv_sources,
+        pgd_config=pgd_config,
+        model=model,
+        weight_deltas=weight_deltas,
+        device=device,
+        output_loss_type=output_loss_type,
+        sampling=sampling,
+        router=router,
+        batch_dims=batch_dims,
+    )
+
+    for _ in range(pgd_config.n_steps):
+        assert adv_sources.grad is None
+        _, _, adv_sources_grads = fwd_bwd_fn(data_iter=create_data_iter())
+
+        with torch.no_grad():
+            adv_sources.add_(pgd_config.step_size * adv_sources_grads.sign())
+            adv_sources.clamp_(0.0, 1.0)
+
+    final_loss, final_n_examples, _ = fwd_bwd_fn(data_iter=create_data_iter())
+    return final_loss / final_n_examples
+
+
+def _forward_with_adv_sources(
+    model: ComponentModel,
+    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+    adv_sources: Float[Tensor, "n_layers *batch_dim_or_ones C2"],
+    ci: dict[str, Float[Tensor, "... C"]],
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    routing_masks: RoutingMasks,
+    target_out: Float[Tensor, "... vocab"],
+    output_loss_type: Literal["mse", "kl"],
+    batch_dims: tuple[int, ...],
+):
+    expanded_adv_sources = adv_sources.expand(-1, *batch_dims, -1)
+    adv_sources_components: Float[Tensor, "n_layers *batch_dims C"]
+    match weight_deltas:
+        case None:
+            weight_deltas_and_masks = None
+            adv_sources_components = expanded_adv_sources
+        case dict():
+            weight_deltas_and_masks = {
+                k: (weight_deltas[k], expanded_adv_sources[i, ..., -1])
+                for i, k in enumerate(weight_deltas)
+            }
+            adv_sources_components = expanded_adv_sources[..., :-1]
+
+    mask_infos = make_mask_infos(
+        component_masks=_interpolate_component_mask(ci, adv_sources_components),
+        weight_deltas_and_masks=weight_deltas_and_masks,
+        routing_masks=routing_masks,
+    )
+    out = model(batch, mask_infos=mask_infos)
+
+    sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+
+    n_examples = (
+        target_out.shape.numel() if output_loss_type == "mse" else target_out.shape[:-1].numel()
+    )
+
+    return sum_loss, n_examples
+
+
+def _multibatch_pgd_fwd_bwd(
+    adv_sources: Float[Tensor, "n_layers *ones C2"],
+    pgd_config: PGDMultiBatchConfig,
+    model: ComponentModel,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    data_iter: Iterator[Int[Tensor, "..."]]
+    | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    device: torch.device | str,
+    output_loss_type: Literal["mse", "kl"],
+    router: Router,
+    sampling: SamplingType,
+    batch_dims: tuple[int, ...],
+) -> tuple[Float[Tensor, ""], int, Float[Tensor, "n_layers *batch_dim_or_ones C2"]]:
+    """Perform a forward and backward pass over multiple batches with gradient accumulation.
+
+    Returns:
+        - The total loss for the PGD step (only used for the final step)
+        - The number of examples used in the PGD step
+        - The gradients of the adv_sources
+    """
+    pgd_step_accum_sum_loss = torch.tensor(0.0, device=device)
+    pgd_step_accum_n_examples = 0
+    pgd_step_accum_grads = torch.zeros_like(adv_sources)
+
+    for microbatch_idx in range(pgd_config.gradient_accumulation_steps):
+        try:
+            microbatch_item = next(data_iter)
+        except StopIteration:
+            logger.warning(f"Dataloader exhausted after {microbatch_idx} batches, ending PGD step.")
+            break
+        microbatch = extract_batch_data(microbatch_item).to(device)
+
+        # NOTE: technically this is duplicated work across PGD steps, but that's the price we pay to
+        # enable accumulating gradients over more microbatches than we'd be able to fit CI values in
+        # memory for. In other words, you can't fit 100,000 microbatches worth of CI values in memory.
+        target_model_output: OutputWithCache = model(microbatch, cache_type="input")
+        ci = model.calc_causal_importances(
+            pre_weight_acts=target_model_output.cache,
+            sampling=sampling,
+        ).lower_leaky
+
+        # It's important that we call this every microbatch to ensure stochastic routing masks are
+        # sampled independently for each example.
+        routing_masks = router.get_masks(
+            module_names=model.target_module_paths, mask_shape=batch_dims
+        )
+
+        batch_sum_loss, batch_n_examples = _forward_with_adv_sources(
+            model=model,
+            batch=microbatch,
+            adv_sources=adv_sources,
+            ci=ci,
+            weight_deltas=weight_deltas,
+            routing_masks=routing_masks,
+            target_out=target_model_output.output,
+            output_loss_type=output_loss_type,
+            batch_dims=batch_dims,
+        )
+
+        pgd_step_accum_sum_loss += batch_sum_loss
+        pgd_step_accum_n_examples += batch_n_examples
+
+        # important: take gradient wrt the UNEXPANDED adv_sources, not the expanded ones
+        (adv_sources_grads,) = torch.autograd.grad(batch_sum_loss, adv_sources)
+        adv_sources_grads = all_reduce(adv_sources_grads, op=ReduceOp.SUM)
+        pgd_step_accum_grads += adv_sources_grads.detach()
+
+        del target_model_output, ci
+
+    return pgd_step_accum_sum_loss, pgd_step_accum_n_examples, pgd_step_accum_grads
 
 
 def _get_pgd_init_tensor(

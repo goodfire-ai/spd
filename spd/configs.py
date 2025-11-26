@@ -106,6 +106,21 @@ class PGDReconLayerwiseLossConfig(PGDConfig):
     classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
 
 
+class PGDMultiBatchConfig(LossMetricConfig):
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+    gradient_accumulation_steps: int
+
+
+class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
+    classname: Literal["PGDMultiBatchReconLoss"] = "PGDMultiBatchReconLoss"
+
+
+class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
+    classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
+
+
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
@@ -183,6 +198,7 @@ LossMetricConfigType = (
     # Hidden acts
     | StochasticHiddenActsReconLossConfig
 )
+
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
     | CIHistogramsConfig
@@ -193,6 +209,8 @@ EvalOnlyMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
+    | PGDMultiBatchReconLossConfig
+    | PGDMultiBatchReconSubsetLossConfig
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
@@ -292,6 +310,10 @@ class Config(BaseConfig):
     gradient_accumulation_steps: PositiveInt = Field(
         default=1,
         description="Number of steps to accumulate gradients over before updating parameters",
+    )
+    grad_clip_norm: PositiveFloat | None = Field(
+        default=None,
+        description="If set, clip gradient norm to this value before each optimiser step",
     )
 
     # --- Faithfulness Warmup ---

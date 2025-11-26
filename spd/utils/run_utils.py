@@ -393,6 +393,8 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PermutedCIPlots": "PermCIPlots",
     "UVPlots": "UVPlots",
     "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
+    "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
+    "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
 }
 
 
