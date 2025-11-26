@@ -195,26 +195,7 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
         values: [0.05, 0.1]
   ```
 
-**Logs:** Agent logs are found in `~/slurm_logs/slurm-<job_id>_<task_id>.out`
-
-### Multi-Node Training
-
-For large-scale experiments, use multi-node DDP via the `--dp` flag. When dp > 8, multiple nodes are used automatically (dp must be divisible by 8 for multi-node):
-
-```bash
-spd-run --experiments gpt2 --dp 4                       # Single node, 4 GPUs
-spd-run --experiments ss_llama_simple --dp 16           # 2 nodes x 8 GPUs each
-spd-run --experiments ss_llama_simple --dp 24           # 3 nodes x 8 GPUs each
-```
-
-### Additional Options
-
-```bash
-spd-run --project my-project         # Use custom W&B project
-spd-run --job_suffix test            # Add suffix to SLURM job names
-spd-run --create_report              # Create W&B report (in addition to view)
-spd-run --partition h200-reserved    # Specify SLURM partition
-```
+**Logs:** logs are found in `~/slurm_logs/slurm-<job_id>_<task_id>.out`
 
 ### Cluster Usage Guidelines
 
