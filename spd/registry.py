@@ -144,3 +144,4 @@ def get_max_expected_runtime(experiments_list: list[str]) -> str:
         EXPERIMENT_REGISTRY[experiment].expected_runtime for experiment in experiments_list
     )
     return f"{max_expected_runtime // 60}h{max_expected_runtime % 60}m"
+
