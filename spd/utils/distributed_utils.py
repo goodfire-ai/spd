@@ -27,11 +27,6 @@ class DistributedState:
     local_rank: int
     backend: Literal["nccl", "gloo"]
 
-    def device(self) -> str:
-        if self.backend == "gloo":
-            return "cpu"
-        return f"cuda:{self.local_rank}"
-
 
 # Module-level cached state used as a single source of truth
 _state: DistributedState | None = None
@@ -133,9 +128,9 @@ def is_main_process() -> bool:
 def get_device() -> str:
     """Get device for current process in distributed setting."""
     state = get_distributed_state()
-    if state is None:
+    if state is None or state.backend == "gloo":
         return "cpu"
-    return state.device()
+    return f"cuda:{state.local_rank}"
 
 
 def sync_across_processes() -> None:
