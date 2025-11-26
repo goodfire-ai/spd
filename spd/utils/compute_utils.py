@@ -87,16 +87,17 @@ def get_command(
         # Single-node DDP
         command = f"torchrun --standalone --nproc_per_node={n_gpus} --master_port={port} {job.script_path} "
     else:
-        # Multi-node DDP
+        # Multi-node DDP via srun + torchrun (static launch)
+        # Each node runs torchrun with its node_rank from SLURM_NODEID
         n_nodes = n_gpus // GPUS_PER_NODE
         command = (
             f"srun "
             f"torchrun "
             f"--nnodes={n_nodes} "
+            f'--node_rank=$SLURM_NODEID '
             f"--nproc_per_node={GPUS_PER_NODE} "
-            f"--rdzv_id={run_id}_{job_idx} "
-            f"--rdzv_backend=c10d "
-            f'--rdzv_endpoint=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1):{port} '
+            f'--master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1) '
+            f"--master_port={port} "
             f"{job.script_path} "
         )
 
@@ -150,7 +151,7 @@ def create_slurm_array_script(
     case_block_lines = []
     for i, training_job in enumerate(training_jobs):
         command = get_command(run_id, training_job, i, n_gpus, sweep_params)
-        case_block_lines.append(f"{i + 1})\n")
+        case_block_lines.append(f"{i + 1})")
         if command.env_vars is not None:
             for k, v in command.env_vars.items():
                 case_block_lines.append(f"    export {k}={v}")
@@ -182,37 +183,42 @@ def create_slurm_array_script(
 #SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
 #SBATCH --array={array_range}
 
-# Create job-specific working directory
-# WORK_DIR="$HOME/slurm_workspaces/{slurm_job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
-# mkdir -p "$WORK_DIR"
+# Create job-specific working directory on shared filesystem (for multi-node access)
+WORK_DIR="$HOME/slurm_workspaces/{slurm_job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+mkdir -p "$WORK_DIR"
+
 # Clean up the workspace when the script exits
-# trap 'rm -rf "$WORK_DIR"' EXIT
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Clone the repository to the job-specific directory
-# git clone {REPO_ROOT} "$WORK_DIR"
+git clone {REPO_ROOT} "$WORK_DIR"
 
 # Change to the cloned repository directory
-# cd "$WORK_DIR"
+cd "$WORK_DIR"
 
 # Copy the .env file from the original repository for WandB authentication
-# cp {REPO_ROOT}/.env .env
+cp {REPO_ROOT}/.env .env
 
 # Checkout the snapshot branch to ensure consistent code
-# git checkout "{snapshot_branch}"
+git checkout "{snapshot_branch}"
 
 # Ensure that dependencies are using the snapshot branch. SLURM might inherit the
 # parent environment, so we need to deactivate and unset the virtual environment.
-# echo "Deactivating virtual environment"
-# deactivate 2>/dev/null || true
-# unset VIRTUAL_ENV
+echo "Deactivating virtual environment"
+deactivate 2>/dev/null || true
+unset VIRTUAL_ENV
 
 # echo "Syncing dependencies"
-# uv sync --no-dev --link-mode copy -q
+uv sync --no-dev --link-mode copy -q
 
-# WORK_DIR="$HOME/spd/"
 
 echo "Activating virtual environment"
 source .venv/bin/activate
+
+echo "Debug: SLURM_NODEID=$SLURM_NODEID"
+echo "Debug: SLURM_PROCID=$SLURM_PROCID"
+echo "Debug: SLURM_JOB_NODELIST=$SLURM_JOB_NODELIST"
+echo "Debug: Master node=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)"
 
 echo "Running..."
 # Execute the appropriate command based on array task ID
