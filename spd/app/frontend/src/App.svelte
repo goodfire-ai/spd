@@ -126,6 +126,9 @@
     }
 
     .sidebar {
+        width: 25vw;
+        min-width: 200px;
+        max-width: 400px;
         background: #f8f9fa;
         border-right: 1px solid #dee2e6;
         padding: 1.5rem;
@@ -248,5 +251,8 @@
     .config pre {
         margin: 0;
         font-size: 0.8rem;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
     }
 </style>
