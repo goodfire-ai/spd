@@ -110,9 +110,6 @@ class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
 
 
-PGDMultiBatchConfigType = PGDMultiBatchReconLossConfig | PGDMultiBatchReconSubsetLossConfig
-
-
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
@@ -171,15 +168,14 @@ class UVPlotsConfig(BaseConfig):
     dense_patterns: list[str] | None
 
 
-LossMetricConfigType = (
-    FaithfulnessLossConfig
-    | ImportanceMinimalityLossConfig
-    # Recon losses:
-    # CI masked recon
+ReconLossConfigType = (
+    # - Unmasked
+    | UnmaskedReconLossConfig
+    # - CI masked
     | CIMaskedReconLossConfig
     | CIMaskedReconSubsetLossConfig
     | CIMaskedReconLayerwiseLossConfig
-    # Stochastic
+    # - Stochastic
     | StochasticReconLossConfig
     | StochasticReconSubsetLossConfig
     | StochasticReconLayerwiseLossConfig
@@ -189,11 +185,9 @@ LossMetricConfigType = (
     | PGDReconLayerwiseLossConfig
     # Hidden acts
     | StochasticHiddenActsReconLossConfig
-    # Misc
-    | UnmaskedReconLossConfig
-    # Multi-batch
-    | PGDMultiBatchConfigType
 )
+
+LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
@@ -205,6 +199,8 @@ EvalOnlyMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
+    | PGDMultiBatchReconLossConfig
+    | PGDMultiBatchReconSubsetLossConfig
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
@@ -515,17 +511,6 @@ class Config(BaseConfig):
             assert self.gradient_accumulation_steps == 1, (
                 "gradient_accumulation_steps must be 1 if we are using PGD losses with "
                 "mask_scope='shared_across_batch'"
-            )
-
-        has_multibatch_pgd_subset_loss = any(
-            [
-                loss_cfg.classname == "PGDMultiBatchReconSubsetLoss"
-                for loss_cfg in self.loss_metric_configs
-            ]
-        )
-        if has_multibatch_pgd_subset_loss:
-            assert self.gradient_accumulation_steps == 1, (
-                "cannot use gradient accumulation with PGDMultiBatchReconSubsetLoss"
             )
 
         return self

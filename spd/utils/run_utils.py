@@ -382,8 +382,6 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconLoss": "PGDRecon",
     "PGDReconSubsetLoss": "PGDReconSub",
     "PGDReconLayerwiseLoss": "PGDReconLayer",
-    "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
-    "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
     "UnmaskedReconLoss": "UnmaskedRecon",
     # Eval metrics
@@ -396,6 +394,8 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PermutedCIPlots": "PermCIPlots",
     "UVPlots": "UVPlots",
     "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
+    "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
+    "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
 }
 
 

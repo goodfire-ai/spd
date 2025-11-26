@@ -24,7 +24,6 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
-    PGDMultiBatchConfigType,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
@@ -332,7 +331,9 @@ def evaluate(
 
 
 def evaluate_multibatch_pgd(
-    multibatch_pgd_eval_configs: list[PGDMultiBatchConfigType],
+    multibatch_pgd_eval_configs: list[
+        PGDMultiBatchReconLossConfig | PGDMultiBatchReconSubsetLossConfig
+    ],
     model: ComponentModel,
     create_data_iter: CreateDataIter,
     config: Config,
