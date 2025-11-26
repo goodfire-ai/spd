@@ -142,7 +142,6 @@ def tokenize_and_concatenate(
     return tokenized_dataset
 
 
-# TODO docs reflect new args
 def create_data_loader(
     dataset_config: DatasetConfig,
     batch_size: int,

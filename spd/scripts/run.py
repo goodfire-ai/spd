@@ -11,27 +11,16 @@ import copy
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import fire
 import yaml
 
-from spd.configs import Config
 from spd.log import logger
-from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
 from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
-from spd.utils.compute_utils import (
-    ComputeStrategy,
-    CpuOrSingleGpu,
-    MultiGpu,
-    MultiNode,
-    TrainingJob,
-    create_slurm_array_script,
-    submit_slurm_array,
-)
-from spd.utils.git_utils import create_git_snapshot
-from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
-from spd.utils.wandb_utils import ReportCfg, create_view_and_report
+
+if TYPE_CHECKING:
+    from spd.utils.compute_utils import ComputeStrategy, TrainingJob
 
 
 def main(
@@ -62,6 +51,11 @@ def main(
         dp: Number of GPUs for single-node data parallelism (requires 2+)
         project: W&B project name
     """
+    # Lazy imports to speed up --help (these pull in torch, transformers, etc.)
+    from spd.registry import get_max_expected_runtime
+    from spd.utils.compute_utils import create_slurm_array_script, submit_slurm_array
+    from spd.utils.git_utils import create_git_snapshot
+
     run_id = _generate_run_id()
     logger.info(f"Run ID: {run_id}")
 
@@ -142,6 +136,15 @@ def _create_training_jobs(
     we add a prefix to prevent Fire parsing with ast.literal_eval
     (https://github.com/google/python-fire/issues/332)
     """
+    from spd.configs import Config
+    from spd.registry import EXPERIMENT_REGISTRY
+    from spd.utils.compute_utils import TrainingJob
+    from spd.utils.run_utils import (
+        apply_nested_updates,
+        generate_grid_combinations,
+        generate_run_name,
+    )
+
     training_jobs: list[TrainingJob] = []
 
     logger.info("Task breakdown by experiment:")
@@ -246,6 +249,8 @@ def _get_experiments(
     Returns:
         List of experiment names to run.
     """
+    from spd.registry import EXPERIMENT_REGISTRY
+
     # Determine experiment list
     if experiments_list_str is None:
         experiments = list(EXPERIMENT_REGISTRY.keys())
@@ -266,6 +271,8 @@ def _build_compute_strategy(
     num_nodes: int | None,
 ) -> ComputeStrategy:
     """Construct a compute strategy from CLI arguments."""
+    from spd.utils.compute_utils import CpuOrSingleGpu, MultiGpu, MultiNode
+
     if cpu:
         assert dp is None, "dp should not be specified when running on cpu"
         assert num_nodes is None, "num_nodes should not be specified when running on cpu"
@@ -317,6 +324,8 @@ def _wandb_setup(
     commit_hash: str,
 ) -> None:
     """Set up W&B workspace view and optionally a report."""
+    from spd.utils.wandb_utils import ReportCfg, create_view_and_report
+
     match create_report, report_title:
         case True, None:
             create_view_and_report(

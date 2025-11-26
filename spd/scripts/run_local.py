@@ -1,8 +1,4 @@
-"""Simple SPD runner for collaborators and public use.
-
-This provides a lightweight interface to run single SPD experiments locally,
-without the complexity of SLURM orchestration, sweeps, or git snapshots.
-"""
+"""Local SPD experiment runner"""
 
 import subprocess
 import sys
@@ -27,9 +23,9 @@ def main(
         dp: Number of GPUs for single-node data parallelism (requires 2+)
 
     Examples:
-        spd-simple tms_5-2           # Single GPU (default)
-        spd-simple tms_5-2 --cpu     # CPU only
-        spd-simple tms_5-2 --dp 4    # 4 GPUs on single node
+        spd-local tms_5-2           # Single GPU (default)
+        spd-local tms_5-2 --cpu     # CPU only
+        spd-local tms_5-2 --dp 4    # 4 GPUs on single node
     """
     if experiment not in EXPERIMENT_REGISTRY:
         available = ", ".join(sorted(EXPERIMENT_REGISTRY.keys()))
@@ -70,10 +66,10 @@ def main(
 
     if cpu:
         env_prefix = "CUDA_VISIBLE_DEVICES="
-        logger.info(f"Running: {env_prefix} {' '.join(cmd[:3])} ...")
+        logger.info(f"Running: {env_prefix} {' '.join(cmd)}")
         subprocess.run(cmd, check=True, env={"CUDA_VISIBLE_DEVICES": ""})
     else:
-        logger.info(f"Running: {' '.join(cmd[:3])} ...")
+        logger.info(f"Running: {' '.join(cmd)}")
         subprocess.run(cmd, check=True)
 
 
