@@ -170,7 +170,7 @@ class UVPlotsConfig(BaseConfig):
 
 ReconLossConfigType = (
     # - Unmasked
-    | UnmaskedReconLossConfig
+    UnmaskedReconLossConfig
     # - CI masked
     | CIMaskedReconLossConfig
     | CIMaskedReconSubsetLossConfig
