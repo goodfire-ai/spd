@@ -1,5 +1,7 @@
 # %%
 
+import gzip
+import json
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -26,7 +28,7 @@ def compute_mean_ci_per_component(
     device: str,
     config: Config,
     max_batches: int | None,
-) -> dict[str, torch.Tensor]:
+) -> dict[str, Tensor]:
     """Compute mean causal importance per component over the dataset.
 
     Args:
@@ -40,7 +42,7 @@ def compute_mean_ci_per_component(
         Dictionary mapping module path -> tensor of shape [C] with mean CI per component.
     """
     # Initialize accumulators
-    ci_sums: dict[str, torch.Tensor] = {
+    ci_sums: dict[str, Tensor] = {
         module_name: torch.zeros(model.C, device=device) for module_name in model.components
     }
     examples_seen: dict[str, int] = {module_name: 0 for module_name in model.components}
@@ -88,7 +90,7 @@ def compute_alive_components(
     config: Config,
     max_batches: int | None,
     threshold: float,
-) -> tuple[dict[str, torch.Tensor], dict[str, list[int]], tuple[Image.Image, Image.Image]]:
+) -> tuple[dict[str, Tensor], dict[str, list[int]], tuple[Image.Image, Image.Image]]:
     """Compute alive components based on mean CI threshold.
 
     Args:
@@ -210,7 +212,7 @@ def compute_global_attributions(
     valid_pairs: list[tuple[str, str]],
     max_batches: int,
     alive_indices: dict[str, list[int]],
-) -> dict[tuple[str, str], torch.Tensor]:
+) -> dict[tuple[str, str], Tensor]:
     """Compute global attributions accumulated over the dataset.
 
     For each valid layer pair (in_layer, out_layer), computes the mean absolute gradient
@@ -280,53 +282,61 @@ def compute_global_attributions(
         # Compute attributions for each valid pair
         pair_pbar = tqdm(valid_pairs, desc="Layer pairs", leave=False)
         for in_layer, out_layer in pair_pbar:
-            out_pre_detach = cache[f"{out_layer}_pre_detach"]
-            in_post_detach = cache[f"{in_layer}_post_detach"]
+            out_pre_detach: Float[Tensor, "b s n_components"] = cache[f"{out_layer}_pre_detach"]
+            in_post_detach: Float[Tensor, "b s n_components"] = cache[f"{in_layer}_post_detach"]
 
-            # Compute gradients for each output component
-            # out_pre_detach shape: [batch, seq, n_components]
-            # in_post_detach shape: [batch, seq, n_components]
             batch_attribution = torch.zeros(
                 len(alive_indices[in_layer]), len(alive_indices[out_layer]), device=device
             )
 
-            for i, c_out in enumerate(alive_indices[out_layer]):
-                # Sum over batch and seq to get a scalar for this output component
-                out_sum = out_pre_detach[:, :, c_out].sum()
+            alive_out = alive_indices[out_layer]
+            # Detach CI weights - we only need values, not gradients through them
+            ci_weights = ci.lower_leaky[out_layer].detach()
+            for i, c_out in enumerate(alive_out):
+                # Sum over batch and seq, weighted by the out ci values
+                out_sum = (out_pre_detach[..., c_out] * ci_weights[..., c_out]).sum()
 
-                grads = torch.autograd.grad(
+                grads: Float[Tensor, "b s n_components"] = torch.autograd.grad(
                     outputs=out_sum, inputs=in_post_detach, retain_graph=True
                 )[0]
 
                 assert grads is not None, "Gradient is None"
-                # grads shape: [batch, seq, n_components]
-                # Only consider the components that are alive
-                alive_grads = grads[..., alive_indices[in_layer]]
-                # Mean absolute gradient over batch and seq for each input component
-                mean_abs_grad = alive_grads.abs().mean(dim=(0, 1))  # [n_alive_components]
-                batch_attribution[:, i] = mean_abs_grad
+                # Detach in_post_detach for the multiplication - grads already captures the gradient info
+                raw_attributions: Float[Tensor, "b s n_components"] = (
+                    grads * in_post_detach.detach()
+                )
+                alive_attributions: Float[Tensor, "b s n_alive_in"] = raw_attributions[
+                    ..., alive_indices[in_layer]
+                ]
+                mean_abs_attributions: Float[Tensor, " n_alive_in"] = alive_attributions.abs().mean(
+                    dim=(0, 1)
+                )
+                batch_attribution[:, i] = mean_abs_attributions
 
             attribution_sums[(in_layer, out_layer)] += batch_attribution
 
         total_samples += 1  # Count batches (already averaged over batch/seq within)
 
-    # Average over number of batches
+    # Average over number of samples
     global_attributions = {
         pair: attr_sum / total_samples for pair, attr_sum in attribution_sums.items()
     }
 
-    print(f"Computed global attributions over {total_samples} batches")
+    print(f"Computed global attributions over {total_samples} samples")
     return global_attributions
 
 
 # %%
 # Configuration
 # wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
-wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
-n_blocks = 2
-batch_size = 512
-n_attribution_batches = 10
-n_alive_calc_batches = 200
+# wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
+wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L
+n_blocks = 1
+batch_size = 600
+# n_attribution_batches = 20
+n_attribution_batches = 2
+n_alive_calc_batches = 50
+# n_alive_calc_batches = 200
 ci_mean_alive_threshold = 1e-6
 dataset_seed = 0
 
@@ -418,20 +428,44 @@ global_attributions = compute_global_attributions(
 for pair, attr in global_attributions.items():
     print(f"{pair[0]} -> {pair[1]}: mean={attr.mean():.6f}, max={attr.max():.6f}")
 
-torch.save(global_attributions, out_dir / f"global_attributions_{wandb_id}.pt")
-
 # %%
-# Plot the attribution graph
-print("\nPlotting attribution graph...")
+# Save attributions in both PyTorch and JSON formats
+print("\nSaving attribution data...")
 out_dir = Path(__file__).parent / "out"
-global_attributions = torch.load(out_dir / f"global_attributions_{wandb_id}.pt")
-# graph_img = plot_attribution_graph(
-#     global_attributions=global_attributions,
-#     alive_indices=alive_indices,
-#     n_blocks=n_blocks,
-#     output_path=out_dir / f"attribution_graph_{wandb_id}.png",
-#     edge_threshold=0.0,
-# )
-# print(f"Attribution graph has {sum(len(v) for v in alive_indices.values())} nodes")
+
+# Save PyTorch format
+pt_path = out_dir / f"global_attributions_{wandb_id}.pt"
+torch.save(global_attributions, pt_path)
+print(f"Saved PyTorch format to {pt_path}")
+
+# Convert and save JSON format for web visualization
+attributions_json = {}
+for (in_layer, out_layer), attr_tensor in global_attributions.items():
+    key = f"('{in_layer}', '{out_layer}')"
+    # Keep full precision - just convert to list
+    attributions_json[key] = attr_tensor.cpu().tolist()
+
+json_data = {
+    "n_blocks": n_blocks,
+    "attributions": attributions_json,
+    "alive_indices": alive_indices,
+}
+
+json_path = out_dir / f"global_attributions_{wandb_id}.json"
+
+# Write JSON with compact formatting
+with open(json_path, "w") as f:
+    json.dump(json_data, f, separators=(",", ":"), ensure_ascii=False)
+
+# Also save a compressed version for very large files
+gz_path = out_dir / f"global_attributions_{wandb_id}.json.gz"
+with gzip.open(gz_path, "wt", encoding="utf-8") as f:
+    json.dump(json_data, f, separators=(",", ":"), ensure_ascii=False)
+
+print(f"Saved JSON format to {json_path}")
+print(f"Saved compressed format to {gz_path}")
+print(f"  - {len(attributions_json)} layer pairs")
+print(f"  - {sum(len(v) for v in alive_indices.values())} total alive components")
+print(f"\nTo visualize: Open scripts/plot_attributions.html and load {json_path}")
 
 # %%

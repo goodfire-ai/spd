@@ -8,9 +8,11 @@ import networkx as nx
 import torch
 
 # Configuration
-wandb_id = "c0k3z78g"
-n_blocks = 2
-edge_threshold = 0.1
+# wandb_id = "c0k3z78g" # ss_gpt2_simple-2L
+# n_blocks = 2
+wandb_id = "8ynfbr38"  # ss_gpt2_simple-1L
+n_blocks = 1
+edge_threshold = 1e-1
 
 # Load saved data
 out_dir = Path(__file__).parent / "out"
@@ -28,9 +30,15 @@ for (in_layer, out_layer), attr in global_attributions.items():
 print(f"Loaded attributions for {len(global_attributions)} layer pairs")
 print(f"Total alive components: {sum(len(v) for v in alive_indices.values())}")
 
-# Count edges
-total_edges = sum((attr > edge_threshold).sum().item() for attr in global_attributions.values())
-print(f"Edges to draw (threshold={edge_threshold}): {total_edges:,}")
+# Count edges before and after thresholding
+total_edges = sum(attr.numel() for attr in global_attributions.values())
+print(f"Total edges: {total_edges:,}")
+thresholds = [1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+for threshold in thresholds:
+    total_edges_threshold = sum(
+        (attr > threshold).sum().item() for attr in global_attributions.values()
+    )
+    print(f"Edges > {threshold}: {total_edges_threshold:,}")
 
 # %%
 # Plot the attribution graph
@@ -59,14 +67,25 @@ G = nx.DiGraph()
 node_positions = {}
 block_spacing = 6.0  # Vertical spacing between blocks
 
-# Layer y-offsets within a block: down_proj at top, q/k/v at bottom
+# Layer y-offsets within a block: down_proj at top, q/k/v at same level at bottom
+# q_proj, k_proj, v_proj are placed side by side since they never connect to each other
 layer_y_offsets = {
-    "mlp.down_proj": 2.5,
-    "mlp.c_fc": 1.5,
-    "attn.o_proj": 0.5,
-    "attn.v_proj": -0.5,
+    "mlp.down_proj": 2.0,
+    "mlp.c_fc": 1.0,
+    "attn.o_proj": 0.0,
+    "attn.v_proj": -1.0,  # Same y-level for q/k/v
     "attn.k_proj": -1.0,
-    "attn.q_proj": -1.5,
+    "attn.q_proj": -1.0,
+}
+
+# X-offsets for q/k/v to place them side by side with much more spacing
+layer_x_offsets = {
+    "mlp.down_proj": 0.0,
+    "mlp.c_fc": 0.0,
+    "attn.o_proj": 0.0,
+    "attn.q_proj": -20.0,  # Left (much more spacing)
+    "attn.k_proj": 0.0,  # Center
+    "attn.v_proj": 20.0,  # Right (much more spacing)
 }
 
 for layer in all_layers:
@@ -80,13 +99,14 @@ for layer in all_layers:
 
     # Block 1 on top (higher y), Block 0 on bottom (lower y)
     y_base = block_idx * block_spacing + layer_y_offsets[layer_name]
-    # X-axis for spreading components horizontally
-    x_base = 0
+    # X-axis base depends on layer type (q/k/v are offset)
+    x_base = layer_x_offsets[layer_name]
 
     for comp_idx, local_idx in enumerate(alive_indices.get(layer, [])):
         node_id = f"{layer}:{local_idx}"
         G.add_node(node_id, layer=layer, component=local_idx)
-        x = x_base + (comp_idx - n_alive / 2) * 0.15
+        # Increase spacing between nodes from 0.15 to 0.25 for less overlap
+        x = x_base + (comp_idx - n_alive / 2) * 0.25
         y = y_base
         node_positions[node_id] = (x, y)
 
@@ -108,8 +128,8 @@ for (in_layer, out_layer), attr_tensor in global_attributions.items():
 
 print(f"Graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
 
-# Create figure (tall layout for vertical block arrangement)
-fig, ax = plt.subplots(1, 1, figsize=(12, 14))
+# Create figure (extra wide to accommodate q/k/v side by side with large spacing)
+fig, ax = plt.subplots(1, 1, figsize=(32, 12))
 
 # Draw nodes grouped by layer
 layer_colors = {
@@ -176,31 +196,6 @@ if edge_weights:
             ax=ax,
         )
 
-# Add layer labels
-for block_idx in range(n_blocks):
-    # Block 1 on top, Block 0 on bottom
-    block_y_base = block_idx * block_spacing
-    for layer_name, y_offset in layer_y_offsets.items():
-        short_name = layer_name.split(".")[-1]
-        ax.annotate(
-            short_name,
-            (-1.5, block_y_base + y_offset),
-            fontsize=8,
-            ha="right",
-            va="center",
-            color="#555555",
-        )
-
-    ax.annotate(
-        f"Block {block_idx}",
-        (-2.5, block_y_base),
-        fontsize=10,
-        ha="center",
-        va="center",
-        fontweight="bold",
-        rotation=90,
-    )
-
 # Add legend
 legend_elements = [
     plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=color, markersize=10, label=name)
@@ -220,7 +215,9 @@ ax.axis("off")
 plt.tight_layout()
 
 # Save
-output_path = out_dir / f"attribution_graph_{wandb_id}.png"
+# Make an edge threshold string in scientific notation which doesn't include decimal places
+edge_threshold_str = f"{edge_threshold:.1e}".replace(".0", "")
+output_path = out_dir / f"attribution_graph_{wandb_id}_edge_threshold_{edge_threshold_str}.png"
 fig.savefig(output_path, dpi=150, bbox_inches="tight")
 print(f"Saved to {output_path}")
 
