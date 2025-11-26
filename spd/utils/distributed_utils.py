@@ -56,6 +56,9 @@ def init_distributed() -> DistributedState | None:
     assert _state is None, "Distributed state already initialized"
     assert not dist.is_initialized()
 
+    if not _SHOULD_GET_INITIALIZED:
+        return None
+
     backend = "nccl" if torch.cuda.is_available() else "gloo"
     logger.info(f"init_distributed: using {backend=}")
 

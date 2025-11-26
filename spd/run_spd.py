@@ -238,7 +238,7 @@ def optimize(
         global_n_examples_per_batch=batch_dims.numel(),
     )
 
-    for step in tqdm(range(config.steps + 1), ncols=0):
+    for step in tqdm(range(config.steps + 1), ncols=0, disabled=not is_main_process()):
         optimizer.zero_grad()
 
         step_lr = get_lr_with_warmup(
