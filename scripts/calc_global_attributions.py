@@ -212,6 +212,7 @@ def compute_global_attributions(
     valid_pairs: list[tuple[str, str]],
     max_batches: int,
     alive_indices: dict[str, list[int]],
+    ci_threshold: float,
 ) -> dict[tuple[str, str], Tensor]:
     """Compute global attributions accumulated over the dataset.
 
@@ -227,6 +228,7 @@ def compute_global_attributions(
         valid_pairs: List of (in_layer, out_layer) pairs to compute attributions for.
         max_batches: Maximum number of batches to process.
         alive_indices: Dictionary mapping module path -> list of alive component indices.
+        ci_threshold: Threshold for considering a component for the attribution calculation.
     Returns:
         Dictionary mapping (in_layer, out_layer) -> attribution tensor of shape [n_alive_in, n_alive_out]
         where attribution[i, j] is the mean absolute gradient from the i-th alive input component to the j-th alive output component.
@@ -249,7 +251,10 @@ def compute_global_attributions(
         if batch_idx >= max_batches:
             break
 
-        batch = extract_batch_data(batch_raw).to(device)
+        batch: Float[Tensor, "b s C"] = extract_batch_data(batch_raw).to(device)
+
+        batch_size, n_seq = batch.shape
+        total_samples += batch_size * n_seq
 
         # Forward pass to get pre-weight activations
         with torch.no_grad():
@@ -280,46 +285,48 @@ def compute_global_attributions(
         cache = comp_output_with_cache.cache
 
         # Compute attributions for each valid pair
-        pair_pbar = tqdm(valid_pairs, desc="Layer pairs", leave=False)
-        for in_layer, out_layer in pair_pbar:
-            out_pre_detach: Float[Tensor, "b s n_components"] = cache[f"{out_layer}_pre_detach"]
-            in_post_detach: Float[Tensor, "b s n_components"] = cache[f"{in_layer}_post_detach"]
+        for in_layer, out_layer in tqdm(valid_pairs, desc="Layer pairs", leave=False):
+            out_pre_detach: Float[Tensor, "b s C"] = cache[f"{out_layer}_pre_detach"]
+            weighted_out_pre_detach = out_pre_detach * ci.lower_leaky[out_layer].detach()
+            in_post_detach: Float[Tensor, "b s C"] = cache[f"{in_layer}_post_detach"]
 
             batch_attribution = torch.zeros(
                 len(alive_indices[in_layer]), len(alive_indices[out_layer]), device=device
             )
 
-            alive_out = alive_indices[out_layer]
-            # Detach CI weights - we only need values, not gradients through them
-            ci_weights = ci.lower_leaky[out_layer].detach()
-            for i, c_out in enumerate(alive_out):
-                # Sum over batch and seq, weighted by the out ci values
-                out_sum = (out_pre_detach[..., c_out] * ci_weights[..., c_out]).sum()
-
-                grads: Float[Tensor, "b s n_components"] = torch.autograd.grad(
-                    outputs=out_sum, inputs=in_post_detach, retain_graph=True
-                )[0]
-
-                assert grads is not None, "Gradient is None"
-                # Detach in_post_detach for the multiplication - grads already captures the gradient info
-                raw_attributions: Float[Tensor, "b s n_components"] = (
-                    grads * in_post_detach.detach()
-                )
-                alive_attributions: Float[Tensor, "b s n_alive_in"] = raw_attributions[
-                    ..., alive_indices[in_layer]
-                ]
-                mean_abs_attributions: Float[Tensor, " n_alive_in"] = alive_attributions.abs().mean(
-                    dim=(0, 1)
-                )
-                batch_attribution[:, i] = mean_abs_attributions
+            alive_out: list[int] = alive_indices[out_layer]
+            c_pbar = tqdm(
+                enumerate(alive_out), desc="Components", leave=False, total=len(alive_out)
+            )
+            for c, c_idx in c_pbar:
+                n_grads_computed = 0
+                for s in range(n_seq):
+                    for b in range(batch_size):
+                        if ci.lower_leaky[out_layer][b, s, c_idx] <= ci_threshold:
+                            continue
+                        # TODO: Handle the case with o_proj in numerator and other attn in denominator
+                        out_value = weighted_out_pre_detach[b, s, c_idx]
+                        grads: Float[Tensor, " C"] = torch.autograd.grad(
+                            outputs=out_value,
+                            inputs=in_post_detach,
+                            retain_graph=True,
+                            allow_unused=True,
+                        )[0]
+                        assert grads is not None, "Gradient is None"
+                        with torch.no_grad():
+                            act_weighted_grads: Float[Tensor, " C"] = (
+                                grads[b, s, :]
+                                * in_post_detach[b, s, :]
+                                * ci.lower_leaky[in_layer][b, s, :]
+                            )[alive_indices[in_layer]].pow(2)
+                            batch_attribution[:, c] += act_weighted_grads
+                        n_grads_computed += 1
+                tqdm.write(f"Computed {n_grads_computed} gradients for {in_layer} -> {out_layer}")
 
             attribution_sums[(in_layer, out_layer)] += batch_attribution
 
-        total_samples += 1  # Count batches (already averaged over batch/seq within)
-
-    # Average over number of samples
     global_attributions = {
-        pair: attr_sum / total_samples for pair, attr_sum in attribution_sums.items()
+        pair: (attr_sum / total_samples).sqrt() for pair, attr_sum in attribution_sums.items()
     }
 
     print(f"Computed global attributions over {total_samples} samples")
@@ -332,12 +339,13 @@ def compute_global_attributions(
 # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
 wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L
 n_blocks = 1
-batch_size = 600
+batch_size = 20
 # n_attribution_batches = 20
 n_attribution_batches = 2
-n_alive_calc_batches = 50
+n_alive_calc_batches = 5
 # n_alive_calc_batches = 200
 ci_mean_alive_threshold = 1e-6
+ci_attribution_threshold = 1e-3
 dataset_seed = 0
 
 out_dir = Path(__file__).parent / "out"
@@ -422,6 +430,7 @@ global_attributions = compute_global_attributions(
     valid_pairs=valid_pairs,
     max_batches=n_attribution_batches,
     alive_indices=alive_indices,
+    ci_threshold=ci_mean_alive_threshold,
 )
 
 # Print summary statistics
