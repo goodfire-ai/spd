@@ -60,6 +60,7 @@ from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetC
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import dict_safe_update_, extract_batch_data
 
@@ -152,7 +153,10 @@ def init_metric(
             )
         case CIMaskedReconSubsetLossConfig():
             metric = CIMaskedReconSubsetLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+                routing=cfg.routing,
             )
         case CIMaskedReconLayerwiseLossConfig():
             metric = CIMaskedReconLayerwiseLoss(
@@ -208,6 +212,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
+                routing=cfg.routing,
             )
         case PGDReconLossConfig():
             metric = PGDReconLoss(
@@ -224,6 +229,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg,
+                routing=cfg.routing,
             )
         case PGDReconLayerwiseLossConfig():
             metric = PGDReconLayerwiseLoss(
@@ -338,9 +344,9 @@ def evaluate_multibatch_pgd(
     for multibatch_pgd_config in multibatch_pgd_eval_configs:
         match multibatch_pgd_config:
             case PGDMultiBatchReconLossConfig():
-                routing = "all"
+                router = AllLayersRouter()
             case PGDMultiBatchReconSubsetLossConfig():
-                routing = "uniform_k-stochastic"
+                router = get_subset_router(multibatch_pgd_config.routing, device)
 
         assert multibatch_pgd_config.classname not in metrics, (
             f"Metric {multibatch_pgd_config.classname} already exists"
@@ -352,7 +358,7 @@ def evaluate_multibatch_pgd(
             weight_deltas=weight_deltas,
             create_data_iter=create_data_iter,
             output_loss_type=config.output_loss_type,
-            routing=routing,
+            router=router,
             sampling=config.sampling,
             use_delta_component=config.use_delta_component,
             batch_dims=batch_dims,
