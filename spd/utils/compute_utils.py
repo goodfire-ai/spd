@@ -188,7 +188,6 @@ def create_slurm_array_script(
 #SBATCH --nodes={n_nodes}
 #SBATCH --ntasks={n_nodes}
 #SBATCH --gpus-per-task={gpus_per_task}
-#SBATCH --cpus-per-task={gpus_per_task * 4}  # 4 CPUs per GPU
 
 #SBATCH --partition={partition}
 #SBATCH --time=72:00:00
