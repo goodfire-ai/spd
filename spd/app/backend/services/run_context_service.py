@@ -115,8 +115,6 @@ class RunContextService:
             batch_size=1,  # NOTE: we use a batch size of 1 for simplicity and because almost always just want a single example
             buffer_size=task_config.buffer_size,
             global_seed=run_info.config.seed,
-            ddp_rank=0,
-            ddp_world_size=0,
         )
 
         logger.info("Creating component model from run info")

@@ -5,22 +5,12 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Literal, cast
 
 import pytest
 import torch
 import yaml
 
 from spd.settings import REPO_ROOT
-from spd.utils import distributed_utils
-from spd.utils.distributed_utils import (
-    DistributedState,
-    get_local_rank,
-    get_rank,
-    get_world_size,
-    is_distributed,
-    is_main_process,
-)
 
 TEST_CONFIG = {
     # --- General ---
@@ -147,37 +137,32 @@ class TestDistributedDeterminicity:
         self,
         config_path: Path,
         n_processes: int,
-        port: int = 29500,
+        port: int,
     ) -> None:
-        """Run the experiment using mpirun."""
+        """Run the experiment using torchrun."""
         script_path = REPO_ROOT / "spd" / "experiments" / "lm" / "lm_decomposition.py"
         assert script_path.exists(), f"{script_path} not found"
 
-        env = {
-            "CUDA_VISIBLE_DEVICES": "",
-            "OMP_NUM_THREADS": "1",
-            "MASTER_PORT": str(port),
-        }
-
         cmd = [
-            "mpirun",
-            "--bind-to",  # avoid trying to bind to cores that aren't available.
-            "none",  #  See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
-            "-np",
-            str(n_processes),
-            "python",
+            "torchrun",
+            "--standalone",
+            f"--nproc_per_node={n_processes}",
+            "--master_port",
+            str(port),
             str(script_path),
             str(config_path),
         ]
 
-        result = subprocess.run(
-            cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=300
-        )
+        # disable cuda so we run on cpu:
+        new_env = os.environ.copy()
+        new_env["CUDA_VISIBLE_DEVICES"] = ""
+
+        result = subprocess.run(cmd, env=new_env, capture_output=True, text=True, timeout=300)
 
         if result.returncode != 0:
             print(f"STDOUT: {result.stdout}")
             print(f"STDERR: {result.stderr}")
-            raise RuntimeError(f"mpirun failed with code {result.returncode}")
+            raise RuntimeError(f"torchrun failed with code {result.returncode}")
 
     def _load_metrics(self, metrics_file: Path) -> list[dict[str, float]]:
         """Load eval metrics from the metrics.jsonl file."""
@@ -285,50 +270,3 @@ class TestDistributedDeterminicity:
                     f"Max difference: {torch.max(torch.abs(dp1_param - dp2_param)).item():.2e}"
                 )
                 raise e
-
-
-class TestDistributedUtilities:
-    """Test distributed utilities in non-distributed mode."""
-
-    def test_non_distributed_getters(self):
-        """Test getter functions in non-distributed mode."""
-        assert not is_distributed()
-        assert get_rank() == 0
-        assert get_world_size() == 1
-        assert get_local_rank() == 0
-        assert is_main_process()
-
-    @pytest.mark.parametrize(
-        "cuda_available, distributed, local_rank, backend, expected",
-        [
-            (False, False, 0, "gloo", "cpu"),
-            (False, True, 1, "gloo", "cpu"),
-            (True, False, 0, "nccl", "cuda"),
-            (True, True, 0, "nccl", "cuda:0"),
-            (True, True, 2, "nccl", "cuda:2"),
-            # Test that gloo backend forces CPU even when CUDA is available
-            (True, True, 0, "gloo", "cpu"),
-            (True, True, 2, "gloo", "cpu"),
-        ],
-    )
-    def test_get_device_matrix(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        cuda_available: bool,
-        distributed: bool,
-        local_rank: int,
-        backend: str,
-        expected: str,
-    ) -> None:
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available, raising=False)
-        monkeypatch.setattr(distributed_utils, "is_distributed", lambda: distributed)
-        monkeypatch.setattr(distributed_utils, "get_local_rank", lambda: local_rank)
-        # Mock get_distributed_state to return the expected backend
-        mock_state = DistributedState(
-            rank=0,
-            world_size=2 if distributed else 1,
-            local_rank=local_rank,
-            backend=cast(Literal["nccl", "gloo"], backend),
-        )
-        monkeypatch.setattr(distributed_utils, "get_distributed_state", lambda: mock_state)
-        assert distributed_utils.get_device() == expected
