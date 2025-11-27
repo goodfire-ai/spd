@@ -344,9 +344,6 @@ def compute_global_attributions(
 
             # Gather all input tensors for this target layer
             in_tensors = [cache[f"{in_layer}_post_detach"] for in_layer in in_layers]
-            ci_weighted_inputs = [
-                in_tensors[i] * ci.lower_leaky[in_layers[i]] for i in range(len(in_layers))
-            ]
 
             # Initialize batch attributions for each input layer
             batch_attributions = {
@@ -387,7 +384,7 @@ def compute_global_attributions(
                                 grads = grads_tuple[i]
                                 assert grads is not None, f"Gradient is None for {in_layer}"
                                 alive_in = alive_indices[in_layer]
-                                weighted = grads * ci_weighted_inputs[i]
+                                weighted = grads * in_tensors[i]
                                 # Only sum contributions from positions s_in <= s_out (causal)
                                 weighted_alive = weighted[:, : s_out + 1, alive_in]
                                 batch_attributions[in_layer][:, c_enum] += weighted_alive.pow(
@@ -414,7 +411,7 @@ def compute_global_attributions(
                             grads = grads_tuple[i]
                             assert grads is not None, f"Gradient is None for {in_layer}"
                             alive_in = alive_indices[in_layer]
-                            weighted = grads * ci_weighted_inputs[i]
+                            weighted = grads * in_tensors[i]
                             weighted_alive = weighted[:, :, alive_in]
                             batch_attributions[in_layer][:, c_enum] += weighted_alive.pow(2).sum(
                                 dim=(0, 1)
