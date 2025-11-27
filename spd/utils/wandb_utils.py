@@ -136,11 +136,26 @@ def init_wandb[T_config: BaseModel](
     """
     load_dotenv(override=True)
 
+    # Import here to avoid circular dependency
+    from spd.utils.distributed_utils import get_distributed_state
+
+    # Get distributed info to properly report multi-node/GPU setup
+    dist_state = get_distributed_state()
+    group = None
+    if dist_state is not None and dist_state.world_size > 1:
+        # Use SLURM job ID or run name as group to link distributed processes
+        slurm_job_id = os.getenv("SLURM_JOB_ID")
+        if slurm_job_id:
+            group = f"slurm-{slurm_job_id}"
+        elif name:
+            group = name
+
     wandb.init(
         project=project,
         entity=os.getenv("WANDB_ENTITY"),
         name=name,
         tags=tags,
+        group=group,
     )
     assert wandb.run is not None
     wandb.run.log_code(
@@ -158,7 +173,19 @@ def init_wandb[T_config: BaseModel](
         del config_dict["loss_metric_configs"]
     if "eval_metric_configs" in config_dict:
         del config_dict["eval_metric_configs"]
-    wandb.config.update({**config_dict, **flattened_config_dict})
+
+    # Add distributed training metadata to wandb config
+    if dist_state is not None:
+        distributed_metadata = {
+            "distributed/world_size": dist_state.world_size,
+            "distributed/rank": dist_state.rank,
+            "distributed/local_rank": dist_state.local_rank,
+            "distributed/backend": dist_state.backend,
+        }
+        wandb.config.update({**config_dict, **flattened_config_dict, **distributed_metadata})
+    else:
+        wandb.config.update({**config_dict, **flattened_config_dict})
+
     return config
 
 
