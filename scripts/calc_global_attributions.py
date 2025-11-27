@@ -1,12 +1,11 @@
 # %%
 
-from abc import ABC, abstractmethod
 import gzip
 import json
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 import torch
 from jaxtyping import Float
