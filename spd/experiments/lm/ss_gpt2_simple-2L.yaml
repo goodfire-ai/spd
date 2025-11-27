@@ -1,0 +1,108 @@
+# --- WandB ---
+wandb_project: spd
+wandb_run_name: null
+wandb_run_name_prefix: ""
+
+# --- General ---
+seed: 1
+C: 650
+n_mask_samples: 1
+ci_fn_type: "shared_mlp"
+ci_fn_hidden_dims: [550]
+sigmoid_type: "leaky_hard"
+target_module_patterns:
+  - "h.*.mlp.c_fc"
+  - "h.*.mlp.down_proj"
+  - "h.*.attn.q_proj"
+  - "h.*.attn.k_proj"
+  - "h.*.attn.v_proj"
+  - "h.*.attn.o_proj"
+identity_module_patterns: null
+use_delta_component: true
+loss_metric_configs:
+- coeff: 0.002
+  classname: ImportanceMinimalityLoss
+  pnorm: 2.0
+  p_anneal_start_frac: 0.0
+  p_anneal_final_p: 0.3
+  p_anneal_end_frac: 1.0
+  eps: 1.0e-12
+- coeff: 0.5
+  classname: StochasticReconSubsetLoss
+- coeff: 0.5
+  init: random
+  step_size: 1.0
+  n_steps: 1
+  mask_scope: shared_across_batch
+  classname: PGDReconSubsetLoss
+- coeff: 1000000.0
+  classname: FaithfulnessLoss
+output_loss_type: kl
+lr: 0.0002
+steps: 400_000
+batch_size: 64
+gradient_accumulation_steps: 1
+faithfulness_warmup_steps: 200
+faithfulness_warmup_lr: 0.001
+faithfulness_warmup_weight_decay: 0.0
+lr_schedule: cosine
+lr_exponential_halflife: null
+lr_warmup_pct: 0.0
+out_dir: null
+train_log_freq: 200
+eval_freq: 1000
+eval_batch_size: 64
+slow_eval_freq: 10000
+n_eval_steps: 5
+slow_eval_on_first_step: true
+save_freq: null
+eval_metric_configs:
+- classname: CIHistograms
+  n_batches_accum: 5
+- classname: ComponentActivationDensity
+- classname: CI_L0
+  groups:
+    total:
+    - '*'
+    layer_0:
+    - h.0.*
+    layer_1:
+    - h.1.*
+- classname: CEandKLLosses
+  rounding_threshold: 0.0
+- classname: CIMeanPerComponent
+- coeff: null
+  classname: StochasticHiddenActsReconLoss
+- coeff: null
+  init: random
+  step_size: 0.1
+  n_steps: 20
+  mask_scope: shared_across_batch
+  classname: PGDReconLoss
+ci_alive_threshold: 0.0
+n_examples_until_dead: 1368400
+
+# --- Pretrained model info ---
+pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
+pretrained_model_name: wandb:goodfire/spd/runs/wr1su18m # 100k steps. 4019 tokenizer
+pretrained_model_output_attr: idx_0
+tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok:  TODO: Load from wandb instead
+
+# --- Task Specific ---
+task_config:
+  task_name: lm 
+  max_seq_len: 512
+  dataset_name: "SimpleStories/SimpleStories"
+  column_name: "story"
+  train_data_split: "train"
+  eval_data_split: "test"
+
+# Config details for the target model taken from https://github.com/goodfire-ai/simple_stories_train/blob/dev/simple_stories_train/models/model_configs.py
+# "gpt2_simple-1.25M": GPT2SimpleConfig(
+#     block_size=512,
+#     vocab_size=4019,
+#     n_layer=4,
+#     n_head=4,
+#     n_embd=128,
+#     flash_attention=False,
+# ),
