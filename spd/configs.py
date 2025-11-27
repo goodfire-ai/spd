@@ -169,21 +169,16 @@ class UVPlotsConfig(BaseConfig):
 
 
 ReconLossConfigType = (
-    # Unmasked
     UnmaskedReconLossConfig
-    # CI masked
     | CIMaskedReconLossConfig
     | CIMaskedReconSubsetLossConfig
     | CIMaskedReconLayerwiseLossConfig
-    # Stochastic
     | StochasticReconLossConfig
     | StochasticReconSubsetLossConfig
     | StochasticReconLayerwiseLossConfig
-    # PGD
     | PGDReconLossConfig
     | PGDReconSubsetLossConfig
     | PGDReconLayerwiseLossConfig
-    # Hidden acts
     | StochasticHiddenActsReconLossConfig
 )
 
