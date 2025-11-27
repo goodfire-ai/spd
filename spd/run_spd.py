@@ -37,8 +37,7 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
-    get_world_size,
-    is_distributed,
+    get_distributed_state,
     is_main_process,
     sync_across_processes,
 )
@@ -162,12 +161,11 @@ def optimize(
     model.to(device)
 
     # Wrap model with DDP if distributed
-    world_size = get_world_size()
+    dist_state = get_distributed_state()
     wrapped_model: nn.Module = model
-    if world_size > 1:
-        if device.startswith("cuda"):
-            # Parse device string to get device id for GPU
-            device_id = int(device.split(":")[1]) if ":" in device else 0
+    if dist_state is not None:
+        if dist_state.backend == "nccl":
+            device_id = dist_state.local_rank
             wrapped_model = torch.nn.parallel.DistributedDataParallel(
                 model,
                 device_ids=[device_id],
@@ -180,6 +178,7 @@ def optimize(
         component_model = wrapped_model.module  # type: ignore[attr-defined]
     else:
         component_model = model
+    assert isinstance(component_model, ComponentModel), "component_model is not a ComponentModel"
 
     if tied_weights is not None:
         # Tie component weights. Assume that the first element is a transpose of the second element
@@ -239,7 +238,7 @@ def optimize(
         global_n_examples_per_batch=batch_dims.numel(),
     )
 
-    for step in tqdm(range(config.steps + 1), ncols=0):
+    for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
 
         step_lr = get_lr_with_warmup(
@@ -301,9 +300,8 @@ def optimize(
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
-            if is_distributed():
-                avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
-                microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
+            avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
+            microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
             alive_counts = alive_tracker.compute()
             for target_module_path, n_alive_count in alive_counts.items():

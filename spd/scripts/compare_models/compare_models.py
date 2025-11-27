@@ -197,8 +197,6 @@ class ModelComparator:
             batch_size=self.config.eval_batch_size,
             buffer_size=task_config.buffer_size,
             global_seed=self.current_config.seed + 1,
-            ddp_rank=0,
-            ddp_world_size=1,
         )
         return iter(loader)
 
