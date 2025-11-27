@@ -112,23 +112,12 @@ class _TopKExamples:
         active_pos = []
         active_ci = []
         for ex in sorted_examples:
-            example_tokens.append(_token_ids_to_strings(ex.window_token_ids, token_strings))
+            example_tokens.append([token_strings[tid] for tid in ex.window_token_ids])
             example_ci.append([round(v, 3) for v in ex.token_ci_values])
             active_pos.append(ex.active_pos_in_window)
             active_ci.append(round(ex.active_pos_ci, 3))
 
         return example_tokens, example_ci, active_pos, active_ci
-
-
-def _token_ids_to_strings(token_ids: list[int], token_strings: dict[int, str]) -> list[str]:
-    """Convert token IDs to strings, stripping leading space from first token."""
-    if not token_ids:
-        return []
-    result = [token_strings[tid] for tid in token_ids]
-    # Strip leading space from first token (wordpiece adds space prefix to non-## tokens)
-    if result and result[0].startswith(" "):
-        result[0] = result[0][1:]
-    return result
 
 
 def _get_pad_indices_numpy(arr: NDArray[np.int64], pad_val: int) -> tuple[int, int]:
