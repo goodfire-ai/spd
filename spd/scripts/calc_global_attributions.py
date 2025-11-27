@@ -201,28 +201,16 @@ def get_sources_by_target(
     for in_layer, out_layer in test_pairs:
         out_pre_detach = cache[f"{out_layer}_pre_detach"]
         in_post_detach = cache[f"{in_layer}_post_detach"]
-        batch_idx = 0
-        seq_idx = 50
-        target_component_idx = 10
-        out_value = out_pre_detach[batch_idx, seq_idx, target_component_idx]
-        try:
-            grads = torch.autograd.grad(
-                outputs=out_value,
-                inputs=in_post_detach,
-                retain_graph=True,
-                allow_unused=True,
-            )
-            assert len(grads) == 1, "Expected 1 gradient"
-            grad = grads[0]
-            # torch.autograd.grad returns None for unused inputs when allow_unused=True
-            has_grad = (
-                grad.abs().max().item() > 1e-8
-                if grad is not None  # pyright: ignore[reportUnnecessaryComparison]
-                else False
-            )
-        except RuntimeError:
-            has_grad = False
-        if has_grad:
+        out_value = out_pre_detach[0, 0, 0]  # Pick arbitrary value
+        grads = torch.autograd.grad(
+            outputs=out_value,
+            inputs=in_post_detach,
+            retain_graph=True,
+            allow_unused=True,
+        )
+        assert len(grads) == 1, "Expected 1 gradient"
+        grad = grads[0]
+        if grad.abs().max().item() > 0:
             sources_by_target[out_layer].append(in_layer)
     return dict(sources_by_target)
 
