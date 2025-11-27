@@ -8,49 +8,38 @@
     }
 
     let { harvestMetadata }: Props = $props();
-    if (Object.keys(harvestMetadata.layers).length === 0) {
-        throw new Error("No layers data");
-    }
-    const LIMIT = 20;
 
+    const N_TOKENS_TO_DISPLAY = 20;
+
+    let availableLayers = $derived(Object.keys(harvestMetadata.layers));
     let currentPage = $state(0);
-    let selectedLayer = $derived(Object.keys(harvestMetadata.layers)[0]);
+    let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
     let metricMode = $state<"recall" | "precision">("recall");
 
-    // Display page (1-indexed)
-    let displayPage = $derived(currentPage + 1);
+    let componentCache = $state<Record<string, ComponentDetail>>({});
+    let loadingComponent = $state(false);
 
-    // Update currentPage when page input changes
+    let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
+    let totalPages = $derived(currentLayerMetadata.length);
+    let currentMetadata = $derived<api.SubcomponentMetadata>(currentLayerMetadata[currentPage]);
+
+    function getCacheKey(layer: string, componentIdx: number) {
+        return `${layer}:${componentIdx}`;
+    }
+
+    let currentComponent = $derived.by(() => {
+        const cacheKey = getCacheKey(selectedLayer, currentMetadata.subcomponent_idx);
+        return componentCache[cacheKey];
+    });
+
     function handlePageInput(event: Event) {
         const target = event.target as HTMLInputElement;
+        if (target.value === "") return;
         const value = parseInt(target.value);
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
         }
-        // If invalid, the derived displayPage will show the correct value
     }
-
-    // Component data cache: key is `${layer}:${componentIdx}`
-    let componentCache = $state<Record<string, ComponentDetail>>({});
-    let loadingComponent = $state(false);
-
-    // Derive available layers from the data
-    let availableComponentLayers = $derived(Object.keys(harvestMetadata.layers));
-
-    // Derive current metadata from selections
-    let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
-    let totalPages = $derived(currentLayerMetadata.length);
-
-    // current page isn't reset to 0 instantly when layer changes, so we must handle the case when,
-    // for a brief moment, the current page is out of bounds.
-    let currentMetadata = $derived<api.SubcomponentMetadata | null>(currentLayerMetadata.at(currentPage) ?? null);
-
-    // Get current component data from cache
-    let currentItem = $derived.by(() => {
-        if (!currentMetadata) return null;
-        const cacheKey = `${selectedLayer}:${currentMetadata.subcomponent_idx}`;
-        return componentCache[cacheKey] ?? null;
-    });
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -62,7 +51,8 @@
 
     // Reset page when layer changes
     $effect(() => {
-        if (selectedLayer) currentPage = 0;
+        selectedLayer; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        currentPage = 0;
     });
 
     // Lazy-load component data when page or layer changes
@@ -73,7 +63,7 @@
 
         if (!meta) return;
 
-        const cacheKey = `${layer}:${meta.subcomponent_idx}`;
+        const cacheKey = getCacheKey(layer, meta.subcomponent_idx);
 
         // skip if already cached
         if (componentCache[cacheKey]) return;
@@ -86,7 +76,7 @@
                 const detail = await api.getComponentDetail(harvestMetadata.harvest_id, layer, meta.subcomponent_idx);
 
                 if (cancelled) return;
-                componentCache[cacheKey] = detail; // writes to $state
+                componentCache[cacheKey] = detail;
             } catch (error) {
                 if (!cancelled) console.error("Failed to load component:", error);
             } finally {
@@ -102,18 +92,27 @@
         };
     });
 
-    let densities = $derived(
-        currentItem?.token_prs
-            ?.slice()
-            .sort((a, b) => b[metricMode] - a[metricMode])
-            .slice(0, LIMIT),
-    );
+    // Build sorted token densities from columnar data
+    let densities = $derived.by(() => {
+        const n = currentComponent.pr_tokens.length;
+        const indices = Array.from({ length: n }, (_, i) => i);
+        indices.sort((a, b) => {
+            const valA = metricMode === "recall" ? currentComponent.pr_recalls[a] : currentComponent.pr_precisions[a];
+            const valB = metricMode === "recall" ? currentComponent.pr_recalls[b] : currentComponent.pr_precisions[b];
+            return valB - valA;
+        });
+        return indices.slice(0, N_TOKENS_TO_DISPLAY).map((i) => ({
+            token: currentComponent.pr_tokens[i],
+            recall: currentComponent.pr_recalls[i],
+            precision: currentComponent.pr_precisions[i],
+        }));
+    });
 </script>
 
 <div class="layer-select-section">
     <label for="layer-select">Layer:</label>
     <select id="layer-select" bind:value={selectedLayer}>
-        {#each availableComponentLayers as layer (layer)}
+        {#each availableLayers as layer (layer)}
             <option value={layer}>{layer}</option>
         {/each}
     </select>
@@ -121,14 +120,21 @@
 
 <div class="pagination-controls">
     <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input type="number" min="1" max={totalPages} value={displayPage} oninput={handlePageInput} class="page-input" />
+    <input
+        type="number"
+        min="1"
+        max={totalPages}
+        value={currentPage + 1}
+        oninput={handlePageInput}
+        class="page-input"
+    />
     <span>of {totalPages}</span>
     <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
 </div>
 
 {#if loadingComponent}
     <div class="loading">Loading component data...</div>
-{:else if currentItem && currentMetadata}
+{:else if currentComponent && currentMetadata}
     <div class="subcomponent-section-header">
         <h4>
             Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
@@ -140,8 +146,8 @@
                 <div class="token-densities-header">
                     <h5>
                         Tokens
-                        {currentItem.token_prs.length > LIMIT
-                            ? `(top ${LIMIT} of ${currentItem.token_prs.length})`
+                        {currentComponent.pr_tokens.length > N_TOKENS_TO_DISPLAY
+                            ? `(top ${N_TOKENS_TO_DISPLAY} of ${currentComponent.pr_tokens.length})`
                             : ""}
                     </h5>
                     <div class="metric-toggle">
@@ -175,7 +181,12 @@
             </div>
         {/if}
 
-        <ActivationContextsPagedTable examples={currentItem.examples} />
+        <ActivationContextsPagedTable
+            exampleTokens={currentComponent.example_tokens}
+            exampleCi={currentComponent.example_ci}
+            exampleActivePos={currentComponent.example_active_pos}
+            activatingTokens={currentComponent.pr_tokens}
+        />
     </div>
 {/if}
 

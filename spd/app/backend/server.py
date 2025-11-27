@@ -84,8 +84,8 @@ def get_subcomponent_activation_contexts(
             topk_examples,
         ):
             match res:
-                case ("progress", data):
-                    progress_data = {"type": "progress", "current": data, "total": n_batches}
+                case ("progress", progress):
+                    progress_data = {"type": "progress", "progress": progress}
                     yield f"data: {json.dumps(progress_data)}\n\n"
                 case ("complete", data):
                     # Generate harvest ID and cache the full result
