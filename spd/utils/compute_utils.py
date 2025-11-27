@@ -19,10 +19,6 @@ CUDA_FLAGS = {
 GPUS_PER_NODE = 8
 
 
-def get_config_json(config: Config) -> str:
-    return f"json:{json.dumps(config.model_dump(mode='json'))}"
-
-
 @dataclass
 class Command:
     command: str
@@ -81,6 +77,8 @@ def get_command(
     """
     port = _choose_master_port(run_id, job_idx)
 
+    json_tagged_config = f"json:{json.dumps(job.config.model_dump(mode='json'))}"
+
     if n_gpus is None or n_gpus == 1:
         # Single GPU or CPU
         command = f"python {job.script_path} "
@@ -93,8 +91,6 @@ def get_command(
         # Build the torchrun command with $SLURM vars that will be evaluated on each node
         n_nodes = n_gpus // GPUS_PER_NODE
 
-        config_json = get_config_json(job.config)
-
         # Build torchrun command with shell variables that need to be evaluated on each node
         torchrun_cmd = (
             f"torchrun "
@@ -104,26 +100,28 @@ def get_command(
             f'--master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1) '
             f"--master_port={port} "
             f"{job.script_path} "
-            f"--config_json {shlex.quote(config_json)} "
+            f"--config_json {shlex.quote(json_tagged_config)} "
             f"--sweep_id {run_id} "
             f"--evals_id {job.experiment}"
         )
 
         if sweep_params is not None:
-            torchrun_cmd += f" --sweep_params_json {shlex.quote(json.dumps(sweep_params))}"
+            json_tagged_sweep_params = f"json:{json.dumps(sweep_params)}"
+            torchrun_cmd += f" --sweep_params_json {shlex.quote(json_tagged_sweep_params)}"
 
-        # Wrap in srun bash -c with proper shell quoting
+        # Wrap in srun bash -c with proper shell quoting so that $SLURM_PROCID is evaluated on each node
         command = f"srun bash -c {shlex.quote(torchrun_cmd)}"
         return Command(env_vars=CUDA_FLAGS, command=command)
 
     command += (
-        f"--config_json '{get_config_json(job.config)}' "
+        f"--config_json {shlex.quote(json_tagged_config)} "
         f"--sweep_id {run_id} "
         f"--evals_id {job.experiment} "
     )
 
     if sweep_params is not None:
-        command += f"--sweep_params_json '{json.dumps(sweep_params)}' "
+        json_tagged_sweep_params = f"json:{json.dumps(sweep_params)}"
+        command += f" --sweep_params_json {shlex.quote(json_tagged_sweep_params)} "
 
     return Command(env_vars=CUDA_FLAGS, command=command)
 
