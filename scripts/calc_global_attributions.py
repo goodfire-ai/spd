@@ -2,6 +2,7 @@
 
 import gzip
 import json
+from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -134,13 +135,18 @@ def compute_alive_components(
     return mean_cis, alive_indices, images
 
 
-def get_valid_pairs(
+def get_sources_by_target(
     model: ComponentModel,
     data_loader: Iterable[dict[str, Any]],
     device: str,
     config: Config,
     n_blocks: int,
-) -> list[tuple[str, str]]:
+) -> dict[str, list[str]]:
+    """Find valid gradient connections grouped by target layer.
+
+    Returns:
+        Dict mapping out_layer -> list of in_layers that have gradient flow to it.
+    """
     # Get an arbitrary batch
     batch_raw = next(iter(data_loader))
     batch = extract_batch_data(batch_raw).to(device)
@@ -191,7 +197,7 @@ def get_valid_pairs(
             if layers.index(in_layer) < layers.index(out_layer):
                 test_pairs.append((in_layer, out_layer))
 
-    valid_pairs = []
+    sources_by_target: dict[str, list[str]] = defaultdict(list)
     for in_layer, out_layer in test_pairs:
         out_pre_detach = cache[f"{out_layer}_pre_detach"]
         in_post_detach = cache[f"{in_layer}_post_detach"]
@@ -217,8 +223,32 @@ def get_valid_pairs(
         except RuntimeError:
             has_grad = False
         if has_grad:
-            valid_pairs.append((in_layer, out_layer))
-    return valid_pairs
+            sources_by_target[out_layer].append(in_layer)
+    return dict(sources_by_target)
+
+
+def validate_attention_pair_structure(sources_by_target: dict[str, list[str]]) -> None:
+    """Assert that o_proj layers only receive from same-block QKV.
+
+    This structural property allows us to handle attention and non-attention
+    cases separately without mixing within a single target layer.
+    """
+    for out_layer, in_layers in sources_by_target.items():
+        if "o_proj" in out_layer:
+            out_block = out_layer.split(".")[1]
+            for in_layer in in_layers:
+                assert any(x in in_layer for x in ["q_proj", "k_proj", "v_proj"]), (
+                    f"o_proj output {out_layer} has non-QKV input {in_layer}"
+                )
+                in_block = in_layer.split(".")[1]
+                assert in_block == out_block, (
+                    f"o_proj output {out_layer} has input from different block: {in_layer}"
+                )
+        else:
+            for in_layer in in_layers:
+                assert not is_qkv_to_o_pair(in_layer, out_layer), (
+                    f"Non-o_proj output {out_layer} has attention pair input {in_layer}"
+                )
 
 
 def compute_global_attributions(
@@ -226,7 +256,7 @@ def compute_global_attributions(
     data_loader: Iterable[dict[str, Any]],
     device: str,
     config: Config,
-    valid_pairs: list[tuple[str, str]],
+    sources_by_target: dict[str, list[str]],
     max_batches: int,
     alive_indices: dict[str, list[int]],
     ci_attribution_threshold: float,
@@ -237,32 +267,35 @@ def compute_global_attributions(
     of output component activations with respect to input component activations,
     averaged over batch, sequence positions, and number of batches.
 
+    Optimization: For each target layer, we batch all source layers into a single
+    autograd.grad call, sharing backward computation.
+
     Args:
         model: The ComponentModel to analyze.
         data_loader: DataLoader providing batches.
         device: Device to run on.
         config: SPD config with sampling settings.
-        valid_pairs: List of (in_layer, out_layer) pairs to compute attributions for.
+        sources_by_target: Dict mapping out_layer -> list of in_layers.
         max_batches: Maximum number of batches to process.
         alive_indices: Dictionary mapping module path -> list of alive component indices.
         ci_attribution_threshold: Threshold for considering a component for the attribution calculation.
+
     Returns:
         Dictionary mapping (in_layer, out_layer) -> attribution tensor of shape [n_alive_in, n_alive_out]
-        where attribution[i, j] is the mean absolute gradient from the i-th alive input component to the j-th alive output component.
+        where attribution[i, j] is the mean absolute gradient from the i-th alive input component
+        to the j-th alive output component.
     """
-
-    # Initialize accumulators for each valid pair
-    # Track samples separately per pair since attention pairs aggregate differently
+    # Initialize accumulators for each (in_layer, out_layer) pair
     attribution_sums: dict[tuple[str, str], Float[Tensor, "n_alive_in n_alive_out"]] = {}
     samples_per_pair: dict[tuple[str, str], int] = {}
-    for pair in valid_pairs:
-        in_layer, out_layer = pair
-        n_alive_in = len(alive_indices[in_layer])
-        n_alive_out = len(alive_indices[out_layer])
-        attribution_sums[(in_layer, out_layer)] = torch.zeros(
-            n_alive_in, n_alive_out, device=device
-        )
-        samples_per_pair[(in_layer, out_layer)] = 0
+    for out_layer, in_layers in sources_by_target.items():
+        for in_layer in in_layers:
+            n_alive_in = len(alive_indices[in_layer])
+            n_alive_out = len(alive_indices[out_layer])
+            attribution_sums[(in_layer, out_layer)] = torch.zeros(
+                n_alive_in, n_alive_out, device=device
+            )
+            samples_per_pair[(in_layer, out_layer)] = 0
 
     batch_pbar = tqdm(enumerate(data_loader), desc="Batches", total=max_batches)
     for batch_idx, batch_raw in batch_pbar:
@@ -301,88 +334,108 @@ def compute_global_attributions(
 
         cache = comp_output_with_cache.cache
 
-        # Compute attributions for each valid pair
-        for in_layer, out_layer in tqdm(valid_pairs, desc="Layer pairs", leave=False):
+        # Compute attributions grouped by target layer
+        for out_layer, in_layers in tqdm(
+            sources_by_target.items(), desc="Target layers", leave=False
+        ):
             out_pre_detach: Float[Tensor, "b s C"] = cache[f"{out_layer}_pre_detach"]
-            in_post_detach: Float[Tensor, "b s C"] = cache[f"{in_layer}_post_detach"]
-
             alive_out: list[int] = alive_indices[out_layer]
-            alive_in: list[int] = alive_indices[in_layer]
-            batch_attribution = torch.zeros(len(alive_in), len(alive_out), device=device)
-
             ci_out = ci.lower_leaky[out_layer]
-            ci_in = ci.lower_leaky[in_layer]
 
-            ci_weighted_in_post_detach = in_post_detach * ci_in
+            # Gather all input tensors for this target layer
+            in_tensors = [cache[f"{in_layer}_post_detach"] for in_layer in in_layers]
+            ci_weighted_inputs = [
+                in_tensors[i] * ci.lower_leaky[in_layers[i]] for i in range(len(in_layers))
+            ]
 
-            is_attention_pair = is_qkv_to_o_pair(in_layer, out_layer)
-            tqdm.write(f"Attention pair: {in_layer} -> {out_layer}")
+            # Initialize batch attributions for each input layer
+            batch_attributions = {
+                in_layer: torch.zeros(len(alive_indices[in_layer]), len(alive_out), device=device)
+                for in_layer in in_layers
+            }
+
+            is_attention_output = "o_proj" in out_layer
+            tqdm.write(
+                f"{'Attention' if is_attention_output else 'Non-attention'} target: "
+                f"{out_layer} <- {in_layers}"
+            )
 
             grad_outputs: Float[Tensor, "b s C"] = torch.zeros_like(out_pre_detach)
 
             for c_enum, c_idx in tqdm(
                 enumerate(alive_out), desc="Components", leave=False, total=len(alive_out)
             ):
-                if is_attention_pair:
-                    # Attention pair: loop over output sequence positions because
-                    # output at s_out has gradients w.r.t. inputs at all s_in <= s_out
+                if is_attention_output:
+                    # Attention target: loop over output sequence positions
                     for s_out in range(n_seq):
                         if ci_out[:, s_out, c_idx].sum() <= ci_attribution_threshold:
                             continue
                         grad_outputs.zero_()
                         grad_outputs[:, s_out, c_idx] = ci_out[:, s_out, c_idx].detach()
 
-                        grads = torch.autograd.grad(
+                        # Single autograd call for all input layers
+                        grads_tuple = torch.autograd.grad(
                             outputs=out_pre_detach,
-                            inputs=in_post_detach,
+                            inputs=in_tensors,
                             grad_outputs=grad_outputs,
                             retain_graph=True,
                             allow_unused=True,
-                        )[0]
-                        assert grads is not None, "Gradient is None"
+                        )
 
                         with torch.no_grad():
-                            weighted = grads * ci_weighted_in_post_detach
-                            # Only sum contributions from positions s_in <= s_out (causal)
-                            weighted_alive = weighted[:, : s_out + 1, alive_in]
-                            batch_attribution[:, c_enum] += weighted_alive.pow(2).sum(dim=(0, 1))
+                            for i, in_layer in enumerate(in_layers):
+                                grads = grads_tuple[i]
+                                assert grads is not None, f"Gradient is None for {in_layer}"
+                                alive_in = alive_indices[in_layer]
+                                weighted = grads * ci_weighted_inputs[i]
+                                # Only sum contributions from positions s_in <= s_out (causal)
+                                weighted_alive = weighted[:, : s_out + 1, alive_in]
+                                batch_attributions[in_layer][:, c_enum] += weighted_alive.pow(
+                                    2
+                                ).sum(dim=(0, 1))
                 else:
+                    # Non-attention target: vectorize over all (b, s) positions
                     if ci_out[:, :, c_idx].sum() <= ci_attribution_threshold:
                         continue
-                    # Standard case: vectorize over all (b, s) positions
                     grad_outputs.zero_()
                     grad_outputs[:, :, c_idx] = ci_out[:, :, c_idx].detach()
 
-                    grads = torch.autograd.grad(
+                    # Single autograd call for all input layers
+                    grads_tuple = torch.autograd.grad(
                         outputs=out_pre_detach,
-                        inputs=in_post_detach,
+                        inputs=in_tensors,
                         grad_outputs=grad_outputs,
                         retain_graph=True,
                         allow_unused=True,
-                    )[0]
-                    assert grads is not None, "Gradient is None"
+                    )
 
                     with torch.no_grad():
-                        weighted = grads * in_post_detach * ci_in
-                        weighted_alive = weighted[:, :, alive_in]
-                        batch_attribution[:, c_enum] += weighted_alive.pow(2).sum(dim=(0, 1))
+                        for i, in_layer in enumerate(in_layers):
+                            grads = grads_tuple[i]
+                            assert grads is not None, f"Gradient is None for {in_layer}"
+                            alive_in = alive_indices[in_layer]
+                            weighted = grads * ci_weighted_inputs[i]
+                            weighted_alive = weighted[:, :, alive_in]
+                            batch_attributions[in_layer][:, c_enum] += weighted_alive.pow(2).sum(
+                                dim=(0, 1)
+                            )
 
-            attribution_sums[(in_layer, out_layer)] += batch_attribution
-
-            # Track samples: for attention pairs, we have batch_size * (1+2+...+n_seq) = batch_size * n_seq*(n_seq+1)/2
-            # input positions per batch (triangular sum due to causal masking).
-            # For standard pairs, we have batch_size * n_seq positions.
-            if is_attention_pair:
-                samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq * (n_seq + 1) // 2
-            else:
-                samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq
+            # Accumulate batch results and track samples
+            for in_layer in in_layers:
+                attribution_sums[(in_layer, out_layer)] += batch_attributions[in_layer]
+                # Track samples: attention pairs have triangular sum due to causal masking
+                if is_attention_output:
+                    samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq * (n_seq + 1) // 2
+                else:
+                    samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq
 
     global_attributions = {
         pair: (attr_sum / samples_per_pair[pair]).sqrt()
         for pair, attr_sum in attribution_sums.items()
     }
 
-    total_samples = sum(samples_per_pair.values()) // len(valid_pairs) if valid_pairs else 0
+    n_pairs = len(attribution_sums)
+    total_samples = sum(samples_per_pair.values()) // n_pairs if n_pairs else 0
     print(f"Computed global attributions over ~{total_samples} samples per pair")
     return global_attributions
 
@@ -393,9 +446,9 @@ def compute_global_attributions(
 # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
 wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L
 n_blocks = 1
-batch_size = 32
+batch_size = 512
 # n_attribution_batches = 20
-n_attribution_batches = 2
+n_attribution_batches = 1
 n_alive_calc_batches = 5
 # n_alive_calc_batches = 200
 ci_mean_alive_threshold = 1e-6
@@ -447,8 +500,13 @@ data_loader, tokenizer = create_data_loader(
     ddp_world_size=1,
 )
 
-valid_pairs = get_valid_pairs(model, data_loader, device, config, n_blocks)
-print(f"Valid layer pairs: {valid_pairs}")
+sources_by_target = get_sources_by_target(model, data_loader, device, config, n_blocks)
+validate_attention_pair_structure(sources_by_target)
+
+n_pairs = sum(len(ins) for ins in sources_by_target.values())
+print(f"Sources by target: {n_pairs} pairs across {len(sources_by_target)} target layers")
+for out_layer, in_layers in sources_by_target.items():
+    print(f"  {out_layer} <- {in_layers}")
 # %%
 # Compute alive components based on mean CI threshold
 print("\nComputing alive components based on mean CI...")
@@ -481,7 +539,7 @@ global_attributions = compute_global_attributions(
     data_loader=data_loader,
     device=device,
     config=config,
-    valid_pairs=valid_pairs,
+    sources_by_target=sources_by_target,
     max_batches=n_attribution_batches,
     alive_indices=alive_indices,
     ci_attribution_threshold=ci_attribution_threshold,
