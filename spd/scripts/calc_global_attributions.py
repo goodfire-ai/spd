@@ -416,8 +416,8 @@ def compute_global_attributions(
 
     global_attributions = {}
     for pair, attr_sum in attribution_sums.items():
-        attr = attr_sum / samples_per_pair[pair]
-        global_attributions[pair] = attr / attr.sum()
+        attr: Float[Tensor, "n_alive_in n_alive_out"] = attr_sum / samples_per_pair[pair]
+        global_attributions[pair] = attr / attr.sum(dim=1, keepdim=True)
 
     n_pairs = len(attribution_sums)
     total_samples = sum(samples_per_pair.values()) // n_pairs if n_pairs else 0
