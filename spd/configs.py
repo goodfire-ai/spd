@@ -81,6 +81,10 @@ class StochasticReconLayerwiseLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
 
 
+class UnmaskedReconLossConfig(LossMetricConfig):
+    classname: Literal["UnmaskedReconLoss"] = "UnmaskedReconLoss"
+
+
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
 
 MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
@@ -180,25 +184,21 @@ class UVPlotsConfig(BaseConfig):
     dense_patterns: list[str] | None
 
 
-LossMetricConfigType = (
-    FaithfulnessLossConfig
-    | ImportanceMinimalityLossConfig
-    # Recon losses:
-    # CI masked recon
+ReconLossConfigType = (
+    UnmaskedReconLossConfig
     | CIMaskedReconLossConfig
     | CIMaskedReconSubsetLossConfig
     | CIMaskedReconLayerwiseLossConfig
-    # Stochastic
     | StochasticReconLossConfig
     | StochasticReconSubsetLossConfig
     | StochasticReconLayerwiseLossConfig
-    # PGD
     | PGDReconLossConfig
     | PGDReconSubsetLossConfig
     | PGDReconLayerwiseLossConfig
-    # Hidden acts
     | StochasticHiddenActsReconLossConfig
 )
+
+LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
