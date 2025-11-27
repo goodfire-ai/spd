@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attribution Graph Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0f0f0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            padding: 20px 30px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .header h1 {
+            font-size: 1.4rem;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        .controls {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .control-group input[type="range"] {
+            width: 120px;
+            accent-color: #6366f1;
+        }
+
+        .control-group input[type="file"] {
+            font-size: 0.85rem;
+        }
+
+        .control-group span {
+            font-size: 0.85rem;
+            color: #6366f1;
+            min-width: 60px;
+        }
+
+        .stats {
+            font-size: 0.85rem;
+            color: #666;
+            margin-left: auto;
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .graph-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #graph {
+            width: 100%;
+            height: 100%;
+        }
+
+        .legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(26, 26, 26, 0.95);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 0.8rem;
+        }
+
+        .legend-title {
+            font-weight: 500;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 6px 0;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s;
+            z-index: 1000;
+        }
+
+        .tooltip.visible {
+            opacity: 1;
+        }
+
+        .tooltip-title {
+            font-weight: 500;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+
+        .tooltip-value {
+            color: #6366f1;
+        }
+
+        .node {
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .node:hover {
+            opacity: 0.8;
+        }
+
+        .edge {
+            fill: none;
+            stroke-linecap: round;
+        }
+
+        .block-label {
+            font-size: 14px;
+            font-weight: 600;
+            fill: #666;
+        }
+
+        .layer-label {
+            font-size: 11px;
+            fill: #555;
+        }
+
+        .drop-zone {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #555;
+            pointer-events: none;
+        }
+
+        .drop-zone.hidden {
+            display: none;
+        }
+
+        .drop-zone-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .drop-zone-text {
+            font-size: 1.1rem;
+        }
+
+        .drop-zone-hint {
+            font-size: 0.85rem;
+            margin-top: 8px;
+            color: #444;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Global Attribution Graph</h1>
+        <div class="controls">
+            <div class="control-group">
+                <label>Load JSON:</label>
+                <input type="file" id="fileInput" accept=".json,.gz">
+            </div>
+            <div class="control-group">
+                <label>Edge Threshold:</label>
+                <input type="range" id="thresholdSlider" min="-15" max="0" step="0.1" value="-6">
+                <span id="thresholdValue">1e-6</span>
+            </div>
+        </div>
+        <div class="stats" id="stats">No data loaded</div>
+    </div>
+
+    <div class="main-container">
+        <div class="graph-container">
+            <svg id="graph"></svg>
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-icon">📊</div>
+                <div class="drop-zone-text">Drop attribution JSON file here</div>
+                <div class="drop-zone-hint">or use the file picker above</div>
+            </div>
+            <div class="legend">
+                <div class="legend-title">Layer Types</div>
+                <div class="legend-item"><div class="legend-color" style="background: #3b82f6"></div>q_proj</div>
+                <div class="legend-item"><div class="legend-color" style="background: #22c55e"></div>k_proj</div>
+                <div class="legend-item"><div class="legend-color" style="background: #a855f7"></div>v_proj</div>
+                <div class="legend-item"><div class="legend-color" style="background: #ef4444"></div>o_proj</div>
+                <div class="legend-item"><div class="legend-color" style="background: #f97316"></div>c_fc</div>
+                <div class="legend-item"><div class="legend-color" style="background: #78716c"></div>down_proj</div>
+            </div>
+            <div class="tooltip" id="tooltip"></div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const layerColors = {
+            'attn.q_proj': '#3b82f6',
+            'attn.k_proj': '#22c55e',
+            'attn.v_proj': '#a855f7',
+            'attn.o_proj': '#ef4444',
+            'mlp.c_fc': '#f97316',
+            'mlp.down_proj': '#78716c'
+        };
+
+        const layerYOffsets = {
+            'mlp.down_proj': 2.0,
+            'mlp.c_fc': 1.0,
+            'attn.o_proj': 0.0,
+            'attn.v_proj': -1.0,
+            'attn.k_proj': -1.0,
+            'attn.q_proj': -1.0,
+        };
+
+        const layerXOffsets = {
+            'mlp.down_proj': 0.0,
+            'mlp.c_fc': 0.0,
+            'attn.o_proj': 0.0,
+            'attn.q_proj': -1.5,
+            'attn.k_proj': 0.0,
+            'attn.v_proj': 1.5,
+        };
+
+        const layerOrder = [
+            'attn.q_proj', 'attn.k_proj', 'attn.v_proj',
+            'attn.o_proj', 'mlp.c_fc', 'mlp.down_proj'
+        ];
+
+        // State
+        let globalData = null;
+        let currentThreshold = 1e-6;
+
+        // DOM elements
+        const svg = d3.select('#graph');
+        const tooltip = d3.select('#tooltip');
+        const thresholdSlider = document.getElementById('thresholdSlider');
+        const thresholdValue = document.getElementById('thresholdValue');
+        const statsEl = document.getElementById('stats');
+        const fileInput = document.getElementById('fileInput');
+        const dropZone = document.getElementById('dropZone');
+
+        // Initialize SVG
+        const margin = { top: 60, right: 40, bottom: 40, left: 80 };
+        let width, height;
+
+        function updateDimensions() {
+            const container = document.querySelector('.graph-container');
+            width = container.clientWidth;
+            height = container.clientHeight;
+            svg.attr('width', width).attr('height', height);
+        }
+
+        window.addEventListener('resize', () => {
+            updateDimensions();
+            if (globalData) render();
+        });
+
+        updateDimensions();
+
+        // File handling
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) loadFile(file);
+        });
+
+        document.body.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.background = 'rgba(99, 102, 241, 0.1)';
+        });
+
+        document.body.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.style.background = 'transparent';
+        });
+
+        document.body.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.background = 'transparent';
+            const file = e.dataTransfer.files[0];
+            if (file) loadFile(file);
+        });
+
+        async function loadFile(file) {
+            try {
+                let text;
+
+                // Check if it's a gzipped file
+                if (file.name.endsWith('.gz')) {
+                    // Decompress gzipped file
+                    const arrayBuffer = await file.arrayBuffer();
+                    const compressed = new Uint8Array(arrayBuffer);
+
+                    // Use DecompressionStream API if available
+                    if (window.DecompressionStream) {
+                        const stream = new Response(compressed).body.pipeThrough(new DecompressionStream('gzip'));
+                        const decompressed = await new Response(stream).text();
+                        text = decompressed;
+                    } else {
+                        // Fallback: Alert user to use uncompressed file
+                        alert('Your browser doesn\'t support gzipped files. Please use the uncompressed .json file instead.');
+                        return;
+                    }
+                } else {
+                    // Regular JSON file
+                    text = await file.text();
+                }
+
+                // For large files, show loading message
+                if (file.size > 10 * 1024 * 1024) { // If larger than 10MB
+                    console.log('Processing large file... Size:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+                }
+
+                // Try parsing the JSON
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseError) {
+                    console.error('Parse error:', parseError);
+
+                    // Try to find where the JSON was truncated
+                    const errorMatch = parseError.message.match(/position (\d+)/);
+                    if (errorMatch) {
+                        const position = parseInt(errorMatch[1]);
+                        const snippet = text.substring(Math.max(0, position - 50), Math.min(text.length, position + 50));
+                        console.error('Error near position', position, ':', snippet);
+                        console.error('File length:', text.length, 'Error position:', position);
+                    }
+
+                    throw new Error(`JSON parsing failed: ${parseError.message}`);
+                }
+
+                globalData = processData(data);
+                dropZone.classList.add('hidden');
+                render();
+
+                // Show success message for large files
+                const fileSize = (file.size / 1024 / 1024).toFixed(2);
+                console.log(`Successfully loaded ${file.name} (${fileSize} MB)`);
+
+            } catch (err) {
+                alert('Error loading file: ' + err.message);
+                console.error('Full error:', err);
+            }
+        }
+
+        function processData(data) {
+            // Handle both dense and sparse formats
+            let attributions;
+            const aliveIndices = data.alive_indices || {};
+            const nBlocks = data.n_blocks || 2;
+
+            // Check format
+            if (data.format === 'sparse' && data.attributions_sparse) {
+                // Convert sparse format to dense for processing
+                console.log('Processing sparse format data...');
+                attributions = {};
+                for (const [key, sparseData] of Object.entries(data.attributions_sparse)) {
+                    const shape = sparseData.shape;
+                    const dense = Array(shape[0]).fill(null).map(() => Array(shape[1]).fill(0));
+
+                    // Fill in non-zero values
+                    for (const [i, j, value] of sparseData.data) {
+                        dense[i][j] = value;
+                    }
+
+                    attributions[key] = dense;
+                }
+
+                // Log compression stats if available
+                if (data.stats) {
+                    console.log('Compression stats:', data.stats);
+                }
+            } else {
+                // Dense format (original)
+                attributions = data.attributions || data;
+            }
+
+            // Build node list
+            const nodes = [];
+            const nodeMap = {};
+
+            // Infer alive indices from attribution tensor shapes if not provided
+            const inferredAlive = {};
+            for (const [pairKey, values] of Object.entries(attributions)) {
+                const match = pairKey.match(/\('([^']+)',\s*'([^']+)'\)/);
+                if (!match) continue;
+                const [, inLayer, outLayer] = match;
+                const nIn = values.length;
+                const nOut = values[0]?.length || 0;
+                if (!inferredAlive[inLayer]) inferredAlive[inLayer] = nIn;
+                if (!inferredAlive[outLayer]) inferredAlive[outLayer] = nOut;
+            }
+
+            // Create nodes for each layer
+            const allLayers = [];
+            for (let block = 0; block < nBlocks; block++) {
+                for (const layerName of layerOrder) {
+                    allLayers.push(`h.${block}.${layerName}`);
+                }
+            }
+
+            for (const layer of allLayers) {
+                const alive = aliveIndices[layer] ||
+                    Array.from({ length: inferredAlive[layer] || 0 }, (_, i) => i);
+
+                for (let i = 0; i < alive.length; i++) {
+                    const nodeId = `${layer}:${alive[i]}`;
+                    const node = {
+                        id: nodeId,
+                        layer: layer,
+                        component: alive[i],
+                        localIndex: i,
+                        totalInLayer: alive.length
+                    };
+                    nodes.push(node);
+                    nodeMap[nodeId] = node;
+                }
+            }
+
+            // Build edge list
+            const edges = [];
+            for (const [pairKey, values] of Object.entries(attributions)) {
+                const match = pairKey.match(/\('([^']+)',\s*'([^']+)'\)/);
+                if (!match) continue;
+                const [, inLayer, outLayer] = match;
+
+                const inAlive = aliveIndices[inLayer] ||
+                    Array.from({ length: values.length }, (_, i) => i);
+                const outAlive = aliveIndices[outLayer] ||
+                    Array.from({ length: values[0]?.length || 0 }, (_, i) => i);
+
+                for (let i = 0; i < values.length; i++) {
+                    for (let j = 0; j < values[i].length; j++) {
+                        const weight = values[i][j];
+                        if (weight > 0) {
+                            edges.push({
+                                source: `${inLayer}:${inAlive[i]}`,
+                                target: `${outLayer}:${outAlive[j]}`,
+                                weight: weight
+                            });
+                        }
+                    }
+                }
+            }
+
+            return { nodes, edges, nodeMap, nBlocks };
+        }
+
+        function render() {
+            if (!globalData) return;
+
+            const { nodes, edges, nBlocks } = globalData;
+
+            // Filter edges by threshold
+            const filteredEdges = edges.filter(e => e.weight > currentThreshold);
+
+            // Update stats
+            const totalEdges = edges.length;
+            const visibleEdges = filteredEdges.length;
+            statsEl.textContent = `${nodes.length} nodes | ${visibleEdges.toLocaleString()} / ${totalEdges.toLocaleString()} edges`;
+
+            // Compute positions
+            const graphWidth = width - margin.left - margin.right;
+            const graphHeight = height - margin.top - margin.bottom;
+            const blockSpacing = graphHeight / nBlocks;
+            const nodeSpacing = 8;
+
+            const nodePositions = {};
+            for (const node of nodes) {
+                const parts = node.layer.split('.');
+                const blockIdx = parseInt(parts[1]);
+                const layerName = parts.slice(2).join('.');
+
+                // Flip Y so block 0 is at bottom
+                const yBase = graphHeight - (blockIdx + 0.5) * blockSpacing + layerYOffsets[layerName] * 40;
+                const xBase = graphWidth / 2 + layerXOffsets[layerName] * 100;
+
+                const x = xBase + (node.localIndex - node.totalInLayer / 2) * nodeSpacing;
+                const y = yBase;
+
+                nodePositions[node.id] = { x: x + margin.left, y: y + margin.top };
+            }
+
+            // Clear and redraw
+            svg.selectAll('*').remove();
+
+            const g = svg.append('g');
+
+            // Add block labels
+            for (let block = 0; block < nBlocks; block++) {
+                const y = graphHeight - (block + 0.5) * blockSpacing + margin.top;
+                g.append('text')
+                    .attr('class', 'block-label')
+                    .attr('x', 25)
+                    .attr('y', y)
+                    .attr('text-anchor', 'middle')
+                    .attr('dominant-baseline', 'middle')
+                    .text(`Block ${block}`);
+            }
+
+            // Add layer labels
+            for (let block = 0; block < nBlocks; block++) {
+                const yBase = graphHeight - (block + 0.5) * blockSpacing + margin.top;
+
+                for (const [layerName, yOffset] of Object.entries(layerYOffsets)) {
+                    const y = yBase + yOffset * 40;
+                    const xOffset = layerXOffsets[layerName];
+                    const shortName = layerName.split('.').pop();
+
+                    if (layerName.includes('attn.q') || layerName.includes('attn.k') || layerName.includes('attn.v')) {
+                        const x = graphWidth / 2 + xOffset * 100 + margin.left;
+                        g.append('text')
+                            .attr('class', 'layer-label')
+                            .attr('x', x)
+                            .attr('y', y - 20)
+                            .attr('text-anchor', 'middle')
+                            .text(shortName);
+                    } else {
+                        g.append('text')
+                            .attr('class', 'layer-label')
+                            .attr('x', margin.left - 10)
+                            .attr('y', y)
+                            .attr('text-anchor', 'end')
+                            .attr('dominant-baseline', 'middle')
+                            .text(shortName);
+                    }
+                }
+            }
+
+            // Compute edge weight range for styling
+            const weights = filteredEdges.map(e => e.weight);
+            const minWeight = Math.min(...weights) || 0;
+            const maxWeight = Math.max(...weights) || 1;
+
+            // Draw edges (use curved lines for visual appeal)
+            const edgeGroup = g.append('g').attr('class', 'edges');
+
+            // Batch edges by weight bucket for performance
+            const nBuckets = 10;
+            const buckets = Array.from({ length: nBuckets }, () => []);
+
+            for (const edge of filteredEdges) {
+                const normalized = maxWeight > minWeight
+                    ? (edge.weight - minWeight) / (maxWeight - minWeight)
+                    : 0.5;
+                const bucketIdx = Math.min(Math.floor(normalized * nBuckets), nBuckets - 1);
+                buckets[bucketIdx].push(edge);
+            }
+
+            for (let i = 0; i < nBuckets; i++) {
+                if (buckets[i].length === 0) continue;
+
+                const normalized = (i + 0.5) / nBuckets;
+                const strokeWidth = 0.3 + normalized * 2;
+                const opacity = 0.2 + normalized * 0.6;
+
+                edgeGroup.selectAll(`.edge-bucket-${i}`)
+                    .data(buckets[i])
+                    .enter()
+                    .append('path')
+                    .attr('class', 'edge')
+                    .attr('d', d => {
+                        const source = nodePositions[d.source];
+                        const target = nodePositions[d.target];
+                        if (!source || !target) return '';
+
+                        const dx = target.x - source.x;
+                        const dy = target.y - source.y;
+                        const dr = Math.sqrt(dx * dx + dy * dy) * 0.5;
+
+                        return `M${source.x},${source.y}Q${(source.x + target.x) / 2 + dy * 0.1},${(source.y + target.y) / 2 - dx * 0.1} ${target.x},${target.y}`;
+                    })
+                    .attr('stroke', '#666')
+                    .attr('stroke-width', strokeWidth)
+                    .attr('opacity', opacity)
+                    .on('mouseover', function(event, d) {
+                        d3.select(this).attr('stroke', '#6366f1');
+                        showTooltip(event, `${d.source} → ${d.target}`, d.weight.toExponential(3));
+                    })
+                    .on('mouseout', function() {
+                        d3.select(this).attr('stroke', '#666');
+                        hideTooltip();
+                    });
+            }
+
+            // Draw nodes
+            const nodeGroup = g.append('g').attr('class', 'nodes');
+
+            nodeGroup.selectAll('.node')
+                .data(nodes)
+                .enter()
+                .append('circle')
+                .attr('class', 'node')
+                .attr('cx', d => nodePositions[d.id].x)
+                .attr('cy', d => nodePositions[d.id].y)
+                .attr('r', 4)
+                .attr('fill', d => {
+                    const layerName = d.layer.split('.').slice(2).join('.');
+                    return layerColors[layerName] || '#666';
+                })
+                .on('mouseover', function(event, d) {
+                    d3.select(this).attr('r', 6);
+                    showTooltip(event, d.id, `Component ${d.component}`);
+                })
+                .on('mouseout', function() {
+                    d3.select(this).attr('r', 4);
+                    hideTooltip();
+                });
+        }
+
+        function showTooltip(event, title, value) {
+            tooltip.html(`<div class="tooltip-title">${title}</div><div class="tooltip-value">${value}</div>`)
+                .style('left', (event.pageX + 15) + 'px')
+                .style('top', (event.pageY - 10) + 'px')
+                .classed('visible', true);
+        }
+
+        function hideTooltip() {
+            tooltip.classed('visible', false);
+        }
+
+        // Threshold slider
+        thresholdSlider.addEventListener('input', (e) => {
+            const exp = parseFloat(e.target.value);
+            currentThreshold = Math.pow(10, exp);
+            thresholdValue.textContent = currentThreshold.toExponential(0);
+            if (globalData) render();
+        });
+
+        // Load example data for demonstration
+        function loadExampleData() {
+            // This creates some sample data for testing
+            // In real use, load from JSON file
+            const sampleData = {
+                n_blocks: 2,
+                attributions: {},
+                alive_indices: {}
+            };
+
+            const layers = [];
+            for (let b = 0; b < 2; b++) {
+                for (const l of layerOrder) {
+                    layers.push(`h.${b}.${l}`);
+                }
+            }
+
+            // Generate sample alive indices
+            for (const layer of layers) {
+                sampleData.alive_indices[layer] = Array.from({ length: 15 + Math.floor(Math.random() * 10) }, (_, i) => i);
+            }
+
+            // Generate sample attributions between consecutive valid pairs
+            for (let i = 0; i < layers.length; i++) {
+                for (let j = i + 1; j < layers.length; j++) {
+                    const inLayer = layers[i];
+                    const outLayer = layers[j];
+                    const nIn = sampleData.alive_indices[inLayer].length;
+                    const nOut = sampleData.alive_indices[outLayer].length;
+
+                    const attr = [];
+                    for (let ii = 0; ii < nIn; ii++) {
+                        const row = [];
+                        for (let jj = 0; jj < nOut; jj++) {
+                            // Generate sparse attributions with power-law distribution
+                            row.push(Math.random() < 0.3 ? Math.pow(10, -1 - Math.random() * 7) : 0);
+                        }
+                        attr.push(row);
+                    }
+
+                    sampleData.attributions[`('${inLayer}', '${outLayer}')`] = attr;
+                }
+            }
+
+            return sampleData;
+        }
+
+        // Uncomment to load example data on start:
+        // globalData = processData(loadExampleData());
+        // dropZone.classList.add('hidden');
+        // render();
+    </script>
+</body>
+</html>
