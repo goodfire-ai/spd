@@ -5,9 +5,10 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import SamplingType
+from spd.configs import SamplingType, SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.routing import Router, get_subset_router
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
@@ -22,6 +23,7 @@ def _stochastic_recon_subset_loss_update(
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    router: Router,
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     device = get_obj_device(ci)
@@ -33,7 +35,7 @@ def _stochastic_recon_subset_loss_update(
             causal_importances=ci,
             component_mask_sampling=sampling,
             weight_deltas=weight_deltas,
-            routing="uniform_k-stochastic",
+            router=router,
         )
         for _ in range(n_mask_samples)
     ]
@@ -63,6 +65,7 @@ def stochastic_recon_subset_loss(
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    routing: SubsetRoutingType,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _stochastic_recon_subset_loss_update(
         model=model,
@@ -73,6 +76,7 @@ def stochastic_recon_subset_loss(
         target_out=target_out,
         ci=ci,
         weight_deltas=weight_deltas,
+        router=get_subset_router(routing, batch.device),
     )
     return _stochastic_recon_subset_loss_compute(sum_loss, n_examples)
 
@@ -90,12 +94,14 @@ class StochasticReconSubsetLoss(Metric):
         use_delta_component: bool,
         n_mask_samples: int,
         output_loss_type: Literal["mse", "kl"],
+        routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.router = get_subset_router(routing, device)
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -118,6 +124,7 @@ class StochasticReconSubsetLoss(Metric):
             target_out=target_out,
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
+            router=self.router,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

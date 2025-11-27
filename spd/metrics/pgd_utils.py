@@ -11,7 +11,7 @@ from spd.configs import PGDConfig, PGDInitStrategy, PGDMultiBatchConfig, Samplin
 from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import RoutingMasks, make_mask_infos
-from spd.utils.component_utils import RoutingType, sample_uniform_k_subset_routing_masks
+from spd.routing import Router
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
 
@@ -23,7 +23,7 @@ def pgd_masked_recon_loss_update(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
-    routing: RoutingType,
+    router: Router,
     pgd_config: PGDConfig,
 ) -> tuple[Float[Tensor, ""], int]:
     """Central implementation of PGD masked reconstruction loss.
@@ -36,15 +36,7 @@ def pgd_masked_recon_loss_update(
     # C2 represents the total number of components including the optional weight delta
     C2 = C if weight_deltas is None else C + 1
 
-    match routing:
-        case "all":
-            routing_masks = "all"
-        case "uniform_k-stochastic":
-            routing_masks = sample_uniform_k_subset_routing_masks(
-                mask_shape=batch_dims,
-                module_names=model.target_module_paths,
-                device=batch.device,
-            )
+    routing_masks = router.get_masks(module_names=model.target_module_paths, mask_shape=batch_dims)
 
     # We create a single adv_sources tensor and index into it for each layer
     match pgd_config.mask_scope:
@@ -97,7 +89,7 @@ def calc_multibatch_pgd_masked_recon_loss(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     create_data_iter: CreateDataIter,
     output_loss_type: Literal["mse", "kl"],
-    routing: RoutingType,
+    router: Router,
     sampling: SamplingType,
     use_delta_component: bool,
     batch_dims: tuple[int, ...],
@@ -115,7 +107,7 @@ def calc_multibatch_pgd_masked_recon_loss(
             an iterator which behaves identically each time. Specifically in terms of data ordering
             and shuffling.
         output_loss_type: Loss type for reconstruction ("mse" or "kl")
-        routing: Routing strategy ("all" or "uniform_k-stochastic")
+        router: Router to use for routing masks
         sampling: Sampling mode for causal importance calculation
         use_delta_component: Whether to include weight delta component
         batch_dims: Dimensions of batch (e.g., (batch_size,) or (batch_size, seq_len))
@@ -132,17 +124,6 @@ def calc_multibatch_pgd_masked_recon_loss(
         init=pgd_config.init, shape=adv_source_shape, device=device
     ).requires_grad_(True)
 
-    def get_routing_masks() -> RoutingMasks:
-        match routing:
-            case "all":
-                return "all"
-            case "uniform_k-stochastic":
-                return sample_uniform_k_subset_routing_masks(
-                    mask_shape=batch_dims,
-                    module_names=model.target_module_paths,
-                    device=device,
-                )
-
     fwd_bwd_fn = partial(
         _multibatch_pgd_fwd_bwd,
         adv_sources=adv_sources,
@@ -152,8 +133,8 @@ def calc_multibatch_pgd_masked_recon_loss(
         device=device,
         output_loss_type=output_loss_type,
         sampling=sampling,
-        get_routing_masks=get_routing_masks,
-        batch_dims=torch.Size(batch_dims),
+        router=router,
+        batch_dims=batch_dims,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -217,7 +198,7 @@ def _multibatch_pgd_fwd_bwd(
     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: torch.device | str,
     output_loss_type: Literal["mse", "kl"],
-    get_routing_masks: Callable[[], RoutingMasks],
+    router: Router,
     sampling: SamplingType,
     batch_dims: tuple[int, ...],
 ) -> tuple[Float[Tensor, ""], int, Float[Tensor, "n_layers *batch_dim_or_ones C2"]]:
@@ -251,7 +232,9 @@ def _multibatch_pgd_fwd_bwd(
 
         # It's important that we call this every microbatch to ensure stochastic routing masks are
         # sampled independently for each example.
-        routing_masks = get_routing_masks()
+        routing_masks = router.get_masks(
+            module_names=model.target_module_paths, mask_shape=batch_dims
+        )
 
         batch_sum_loss, batch_n_examples = _forward_with_adv_sources(
             model=model,

@@ -36,9 +36,7 @@ class ComponentActivationDensity(Metric):
         for module_name, ci_vals in ci.lower_leaky.items():
             active_components = ci_vals > self.ci_alive_threshold
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
-            self.component_activation_counts[module_name] += (
-                n_activations_per_component * n_examples_this_batch
-            )
+            self.component_activation_counts[module_name] += n_activations_per_component
 
     @override
     def compute(self) -> dict[str, Image.Image]:

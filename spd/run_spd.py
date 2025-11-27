@@ -51,6 +51,7 @@ from spd.utils.general_utils import (
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
+from spd.utils.wandb_utils import try_wandb
 
 
 def run_faithfulness_warmup(
@@ -326,7 +327,7 @@ def optimize(
                 if out_dir is not None:
                     local_log(microbatch_log_data, step, out_dir)
                 if config.wandb_project:
-                    wandb.log(microbatch_log_data, step=step)
+                    try_wandb(wandb.log, microbatch_log_data, step=step)
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
@@ -370,7 +371,7 @@ def optimize(
                             f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
                             for k, v in metrics.items()
                         }
-                        wandb.log(wandb_logs, step=step)
+                        try_wandb(wandb.log, wandb_logs, step=step)
 
                 del metrics
                 # TODO: we should reverse the order of these two calls
@@ -390,7 +391,12 @@ def optimize(
             save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
             logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")
             if config.wandb_project:
-                wandb.save(str(out_dir / f"model_{step}.pth"), base_path=str(out_dir), policy="now")
+                try_wandb(
+                    wandb.save,
+                    str(out_dir / f"model_{step}.pth"),
+                    base_path=str(out_dir),
+                    policy="now",
+                )
 
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
