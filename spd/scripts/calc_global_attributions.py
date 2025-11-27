@@ -426,10 +426,10 @@ def compute_global_attributions(
                 else:
                     samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq
 
-    global_attributions = {
-        pair: (attr_sum / samples_per_pair[pair]).sqrt()
-        for pair, attr_sum in attribution_sums.items()
-    }
+    global_attributions = {}
+    for pair, attr_sum in attribution_sums.items():
+        attr = attr_sum / samples_per_pair[pair]
+        global_attributions[pair] = attr / attr.sum()
 
     n_pairs = len(attribution_sums)
     total_samples = sum(samples_per_pair.values()) // n_pairs if n_pairs else 0
@@ -443,10 +443,11 @@ def compute_global_attributions(
 # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
 wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L
 n_blocks = 1
-batch_size = 512
+batch_size = 1024
+n_ctx = 64
 # n_attribution_batches = 20
-n_attribution_batches = 1
-n_alive_calc_batches = 5
+n_attribution_batches = 5
+n_alive_calc_batches = 200
 # n_alive_calc_batches = 200
 ci_mean_alive_threshold = 1e-6
 ci_attribution_threshold = 1e-6
@@ -479,7 +480,7 @@ dataset_config = DatasetConfig(
     name=task_config.dataset_name,
     hf_tokenizer_path=config.tokenizer_name,
     split=task_config.train_data_split,  # Using train split for now
-    n_ctx=task_config.max_seq_len,
+    n_ctx=n_ctx,
     is_tokenized=task_config.is_tokenized,
     streaming=task_config.streaming,
     column_name=task_config.column_name,
