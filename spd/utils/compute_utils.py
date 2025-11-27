@@ -109,8 +109,16 @@ def get_command(
             json_tagged_sweep_params = f"json:{json.dumps(sweep_params)}"
             torchrun_cmd += f" --sweep_params_json {shlex.quote(json_tagged_sweep_params)}"
 
-        # Wrap in srun bash -c with proper shell quoting so that $SLURM_PROCID is evaluated on each node
-        command = f"srun bash -c {shlex.quote(torchrun_cmd)}"
+        # Two things here:
+        # 1: We wrap in srun bash -c with proper shell quoting so that $SLURM_PROCID is evaluated on each
+        #    node.
+        # 2: We set --cpus-per-task=128 because:
+        #    Slurm automatically allocates 16 cpus per gpu. We have `DefCpuPerGPU=16` set
+        #    If you run srun bare, it allocates 1 cpu per task. For some reason, we've found that if
+        #    we set --cpus-per-task to anything other than 8 * 16 = 128, we get the error:
+        #    `srun: error: Unable to create step for job 52790: More processors requested than
+        #    permitted`
+        command = f"srun --cpus-per-task=128 bash -c {shlex.quote(torchrun_cmd)}"
         return Command(env_vars=CUDA_FLAGS, command=command)
 
     command += (
