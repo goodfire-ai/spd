@@ -133,6 +133,7 @@ def create_slurm_array_script(
     run_id: str,
     training_jobs: list[TrainingJob],
     sweep_params: dict[str, Any] | None,
+    slurm_logs_dir: Path,
     snapshot_branch: str,
     n_gpus: int | None,
     partition: str,
@@ -151,9 +152,6 @@ def create_slurm_array_script(
         partition: SLURM partition to use.
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
-    slurm_logs_dir = Path.home() / "slurm_logs"
-    slurm_logs_dir.mkdir(exist_ok=True)
-
     n_jobs = len(training_jobs)
 
     # Create array range (SLURM arrays are 1-indexed)
