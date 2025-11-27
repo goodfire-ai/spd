@@ -13,7 +13,7 @@
             class="token-highlight"
             class:active-token={i === activePosition}
             style="background-color:rgba(0,200,0,{tokenCi[i] * 0.5})"
-            data-ci="CI: {tokenCi[i].toFixed(3)}">{tok.startsWith("##") ? tok.slice(2) : ` ${tok}`}</span
+            data-ci="CI: {tokenCi[i].toFixed(3)}">{tok}</span
         >{/each}</span
 >
 
@@ -25,8 +25,8 @@
 
     .token-highlight {
         display: inline;
-        padding: 2px 4px;
-        border-radius: 3px;
+        padding: 2px 0px;
+        border-radius: 2px;
         position: relative;
     }
 
