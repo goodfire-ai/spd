@@ -101,6 +101,10 @@ def launch_slurm_run(
         partition=partition,
         max_concurrent_tasks=n_agents,
     )
+    logfile = Path("{slurm_logs_dir}/slurm-%A_%a.out")
+    logfile.touch()
+
+    ""
 
     # Save script to permanent location for debugging
     sbatch_scripts_dir = Path.home() / "sbatch_scripts"
@@ -109,6 +113,7 @@ def launch_slurm_run(
     array_script_path = sbatch_scripts_dir / f"run_array_{run_id}.sh"
     with open(array_script_path, "w") as f:
         f.write(array_script_content)
+
     array_script_path.chmod(0o755)
     array_job_id = submit_slurm_array(array_script_path)
 
