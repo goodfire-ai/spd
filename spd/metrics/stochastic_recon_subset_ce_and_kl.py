@@ -9,11 +9,11 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import SamplingType
+from spd.configs import SamplingType, SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.routing import AllLayersRouter
+from spd.routing import get_subset_router
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
@@ -34,6 +34,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
+        routing: SubsetRoutingType,
         include_patterns: dict[str, list[str]] | None = None,
         exclude_patterns: dict[str, list[str]] | None = None,
     ) -> None:
@@ -44,6 +45,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         self.n_mask_samples = n_mask_samples
         self.include_patterns = include_patterns or {}
         self.exclude_patterns = exclude_patterns or {}
+        self.router = get_subset_router(routing, device)
 
         if not self.include_patterns and not self.exclude_patterns:
             raise ValueError(
@@ -150,7 +152,7 @@ class StochasticReconSubsetCEAndKL(Metric):
                 causal_importances=ci,
                 component_mask_sampling=self.sampling,
                 weight_deltas=weight_deltas if self.use_delta_component else None,
-                router=AllLayersRouter(),
+                router=self.router,
             )
             for _ in range(self.n_mask_samples)
         ]

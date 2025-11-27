@@ -174,6 +174,7 @@ class PermutedCIPlotsConfig(BaseConfig):
 
 class StochasticReconSubsetCEAndKLConfig(BaseConfig):
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
     include_patterns: dict[str, list[str]] | None
     exclude_patterns: dict[str, list[str]] | None
 

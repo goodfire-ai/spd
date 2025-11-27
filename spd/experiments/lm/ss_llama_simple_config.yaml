@@ -33,7 +33,8 @@ loss_metric_configs:
     p_anneal_end_frac: 1.0
 
   - classname: "StochasticReconSubsetLoss"
-    routing: 0.4
+    routing:
+      type: uniform_k_subset
     coeff: 1.0
 
 output_loss_type: kl
@@ -78,6 +79,8 @@ eval_metric_configs:
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
   - classname: "PGDReconSubsetLoss"
+    routing:
+      type: uniform_k_subset
     init: "random"
     step_size: 0.01
     n_steps: 20

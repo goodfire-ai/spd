@@ -67,6 +67,8 @@ eval_metric_configs:
     rounding_threshold: 0.0
   - classname: "CIMeanPerComponent"
   - classname: "StochasticReconSubsetCEAndKL"
+    routing:
+      type: uniform_k_subset
     include_patterns:
       layer_0_only: ["h.0.*"]
       layer_1_only: ["h.1.*"]
