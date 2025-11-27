@@ -10,6 +10,7 @@ import torch
 import tqdm
 from jaxtyping import Float, Int
 from numpy.typing import NDArray
+from torch import Tensor
 
 from spd.app.backend.schemas import (
     ModelActivationContexts,
@@ -44,16 +45,6 @@ class _TopKExamples:
         # Min-heap of tuples (importance, counter, example)
         self.heap: list[tuple[float, int, SubcomponentExample]] = []
         self._counter: int = 0
-
-    def maybe_add(self, example: SubcomponentExample) -> None:
-        key = (example.active_pos_ci, self._counter, example)
-        self._counter += 1
-        if len(self.heap) < self.k:
-            heapq.heappush(self.heap, key)
-            return
-        # Heap full: replace min if better
-        if self.heap[0][0] < example.active_pos_ci:
-            heapq.heapreplace(self.heap, key)
 
     def add_batch(
         self,
@@ -150,9 +141,9 @@ def _get_pad_indices_numpy(arr: NDArray[np.int64], pad_val: int) -> tuple[int, i
 
 
 def roll_batch_size_1_into_x(
-    singleton_batches: Iterable[torch.Tensor],
+    singleton_batches: Iterable[Tensor],
     batch_size: int,
-) -> Generator[torch.Tensor]:
+) -> Generator[Tensor]:
     examples = []
     for batch in singleton_batches:
         assert batch.shape[0] == 1, "Batch size must be 1"
@@ -166,8 +157,8 @@ def roll_batch_size_1_into_x(
 
 DEFAULT_PAD_TOKEN_ID = 0
 
-# Minimum interval between progress updates (seconds)
-PROGRESS_THROTTLE_INTERVAL = 0.1
+# Minimum interval between progress updates
+PROGRESS_THROTTLE_INTERVAL_SECONDS = 0.1
 
 
 def get_activations_data_streaming(
@@ -200,7 +191,7 @@ def get_activations_data_streaming(
     )
     # - the sum of causal importances
     C = run_context.cm.C
-    component_sum_cis = defaultdict[str, Float[torch.Tensor, " C"]](
+    component_sum_cis = defaultdict[str, Float[Tensor, " C"]](
         lambda: torch.zeros(C, device=device, dtype=torch.float)
     )
 
@@ -221,15 +212,17 @@ def get_activations_data_streaming(
     pbar = tqdm.tqdm(total=n_batches * n_modules, desc="Processing batches", unit="batch,layer")
 
     for i in range(n_batches):
-        batch: Int[torch.Tensor, "B S"] = next(batches)
+        batch: Int[Tensor, "B S"] = next(batches)
         assert not batch.requires_grad, "Batch tensors with requires_grad are not supported"
-        assert isinstance(batch, torch.Tensor)
+        assert isinstance(batch, Tensor)
         assert batch.ndim == 2, "Expected batch tensor of shape (B, S)"
         B, S = batch.shape
 
         n_toks_seen += B * S
 
         # Count all token occurrences in batch for precision calculation
+        token_ids_in_batch: Tensor
+        counts: Tensor
         token_ids_in_batch, counts = batch.flatten().unique(return_counts=True)
         for token_id, count in zip(token_ids_in_batch.tolist(), counts.tolist(), strict=True):
             total_token_counts[token_id] += count
@@ -249,9 +242,9 @@ def get_activations_data_streaming(
             if not mask.any():
                 continue
 
-            batch_idx: Int[torch.Tensor, " n_firings"]
-            seq_idx: Int[torch.Tensor, " n_firings"]
-            comp_idx: Int[torch.Tensor, " n_firings"]
+            batch_idx: Int[Tensor, " n_firings"]
+            seq_idx: Int[Tensor, " n_firings"]
+            comp_idx: Int[Tensor, " n_firings"]
             batch_idx, seq_idx, comp_idx = torch.where(mask)
             (n_firings,) = batch_idx.shape
 
@@ -295,10 +288,10 @@ def get_activations_data_streaming(
             comp_idx_expanded = comp_idx.unsqueeze(1).expand(-1, window_size)
             assert comp_idx_expanded.shape == (n_firings, window_size)
 
-            window_token_ids: Int[torch.Tensor, "n_firings W"] = batch_padded[
+            window_token_ids: Int[Tensor, "n_firings W"] = batch_padded[
                 batch_idx_expanded, window_indices
             ]
-            window_ci_values: Float[torch.Tensor, "n_firings W"] = ci_padded[
+            window_ci_values: Float[Tensor, "n_firings W"] = ci_padded[
                 batch_idx_expanded, window_indices, comp_idx_expanded
             ]
 
@@ -341,7 +334,7 @@ def get_activations_data_streaming(
 
             # Yield progress update within batch (throttled)
             current_time = time.monotonic()
-            if current_time - last_progress_time >= PROGRESS_THROTTLE_INTERVAL:
+            if current_time - last_progress_time >= PROGRESS_THROTTLE_INTERVAL_SECONDS:
                 # Progress: batch progress + fractional module progress within batch
                 progress = (i + (module_idx + 1) / n_modules) / n_batches
                 yield ("progress", progress)
@@ -384,8 +377,8 @@ def get_activations_data_streaming(
 
 
 def _get_importances_by_module(
-    cm: ComponentModel, batch: torch.Tensor, config: Config
-) -> dict[str, Float[torch.Tensor, "B S C"]]:
+    cm: ComponentModel, batch: Tensor, config: Config
+) -> dict[str, Float[Tensor, "B S C"]]:
     """returns a dictionary of module names to causal importances, where the shape is (B, S, C)"""
 
     with torch.no_grad():
