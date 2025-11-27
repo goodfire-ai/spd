@@ -248,7 +248,6 @@ def init_metric(
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
-                routing=cfg.routing,
                 include_patterns=cfg.include_patterns,
                 exclude_patterns=cfg.exclude_patterns,
             )

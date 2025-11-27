@@ -57,7 +57,7 @@ SubsetRoutingType = UniformKSubsetRoutingConfig | StaticProbabilityRoutingConfig
 
 class CIMaskedReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
-    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())]
 
 
 class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
@@ -74,7 +74,7 @@ class StochasticReconLossConfig(LossMetricConfig):
 
 class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
-    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())]
 
 
 class StochasticReconLayerwiseLossConfig(LossMetricConfig):
@@ -103,7 +103,7 @@ class PGDReconLossConfig(PGDConfig):
 
 class PGDReconSubsetLossConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
-    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())]
 
 
 class PGDReconLayerwiseLossConfig(PGDConfig):
@@ -123,7 +123,7 @@ class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
 
 class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
-    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())]
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
@@ -174,7 +174,6 @@ class PermutedCIPlotsConfig(BaseConfig):
 
 class StochasticReconSubsetCEAndKLConfig(BaseConfig):
     classname: Literal["StochasticReconSubsetCEAndKL"] = "StochasticReconSubsetCEAndKL"
-    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
     include_patterns: dict[str, list[str]] | None
     exclude_patterns: dict[str, list[str]] | None
 
