@@ -28,7 +28,6 @@ def _build_token_lookup(
 
     Uses tokenizer-specific strategy to produce strings that concatenate correctly.
     """
-    # strategy = TOKENIZER_STRATEGIES[tokenizer_name]
     lookup: dict[int, str] = {}
 
     for tid in range(tokenizer.vocab_size):  # pyright: ignore[reportAttributeAccessIssue]
