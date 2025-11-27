@@ -12,7 +12,7 @@ import torch
 # n_blocks = 2
 wandb_id = "8ynfbr38"  # ss_gpt2_simple-1L
 n_blocks = 1
-edge_threshold = 1e-1
+edge_threshold = 1e-3
 
 # Load saved data
 out_dir = Path(__file__).parent / "out"
@@ -33,7 +33,7 @@ print(f"Total alive components: {sum(len(v) for v in alive_indices.values())}")
 # Count edges before and after thresholding
 total_edges = sum(attr.numel() for attr in global_attributions.values())
 print(f"Total edges: {total_edges:,}")
-thresholds = [1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+thresholds = [1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-12, 1e-15]
 for threshold in thresholds:
     total_edges_threshold = sum(
         (attr > threshold).sum().item() for attr in global_attributions.values()

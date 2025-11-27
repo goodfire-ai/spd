@@ -210,7 +210,7 @@ def get_sources_by_target(
         )
         assert len(grads) == 1, "Expected 1 gradient"
         grad = grads[0]
-        if grad.abs().max().item() > 0:
+        if grad is not None and grad.abs().max().item() > 0:  # pyright: ignore[reportUnnecessaryComparison]
             sources_by_target[out_layer].append(in_layer)
     return dict(sources_by_target)
 
@@ -435,7 +435,7 @@ batch_size = 1024
 n_ctx = 64
 # n_attribution_batches = 20
 n_attribution_batches = 5
-n_alive_calc_batches = 200
+n_alive_calc_batches = 100
 # n_alive_calc_batches = 200
 ci_mean_alive_threshold = 1e-6
 ci_attribution_threshold = 1e-6
