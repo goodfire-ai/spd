@@ -33,6 +33,7 @@ loss_metric_configs:
     p_anneal_end_frac: 1.0
 
   - classname: "StochasticReconSubsetLoss"
+    routing: 0.4
     coeff: 1.0
 
 output_loss_type: kl

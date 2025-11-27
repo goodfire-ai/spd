@@ -43,8 +43,21 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     eps: float = 1e-12
 
 
+class UniformKSubsetRoutingConfig(BaseConfig):
+    type: Literal["uniform_k_subset"] = "uniform_k_subset"
+
+
+class StaticProbabilityRoutingConfig(BaseConfig):
+    type: Literal["static_probability"] = "static_probability"
+    p: Probability
+
+
+SubsetRoutingType = UniformKSubsetRoutingConfig | StaticProbabilityRoutingConfig
+
+
 class CIMaskedReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
 
 
 class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
@@ -61,6 +74,7 @@ class StochasticReconLossConfig(LossMetricConfig):
 
 class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
 
 
 class StochasticReconLayerwiseLossConfig(LossMetricConfig):
@@ -85,6 +99,7 @@ class PGDReconLossConfig(PGDConfig):
 
 class PGDReconSubsetLossConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
 
 
 class PGDReconLayerwiseLossConfig(PGDConfig):
@@ -104,6 +119,7 @@ class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
 
 class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
+    routing: Annotated[SubsetRoutingType, Field(discriminator="type")]
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
