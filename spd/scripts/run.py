@@ -91,11 +91,15 @@ def launch_slurm_run(
 
     slurm_job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
 
+    slurm_logs_dir = Path.home() / "slurm_logs"
+    slurm_logs_dir.mkdir(exist_ok=True)
+
     array_script_content = create_slurm_array_script(
         slurm_job_name=slurm_job_name,
         run_id=run_id,
         training_jobs=training_jobs,
         sweep_params=sweep_params,
+        slurm_logs_dir=slurm_logs_dir,
         snapshot_branch=snapshot_branch,
         n_gpus=n_gpus,
         partition=partition,
@@ -115,6 +119,11 @@ def launch_slurm_run(
     # Rename script to include job ID for easier correlation with logs
     final_script_path = sbatch_scripts_dir / f"{array_job_id}.sh"
     array_script_path.rename(final_script_path)
+
+    # Quality of life: create empty log files for each job so you can tail
+    # them before waiting for the job to start
+    for i in range(len(training_jobs)):
+        (slurm_logs_dir / f"slurm-{array_job_id}_{i + 1}.out").touch()
 
     logger.section("Job submitted successfully!")
     logger.values(
