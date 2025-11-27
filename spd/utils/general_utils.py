@@ -249,7 +249,7 @@ def runtime_cast[T](type_: type[T], obj: Any) -> T:
     return obj
 
 
-def _fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None) -> str:
+def fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = None) -> str:
     """Fetch the latest checkpoint name from a list of .pth files.
 
     Assumes format is <name>_<step>.pth or <name>.pth.
@@ -270,7 +270,7 @@ def _fetch_latest_checkpoint_name(filenames: list[str], prefix: str | None = Non
 def fetch_latest_local_checkpoint(run_dir: Path, prefix: str | None = None) -> Path:
     """Fetch the latest checkpoint from a local run directory."""
     filenames = [file.name for file in run_dir.iterdir() if file.name.endswith(".pth")]
-    latest_checkpoint_name = _fetch_latest_checkpoint_name(filenames, prefix)
+    latest_checkpoint_name = fetch_latest_checkpoint_name(filenames, prefix)
     latest_checkpoint_local = run_dir / latest_checkpoint_name
     return latest_checkpoint_local
 

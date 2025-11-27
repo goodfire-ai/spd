@@ -22,6 +22,7 @@ If there's an assumption you're making while writing code, assert it.
 - Always use the PEP 604 typing format of `|` for unions and `type | None` over `Optional`.
 - Use `dict`, `list` and `tuple` not `Dict`, `List` and `Tuple`
 - Don't add type annotations when they're redundant. (i.e. `my_thing: Thing = Thing()` or `name: str = "John Doe"`)
+- Prefer `match` over `if/elif/else` chains when dispatching on conditions - more declarative and makes cases explicit
 
 ## Tensor Operations
 - Try to use einops by default for clarity.

@@ -13,6 +13,7 @@ from spd.experiments.resid_mlp.resid_mlp_dataset import (
     ResidMLPDataset,
 )
 from spd.log import logger
+from spd.settings import DEFAULT_PROJECT_NAME
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import compute_feature_importances, get_lr_schedule_fn, set_seed
@@ -207,7 +208,7 @@ if __name__ == "__main__":
     device = get_device()
     # 1 layer
     config = ResidMLPTrainConfig(
-        wandb_project="spd",
+        wandb_project=DEFAULT_PROJECT_NAME,
         seed=0,
         resid_mlp_model_config=ResidMLPModelConfig(
             n_features=100,  # 1 layer
@@ -237,7 +238,7 @@ if __name__ == "__main__":
     )
     # # 2 layers
     # config = ResidMLPTrainConfig(
-    #     wandb_project="spd",
+    #     wandb_project=DEFAULT_PROJECT_NAME,
     #     seed=0,
     #     resid_mlp_model_config=ResidMLPModelConfig(
     #         n_features=100, # 2 layers
@@ -267,7 +268,7 @@ if __name__ == "__main__":
     # )
     # # 3 layers
     # config = ResidMLPTrainConfig(
-    #     wandb_project="spd",
+    #     wandb_project=DEFAULT_PROJECT_NAME,
     #     seed=0,
     #     resid_mlp_model_config=ResidMLPModelConfig(
     #         n_features=102,  # 3 layers

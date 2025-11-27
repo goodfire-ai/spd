@@ -1,6 +1,6 @@
 import os
 from collections.abc import Callable
-from enum import Enum
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +15,7 @@ from wandb.apis.public import File, Run
 from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import (
-    _fetch_latest_checkpoint_name,
-    replace_pydantic_model,
-)
+from spd.utils.general_utils import fetch_latest_checkpoint_name, replace_pydantic_model
 from spd.utils.run_utils import METRIC_CONFIG_SHORT_NAMES
 
 WORKSPACE_TEMPLATES = {
@@ -31,22 +28,6 @@ WORKSPACE_TEMPLATES = {
     "resid_mlp2": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
     "resid_mlp3": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
 }
-
-
-class SPDWandbSection(Enum):
-    class Train(Enum):
-        TRAIN_GRAD_NORM_SUMMARY = "train/grad_norm/summary"
-        TRAIN_GRAD_NORM_GATES = "train/grad_norm/gates"
-        TRAIN_GRAD_NORM_COMPONENTS = "train/grad_norm/components"
-        TRAIN_LR = "train/lr"
-        TRAIN_ALIVE = "train/alive_t{ci_alive_threshold}"
-        TRAIN_L0 = "train/l0"
-        TRAIN_LOSS = "train/loss"
-
-    class Eval(Enum): ...
-
-    TRAIN = Train
-    EVAL = Eval
 
 
 def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
@@ -89,7 +70,7 @@ def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
 def fetch_latest_wandb_checkpoint(run: Run, prefix: str | None = None) -> File:
     """Fetch the latest checkpoint from a wandb run."""
     filenames = [file.name for file in run.files() if file.name.endswith((".pth", ".pt"))]
-    latest_checkpoint_name = _fetch_latest_checkpoint_name(filenames, prefix)
+    latest_checkpoint_name = fetch_latest_checkpoint_name(filenames, prefix)
     latest_checkpoint_remote = run.file(latest_checkpoint_name)
     return latest_checkpoint_remote
 
@@ -194,7 +175,7 @@ def ensure_project_exists(project: str) -> None:
         logger.info(f"Project '{project}' created successfully")
 
 
-def create_workspace_view(run_id: str, experiment_name: str, project: str = "spd") -> str:
+def create_workspace_view(run_id: str, experiment_name: str, project: str) -> str:
     """Create a wandb workspace view for an experiment."""
     # Use experiment-specific template if available
     template_url: str = WORKSPACE_TEMPLATES.get(experiment_name, WORKSPACE_TEMPLATES["default"])
@@ -223,24 +204,26 @@ def create_wandb_report(
     report_title: str,
     run_id: str,
     branch_name: str,
-    commit_hash: str,
-    experiments_list: list[str],
+    commit_hash: str | None,
+    experiments: list[str],
     include_run_comparer: bool,
-    project: str = "spd",
+    project: str,
     report_total_width: int = 24,
 ) -> str:
     """Create a W&B report for the run."""
     report = wr.Report(
         project=project,
         title=report_title,
-        description=f"Experiments: {', '.join(experiments_list)}",
+        description=f"Experiments: {', '.join(experiments)}",
         width="fluid",
     )
 
-    report.blocks.append(wr.MarkdownBlock(text=f"Branch: `{branch_name}`\nCommit: `{commit_hash}`"))
+    report.blocks.append(
+        wr.MarkdownBlock(text=f"Branch: `{branch_name}`\nCommit: `{commit_hash or 'none'}`")
+    )
 
     # Create separate panel grids for each experiment
-    for experiment in experiments_list:
+    for experiment in experiments:
         task_name: str = EXPERIMENT_REGISTRY[experiment].task_name
 
         # Use run_id and experiment name tags for filtering
@@ -392,31 +375,34 @@ def create_wandb_report(
     return report.url
 
 
-def wandb_setup(
+@dataclass
+class ReportCfg:
+    """metadata for setting up a wandb view and optionally a report for the run.
+
+    Args:
+        snapshot_branch: Git branch name for the snapshot created by this run.
+        commit_hash: Commit hash of the snapshot created by this run.
+        report_title: Title for the W&B report. If None, will be generated
+    """
+
+    branch: str
+    commit_hash: str
+    report_title: str | None
+
+
+def create_view_and_report(
     project: str,
     run_id: str,
-    experiments_list: list[str],
-    # only used in report generation
-    create_report: bool,
-    # passed to create_wandb_report as-is
-    report_title: str | None,
-    snapshot_branch: str,
-    commit_hash: str,
-    include_run_comparer: bool,
+    experiments: list[str],
+    report_cfg: ReportCfg | None,
 ) -> None:
     """set up wandb, creating workspace views and optionally creating a report
 
     Args:
         project: W&B project name
         run_id: Unique run identifier
-        experiments_list: List of experiment names to create views for
-        create_report: Whether to create a W&B report for the run. if False, no report will be created and the rest of the arguments don't matter
-        report_title: Title for the W&B report, if created. If None, will be
-            generated as "SPD Run Report - {run_id}".
-        snapshot_branch: Git branch name for the snapshot created by this run.
-        commit_hash: Commit hash of the snapshot created by this run.
-        include_run_comparer: Whether to include the run comparer in the report.
-
+        experiments: List of experiment names to create views for
+        report_cfg: How to set up a wandb view, and optionally a report for the run, if at all.
     """
     # Ensure the W&B project exists
     ensure_project_exists(project)
@@ -424,20 +410,20 @@ def wandb_setup(
     # Create workspace views for each experiment
     logger.section("Creating workspace views...")
     workspace_urls: dict[str, str] = {}
-    for experiment in experiments_list:
+    for experiment in experiments:
         workspace_url = create_workspace_view(run_id, experiment, project)
         workspace_urls[experiment] = workspace_url
 
     # Create report if requested
     report_url: str | None = None
-    if create_report and len(experiments_list) > 1:
+    if report_cfg is not None and len(experiments) > 1:
         report_url = create_wandb_report(
-            report_title=report_title or f"SPD Run Report - {run_id}",
+            report_title=report_cfg.report_title or f"SPD Run Report - {run_id}",
             run_id=run_id,
-            branch_name=snapshot_branch,
-            commit_hash=commit_hash,
-            experiments_list=experiments_list,
-            include_run_comparer=include_run_comparer,
+            branch_name=report_cfg.branch,
+            commit_hash=report_cfg.commit_hash,
+            experiments=experiments,
+            include_run_comparer=True,
             project=project,
         )
 

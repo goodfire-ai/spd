@@ -2,19 +2,15 @@
 
 This file can be run in two ways:
 
-1. Directly with mpirun (fastest):
-   mpirun --bind-to none -np 2 python tests/test_gather_all_tensors_distributed.py
-   (see:
-   https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
-   for why we need to bind to none)
+1. Directly with torchrun (fastest):
+   torchrun --standalone --nproc_per_node=2 --master_port=29503 tests/test_gather_all_tensors_distributed.py
 
-2. Via pytest (runs mpirun in subprocess):
+2. Via pytest (runs torchrun in subprocess):
    pytest tests/test_gather_all_tensors_distributed.py
 """
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -23,8 +19,7 @@ import torch
 from spd.utils.distributed_utils import (
     cleanup_distributed,
     gather_all_tensors,
-    get_rank,
-    get_world_size,
+    get_distributed_state,
     init_distributed,
     sync_across_processes,
 )
@@ -32,8 +27,10 @@ from spd.utils.distributed_utils import (
 
 def _test_gather_identical_shapes():
     """Test gathering tensors with identical shapes across ranks."""
-    rank = get_rank()
-    world_size = get_world_size()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
+    world_size = state.world_size
 
     # Each rank has a different tensor with same shape
     tensor = torch.tensor([rank * 1.0, rank * 2.0])
@@ -62,8 +59,10 @@ def _test_gather_identical_shapes():
 
 def _test_gather_scalar_tensors():
     """Test gathering scalar tensors."""
-    rank = get_rank()
-    world_size = get_world_size()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
+    world_size = state.world_size
 
     # Scalar tensor with rank-specific value
     tensor = torch.tensor(rank * 10.0)
@@ -85,8 +84,10 @@ def _test_gather_scalar_tensors():
 
 def _test_gather_multidimensional_tensors():
     """Test gathering multidimensional tensors."""
-    rank = get_rank()
-    world_size = get_world_size()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
+    world_size = state.world_size
 
     # 2D tensor with rank-specific values
     tensor = torch.full((3, 4), fill_value=float(rank))
@@ -112,7 +113,9 @@ def _test_gather_multidimensional_tensors():
 
 def _test_gather_empty_tensor():
     """Test gathering empty tensors."""
-    rank = get_rank()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
 
     # Empty tensor with consistent shape
     tensor = torch.tensor([])
@@ -131,8 +134,10 @@ def _test_gather_empty_tensor():
 
 def _test_gather_float_tensor():
     """Test gathering tensors."""
-    rank = get_rank()
-    world_size = get_world_size()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
+    world_size = state.world_size
 
     # Tensor with rank-specific pattern
     tensor = torch.arange(10, dtype=torch.float32) + rank * 10
@@ -152,7 +157,9 @@ def _test_gather_float_tensor():
 
 def _test_gather_preserves_autograd():
     """Test that gathered tensor for current rank preserves autograd."""
-    rank = get_rank()
+    state = get_distributed_state()
+    assert state is not None
+    rank = state.rank
 
     # Tensor with gradient tracking
     tensor = torch.tensor([rank * 1.0, rank * 2.0], requires_grad=True)
@@ -169,12 +176,14 @@ def _test_gather_preserves_autograd():
 
 
 def run_all_tests():
-    """Run all distributed tests when called directly with mpirun."""
+    """Run all distributed tests when called directly with torchrun."""
     # Initialize distributed once for all tests
-    init_distributed(backend="gloo")
+    init_distributed()
     try:
-        rank = get_rank()
-        world_size = get_world_size()
+        state = get_distributed_state()
+        assert state is not None
+        rank = state.rank
+        world_size = state.world_size
 
         assert world_size == 2, f"Tests require exactly 2 ranks, got {world_size}"
 
@@ -207,45 +216,41 @@ def run_all_tests():
 
 
 # ===== Pytest wrapper =====
-# This allows running via pytest, which will spawn mpirun in a subprocess
+# This allows running via pytest, which will spawn torchrun in a subprocess
 @pytest.mark.slow
 class TestGatherAllTensors:
     """Pytest wrapper for gather_all_tensors tests."""
 
-    def testgather_all_tensors_distributed(self):
-        """Run distributed tests via mpirun in subprocess."""
+    def test_gather_all_tensors_distributed(self):
+        """Run distributed tests via torchrun in subprocess."""
         script_path = Path(__file__).resolve()
 
         # ports should be globally unique in tests to allow test parallelization
         # see discussion at: https://github.com/goodfire-ai/spd/pull/186
-        env = {
-            "MASTER_PORT": "29503",
-            "OMP_NUM_THREADS": "1",
-        }
-
         cmd = [
-            "mpirun",
-            "--bind-to",  # avoid trying to bind to cores that aren't available.
-            "none",  #  See: https://goodfire-ai.slack.com/archives/C0660ARC4E9/p1761839718834979?thread_ts=1761839156.042599&cid=C0660ARC4E9
-            "-np",
-            "2",
-            sys.executable,
+            "torchrun",
+            "--standalone",
+            "--nproc_per_node=2",
+            "--master_port",
+            "29503",
             str(script_path),
         ]
 
-        result = subprocess.run(
-            cmd, env={**os.environ, **env}, capture_output=True, text=True, timeout=120
-        )
+        # disable cuda so we run on cpu:
+        new_env = os.environ.copy()
+        new_env["CUDA_VISIBLE_DEVICES"] = ""
+
+        result = subprocess.run(cmd, env=new_env, capture_output=True, text=True, timeout=120)
 
         if result.returncode != 0:
             print(f"STDOUT:\n{result.stdout}")
             print(f"STDERR:\n{result.stderr}")
             raise RuntimeError(f"Distributed test failed with code {result.returncode}")
 
-        # Print output for visibility
-        print(result.stdout)
+        # Print output for visibility (torchrun outputs to stderr)
+        print(result.stderr)
 
 
 if __name__ == "__main__":
-    # When run directly with mpirun, execute all tests
+    # When run directly with torchrun, execute all tests
     run_all_tests()

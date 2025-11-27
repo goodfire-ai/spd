@@ -10,6 +10,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from spd.base_config import BaseConfig
 from spd.log import logger
+from spd.utils.distributed_utils import DistributedState
 
 
 class DatasetConfig(BaseConfig):
@@ -145,9 +146,8 @@ def create_data_loader(
     dataset_config: DatasetConfig,
     batch_size: int,
     buffer_size: int,
+    dist_state: DistributedState | None = None,
     global_seed: int = 0,
-    ddp_rank: int = 0,
-    ddp_world_size: int = 1,
     to_lower: bool = True,
 ) -> tuple[DataLoader[Any], PreTrainedTokenizer]:
     """Create a DataLoader for the given dataset.
@@ -159,14 +159,14 @@ def create_data_loader(
     - No data is duplicated across ranks
 
     For shuffling datasets between epochs:
-    - When dp>1 and streaming=True, we shard the dataset across ranks and use the default sampler.
+    - When dist_state.world_size>1 and streaming=True, we shard the dataset across ranks and use the default sampler.
         If the dataset has fewer dataset shards than we have ddp ranks, we split up the dataset
         by example. We also use dataset.set_epoch(epoch) during training.
-    - When dp>1 and streaming=False, we use a DistributedSampler and run
+    - When dist_state.world_size>1 and streaming=False, we use a DistributedSampler and run
         sampler.set_epoch(epoch) during training.
-    - When dp=1 and streaming=True, we use the default sampler and run
+    - When dist_state.world_size==1 and streaming=True, we use the default sampler and run
         dataset.set_epoch(epoch) during training.
-    - When dp=1 and streaming=False, we use the default sampler and set shuffle=True on the
+    - When dist_state.world_size==1 and streaming=False, we use the default sampler and set shuffle=True on the
         DataLoader.
 
     Args:
@@ -174,8 +174,8 @@ def create_data_loader(
         batch_size: The batch size.
         buffer_size: The buffer size for streaming datasets.
         global_seed: Used for shuffling if dataset_config.seed is None.
-        ddp_rank: The rank of the current process in DDP.
-        ddp_world_size: The world size in DDP.
+        dist_state: The distributed state or None if not in a distributed setting.
+        to_lower: Whether to convert the text to lowercase.
 
     Returns:
         A tuple of the DataLoader and the tokenizer.
@@ -189,23 +189,21 @@ def create_data_loader(
     )
     seed = dataset_config.seed if dataset_config.seed is not None else global_seed
 
-    is_ddp = ddp_world_size > 1
-
     if dataset_config.streaming:
         assert isinstance(dataset, IterableDataset)
         logger.warning(
             "WARNING: Streaming is currently quite slow and not well tested. In general, we suggest"
             " setting streaming=False and having the dataset download (and cache)."
         )
-        if is_ddp:
+        if dist_state is not None:
             logger.warning("WARNING: Streaming with ddp has not been well tested. Use at own risk.")
             ds_num_shards = getattr(dataset, "num_shards", None)
-            if isinstance(ds_num_shards, int) and ds_num_shards >= ddp_world_size:
-                dataset = dataset.shard(num_shards=ddp_world_size, index=ddp_rank)
+            if isinstance(ds_num_shards, int) and ds_num_shards >= dist_state.world_size:
+                dataset = dataset.shard(num_shards=dist_state.world_size, index=dist_state.rank)
             else:
                 # Fallback: example-level partitioning before shuffle
                 dataset = dataset.filter(
-                    lambda _ex, idx, r=ddp_rank, ws=ddp_world_size: idx % ws == r,
+                    lambda _ex, idx: idx % dist_state.world_size == dist_state.rank,
                     with_indices=True,
                 )
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
@@ -238,11 +236,11 @@ def create_data_loader(
         )
 
     sampler = None
-    if not dataset_config.streaming and is_ddp:
+    if not dataset_config.streaming and dist_state is not None:
         sampler = DistributedSampler(
             torch_dataset,  # pyright: ignore[reportArgumentType]
-            num_replicas=ddp_world_size,
-            rank=ddp_rank,
+            num_replicas=dist_state.world_size,
+            rank=dist_state.rank,
             shuffle=dataset_config.shuffle_each_epoch,
             seed=seed,
             drop_last=True,
