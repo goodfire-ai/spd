@@ -4,7 +4,6 @@ import gzip
 import json
 from collections import defaultdict
 from collections.abc import Iterable
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -14,11 +13,14 @@ from torch import Tensor
 from tqdm.auto import tqdm
 
 from spd.configs import Config
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
+from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.plotting import plot_mean_component_cis_both_scales
+from spd.scripts.model_loading import (
+    create_data_loader_from_config,
+    get_out_dir,
+    load_model_from_wandb,
+)
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -137,7 +139,6 @@ def compute_alive_components(
 
 def get_sources_by_target(
     model: ComponentModel,
-    data_loader: Iterable[dict[str, Any]],
     device: str,
     config: Config,
     n_blocks: int,
@@ -147,16 +148,12 @@ def get_sources_by_target(
     Returns:
         Dict mapping out_layer -> list of in_layers that have gradient flow to it.
     """
-    # Get an arbitrary batch
-    batch_raw = next(iter(data_loader))
-    batch = extract_batch_data(batch_raw).to(device)
-    print(f"Batch shape: {batch.shape}")
+    # Use a small dummy batch - we only need to trace gradient connections
+    batch: Float[Tensor, "batch seq"] = torch.zeros(2, 3, dtype=torch.long, device=device)
 
     with torch.no_grad():
         output_with_cache: OutputWithCache = model(batch, cache_type="input")
         print(f"Output shape: {output_with_cache.output.shape}")
-        print(f"Number of cached layers: {len(output_with_cache.cache)}")
-        print(f"Cached layer names: {list(output_with_cache.cache.keys())}")
 
     with torch.no_grad():
         ci = model.calc_causal_importances(
@@ -210,7 +207,7 @@ def get_sources_by_target(
         )
         assert len(grads) == 1, "Expected 1 gradient"
         grad = grads[0]
-        if grad is not None and grad.abs().max().item() > 0:  # pyright: ignore[reportUnnecessaryComparison]
+        if grad is not None:  # pyright: ignore[reportUnnecessaryComparison]
             sources_by_target[out_layer].append(in_layer)
     return dict(sources_by_target)
 
@@ -364,7 +361,6 @@ def compute_global_attributions(
                             inputs=in_tensors,
                             grad_outputs=grad_outputs,
                             retain_graph=True,
-                            allow_unused=True,
                         )
 
                         with torch.no_grad():
@@ -425,154 +421,125 @@ def compute_global_attributions(
     return global_attributions
 
 
-# %%
-# Configuration
-# wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
-# wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
-wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L
-n_blocks = 1
-batch_size = 1024
-n_ctx = 64
-# n_attribution_batches = 20
-n_attribution_batches = 5
-n_alive_calc_batches = 100
-# n_alive_calc_batches = 200
-ci_mean_alive_threshold = 1e-6
-ci_attribution_threshold = 1e-6
-dataset_seed = 0
+if __name__ == "__main__":
+    # %%
+    # Configuration
+    # wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
+    # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
+    wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L
+    n_blocks = 1
+    batch_size = 1024
+    n_ctx = 64
+    # n_attribution_batches = 20
+    n_attribution_batches = 5
+    n_alive_calc_batches = 100
+    # n_alive_calc_batches = 200
+    ci_mean_alive_threshold = 1e-6
+    ci_attribution_threshold = 1e-6
+    dataset_seed = 0
 
-out_dir = Path(__file__).parent / "out"
-out_dir.mkdir(parents=True, exist_ok=True)
-wandb_id = wandb_path.split("/")[-1]
+    out_dir = get_out_dir()
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
-print(f"Loading model from {wandb_path}...")
+    # Load model using shared utility
+    loaded = load_model_from_wandb(wandb_path)
+    model = loaded.model
+    config = loaded.config
+    device = loaded.device
+    wandb_id = loaded.wandb_id
 
-# Load the model
-run_info = SPDRunInfo.from_path(wandb_path)
-config: Config = run_info.config
-model = ComponentModel.from_run_info(run_info)
-model = model.to(device)
-model.eval()
+    # Load the dataset
+    data_loader, tokenizer = create_data_loader_from_config(
+        config=config,
+        batch_size=batch_size,
+        n_ctx=n_ctx,
+        seed=dataset_seed,
+    )
 
-print("Model loaded successfully!")
-print(f"Number of components: {model.C}")
-print(f"Target module paths: {model.target_module_paths}")
+    sources_by_target = get_sources_by_target(model, device, config, n_blocks)
+    validate_attention_pair_structure(sources_by_target)
+    n_pairs = sum(len(ins) for ins in sources_by_target.values())
+    print(f"Sources by target: {n_pairs} pairs across {len(sources_by_target)} target layers")
+    for out_layer, in_layers in sources_by_target.items():
+        print(f"  {out_layer} <- {in_layers}")
+    # %%
+    # Compute alive components based on mean CI threshold
+    print("\nComputing alive components based on mean CI...")
+    mean_cis, alive_indices, (img_linear, img_log) = compute_alive_components(
+        model=model,
+        data_loader=data_loader,
+        device=device,
+        config=config,
+        max_batches=n_alive_calc_batches,
+        threshold=ci_mean_alive_threshold,
+    )
 
-# Load the dataset
-task_config = config.task_config
-assert isinstance(task_config, LMTaskConfig), "Expected LM task config"
+    # Print summary
+    print("\nAlive components per layer:")
+    for module_name, indices in alive_indices.items():
+        n_alive = len(indices)
+        print(f"  {module_name}: {n_alive}/{model.C} alive")
 
-dataset_config = DatasetConfig(
-    name=task_config.dataset_name,
-    hf_tokenizer_path=config.tokenizer_name,
-    split=task_config.train_data_split,  # Using train split for now
-    n_ctx=n_ctx,
-    is_tokenized=task_config.is_tokenized,
-    streaming=task_config.streaming,
-    column_name=task_config.column_name,
-    shuffle_each_epoch=False,  # No need to shuffle for testing
-    seed=dataset_seed,
-)
+    # Save images for verification
+    img_linear.save(out_dir / f"ci_mean_per_component_linear_{wandb_id}.png")
+    img_log.save(out_dir / f"ci_mean_per_component_log_{wandb_id}.png")
+    print(
+        f"Saved verification images to {out_dir / f'ci_mean_per_component_linear_{wandb_id}.png'} and {out_dir / f'ci_mean_per_component_log_{wandb_id}.png'}"
+    )
+    # %%
+    # Compute global attributions over the dataset
+    print("\nComputing global attributions...")
+    global_attributions = compute_global_attributions(
+        model=model,
+        data_loader=data_loader,
+        device=device,
+        config=config,
+        sources_by_target=sources_by_target,
+        max_batches=n_attribution_batches,
+        alive_indices=alive_indices,
+        ci_attribution_threshold=ci_attribution_threshold,
+    )
 
-print(f"\nLoading dataset {dataset_config.name}...")
-data_loader, tokenizer = create_data_loader(
-    dataset_config=dataset_config,
-    batch_size=batch_size,
-    buffer_size=task_config.buffer_size,
-    global_seed=dataset_seed,
-    ddp_rank=0,
-    ddp_world_size=1,
-)
+    # Print summary statistics
+    for pair, attr in global_attributions.items():
+        print(f"{pair[0]} -> {pair[1]}: mean={attr.mean():.6f}, max={attr.max():.6f}")
 
-sources_by_target = get_sources_by_target(model, data_loader, device, config, n_blocks)
-validate_attention_pair_structure(sources_by_target)
+    # %%
+    # Save attributions in both PyTorch and JSON formats
+    print("\nSaving attribution data...")
 
-n_pairs = sum(len(ins) for ins in sources_by_target.values())
-print(f"Sources by target: {n_pairs} pairs across {len(sources_by_target)} target layers")
-for out_layer, in_layers in sources_by_target.items():
-    print(f"  {out_layer} <- {in_layers}")
-# %%
-# Compute alive components based on mean CI threshold
-print("\nComputing alive components based on mean CI...")
-mean_cis, alive_indices, (img_linear, img_log) = compute_alive_components(
-    model=model,
-    data_loader=data_loader,
-    device=device,
-    config=config,
-    max_batches=n_alive_calc_batches,
-    threshold=ci_mean_alive_threshold,
-)
+    # Save PyTorch format
+    pt_path = out_dir / f"global_attributions_{wandb_id}.pt"
+    torch.save(global_attributions, pt_path)
+    print(f"Saved PyTorch format to {pt_path}")
 
-# Print summary
-print("\nAlive components per layer:")
-for module_name, indices in alive_indices.items():
-    n_alive = len(indices)
-    print(f"  {module_name}: {n_alive}/{model.C} alive")
+    # Convert and save JSON format for web visualization
+    attributions_json = {}
+    for (in_layer, out_layer), attr_tensor in global_attributions.items():
+        key = f"('{in_layer}', '{out_layer}')"
+        # Keep full precision - just convert to list
+        attributions_json[key] = attr_tensor.cpu().tolist()
 
-# Save images for verification
-img_linear.save(out_dir / f"ci_mean_per_component_linear_{wandb_id}.png")
-img_log.save(out_dir / f"ci_mean_per_component_log_{wandb_id}.png")
-print(
-    f"Saved verification images to {out_dir / f'ci_mean_per_component_linear_{wandb_id}.png'} and {out_dir / f'ci_mean_per_component_log_{wandb_id}.png'}"
-)
-# %%
-# Compute global attributions over the dataset
-print("\nComputing global attributions...")
-global_attributions = compute_global_attributions(
-    model=model,
-    data_loader=data_loader,
-    device=device,
-    config=config,
-    sources_by_target=sources_by_target,
-    max_batches=n_attribution_batches,
-    alive_indices=alive_indices,
-    ci_attribution_threshold=ci_attribution_threshold,
-)
+    json_data = {
+        "n_blocks": n_blocks,
+        "attributions": attributions_json,
+        "alive_indices": alive_indices,
+    }
 
-# Print summary statistics
-for pair, attr in global_attributions.items():
-    print(f"{pair[0]} -> {pair[1]}: mean={attr.mean():.6f}, max={attr.max():.6f}")
+    json_path = out_dir / f"global_attributions_{wandb_id}.json"
 
-# %%
-# Save attributions in both PyTorch and JSON formats
-print("\nSaving attribution data...")
-out_dir = Path(__file__).parent / "out"
+    # Write JSON with compact formatting
+    with open(json_path, "w") as f:
+        json.dump(json_data, f, separators=(",", ":"), ensure_ascii=False)
 
-# Save PyTorch format
-pt_path = out_dir / f"global_attributions_{wandb_id}.pt"
-torch.save(global_attributions, pt_path)
-print(f"Saved PyTorch format to {pt_path}")
+    # Also save a compressed version for very large files
+    gz_path = out_dir / f"global_attributions_{wandb_id}.json.gz"
+    with gzip.open(gz_path, "wt", encoding="utf-8") as f:
+        json.dump(json_data, f, separators=(",", ":"), ensure_ascii=False)
 
-# Convert and save JSON format for web visualization
-attributions_json = {}
-for (in_layer, out_layer), attr_tensor in global_attributions.items():
-    key = f"('{in_layer}', '{out_layer}')"
-    # Keep full precision - just convert to list
-    attributions_json[key] = attr_tensor.cpu().tolist()
+    print(f"Saved JSON format to {json_path}")
+    print(f"Saved compressed format to {gz_path}")
+    print(f"  - {len(attributions_json)} layer pairs")
+    print(f"  - {sum(len(v) for v in alive_indices.values())} total alive components")
+    print(f"\nTo visualize: Open scripts/plot_attributions.html and load {json_path}")
 
-json_data = {
-    "n_blocks": n_blocks,
-    "attributions": attributions_json,
-    "alive_indices": alive_indices,
-}
-
-json_path = out_dir / f"global_attributions_{wandb_id}.json"
-
-# Write JSON with compact formatting
-with open(json_path, "w") as f:
-    json.dump(json_data, f, separators=(",", ":"), ensure_ascii=False)
-
-# Also save a compressed version for very large files
-gz_path = out_dir / f"global_attributions_{wandb_id}.json.gz"
-with gzip.open(gz_path, "wt", encoding="utf-8") as f:
-    json.dump(json_data, f, separators=(",", ":"), ensure_ascii=False)
-
-print(f"Saved JSON format to {json_path}")
-print(f"Saved compressed format to {gz_path}")
-print(f"  - {len(attributions_json)} layer pairs")
-print(f"  - {sum(len(v) for v in alive_indices.values())} total alive components")
-print(f"\nTo visualize: Open scripts/plot_attributions.html and load {json_path}")
-
-# %%
+    # %%
