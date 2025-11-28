@@ -265,6 +265,8 @@ def compute_global_attributions(
         where attribution[i, j] is the mean absolute gradient from the i-th alive input component
         to the j-th alive output component.
     """
+    alive_indices["wte"] = [0]  # Treat wte as single alive component
+
     # Initialize accumulators for each (in_layer, out_layer) pair
     attribution_sums: dict[tuple[str, str], Float[Tensor, "n_alive_in n_alive_out"]] = {}
     samples_per_pair: dict[tuple[str, str], int] = {}
@@ -276,6 +278,18 @@ def compute_global_attributions(
                 n_alive_in, n_alive_out, device=device
             )
             samples_per_pair[(in_layer, out_layer)] = 0
+
+    # Set up wte hook
+    wte_handle = None
+    wte_cache: dict[str, Tensor] = {}
+
+    def wte_hook(_module: nn.Module, _args: Any, _kwargs: Any, output: Tensor) -> Any:
+        output.requires_grad_(True)
+        wte_cache["wte_post_detach"] = output
+        return output
+
+    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
+    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
 
     batch_pbar = tqdm(enumerate(data_loader), desc="Batches", total=max_batches)
     for batch_idx, batch_raw in batch_pbar:
@@ -313,6 +327,12 @@ def compute_global_attributions(
             )
 
         cache = comp_output_with_cache.cache
+
+        # Add wte to cache and CI
+        cache["wte_post_detach"] = wte_cache["wte_post_detach"]
+        # Add fake CI for wte: shape (b, s, embedding_dim) with 1.0 at index 0
+        ci.lower_leaky["wte"] = torch.zeros_like(wte_cache["wte_post_detach"])
+        ci.lower_leaky["wte"][:, :, 0] = 1.0
 
         # Compute attributions grouped by target layer
         for out_layer, in_layers in tqdm(
@@ -362,8 +382,16 @@ def compute_global_attributions(
                             for i, in_layer in enumerate(in_layers):
                                 grads = grads_tuple[i]
                                 assert grads is not None, f"Gradient is None for {in_layer}"
-                                alive_in = alive_indices[in_layer]
                                 weighted = grads * in_tensors[i]
+
+                                # Special handling for wte: sum over embedding_dim to get single component
+                                if in_layer == "wte":
+                                    # weighted is (b, s, embedding_dim), sum to (b, s, 1)
+                                    weighted = weighted.sum(dim=-1, keepdim=True)
+                                    alive_in = [0]
+                                else:
+                                    alive_in = alive_indices[in_layer]
+
                                 # Only sum contributions from positions s_in <= s_out (causal)
                                 weighted_alive = weighted[:, : s_out + 1, alive_in]
                                 batch_attributions[in_layer][:, c_enum] += weighted_alive.pow(
@@ -389,8 +417,16 @@ def compute_global_attributions(
                         for i, in_layer in enumerate(in_layers):
                             grads = grads_tuple[i]
                             assert grads is not None, f"Gradient is None for {in_layer}"
-                            alive_in = alive_indices[in_layer]
                             weighted = grads * in_tensors[i]
+
+                            # Special handling for wte: sum over embedding_dim to get single component
+                            if in_layer == "wte":
+                                # weighted is (b, s, embedding_dim), sum to (b, s, 1)
+                                weighted = weighted.sum(dim=-1, keepdim=True)
+                                alive_in = [0]
+                            else:
+                                alive_in = alive_indices[in_layer]
+
                             weighted_alive = weighted[:, :, alive_in]
                             batch_attributions[in_layer][:, c_enum] += weighted_alive.pow(2).sum(
                                 dim=(0, 1)
@@ -404,6 +440,8 @@ def compute_global_attributions(
                     samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq * (n_seq + 1) // 2
                 else:
                     samples_per_pair[(in_layer, out_layer)] += batch_size * n_seq
+
+    wte_handle.remove()
 
     global_attributions = {}
     for pair, attr_sum in attribution_sums.items():
