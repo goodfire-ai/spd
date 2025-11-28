@@ -33,12 +33,25 @@ def get_layer_order() -> list[str]:
     return [
         "wte",  # Word token embeddings (first layer)
         "attn.q_proj",
-        "attn.k_proj",
         "attn.v_proj",
+        "attn.k_proj",
         "attn.o_proj",
         "mlp.c_fc",
         "mlp.down_proj",
     ]
+
+
+# Sublayers that share a row (q, v, k displayed side by side)
+QVK_SUBLAYERS = {"attn.q_proj", "attn.v_proj", "attn.k_proj"}
+
+# Column allocation for q, v, k: (n_cols, start_col) out of 12 total columns
+# Layout: Q(2) | gap(1) | V(4) | gap(1) | K(4) = 12 total
+QVK_LAYOUT: dict[str, tuple[int, int]] = {
+    "attn.q_proj": (2, 0),  # 2 columns, starts at 0
+    "attn.v_proj": (4, 3),  # 4 columns, starts at 3 (1 col gap after q)
+    "attn.k_proj": (4, 8),  # 4 columns, starts at 8 (1 col gap after v)
+}
+QVK_TOTAL_COLS = 12
 
 
 def get_layer_color(layer: str) -> str:
@@ -81,7 +94,7 @@ def compute_layer_y_positions(
     """Compute Y position for each layer.
 
     Layers are ordered by block, then by sublayer type within block.
-    Each layer is equidistant.
+    q, v, k layers share the same row (same y position).
 
     Returns:
         Dict mapping layer name to y position.
@@ -103,10 +116,27 @@ def compute_layer_y_positions(
 
     sorted_layers = sorted(parsed, key=sort_key)
 
-    # Assign equidistant Y positions
+    # Assign Y positions, grouping q, v, k on the same row
     y_positions = {}
-    for i, (layer, _, _) in enumerate(sorted_layers):
-        y_positions[layer] = float(i)
+    current_y = 0.0
+    prev_block_idx = None
+    prev_was_qvk = False
+
+    for layer, block_idx, sublayer in sorted_layers:
+        is_qvk = sublayer in QVK_SUBLAYERS
+
+        # Check if we should share y with previous layer
+        if is_qvk and prev_was_qvk and block_idx == prev_block_idx:
+            # Same row as previous q/v/k layer
+            y_positions[layer] = current_y
+        else:
+            # New row
+            if y_positions:  # Not the first layer
+                current_y += 1.0
+            y_positions[layer] = current_y
+
+        prev_block_idx = block_idx
+        prev_was_qvk = is_qvk
 
     return y_positions
 
@@ -157,7 +187,7 @@ def plot_local_attribution_graph(
     node_scale: float = 30.0,
     edge_alpha_scale: float = 0.5,
     figsize: tuple[float, float] | None = None,
-    max_grid_cols: int = 8,
+    max_grid_cols: int = 12,
 ) -> plt.Figure:
     """Plot the local attribution graph.
 
@@ -214,9 +244,20 @@ def plot_local_attribution_graph(
         if n_components == 0:
             continue
 
-        # Calculate grid dimensions (same for all positions)
-        n_rows = (n_components + max_grid_cols - 1) // max_grid_cols
-        n_cols = min(n_components, max_grid_cols)
+        # Check if this is a q/v/k layer that shares a row
+        _, sublayer = parse_layer_name(layer)
+        is_qvk = sublayer in QVK_SUBLAYERS
+
+        if is_qvk:
+            # Use the allocated columns for this sublayer
+            layer_max_cols, start_col = QVK_LAYOUT[sublayer]
+        else:
+            layer_max_cols = max_grid_cols
+            start_col = 0
+
+        # Calculate grid dimensions for this layer
+        n_rows = (n_components + layer_max_cols - 1) // layer_max_cols
+        n_cols = min(n_components, layer_max_cols)
 
         # Process each sequence position separately
         for s in range(n_seq):
@@ -225,11 +266,22 @@ def plot_local_attribution_graph(
 
             # Arrange all components in grid (not just alive ones at this position)
             for local_idx, c in enumerate(all_alive_components):
-                col = local_idx % max_grid_cols
-                row = local_idx // max_grid_cols
+                col = local_idx % layer_max_cols
+                row = local_idx // layer_max_cols
 
-                # Position within grid, centered on sequence position
-                x_offset = (col - (n_cols - 1) / 2) * col_spacing
+                if is_qvk:
+                    # Position within the allocated horizontal segment
+                    # Center of this sublayer's segment within the total QVK row
+                    segment_center = start_col + layer_max_cols / 2
+                    total_center = QVK_TOTAL_COLS / 2
+                    # Offset from center of entire row
+                    segment_offset = (segment_center - total_center) * col_spacing
+                    # Position within segment, centered
+                    x_offset = segment_offset + (col - (n_cols - 1) / 2) * col_spacing
+                else:
+                    # Position within grid, centered on sequence position
+                    x_offset = (col - (n_cols - 1) / 2) * col_spacing
+
                 y_offset = (row - (n_rows - 1) / 2) * row_spacing
 
                 x = x_base + x_offset
@@ -343,14 +395,37 @@ def plot_local_attribution_graph(
     ax.set_xticklabels(token_strings, rotation=45, ha="right", fontsize=9)
     ax.xaxis.set_ticks_position("bottom")
 
-    # Y-axis: layer labels
+    # Y-axis: layer labels (group q/v/k into single label)
     layer_names_sorted = sorted(layer_y.keys(), key=lambda x: layer_y[x])
-    layer_centers = [layer_y[layer] for layer in layer_names_sorted]
+    # Deduplicate y positions and create combined labels for q/v/k rows
+    y_to_layers: dict[float, list[str]] = {}
+    for layer in layer_names_sorted:
+        y = layer_y[layer]
+        if y not in y_to_layers:
+            y_to_layers[y] = []
+        y_to_layers[y].append(layer)
+
+    layer_centers = sorted(y_to_layers.keys())
+    layer_labels = []
+    for y in layer_centers:
+        layers_at_y = y_to_layers[y]
+        if len(layers_at_y) > 1:
+            # Multiple layers at same y (q/v/k row)
+            # Extract block prefix and combine sublayer names
+            block_idx, _ = parse_layer_name(layers_at_y[0])
+            sublayers = [parse_layer_name(layer)[1] for layer in layers_at_y]
+            # Order: q, v, k
+            ordered = []
+            for sub in ["attn.q_proj", "attn.v_proj", "attn.k_proj"]:
+                if sub in sublayers:
+                    ordered.append(sub.split(".")[-1])
+            label = f"h.{block_idx}\n" + "/".join(ordered)
+        else:
+            label = layers_at_y[0].replace(".", "\n", 1)
+        layer_labels.append(label)
+
     ax.set_yticks(layer_centers)
-    ax.set_yticklabels(
-        [layer.replace(".", "\n", 1) for layer in layer_names_sorted],
-        fontsize=9,
-    )
+    ax.set_yticklabels(layer_labels, fontsize=9)
 
     # Add horizontal lines to separate layers
     for y in layer_y.values():
