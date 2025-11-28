@@ -1,0 +1,444 @@
+# %%
+"""Plot local attribution graph from saved .pt file."""
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from jaxtyping import Float
+from matplotlib.collections import LineCollection
+from torch import Tensor
+
+from spd.scripts.calc_local_attributions import PairAttribution
+from spd.scripts.model_loading import get_out_dir
+
+
+@dataclass
+class NodeInfo:
+    """Information about a node in the attribution graph."""
+
+    layer: str
+    seq_pos: int
+    component_idx: int
+    x: float
+    y: float
+    importance: float
+
+
+def get_layer_order() -> list[str]:
+    """Get the canonical ordering of sublayers within a block."""
+    return [
+        "wte",  # Word token embeddings (first layer)
+        "attn.q_proj",
+        "attn.k_proj",
+        "attn.v_proj",
+        "attn.o_proj",
+        "mlp.c_fc",
+        "mlp.down_proj",
+    ]
+
+
+def get_layer_color(layer: str) -> str:
+    """Get color for a layer based on its type."""
+    if layer == "wte":
+        return "#34495E"  # Dark blue-gray for embeddings
+
+    colors = {
+        "attn.q_proj": "#E67E22",  # Orange
+        "attn.k_proj": "#27AE60",  # Green
+        "attn.v_proj": "#F1C40F",  # Yellow
+        "attn.o_proj": "#E74C3C",  # Red
+        "mlp.c_fc": "#3498DB",  # Blue
+        "mlp.down_proj": "#9B59B6",  # Purple
+    }
+    for sublayer, color in colors.items():
+        if sublayer in layer:
+            return color
+    return "#95A5A6"  # Gray fallback
+
+
+def parse_layer_name(layer: str) -> tuple[int, str]:
+    """Parse layer name into block index and sublayer type.
+
+    E.g., "h.0.attn.q_proj" -> (0, "attn.q_proj")
+         "wte" -> (-1, "wte")
+    """
+    if layer == "wte":
+        return -1, "wte"
+
+    parts = layer.split(".")
+    block_idx = int(parts[1])
+    sublayer = ".".join(parts[2:])
+    return block_idx, sublayer
+
+
+def compute_layer_y_positions(
+    attr_pairs: list[PairAttribution],
+) -> dict[str, float]:
+    """Compute Y position for each layer.
+
+    Layers are ordered by block, then by sublayer type within block.
+    Each layer is equidistant.
+
+    Returns:
+        Dict mapping layer name to y position.
+    """
+    # Collect all unique layers
+    layers = set()
+    for pair in attr_pairs:
+        layers.add(pair.source)
+        layers.add(pair.target)
+
+    # Parse and sort
+    layer_order = get_layer_order()
+    parsed = [(layer, *parse_layer_name(layer)) for layer in layers]
+
+    def sort_key(item: tuple[str, int, str]) -> tuple[int, int]:
+        _, block_idx, sublayer = item
+        sublayer_idx = layer_order.index(sublayer) if sublayer in layer_order else 999
+        return (block_idx, sublayer_idx)
+
+    sorted_layers = sorted(parsed, key=sort_key)
+
+    # Assign equidistant Y positions
+    y_positions = {}
+    for i, (layer, _, _) in enumerate(sorted_layers):
+        y_positions[layer] = float(i)
+
+    return y_positions
+
+
+def compute_node_importances(
+    attr_pairs: list[PairAttribution],
+    n_seq: int,
+) -> dict[str, Float[Tensor, "seq C"]]:
+    """Compute importance values for nodes based on total attribution flow.
+
+    Returns a dict mapping layer -> tensor of shape [n_seq, max_component_idx+1].
+    Importance is the sum of incoming and outgoing attributions.
+    """
+    # First pass: determine max component index per layer
+    layer_max_c: dict[str, int] = {}
+    for pair in attr_pairs:
+        src_max = max(pair.trimmed_c_in_idxs) if pair.trimmed_c_in_idxs else 0
+        tgt_max = max(pair.trimmed_c_out_idxs) if pair.trimmed_c_out_idxs else 0
+        layer_max_c[pair.source] = max(layer_max_c.get(pair.source, 0), src_max)
+        layer_max_c[pair.target] = max(layer_max_c.get(pair.target, 0), tgt_max)
+
+    # Initialize importance tensors
+    importances: dict[str, Float[Tensor, "seq C"]] = {}
+    for layer, max_c in layer_max_c.items():
+        importances[layer] = torch.zeros(n_seq, max_c + 1)
+
+    # Accumulate attribution magnitudes
+    for pair in attr_pairs:
+        attr = pair.attribution.abs()  # [s_in, trimmed_c_in, s_out, trimmed_c_out]
+
+        # Sum over output dimensions -> importance for source nodes
+        src_importance = attr.sum(dim=(2, 3))  # [s_in, trimmed_c_in]
+        for i, c_in in enumerate(pair.trimmed_c_in_idxs):
+            importances[pair.source][:, c_in] += src_importance[:, i]
+
+        # Sum over input dimensions -> importance for target nodes
+        tgt_importance = attr.sum(dim=(0, 1))  # [s_out, trimmed_c_out]
+        for j, c_out in enumerate(pair.trimmed_c_out_idxs):
+            importances[pair.target][:, c_out] += tgt_importance[:, j]
+
+    return importances
+
+
+def plot_local_attribution_graph(
+    attr_pairs: list[PairAttribution],
+    token_strings: list[str],
+    min_edge_weight: float = 0.001,
+    node_scale: float = 30.0,
+    edge_alpha_scale: float = 0.5,
+    figsize: tuple[float, float] | None = None,
+    max_grid_cols: int = 8,
+) -> plt.Figure:
+    """Plot the local attribution graph.
+
+    Args:
+        attr_pairs: List of PairAttribution objects from compute_local_attributions.
+        token_strings: List of token strings for x-axis labels.
+        min_edge_weight: Minimum edge weight to display.
+        node_scale: Fixed size for all nodes.
+        edge_alpha_scale: Scale factor for edge transparency.
+        figsize: Figure size (width, height). Auto-computed if None.
+        max_grid_cols: Maximum number of columns in the grid per layer.
+
+    Returns:
+        Matplotlib figure.
+    """
+    n_seq = len(token_strings)
+
+    # Compute node importances first
+    importances = compute_node_importances(attr_pairs, n_seq)
+
+    # Compute layout
+    layer_y = compute_layer_y_positions(attr_pairs)
+
+    # Auto-compute figure size
+    if figsize is None:
+        total_height = max(layer_y.values())
+        figsize = (max(16, n_seq * 2), max(8, total_height * 1.2))
+
+    fig, ax = plt.subplots(figsize=figsize, facecolor="white")
+    ax.set_facecolor("#FAFAFA")
+
+    # Collect all nodes and their positions
+    nodes: list[NodeInfo] = []
+    node_lookup: dict[tuple[str, int, int], NodeInfo] = {}  # (layer, seq, comp) -> NodeInfo
+
+    # X spacing: spread tokens across the plot
+    x_positions = np.linspace(0.1, 0.9, n_seq)
+
+    # Grid layout parameters
+    col_spacing = 0.012  # Horizontal spacing between columns in grid
+    row_spacing = 0.08  # Vertical spacing between rows in grid
+
+    for layer, y_center in layer_y.items():
+        if layer not in importances:
+            continue
+
+        layer_imp = importances[layer]  # [n_seq, max_c+1]
+        alive_mask = layer_imp > 0
+
+        # Find all components that are alive at ANY sequence position
+        all_alive_components = torch.where(alive_mask.any(dim=0))[0].tolist()
+        n_components = len(all_alive_components)
+
+        if n_components == 0:
+            continue
+
+        # Calculate grid dimensions (same for all positions)
+        n_rows = (n_components + max_grid_cols - 1) // max_grid_cols
+        n_cols = min(n_components, max_grid_cols)
+
+        # Process each sequence position separately
+        for s in range(n_seq):
+            # Center the grid at this sequence position
+            x_base = x_positions[s]
+
+            # Arrange all components in grid (not just alive ones at this position)
+            for local_idx, c in enumerate(all_alive_components):
+                col = local_idx % max_grid_cols
+                row = local_idx // max_grid_cols
+
+                # Position within grid, centered on sequence position
+                x_offset = (col - (n_cols - 1) / 2) * col_spacing
+                y_offset = (row - (n_rows - 1) / 2) * row_spacing
+
+                x = x_base + x_offset
+                y = y_center + y_offset
+
+                imp = layer_imp[s, c].item()
+                node = NodeInfo(
+                    layer=layer,
+                    seq_pos=s,
+                    component_idx=c,
+                    x=x,
+                    y=y,
+                    importance=imp,
+                )
+                nodes.append(node)
+                node_lookup[(layer, s, c)] = node
+
+    # Collect edges
+    edges: list[tuple[NodeInfo, NodeInfo, float]] = []
+
+    for pair in attr_pairs:
+        attr = pair.attribution  # [s_in, trimmed_c_in, s_out, trimmed_c_out]
+
+        for i, c_in in enumerate(pair.trimmed_c_in_idxs):
+            for j, c_out in enumerate(pair.trimmed_c_out_idxs):
+                for s_in in range(attr.shape[0]):
+                    for s_out in range(attr.shape[2]):
+                        weight = attr[s_in, i, s_out, j].abs().item()
+                        if weight < min_edge_weight:
+                            continue
+
+                        src_key = (pair.source, s_in, c_in)
+                        tgt_key = (pair.target, s_out, c_out)
+
+                        if src_key in node_lookup and tgt_key in node_lookup:
+                            src_node = node_lookup[src_key]
+                            tgt_node = node_lookup[tgt_key]
+                            edges.append((src_node, tgt_node, weight))
+
+    edges_by_target: dict[tuple[str, int, int], list[tuple[NodeInfo, NodeInfo, float]]] = {}
+    for src, tgt, w in edges:
+        key = (tgt.layer, tgt.seq_pos, tgt.component_idx)
+        if key not in edges_by_target:
+            edges_by_target[key] = []
+        edges_by_target[key].append((src, tgt, w))
+
+    sorted_edges = []
+    for target_edges in edges_by_target.values():
+        sorted_edges.extend(sorted(target_edges, key=lambda e: e[2], reverse=True))
+    edges = sorted_edges
+
+    # Normalize edge weights for alpha
+    if edges:
+        edge_weights = [e[2] for e in edges]
+        max_edge = max(edge_weights)
+        if max_edge > 0:
+            edges = [(s, t, w / max_edge) for s, t, w in edges]
+
+    # Track which nodes have edges
+    nodes_with_edges = set()
+    for src, tgt, _ in edges:
+        nodes_with_edges.add((src.layer, src.seq_pos, src.component_idx))
+        nodes_with_edges.add((tgt.layer, tgt.seq_pos, tgt.component_idx))
+
+    # Draw edges
+    if edges:
+        lines = []
+        alphas = []
+        for src, tgt, w in edges:
+            lines.append([(src.x, src.y), (tgt.x, tgt.y)])
+            alphas.append(w * edge_alpha_scale)
+
+        lc = LineCollection(
+            lines,
+            colors=[(0.5, 0.5, 0.5, a) for a in alphas],
+            linewidths=0.5,
+            zorder=1,
+        )
+        ax.add_collection(lc)
+
+    # Draw nodes
+    for node in nodes:
+        node_key = (node.layer, node.seq_pos, node.component_idx)
+        has_edges = node_key in nodes_with_edges
+
+        if has_edges:
+            color = get_layer_color(node.layer)
+            alpha = 0.9
+        else:
+            color = "#D3D3D3"
+            alpha = 0.3
+
+        ax.scatter(
+            node.x,
+            node.y,
+            s=node_scale,
+            c=color,
+            edgecolors="white",
+            linewidths=0.5,
+            zorder=2,
+            alpha=alpha,
+        )
+
+    # Configure axes
+    total_height = max(layer_y.values())
+    ax.set_xlim(0, 1)
+    ax.set_ylim(-0.5, total_height + 0.5)
+
+    # X-axis: token labels
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(token_strings, rotation=45, ha="right", fontsize=9)
+    ax.xaxis.set_ticks_position("bottom")
+
+    # Y-axis: layer labels
+    layer_names_sorted = sorted(layer_y.keys(), key=lambda x: layer_y[x])
+    layer_centers = [layer_y[layer] for layer in layer_names_sorted]
+    ax.set_yticks(layer_centers)
+    ax.set_yticklabels(
+        [layer.replace(".", "\n", 1) for layer in layer_names_sorted],
+        fontsize=9,
+    )
+
+    # Add horizontal lines to separate layers
+    for y in layer_y.values():
+        ax.axhline(y=y - 0.5, color="gray", linestyle="--", linewidth=0.5, alpha=0.3)
+
+    # Grid
+    ax.grid(False)
+
+    # Title
+    ax.set_title("Local Attribution Graph", fontsize=14, fontweight="bold", pad=10)
+
+    # Legend for layer colors
+    layer_order = get_layer_order()
+    legend_elements = []
+    for sublayer in reversed(layer_order):
+        color = get_layer_color(sublayer)
+        legend_elements.append(
+            plt.scatter([], [], c=color, s=50, label=sublayer, edgecolors="white")
+        )
+    ax.legend(
+        handles=legend_elements,
+        loc="upper left",
+        bbox_to_anchor=(1.01, 1),
+        fontsize=8,
+        framealpha=0.9,
+    )
+
+    plt.tight_layout()
+    return fig
+
+
+def load_and_plot(
+    pt_path: Path,
+    output_path: Path | None = None,
+    **plot_kwargs: Any,
+) -> plt.Figure:
+    """Load attributions from .pt file and create plot.
+
+    Args:
+        pt_path: Path to the saved .pt file.
+        output_path: Optional path to save the figure.
+        **plot_kwargs: Additional kwargs passed to plot_local_attribution_graph.
+
+    Returns:
+        Matplotlib figure.
+    """
+    data = torch.load(pt_path, weights_only=False)
+    attr_pairs: list[PairAttribution] = data["attr_pairs"]
+    token_strings: list[str] = data["token_strings"]
+
+    print(f"Loaded attributions from {pt_path}")
+    print(f"  Prompt: {data.get('prompt', 'N/A')!r}")
+    print(f"  Tokens: {token_strings}")
+    print(f"  Number of layer pairs: {len(attr_pairs)}")
+
+    fig = plot_local_attribution_graph(
+        attr_pairs=attr_pairs,
+        token_strings=token_strings,
+        **plot_kwargs,
+    )
+
+    if output_path is not None:
+        fig.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="white")
+        print(f"Saved figure to {output_path}")
+
+    return fig
+
+
+# %%
+if __name__ == "__main__":
+    # Configuration
+    wandb_id = "33n6xjjt"  # ss_gpt2_simple-1L (new)
+
+    out_dir = get_out_dir()
+    pt_path = out_dir / f"local_attributions_{wandb_id}.pt"
+
+    if not pt_path.exists():
+        raise FileNotFoundError(
+            f"Local attributions file not found: {pt_path}\n"
+            "Run calc_local_attributions.py first to generate the data."
+        )
+
+    output_path = out_dir / f"local_attribution_graph_{wandb_id}.png"
+
+    fig = load_and_plot(
+        pt_path=pt_path,
+        output_path=output_path,
+        min_edge_weight=0.0001,
+        node_scale=30.0,
+        edge_alpha_scale=0.7,
+    )
