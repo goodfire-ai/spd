@@ -108,6 +108,6 @@ def create_data_loader_from_config(
 
 def get_out_dir() -> Path:
     """Get the output directory for attribution scripts."""
-    out_dir = Path(__file__).parent / "out"
+    out_dir = Path(__file__).parent
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir

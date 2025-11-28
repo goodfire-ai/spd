@@ -152,6 +152,80 @@ def compute_local_attributions(
     return local_attributions
 
 
+def normalize_attributions_by_target(
+    attr_pairs: list[PairAttribution],
+) -> list[PairAttribution]:
+    """Normalize attributions so that for each target node, all incoming edges sum to 1.
+
+    For each (target_layer, s_out, c_out), we collect all incoming attributions and
+    divide by the sum of absolute values. Then we scale back up by the number of
+    potential sources to avoid penalizing nodes with more upstream connections:
+    - For cross-seq (kv->o) pairs: scale by (s_out + 1) * 2 (k and v)
+    - For same-seq pairs: scale by number of PairAttributions with this target
+    """
+    # Count number of same-seq source pairs per target
+    same_seq_source_counts: dict[str, int] = {}
+    for pair in attr_pairs:
+        if not pair.is_kv_to_o_pair:
+            same_seq_source_counts[pair.target] = same_seq_source_counts.get(pair.target, 0) + 1
+
+    # First pass: compute sum of |attr| for each target node across all source pairs
+    # Key: (target_layer, s_out, c_out) -> sum of |attr|
+    target_sums: dict[tuple[str, int, int], float] = {}
+
+    for pair in attr_pairs:
+        # attribution shape: [s_in, trimmed_c_in, s_out, trimmed_c_out]
+        attr = pair.attribution
+        n_s_out = attr.shape[2]
+        n_c_out = attr.shape[3]
+
+        for s_out in range(n_s_out):
+            for c_out_local in range(n_c_out):
+                c_out = pair.trimmed_c_out_idxs[c_out_local]
+                key = (pair.target, s_out, c_out)
+                # Sum absolute values of all inputs to this target
+                abs_sum = attr[:, :, s_out, c_out_local].abs().sum().item()
+                target_sums[key] = target_sums.get(key, 0.0) + abs_sum
+
+    # Second pass: normalize each attribution by the target's total, then scale
+    normalized_pairs: list[PairAttribution] = []
+    for pair in attr_pairs:
+        attr = pair.attribution.clone()
+        n_s_out = attr.shape[2]
+        n_c_out = attr.shape[3]
+
+        for s_out in range(n_s_out):
+            for c_out_local in range(n_c_out):
+                c_out = pair.trimmed_c_out_idxs[c_out_local]
+                key = (pair.target, s_out, c_out)
+                total = target_sums.get(key, 1.0)
+                if total > 0:
+                    attr[:, :, s_out, c_out_local] /= total
+
+                    # Scale by number of potential sources
+                    if pair.is_kv_to_o_pair:
+                        # Cross-seq (kv->o): can attend to s_out+1 positions, from k and v
+                        scale = (s_out + 1) * 2
+                    else:
+                        # Same-seq: scale by number of source pairs for this target
+                        scale = same_seq_source_counts.get(pair.target, 1)
+
+                    attr[:, :, s_out, c_out_local] *= scale
+
+        normalized_pairs.append(
+            PairAttribution(
+                source=pair.source,
+                target=pair.target,
+                attribution=attr,
+                trimmed_c_in_idxs=pair.trimmed_c_in_idxs,
+                trimmed_c_out_idxs=pair.trimmed_c_out_idxs,
+                is_kv_to_o_pair=pair.is_kv_to_o_pair,
+            )
+        )
+
+    return normalized_pairs
+
+
 # %%
 # Configuration
 # wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L (Old)
@@ -161,7 +235,7 @@ def compute_local_attributions(
 # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
 # n_blocks = 2
 
-wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
+wandb_path = "wandb:goodfire/spd/runs/jyo9duz5"  # ss_gpt2_simple-1.25M (4L)
 n_blocks = 4
 
 ci_threshold = 1e-6
@@ -240,6 +314,11 @@ attr_pairs = compute_local_attributions(
     sampling=config.sampling,
     device=device,
 )
+
+# Normalize attributions so each target node's incoming edges sum to 1
+# NOTE: Disabled for now - conceptually flawed
+# print("\nNormalizing attributions by target node...")
+# attr_pairs = normalize_attributions_by_target(attr_pairs)
 
 # Print summary statistics
 print("\nAttribution summary:")
@@ -388,7 +467,9 @@ local_attr_data = {
     "activation_contexts": {
         layer_name: [
             filter_subcomp(subcomp.model_dump())
-            for subcomp in sorted(subcomps, key=lambda x: x.mean_ci, reverse=True)[:MAX_SUBCOMPS_PER_LAYER]
+            for subcomp in sorted(subcomps, key=lambda x: x.mean_ci, reverse=True)[
+                :MAX_SUBCOMPS_PER_LAYER
+            ]
         ]
         for layer_name, subcomps in activation_contexts.layers.items()
     },
