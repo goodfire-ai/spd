@@ -146,3 +146,27 @@ export async function getComponentDetail(
     }
     return (await response.json()) as ComponentDetail;
 }
+
+// Local attributions types
+export type PairAttribution = {
+    source: string;
+    target: string;
+    attribution: number[][][][]; // [s_in, trimmed_c_in, s_out, trimmed_c_out]
+    trimmed_c_in_idxs: number[];
+    trimmed_c_out_idxs: number[];
+    is_kv_to_o_pair: boolean;
+};
+
+export type LocalAttributions = {
+    tokens: string[];
+    pairs: PairAttribution[];
+};
+
+export async function getLocalAttributions(): Promise<LocalAttributions> {
+    const response = await fetch(`${API_URL}/local_attributions`);
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get local attributions");
+    }
+    return (await response.json()) as LocalAttributions;
+}

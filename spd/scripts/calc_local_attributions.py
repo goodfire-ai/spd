@@ -210,9 +210,95 @@ for attr_pair in attr_pairs:
     )
 
 # %%
+# Get activation contexts
+
+from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
+from spd.app.backend.services.run_context_service import TrainRunContext, _build_token_lookup
+from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.utils.general_utils import runtime_cast
+
+print("\nLoading activation contexts...")
+
+# Build TrainRunContext for activation contexts
+task_config = runtime_cast(LMTaskConfig, config.task_config)
+train_data_config = DatasetConfig(
+    name=task_config.dataset_name,
+    hf_tokenizer_path=config.tokenizer_name,
+    split=task_config.train_data_split,
+    n_ctx=task_config.max_seq_len,
+    is_tokenized=task_config.is_tokenized,
+    streaming=task_config.streaming,
+    column_name=task_config.column_name,
+    shuffle_each_epoch=task_config.shuffle_each_epoch,
+    seed=None,
+)
+train_loader, _ = create_data_loader(
+    dataset_config=train_data_config,
+    batch_size=1,
+    buffer_size=task_config.buffer_size,
+    global_seed=config.seed,
+)
+assert config.tokenizer_name is not None
+token_string_lookup = _build_token_lookup(tokenizer, config.tokenizer_name)
+
+run_context = TrainRunContext(
+    wandb_id=loaded.wandb_id,
+    wandb_path=wandb_path,
+    config=config,
+    cm=model,
+    tokenizer=tokenizer,
+    train_loader=train_loader,
+    token_strings=token_string_lookup,
+)
+
+# Get activation contexts (just consume the generator to get final result)
+activation_contexts = None
+for result in get_activations_data_streaming(
+    run_context=run_context,
+    importance_threshold=0.1,
+    n_batches=50,
+    n_tokens_either_side=5,
+    batch_size=32,
+    topk_examples=10,
+):
+    if result[0] == "complete":
+        activation_contexts = result[1]
+        break
+
+assert activation_contexts is not None, "Failed to get activation contexts"
+print(f"Got activation contexts for {len(activation_contexts.layers)} layers")
+
+# %%
 # Save attributions
+import json
+
 out_dir = get_out_dir()
 
-# Save PyTorch format
-pt_path = out_dir / f"local_attributions_{loaded.wandb_id}.pt"
+# Serialize to JSON-friendly format for the app
+local_attr_data = {
+    "tokens": token_strings,
+    "pairs": [
+        {
+            "source": pair.source,
+            "target": pair.target,
+            "attribution": pair.attribution.tolist(),
+            "trimmed_c_in_idxs": pair.trimmed_c_in_idxs,
+            "trimmed_c_out_idxs": pair.trimmed_c_out_idxs,
+            "is_kv_to_o_pair": pair.is_kv_to_o_pair,
+        }
+        for pair in attr_pairs
+    ],
+    # Add activation contexts - convert pydantic models to dicts
+    "activation_contexts": {
+        layer_name: [subcomp.model_dump() for subcomp in subcomps]
+        for layer_name, subcomps in activation_contexts.layers.items()
+    },
+}
+
+json_path = out_dir / "local_attributions.json"
+with open(json_path, "w") as f:
+    json.dump(local_attr_data, f)
+print(f"\nSaved local attributions to {json_path}")
+
 # %%

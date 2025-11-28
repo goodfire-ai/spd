@@ -3,13 +3,14 @@ import traceback
 import uuid
 from collections.abc import Generator
 from functools import wraps
+from pathlib import Path
 from urllib.parse import unquote
 
 import fire
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
 from spd.app.backend.schemas import (
@@ -142,6 +143,19 @@ def get_component_detail(
         )
 
     return component
+
+
+# Hardcoded path to local attributions file (hack for now)
+LOCAL_ATTRIBUTIONS_PATH = Path(__file__).parent.parent.parent / "scripts" / "out" / "local_attributions.json"
+
+
+@app.get("/local_attributions")
+@handle_errors
+def get_local_attributions() -> FileResponse:
+    """Serve local attributions JSON file."""
+    if not LOCAL_ATTRIBUTIONS_PATH.exists():
+        raise HTTPException(status_code=404, detail=f"Local attributions file not found at {LOCAL_ATTRIBUTIONS_PATH}")
+    return FileResponse(LOCAL_ATTRIBUTIONS_PATH, media_type="application/json")
 
 
 @app.get("/")

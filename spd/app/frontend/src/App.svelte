@@ -3,6 +3,7 @@
     import * as api from "./lib/api";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
+    import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import { parseWandbRunPath } from "./lib";
 
     let loadingTrainRun = $state(false);
@@ -66,7 +67,7 @@
         return () => clearInterval(interval);
     });
 
-    let activeTab = $state<"activation-contexts" | null>(null);
+    let activeTab = $state<"activation-contexts" | "local-attributions" | null>(null);
 </script>
 
 <div class="app-layout">
@@ -98,6 +99,15 @@
                     Activation Contexts
                 </button>
             {/if}
+            <button
+                class="tab-button"
+                class:active={activeTab === "local-attributions"}
+                onclick={() => {
+                    activeTab = "local-attributions";
+                }}
+            >
+                Local Attributions
+            </button>
         </div>
         {#if status.train_run}
             <div class="config">
@@ -115,6 +125,9 @@
         {/if}
         {#if status.train_run && activeTab === "activation-contexts"}
             <ActivationContextsTab />
+        {/if}
+        {#if activeTab === "local-attributions"}
+            <LocalAttributionsTab />
         {/if}
     </div>
 </div>
