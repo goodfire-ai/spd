@@ -2,6 +2,7 @@
 """Compute local attributions for a single prompt."""
 
 from dataclasses import dataclass
+from itertools import islice
 
 import torch
 from jaxtyping import Float
@@ -154,19 +155,30 @@ def compute_local_attributions(
 # %%
 # Configuration
 # wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L (Old)
-wandb_path = "wandb:goodfire/spd/runs/33n6xjjt"  # ss_gpt2_simple-1L (new)
+# n_blocks = 1
+# wandb_path = "wandb:goodfire/spd/runs/33n6xjjt"  # ss_gpt2_simple-1L (new)
+# n_blocks = 1
 # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
-# wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
-n_blocks = 1
-ci_threshold = 1e-6
-# prompt = "The quick brown fox"
-prompt = "Eagerly, a girl named Kim went"
+# n_blocks = 2
 
+wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
+n_blocks = 4
+
+ci_threshold = 1e-6
+
+print("=" * 60)
+print("Loading model from wandb...")
 loaded = load_model_from_wandb(wandb_path)
 model, config, device = loaded.model, loaded.config, loaded.device
+print(f"  Model loaded on {device}")
+print(f"  C={model.C} components")
 
+print("\nLoading tokenizer...")
 tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name)
 assert isinstance(tokenizer, PreTrainedTokenizerFast), "Expected PreTrainedTokenizerFast"
+print(f"  Tokenizer: {config.tokenizer_name}")
+
+print("\nBuilding source->target layer mapping...")
 sources_by_target = get_sources_by_target(model, device, config, n_blocks)
 
 n_pairs = sum(len(ins) for ins in sources_by_target.values())
@@ -175,19 +187,51 @@ for out_layer, in_layers in sources_by_target.items():
     print(f"  {out_layer} <- {in_layers}")
 
 # %%
-# Tokenize the prompt
-print(f"\nPrompt: {prompt!r}")
-tokens = tokenizer.encode(prompt, return_tensors="pt", add_special_tokens=False)
-assert isinstance(tokens, Tensor), "Expected Tensor"
-tokens = tokens.to(device)
-print(f"Tokens shape: {tokens.shape}")
-print(f"Tokens: {tokens[0].tolist()}")
-token_strings = [tokenizer.decode([t]) for t in tokens[0].tolist()]
-print(f"Token strings: {token_strings}")
+# Sample a random sequence from the dataset
+import random
 
-# %%
-# Compute local attributions
-print("\nComputing local attributions...")
+from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
+from spd.utils.general_utils import runtime_cast
+
+print("\n" + "=" * 60)
+print("Loading dataset...")
+task_config = runtime_cast(LMTaskConfig, config.task_config)
+train_data_config = DatasetConfig(
+    name=task_config.dataset_name,
+    hf_tokenizer_path=config.tokenizer_name,
+    split=task_config.train_data_split,
+    n_ctx=32,
+    is_tokenized=task_config.is_tokenized,
+    streaming=task_config.streaming,
+    column_name=task_config.column_name,
+    shuffle_each_epoch=task_config.shuffle_each_epoch,
+    seed=None,
+)
+train_loader, _ = create_data_loader(
+    dataset_config=train_data_config,
+    batch_size=1,
+    buffer_size=task_config.buffer_size,
+    global_seed=config.seed,
+)
+print(f"  Dataset: {task_config.dataset_name}")
+
+# Skip a random number of batches and take one sequence
+print("\nSampling random sequence...")
+n_skip = random.randint(0, 100)
+
+tokens: Float[Tensor, "1 seq"] = None
+for i, batch in enumerate(train_loader):
+    if i == n_skip:
+        tokens = batch["input_ids"].to(device)
+        break
+
+assert tokens.shape[0] == 1, "Expected batch size 1"
+print(f"  Sampled sequence {n_skip} from dataset")
+print(f"  Tokens shape: {tokens.shape}")
+token_strings = [tokenizer.decode([t]) for t in tokens[0].tolist()]
+print(f"  Sequence: {''.join(token_strings)!r}")
+
 attr_pairs = compute_local_attributions(
     model=model,
     tokens=tokens,
@@ -199,7 +243,6 @@ attr_pairs = compute_local_attributions(
 
 # Print summary statistics
 print("\nAttribution summary:")
-# for pair, attr in local_attributions:
 for attr_pair in attr_pairs:
     nonzero = (attr_pair.attribution > 0).sum().item()
     total = attr_pair.attribution.numel()
@@ -214,31 +257,11 @@ for attr_pair in attr_pairs:
 
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
 from spd.app.backend.services.run_context_service import TrainRunContext, _build_token_lookup
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.utils.general_utils import runtime_cast
 
-print("\nLoading activation contexts...")
+print("\n" + "=" * 60)
+print("Computing activation contexts...")
 
-# Build TrainRunContext for activation contexts
-task_config = runtime_cast(LMTaskConfig, config.task_config)
-train_data_config = DatasetConfig(
-    name=task_config.dataset_name,
-    hf_tokenizer_path=config.tokenizer_name,
-    split=task_config.train_data_split,
-    n_ctx=task_config.max_seq_len,
-    is_tokenized=task_config.is_tokenized,
-    streaming=task_config.streaming,
-    column_name=task_config.column_name,
-    shuffle_each_epoch=task_config.shuffle_each_epoch,
-    seed=None,
-)
-train_loader, _ = create_data_loader(
-    dataset_config=train_data_config,
-    batch_size=1,
-    buffer_size=task_config.buffer_size,
-    global_seed=config.seed,
-)
+# Build TrainRunContext for activation contexts (reuse train_loader from above)
 assert config.tokenizer_name is not None
 token_string_lookup = _build_token_lookup(tokenizer, config.tokenizer_name)
 
@@ -252,46 +275,121 @@ run_context = TrainRunContext(
     token_strings=token_string_lookup,
 )
 
+n_batches_act_ctx = 10
+print(f"  Processing {n_batches_act_ctx} batches...")
+
 # Get activation contexts (just consume the generator to get final result)
 activation_contexts = None
+pbar = tqdm(total=1.0, desc="Activation contexts", unit="%", bar_format="{l_bar}{bar}| {n:.0%}")
 for result in get_activations_data_streaming(
     run_context=run_context,
     importance_threshold=0.1,
-    n_batches=50,
+    n_batches=n_batches_act_ctx,
     n_tokens_either_side=5,
-    batch_size=32,
+    batch_size=8,
     topk_examples=10,
 ):
-    if result[0] == "complete":
+    if result[0] == "progress":
+        pbar.n = result[1]
+        pbar.refresh()
+    elif result[0] == "complete":
         activation_contexts = result[1]
+        pbar.n = 1.0
+        pbar.refresh()
         break
+pbar.close()
 
 assert activation_contexts is not None, "Failed to get activation contexts"
-print(f"Got activation contexts for {len(activation_contexts.layers)} layers")
+print(f"  Got activation contexts for {len(activation_contexts.layers)} layers")
 
 # %%
 # Save attributions
 import json
 
+print("\n" + "=" * 60)
+print("Saving results...")
+
 out_dir = get_out_dir()
+
+# Filtering params to keep file size manageable
+# Note: FE does its own filtering (by mean CI, top K edges), so we keep more data here
+MAX_SUBCOMPS_PER_LAYER = 100  # Keep top N subcomponents per layer for activation context
+MAX_PR_TOKENS = 20  # Keep top N tokens for pr_tokens and predicted_tokens
+ATTR_THRESHOLD = 1e-4  # Only keep attributions above this threshold (saves file size)
+
+
+def filter_subcomp(subcomp_dict: dict) -> dict:
+    """Filter a subcomponent dict to reduce size."""
+    return {
+        **subcomp_dict,
+        "pr_tokens": subcomp_dict["pr_tokens"][:MAX_PR_TOKENS],
+        "pr_recalls": subcomp_dict["pr_recalls"][:MAX_PR_TOKENS],
+        "pr_precisions": subcomp_dict["pr_precisions"][:MAX_PR_TOKENS],
+        "predicted_tokens": subcomp_dict["predicted_tokens"][:MAX_PR_TOKENS],
+        "predicted_probs": subcomp_dict["predicted_probs"][:MAX_PR_TOKENS],
+    }
+
+
+def sparsify_attribution_cross_seq(attr_tensor: Tensor) -> list[list]:
+    """Sparse format for cross-seq pairs: [[s_in, c_in, s_out, c_out, val], ...]"""
+    sparse: list[list] = []
+    attr_np = attr_tensor.cpu().numpy()
+    for s_in in range(attr_np.shape[0]):
+        for c_in in range(attr_np.shape[1]):
+            for s_out in range(attr_np.shape[2]):
+                for c_out in range(attr_np.shape[3]):
+                    val = float(attr_np[s_in, c_in, s_out, c_out])
+                    if abs(val) >= ATTR_THRESHOLD:
+                        sparse.append([s_in, c_in, s_out, c_out, round(val, 6)])
+    return sparse
+
+
+def sparsify_attribution_same_seq(attr_tensor: Tensor) -> list[list]:
+    """Sparse format for same-seq pairs: [[s, c_in, c_out, val], ...] where s_in == s_out == s."""
+    sparse: list[list] = []
+    attr_np = attr_tensor.cpu().numpy()
+    n_seq = attr_np.shape[0]
+    for s in range(n_seq):
+        for c_in in range(attr_np.shape[1]):
+            for c_out in range(attr_np.shape[3]):
+                val = float(attr_np[s, c_in, s, c_out])
+                if abs(val) >= ATTR_THRESHOLD:
+                    sparse.append([s, c_in, c_out, round(val, 6)])
+    return sparse
+
+
+def serialize_pair(pair: PairAttribution) -> dict:
+    """Serialize a pair with appropriate sparse format based on whether it's cross-seq."""
+    if pair.is_kv_to_o_pair:
+        return {
+            "source": pair.source,
+            "target": pair.target,
+            "is_cross_seq": True,
+            "attribution": sparsify_attribution_cross_seq(pair.attribution),
+            "trimmed_c_in_idxs": pair.trimmed_c_in_idxs,
+            "trimmed_c_out_idxs": pair.trimmed_c_out_idxs,
+        }
+    else:
+        return {
+            "source": pair.source,
+            "target": pair.target,
+            "is_cross_seq": False,
+            "attribution": sparsify_attribution_same_seq(pair.attribution),
+            "trimmed_c_in_idxs": pair.trimmed_c_in_idxs,
+            "trimmed_c_out_idxs": pair.trimmed_c_out_idxs,
+        }
+
 
 # Serialize to JSON-friendly format for the app
 local_attr_data = {
     "tokens": token_strings,
-    "pairs": [
-        {
-            "source": pair.source,
-            "target": pair.target,
-            "attribution": pair.attribution.tolist(),
-            "trimmed_c_in_idxs": pair.trimmed_c_in_idxs,
-            "trimmed_c_out_idxs": pair.trimmed_c_out_idxs,
-            "is_kv_to_o_pair": pair.is_kv_to_o_pair,
-        }
-        for pair in attr_pairs
-    ],
-    # Add activation contexts - convert pydantic models to dicts
+    "pairs": [serialize_pair(pair) for pair in attr_pairs],
+    # Add activation contexts - filter and limit subcomponents
     "activation_contexts": {
-        layer_name: [subcomp.model_dump() for subcomp in subcomps]
+        layer_name: [
+            filter_subcomp(subcomp.model_dump())
+            for subcomp in sorted(subcomps, key=lambda x: x.mean_ci, reverse=True)[:MAX_SUBCOMPS_PER_LAYER]
+        ]
         for layer_name, subcomps in activation_contexts.layers.items()
     },
 }
@@ -299,6 +397,8 @@ local_attr_data = {
 json_path = out_dir / "local_attributions.json"
 with open(json_path, "w") as f:
     json.dump(local_attr_data, f)
-print(f"\nSaved local attributions to {json_path}")
+print(f"  Saved to {json_path}")
+print("\n" + "=" * 60)
+print("Done!")
 
 # %%

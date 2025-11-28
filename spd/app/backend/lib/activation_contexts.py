@@ -174,8 +174,12 @@ def get_activations_data_streaming(
     )
     # - the number of activations for each component
     component_activation_counts = defaultdict[str, defaultdict[int, int]](lambda: defaultdict(int))
-    # - and the number of times each token activates for each component
+    # - and the number of times each token activates for each component (input token)
     component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
+        lambda: defaultdict(lambda: defaultdict(int))
+    )
+    # - the number of times each token is predicted when component fires
+    component_predicted_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
     # - the sum of causal importances
@@ -216,9 +220,11 @@ def get_activations_data_streaming(
         for token_id, count in zip(token_ids_in_batch.tolist(), counts.tolist(), strict=True):
             total_token_counts[token_id] += count
 
-        importances_by_module = _get_importances_by_module(
-            run_context.cm, batch, run_context.config
-        )
+        result = _get_importances_and_logits(run_context.cm, batch, run_context.config)
+        importances_by_module = result.importances
+
+        # Get predicted tokens (argmax of logits at each position)
+        predicted_token_ids: Int[Tensor, "B S"] = result.logits.argmax(dim=-1)
 
         for module_idx, (module_name, ci) in enumerate(importances_by_module.items()):
             pbar.update(1)
@@ -296,6 +302,9 @@ def get_activations_data_streaming(
             # Get token IDs at active position for token counting
             active_token_ids = window_token_ids_np[:, n_tokens_either_side]
 
+            # Get predicted tokens at each firing position
+            firing_predicted_tokens = predicted_token_ids[batch_idx, seq_idx].cpu().numpy()
+
             # Process by component - group firings and use batch add
             unique_components = np.unique(comp_idx_np)
             for c_idx in unique_components:
@@ -306,11 +315,19 @@ def get_activations_data_streaming(
                 n_firings_for_component = int(mask_c.sum())
                 component_activation_counts[module_name][c_idx_int] += n_firings_for_component
 
-                # Update token counts for this component
+                # Update token counts for this component (input tokens)
                 tokens_for_component = active_token_ids[mask_c]
                 unique_tokens, token_counts = np.unique(tokens_for_component, return_counts=True)
                 for tok_id, count in zip(unique_tokens, token_counts, strict=True):
                     component_activation_tokens[module_name][c_idx_int][int(tok_id)] += int(count)
+
+                # Update predicted token counts for this component
+                predicted_for_component = firing_predicted_tokens[mask_c]
+                unique_predicted, predicted_counts = np.unique(
+                    predicted_for_component, return_counts=True
+                )
+                for tok_id, count in zip(unique_predicted, predicted_counts, strict=True):
+                    component_predicted_tokens[module_name][c_idx_int][int(tok_id)] += int(count)
 
                 # Add examples in batch (with early termination optimization)
                 examples[module_name][c_idx_int].add_batch(
@@ -332,6 +349,7 @@ def get_activations_data_streaming(
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
     for module_name in component_activation_tokens:
         module_acts = component_activation_tokens[module_name]
+        module_predicted = component_predicted_tokens[module_name]
         module_examples = examples[module_name]
         module_activation_counts = component_activation_counts[module_name]
         module_mean_cis = (component_sum_cis[module_name] / n_toks_seen).tolist()
@@ -340,6 +358,11 @@ def get_activations_data_streaming(
             pr_tokens, pr_recalls, pr_precisions = _get_component_token_pr(
                 component_token_acts=module_acts[component_idx],
                 total_token_counts=total_token_counts,
+                token_strings=run_context.token_strings,
+                component_activation_count=module_activation_counts[component_idx],
+            )
+            predicted_tokens, predicted_probs = _get_component_predicted_tokens(
+                component_predicted_counts=module_predicted[component_idx],
                 token_strings=run_context.token_strings,
                 component_activation_count=module_activation_counts[component_idx],
             )
@@ -356,6 +379,8 @@ def get_activations_data_streaming(
                 pr_tokens=pr_tokens,
                 pr_recalls=pr_recalls,
                 pr_precisions=pr_precisions,
+                predicted_tokens=predicted_tokens,
+                predicted_probs=predicted_probs,
             )
             module_subcomponent_ctxs.append(subcomponent_ctx)
         module_subcomponent_ctxs.sort(key=lambda x: x.mean_ci, reverse=True)
@@ -365,19 +390,26 @@ def get_activations_data_streaming(
     yield ("complete", ModelActivationContexts(layers=model_ctxs))
 
 
-def _get_importances_by_module(
+@dataclass
+class ImportancesAndLogits:
+    importances: dict[str, Float[Tensor, "B S C"]]
+    logits: Float[Tensor, "B S V"]
+
+
+def _get_importances_and_logits(
     cm: ComponentModel, batch: Tensor, config: Config
-) -> dict[str, Float[Tensor, "B S C"]]:
-    """returns a dictionary of module names to causal importances, where the shape is (B, S, C)"""
+) -> ImportancesAndLogits:
+    """Returns importances by module and logits for predicted token tracking."""
 
     with torch.no_grad():
-        pre_weight_acts = cm(batch, cache_type="input").cache
+        output_with_cache = cm(batch, cache_type="input")
+        logits = output_with_cache.output
         importances_by_module = cm.calc_causal_importances(
-            pre_weight_acts=pre_weight_acts,
+            pre_weight_acts=output_with_cache.cache,
             detach_inputs=True,
             sampling=config.sampling,
         ).lower_leaky
-    return importances_by_module
+    return ImportancesAndLogits(importances=importances_by_module, logits=logits)
 
 
 def _get_component_token_pr(
@@ -408,3 +440,28 @@ def _get_component_token_pr(
     precisions = [precisions[i] for i in sorted_indices]
 
     return tokens, recalls, precisions
+
+
+def _get_component_predicted_tokens(
+    component_predicted_counts: dict[int, int],
+    token_strings: dict[int, str],
+    component_activation_count: int,
+) -> tuple[list[str], list[float]]:
+    """Return columnar data: (tokens, probs) sorted by probability descending.
+
+    prob = P(predicted_token = X | component fires)
+    """
+    tokens: list[str] = []
+    probs: list[float] = []
+
+    for token_id, count in component_predicted_counts.items():
+        prob = round(count / component_activation_count, 3)
+        tokens.append(token_strings[token_id])
+        probs.append(prob)
+
+    # Sort by probability descending
+    sorted_indices = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)
+    tokens = [tokens[i] for i in sorted_indices]
+    probs = [probs[i] for i in sorted_indices]
+
+    return tokens, probs

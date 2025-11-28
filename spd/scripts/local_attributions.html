@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Attributions Graph</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 1rem;
+            background: #fafafa;
+        }
+        h1 { margin-top: 0; }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            flex-wrap: wrap;
+        }
+        .controls label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .controls input[type="range"] { width: 450px; }
+        .controls input[type="number"] {
+            width: 80px;
+            padding: 0.25rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .edge-count { color: #666; font-size: 0.9rem; }
+        .graph-wrapper {
+            display: flex;
+            max-height: 80vh;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .layer-labels-container {
+            position: sticky;
+            left: 0;
+            background: white;
+            border-right: 1px solid #eee;
+            z-index: 11;
+            flex-shrink: 0;
+        }
+        .graph-container {
+            overflow: auto;
+            flex: 1;
+            position: relative;
+        }
+        .token-labels-container {
+            position: sticky;
+            bottom: 0;
+            background: white;
+            border-top: 1px solid #eee;
+            z-index: 10;
+        }
+        svg { display: block; }
+        .legend {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .legend h3 { margin: 0 0 0.5rem 0; font-size: 0.9rem; }
+        .legend-items { display: flex; flex-wrap: wrap; gap: 1rem; }
+        .legend-item { display: flex; align-items: center; gap: 0.25rem; font-size: 0.85rem; }
+        .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .legend-edge { margin-top: 0.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 1rem; }
+        .edge-pos, .edge-neg { display: inline-block; width: 30px; height: 3px; margin-right: 0.25rem; }
+        .edge-pos { background: #2196f3; }
+        .edge-neg { background: #f44336; }
+        #loading { padding: 2rem; text-align: center; color: #666; }
+        .node-details {
+            position: fixed;
+            padding: 1rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            max-width: 1000px;
+            max-height: 800px;
+            overflow-y: auto;
+            z-index: 1000;
+            pointer-events: auto;
+        }
+        .node-details.pinned-mode {
+            display: flex;
+            flex-direction: row;
+            gap: 1rem;
+            overflow-x: auto;
+            max-width: calc(100vw - 40px);
+        }
+        .node-details.pinned-mode #node-examples {
+            display: flex;
+            flex-direction: row;
+            gap: 1rem;
+        }
+        .node-details.pinned-mode #node-examples > div {
+            flex-shrink: 0;
+            min-width: 350px;
+            max-width: 500px;
+        }
+        .pinned-container {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .pinned-container h3 {
+            margin: 0 0 0.75rem 0;
+            font-size: 0.9rem;
+        }
+        #pinned-items {
+            display: flex;
+            flex-direction: row;
+            gap: 1rem;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
+        }
+        #pinned-items > div {
+            flex-shrink: 0;
+            min-width: 350px;
+            max-width: 500px;
+        }
+        .edge {
+            transition: opacity 0.15s, stroke-width 0.15s;
+        }
+        .edge.highlighted {
+            opacity: 1 !important;
+            stroke-width: 3 !important;
+        }
+        .node {
+            transition: stroke-width 0.15s, filter 0.15s;
+        }
+        .node.same-component {
+            stroke: #000 !important;
+            stroke-width: 2.5 !important;
+            filter: brightness(0.7) saturate(1.5);
+        }
+        .node-details h3 { margin: 0 0 0.5rem 0; font-size: 0.9rem; }
+        #node-info { margin-bottom: 0.5rem; font-size: 0.85rem; }
+        #node-info p { margin: 0.15rem 0; }
+        .example-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            margin: 0.5rem 0;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        .example-token {
+            padding: 2px 4px;
+            border-radius: 2px;
+        }
+        .example-token.active {
+            font-weight: bold;
+            border: 1px solid #333;
+        }
+        .pr-table { font-size: 0.85rem; margin-top: 0.5rem; }
+        .pr-table th, .pr-table td { padding: 0.25rem 0.5rem; text-align: left; }
+    </style>
+</head>
+<body>
+    <h1>Local Attributions Graph</h1>
+    <div id="loading">Loading data...</div>
+    <div id="app" style="display:none;">
+        <div class="controls">
+            <label>
+                Max mean CI:
+                <input type="number" id="max-mean-ci" min="0" max="1" step="0.01" value="0.5">
+            </label>
+            <label>
+                Top K edges:
+                <input type="number" id="topk-edges" min="10" max="10000" step="100" value="1000">
+            </label>
+            <span class="edge-count">Showing <span id="edge-count">0</span> edges</span>
+        </div>
+        <div class="graph-wrapper">
+            <div id="layer-labels" class="layer-labels-container"></div>
+            <div class="graph-container">
+                <svg id="graph"></svg>
+                <div id="token-labels" class="token-labels-container"></div>
+            </div>
+        </div>
+        <div class="legend">
+            <h3>Legend</h3>
+            <div class="legend-items" id="legend-items"></div>
+            <div class="legend-edge">
+                <span class="edge-pos"></span> Positive
+                <span class="edge-neg"></span> Negative
+            </div>
+        </div>
+
+        <div id="pinned-container" class="pinned-container" style="display:none;">
+            <h3>Pinned Components</h3>
+            <div id="pinned-items"></div>
+        </div>
+
+        <div id="node-details" class="node-details" style="display:none;">
+            <h3>Component Details</h3>
+            <div id="node-info"></div>
+            <div id="node-examples"></div>
+        </div>
+    </div>
+
+    <script>
+        const COMPONENT_SIZE = 8;  // size of each component node
+        const COMPONENT_GAP = 2;   // gap between components
+        const LAYER_GAP = 30;      // gap between layer rows
+        const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
+        const LABEL_WIDTH = 100;
+
+        const SUBTYPE_ORDER = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'c_fc', 'down_proj'];
+        const COLORS = {
+            q_proj: "#e91e63", k_proj: "#9c27b0", v_proj: "#673ab7",
+            o_proj: "#3f51b5", c_fc: "#009688", down_proj: "#4caf50"
+        };
+
+        let data = null;
+        let maxAttr = 1;
+        let allEdges = [];         // all edges for topK selection (sorted by |val| desc)
+        let componentImportance = {};  // "layer:cIdx" -> sum of attr^2 (global)
+        let componentImportanceLocal = {};  // "layer:seq:cIdx" -> sum of attr^2 (per position)
+        let componentMeanCI = {};  // "layer:cIdx" -> mean CI from activation contexts
+        let layerYPositions = {};  // layer -> base Y position
+        let nodePositions = {};    // "layer:seq:cIdx" -> {x, y}
+        let nodeOutAttr = {};      // "layer:seq:cIdx" -> summed output attribution
+        let hoveredNodeKey = null; // currently hovered node key
+        let isHoveringTooltip = false; // whether mouse is over tooltip
+        let pinnedNodes = []; // [{ layer, cIdx, nodeKey }, ...] - clicked/pinned components
+
+        function parseLayer(name) {
+            const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
+            return m ? { name, block: +m[1], type: m[2], subtype: m[3] } : null;
+        }
+
+        function computeComponentImportanceAndEdges() {
+            // Compute importance as sum of attr^2 for each component
+            // Also collect all edges for topK selection
+            // Handle both sparse formats: cross-seq [s_in, c_in, s_out, c_out, val] and same-seq [s, c_in, c_out, val]
+            componentImportance = {};
+            componentImportanceLocal = {};
+            allEdges = [];
+
+            for (const pair of data.pairs) {
+                const isCrossSeq = pair.is_cross_seq;
+                const cInIdxs = pair.trimmed_c_in_idxs;
+                const cOutIdxs = pair.trimmed_c_out_idxs;
+
+                for (const entry of pair.attribution) {
+                    let sIn, cInLocal, sOut, cOutLocal, val;
+                    if (isCrossSeq) {
+                        // [s_in, c_in, s_out, c_out, val]
+                        [sIn, cInLocal, sOut, cOutLocal, val] = entry;
+                    } else {
+                        // [s, c_in, c_out, val]
+                        sIn = entry[0];
+                        sOut = entry[0];
+                        cInLocal = entry[1];
+                        cOutLocal = entry[2];
+                        val = entry[3];
+                    }
+
+                    const cInIdx = cInIdxs[cInLocal];
+                    const cOutIdx = cOutIdxs[cOutLocal];
+
+                    // Collect edge
+                    allEdges.push({
+                        srcKey: `${pair.source}:${sIn}:${cInIdx}`,
+                        tgtKey: `${pair.target}:${sOut}:${cOutIdx}`,
+                        val
+                    });
+
+                    const valSq = val * val;
+
+                    // Add to source component importance (global)
+                    const srcKey = `${pair.source}:${cInIdx}`;
+                    if (!componentImportance[srcKey]) componentImportance[srcKey] = 0;
+                    componentImportance[srcKey] += valSq;
+
+                    // Add to target component importance (global)
+                    const tgtKey = `${pair.target}:${cOutIdx}`;
+                    if (!componentImportance[tgtKey]) componentImportance[tgtKey] = 0;
+                    componentImportance[tgtKey] += valSq;
+
+                    // Add to local (per-position) importance
+                    const srcKeyLocal = `${pair.source}:${sIn}:${cInIdx}`;
+                    if (!componentImportanceLocal[srcKeyLocal]) componentImportanceLocal[srcKeyLocal] = 0;
+                    componentImportanceLocal[srcKeyLocal] += valSq;
+
+                    const tgtKeyLocal = `${pair.target}:${sOut}:${cOutIdx}`;
+                    if (!componentImportanceLocal[tgtKeyLocal]) componentImportanceLocal[tgtKeyLocal] = 0;
+                    componentImportanceLocal[tgtKeyLocal] += valSq;
+                }
+            }
+
+            // Sort edges by absolute value descending for topK
+            allEdges.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+        }
+
+        function getFilteredEdgesAndNodes(topK, maxMeanCI) {
+            // Step 1: Filter edges by max mean CI (both endpoints must pass)
+            const ciFilteredEdges = allEdges.filter(edge => {
+                const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
+                const [tgtLayer, , tgtCIdx] = edge.tgtKey.split(':');
+                const srcMeanCI = componentMeanCI[`${srcLayer}:${srcCIdx}`];
+                const tgtMeanCI = componentMeanCI[`${tgtLayer}:${tgtCIdx}`];
+                const srcOk = srcMeanCI === undefined || srcMeanCI <= maxMeanCI;
+                const tgtOk = tgtMeanCI === undefined || tgtMeanCI <= maxMeanCI;
+                return srcOk && tgtOk;
+            });
+
+            // Step 2: Take top K edges by importance
+            const topEdges = ciFilteredEdges.slice(0, topK);
+
+            // Step 3: Collect nodes that appear in these edges (no orphans)
+            const activeNodes = new Set();
+            for (const edge of topEdges) {
+                activeNodes.add(edge.srcKey);
+                activeNodes.add(edge.tgtKey);
+            }
+
+            return { edges: topEdges, activeNodes };
+        }
+
+        function buildLayout(activeNodes) {
+            // Collect components per (layer, seqIdx) from active nodes
+            // activeNodes are keys like "layer:seqIdx:cIdx"
+            const nodesPerLayerSeq = {};  // "layer:seqIdx" -> [cIdx, ...]
+            const allLayers = new Set();
+
+            for (const nodeKey of activeNodes) {
+                const [layer, seqIdx, cIdx] = nodeKey.split(':');
+                allLayers.add(layer);
+                const key = `${layer}:${seqIdx}`;
+                if (!nodesPerLayerSeq[key]) nodesPerLayerSeq[key] = [];
+                nodesPerLayerSeq[key].push(+cIdx);
+            }
+
+            // Sort layers by (block, subtype)
+            const layers = Array.from(allLayers).sort((a, b) => {
+                const infoA = parseLayer(a);
+                const infoB = parseLayer(b);
+                if (infoA.block !== infoB.block) {
+                    return infoA.block - infoB.block;
+                }
+                return SUBTYPE_ORDER.indexOf(infoA.subtype) - SUBTYPE_ORDER.indexOf(infoB.subtype);
+            });
+
+            // Compute Y positions (bottom to top, so reverse)
+            layerYPositions = {};
+            let currentY = MARGIN.top;
+            for (const layer of layers.slice().reverse()) {
+                layerYPositions[layer] = currentY;
+                currentY += COMPONENT_SIZE + LAYER_GAP;
+            }
+
+            // Compute max components per sequence position (across all layers)
+            const maxComponentsPerSeq = [];  // [seqIdx] -> max components at that position
+            for (let seqIdx = 0; seqIdx < data.tokens.length; seqIdx++) {
+                let maxAtSeq = 0;
+                for (const layer of layers) {
+                    const key = `${layer}:${seqIdx}`;
+                    const count = nodesPerLayerSeq[key]?.length || 0;
+                    maxAtSeq = Math.max(maxAtSeq, count);
+                }
+                maxComponentsPerSeq.push(maxAtSeq);
+            }
+
+            // Compute column widths and cumulative X positions
+            const MIN_COL_WIDTH = 30;  // minimum width even if no components
+            const COL_PADDING = 16;    // padding on each side of components
+            const seqWidths = maxComponentsPerSeq.map(n =>
+                Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + COMPONENT_GAP) + COL_PADDING * 2)
+            );
+            const seqXStarts = [MARGIN.left];  // cumulative X start for each seq position
+            for (let i = 0; i < seqWidths.length - 1; i++) {
+                seqXStarts.push(seqXStarts[i] + seqWidths[i]);
+            }
+
+            // Build node positions
+            // Sort components within each (layer, seqIdx) by local importance
+            nodePositions = {};
+
+            for (const layer of layers) {
+                for (let seqIdx = 0; seqIdx < data.tokens.length; seqIdx++) {
+                    const key = `${layer}:${seqIdx}`;
+                    const components = nodesPerLayerSeq[key] || [];
+
+                    // Sort by local importance (descending)
+                    components.sort((a, b) => {
+                        const impA = componentImportanceLocal[`${layer}:${seqIdx}:${a}`] || 0;
+                        const impB = componentImportanceLocal[`${layer}:${seqIdx}:${b}`] || 0;
+                        return impB - impA;
+                    });
+
+                    const baseX = seqXStarts[seqIdx] + COL_PADDING;
+                    const baseY = layerYPositions[layer];
+
+                    for (let i = 0; i < components.length; i++) {
+                        const cIdx = components[i];
+                        const nodeKey = `${layer}:${seqIdx}:${cIdx}`;
+                        nodePositions[nodeKey] = {
+                            x: baseX + i * (COMPONENT_SIZE + COMPONENT_GAP) + COMPONENT_SIZE / 2,
+                            y: baseY + COMPONENT_SIZE / 2
+                        };
+                    }
+                }
+            }
+
+            return { layers, seqWidths, seqXStarts };
+        }
+
+
+        function computeNodeOutAttrs() {
+            // Sum output attributions for each node (as source)
+            // Handle both sparse formats
+            nodeOutAttr = {};
+            for (const pair of data.pairs) {
+                const isCrossSeq = pair.is_cross_seq;
+                const cInIdxs = pair.trimmed_c_in_idxs;
+
+                for (const entry of pair.attribution) {
+                    let sIn, cInLocal, val;
+                    if (isCrossSeq) {
+                        // [s_in, c_in, s_out, c_out, val]
+                        sIn = entry[0];
+                        cInLocal = entry[1];
+                        val = entry[4];
+                    } else {
+                        // [s, c_in, c_out, val]
+                        sIn = entry[0];
+                        cInLocal = entry[1];
+                        val = entry[3];
+                    }
+
+                    const cIdx = cInIdxs[cInLocal];
+                    const key = `${pair.source}:${sIn}:${cIdx}`;
+                    if (!nodeOutAttr[key]) nodeOutAttr[key] = 0;
+                    nodeOutAttr[key] += Math.abs(val);
+                }
+            }
+        }
+
+        let maxNodeOutAttr = 1;
+
+        function hideNodeDetails() {
+            // Don't hide if we have pinned nodes
+            if (pinnedNodes.length > 0) return;
+
+            // Delay hiding to allow mouse to move to tooltip
+            setTimeout(() => {
+                if (!isHoveringTooltip && !hoveredNodeKey && pinnedNodes.length === 0) {
+                    document.getElementById('node-details').style.display = 'none';
+                    unhighlightAll();
+                }
+            }, 100);
+        }
+
+        function pinNode(layer, cIdx, nodeKey) {
+            const existingIdx = pinnedNodes.findIndex(p => p.layer === layer && p.cIdx === cIdx);
+
+            if (existingIdx >= 0) {
+                // Clicking same component - unpin it
+                pinnedNodes.splice(existingIdx, 1);
+            } else {
+                // Pin this component
+                pinnedNodes.push({ layer, cIdx, nodeKey });
+            }
+
+            // Update highlights and panel
+            updatePinnedDisplay();
+        }
+
+        function updatePinnedDisplay() {
+            if (pinnedNodes.length === 0) {
+                document.getElementById('pinned-container').style.display = 'none';
+                unhighlightAll();
+                return;
+            }
+
+            // Highlight all pinned components
+            const svg = document.getElementById('graph');
+
+            // Reset all highlights first
+            svg.querySelectorAll('.edge').forEach(el => el.classList.remove('highlighted'));
+            svg.querySelectorAll('.node').forEach(el => el.classList.remove('same-component'));
+
+            // Apply highlights for all pinned nodes
+            for (const pinned of pinnedNodes) {
+                // Highlight edges
+                svg.querySelectorAll('.edge').forEach(el => {
+                    const src = el.getAttribute('data-src');
+                    const tgt = el.getAttribute('data-tgt');
+                    if (src === pinned.nodeKey || tgt === pinned.nodeKey) {
+                        el.classList.add('highlighted');
+                    }
+                });
+
+                // Highlight same-component nodes
+                svg.querySelectorAll('.node').forEach(el => {
+                    const nodeLayer = el.getAttribute('data-layer');
+                    const nodeCIdx = el.getAttribute('data-cidx');
+                    if (nodeLayer === pinned.layer && nodeCIdx === String(pinned.cIdx)) {
+                        el.classList.add('same-component');
+                    }
+                });
+            }
+
+            // Show details for all pinned nodes
+            showPinnedDetails();
+        }
+
+        function showPinnedDetails() {
+            const containerEl = document.getElementById('pinned-container');
+            const itemsEl = document.getElementById('pinned-items');
+
+            let html = '';
+            for (const pinned of pinnedNodes) {
+                html += buildFullNodeDetailsHtml(pinned.layer, pinned.cIdx);
+            }
+
+            itemsEl.innerHTML = html;
+            containerEl.style.display = 'block';
+        }
+
+        function buildFullNodeDetailsHtml(layer, cIdx) {
+            // Get attribution stats for this component
+            const globalImp = componentImportance[`${layer}:${cIdx}`] || 0;
+            let sumAbsAttr = 0;
+            let countEdges = 0;
+            for (const edge of allEdges) {
+                const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
+                const [tgtLayer, , tgtCIdx] = edge.tgtKey.split(':');
+                if ((srcLayer === layer && +srcCIdx === cIdx) || (tgtLayer === layer && +tgtCIdx === cIdx)) {
+                    sumAbsAttr += Math.abs(edge.val);
+                    countEdges++;
+                }
+            }
+            const meanAbsAttr = countEdges > 0 ? sumAbsAttr / countEdges : 0;
+            const meanSqAttr = countEdges > 0 ? globalImp / countEdges : 0;
+
+            const actCtx = data.activation_contexts?.[layer];
+            const subcomp = actCtx?.find(s => s.subcomponent_idx === cIdx);
+
+            let html = `<div style="border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fafafa;">`;
+            html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <strong style="font-size: 1rem;">${layer} : ${cIdx}</strong>
+                <button onclick="pinNode('${layer}', ${cIdx}, '')" style="cursor: pointer; background: #f44336; color: white; border: none; border-radius: 4px; padding: 0.25rem 0.5rem;">✕ unpin</button>
+            </div>`;
+
+            if (subcomp) {
+                html += `<p style="margin: 0.25rem 0; font-size: 0.85rem;"><strong>Mean CI:</strong> ${subcomp.mean_ci.toFixed(4)} | <strong>Sum attr²:</strong> ${globalImp.toFixed(6)} | <strong>Mean |attr|:</strong> ${meanAbsAttr.toFixed(6)} | <strong>Mean attr²:</strong> ${meanSqAttr.toFixed(6)} <small>(${countEdges} edges)</small></p>`;
+
+                // Show examples
+                if (subcomp.example_tokens && subcomp.example_tokens.length > 0) {
+                    html += '<h4 style="margin: 0.75rem 0 0.25rem 0; font-size: 0.85rem;">Top Activating Examples</h4>';
+                    for (let i = 0; i < subcomp.example_tokens.length; i++) {
+                        const tokens = subcomp.example_tokens[i];
+                        const ciVals = subcomp.example_ci[i];
+                        const activePos = subcomp.example_active_pos[i];
+                        const activeCi = subcomp.example_active_ci[i];
+
+                        html += `<div class="example-row">`;
+                        for (let j = 0; j < tokens.length; j++) {
+                            const ci = ciVals[j];
+                            const isActive = j === activePos;
+                            const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
+                            html += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}" title="CI: ${ci.toFixed(3)}">${tokens[j]}</span>`;
+                        }
+                        html += ` <small>(CI: ${activeCi.toFixed(3)})</small></div>`;
+                    }
+                }
+
+                // Show top tokens in a horizontal layout
+                html += '<div style="display: flex; gap: 2rem; flex-wrap: wrap;">';
+
+                // Show top tokens by precision (input tokens)
+                if (subcomp.pr_tokens && subcomp.pr_tokens.length > 0) {
+                    html += '<div>';
+                    html += '<h4 style="margin: 0.75rem 0 0.25rem 0; font-size: 0.85rem;">Top Input Tokens</h4>';
+                    html += '<table class="pr-table"><tr><th>Token</th><th title="P(fires | token)">P(fire|tok)</th></tr>';
+                    const nShow = Math.min(10, subcomp.pr_tokens.length);
+                    for (let i = 0; i < nShow; i++) {
+                        html += `<tr><td><code>${subcomp.pr_tokens[i]}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
+                    }
+                    html += '</table></div>';
+                }
+
+                // Show top predicted tokens
+                if (subcomp.predicted_tokens && subcomp.predicted_tokens.length > 0) {
+                    html += '<div>';
+                    html += '<h4 style="margin: 0.75rem 0 0.25rem 0; font-size: 0.85rem;">Top Predicted Tokens</h4>';
+                    html += '<table class="pr-table"><tr><th>Token</th><th>P(pred|fire)</th></tr>';
+                    const nShow = Math.min(10, subcomp.predicted_tokens.length);
+                    for (let i = 0; i < nShow; i++) {
+                        html += `<tr><td><code>${subcomp.predicted_tokens[i]}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
+                    }
+                    html += '</table></div>';
+                }
+
+                html += '</div>';
+            } else {
+                html += `<p style="color: #666; font-size: 0.85rem;">No activation context data for this component</p>`;
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        function unhighlightAll() {
+            const svg = document.getElementById('graph');
+            svg.querySelectorAll('.edge').forEach(el => {
+                el.classList.remove('highlighted');
+            });
+            svg.querySelectorAll('.node').forEach(el => {
+                el.classList.remove('same-component');
+            });
+        }
+
+        function highlightForNode(nodeKey, layer, cIdx) {
+            const svg = document.getElementById('graph');
+
+            // Highlight edges connected to this node
+            svg.querySelectorAll('.edge').forEach(el => {
+                const src = el.getAttribute('data-src');
+                const tgt = el.getAttribute('data-tgt');
+                if (src === nodeKey || tgt === nodeKey) {
+                    el.classList.add('highlighted');
+                } else {
+                    el.classList.remove('highlighted');
+                }
+            });
+
+            // Highlight all nodes with same layer:cIdx (same component, different seq positions)
+            svg.querySelectorAll('.node').forEach(el => {
+                const nodeLayer = el.getAttribute('data-layer');
+                const nodeCIdx = el.getAttribute('data-cidx');
+                if (nodeLayer === layer && nodeCIdx === String(cIdx)) {
+                    el.classList.add('same-component');
+                } else {
+                    el.classList.remove('same-component');
+                }
+            });
+        }
+
+        function showNodeDetails(layer, cIdx, mouseX, mouseY) {
+            const detailsEl = document.getElementById('node-details');
+            const infoEl = document.getElementById('node-info');
+            const examplesEl = document.getElementById('node-examples');
+
+            // Remove pinned-mode class for hover display
+            detailsEl.classList.remove('pinned-mode');
+
+            // Hover mode - near mouse
+            detailsEl.style.position = 'fixed';
+            detailsEl.style.bottom = '';
+            detailsEl.style.maxHeight = '800px';
+            detailsEl.style.maxWidth = '1000px';
+            {
+                const padding = 15;
+                let left = mouseX + padding;
+                let top = mouseY + padding;
+
+                if (left + 1000 > window.innerWidth) {
+                    left = mouseX - 1000 - padding;
+                }
+                if (top + 800 > window.innerHeight) {
+                    top = mouseY - 800 - padding;
+                }
+
+                detailsEl.style.left = left + 'px';
+                detailsEl.style.top = top + 'px';
+            }
+
+            // Find activation context for this layer/component
+            const actCtx = data.activation_contexts?.[layer];
+            if (!actCtx) {
+                infoEl.innerHTML = `<p>No activation context data for ${layer}</p>`;
+                examplesEl.innerHTML = '';
+                detailsEl.style.display = 'block';
+                return;
+            }
+
+            const subcomp = actCtx.find(s => s.subcomponent_idx === cIdx);
+            if (!subcomp) {
+                infoEl.innerHTML = `<p>No data for component ${cIdx} in ${layer}</p>`;
+                examplesEl.innerHTML = '';
+                detailsEl.style.display = 'block';
+                return;
+            }
+
+            // Get attribution stats for this component
+            const globalImp = componentImportance[`${layer}:${cIdx}`] || 0;
+            // Count edges involving this component to compute means
+            let sumAbsAttr = 0;
+            let countEdges = 0;
+            for (const edge of allEdges) {
+                const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
+                const [tgtLayer, , tgtCIdx] = edge.tgtKey.split(':');
+                if ((srcLayer === layer && +srcCIdx === cIdx) || (tgtLayer === layer && +tgtCIdx === cIdx)) {
+                    sumAbsAttr += Math.abs(edge.val);
+                    countEdges++;
+                }
+            }
+            const meanAbsAttr = countEdges > 0 ? sumAbsAttr / countEdges : 0;
+            const meanSqAttr = countEdges > 0 ? globalImp / countEdges : 0;
+
+            // Show info
+            infoEl.innerHTML = `
+                <p><strong>Layer:</strong> ${layer}</p>
+                <p><strong>Component:</strong> ${cIdx}</p>
+                <p><strong>Mean CI:</strong> ${subcomp.mean_ci.toFixed(4)}</p>
+                <p><strong>Sum attr²:</strong> ${globalImp.toFixed(6)}</p>
+                <p><strong>Mean |attr|:</strong> ${meanAbsAttr.toFixed(6)} <small>(${countEdges} edges)</small></p>
+                <p><strong>Mean attr²:</strong> ${meanSqAttr.toFixed(6)}</p>
+            `;
+
+            // Show examples
+            let examplesHtml = '<h4>Top Activating Examples</h4>';
+            for (let i = 0; i < subcomp.example_tokens.length; i++) {
+                const tokens = subcomp.example_tokens[i];
+                const ciVals = subcomp.example_ci[i];
+                const activePos = subcomp.example_active_pos[i];
+                const activeCi = subcomp.example_active_ci[i];
+
+                examplesHtml += `<div class="example-row">`;
+                for (let j = 0; j < tokens.length; j++) {
+                    const ci = ciVals[j];
+                    const isActive = j === activePos;
+                    const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
+                    examplesHtml += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}" title="CI: ${ci.toFixed(3)}">${tokens[j]}</span>`;
+                }
+                examplesHtml += ` <small>(CI: ${activeCi.toFixed(3)})</small></div>`;
+            }
+
+            // Show top tokens by precision (input tokens)
+            if (subcomp.pr_tokens && subcomp.pr_tokens.length > 0) {
+                examplesHtml += '<h4>Top Input Tokens</h4>';
+                examplesHtml += '<table class="pr-table"><tr><th>Token</th><th title="P(fires | token)">P(fire|tok)</th></tr>';
+                const nShow = Math.min(10, subcomp.pr_tokens.length);
+                for (let i = 0; i < nShow; i++) {
+                    examplesHtml += `<tr><td><code>${subcomp.pr_tokens[i]}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
+                }
+                examplesHtml += '</table>';
+            }
+
+            // Show top predicted tokens
+            if (subcomp.predicted_tokens && subcomp.predicted_tokens.length > 0) {
+                examplesHtml += '<h4>Top Predicted Tokens</h4>';
+                examplesHtml += '<p style="font-size:0.8rem;color:#666;margin:0 0 0.5rem 0;">P(token predicted | component fires)</p>';
+                examplesHtml += '<table class="pr-table"><tr><th>Token</th><th>Probability</th></tr>';
+                const nShow = Math.min(10, subcomp.predicted_tokens.length);
+                for (let i = 0; i < nShow; i++) {
+                    examplesHtml += `<tr><td><code>${subcomp.predicted_tokens[i]}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
+                }
+                examplesHtml += '</table>';
+            }
+
+            examplesEl.innerHTML = examplesHtml;
+            detailsEl.style.display = 'block';
+        }
+
+        function render() {
+            const topK = +document.getElementById('topk-edges').value;
+            const maxMeanCI = +document.getElementById('max-mean-ci').value;
+
+            // Step 1 & 2: Filter edges by mean CI, take top K, get active nodes
+            const { edges, activeNodes } = getFilteredEdgesAndNodes(topK, maxMeanCI);
+            document.getElementById('edge-count').textContent = edges.length;
+
+            // Step 3: Build layout from active nodes (removes orphans, sorts locally)
+            const { layers, seqWidths, seqXStarts } = buildLayout(activeNodes);
+
+            // Total width is last column start + last column width + margin
+            const totalSeqWidth = seqXStarts[seqXStarts.length - 1] + seqWidths[seqWidths.length - 1];
+            const width = totalSeqWidth + MARGIN.right;
+
+            // Height based on layer positions
+            let maxY = 0;
+            for (const layer in layerYPositions) {
+                maxY = Math.max(maxY, layerYPositions[layer] + COMPONENT_SIZE);
+            }
+            const height = maxY + MARGIN.bottom;
+
+            const svg = document.getElementById('graph');
+            svg.setAttribute('width', width);
+            svg.setAttribute('height', height);
+
+            let html = '';
+
+            // Vertical separator lines between sequence positions
+            for (let i = 1; i < data.tokens.length; i++) {
+                const x = seqXStarts[i];
+                html += `<line x1="${x}" y1="${MARGIN.top - 20}" x2="${x}" y2="${height}" stroke="#ddd" stroke-width="1"/>`;
+            }
+
+            // Edges
+            for (const e of edges) {
+                const p1 = nodePositions[e.srcKey];
+                const p2 = nodePositions[e.tgtKey];
+                if (p1 && p2) {
+                    const color = e.val > 0 ? '#2196f3' : '#f44336';
+                    const w = Math.max(0.5, (Math.abs(e.val) / maxAttr) * 2);
+                    const op = 0.2 + (Math.abs(e.val) / maxAttr) * 0.6;
+                    html += `<line class="edge" data-src="${e.srcKey}" data-tgt="${e.tgtKey}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${color}" stroke-width="${w}" opacity="${op}"/>`;
+                }
+            }
+
+            // Nodes - colored by summed output attribution
+            for (const key in nodePositions) {
+                const pos = nodePositions[key];
+                const [layer, seqIdx, cIdx] = key.split(':');
+                const info = parseLayer(layer);
+                const outAttr = nodeOutAttr[key] || 0;
+                const intensity = Math.min(1, outAttr / maxNodeOutAttr);
+                // Interpolate from gray to layer color based on intensity
+                const baseColor = COLORS[info.subtype] || '#999';
+                const opacity = 0.2 + intensity * 0.8;
+                html += `<rect class="node" data-layer="${layer}" data-seq="${seqIdx}" data-cidx="${cIdx}" x="${pos.x - COMPONENT_SIZE/2}" y="${pos.y - COMPONENT_SIZE/2}" width="${COMPONENT_SIZE}" height="${COMPONENT_SIZE}" fill="${baseColor}" rx="1" opacity="${opacity}" style="cursor:pointer"><title>${layer} seq=${seqIdx} c=${cIdx}\nOut attr: ${outAttr.toFixed(4)}</title></rect>`;
+            }
+
+            svg.innerHTML = html;
+
+            // Token labels in sticky container (outside SVG, same width as main SVG)
+            let tokenHtml = `<svg width="${width}" height="50" style="display:block;">`;
+            // Separator lines in token labels too
+            for (let i = 1; i < data.tokens.length; i++) {
+                const x = seqXStarts[i];
+                tokenHtml += `<line x1="${x}" y1="0" x2="${x}" y2="50" stroke="#ddd" stroke-width="1"/>`;
+            }
+            for (let i = 0; i < data.tokens.length; i++) {
+                // Center token label in its column
+                const colCenter = seqXStarts[i] + seqWidths[i] / 2;
+                tokenHtml += `<text x="${colCenter}" y="20" text-anchor="middle" font-size="12" font-family="monospace" font-weight="500">${data.tokens[i]}</text>`;
+                tokenHtml += `<text x="${colCenter}" y="38" text-anchor="middle" font-size="10" fill="#999">[${i}]</text>`;
+            }
+            tokenHtml += '</svg>';
+            document.getElementById('token-labels').innerHTML = tokenHtml;
+
+            // Layer labels in sticky left container
+            let layerHtml = `<svg width="${LABEL_WIDTH}" height="${height}" style="display:block;">`;
+            for (const layer in layerYPositions) {
+                const info = parseLayer(layer);
+                const y = layerYPositions[layer] + COMPONENT_SIZE / 2;
+                layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${COLORS[info.subtype]}">${info.subtype}</text>`;
+            }
+            layerHtml += '</svg>';
+            document.getElementById('layer-labels').innerHTML = layerHtml;
+
+            // Add hover handlers for nodes
+            const nodes = svg.querySelectorAll('.node');
+            nodes.forEach((node, i) => {
+                node.addEventListener('mouseenter', (e) => {
+                    // Don't show hover tooltip if we have pinned nodes
+                    if (pinnedNodes.length > 0) return;
+
+                    const layer = node.getAttribute('data-layer');
+                    const seqIdx = node.getAttribute('data-seq');
+                    const cIdx = parseInt(node.getAttribute('data-cidx'));
+                    const nodeKey = `${layer}:${seqIdx}:${cIdx}`;
+                    hoveredNodeKey = nodeKey;
+                    highlightForNode(nodeKey, layer, cIdx);
+                    showNodeDetails(layer, cIdx, e.clientX, e.clientY);
+                });
+                node.addEventListener('mouseleave', () => {
+                    hoveredNodeKey = null;
+                    hideNodeDetails();
+                });
+                node.addEventListener('click', (e) => {
+                    const layer = node.getAttribute('data-layer');
+                    const seqIdx = node.getAttribute('data-seq');
+                    const cIdx = parseInt(node.getAttribute('data-cidx'));
+                    const nodeKey = `${layer}:${seqIdx}:${cIdx}`;
+                    pinNode(layer, cIdx, nodeKey);
+                });
+            });
+
+            // Add hover handlers for tooltip
+            const detailsEl = document.getElementById('node-details');
+            detailsEl.addEventListener('mouseenter', () => {
+                isHoveringTooltip = true;
+            });
+            detailsEl.addEventListener('mouseleave', () => {
+                isHoveringTooltip = false;
+                hideNodeDetails();
+            });
+        }
+
+        // Load JSON
+        fetch('local_attributions.json')
+            .then(r => r.json())
+            .then(d => {
+                data = d;
+                // Find max attribution (sparse format)
+                for (const pair of data.pairs) {
+                    const isCrossSeq = pair.is_cross_seq;
+                    for (const entry of pair.attribution) {
+                        // Cross-seq: [s_in, c_in, s_out, c_out, val], Same-seq: [s, c_in, c_out, val]
+                        const val = isCrossSeq ? entry[4] : entry[3];
+                        if (Math.abs(val) > maxAttr) maxAttr = Math.abs(val);
+                    }
+                }
+
+                // Compute component importance and collect all edges for topK
+                computeComponentImportanceAndEdges();
+
+                // Build mean CI lookup from activation contexts
+                componentMeanCI = {};
+                if (data.activation_contexts) {
+                    for (const [layer, subcomps] of Object.entries(data.activation_contexts)) {
+                        for (const subcomp of subcomps) {
+                            componentMeanCI[`${layer}:${subcomp.subcomponent_idx}`] = subcomp.mean_ci;
+                        }
+                    }
+                }
+                computeNodeOutAttrs();
+                maxNodeOutAttr = Math.max(...Object.values(nodeOutAttr), 1);
+
+                // Build legend
+                const legendEl = document.getElementById('legend-items');
+                for (const [name, color] of Object.entries(COLORS)) {
+                    legendEl.innerHTML += `<div class="legend-item"><span class="legend-dot" style="background:${color}"></span>${name}</div>`;
+                }
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('app').style.display = 'block';
+                render();
+
+                document.getElementById('topk-edges').addEventListener('input', render);
+                document.getElementById('max-mean-ci').addEventListener('input', render);
+            })
+            .catch(e => {
+                document.getElementById('loading').textContent = 'Error loading data: ' + e.message;
+            });
+    </script>
+</body>
+</html>

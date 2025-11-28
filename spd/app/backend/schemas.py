@@ -13,10 +13,15 @@ class SubcomponentActivationContexts(BaseModel):
     example_active_pos: list[int]  # [n_examples] - index into window
     example_active_ci: list[float]  # [n_examples]
 
-    # Token precision/recall - columnar arrays sorted by recall descending
+    # Token precision/recall (input tokens) - columnar arrays sorted by recall descending
     pr_tokens: list[str]  # [n_unique_tokens]
     pr_recalls: list[float]  # [n_unique_tokens]
     pr_precisions: list[float]  # [n_unique_tokens]
+
+    # Predicted token stats - P(predicted_token | component fires)
+    # Sorted by probability descending
+    predicted_tokens: list[str]  # [n_unique_predicted]
+    predicted_probs: list[float]  # [n_unique_predicted] - P(token predicted | component fires)
 
 
 class ModelActivationContexts(BaseModel):
