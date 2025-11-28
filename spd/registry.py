@@ -81,18 +81,23 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         expected_runtime=60,
         canonical_run=None,
     ),
-    # NOTE: This will be deprecated when we replicate runs with ss_llama_simple
-    "ss_llama": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_config.yaml"),
-        expected_runtime=2000,
-    ),
     "ss_llama_simple": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_simple_config.yaml"),
         expected_runtime=2000,
+    ),
+    "ss_llama_simple-1L": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_simple-1L.yaml"),
+        expected_runtime=180,
+    ),
+    "ss_llama_simple-2L": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_simple-2L.yaml"),
+        expected_runtime=240,
     ),
     "ss_gpt2": ExperimentConfig(
         task_name="lm",
@@ -117,6 +122,18 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_gpt2_simple_noln_config.yaml"),
         expected_runtime=330,
+    ),
+    "ss_gpt2_simple-1L": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_gpt2_simple-1L.yaml"),
+        expected_runtime=180,
+    ),
+    "ss_gpt2_simple-2L": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_gpt2_simple-2L.yaml"),
+        expected_runtime=240,
     ),
     "ts": ExperimentConfig(
         task_name="lm",

@@ -1,55 +1,64 @@
 <script lang="ts">
-    import type { ActivationContext } from "../lib/api";
-    import ActivationContextComponent from "./ActivationContext.svelte";
+    import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
-        examples: ActivationContext[];
+        // Columnar data
+        exampleTokens: string[][]; // [n_examples, window_size]
+        exampleCi: number[][]; // [n_examples, window_size]
+        exampleActivePos: number[]; // [n_examples]
+        // Unique activating tokens (from pr_tokens, already sorted by recall)
+        activatingTokens: string[];
     }
 
-    let { examples }: Props = $props();
+    let { exampleTokens, exampleCi, exampleActivePos, activatingTokens }: Props = $props();
 
     let currentPage = $state(0);
-    let pageSize = $state(100);
-    let tokenFilter = $state("");
+    let pageSize = $state(20);
+    let tokenFilter = $state<string | null>(null);
 
+    // Number of examples (guard against null during transitions)
+    let nExamples = $derived(exampleTokens?.length ?? 0);
 
     // Update currentPage when page input changes
     function handlePageInput(event: Event) {
-        const target = event.target as HTMLInputElement;
-        const value = parseInt(target.value);
-        if (!isNaN(value) && value >= 1 && value <= totalPages) {
-            currentPage = value - 1;
+        const { value } = event.target as HTMLInputElement;
+        if (value === "") return;
+        const valueNum = parseInt(value);
+        if (!isNaN(valueNum) && valueNum >= 1 && valueNum <= totalPages) {
+            currentPage = valueNum - 1;
         } else {
             alert("something went wrong");
             currentPage = 0;
         }
     }
 
-    // Get unique tokens from all examples
-    let allActivatingTokens = $derived.by(() => {
-        const tokenSet = new Set<string>(
-            examples.flatMap((example) =>
-                example.token_strings.filter((_, idx) => example.token_ci_values[idx] > 0.01),
-            ),
-        );
-        return Array.from(tokenSet).sort();
+    // Filter example indices by token
+    let filteredIndices = $derived.by(() => {
+        if (tokenFilter === null) {
+            return Array.from({ length: nExamples }, (_, i) => i);
+        }
+
+        const indices: number[] = [];
+        for (let i = 0; i < nExamples; i++) {
+            const tokens = exampleTokens[i];
+            const ci = exampleCi[i];
+            for (let j = 0; j < tokens.length; j++) {
+                if (tokens[j] === tokenFilter && ci[j] > 0) {
+                    indices.push(i);
+                    break;
+                }
+            }
+        }
+        return indices;
     });
 
-    // Filter examples by token
-    let filteredExamples = $derived.by(() => {
-        if (!tokenFilter) return examples;
-        return examples.filter((example) =>
-            example.token_strings.some((token, idx) => token === tokenFilter && example.token_ci_values[idx] > 0),
-        );
-    });
-
-    let paginatedExamples = $derived.by(() => {
+    let paginatedIndices = $derived.by(() => {
         const start = currentPage * pageSize;
         const end = start + pageSize;
-        return filteredExamples.slice(start, end);
+        return filteredIndices.slice(start, end);
     });
 
-    let totalPages = $derived(Math.ceil(filteredExamples.length / pageSize));
+    let totalPages = $derived(Math.ceil(filteredIndices.length / pageSize));
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -59,17 +68,12 @@
         if (currentPage < totalPages - 1) currentPage++;
     }
 
-    // Reset to page 0 when examples, page size, or filter changes
+    // Reset to page 0 when data, page size, or filter changes
     $effect(() => {
-        if (examples) currentPage = 0;
-    });
-
-    $effect(() => {
-        if (pageSize) currentPage = 0;
-    });
-
-    $effect(() => {
-        if (tokenFilter !== undefined) currentPage = 0;
+        exampleTokens; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        pageSize; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        tokenFilter; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        currentPage = 0;
     });
 </script>
 
@@ -102,15 +106,21 @@
             <label for="token-filter">Filter by token:</label>
             <select id="token-filter" bind:value={tokenFilter}>
                 <option value="">All tokens</option>
-                {#each allActivatingTokens as token (token)}
+                {#each activatingTokens as token (token)}
                     <option value={token}>{token}</option>
                 {/each}
             </select>
         </div>
     </div>
     <div class="examples">
-        {#each paginatedExamples as example (example.__id)}
-            <ActivationContextComponent {example} />
+        {#each paginatedIndices as idx (idx)}
+            <div class="example-item">
+                <TokenHighlights
+                    tokenStrings={exampleTokens[idx]}
+                    tokenCi={exampleCi[idx]}
+                    activePosition={exampleActivePos[idx]}
+                />
+            </div>
         {/each}
     </div>
 </div>
@@ -209,5 +219,14 @@
     .page-input::-webkit-outer-spin-button {
         appearance: none;
         margin: 0;
+    }
+
+    .example-item {
+        font-family: monospace;
+        font-size: 14px;
+        line-height: 1.8;
+        color: #333;
+        padding: 0.5rem;
+        overflow: visible;
     }
 </style>

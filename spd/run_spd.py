@@ -37,8 +37,7 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
-    get_world_size,
-    is_distributed,
+    get_distributed_state,
     is_main_process,
     sync_across_processes,
 )
@@ -51,6 +50,7 @@ from spd.utils.general_utils import (
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
+from spd.utils.wandb_utils import try_wandb
 
 
 def run_faithfulness_warmup(
@@ -161,12 +161,11 @@ def optimize(
     model.to(device)
 
     # Wrap model with DDP if distributed
-    world_size = get_world_size()
+    dist_state = get_distributed_state()
     wrapped_model: nn.Module = model
-    if world_size > 1:
-        if device.startswith("cuda"):
-            # Parse device string to get device id for GPU
-            device_id = int(device.split(":")[1]) if ":" in device else 0
+    if dist_state is not None:
+        if dist_state.backend == "nccl":
+            device_id = dist_state.local_rank
             wrapped_model = torch.nn.parallel.DistributedDataParallel(
                 model,
                 device_ids=[device_id],
@@ -179,6 +178,7 @@ def optimize(
         component_model = wrapped_model.module  # type: ignore[attr-defined]
     else:
         component_model = model
+    assert isinstance(component_model, ComponentModel), "component_model is not a ComponentModel"
 
     if tied_weights is not None:
         # Tie component weights. Assume that the first element is a transpose of the second element
@@ -238,7 +238,7 @@ def optimize(
         global_n_examples_per_batch=batch_dims.numel(),
     )
 
-    for step in tqdm(range(config.steps + 1), ncols=0):
+    for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
 
         step_lr = get_lr_with_warmup(
@@ -300,9 +300,8 @@ def optimize(
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
-            if is_distributed():
-                avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
-                microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
+            avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
+            microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
 
             alive_counts = alive_tracker.compute()
             for target_module_path, n_alive_count in alive_counts.items():
@@ -326,7 +325,7 @@ def optimize(
                 if out_dir is not None:
                     local_log(microbatch_log_data, step, out_dir)
                 if config.wandb_project:
-                    wandb.log(microbatch_log_data, step=step)
+                    try_wandb(wandb.log, microbatch_log_data, step=step)
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
@@ -370,7 +369,7 @@ def optimize(
                             f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
                             for k, v in metrics.items()
                         }
-                        wandb.log(wandb_logs, step=step)
+                        try_wandb(wandb.log, wandb_logs, step=step)
 
                 del metrics
                 # TODO: we should reverse the order of these two calls
@@ -390,7 +389,12 @@ def optimize(
             save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
             logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")
             if config.wandb_project:
-                wandb.save(str(out_dir / f"model_{step}.pth"), base_path=str(out_dir), policy="now")
+                try_wandb(
+                    wandb.save,
+                    str(out_dir / f"model_{step}.pth"),
+                    base_path=str(out_dir),
+                    policy="now",
+                )
 
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:

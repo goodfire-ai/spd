@@ -5,6 +5,7 @@ from collections.abc import Generator
 from functools import wraps
 from urllib.parse import unquote
 
+import fire
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -83,8 +84,8 @@ def get_subcomponent_activation_contexts(
             topk_examples,
         ):
             match res:
-                case ("progress", data):
-                    progress_data = {"type": "progress", "current": data, "total": n_batches}
+                case ("progress", progress):
+                    progress_data = {"type": "progress", "progress": progress}
                     yield f"data: {json.dumps(progress_data)}\n\n"
                 case ("complete", data):
                     # Generate harvest ID and cache the full result
@@ -149,11 +150,9 @@ def healthcheck() -> str:
     return "Hello, World!"
 
 
+def cli(port: int = 8000) -> None:
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
+
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run the SPD backend server")
-    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on")
-    args = parser.parse_args()
-
-    uvicorn.run(app, host="0.0.0.0", port=args.port)
+    fire.Fire(cli)

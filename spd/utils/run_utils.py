@@ -12,7 +12,7 @@ import torch
 import wandb
 import yaml
 
-from spd.settings import SPD_CACHE_DIR
+from spd.settings import DEFAULT_PROJECT_NAME, SPD_CACHE_DIR
 
 # Fields that use discriminated union merging: field_name -> discriminator_field
 _DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
@@ -48,8 +48,8 @@ def get_output_dir(use_wandb_id: bool = True) -> Path:
     # Check if wandb is active and has a run
     if use_wandb_id:
         assert wandb.run is not None, "WandB run is not active"
-        # Get project name from wandb.run, fallback to "spd" if not available
-        project = getattr(wandb.run, "project", "spd")
+        # Get project name from wandb.run, fallback to DEFAULT_PROJECT_NAME if not available
+        project = getattr(wandb.run, "project", DEFAULT_PROJECT_NAME)
         run_id = f"{project}-{wandb.run.id}"
     else:
         run_id = get_local_run_id()
@@ -383,6 +383,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconSubsetLoss": "PGDReconSub",
     "PGDReconLayerwiseLoss": "PGDReconLayer",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
+    "UnmaskedReconLoss": "UnmaskedRecon",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
     "CIHistograms": "CIHist",

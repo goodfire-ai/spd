@@ -6,7 +6,7 @@ from torch import Tensor
 from spd.configs import SamplingType
 from spd.metrics import stochastic_hidden_acts_recon_loss
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
-from spd.utils.component_utils import RoutingType
+from spd.routing import Router
 from tests.metrics.fixtures import make_two_layer_component_model
 
 
@@ -59,7 +59,7 @@ class TestStochasticHiddenActsReconLoss:
             causal_importances: dict[str, Tensor],  # pyright: ignore[reportUnusedParameter]
             component_mask_sampling: SamplingType,  # pyright: ignore[reportUnusedParameter]
             weight_deltas: dict[str, Tensor] | None,  # pyright: ignore[reportUnusedParameter]
-            routing: RoutingType,  # pyright: ignore[reportUnusedParameter]
+            router: Router,  # pyright: ignore[reportUnusedParameter]
         ) -> dict[str, ComponentsMaskInfo]:
             idx = call_count[0] % len(sample_masks_fc1)
             call_count[0] += 1
