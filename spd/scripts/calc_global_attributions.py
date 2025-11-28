@@ -9,7 +9,7 @@ from typing import Any
 import torch
 from jaxtyping import Float
 from PIL import Image
-from torch import Tensor
+from torch import Tensor, nn
 from tqdm.auto import tqdm
 
 from spd.configs import Config
@@ -168,15 +168,34 @@ def get_sources_by_target(
         component_masks=component_masks,
         routing_masks="all",
     )
+
+    wte_cache: dict[str, Tensor] = {}
+
+    # Add an extra forward hook to the model to cache the output of model.target_model.wte
+    def wte_hook(
+        _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
+    ) -> Any:
+        output.requires_grad_(True)
+        # We call it "post_detach" for consistency, we don't bother detaching here as there are
+        # no modules before it that we care about
+        wte_cache["wte_post_detach"] = output
+        return output
+
+    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
+    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
+
     with torch.enable_grad():
         comp_output_with_cache_grad: OutputWithCache = model(
             batch,
             mask_infos=mask_infos,
             cache_type="component_acts",
         )
+    wte_handle.remove()
 
     cache = comp_output_with_cache_grad.cache
-    layers = []
+    cache["wte_post_detach"] = wte_cache["wte_post_detach"]
+
+    layers = ["wte"]
     layer_names = [
         "attn.q_proj",
         "attn.k_proj",
@@ -190,7 +209,7 @@ def get_sources_by_target(
 
     test_pairs = []
     for in_layer in layers:
-        for out_layer in layers:
+        for out_layer in layers[1:]:  # Skip wte
             if layers.index(in_layer) < layers.index(out_layer):
                 test_pairs.append((in_layer, out_layer))
 

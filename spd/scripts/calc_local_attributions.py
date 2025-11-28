@@ -2,10 +2,11 @@
 """Compute local attributions for a single prompt."""
 
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 from jaxtyping import Float
-from torch import Tensor
+from torch import Tensor, nn
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
@@ -68,12 +69,33 @@ def compute_local_attributions(
     component_masks = ci.lower_leaky
     mask_infos = make_mask_infos(component_masks=component_masks, routing_masks="all")
 
+    # For wte, our component_acts will be (b, s, embedding_dim), instead of (b, s, C). We pretend
+    # that it has ci values of 1 for the 0th index of the embedding dimension and 0 elsewhere. This
+    # is because later we sum over the embedding_dim and add a new singleton dimension for the
+    # component
+    wte_cache: dict[str, Tensor] = {}
+
+    def wte_hook(_module: nn.Module, _args: Any, _kwargs: Any, output: Tensor) -> Any:
+        output.requires_grad_(True)
+        # We call it "post_detach" for consistency, we don't bother detaching here as there are
+        # no modules before it that we care about
+        wte_cache["wte_post_detach"] = output
+        return output
+
+    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
+    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
+
     with torch.enable_grad():
         comp_output_with_cache: OutputWithCache = model(
             tokens, mask_infos=mask_infos, cache_type="component_acts"
         )
+    wte_handle.remove()
+
+    ci.lower_leaky["wte"] = torch.zeros_like(wte_cache["wte_post_detach"])
+    ci.lower_leaky["wte"][:, :, 0] = 1.0
 
     cache = comp_output_with_cache.cache
+    cache["wte_post_detach"] = wte_cache["wte_post_detach"]
 
     local_attributions: list[PairAttribution] = []
 
@@ -119,15 +141,25 @@ def compute_local_attributions(
                 s_in_range = range(s_out + 1) if is_attention_output else range(s_out, s_out + 1)
 
                 with torch.no_grad():
-                    for in_post_detach_grad, in_post_detach, alive_in_mask, attribution in zip(
+                    for (
+                        in_layer,
+                        in_post_detach_grad,
+                        in_post_detach,
+                        alive_in_mask,
+                        attribution,
+                    ) in zip(
+                        in_layers,
                         in_post_detach_grads,
                         in_post_detaches,
                         alive_in_masks,
                         attributions,
                         strict=True,
                     ):
-                        # Weight by input acts and square (we index into the singular batch dimension)
                         weighted: Float[Tensor, "s C"] = (in_post_detach_grad * in_post_detach)[0]
+                        if in_layer == "wte":
+                            # We actually have shape "s embedding_dim", so we sum over the embedding
+                            # dimension and add a new singleton component dimension
+                            weighted = weighted.sum(dim=1).unsqueeze(1)
                         for s_in in s_in_range:
                             alive_c_in: list[int] = torch.where(alive_in_mask[0, s_in])[0].tolist()
                             for c_in in alive_c_in:
@@ -213,6 +245,14 @@ for attr_pair in attr_pairs:
 # Save attributions
 out_dir = get_out_dir()
 
-# Save PyTorch format
+# Save PyTorch format with all necessary data
 pt_path = out_dir / f"local_attributions_{loaded.wandb_id}.pt"
-# %%
+save_data = {
+    "attr_pairs": attr_pairs,
+    "token_strings": token_strings,
+    "prompt": prompt,
+    "ci_threshold": ci_threshold,
+    "wandb_id": loaded.wandb_id,
+}
+torch.save(save_data, pt_path)
+print(f"\nSaved local attributions to {pt_path}")
