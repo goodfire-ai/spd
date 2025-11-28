@@ -158,13 +158,10 @@ wandb_path = "wandb:goodfire/spd/runs/33n6xjjt"  # ss_gpt2_simple-1L (new)
 # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
 # wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
 n_blocks = 1
-batch_size = 1  # Only need 1 for getting sources_by_target
-n_ctx = 64
 ci_threshold = 1e-6
 # prompt = "The quick brown fox"
 prompt = "Eagerly, a girl named Kim went"
 
-# Load model
 loaded = load_model_from_wandb(wandb_path)
 model, config, device = loaded.model, loaded.config, loaded.device
 
