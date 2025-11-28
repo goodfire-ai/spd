@@ -24,15 +24,15 @@ from spd.scripts.model_loading import (
 from spd.utils.general_utils import extract_batch_data
 
 
-def is_qkv_to_o_pair(in_layer: str, out_layer: str) -> bool:
+def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
     """Check if pair requires per-sequence-position gradient computation.
 
-    For q/k/v → o_proj within the same attention block, output at s_out
+    For k/v → o_proj within the same attention block, output at s_out
     has gradients w.r.t. inputs at all s_in ≤ s_out (causal attention).
     """
-    in_is_qkv = any(x in in_layer for x in ["q_proj", "k_proj", "v_proj"])
+    in_is_kv = any(x in in_layer for x in ["k_proj", "v_proj"])
     out_is_o = "o_proj" in out_layer
-    if not (in_is_qkv and out_is_o):
+    if not (in_is_kv and out_is_o):
         return False
 
     # Check same attention block: "h.{idx}.attn.{proj}"
@@ -212,30 +212,6 @@ def get_sources_by_target(
     return dict(sources_by_target)
 
 
-def validate_attention_pair_structure(sources_by_target: dict[str, list[str]]) -> None:
-    """Assert that o_proj layers only receive from same-block QKV.
-
-    This structural property allows us to handle attention and non-attention
-    cases separately without mixing within a single target layer.
-    """
-    for out_layer, in_layers in sources_by_target.items():
-        if "o_proj" in out_layer:
-            out_block = out_layer.split(".")[1]
-            for in_layer in in_layers:
-                assert any(x in in_layer for x in ["q_proj", "k_proj", "v_proj"]), (
-                    f"o_proj output {out_layer} has non-QKV input {in_layer}"
-                )
-                in_block = in_layer.split(".")[1]
-                assert in_block == out_block, (
-                    f"o_proj output {out_layer} has input from different block: {in_layer}"
-                )
-        else:
-            for in_layer in in_layers:
-                assert not is_qkv_to_o_pair(in_layer, out_layer), (
-                    f"Non-o_proj output {out_layer} has attention pair input {in_layer}"
-                )
-
-
 def compute_global_attributions(
     model: ComponentModel,
     data_loader: Iterable[dict[str, Any]],
@@ -336,10 +312,10 @@ def compute_global_attributions(
                 for in_layer in in_layers
             }
 
-            is_attention_output = "o_proj" in out_layer
-            tqdm.write(
-                f"{'Attention' if is_attention_output else 'Non-attention'} target: "
-                f"{out_layer} <- {in_layers}"
+            # NOTE: o->q will be treated as an attention pair even though there are no attrs
+            # across sequence positions. This is just so we don't have to special case it.
+            is_attention_output = any(
+                is_kv_to_o_pair(in_layer, out_layer) for in_layer in in_layers
             )
 
             grad_outputs: Float[Tensor, "b s C"] = torch.zeros_like(out_pre_detach)
@@ -457,7 +433,6 @@ if __name__ == "__main__":
     )
 
     sources_by_target = get_sources_by_target(model, device, config, n_blocks)
-    validate_attention_pair_structure(sources_by_target)
     n_pairs = sum(len(ins) for ins in sources_by_target.values())
     print(f"Sources by target: {n_pairs} pairs across {len(sources_by_target)} target layers")
     for out_layer, in_layers in sources_by_target.items():

@@ -101,8 +101,6 @@ def create_data_loader_from_config(
         batch_size=batch_size,
         buffer_size=task_config.buffer_size,
         global_seed=seed,
-        ddp_rank=0,
-        ddp_world_size=1,
     )
 
     return data_loader, tokenizer

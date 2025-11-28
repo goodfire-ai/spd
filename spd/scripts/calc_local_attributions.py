@@ -1,8 +1,7 @@
 # %%
 """Compute local attributions for a single prompt."""
 
-import gzip
-import json
+from dataclasses import dataclass
 
 import torch
 from jaxtyping import Float
@@ -14,15 +13,18 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
-from spd.scripts.calc_global_attributions import (
-    get_sources_by_target,
-    is_qkv_to_o_pair,
-    validate_attention_pair_structure,
-)
-from spd.scripts.model_loading import (
-    get_out_dir,
-    load_model_from_wandb,
-)
+from spd.scripts.calc_global_attributions import get_sources_by_target, is_kv_to_o_pair
+from spd.scripts.model_loading import get_out_dir, load_model_from_wandb
+
+
+@dataclass
+class PairAttribution:
+    source: str
+    target: str
+    attribution: Float[Tensor, "s_in trimmed_c_in s_out trimmed_c_out"]
+    trimmed_c_in_idxs: list[int]
+    trimmed_c_out_idxs: list[int]
+    is_kv_to_o_pair: bool
 
 
 def compute_local_attributions(
@@ -32,7 +34,7 @@ def compute_local_attributions(
     ci_threshold: float,
     sampling: SamplingType,
     device: str,
-) -> dict[tuple[str, str], Float[Tensor, "s_in C s_out C"]]:
+) -> list[PairAttribution]:
     """Compute local attributions for a single prompt.
 
     For each valid layer pair (in_layer, out_layer), computes the gradient-based
@@ -48,9 +50,7 @@ def compute_local_attributions(
         device: Device to run on.
 
     Returns:
-        Dictionary mapping (in_layer, out_layer) -> attribution tensor.
-        For non-attention pairs: shape [seq, C, seq, C] but only diagonal (s_in == s_out) is nonzero.
-        For Q/K/V -> O pairs: shape [seq, C, seq, C] with causal structure (s_in <= s_out).
+        List of PairAttribution objects.
     """
     n_seq = tokens.shape[1]
     C = model.C
@@ -75,58 +75,78 @@ def compute_local_attributions(
 
     cache = comp_output_with_cache.cache
 
-    # Initialize output attributions
-    local_attributions: dict[tuple[str, str], Float[Tensor, "s_in C s_out C"]] = {}
+    local_attributions: list[PairAttribution] = []
 
     for out_layer, in_layers in tqdm(sources_by_target.items(), desc="Target layers"):
         out_pre_detach: Float[Tensor, "1 s C"] = cache[f"{out_layer}_pre_detach"]
         ci_out: Float[Tensor, "1 s C"] = ci.lower_leaky[out_layer]
 
-        for in_layer in in_layers:
-            in_post_detach: Float[Tensor, "1 s C"] = cache[f"{in_layer}_post_detach"]
-            ci_in: Float[Tensor, "1 s C"] = ci.lower_leaky[in_layer]
+        in_post_detaches: list[Float[Tensor, "1 s C"]] = [
+            cache[f"{in_layer}_post_detach"] for in_layer in in_layers
+        ]
+        ci_ins: list[Float[Tensor, "1 s C"]] = [ci.lower_leaky[in_layer] for in_layer in in_layers]
 
-            attribution: Float[Tensor, "s_in C s_out C"] = torch.zeros(
-                n_seq, C, n_seq, C, device=device
-            )
+        attributions: list[Float[Tensor, "s_in C s_out C"]] = [
+            torch.zeros(n_seq, C, n_seq, C, device=device) for _ in in_layers
+        ]
 
-            is_attention_pair = is_qkv_to_o_pair(in_layer, out_layer)
+        # NOTE: o->q will be treated as an attention pair even though there are no attrs
+        # across sequence positions. This is just so we don't have to special case it.
+        is_attention_output = any(is_kv_to_o_pair(in_layer, out_layer) for in_layer in in_layers)
 
-            # Determine which (s_out, c_out) pairs are alive
-            alive_out_mask: Float[Tensor, "1 s C"] = ci_out >= ci_threshold
-            alive_in_mask: Float[Tensor, "1 s C"] = ci_in >= ci_threshold
+        # Determine which (s_out, c_out) pairs are alive
+        alive_out_mask: Float[Tensor, "1 s C"] = ci_out >= ci_threshold
+        alive_out_c_idxs: list[int] = torch.where(alive_out_mask[0].any(dim=0))[0].tolist()
 
-            for s_out in tqdm(range(n_seq), desc=f"{in_layer} -> {out_layer}", leave=False):
-                # Get alive output components at this position
-                alive_c_out: list[int] = torch.where(alive_out_mask[0, s_out])[0].tolist()
-                if len(alive_c_out) == 0:
-                    continue
+        alive_in_masks: list[Float[Tensor, "1 s C"]] = [ci_in >= ci_threshold for ci_in in ci_ins]
+        alive_in_c_idxs: list[list[int]] = [
+            torch.where(alive_in_mask[0].any(dim=0))[0].tolist() for alive_in_mask in alive_in_masks
+        ]
 
-                for c_out in alive_c_out:
-                    grads = torch.autograd.grad(
-                        outputs=out_pre_detach[0, s_out, c_out],
-                        inputs=in_post_detach,
-                        retain_graph=True,
-                    )
+        for s_out in tqdm(range(n_seq), desc=f"{out_layer} -> {in_layers}", leave=False):
+            # Get alive output components at this position
+            s_out_alive_c_idxs: list[int] = torch.where(alive_out_mask[0, s_out])[0].tolist()
+            if len(s_out_alive_c_idxs) == 0:
+                continue
 
-                    assert len(grads) == 1
-                    in_post_detach_grad: Float[Tensor, "1 s C"] = grads[0]
-                    assert in_post_detach_grad is not None, f"Gradient is None for {in_layer}"
+            for c_out in s_out_alive_c_idxs:
+                in_post_detach_grads = torch.autograd.grad(
+                    outputs=out_pre_detach[0, s_out, c_out],
+                    inputs=in_post_detaches,
+                    retain_graph=True,
+                )
+                # Handle causal attention mask
+                s_in_range = range(s_out + 1) if is_attention_output else range(s_out, s_out + 1)
 
-                    # Weight by input acts and square (we index into the singular batch dimension)
-                    weighted: Float[Tensor, "s C"] = (in_post_detach_grad * in_post_detach)[0]
-
-                    # Handle causal attention mask
-                    s_in_range = range(s_out + 1) if is_attention_pair else range(s_out, s_out + 1)
-
-                    with torch.no_grad():
+                with torch.no_grad():
+                    for in_post_detach_grad, in_post_detach, alive_in_mask, attribution in zip(
+                        in_post_detach_grads,
+                        in_post_detaches,
+                        alive_in_masks,
+                        attributions,
+                        strict=True,
+                    ):
+                        # Weight by input acts and square (we index into the singular batch dimension)
+                        weighted: Float[Tensor, "s C"] = (in_post_detach_grad * in_post_detach)[0]
                         for s_in in s_in_range:
-                            # Only include alive input components
                             alive_c_in: list[int] = torch.where(alive_in_mask[0, s_in])[0].tolist()
                             for c_in in alive_c_in:
                                 attribution[s_in, c_in, s_out, c_out] = weighted[s_in, c_in]
 
-            local_attributions[(in_layer, out_layer)] = attribution
+        for in_layer, attribution, layer_alive_in_c_idxs in zip(
+            in_layers, attributions, alive_in_c_idxs, strict=True
+        ):
+            trimmed_attribution = attribution[:, layer_alive_in_c_idxs][:, :, :, alive_out_c_idxs]
+            local_attributions.append(
+                PairAttribution(
+                    source=in_layer,
+                    target=out_layer,
+                    attribution=trimmed_attribution,
+                    trimmed_c_in_idxs=layer_alive_in_c_idxs,
+                    trimmed_c_out_idxs=alive_out_c_idxs,
+                    is_kv_to_o_pair=is_kv_to_o_pair(in_layer, out_layer),
+                )
+            )
 
     return local_attributions
 
@@ -151,7 +171,6 @@ model, config, device = loaded.model, loaded.config, loaded.device
 tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name)
 assert isinstance(tokenizer, PreTrainedTokenizerFast), "Expected PreTrainedTokenizerFast"
 sources_by_target = get_sources_by_target(model, device, config, n_blocks)
-validate_attention_pair_structure(sources_by_target)
 
 n_pairs = sum(len(ins) for ins in sources_by_target.values())
 print(f"Sources by target: {n_pairs} pairs across {len(sources_by_target)} target layers")
@@ -172,7 +191,7 @@ print(f"Token strings: {token_strings}")
 # %%
 # Compute local attributions
 print("\nComputing local attributions...")
-local_attributions = compute_local_attributions(
+attr_pairs = compute_local_attributions(
     model=model,
     tokens=tokens,
     sources_by_target=sources_by_target,
@@ -183,13 +202,14 @@ local_attributions = compute_local_attributions(
 
 # Print summary statistics
 print("\nAttribution summary:")
-for pair, attr in local_attributions.items():
-    nonzero = (attr > 0).sum().item()
-    total = attr.numel()
+# for pair, attr in local_attributions:
+for attr_pair in attr_pairs:
+    nonzero = (attr_pair.attribution > 0).sum().item()
+    total = attr_pair.attribution.numel()
     print(
-        f"  {pair[0]} -> {pair[1]}: "
+        f"  {attr_pair.source} -> {attr_pair.target}: "
         f"nonzero={nonzero}/{total} ({100 * nonzero / total:.2f}%), "
-        f"max={attr.max():.6f}"
+        f"max={attr_pair.attribution.max():.6f}"
     )
 
 # %%
@@ -198,40 +218,4 @@ out_dir = get_out_dir()
 
 # Save PyTorch format
 pt_path = out_dir / f"local_attributions_{loaded.wandb_id}.pt"
-save_data = {
-    "attributions": local_attributions,
-    "tokens": tokens.cpu(),
-    "token_strings": token_strings,
-    "prompt": prompt,
-}
-torch.save(save_data, pt_path)
-print(f"\nSaved PyTorch format to {pt_path}")
-
-# Convert and save JSON format for web visualization
-attributions_json = {}
-for (in_layer, out_layer), attr_tensor in local_attributions.items():
-    key = f"('{in_layer}', '{out_layer}')"
-    attributions_json[key] = attr_tensor.cpu().tolist()
-
-json_data = {
-    "n_blocks": n_blocks,
-    "attributions": attributions_json,
-    "tokens": tokens[0].cpu().tolist(),
-    "token_strings": token_strings,
-    "prompt": prompt,
-}
-
-json_path = out_dir / f"local_attributions_{loaded.wandb_id}.json"
-with open(json_path, "w") as f:
-    json.dump(json_data, f, separators=(",", ":"), ensure_ascii=False)
-
-gz_path = out_dir / f"local_attributions_{loaded.wandb_id}.json.gz"
-with gzip.open(gz_path, "wt", encoding="utf-8") as f:
-    json.dump(json_data, f, separators=(",", ":"), ensure_ascii=False)
-
-print(f"Saved JSON format to {json_path}")
-print(f"Saved compressed format to {gz_path}")
-print(f"  - {len(attributions_json)} layer pairs")
-print(f"  - Sequence length: {tokens.shape[1]}")
-
 # %%
