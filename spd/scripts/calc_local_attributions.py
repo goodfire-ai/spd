@@ -96,8 +96,6 @@ def compute_local_attributions(
             alive_out_mask: Float[Tensor, "1 s C"] = ci_out >= ci_threshold
             alive_in_mask: Float[Tensor, "1 s C"] = ci_in >= ci_threshold
 
-            grad_outputs: Float[Tensor, "1 s C"] = torch.zeros_like(out_pre_detach)
-
             for s_out in tqdm(range(n_seq), desc=f"{in_layer} -> {out_layer}", leave=False):
                 # Get alive output components at this position
                 alive_c_out: list[int] = torch.where(alive_out_mask[0, s_out])[0].tolist()
@@ -105,13 +103,9 @@ def compute_local_attributions(
                     continue
 
                 for c_out in alive_c_out:
-                    grad_outputs.zero_()
-                    grad_outputs[0, s_out, c_out] = 1.0
-
                     grads = torch.autograd.grad(
-                        outputs=out_pre_detach,
+                        outputs=out_pre_detach[0, s_out, c_out],
                         inputs=in_post_detach,
-                        grad_outputs=grad_outputs,
                         retain_graph=True,
                     )
 
@@ -120,7 +114,7 @@ def compute_local_attributions(
                     assert in_post_detach_grad is not None, f"Gradient is None for {in_layer}"
 
                     # Weight by input acts and square (we index into the singular batch dimension)
-                    weighted: Float[Tensor, "s C"] = (in_post_detach_grad * in_post_detach)[0] ** 2
+                    weighted: Float[Tensor, "s C"] = (in_post_detach_grad * in_post_detach)[0]
 
                     # Handle causal attention mask
                     s_in_range = range(s_out + 1) if is_attention_pair else range(s_out, s_out + 1)
