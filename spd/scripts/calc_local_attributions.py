@@ -234,10 +234,10 @@ def compute_local_attributions(
 # %%
 # Configuration
 # wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L (Old)
-wandb_path = "wandb:goodfire/spd/runs/33n6xjjt"  # ss_gpt2_simple-1L (new)
+# wandb_path = "wandb:goodfire/spd/runs/33n6xjjt"  # ss_gpt2_simple-1L (new)
 # wandb_path = "wandb:goodfire/spd/runs/c0k3z78g"  # ss_gpt2_simple-2L
-# wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
-n_blocks = 1
+wandb_path = "wandb:goodfire/spd/runs/jyo9duz5"  # ss_gpt2_simple-1.25M (4L)
+n_blocks = 4
 ci_threshold = 1e-6
 output_prob_threshold = 1e-1
 # prompt = "The quick brown fox"
@@ -284,12 +284,17 @@ attr_pairs = compute_local_attributions(
 print("\nAttribution summary:")
 # for pair, attr in local_attributions:
 for attr_pair in attr_pairs:
-    nonzero = (attr_pair.attribution > 0).sum().item()
     total = attr_pair.attribution.numel()
+    if total == 0:
+        print(
+            f"Ignoring {attr_pair.source} -> {attr_pair.target}: shape={list(attr_pair.attribution.shape)}, zero"
+        )
+        continue
+    nonzero = (attr_pair.attribution > 0).sum().item()
     print(
         f"  {attr_pair.source} -> {attr_pair.target}: "
         f"shape={list(attr_pair.attribution.shape)}, "
-        f"nonzero={nonzero}/{total} ({100 * nonzero / total:.2f}%), "
+        f"nonzero={nonzero}/{total} ({100 * nonzero / (total + 1e-12):.2f}%), "
         f"max={attr_pair.attribution.max():.6f}"
     )
 

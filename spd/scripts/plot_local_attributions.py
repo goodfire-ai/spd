@@ -573,7 +573,9 @@ def load_and_plot(
 # %%
 if __name__ == "__main__":
     # Configuration
-    wandb_id = "33n6xjjt"  # ss_gpt2_simple-1L (new)
+    # wandb_id = "33n6xjjt"  # ss_gpt2_simple-1L (new)
+    # wandb_id = "c0k3z78g"  # ss_gpt2_simple-2L
+    wandb_id = "jyo9duz5"  # ss_gpt2_simple-1.25M (4L)
 
     out_dir = get_out_dir()
     pt_path = out_dir / f"local_attributions_{wandb_id}.pt"
