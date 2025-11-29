@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
-from jaxtyping import Float
+from jaxtyping import Bool, Float
 from torch import Tensor, nn
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
@@ -16,6 +16,42 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.scripts.calc_global_attributions import get_sources_by_target, is_kv_to_o_pair
 from spd.scripts.model_loading import get_out_dir, load_model_from_wandb
+
+
+@dataclass
+class LayerAliveInfo:
+    """Info about alive components for a layer."""
+
+    alive_mask: Bool[Tensor, "1 s dim"]  # Which (pos, component) pairs are alive
+    alive_c_idxs: list[int]  # Components alive at any position
+    c_to_trimmed: dict[int, int]  # original idx -> trimmed idx
+
+
+def compute_layer_alive_info(
+    layer_name: str,
+    ci_lower_leaky: dict[str, Tensor],
+    output_probs: Float[Tensor, "1 s vocab"] | None,
+    ci_threshold: float,
+    output_prob_threshold: float,
+    n_seq: int,
+    device: str,
+) -> LayerAliveInfo:
+    """Compute alive info for a layer. Handles regular, wte, and output layers."""
+    if layer_name == "wte":
+        # WTE: single pseudo-component, always alive at all positions
+        alive_mask = torch.ones(1, n_seq, 1, device=device, dtype=torch.bool)
+        alive_c_idxs = [0]
+    elif layer_name == "output":
+        assert output_probs is not None
+        alive_mask = output_probs >= output_prob_threshold
+        alive_c_idxs = torch.where(alive_mask[0].any(dim=0))[0].tolist()
+    else:
+        ci = ci_lower_leaky[layer_name]
+        alive_mask = ci >= ci_threshold
+        alive_c_idxs = torch.where(alive_mask[0].any(dim=0))[0].tolist()
+
+    c_to_trimmed = {c: i for i, c in enumerate(alive_c_idxs)}
+    return LayerAliveInfo(alive_mask, alive_c_idxs, c_to_trimmed)
 
 
 @dataclass
@@ -33,6 +69,7 @@ def compute_local_attributions(
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     ci_threshold: float,
+    output_prob_threshold: float,
     sampling: SamplingType,
     device: str,
 ) -> list[PairAttribution]:
@@ -47,6 +84,7 @@ def compute_local_attributions(
         tokens: Tokenized prompt of shape [1, seq_len].
         sources_by_target: Dict mapping out_layer -> list of in_layers.
         ci_threshold: Threshold for considering a component alive at a position.
+        output_prob_threshold: Threshold for considering an output logit alive (on softmax probs).
         sampling: Sampling type to use for causal importances.
         device: Device to run on.
 
@@ -54,7 +92,6 @@ def compute_local_attributions(
         List of PairAttribution objects.
     """
     n_seq = tokens.shape[1]
-    C = model.C
 
     with torch.no_grad():
         output_with_cache: OutputWithCache = model(tokens, cache_type="input")
@@ -66,13 +103,12 @@ def compute_local_attributions(
             detach_inputs=False,
         )
 
-    component_masks = ci.lower_leaky
-    mask_infos = make_mask_infos(component_masks=component_masks, routing_masks="all")
+    # Create masks so we can use all components (without masks)
+    mask_infos = make_mask_infos(
+        component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
+        routing_masks="all",
+    )
 
-    # For wte, our component_acts will be (b, s, embedding_dim), instead of (b, s, C). We pretend
-    # that it has ci values of 1 for the 0th index of the embedding dimension and 0 elsewhere. This
-    # is because later we sum over the embedding_dim and add a new singleton dimension for the
-    # component
     wte_cache: dict[str, Tensor] = {}
 
     def wte_hook(_module: nn.Module, _args: Any, _kwargs: Any, output: Tensor) -> Any:
@@ -91,47 +127,60 @@ def compute_local_attributions(
         )
     wte_handle.remove()
 
-    ci.lower_leaky["wte"] = torch.zeros_like(wte_cache["wte_post_detach"])
-    ci.lower_leaky["wte"][:, :, 0] = 1.0
-
     cache = comp_output_with_cache.cache
     cache["wte_post_detach"] = wte_cache["wte_post_detach"]
+    cache["output_pre_detach"] = comp_output_with_cache.output
+
+    # Compute output probabilities for thresholding
+    output_probs = torch.softmax(comp_output_with_cache.output, dim=-1)
+
+    # Compute alive info for all layers upfront
+    all_layers: set[str] = set(sources_by_target.keys())
+    for sources in sources_by_target.values():
+        all_layers.update(sources)
+
+    alive_info: dict[str, LayerAliveInfo] = {}
+    for layer in all_layers:
+        alive_info[layer] = compute_layer_alive_info(
+            layer, ci.lower_leaky, output_probs, ci_threshold, output_prob_threshold, n_seq, device
+        )
 
     local_attributions: list[PairAttribution] = []
 
-    for out_layer, in_layers in tqdm(sources_by_target.items(), desc="Target layers"):
-        out_pre_detach: Float[Tensor, "1 s C"] = cache[f"{out_layer}_pre_detach"]
-        ci_out: Float[Tensor, "1 s C"] = ci.lower_leaky[out_layer]
+    for target, sources in tqdm(sources_by_target.items(), desc="Target layers"):
+        target_info = alive_info[target]
+        out_pre_detach: Float[Tensor, "1 s dim"] = cache[f"{target}_pre_detach"]
 
-        in_post_detaches: list[Float[Tensor, "1 s C"]] = [
-            cache[f"{in_layer}_post_detach"] for in_layer in in_layers
+        source_infos = [alive_info[source] for source in sources]
+        in_post_detaches: list[Float[Tensor, "1 s dim"]] = [
+            cache[f"{source}_post_detach"] for source in sources
         ]
-        ci_ins: list[Float[Tensor, "1 s C"]] = [ci.lower_leaky[in_layer] for in_layer in in_layers]
 
-        attributions: list[Float[Tensor, "s_in C s_out C"]] = [
-            torch.zeros(n_seq, C, n_seq, C, device=device) for _ in in_layers
+        # Initialize attribution tensors at final trimmed size
+        attributions: list[Float[Tensor, "s_in n_c_in s_out n_c_out"]] = [
+            torch.zeros(
+                n_seq,
+                len(source_info.alive_c_idxs),
+                n_seq,
+                len(target_info.alive_c_idxs),
+                device=device,
+            )
+            for source_info in source_infos
         ]
 
         # NOTE: o->q will be treated as an attention pair even though there are no attrs
         # across sequence positions. This is just so we don't have to special case it.
-        is_attention_output = any(is_kv_to_o_pair(in_layer, out_layer) for in_layer in in_layers)
+        is_attention_output = any(is_kv_to_o_pair(source, target) for source in sources)
 
-        # Determine which (s_out, c_out) pairs are alive
-        alive_out_mask: Float[Tensor, "1 s C"] = ci_out >= ci_threshold
-        alive_out_c_idxs: list[int] = torch.where(alive_out_mask[0].any(dim=0))[0].tolist()
-
-        alive_in_masks: list[Float[Tensor, "1 s C"]] = [ci_in >= ci_threshold for ci_in in ci_ins]
-        alive_in_c_idxs: list[list[int]] = [
-            torch.where(alive_in_mask[0].any(dim=0))[0].tolist() for alive_in_mask in alive_in_masks
-        ]
-
-        for s_out in tqdm(range(n_seq), desc=f"{out_layer} -> {in_layers}", leave=False):
+        for s_out in tqdm(range(n_seq), desc=f"{target} <- {sources}", leave=False):
             # Get alive output components at this position
-            s_out_alive_c_idxs: list[int] = torch.where(alive_out_mask[0, s_out])[0].tolist()
-            if len(s_out_alive_c_idxs) == 0:
+            s_out_alive_c: list[int] = [
+                c for c in target_info.alive_c_idxs if target_info.alive_mask[0, s_out, c]
+            ]
+            if not s_out_alive_c:
                 continue
 
-            for c_out in s_out_alive_c_idxs:
+            for c_out in s_out_alive_c:
                 in_post_detach_grads = torch.autograd.grad(
                     outputs=out_pre_detach[0, s_out, c_out],
                     inputs=in_post_detaches,
@@ -139,44 +188,43 @@ def compute_local_attributions(
                 )
                 # Handle causal attention mask
                 s_in_range = range(s_out + 1) if is_attention_output else range(s_out, s_out + 1)
+                trimmed_c_out = target_info.c_to_trimmed[c_out]
 
                 with torch.no_grad():
-                    for (
-                        in_layer,
-                        in_post_detach_grad,
-                        in_post_detach,
-                        alive_in_mask,
-                        attribution,
-                    ) in zip(
-                        in_layers,
+                    for source, source_info, grad, in_post_detach, attr in zip(
+                        sources,
+                        source_infos,
                         in_post_detach_grads,
                         in_post_detaches,
-                        alive_in_masks,
                         attributions,
                         strict=True,
                     ):
-                        weighted: Float[Tensor, "s C"] = (in_post_detach_grad * in_post_detach)[0]
-                        if in_layer == "wte":
-                            # We actually have shape "s embedding_dim", so we sum over the embedding
-                            # dimension and add a new singleton component dimension
-                            weighted = weighted.sum(dim=1).unsqueeze(1)
-                        for s_in in s_in_range:
-                            alive_c_in: list[int] = torch.where(alive_in_mask[0, s_in])[0].tolist()
-                            for c_in in alive_c_in:
-                                attribution[s_in, c_in, s_out, c_out] = weighted[s_in, c_in]
+                        weighted: Float[Tensor, "s dim"] = (grad * in_post_detach)[0]
+                        if source == "wte":
+                            # Sum over embedding_dim to get single pseudo-component
+                            weighted = weighted.sum(dim=1, keepdim=True)
 
-        for in_layer, attribution, layer_alive_in_c_idxs in zip(
-            in_layers, attributions, alive_in_c_idxs, strict=True
-        ):
-            trimmed_attribution = attribution[:, layer_alive_in_c_idxs][:, :, :, alive_out_c_idxs]
+                        for s_in in s_in_range:
+                            alive_c_in = [
+                                c
+                                for c in source_info.alive_c_idxs
+                                if source_info.alive_mask[0, s_in, c]
+                            ]
+                            for c_in in alive_c_in:
+                                trimmed_c_in = source_info.c_to_trimmed[c_in]
+                                attr[s_in, trimmed_c_in, s_out, trimmed_c_out] = weighted[
+                                    s_in, c_in
+                                ]
+
+        for source, source_info, attr in zip(sources, source_infos, attributions, strict=True):
             local_attributions.append(
                 PairAttribution(
-                    source=in_layer,
-                    target=out_layer,
-                    attribution=trimmed_attribution,
-                    trimmed_c_in_idxs=layer_alive_in_c_idxs,
-                    trimmed_c_out_idxs=alive_out_c_idxs,
-                    is_kv_to_o_pair=is_kv_to_o_pair(in_layer, out_layer),
+                    source=source,
+                    target=target,
+                    attribution=attr,
+                    trimmed_c_in_idxs=source_info.alive_c_idxs,
+                    trimmed_c_out_idxs=target_info.alive_c_idxs,
+                    is_kv_to_o_pair=is_kv_to_o_pair(source, target),
                 )
             )
 
@@ -191,8 +239,10 @@ wandb_path = "wandb:goodfire/spd/runs/33n6xjjt"  # ss_gpt2_simple-1L (new)
 # wandb_path = "wandb:goodfire/spd/runs/jyo9duz5" # ss_gpt2_simple-1.25M (4L)
 n_blocks = 1
 ci_threshold = 1e-6
+output_prob_threshold = 1e-1
 # prompt = "The quick brown fox"
-prompt = "Eagerly, a girl named Kim went"
+# prompt = "Eagerly, a girl named Kim went"
+prompt = "They walked hand in"
 
 loaded = load_model_from_wandb(wandb_path)
 model, config, device = loaded.model, loaded.config, loaded.device
@@ -225,6 +275,7 @@ attr_pairs = compute_local_attributions(
     tokens=tokens,
     sources_by_target=sources_by_target,
     ci_threshold=ci_threshold,
+    output_prob_threshold=output_prob_threshold,
     sampling=config.sampling,
     device=device,
 )
@@ -237,6 +288,7 @@ for attr_pair in attr_pairs:
     total = attr_pair.attribution.numel()
     print(
         f"  {attr_pair.source} -> {attr_pair.target}: "
+        f"shape={list(attr_pair.attribution.shape)}, "
         f"nonzero={nonzero}/{total} ({100 * nonzero / total:.2f}%), "
         f"max={attr_pair.attribution.max():.6f}"
     )
@@ -247,11 +299,36 @@ out_dir = get_out_dir()
 
 # Save PyTorch format with all necessary data
 pt_path = out_dir / f"local_attributions_{loaded.wandb_id}.pt"
+
+# Get output token labels and probabilities for alive output components
+# We need the output probabilities to get per-position probs
+with torch.no_grad():
+    output_with_cache: OutputWithCache = model(tokens, cache_type="input")
+    output_probs_full = torch.softmax(output_with_cache.output, dim=-1)  # [1, seq, vocab]
+
+output_token_labels: dict[int, str] = {}
+# output_probs_by_pos: dict mapping (seq_pos, component_idx) -> probability
+output_probs_by_pos: dict[tuple[int, int], float] = {}
+for attr_pair in attr_pairs:
+    if attr_pair.target == "output":
+        for c_idx in attr_pair.trimmed_c_out_idxs:
+            if c_idx not in output_token_labels:
+                output_token_labels[c_idx] = tokenizer.decode([c_idx])
+            # Store probability for each position
+            for s in range(tokens.shape[1]):
+                prob = output_probs_full[0, s, c_idx].item()
+                if prob >= output_prob_threshold:
+                    output_probs_by_pos[(s, c_idx)] = prob
+        break
+
 save_data = {
     "attr_pairs": attr_pairs,
     "token_strings": token_strings,
     "prompt": prompt,
     "ci_threshold": ci_threshold,
+    "output_prob_threshold": output_prob_threshold,
+    "output_token_labels": output_token_labels,
+    "output_probs_by_pos": output_probs_by_pos,
     "wandb_id": loaded.wandb_id,
 }
 torch.save(save_data, pt_path)

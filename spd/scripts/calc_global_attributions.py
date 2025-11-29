@@ -162,10 +162,9 @@ def get_sources_by_target(
             detach_inputs=False,
         )
 
-    # Create masks for component replacement (use all components with causal importance as mask)
-    component_masks = ci.lower_leaky
+    # Create masks so we can use all components (without masks)
     mask_infos = make_mask_infos(
-        component_masks=component_masks,
+        component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
         routing_masks="all",
     )
 
@@ -194,9 +193,10 @@ def get_sources_by_target(
 
     cache = comp_output_with_cache_grad.cache
     cache["wte_post_detach"] = wte_cache["wte_post_detach"]
+    cache["output_pre_detach"] = comp_output_with_cache_grad.output
 
     layers = ["wte"]
-    layer_names = [
+    component_layers = [
         "attn.q_proj",
         "attn.k_proj",
         "attn.v_proj",
@@ -205,11 +205,12 @@ def get_sources_by_target(
         "mlp.down_proj",
     ]
     for i in range(n_blocks):
-        layers.extend([f"h.{i}.{layer_name}" for layer_name in layer_names])
+        layers.extend([f"h.{i}.{layer_name}" for layer_name in component_layers])
+    layers.append("output")
 
     test_pairs = []
-    for in_layer in layers:
-        for out_layer in layers[1:]:  # Skip wte
+    for in_layer in layers[:-1]:  # Don't include "output" in
+        for out_layer in layers[1:]:  # Don't include "wte" in out_layers
             if layers.index(in_layer) < layers.index(out_layer):
                 test_pairs.append((in_layer, out_layer))
 
@@ -312,10 +313,9 @@ def compute_global_attributions(
                 detach_inputs=False,
             )
 
-        # Create masks and run forward pass with gradient tracking
-        component_masks = ci.lower_leaky
+        # Create masks so we can use all components (without masks)
         mask_infos = make_mask_infos(
-            component_masks=component_masks,
+            component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
             routing_masks="all",
         )
 

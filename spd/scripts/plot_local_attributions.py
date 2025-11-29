@@ -78,9 +78,12 @@ def parse_layer_name(layer: str) -> tuple[int, str]:
 
     E.g., "h.0.attn.q_proj" -> (0, "attn.q_proj")
          "wte" -> (-1, "wte")
+         "output" -> (999, "output")
     """
     if layer == "wte":
         return -1, "wte"
+    if layer == "output":
+        return 999, "output"
 
     parts = layer.split(".")
     block_idx = int(parts[1])
@@ -188,6 +191,9 @@ def plot_local_attribution_graph(
     edge_alpha_scale: float = 0.5,
     figsize: tuple[float, float] | None = None,
     max_grid_cols: int = 12,
+    output_token_labels: dict[int, str] | None = None,
+    output_prob_threshold: float | None = None,
+    output_probs_by_pos: dict[tuple[int, int], float] | None = None,
 ) -> plt.Figure:
     """Plot the local attribution graph.
 
@@ -199,6 +205,9 @@ def plot_local_attribution_graph(
         edge_alpha_scale: Scale factor for edge transparency.
         figsize: Figure size (width, height). Auto-computed if None.
         max_grid_cols: Maximum number of columns in the grid per layer.
+        output_token_labels: Dict mapping output component indices to token strings.
+        output_prob_threshold: Threshold used for filtering output probabilities.
+        output_probs_by_pos: Dict mapping (seq_pos, component_idx) -> probability for output layer.
 
     Returns:
         Matplotlib figure.
@@ -247,6 +256,7 @@ def plot_local_attribution_graph(
         # Check if this is a q/v/k layer that shares a row
         _, sublayer = parse_layer_name(layer)
         is_qvk = sublayer in QVK_SUBLAYERS
+        is_output_layer = layer == "output"
 
         if is_qvk:
             # Use the allocated columns for this sublayer
@@ -264,40 +274,76 @@ def plot_local_attribution_graph(
             # Center the grid at this sequence position
             x_base = x_positions[s]
 
-            # Arrange all components in grid (not just alive ones at this position)
-            for local_idx, c in enumerate(all_alive_components):
-                col = local_idx % layer_max_cols
-                row = local_idx // layer_max_cols
+            if is_output_layer:
+                # For output layer: only show components active at THIS position
+                active_at_pos = [c for c in all_alive_components if alive_mask[s, c]]
+                n_active = len(active_at_pos)
+                if n_active == 0:
+                    continue
 
-                if is_qvk:
-                    # Position within the allocated horizontal segment
-                    # Center of this sublayer's segment within the total QVK row
-                    segment_center = start_col + layer_max_cols / 2
-                    total_center = QVK_TOTAL_COLS / 2
-                    # Offset from center of entire row
-                    segment_offset = (segment_center - total_center) * col_spacing
-                    # Position within segment, centered
-                    x_offset = segment_offset + (col - (n_cols - 1) / 2) * col_spacing
-                else:
-                    # Position within grid, centered on sequence position
-                    x_offset = (col - (n_cols - 1) / 2) * col_spacing
+                n_rows_pos = (n_active + max_grid_cols - 1) // max_grid_cols
+                n_cols_pos = min(n_active, max_grid_cols)
 
-                y_offset = (row - (n_rows - 1) / 2) * row_spacing
+                # Use full width of max_grid_cols for output layer to spread out labels
+                max_width = (max_grid_cols - 1) * col_spacing
+                output_col_spacing = max_width / max(n_cols_pos - 1, 1) if n_cols_pos > 1 else 0
 
-                x = x_base + x_offset
-                y = y_center + y_offset
+                for local_idx, c in enumerate(active_at_pos):
+                    col = local_idx % max_grid_cols
+                    row = local_idx // max_grid_cols
 
-                imp = layer_imp[s, c].item()
-                node = NodeInfo(
-                    layer=layer,
-                    seq_pos=s,
-                    component_idx=c,
-                    x=x,
-                    y=y,
-                    importance=imp,
-                )
-                nodes.append(node)
-                node_lookup[(layer, s, c)] = node
+                    x_offset = (col - (n_cols_pos - 1) / 2) * output_col_spacing
+                    y_offset = (row - (n_rows_pos - 1) / 2) * row_spacing
+
+                    x = x_base + x_offset
+                    y = y_center + y_offset
+
+                    imp = layer_imp[s, c].item()
+                    node = NodeInfo(
+                        layer=layer,
+                        seq_pos=s,
+                        component_idx=c,
+                        x=x,
+                        y=y,
+                        importance=imp,
+                    )
+                    nodes.append(node)
+                    node_lookup[(layer, s, c)] = node
+            else:
+                # For other layers: arrange all components in grid
+                for local_idx, c in enumerate(all_alive_components):
+                    col = local_idx % layer_max_cols
+                    row = local_idx // layer_max_cols
+
+                    if is_qvk:
+                        # Position within the allocated horizontal segment
+                        # Center of this sublayer's segment within the total QVK row
+                        segment_center = start_col + layer_max_cols / 2
+                        total_center = QVK_TOTAL_COLS / 2
+                        # Offset from center of entire row
+                        segment_offset = (segment_center - total_center) * col_spacing
+                        # Position within segment, centered
+                        x_offset = segment_offset + (col - (n_cols - 1) / 2) * col_spacing
+                    else:
+                        # Position within grid, centered on sequence position
+                        x_offset = (col - (n_cols - 1) / 2) * col_spacing
+
+                    y_offset = (row - (n_rows - 1) / 2) * row_spacing
+
+                    x = x_base + x_offset
+                    y = y_center + y_offset
+
+                    imp = layer_imp[s, c].item()
+                    node = NodeInfo(
+                        layer=layer,
+                        seq_pos=s,
+                        component_idx=c,
+                        x=x,
+                        y=y,
+                        importance=imp,
+                    )
+                    nodes.append(node)
+                    node_lookup[(layer, s, c)] = node
 
     # Collect edges
     edges: list[tuple[NodeInfo, NodeInfo, float]] = []
@@ -385,10 +431,32 @@ def plot_local_attribution_graph(
             alpha=alpha,
         )
 
+        # Add token label and probability for output layer nodes
+        if node.layer == "output" and output_token_labels is not None and has_edges:
+            token_label = output_token_labels.get(node.component_idx, "")
+            if token_label:
+                # Build label with probability if available
+                label_text = repr(token_label)[1:-1]  # Strip quotes but show escape chars
+                if output_probs_by_pos is not None:
+                    prob = output_probs_by_pos.get((node.seq_pos, node.component_idx))
+                    if prob is not None:
+                        label_text = f"({prob:.2f})\n{label_text}"
+                ax.annotate(
+                    label_text,
+                    (node.x, node.y),
+                    xytext=(0, 6),
+                    textcoords="offset points",
+                    fontsize=6,
+                    ha="center",
+                    va="bottom",
+                    alpha=0.8,
+                )
+
     # Configure axes
     total_height = max(layer_y.values())
     ax.set_xlim(0, 1)
-    ax.set_ylim(-0.5, total_height + 0.5)
+    # Extra top margin to fit output token labels with probabilities
+    ax.set_ylim(-0.5, total_height + 1.0)
 
     # X-axis: token labels
     ax.set_xticks(x_positions)
@@ -420,6 +488,8 @@ def plot_local_attribution_graph(
                 if sub in sublayers:
                     ordered.append(sub.split(".")[-1])
             label = f"h.{block_idx}\n" + "/".join(ordered)
+        elif layers_at_y[0] == "output" and output_prob_threshold is not None:
+            label = f"output\n(prob>{output_prob_threshold})"
         else:
             label = layers_at_y[0].replace(".", "\n", 1)
         layer_labels.append(label)
@@ -475,6 +545,9 @@ def load_and_plot(
     data = torch.load(pt_path, weights_only=False)
     attr_pairs: list[PairAttribution] = data["attr_pairs"]
     token_strings: list[str] = data["token_strings"]
+    output_token_labels: dict[int, str] | None = data.get("output_token_labels")
+    output_prob_threshold: float | None = data.get("output_prob_threshold")
+    output_probs_by_pos: dict[tuple[int, int], float] | None = data.get("output_probs_by_pos")
 
     print(f"Loaded attributions from {pt_path}")
     print(f"  Prompt: {data.get('prompt', 'N/A')!r}")
@@ -484,6 +557,9 @@ def load_and_plot(
     fig = plot_local_attribution_graph(
         attr_pairs=attr_pairs,
         token_strings=token_strings,
+        output_token_labels=output_token_labels,
+        output_prob_threshold=output_prob_threshold,
+        output_probs_by_pos=output_probs_by_pos,
         **plot_kwargs,
     )
 
