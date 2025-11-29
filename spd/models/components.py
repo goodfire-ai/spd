@@ -190,6 +190,7 @@ class LinearComponents(Components):
         x: Float[Tensor, "... d_in"],
         mask: Float[Tensor, "... C"] | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
+        component_acts_cache: dict[str, Float[Tensor, "... C"]] | None = None,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
@@ -199,13 +200,18 @@ class LinearComponents(Components):
             weight_delta_and_mask: Optional tuple of tensors containing:
                 0: the weight differences between the target model and summed component weights
                 1: mask over the weight delta component for each sample
+            component_acts_cache: Cache dictionary to populate with component acts
         Returns:
             output: The summed output across all components
         """
         component_acts = self.get_inner_acts(x)
+        if component_acts_cache is not None:
+            component_acts_cache["pre_detach"] = component_acts
+            component_acts = component_acts.detach().requires_grad_(True)
+            component_acts_cache["post_detach"] = component_acts
 
         if mask is not None:
-            component_acts *= mask
+            component_acts = component_acts * mask
 
         out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
 
@@ -254,6 +260,7 @@ class EmbeddingComponents(Components):
         x: Int[Tensor, "..."],
         mask: Float[Tensor, "... C"] | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
+        component_acts_cache: dict[str, Float[Tensor, "... C"]] | None = None,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
 
@@ -263,13 +270,19 @@ class EmbeddingComponents(Components):
             weight_delta_and_mask: Optional tuple of tensors containing:
                 0: the weight differences between the target model and summed component weights
                 1: mask over the weight delta component for each sample
+            component_acts_cache: Cache dictionary to populate with component acts
         """
         assert x.dtype == torch.long, "x must be an integer tensor"
 
         component_acts: Float[Tensor, "... C"] = self.get_inner_acts(x)
 
+        if component_acts_cache is not None:
+            component_acts_cache["pre_detach"] = component_acts
+            component_acts = component_acts.detach().requires_grad_(True)
+            component_acts_cache["post_detach"] = component_acts
+
         if mask is not None:
-            component_acts *= mask
+            component_acts = component_acts * mask
 
         out = einops.einsum(component_acts, self.U, "... C, C embedding_dim -> ... embedding_dim")
 

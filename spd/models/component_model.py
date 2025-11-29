@@ -90,10 +90,11 @@ class ComponentModel(LoadableModule):
     `LlamaForCausalLM`, `AutoModelForCausalLM`) as long as its sub-module names
     match the patterns you pass in `target_module_patterns`.
 
-    Forward passes support optional component replacement and/or input caching:
+    Forward passes support optional component replacement and/or caching:
     - No args: Standard forward pass of the target model
     - With mask_infos: Components replace the specified modules via forward hooks
     - With cache_type="input": Input activations are cached for the specified modules
+    - With cache_type="component_acts": Component activations are cached for the specified modules
     - Both can be used simultaneously for component forward pass with input caching
 
     We register components and causal importance functions (ci_fns) as modules in this class in order to have them update
@@ -307,7 +308,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input"],
+        cache_type: Literal["component_acts", "input"],
         **kwargs: Any,
     ) -> OutputWithCache: ...
 
@@ -329,31 +330,30 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input", "none"] = "none",
+        cache_type: Literal["component_acts", "input", "none"] = "none",
         **kwargs: Any,
     ) -> Tensor | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
 
         This method handles the following 4 cases:
         1. mask_infos is None and cache_type is "none": Regular forward pass.
-        2. mask_infos is None and cache_type is "input": Forward pass with input caching on
-            all modules in self.target_module_paths.
-        3. mask_infos is not None and cache_type is "input": Forward pass with component replacement
-            and input caching on the modules provided in mask_infos.
+        2. mask_infos is None and cache_type is "input" or "component_acts": Forward pass with
+            caching on all modules in self.target_module_paths.
+        3. mask_infos is not None and cache_type is "input" or "component_acts": Forward pass with
+            component replacement and caching on the modules provided in mask_infos.
         4. mask_infos is not None and cache_type is "none": Forward pass with component replacement
             on the modules provided in mask_infos and no caching.
-
-        We use the same _components_and_cache_hook for cases 2, 3, and 4, and don't use any hooks
-        for case 1.
 
         Args:
             mask_infos: Dictionary mapping module names to ComponentsMaskInfo.
                 If provided, those modules will be replaced with their components.
-            cache_type: If "input", cache the inputs to the modules provided in mask_infos. If
-                mask_infos is None, cache the inputs to all modules in self.target_module_paths.
+            cache_type: If "input" or "component_acts", cache the inputs or component acts to the
+                modules provided in mask_infos. If "none", no caching is done. If mask_infos is None,
+                cache the inputs or component acts to all modules in self.target_module_paths.
 
         Returns:
-            OutputWithCache object if cache_type is "input", otherwise the model output tensor.
+            OutputWithCache object if cache_type is "input" or "component_acts", otherwise the
+            model output tensor.
         """
         if mask_infos is None and cache_type == "none":
             # No hooks needed. Do a regular forward pass of the target model.
@@ -382,7 +382,7 @@ class ComponentModel(LoadableModule):
 
         out = self._extract_output(raw_out)
         match cache_type:
-            case "input":
+            case "input" | "component_acts":
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
@@ -396,7 +396,7 @@ class ComponentModel(LoadableModule):
         module_name: str,
         components: Components | None,
         mask_info: ComponentsMaskInfo | None,
-        cache_type: Literal["input", "none"],
+        cache_type: Literal["component_acts", "input", "none"],
         cache: dict[str, Tensor],
     ) -> Any | None:
         """Unified hook function that handles both component replacement and caching.
@@ -409,7 +409,7 @@ class ComponentModel(LoadableModule):
             module_name: Name of the module in the target model
             components: Component replacement (if using components)
             mask_info: Mask information (if using components)
-            cache_type: Whether to cache the input
+            cache_type: Whether to cache the component acts, input, or none
             cache: Cache dictionary to populate (if cache_type is not None)
 
         Returns:
@@ -420,7 +420,6 @@ class ComponentModel(LoadableModule):
         assert len(kwargs) == 0, "Expected no keyword arguments"
         x = args[0]
         assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none"], "Expected cache_type to be 'input' or 'none'"
 
         if cache_type == "input":
             cache[module_name] = x
@@ -430,11 +429,16 @@ class ComponentModel(LoadableModule):
                 f"Only supports single-tensor outputs, got {type(output)}"
             )
 
+            component_acts_cache = {} if cache_type == "component_acts" else None
             components_out = components(
                 x,
                 mask=mask_info.component_mask,
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
+                component_acts_cache=component_acts_cache,
             )
+            if component_acts_cache is not None:
+                for k, v in component_acts_cache.items():
+                    cache[f"{module_name}_{k}"] = v
 
             if mask_info.routing_mask == "all":
                 return components_out
