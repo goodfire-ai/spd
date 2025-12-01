@@ -2,7 +2,6 @@
 """Compute local attributions for a single prompt."""
 
 from dataclasses import dataclass
-from itertools import islice
 
 import torch
 from jaxtyping import Float

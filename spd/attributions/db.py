@@ -316,7 +316,7 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         # Attach the other database
-        conn.execute(f"ATTACH DATABASE ? AS other", (str(other_db_path),))
+        conn.execute("ATTACH DATABASE ? AS other", (str(other_db_path),))
 
         # Get count before
         count_before = self.get_prompt_count()

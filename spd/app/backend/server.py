@@ -3,14 +3,13 @@ import traceback
 import uuid
 from collections.abc import Generator
 from functools import wraps
-from pathlib import Path
 from urllib.parse import unquote
 
 import fire
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
 from spd.app.backend.schemas import (

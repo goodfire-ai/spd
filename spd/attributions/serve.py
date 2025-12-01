@@ -14,7 +14,6 @@ API Endpoints:
     Static files served from current directory (for local_attributions.html)
 """
 
-import argparse
 import json
 import re
 import urllib.parse

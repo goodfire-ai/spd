@@ -13,7 +13,6 @@ Usage:
         --output_path ./local_attr.db
 """
 
-import argparse
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path

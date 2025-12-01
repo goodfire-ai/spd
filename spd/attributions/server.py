@@ -11,7 +11,6 @@ API Endpoints:
     GET /api/search                - Find prompts with specific components
 """
 
-import gzip
 import json
 from pathlib import Path
 from typing import Annotated
@@ -19,7 +18,6 @@ from typing import Annotated
 from fastapi import FastAPI, Query
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from spd.attributions.db import LocalAttrDB
 
