@@ -193,7 +193,7 @@ def create_slurm_array_script(
 #!/bin/bash
 #SBATCH --nodes={n_nodes}
 #SBATCH --ntasks={n_nodes}
-#SBATCH --gpus-per-task={gpus_per_task}
+#SBATCH --gres=gpu:{gpus_per_task}
 
 #SBATCH --partition={partition}
 #SBATCH --time=72:00:00

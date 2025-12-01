@@ -340,9 +340,9 @@ def compute_global_attributions(
                 detach_inputs=False,
             )
 
-        # Create masks so we can use all components (without masks)
         mask_infos = make_mask_infos(
-            component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
+            # component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
+            component_masks=ci.lower_leaky,
             routing_masks="all",
         )
 
