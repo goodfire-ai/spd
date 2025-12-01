@@ -13,7 +13,7 @@ API Endpoints:
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.gzip import GZipMiddleware
@@ -26,8 +26,24 @@ THIS_DIR = Path(__file__).parent
 app = FastAPI(title="Local Attributions API")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Global DB reference (set in lifespan)
+# Global DB reference (set in lifespan or startup event)
 db: LocalAttrDB | None = None
+
+# Cache for activation contexts (large, doesn't change)
+_activation_contexts_cache: dict[str, Any] | None = None
+
+
+@app.on_event("startup")
+def startup_event():
+    """Initialize DB connection when worker starts."""
+    import os
+
+    global db
+    if db is None:
+        db_path = os.environ.get("LOCAL_ATTR_DB_PATH")
+        if db_path:
+            db = LocalAttrDB(Path(db_path), check_same_thread=False)
+            print(f"Worker initialized with DB: {db_path}")
 
 
 # -----------------------------------------------------------------------------
@@ -36,7 +52,7 @@ db: LocalAttrDB | None = None
 
 
 @app.get("/api/meta")
-def get_meta():
+def get_meta() -> dict[str, Any]:
     """Return database metadata."""
     assert db is not None
     wandb_info = db.get_meta("wandb_path")
@@ -50,11 +66,18 @@ def get_meta():
 
 @app.get("/api/activation_contexts")
 def get_activation_contexts():
-    """Return activation contexts (component metadata)."""
+    """Return activation contexts (component metadata). Cached after first load."""
+    global _activation_contexts_cache
     assert db is not None
+
+    if _activation_contexts_cache is not None:
+        return _activation_contexts_cache
+
     contexts = db.get_activation_contexts()
     if contexts is None:
         return JSONResponse({"error": "No activation contexts found"}, status_code=404)
+
+    _activation_contexts_cache = contexts
     return contexts
 
 
@@ -157,11 +180,12 @@ def get_prompt(
         "id": prompt.id,
         "tokens": prompt.tokens,
         "edges": edges,
+        "output_probs": prompt.output_probs,
     }
 
 
 @app.get("/api/search")
-def search_prompts(
+def search_prompts(  # pyright: ignore[reportUnknownParameterType]
     components: str = "",
     mode: Annotated[str, Query(pattern="^(all|any)$")] = "all",
 ):
@@ -239,26 +263,36 @@ def create_app(db_path: Path) -> FastAPI:
     return app
 
 
-def main(db_path: str, port: int = 8765, host: str = "localhost"):
+def main(db_path: str, port: int = 8765, host: str = "localhost", workers: int = 4):
     """Run the server.
 
     Args:
         db_path: Path to SQLite database
         port: Port to serve on (default 8765)
         host: Host to bind to (default localhost)
+        workers: Number of worker processes (default 4)
     """
     import uvicorn
 
     db_path_ = Path(db_path)
     assert db_path_.exists(), f"Database not found: {db_path_}"
 
-    create_app(db_path_)
+    # Store db_path for worker initialization
+    import os
+
+    os.environ["LOCAL_ATTR_DB_PATH"] = str(db_path_)
 
     print(f"Server running at http://{host}:{port}/")
     print(f"  Alpine.js UI: http://{host}:{port}/")
-    print(f"  Original UI:  http://{host}:{port}/local_attributions.html")
+    print(f"  Workers: {workers}")
 
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    uvicorn.run(
+        "spd.attributions.server:app",
+        host=host,
+        port=port,
+        log_level="warning",
+        workers=workers,
+    )
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ class PromptRecord:
     id: int
     tokens: list[str]
     pairs_json: str  # JSON string of pairs data
+    output_probs: dict[str, dict[str, Any]]  # {"s:c": {"prob": float, "token": str}}
 
 
 @dataclass
@@ -87,7 +88,8 @@ class LocalAttrDB:
             CREATE TABLE IF NOT EXISTS prompts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 tokens TEXT NOT NULL,
-                pairs BLOB NOT NULL
+                pairs BLOB NOT NULL,
+                output_probs BLOB NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS component_activations (
@@ -109,7 +111,7 @@ class LocalAttrDB:
     # Meta operations
     # -------------------------------------------------------------------------
 
-    def set_meta(self, key: str, value: dict | list) -> None:
+    def set_meta(self, key: str, value: dict[str, Any] | list[Any]) -> None:
         """Store a JSON-serializable value in the meta table (gzipped)."""
         conn = self._get_conn()
         json_bytes = json.dumps(value).encode("utf-8")
@@ -120,20 +122,22 @@ class LocalAttrDB:
         )
         conn.commit()
 
-    def get_meta(self, key: str) -> dict | list | None:
+    def get_meta(self, key: str) -> dict[str, Any] | None:
         """Retrieve a value from the meta table."""
         conn = self._get_conn()
         row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         if row is None:
             return None
         decompressed = gzip.decompress(row["value"])
-        return json.loads(decompressed.decode("utf-8"))
+        json_data = json.loads(decompressed.decode("utf-8"))
+        assert isinstance(json_data, dict)
+        return json_data
 
-    def get_activation_contexts(self) -> dict | None:
+    def get_activation_contexts(self) -> dict[str, Any] | None:
         """Get the stored activation contexts (model-level component metadata)."""
         return self.get_meta("activation_contexts")
 
-    def set_activation_contexts(self, contexts: dict) -> None:
+    def set_activation_contexts(self, contexts: dict[str, Any]) -> None:
         """Store activation contexts (computed once per model)."""
         self.set_meta("activation_contexts", contexts)
 
@@ -146,6 +150,7 @@ class LocalAttrDB:
         tokens: list[str],
         pairs: list[dict[str, Any]],
         active_components: dict[str, ComponentActivation],
+        output_probs: dict[str, dict[str, Any]],
     ) -> int:
         """Add a prompt to the database.
 
@@ -153,6 +158,7 @@ class LocalAttrDB:
             tokens: List of token strings for this prompt.
             pairs: List of pair attribution dicts (sparse format).
             active_components: Dict mapping component_key -> ComponentActivation.
+            output_probs: Dict mapping "s:c" -> {"prob": float, "token": str}.
 
         Returns:
             The prompt ID.
@@ -163,10 +169,14 @@ class LocalAttrDB:
         pairs_json = json.dumps(pairs)
         pairs_compressed = gzip.compress(pairs_json.encode("utf-8"))
 
+        # Compress output_probs data
+        output_probs_json = json.dumps(output_probs)
+        output_probs_compressed = gzip.compress(output_probs_json.encode("utf-8"))
+
         # Insert prompt
         cursor = conn.execute(
-            "INSERT INTO prompts (tokens, pairs) VALUES (?, ?)",
-            (json.dumps(tokens), pairs_compressed),
+            "INSERT INTO prompts (tokens, pairs, output_probs) VALUES (?, ?, ?)",
+            (json.dumps(tokens), pairs_compressed, output_probs_compressed),
         )
         prompt_id = cursor.lastrowid
         assert prompt_id is not None
@@ -192,16 +202,19 @@ class LocalAttrDB:
         """Get a single prompt by ID."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT id, tokens, pairs FROM prompts WHERE id = ?", (prompt_id,)
+            "SELECT id, tokens, pairs, output_probs FROM prompts WHERE id = ?",
+            (prompt_id,),
         ).fetchone()
         if row is None:
             return None
 
         pairs_decompressed = gzip.decompress(row["pairs"]).decode("utf-8")
+        output_probs_decompressed = gzip.decompress(row["output_probs"]).decode("utf-8")
         return PromptRecord(
             id=row["id"],
             tokens=json.loads(row["tokens"]),
             pairs_json=pairs_decompressed,
+            output_probs=json.loads(output_probs_decompressed),
         )
 
     def get_prompt_count(self) -> int:
@@ -237,8 +250,7 @@ class LocalAttrDB:
         Returns:
             List of prompt IDs matching the query.
         """
-        if not component_keys:
-            return []
+        assert component_keys, "No component keys provided"
 
         conn = self._get_conn()
         placeholders = ",".join("?" * len(component_keys))
@@ -264,7 +276,7 @@ class LocalAttrDB:
 
         return [row["prompt_id"] for row in rows]
 
-    def get_component_stats(self, component_key: str) -> dict:
+    def get_component_stats(self, component_key: str) -> dict[str, Any]:
         """Get statistics about a component across all prompts.
 
         Returns:
@@ -323,8 +335,8 @@ class LocalAttrDB:
 
         # Copy prompts (IDs will be reassigned)
         conn.execute("""
-            INSERT INTO prompts (tokens, pairs)
-            SELECT tokens, pairs FROM other.prompts
+            INSERT INTO prompts (tokens, pairs, output_probs)
+            SELECT tokens, pairs, output_probs FROM other.prompts
         """)
 
         # Get the ID offset (first new ID)

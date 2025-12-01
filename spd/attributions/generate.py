@@ -13,6 +13,7 @@ Usage:
         --output_path ./local_attr.db
 """
 
+import fcntl
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,7 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
 from spd.app.backend.services.run_context_service import TrainRunContext, _build_token_lookup
 from spd.attributions.compute import (
+    LocalAttributionResult,
     PairAttribution,
     compute_local_attributions,
     get_sources_by_target,
@@ -49,6 +51,7 @@ class GenerateConfig:
     n_blocks: int = 4
     n_ctx: int = 32
     ci_threshold: float = 1e-6
+    output_prob_threshold: float = 0.01
     attr_threshold: float = 1e-4
     seed: int = 42
     n_batches_act_ctx: int = 50
@@ -135,6 +138,38 @@ def extract_active_components(attr_pairs: list[PairAttribution]) -> dict[str, Co
     return active
 
 
+def extract_output_probs(
+    result: LocalAttributionResult,
+    tokenizer: PreTrainedTokenizerFast,
+) -> dict[str, dict[str, float | str]]:
+    """Extract probabilities and token strings for output tokens in attribution edges.
+
+    Args:
+        result: The LocalAttributionResult containing pairs and output_probs tensor.
+        tokenizer: Tokenizer to decode token IDs to strings.
+
+    Returns:
+        Dict mapping "s:c" -> {"prob": float, "token": str} for output logit nodes.
+    """
+    probs: dict[str, dict[str, float | str]] = {}
+    output_probs_tensor = result.output_probs  # [1, seq, vocab]
+
+    for pair in result.pairs:
+        if pair.target != "output":
+            continue
+        for c_local, c_idx in enumerate(pair.trimmed_c_out_idxs):
+            # Check which positions have non-zero attribution for this output token
+            attr_slice = pair.attribution[:, :, :, c_local]
+            positions = torch.where(attr_slice.abs().sum(dim=(0, 1)) > 0)[0].tolist()
+            for s in positions:
+                key = f"{s}:{c_idx}"
+                if key not in probs:
+                    prob = round(float(output_probs_tensor[0, s, c_idx].detach().cpu().item()), 6)
+                    token_str = tokenizer.decode([c_idx])
+                    probs[key] = {"prob": prob, "token": token_str}
+    return probs
+
+
 def worker_fn(
     worker_id: int,
     n_workers: int,
@@ -148,12 +183,17 @@ def worker_fn(
     print(f"[Worker {worker_id}] Starting on {device}, processing {n_prompts_for_worker} prompts")
 
     # Load model onto this worker's GPU
-    run_info = SPDRunInfo.from_path(config.wandb_path)
-    from spd.models.component_model import ComponentModel
+    # Use file lock to prevent race conditions when loading pretrained weights
+    lock_path = config.output_path.parent / ".model_load.lock"
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        run_info = SPDRunInfo.from_path(config.wandb_path)
+        from spd.models.component_model import ComponentModel
 
-    model = ComponentModel.from_run_info(run_info)
-    model = model.to(device)
-    model.eval()
+        model = ComponentModel.from_run_info(run_info)
+        model = model.to(device)
+        model.eval()
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
 
     # Load tokenizer
     spd_config = run_info.config
@@ -192,27 +232,29 @@ def worker_fn(
 
     # Process prompts
     for _ in tqdm(range(n_prompts_for_worker), desc=f"Worker {worker_id}", position=worker_id):
-        batch = next(data_iter)
-        tokens: Float[Tensor, "1 seq"] = batch["input_ids"].to(device)
+        tokens: Float[Tensor, "1 seq"] = next(data_iter)["input_ids"].to(device)
 
-        attr_pairs = compute_local_attributions(
+        result = compute_local_attributions(
             model=model,
             tokens=tokens,
             sources_by_target=sources_by_target,
             ci_threshold=config.ci_threshold,
+            output_prob_threshold=config.output_prob_threshold,
             sampling=spd_config.sampling,
             device=device,
             show_progress=False,
         )
 
         token_strings = [tokenizer.decode([t]) for t in tokens[0].tolist()]
-        pairs_data = [serialize_pair(pair, config.attr_threshold) for pair in attr_pairs]
-        active_components = extract_active_components(attr_pairs)
+        pairs_data = [serialize_pair(pair, config.attr_threshold) for pair in result.pairs]
+        active_components = extract_active_components(result.pairs)
+        output_probs = extract_output_probs(result, tokenizer)
 
         db.add_prompt(
             tokens=token_strings,
             pairs=pairs_data,
             active_components=active_components,
+            output_probs=output_probs,
         )
 
         # Skip prompts assigned to other workers
@@ -413,6 +455,7 @@ if __name__ == "__main__":
         n_blocks: int = 4,
         n_ctx: int = 32,
         ci_threshold: float = 1e-6,
+        output_prob_threshold: float = 0.01,
         attr_threshold: float = 1e-4,
         seed: int = 42,
         n_batches_act_ctx: int = 50,
@@ -426,6 +469,7 @@ if __name__ == "__main__":
             n_blocks=n_blocks,
             n_ctx=n_ctx,
             ci_threshold=ci_threshold,
+            output_prob_threshold=output_prob_threshold,
             attr_threshold=attr_threshold,
             seed=seed,
             n_batches_act_ctx=n_batches_act_ctx,

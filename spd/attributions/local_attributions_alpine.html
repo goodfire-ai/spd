@@ -296,6 +296,14 @@
                     Top K edges:
                     <input type="number" x-model.number="topK" min="10" max="10000" step="100" @change="reloadWithFilters()">
                 </label>
+                <label>
+                    Node layout:
+                    <select x-model="nodeLayout" @change="render()">
+                        <option value="jittered">Jittered</option>
+                        <option value="shuffled">Shuffled</option>
+                        <option value="importance">By importance</option>
+                    </select>
+                </label>
                 <span class="edge-count">Showing <span x-text="visibleEdgeCount"></span> edges</span>
                 <span class="db-info">DB: <span x-text="promptCount"></span> prompts</span>
             </div>
@@ -330,16 +338,18 @@
                     <span>Pinned Components</span>
                     <button @click="pinnedNodes = []" style="font-size: 0.8rem; padding: 0.25rem 0.5rem; cursor: pointer;">Clear all</button>
                 </h3>
-                <div x-show="!activationContexts" class="loading">Loading component details...</div>
-                <div class="pinned-items" x-show="activationContexts">
+                <div class="pinned-items">
                     <template x-for="pinned in pinnedNodes" :key="`${pinned.layer}:${pinned.cIdx}`">
                         <div class="pinned-item">
                             <div class="pinned-item-header">
-                                <strong x-text="`${pinned.layer} : ${pinned.cIdx}`"></strong>
+                                <strong x-text="`${pinned.layer}:${pinned.cIdx}`"></strong>
                                 <button class="unpin-btn" @click="unpinNode(pinned.layer, pinned.cIdx)">✕ unpin</button>
                             </div>
-                            <template x-if="activationContexts">
-                                <div x-html="buildComponentHtml(pinned.layer, pinned.cIdx)"></div>
+                            <template x-if="pinned.layer === 'output' || activationContexts">
+                                <div x-html="buildComponentHtmlNoSeq(pinned.layer, pinned.cIdx)"></div>
+                            </template>
+                            <template x-if="pinned.layer !== 'output' && !activationContexts">
+                                <div>Loading details...</div>
                             </template>
                         </div>
                     </template>
@@ -355,14 +365,17 @@
                 @mouseleave="isHoveringTooltip = false; maybeHideTooltip()"
             >
                 <h3>Component Details</h3>
-                <template x-if="hoveredNode && !activationContexts">
+                <template x-if="hoveredNode && hoveredNode.layer === 'output'">
+                    <div x-html="buildComponentHtml(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)"></div>
+                </template>
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContexts">
                     <div>
-                        <p><strong x-text="`${hoveredNode.layer} : ${hoveredNode.cIdx}`"></strong></p>
+                        <p><strong x-text="`${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`"></strong></p>
                         <p>Loading details...</p>
                     </div>
                 </template>
-                <template x-if="hoveredNode && activationContexts">
-                    <div x-html="buildComponentHtml(hoveredNode.layer, hoveredNode.cIdx)"></div>
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && activationContexts">
+                    <div x-html="buildComponentHtml(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)"></div>
                 </template>
             </div>
         </div>
@@ -374,10 +387,15 @@
         const LAYER_GAP = 30;
         const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
         const LABEL_WIDTH = 100;
-        const SUBTYPE_ORDER = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'c_fc', 'down_proj'];
+        // Row order for layout (kvq share a row)
+        const ROW_ORDER = ['wte', 'kvq', 'o_proj', 'c_fc', 'down_proj', 'output'];
+        // Within kvq row, order is k, v, q (left to right)
+        const KVQ_SUBTYPES = ['k_proj', 'v_proj', 'q_proj'];
         const COLORS = {
+            wte: "#ff9800",  // orange for input embeddings
             q_proj: "#e91e63", k_proj: "#9c27b0", v_proj: "#673ab7",
-            o_proj: "#3f51b5", c_fc: "#009688", down_proj: "#4caf50"
+            o_proj: "#3f51b5", c_fc: "#009688", down_proj: "#4caf50",
+            output: "#795548"  // brown for output logits
         };
 
         // Simple timing utility that avoids duplicate timer warnings
@@ -410,6 +428,7 @@
                 allPrompts: [],
                 currentPromptId: null,
                 promptData: null,
+                outputProbs: {},  // {"s:c": {prob: float, token: str}} for output logit nodes
                 activationContexts: null,
                 activationContextsLoading: false,
 
@@ -424,6 +443,7 @@
                 // UI state
                 maxMeanCI: 1.0,  // No CI filtering by default
                 topK: 1000,
+                nodeLayout: 'jittered',  // 'importance' | 'shuffled' | 'jittered'
                 visibleEdgeCount: 0,
                 pinnedNodes: [],
                 hoveredNode: null,
@@ -486,6 +506,7 @@
                     timeEnd('loadPrompt.fetch');
 
                     this.promptData = promptData;
+                    this.outputProbs = promptData.output_probs || {};
 
                     timeStart('loadPrompt.process');
                     this.processPromptData();
@@ -571,52 +592,149 @@
                 },
 
                 parseLayer(name) {
+                    // Handle special layers: wte (input embeddings) and output (logits)
+                    if (name === 'wte') {
+                        return { name, block: -1, type: 'embed', subtype: 'wte' };
+                    }
+                    if (name === 'output') {
+                        return { name, block: Infinity, type: 'output', subtype: 'output' };
+                    }
                     const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-                    return m ? { name, block: +m[1], type: m[2], subtype: m[3] } : null;
+                    if (!m) throw new Error(`parseLayer: unrecognized layer name: ${name}`);
+                    return { name, block: +m[1], type: m[2], subtype: m[3] };
+                },
+
+                getRowKey(layer) {
+                    // Returns the row key for layout purposes
+                    // k_proj, v_proj, q_proj all map to 'kvq' row
+                    const info = this.parseLayer(layer);
+                    if (KVQ_SUBTYPES.includes(info.subtype)) {
+                        return `h.${info.block}.kvq`;
+                    }
+                    return layer;
                 },
 
                 getFilteredEdgesAndNodes() {
                     // Server already filtered by top_k and max_mean_ci
-                    // Just build the active nodes set
+                    // Build the active nodes set from edges
                     const activeNodes = new Set();
                     for (const edge of this.allEdges) {
                         activeNodes.add(edge.srcKey);
                         activeNodes.add(edge.tgtKey);
                     }
+
+                    // For output nodes: include all tokens with prob >= min prob of kept tokens
+                    // This ensures we don't show low-prob tokens while hiding higher-prob ones
+                    const outputNodesWithEdges = new Set();
+                    for (const nodeKey of activeNodes) {
+                        if (nodeKey.startsWith('output:')) {
+                            outputNodesWithEdges.add(nodeKey);
+                        }
+                    }
+
+                    if (outputNodesWithEdges.size > 0) {
+                        // Find min probability among output nodes that have edges
+                        let minProb = Infinity;
+                        for (const nodeKey of outputNodesWithEdges) {
+                            const [, seqIdx, cIdx] = nodeKey.split(':');
+                            const probKey = `${seqIdx}:${cIdx}`;
+                            const entry = this.outputProbs[probKey];
+                            if (entry === undefined) {
+                                throw new Error(`Output node ${nodeKey} has edge but no entry in outputProbs`);
+                            }
+                            if (entry.prob < minProb) {
+                                minProb = entry.prob;
+                            }
+                        }
+
+                        // Add all output nodes with prob >= minProb
+                        for (const [probKey, entry] of Object.entries(this.outputProbs)) {
+                            if (entry.prob >= minProb) {
+                                const [seqIdx, cIdx] = probKey.split(':');
+                                activeNodes.add(`output:${seqIdx}:${cIdx}`);
+                            }
+                        }
+                    }
+
                     return { edges: this.allEdges, activeNodes };
                 },
 
                 buildLayout(activeNodes) {
                     const nodesPerLayerSeq = {};
                     const allLayers = new Set();
+                    const allRows = new Set();
 
                     for (const nodeKey of activeNodes) {
                         const [layer, seqIdx, cIdx] = nodeKey.split(':');
                         allLayers.add(layer);
+                        allRows.add(this.getRowKey(layer));
                         const key = `${layer}:${seqIdx}`;
                         if (!nodesPerLayerSeq[key]) nodesPerLayerSeq[key] = [];
                         nodesPerLayerSeq[key].push(+cIdx);
                     }
 
-                    const layers = Array.from(allLayers).sort((a, b) => {
-                        const infoA = this.parseLayer(a);
-                        const infoB = this.parseLayer(b);
+                    // Sort rows (not individual layers) for Y positioning
+                    const rows = Array.from(allRows).sort((a, b) => {
+                        const parseRow = (r) => {
+                            if (r === 'wte') return { block: -1, subtype: 'wte' };
+                            if (r === 'output') return { block: Infinity, subtype: 'output' };
+                            // kvq rows: h.0.kvq
+                            const mKvq = r.match(/h\.(\d+)\.kvq/); if (mKvq) return { block: +mKvq[1], subtype: 'kvq' };
+                            // Regular rows: h.0.attn.o_proj or h.0.mlp.c_fc
+                            const m = r.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
+                            if (!m) throw new Error(`parseRow: unrecognized row key: ${r}`);
+                            return { block: +m[1], subtype: m[3] };
+                        };
+                        const infoA = parseRow(a);
+                        const infoB = parseRow(b);
                         if (infoA.block !== infoB.block) return infoA.block - infoB.block;
-                        return SUBTYPE_ORDER.indexOf(infoA.subtype) - SUBTYPE_ORDER.indexOf(infoB.subtype);
+                        const idxA = ROW_ORDER.indexOf(infoA.subtype);
+                        const idxB = ROW_ORDER.indexOf(infoB.subtype);
+                        if (idxA === -1) throw new Error(`Unknown subtype in ROW_ORDER: ${infoA.subtype}`);
+                        if (idxB === -1) throw new Error(`Unknown subtype in ROW_ORDER: ${infoB.subtype}`);
+                        return idxA - idxB;
                     });
 
-                    this.layerYPositions = {};
+                    // Assign Y positions to rows (k,v,q share same Y)
+                    const rowYPositions = {};
                     let currentY = MARGIN.top;
-                    for (const layer of layers.slice().reverse()) {
-                        this.layerYPositions[layer] = currentY;
+                    for (const row of rows.slice().reverse()) {
+                        rowYPositions[row] = currentY;
                         currentY += COMPONENT_SIZE + LAYER_GAP;
                     }
 
+                    // Map each layer to its row's Y position
+                    this.layerYPositions = {};
+                    for (const layer of allLayers) {
+                        const rowKey = this.getRowKey(layer);
+                        this.layerYPositions[layer] = rowYPositions[rowKey];
+                    }
+
                     const tokens = this.promptData.tokens;
+
+                    // Calculate column widths - for kvq rows, need space for all 3 subtypes
                     const maxComponentsPerSeq = tokens.map((_, seqIdx) => {
-                        return Math.max(...layers.map(layer =>
-                            (nodesPerLayerSeq[`${layer}:${seqIdx}`] || []).length
-                        ), 0);
+                        let maxAtSeq = 0;
+                        for (const row of rows) {
+                            if (row.endsWith('.kvq')) {
+                                const block = row.match(/h\.(\d+)/)[1];
+                                let totalKvq = 0;
+                                for (const subtype of KVQ_SUBTYPES) {
+                                    const layer = `h.${block}.attn.${subtype}`;
+                                    totalKvq += (nodesPerLayerSeq[`${layer}:${seqIdx}`] || []).length;
+                                }
+                                totalKvq += 2; // gaps between groups
+                                maxAtSeq = Math.max(maxAtSeq, totalKvq);
+                            } else {
+                                for (const layer of allLayers) {
+                                    if (this.getRowKey(layer) === row) {
+                                        const count = (nodesPerLayerSeq[`${layer}:${seqIdx}`] || []).length;
+                                        maxAtSeq = Math.max(maxAtSeq, count);
+                                    }
+                                }
+                            }
+                        }
+                        return maxAtSeq;
                     });
 
                     const MIN_COL_WIDTH = 30, COL_PADDING = 16;
@@ -629,28 +747,150 @@
                     }
 
                     this.nodePositions = {};
-                    for (const layer of layers) {
-                        for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
-                            const components = (nodesPerLayerSeq[`${layer}:${seqIdx}`] || []).sort((a, b) => {
-                                const impA = this.componentImportanceLocal[`${layer}:${seqIdx}:${a}`] || 0;
-                                const impB = this.componentImportanceLocal[`${layer}:${seqIdx}:${b}`] || 0;
-                                return impB - impA;
-                            });
+                    const KVQ_GROUP_GAP = COMPONENT_SIZE + COMPONENT_GAP;
 
-                            const baseX = seqXStarts[seqIdx] + COL_PADDING;
+                    for (const layer of allLayers) {
+                        const info = this.parseLayer(layer);
+                        const isKvq = info && KVQ_SUBTYPES.includes(info.subtype);
+                        const isOutput = layer === 'output';
+
+                        for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
+                            const components = [...(nodesPerLayerSeq[`${layer}:${seqIdx}`] || [])];
+                            if (components.length === 0) continue;
+
+                            let baseX = seqXStarts[seqIdx] + COL_PADDING;
                             const baseY = this.layerYPositions[layer];
+
+                            // For kvq layers, offset X based on which subtype (k, v, q order)
+                            if (isKvq) {
+                                const block = info.block;
+                                const subtypeIdx = KVQ_SUBTYPES.indexOf(info.subtype);
+                                for (let i = 0; i < subtypeIdx; i++) {
+                                    const prevLayer = `h.${block}.attn.${KVQ_SUBTYPES[i]}`;
+                                    const prevCount = (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`] || []).length;
+                                    baseX += prevCount * (COMPONENT_SIZE + COMPONENT_GAP);
+                                    baseX += KVQ_GROUP_GAP;
+                                }
+                            }
+
+                            // Use full column width (minus padding) so jitter spreads across entire seq position
+                            const cellWidth = seqWidths[seqIdx] - COL_PADDING * 2;
+                            const offsets = this.getComponentOffsetsForLayout(
+                                components, layer, seqIdx, isOutput, cellWidth
+                            );
 
                             for (let i = 0; i < components.length; i++) {
                                 const cIdx = components[i];
                                 this.nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
-                                    x: baseX + i * (COMPONENT_SIZE + COMPONENT_GAP) + COMPONENT_SIZE / 2,
+                                    x: baseX + offsets[cIdx] + COMPONENT_SIZE / 2,
                                     y: baseY + COMPONENT_SIZE / 2
                                 };
                             }
                         }
                     }
 
-                    return { layers, seqWidths, seqXStarts };
+                    return { rows, seqWidths, seqXStarts };
+                },
+
+                // Get x offsets for each component within a cell based on layout strategy
+                // Returns: { [cIdx]: xOffset } where xOffset is relative to cell start
+                getComponentOffsetsForLayout(components, layer, seqIdx, isOutput, cellWidth) {
+                    const n = components.length;
+                    const offsets = {};
+
+                    if (this.nodeLayout === 'importance') {
+                        // Sort by importance/probability, place evenly
+                        const sorted = [...components].sort((a, b) => {
+                            if (isOutput) {
+                                const entryA = this.outputProbs[`${seqIdx}:${a}`];
+                                const entryB = this.outputProbs[`${seqIdx}:${b}`];
+                                if (entryA === undefined) throw new Error(`Missing entry for output node ${seqIdx}:${a}`);
+                                if (entryB === undefined) throw new Error(`Missing entry for output node ${seqIdx}:${b}`);
+                                return entryB.prob - entryA.prob;
+                            }
+                            const impA = this.componentImportanceLocal[`${layer}:${seqIdx}:${a}`] || 0;
+                            const impB = this.componentImportanceLocal[`${layer}:${seqIdx}:${b}`] || 0;
+                            return impB - impA;
+                        });
+                        for (let i = 0; i < n; i++) {
+                            offsets[sorted[i]] = i * (COMPONENT_SIZE + COMPONENT_GAP);
+                        }
+                        return offsets;
+                    }
+
+                    // 'shuffled': deterministic shuffle, then place evenly
+                    if (this.nodeLayout === 'shuffled') {
+                        const seed = this.hashString(`${layer}:${seqIdx}`);
+                        const shuffled = this.seededShuffle([...components], seed);
+                        for (let i = 0; i < n; i++) {
+                            offsets[shuffled[i]] = i * (COMPONENT_SIZE + COMPONENT_GAP);
+                        }
+                        return offsets;
+                    }
+
+                    if (this.nodeLayout === 'jittered') {
+                        // 'jittered': shuffle -> space-around justify -> jitter scaled by 1/n_nodes
+                        const seed = this.hashString(`${layer}:${seqIdx}`);
+                        const shuffled = this.seededShuffle([...components], seed);
+
+                        // Create seeded random for jitter
+                        let jitterSeed = seed;
+                        const jitterRandom = () => {
+                            jitterSeed |= 0; jitterSeed = jitterSeed + 0x6D2B79F5 | 0;
+                            let t = Math.imul(jitterSeed ^ jitterSeed >>> 15, 1 | jitterSeed);
+                            t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                            return ((t ^ t >>> 14) >>> 0) / 4294967296;
+                        };
+
+                        // Space-around: equal space before first, between each, and after last
+                        // totalSpace = cellWidth - n * COMPONENT_SIZE
+                        // each gap = totalSpace / (n + 1)
+                        const totalSpace = cellWidth - n * COMPONENT_SIZE;
+                        const gap = totalSpace / (n + 1);
+
+                        // Jitter scales inversely with number of nodes
+                        const maxJitter = gap / 2;
+
+                        for (let i = 0; i < n; i++) {
+                            // Space-around position: gap + i * (COMPONENT_SIZE + gap)
+                            const baseOffset = gap + i * (COMPONENT_SIZE + gap);
+                            // Jitter: random value in [-maxJitter, +maxJitter], clamped to cell bounds
+                            const jitter = (jitterRandom() - 0.5) * 2 * maxJitter;
+                            const jitteredOffset = Math.max(0, Math.min(cellWidth - COMPONENT_SIZE, baseOffset + jitter));
+                            offsets[shuffled[i]] = jitteredOffset;
+                        }
+                        return offsets;
+                    }
+
+                    throw new Error(`Unknown node layout: ${this.nodeLayout}`);
+                },
+
+                // Simple string hash for deterministic seeding
+                hashString(str) {
+                    let hash = 0;
+                    for (let i = 0; i < str.length; i++) {
+                        const char = str.charCodeAt(i);
+                        hash = ((hash << 5) - hash) + char;
+                        hash = hash & hash;
+                    }
+                    return Math.abs(hash);
+                },
+
+                // Fisher-Yates shuffle with seeded PRNG
+                seededShuffle(arr, seed) {
+                    // Simple mulberry32 PRNG
+                    const random = () => {
+                        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+                        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+                        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+                    };
+
+                    for (let i = arr.length - 1; i > 0; i--) {
+                        const j = Math.floor(random() * (i + 1));
+                        [arr[i], arr[j]] = [arr[j], arr[i]];
+                    }
+                    return arr;
                 },
 
                 render() {
@@ -662,7 +902,7 @@
                     this.visibleEdgeCount = edges.length;
 
                     timeStart('render.layout');
-                    const { layers, seqWidths, seqXStarts } = this.buildLayout(activeNodes);
+                    const { rows, seqWidths, seqXStarts } = this.buildLayout(activeNodes);
                     timeEnd('render.layout');
                     const tokens = this.promptData.tokens;
 
@@ -677,7 +917,10 @@
                     svg.setAttribute('height', height);
 
                     timeStart('render.buildHtml');
-                    let html = '';
+                    // Use groups to ensure nodes are always rendered on top of edges
+                    let edgesHtml = '';
+                    let nodesHtml = '';
+
                     for (const e of edges) {
                         const p1 = this.nodePositions[e.srcKey];
                         const p2 = this.nodePositions[e.tgtKey];
@@ -685,7 +928,7 @@
                             const color = e.val > 0 ? '#2196f3' : '#f44336';
                             const w = Math.max(0.5, (Math.abs(e.val) / this.maxAttr) * 2);
                             const op = 0.05 + (Math.abs(e.val) / this.maxAttr) * 0.95;
-                            html += `<line class="edge" data-src="${e.srcKey}" data-tgt="${e.tgtKey}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${color}" stroke-width="${w}" opacity="${op}"/>`;
+                            edgesHtml += `<line class="edge" data-src="${e.srcKey}" data-tgt="${e.tgtKey}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${color}" stroke-width="${w}" opacity="${op}"/>`;
                         }
                     }
 
@@ -695,10 +938,32 @@
                         const info = this.parseLayer(layer);
                         const outAttr = this.nodeOutAttr[key] || 0;
                         const intensity = Math.min(1, outAttr / this.maxNodeOutAttr);
-                        const baseColor = COLORS[info.subtype] || '#999';
-                        const opacity = 0.2 + intensity * 0.8;
-                        html += `<rect class="node" data-layer="${layer}" data-seq="${seqIdx}" data-cidx="${cIdx}" x="${pos.x - COMPONENT_SIZE/2}" y="${pos.y - COMPONENT_SIZE/2}" width="${COMPONENT_SIZE}" height="${COMPONENT_SIZE}" fill="${baseColor}" rx="1" opacity="${opacity}"><title>${layer} seq=${seqIdx} c=${cIdx}</title></rect>`;
+
+                        let fillColor;
+                        let opacity;
+                        if (layer === 'output') {
+                            // Color output nodes by probability (green gradient)
+                            const probEntry = this.outputProbs[`${seqIdx}:${cIdx}`];
+                            if (!probEntry) throw new Error(`Missing outputProbs for ${seqIdx}:${cIdx}`);
+                            const prob = probEntry.prob;
+                            // Interpolate from light gray (low prob) to green (high prob)
+                            // Using HSL: green is ~120deg, vary saturation/lightness by prob
+                            const saturation = 20 + prob * 60;  // 20% to 80%
+                            const lightness = 70 - prob * 35;   // 70% to 35%
+                            fillColor = `hsl(120, ${saturation}%, ${lightness}%)`;
+                            opacity = 0.4 + prob * 0.6;
+                        } else {
+                            const baseColor = COLORS[info.subtype];
+                            if (!baseColor) throw new Error(`Unknown subtype color: ${info.subtype}`);
+                            fillColor = baseColor;
+                            opacity = 0.2 + intensity * 0.8;
+                        }
+
+                        nodesHtml += `<rect class="node" data-layer="${layer}" data-seq="${seqIdx}" data-cidx="${cIdx}" x="${pos.x - COMPONENT_SIZE/2}" y="${pos.y - COMPONENT_SIZE/2}" width="${COMPONENT_SIZE}" height="${COMPONENT_SIZE}" fill="${fillColor}" rx="1" opacity="${opacity}"/>`;
                     }
+
+                    // Edges first (back), then nodes (front)
+                    const html = `<g class="edges-layer">${edgesHtml}</g><g class="nodes-layer">${nodesHtml}</g>`;
                     timeEnd('render.buildHtml');
 
                     timeStart('render.svgInnerHTML');
@@ -717,13 +982,45 @@
                     this.$refs.tokenLabels.innerHTML = tokenHtml;
                     timeEnd('render.tokenLabels');
 
-                    // Layer labels
+                    // Layer labels - use unique Y positions (rows, not individual layers)
                     timeStart('render.layerLabels');
-                    let layerHtml = `<svg width="${LABEL_WIDTH}" height="${height}" style="display:block;">`;
+                    const rowYSet = new Map();
                     for (const layer in this.layerYPositions) {
-                        const info = this.parseLayer(layer);
-                        const y = this.layerYPositions[layer] + COMPONENT_SIZE / 2;
-                        layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${COLORS[info.subtype]}">${info.subtype}</text>`;
+                        const y = this.layerYPositions[layer];
+                        const rowKey = this.getRowKey(layer);
+                        if (!rowYSet.has(y)) {
+                            rowYSet.set(y, rowKey);
+                        }
+                    }
+
+                    let layerHtml = `<svg width="${LABEL_WIDTH}" height="${height}" style="display:block;">`;
+                    for (const [y, rowKey] of rowYSet) {
+                        const yCenter = y + COMPONENT_SIZE / 2;
+                        if (rowKey.endsWith('.kvq')) {
+                            const blockIdx = rowKey.split('.')[1];
+                            // For kvq rows, show colored labels for each: k v q
+                            layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="10">`;
+                            layerHtml += `<tspan fill="${COLORS.k_proj}">${blockIdx}</tspan>`;
+                            layerHtml += `<tspan fill="#666"> </tspan>`;
+                            layerHtml += `<tspan fill="${COLORS.k_proj}">k</tspan>`;
+                            layerHtml += `<tspan fill="#666"> </tspan>`;
+                            layerHtml += `<tspan fill="${COLORS.v_proj}">v</tspan>`;
+                            layerHtml += `<tspan fill="#666"> </tspan>`;
+                            layerHtml += `<tspan fill="${COLORS.q_proj}">q</tspan>`;
+                            layerHtml += `</text>`;
+                        } else if (rowKey === 'wte') {
+                            layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${COLORS.wte}">wte</text>`;
+                        } else if (rowKey === 'output') {
+                            layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${COLORS.output}">output</text>`;
+                        } else {
+                            const m = rowKey.match(/h\.\d+\.(attn|mlp)\.(\w+)/);
+                            if (!m) throw new Error(`Layer label: unrecognized rowKey format: ${rowKey}`);
+                            const subtype = m[2];
+                            const color = COLORS[subtype];
+                            if (!color) throw new Error(`Layer label: unknown subtype color: ${subtype}`);
+                            const blockIdx = rowKey.split('.')[1];
+                            layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${color}">${blockIdx}.${subtype}</text>`;
+                        }
                     }
                     layerHtml += '</svg>';
                     this.$refs.layerLabels.innerHTML = layerHtml;
@@ -749,11 +1046,13 @@
                         if (!node) return;
 
                         const layer = node.getAttribute('data-layer');
+                        const seqIdx = parseInt(node.getAttribute('data-seq'));
                         const cIdx = parseInt(node.getAttribute('data-cidx'));
-                        this.hoveredNode = { layer, cIdx };
+                        this.hoveredNode = { layer, seqIdx, cIdx };
                         this.tooltipPos = this.calcTooltipPos(e.clientX, e.clientY);
                         this.updateHighlights();
-                        if (!this.activationContexts) this.loadActivationContexts();
+                        // Only load activation contexts for non-output nodes
+                        if (layer !== 'output' && !this.activationContexts) this.loadActivationContexts();
                     });
 
                     svg.addEventListener('mouseout', (e) => {
@@ -882,23 +1181,157 @@
                     console.log(`[timing] search found ${result.results.length} results`);
                 },
 
-                buildComponentHtml(layer, cIdx) {
+                buildComponentHtml(layer, seqIdx, cIdx) {
+                    // Count edges for this component at this position
+                    let countEdges = 0;
+                    for (const edge of this.allEdges) {
+                        const [srcLayer, srcSeq, srcCIdx] = edge.srcKey.split(':');
+                        const [tgtLayer, tgtSeq, tgtCIdx] = edge.tgtKey.split(':');
+                        if ((srcLayer === layer && +srcSeq === seqIdx && +srcCIdx === cIdx) ||
+                            (tgtLayer === layer && +tgtSeq === seqIdx && +tgtCIdx === cIdx)) {
+                            countEdges++;
+                        }
+                    }
+
+                    // Special handling for output nodes
+                    if (layer === 'output') {
+                        // Collect all tokens at this sequence position
+                        const tokensAtPos = [];
+                        for (const [probKey, entry] of Object.entries(this.outputProbs)) {
+                            const [s, tokenId] = probKey.split(':');
+                            if (+s === seqIdx) {
+                                tokensAtPos.push({ tokenId: +tokenId, prob: entry.prob, token: entry.token });
+                            }
+                        }
+                        if (tokensAtPos.length === 0) {
+                            throw new Error(`No outputProbs entries found for sequence position ${seqIdx}`);
+                        }
+                        // Sort by probability descending
+                        tokensAtPos.sort((a, b) => b.prob - a.prob);
+
+                        // Find the hovered token's entry
+                        const hoveredEntry = tokensAtPos.find(t => t.tokenId === cIdx);
+                        if (!hoveredEntry) {
+                            throw new Error(`Hovered token ${cIdx} not found in outputProbs for position ${seqIdx}`);
+                        }
+
+                        // Header with large token and probability, gradient background based on prob
+                        const probPercent = (hoveredEntry.prob * 100).toFixed(1);
+                        // Use a green gradient: higher prob = more saturated green
+                        const headerBg = `linear-gradient(90deg, rgba(76, 175, 80, ${Math.min(0.8, hoveredEntry.prob + 0.1)}) 0%, rgba(76, 175, 80, 0.1) 100%)`;
+                        let html = `<div style="background: ${headerBg}; padding: 8px 12px; border-radius: 4px; margin-bottom: 10px;">`;
+                        html += `<div style="font-size: 1.4em; font-weight: bold;">"${this.escapeHtml(hoveredEntry.token)}"</div>`;
+                        html += `<div style="font-size: 1.1em; color: #333;">${probPercent}% probability</div>`;
+                        html += `</div>`;
+
+                        html += `<p class="stats"><strong>Position:</strong> ${seqIdx} | <strong>Vocab ID:</strong> ${cIdx} | <strong>Edges:</strong> ${countEdges}</p>`;
+
+                        // Table of all tokens at this position
+                        html += `<h4>All Tokens at Position ${seqIdx}</h4>`;
+                        html += `<table class="pr-table"><tr><th>Token</th><th>Prob</th></tr>`;
+                        for (const t of tokensAtPos) {
+                            const isHovered = t.tokenId === cIdx;
+                            const rowStyle = isHovered ? 'background: rgba(76, 175, 80, 0.3); font-weight: bold;' : '';
+                            html += `<tr style="${rowStyle}"><td><code>${this.escapeHtml(t.token)}</code></td><td>${(t.prob * 100).toFixed(2)}%</td></tr>`;
+                        }
+                        html += `</table>`;
+                        return html;
+                    }
+
+                    // Regular component handling
                     const actCtx = this.activationContexts?.[layer];
                     const subcomp = actCtx?.find(s => s.subcomponent_idx === cIdx);
 
                     if (!subcomp) {
-                        return `<p style="color: #666;">No activation context data</p>`;
+                        return `<p><strong>${layer} : ${cIdx}</strong></p><p class="stats"><strong>Edges:</strong> ${countEdges}</p><p style="color: #666;">No activation context data</p>`;
                     }
 
-                    const globalImp = this.componentImportance[`${layer}:${cIdx}`] || 0;
-                    let sumAbsAttr = 0, countEdges = 0;
+                    let html = `<p class="stats"><strong>Mean CI:</strong> ${subcomp.mean_ci.toFixed(4)} | <strong>Edges:</strong> ${countEdges}</p>`;
+
+                    if (subcomp.example_tokens?.length > 0) {
+                        html += '<h4>Top Activating Examples</h4>';
+                        for (let i = 0; i < Math.min(5, subcomp.example_tokens.length); i++) {
+                            const tokens = subcomp.example_tokens[i];
+                            const ciVals = subcomp.example_ci[i];
+                            const activePos = subcomp.example_active_pos[i];
+
+                            html += `<div class="example-row">`;
+                            for (let j = 0; j < tokens.length; j++) {
+                                const ci = ciVals[j];
+                                const isActive = j === activePos;
+                                const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
+                                html += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}">${this.escapeHtml(tokens[j])}</span>`;
+                            }
+                            html += `</div>`;
+                        }
+                    }
+
+                    html += '<div class="tables-row">';
+                    if (subcomp.pr_tokens?.length > 0) {
+                        html += '<div><h4>Top Input Tokens</h4><table class="pr-table"><tr><th>Token</th><th>P(fire|tok)</th></tr>';
+                        for (let i = 0; i < Math.min(5, subcomp.pr_tokens.length); i++) {
+                            html += `<tr><td><code>${this.escapeHtml(subcomp.pr_tokens[i])}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
+                        }
+                        html += '</table></div>';
+                    }
+                    if (subcomp.predicted_tokens?.length > 0) {
+                        html += '<div><h4>Top Predicted</h4><table class="pr-table"><tr><th>Token</th><th>P</th></tr>';
+                        for (let i = 0; i < Math.min(5, subcomp.predicted_tokens.length); i++) {
+                            html += `<tr><td><code>${this.escapeHtml(subcomp.predicted_tokens[i])}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
+                        }
+                        html += '</table></div>';
+                    }
+                    html += '</div>';
+
+                    return html;
+                },
+
+                // Seq-agnostic version for pinned components
+                buildComponentHtmlNoSeq(layer, cIdx) {
+                    // Count total edges across all seq positions for this component
+                    let countEdges = 0;
                     for (const edge of this.allEdges) {
                         const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
                         const [tgtLayer, , tgtCIdx] = edge.tgtKey.split(':');
-                        if ((srcLayer === layer && +srcCIdx === cIdx) || (tgtLayer === layer && +tgtCIdx === cIdx)) {
-                            sumAbsAttr += Math.abs(edge.val);
+                        if ((srcLayer === layer && +srcCIdx === cIdx) ||
+                            (tgtLayer === layer && +tgtCIdx === cIdx)) {
                             countEdges++;
                         }
+                    }
+
+                    // Special handling for output nodes
+                    if (layer === 'output') {
+                        // Find all positions where this token appears
+                        const positions = [];
+                        for (const [probKey, entry] of Object.entries(this.outputProbs)) {
+                            const [seqIdx, tokenId] = probKey.split(':');
+                            if (+tokenId === cIdx) {
+                                positions.push({ seqIdx: +seqIdx, prob: entry.prob, token: entry.token });
+                            }
+                        }
+                        if (positions.length === 0) {
+                            throw new Error(`No outputProbs entry found for output component ${cIdx}`);
+                        }
+                        positions.sort((a, b) => b.prob - a.prob);
+                        const entry = positions[0];
+
+                        let html = `<p><strong style="font-size: 1.2em;">"${this.escapeHtml(entry.token)}"</strong></p>`;
+                        html += `<p class="stats"><strong>Vocab ID:</strong> ${cIdx} | <strong>Edges:</strong> ${countEdges}</p>`;
+                        html += `<h4>Probability by Position</h4>`;
+                        html += `<table class="pr-table"><tr><th>Pos</th><th>Prob</th></tr>`;
+                        for (const pos of positions) {
+                            html += `<tr><td>${pos.seqIdx}</td><td>${(pos.prob * 100).toFixed(2)}%</td></tr>`;
+                        }
+                        html += `</table>`;
+                        return html;
+                    }
+
+                    // Regular component handling (same as buildComponentHtml but without seq-specific edge counting)
+                    const actCtx = this.activationContexts?.[layer];
+                    const subcomp = actCtx?.find(s => s.subcomponent_idx === cIdx);
+
+                    if (!subcomp) {
+                        return `<p><strong>${layer} : ${cIdx}</strong></p><p class="stats"><strong>Edges:</strong> ${countEdges}</p><p style="color: #666;">No activation context data</p>`;
                     }
 
                     let html = `<p class="stats"><strong>Mean CI:</strong> ${subcomp.mean_ci.toFixed(4)} | <strong>Edges:</strong> ${countEdges}</p>`;
