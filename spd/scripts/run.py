@@ -335,27 +335,23 @@ def _wandb_setup(
 
     match create_report, report_title:
         case True, None:
-            create_view_and_report(
-                project=project,
-                run_id=run_id,
-                experiments=experiments_list,
-                report_cfg=None,
+            report_cfg = ReportCfg(
+                report_title=report_title,
+                branch=snapshot_branch,
+                commit_hash=commit_hash,
             )
         case True, title:
-            create_view_and_report(
-                project=project,
-                run_id=run_id,
-                experiments=experiments_list,
-                report_cfg=ReportCfg(
-                    report_title=title,
-                    branch=snapshot_branch,
-                    commit_hash=commit_hash,
-                ),
+            report_cfg = ReportCfg(
+                report_title=title,
+                branch=snapshot_branch,
+                commit_hash=commit_hash,
             )
-        case False, None:
-            pass  # No report requested, nothing to do
-        case False, title:
-            raise ValueError(
-                f"got report_title='{title}' but create_report=False. "
-                "did you intend to create a report? if so, set create_report=True"
-            )
+        case False, _:
+            report_cfg = None
+
+    create_view_and_report(
+        project=project,
+        run_id=run_id,
+        experiments=experiments_list,
+        report_cfg=report_cfg,
+    )
