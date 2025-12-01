@@ -251,10 +251,18 @@ def generate_database(config: GenerateConfig) -> None:
     db.set_meta("wandb_path", {"path": config.wandb_path})
     db.set_meta("n_blocks", {"n_blocks": config.n_blocks})
 
+    # Load model once in main process to ensure cache is populated before workers spawn
+    # This prevents race conditions when multiple workers try to download simultaneously
+    print("\nLoading model (ensures cache is populated for workers)...")
+    run_info = SPDRunInfo.from_path(config.wandb_path)
+    from spd.models.component_model import ComponentModel
+
+    model = ComponentModel.from_run_info(run_info)
+
     # Compute activation contexts if not present
     existing_act_ctx = db.get_activation_contexts()
     if existing_act_ctx is not None:
-        print(f"\nActivation contexts already in DB ({len(existing_act_ctx)} layers), skipping...")
+        print(f"Activation contexts already in DB ({len(existing_act_ctx)} layers), skipping...")
     else:
         print("\nComputing activation contexts (this only happens once)...")
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
