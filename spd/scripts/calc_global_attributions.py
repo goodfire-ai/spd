@@ -51,6 +51,8 @@ def compute_mean_ci_per_component(
 ) -> dict[str, Tensor]:
     """Compute mean causal importance per component over the dataset.
 
+    Also computes mean output probability per vocab token.
+
     Args:
         model: The ComponentModel to analyze.
         data_loader: DataLoader providing batches.
@@ -60,12 +62,17 @@ def compute_mean_ci_per_component(
 
     Returns:
         Dictionary mapping module path -> tensor of shape [C] with mean CI per component.
+        Also includes "output" -> tensor of shape [vocab_size] with mean output probability.
     """
     # Initialize accumulators
     ci_sums: dict[str, Tensor] = {
         module_name: torch.zeros(model.C, device=device) for module_name in model.components
     }
     examples_seen: dict[str, int] = {module_name: 0 for module_name in model.components}
+
+    # Output prob accumulators (initialized on first batch to get vocab_size)
+    output_prob_sum: Tensor | None = None
+    output_examples_seen = 0
 
     if max_batches is not None:
         batch_pbar = tqdm(enumerate(data_loader), desc="Computing mean CI", total=max_batches)
@@ -94,11 +101,21 @@ def compute_mean_ci_per_component(
             leading_dim_idxs = tuple(range(n_leading_dims))
             ci_sums[module_name] += ci_vals.sum(dim=leading_dim_idxs)
 
+        # Accumulate output probabilities
+        output_probs = torch.softmax(output_with_cache.output, dim=-1)  # [b, s, vocab]
+        if output_prob_sum is None:
+            vocab_size = output_probs.shape[-1]
+            output_prob_sum = torch.zeros(vocab_size, device=device)
+        output_prob_sum += output_probs.sum(dim=(0, 1))
+        output_examples_seen += output_probs.shape[0] * output_probs.shape[1]
+
     # Compute means
-    mean_cis = {
+    mean_cis: dict[str, Tensor] = {
         module_name: ci_sums[module_name] / examples_seen[module_name]
         for module_name in model.components
     }
+    assert output_prob_sum is not None, "No batches processed"
+    mean_cis["output"] = output_prob_sum / output_examples_seen
 
     return mean_cis
 
@@ -110,6 +127,7 @@ def compute_alive_components(
     config: Config,
     max_batches: int | None,
     threshold: float,
+    output_mean_prob_threshold: float,
 ) -> tuple[dict[str, Tensor], dict[str, list[int]], tuple[Image.Image, Image.Image]]:
     """Compute alive components based on mean CI threshold.
 
@@ -120,18 +138,25 @@ def compute_alive_components(
         config: SPD config with sampling settings.
         max_batches: Maximum number of batches to process.
         threshold: Minimum mean CI to consider a component alive.
+        output_mean_prob_threshold: Minimum mean output probability to consider a token alive.
 
     Returns:
         Tuple of:
         - mean_cis: Dictionary mapping module path -> tensor of mean CI per component
+          (includes "output" key with mean output probabilities)
         - alive_indices: Dictionary mapping module path -> list of alive component indices
+          (includes "output" key)
         - images: Tuple of (linear_scale_image, log_scale_image) for verification
     """
     mean_cis = compute_mean_ci_per_component(model, data_loader, device, config, max_batches)
+
     alive_indices = {}
-    for module_name, mean_ci in mean_cis.items():
-        alive_mask = mean_ci >= threshold
+    for module_name, mean_val in mean_cis.items():
+        # Use output_mean_prob_threshold for output layer, threshold for components
+        thresh = output_mean_prob_threshold if module_name == "output" else threshold
+        alive_mask = mean_val >= thresh
         alive_indices[module_name] = torch.where(alive_mask)[0].tolist()
+
     images = plot_mean_component_cis_both_scales(mean_cis)
 
     return mean_cis, alive_indices, images
@@ -241,6 +266,7 @@ def compute_global_attributions(
     max_batches: int,
     alive_indices: dict[str, list[int]],
     ci_attribution_threshold: float,
+    output_mean_prob_threshold: float,
 ) -> dict[tuple[str, str], Tensor]:
     """Compute global attributions accumulated over the dataset.
 
@@ -260,6 +286,7 @@ def compute_global_attributions(
         max_batches: Maximum number of batches to process.
         alive_indices: Dictionary mapping module path -> list of alive component indices.
         ci_attribution_threshold: Threshold for considering a component for the attribution calculation.
+        output_mean_prob_threshold: Threshold for considering an output logit alive (on softmax probs).
 
     Returns:
         Dictionary mapping (in_layer, out_layer) -> attribution tensor of shape [n_alive_in, n_alive_out]
@@ -333,6 +360,17 @@ def compute_global_attributions(
         # Add fake CI for wte: shape (b, s, embedding_dim) with 1.0 at index 0
         ci.lower_leaky["wte"] = torch.zeros_like(wte_cache["wte_post_detach"])
         ci.lower_leaky["wte"][:, :, 0] = 1.0
+
+        # Add output to cache and CI
+        cache["output_pre_detach"] = comp_output_with_cache.output
+        # Use output probs as fake CI for output layer
+        output_probs: Float[Tensor, "b s vocab"] = torch.softmax(
+            comp_output_with_cache.output, dim=-1
+        )
+        # Only consider tokens above threshold as "alive" for this batch
+        ci.lower_leaky["output"] = torch.where(
+            output_probs >= output_mean_prob_threshold, output_probs, torch.zeros_like(output_probs)
+        )
 
         # Compute attributions grouped by target layer
         for out_layer, in_layers in tqdm(
@@ -462,7 +500,8 @@ if __name__ == "__main__":
     # wandb_path = "wandb:goodfire/spd/runs/8ynfbr38"  # ss_gpt2_simple-1L (Old)
     wandb_path = "wandb:goodfire/spd/runs/33n6xjjt"  # ss_gpt2_simple-1L (New)
     n_blocks = 1
-    batch_size = 1024
+    # batch_size = 1024
+    batch_size = 128
     n_ctx = 64
     # n_attribution_batches = 20
     n_attribution_batches = 5
@@ -470,6 +509,7 @@ if __name__ == "__main__":
     # n_alive_calc_batches = 200
     ci_mean_alive_threshold = 1e-6
     ci_attribution_threshold = 1e-6
+    output_mean_prob_threshold = 1e-8
     dataset_seed = 0
 
     out_dir = get_out_dir()
@@ -495,8 +535,8 @@ if __name__ == "__main__":
     for out_layer, in_layers in sources_by_target.items():
         print(f"  {out_layer} <- {in_layers}")
     # %%
-    # Compute alive components based on mean CI threshold
-    print("\nComputing alive components based on mean CI...")
+    # Compute alive components based on mean CI threshold (and output probability threshold)
+    print("\nComputing alive components...")
     mean_cis, alive_indices, (img_linear, img_log) = compute_alive_components(
         model=model,
         data_loader=data_loader,
@@ -504,13 +544,14 @@ if __name__ == "__main__":
         config=config,
         max_batches=n_alive_calc_batches,
         threshold=ci_mean_alive_threshold,
+        output_mean_prob_threshold=output_mean_prob_threshold,
     )
 
     # Print summary
     print("\nAlive components per layer:")
     for module_name, indices in alive_indices.items():
         n_alive = len(indices)
-        print(f"  {module_name}: {n_alive}/{model.C} alive")
+        print(f"  {module_name}: {n_alive} alive")
 
     # Save images for verification
     img_linear.save(out_dir / f"ci_mean_per_component_linear_{wandb_id}.png")
@@ -530,6 +571,7 @@ if __name__ == "__main__":
         max_batches=n_attribution_batches,
         alive_indices=alive_indices,
         ci_attribution_threshold=ci_attribution_threshold,
+        output_mean_prob_threshold=output_mean_prob_threshold,
     )
 
     # Print summary statistics

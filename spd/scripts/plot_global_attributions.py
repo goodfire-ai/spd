@@ -1,170 +1,219 @@
-# %%
 """Plot attribution graph from saved global attributions."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import torch
+from torch import Tensor
 
-# Configuration
-# wandb_id = "c0k3z78g" # ss_gpt2_simple-2L
-# n_blocks = 2
-wandb_id = "8ynfbr38"  # ss_gpt2_simple-1L
-n_blocks = 1
-edge_threshold = 1e-2
+from spd.scripts.model_loading import get_out_dir
 
-# Load saved data
-out_dir = Path(__file__).parent / "out"
-global_attributions = torch.load(out_dir / f"global_attributions_{wandb_id}.pt")
+if TYPE_CHECKING:
+    Graph = nx.DiGraph[Any]
+else:
+    Graph = nx.DiGraph
 
-# Reconstruct alive_indices from attribution tensor shapes
-alive_indices: dict[str, list[int]] = {}
-for (in_layer, out_layer), attr in global_attributions.items():
-    n_alive_in, n_alive_out = attr.shape
-    if in_layer not in alive_indices:
-        alive_indices[in_layer] = list(range(n_alive_in))
-    if out_layer not in alive_indices:
-        alive_indices[out_layer] = list(range(n_alive_out))
 
-print(f"Loaded attributions for {len(global_attributions)} layer pairs")
-print(f"Total alive components: {sum(len(v) for v in alive_indices.values())}")
+@dataclass
+class LayerInfo:
+    """All display information for a layer type."""
 
-# Count edges before and after thresholding
-total_edges = sum(attr.numel() for attr in global_attributions.values())
-print(f"Total edges: {total_edges:,}")
-thresholds = [1, 0.6, 0.2, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-12, 1e-15]
-for threshold in thresholds:
-    total_edges_threshold = sum(
-        (attr > threshold).sum().item() for attr in global_attributions.values()
+    name: str
+    color: str
+    y_offset: float
+    x_offset: float = 0.0
+    legend_name: str | None = None  # If different from name
+
+    @property
+    def display_name(self) -> str:
+        return self.legend_name if self.legend_name is not None else self.name
+
+
+# fmt: off
+LAYER_INFOS: dict[str, LayerInfo] = {
+    "wte":            LayerInfo("wte",            color="#34495E", y_offset=-3.0),
+    "attn.q_proj":    LayerInfo("attn.q_proj",    color="#1f77b4", y_offset=-1.0, x_offset=-20.0, legend_name="q_proj"),
+    "attn.k_proj":    LayerInfo("attn.k_proj",    color="#2ca02c", y_offset=-1.0, x_offset=0.0,   legend_name="k_proj"),
+    "attn.v_proj":    LayerInfo("attn.v_proj",    color="#9467bd", y_offset=-1.0, x_offset=20.0,  legend_name="v_proj"),
+    "attn.o_proj":    LayerInfo("attn.o_proj",    color="#d62728", y_offset=0.0,  legend_name="o_proj"),
+    "mlp.c_fc":       LayerInfo("mlp.c_fc",       color="#ff7f0e", y_offset=1.0,  legend_name="c_fc"),
+    "mlp.down_proj":  LayerInfo("mlp.down_proj",  color="#8c564b", y_offset=2.0,  legend_name="down_proj"),
+    "output":         LayerInfo("output",         color="#17A589", y_offset=4.0),
+}
+# fmt: on
+
+
+def load_attributions(
+    out_dir: Path, wandb_id: str
+) -> tuple[dict[tuple[str, str], Tensor], dict[str, list[int]]]:
+    """Load global attributions and reconstruct alive_indices from tensor shapes."""
+    global_attributions: dict[tuple[str, str], Tensor] = torch.load(
+        out_dir / f"global_attributions_{wandb_id}.pt"
     )
-    print(f"Edges > {threshold}: {total_edges_threshold:,}")
 
-# %%
-# Plot the attribution graph
-print("\nPlotting attribution graph...")
+    alive_indices: dict[str, list[int]] = {}
+    for (in_layer, out_layer), attr in global_attributions.items():
+        n_alive_in, n_alive_out = attr.shape
+        if in_layer not in alive_indices:
+            alive_indices[in_layer] = list(range(n_alive_in))
+        if out_layer not in alive_indices:
+            alive_indices[out_layer] = list(range(n_alive_out))
 
-# Define layer order within a block (network order)
-layer_names_in_block = [
-    "attn.q_proj",
-    "attn.k_proj",
-    "attn.v_proj",
-    "attn.o_proj",
-    "mlp.c_fc",
-    "mlp.down_proj",
-]
+    return global_attributions, alive_indices
 
-# Build full layer list in network order
-all_layers = []
-for block_idx in range(n_blocks):
-    for layer_name in layer_names_in_block:
-        all_layers.append(f"h.{block_idx}.{layer_name}")
 
-# Create graph
-G = nx.DiGraph()
+def print_edge_statistics(global_attributions: dict[tuple[str, str], Tensor]) -> None:
+    """Print statistics about edges at various thresholds."""
+    total_edges = sum(attr.numel() for attr in global_attributions.values())
+    print(f"Total edges: {total_edges:,}")
 
-# Add nodes for each (layer, component) pair
-node_positions = {}
-block_spacing = 6.0  # Vertical spacing between blocks
+    thresholds = [1, 0.6, 0.2, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-12, 1e-15]
+    for threshold in thresholds:
+        edges_above = sum((attr > threshold).sum().item() for attr in global_attributions.values())
+        print(f"Edges > {threshold}: {edges_above:,}")
 
-# Layer y-offsets within a block: down_proj at top, q/k/v at same level at bottom
-# q_proj, k_proj, v_proj are placed side by side since they never connect to each other
-layer_y_offsets = {
-    "mlp.down_proj": 2.0,
-    "mlp.c_fc": 1.0,
-    "attn.o_proj": 0.0,
-    "attn.v_proj": -1.0,  # Same y-level for q/k/v
-    "attn.k_proj": -1.0,
-    "attn.q_proj": -1.0,
-}
 
-# X-offsets for q/k/v to place them side by side with much more spacing
-layer_x_offsets = {
-    "mlp.down_proj": 0.0,
-    "mlp.c_fc": 0.0,
-    "attn.o_proj": 0.0,
-    "attn.q_proj": -20.0,  # Left (much more spacing)
-    "attn.k_proj": 0.0,  # Center
-    "attn.v_proj": 20.0,  # Right (much more spacing)
-}
+def build_layer_list(n_blocks: int) -> list[str]:
+    """Build full layer list in network order (wte -> blocks -> output)."""
+    all_layers = ["wte"]
+    for block_idx in range(n_blocks):
+        for layer_name in [k for k in LAYER_INFOS if k not in ["wte", "output"]]:
+            all_layers.append(f"h.{block_idx}.{layer_name}")
+    all_layers.append("output")
+    return all_layers
 
-for layer in all_layers:
-    parts = layer.split(".")
-    block_idx = int(parts[1])
-    layer_name = ".".join(parts[2:])
 
-    n_alive = len(alive_indices.get(layer, []))
-    if n_alive == 0:
-        continue
+def find_nodes_with_edges(
+    global_attributions: dict[tuple[str, str], Tensor],
+    alive_indices: dict[str, list[int]],
+    edge_threshold: float,
+) -> set[str]:
+    """Find all nodes that participate in edges above threshold."""
+    nodes_with_edges: set[str] = set()
+    for (in_layer, out_layer), attr_tensor in global_attributions.items():
+        in_alive = alive_indices.get(in_layer, [])
+        out_alive = alive_indices.get(out_layer, [])
+        for i, in_comp in enumerate(in_alive):
+            for j, out_comp in enumerate(out_alive):
+                if attr_tensor[i, j].item() > edge_threshold:
+                    nodes_with_edges.add(f"{in_layer}:{in_comp}")
+                    nodes_with_edges.add(f"{out_layer}:{out_comp}")
+    return nodes_with_edges
 
-    # Block 1 on top (higher y), Block 0 on bottom (lower y)
-    y_base = block_idx * block_spacing + layer_y_offsets[layer_name]
-    # X-axis base depends on layer type (q/k/v are offset)
-    x_base = layer_x_offsets[layer_name]
 
-    for comp_idx, local_idx in enumerate(alive_indices.get(layer, [])):
-        node_id = f"{layer}:{local_idx}"
-        G.add_node(node_id, layer=layer, component=local_idx)
-        # Increase spacing between nodes from 0.15 to 0.25 for less overlap
-        x = x_base + (comp_idx - n_alive / 2) * 0.25
-        y = y_base
-        node_positions[node_id] = (x, y)
+def parse_layer_name(layer: str, n_blocks: int) -> tuple[int, str]:
+    """Parse layer name to get block_idx and base layer_name."""
+    if layer == "wte":
+        return 0, "wte"
+    elif layer == "output":
+        return n_blocks - 1, "output"
+    else:
+        parts = layer.split(".")
+        return int(parts[1]), ".".join(parts[2:])
 
-# Add edges based on attributions
-edge_weights = []
-for (in_layer, out_layer), attr_tensor in global_attributions.items():
-    in_alive = alive_indices.get(in_layer, [])
-    out_alive = alive_indices.get(out_layer, [])
 
-    for i, in_comp in enumerate(in_alive):
-        for j, out_comp in enumerate(out_alive):
-            weight = attr_tensor[i, j].item()
-            if weight > edge_threshold:
-                in_node = f"{in_layer}:{in_comp}"
-                out_node = f"{out_layer}:{out_comp}"
-                if in_node in G.nodes and out_node in G.nodes:
-                    G.add_edge(in_node, out_node, weight=weight)
-                    edge_weights.append(weight)
+def build_graph(
+    all_layers: list[str],
+    global_attributions: dict[tuple[str, str], Tensor],
+    alive_indices: dict[str, list[int]],
+    nodes_with_edges: set[str],
+    n_blocks: int,
+    edge_threshold: float,
+    block_spacing: float = 6.0,
+) -> tuple[Graph, dict[str, tuple[float, float]], list[float]]:
+    """Build the attribution graph with node positions and edge weights."""
+    G: Graph = nx.DiGraph()
+    node_positions: dict[str, tuple[float, float]] = {}
 
-print(f"Graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
+    # Add nodes
+    for layer in all_layers:
+        block_idx, layer_name = parse_layer_name(layer, n_blocks)
+        info = LAYER_INFOS[layer_name]
 
-# Create figure (extra wide to accommodate q/k/v side by side with large spacing)
-fig, ax = plt.subplots(1, 1, figsize=(32, 12))
+        y_base = block_idx * block_spacing + info.y_offset
+        x_base = info.x_offset
 
-# Draw nodes grouped by layer
-layer_colors = {
-    "attn.q_proj": "#1f77b4",
-    "attn.k_proj": "#2ca02c",
-    "attn.v_proj": "#9467bd",
-    "attn.o_proj": "#d62728",
-    "mlp.c_fc": "#ff7f0e",
-    "mlp.down_proj": "#8c564b",
-}
+        layer_alive = alive_indices.get(layer, [])
+        layer_nodes_with_edges = [
+            (idx, comp)
+            for idx, comp in enumerate(layer_alive)
+            if f"{layer}:{comp}" in nodes_with_edges
+        ]
+        n_layer_nodes = len(layer_nodes_with_edges)
 
-for layer in all_layers:
-    parts = layer.split(".")
-    layer_name = ".".join(parts[2:])
-    color = layer_colors.get(layer_name, "#333333")
+        for pos_idx, (_, local_idx) in enumerate(layer_nodes_with_edges):
+            node_id = f"{layer}:{local_idx}"
+            G.add_node(node_id, layer=layer, component=local_idx)
+            x = x_base + (pos_idx - n_layer_nodes / 2) * 0.25
+            node_positions[node_id] = (x, y_base)
 
-    layer_nodes = [n for n in G.nodes if G.nodes[n].get("layer") == layer]
-    if layer_nodes:
-        pos_subset = {n: node_positions[n] for n in layer_nodes}
-        nx.draw_networkx_nodes(
-            G,
-            pos_subset,
-            nodelist=layer_nodes,
-            node_color=color,
-            node_size=100,
-            alpha=0.8,
-            ax=ax,
-        )
+    # Add edges
+    edge_weights: list[float] = []
+    for (in_layer, out_layer), attr_tensor in global_attributions.items():
+        in_alive = alive_indices.get(in_layer, [])
+        out_alive = alive_indices.get(out_layer, [])
 
-# Draw edges batched by weight bucket for performance
-if edge_weights:
+        for i, in_comp in enumerate(in_alive):
+            for j, out_comp in enumerate(out_alive):
+                weight = attr_tensor[i, j].item()
+                if weight > edge_threshold:
+                    in_node = f"{in_layer}:{in_comp}"
+                    out_node = f"{out_layer}:{out_comp}"
+                    if in_node in G.nodes and out_node in G.nodes:
+                        G.add_edge(in_node, out_node, weight=weight)
+                        edge_weights.append(weight)
+
+    return G, node_positions, edge_weights
+
+
+def draw_nodes(
+    ax: plt.Axes,
+    G: Graph,
+    node_positions: dict[str, tuple[float, float]],
+    all_layers: list[str],
+) -> None:
+    """Draw nodes grouped by layer."""
+    for layer in all_layers:
+        if layer in ("wte", "output"):
+            layer_name = layer
+        else:
+            parts = layer.split(".")
+            layer_name = ".".join(parts[2:])
+        color = LAYER_INFOS[layer_name].color
+
+        layer_nodes = [n for n in G.nodes if G.nodes[n].get("layer") == layer]
+        if layer_nodes:
+            pos_subset = {n: node_positions[n] for n in layer_nodes}
+            nx.draw_networkx_nodes(
+                G,
+                pos_subset,
+                nodelist=layer_nodes,
+                node_color=color,
+                node_size=100,
+                alpha=0.8,
+                ax=ax,
+            )
+
+
+def draw_edges(
+    ax: plt.Axes,
+    G: Graph,
+    node_positions: dict[str, tuple[float, float]],
+    edge_weights: list[float],
+    n_buckets: int = 10,
+) -> None:
+    """Draw edges batched by weight bucket for performance."""
+    if not edge_weights:
+        return
+
     max_weight = max(edge_weights)
     min_weight = min(edge_weights)
 
-    n_buckets = 10
     edge_buckets: list[list[tuple[str, str]]] = [[] for _ in range(n_buckets)]
 
     for u, v, data in G.edges(data=True):
@@ -196,31 +245,80 @@ if edge_weights:
             ax=ax,
         )
 
-# Add legend
-legend_elements = [
-    plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=color, markersize=10, label=name)
-    for name, color in [
-        ("q_proj", "#1f77b4"),
-        ("k_proj", "#2ca02c"),
-        ("v_proj", "#9467bd"),
-        ("o_proj", "#d62728"),
-        ("c_fc", "#ff7f0e"),
-        ("down_proj", "#8c564b"),
+
+def add_legend(ax: plt.Axes) -> None:
+    """Add legend for layer types."""
+    legend_elements = [
+        plt.Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor=info.color,
+            markersize=10,
+            label=info.display_name,
+        )
+        for info in LAYER_INFOS.values()
     ]
-]
-ax.legend(handles=legend_elements, loc="upper right", fontsize=8)
+    ax.legend(handles=legend_elements, loc="upper right", fontsize=8)
 
-ax.set_title("Global Attribution Graph", fontsize=14, fontweight="bold")
-ax.axis("off")
-plt.tight_layout()
 
-# Save
-# Make an edge threshold string in scientific notation which doesn't include decimal places
-edge_threshold_str = f"{edge_threshold:.1e}".replace(".0", "")
-output_path = out_dir / f"attribution_graph_{wandb_id}_edge_threshold_{edge_threshold_str}.png"
-fig.savefig(output_path, dpi=150, bbox_inches="tight")
-print(f"Saved to {output_path}")
+def plot_attribution_graph(
+    global_attributions: dict[tuple[str, str], Tensor],
+    alive_indices: dict[str, list[int]],
+    n_blocks: int,
+    edge_threshold: float,
+    output_path: Path,
+) -> None:
+    """Create and save the attribution graph visualization."""
+    print("\nPlotting attribution graph...")
 
-plt.close(fig)
+    all_layers = build_layer_list(n_blocks)
+    nodes_with_edges = find_nodes_with_edges(global_attributions, alive_indices, edge_threshold)
+    G, node_positions, edge_weights = build_graph(
+        all_layers, global_attributions, alive_indices, nodes_with_edges, n_blocks, edge_threshold
+    )
 
-# %%
+    print(f"Graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
+
+    fig, ax = plt.subplots(1, 1, figsize=(32, 12))
+
+    draw_nodes(ax, G, node_positions, all_layers)
+    draw_edges(ax, G, node_positions, edge_weights)
+    add_legend(ax)
+
+    ax.set_title("Global Attribution Graph", fontsize=14, fontweight="bold")
+    ax.axis("off")
+    plt.tight_layout()
+
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    print(f"Saved to {output_path}")
+    plt.close(fig)
+
+
+if __name__ == "__main__":
+    # Configuration
+    # wandb_id = "jyo9duz5"  # ss_gpt2_simple-1.25M (4L)
+    # wandb_id = "c0k3z78g"  # ss_gpt2_simple-2L
+    wandb_id = "33n6xjjt"  # ss_gpt2_simple-1L (New)
+    n_blocks = 1
+    edge_threshold = 1e-1
+
+    out_dir = get_out_dir()
+
+    global_attributions, alive_indices = load_attributions(out_dir, wandb_id)
+    print(f"Loaded attributions for {len(global_attributions)} layer pairs")
+    print(f"Total alive components: {sum(len(v) for v in alive_indices.values())}")
+
+    print_edge_statistics(global_attributions)
+
+    edge_threshold_str = f"{edge_threshold:.1e}".replace(".0", "")
+    output_path = out_dir / f"attribution_graph_{wandb_id}_edge_threshold_{edge_threshold_str}.png"
+
+    plot_attribution_graph(
+        global_attributions,
+        alive_indices,
+        n_blocks,
+        edge_threshold,
+        output_path,
+    )
