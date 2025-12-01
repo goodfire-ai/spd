@@ -103,6 +103,13 @@ def compute_local_attributions(
             detach_inputs=False,
         )
 
+    # Log the l0 (lower_leaky values > ci_threshold) for each layer
+    print("L0 values for final seq position:")
+    for layer, ci_vals in ci.lower_leaky.items():
+        # We only care about the final position
+        l0_vals = (ci_vals[0, -1] > ci_threshold).sum().item()
+        print(f"  Layer {layer} has {l0_vals} components alive at {ci_threshold}")
+
     # Create masks so we can use all components (without masks)
     mask_infos = make_mask_infos(
         component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
