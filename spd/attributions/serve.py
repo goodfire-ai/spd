@@ -25,8 +25,8 @@ from typing import Any
 from spd.attributions.db import LocalAttrDB
 
 
-def make_handler(db: LocalAttrDB, static_dir: Path) -> type[BaseHTTPRequestHandler]:
-    """Create a handler class with db and static_dir bound via closure."""
+def make_handler(db: LocalAttrDB) -> type[BaseHTTPRequestHandler]:
+    """Create a handler class with db bound via closure."""
 
     class LocalAttrHandler(BaseHTTPRequestHandler):
         """HTTP request handler for local attribution queries."""
@@ -52,20 +52,21 @@ def make_handler(db: LocalAttrDB, static_dir: Path) -> type[BaseHTTPRequestHandl
             # Normalize path and prevent directory traversal
             clean_path = path.lstrip("/")
             if clean_path == "":
-                clean_path = "index.html"
+                clean_path = "local_attributions.html"
 
-            file_path = static_dir / clean_path
+            file_path = THIS_FILE.parent / clean_path
 
-            # Security: ensure path is within static_dir
-            try:
-                file_path = file_path.resolve()
-                static_dir.resolve()
-                if not str(file_path).startswith(str(static_dir.resolve())):
-                    self.send_error(403, "Forbidden")
-                    return
-            except Exception:
-                self.send_error(400, "Bad path")
-                return
+            # unneeded - running locally only
+            # # Security: ensure path is within static_dir
+            # try:
+            #     file_path = file_path.resolve()
+            #     static_dir.resolve()
+            #     if not str(file_path).startswith(str(static_dir.resolve())):
+            #         self.send_error(403, "Forbidden")
+            #         return
+            # except Exception:
+            #     self.send_error(400, "Bad path")
+            #     return
 
             if not file_path.exists() or not file_path.is_file():
                 self.send_error(404, "Not found")
@@ -125,11 +126,15 @@ def make_handler(db: LocalAttrDB, static_dir: Path) -> type[BaseHTTPRequestHandl
             """Return database metadata."""
             wandb_info = db.get_meta("wandb_path")
             n_blocks_info = db.get_meta("n_blocks")
-            self.send_json({
-                "wandb_path": wandb_info.get("path") if isinstance(wandb_info, dict) else None,
-                "n_blocks": n_blocks_info.get("n_blocks") if isinstance(n_blocks_info, dict) else None,
-                "prompt_count": db.get_prompt_count(),
-            })
+            self.send_json(
+                {
+                    "wandb_path": wandb_info.get("path") if isinstance(wandb_info, dict) else None,
+                    "n_blocks": n_blocks_info.get("n_blocks")
+                    if isinstance(n_blocks_info, dict)
+                    else None,
+                    "prompt_count": db.get_prompt_count(),
+                }
+            )
 
         def handle_activation_contexts(self) -> None:
             """Return activation contexts."""
@@ -142,14 +147,16 @@ def make_handler(db: LocalAttrDB, static_dir: Path) -> type[BaseHTTPRequestHandl
         def handle_prompts(self) -> None:
             """Return list of all prompts (summaries)."""
             summaries = db.get_all_prompt_summaries()
-            self.send_json([
-                {
-                    "id": s.id,
-                    "tokens": s.tokens,
-                    "preview": "".join(s.tokens[:10]) + ("..." if len(s.tokens) > 10 else ""),
-                }
-                for s in summaries
-            ])
+            self.send_json(
+                [
+                    {
+                        "id": s.id,
+                        "tokens": s.tokens,
+                        "preview": "".join(s.tokens[:10]) + ("..." if len(s.tokens) > 10 else ""),
+                    }
+                    for s in summaries
+                ]
+            )
 
         def handle_prompt(self, prompt_id: int) -> None:
             """Return full data for a single prompt."""
@@ -161,11 +168,13 @@ def make_handler(db: LocalAttrDB, static_dir: Path) -> type[BaseHTTPRequestHandl
             # Parse the pairs JSON
             pairs = json.loads(prompt.pairs_json)
 
-            self.send_json({
-                "id": prompt.id,
-                "tokens": prompt.tokens,
-                "pairs": pairs,
-            })
+            self.send_json(
+                {
+                    "id": prompt.id,
+                    "tokens": prompt.tokens,
+                    "pairs": pairs,
+                }
+            )
 
         def handle_search(self, components: list[str], mode: str) -> None:
             """Search for prompts with specified components."""
@@ -182,17 +191,22 @@ def make_handler(db: LocalAttrDB, static_dir: Path) -> type[BaseHTTPRequestHandl
             for pid in prompt_ids:
                 if pid in all_summaries:
                     s = all_summaries[pid]
-                    results.append({
-                        "id": s.id,
-                        "tokens": s.tokens,
-                        "preview": "".join(s.tokens[:10]) + ("..." if len(s.tokens) > 10 else ""),
-                    })
+                    results.append(
+                        {
+                            "id": s.id,
+                            "tokens": s.tokens,
+                            "preview": "".join(s.tokens[:10])
+                            + ("..." if len(s.tokens) > 10 else ""),
+                        }
+                    )
 
-            self.send_json({
-                "query": {"components": components, "mode": mode},
-                "count": len(results),
-                "results": results,
-            })
+            self.send_json(
+                {
+                    "query": {"components": components, "mode": mode},
+                    "count": len(results),
+                    "results": results,
+                }
+            )
 
         def handle_components(self) -> None:
             """Return all unique component keys."""
@@ -202,7 +216,7 @@ def make_handler(db: LocalAttrDB, static_dir: Path) -> type[BaseHTTPRequestHandl
     return LocalAttrHandler
 
 
-def run_server(db_path: Path, port: int, static_dir: Path) -> None:
+def run_server(db_path: Path, port: int) -> None:
     """Run the HTTP server."""
     db = LocalAttrDB(db_path)
 
@@ -214,10 +228,11 @@ def run_server(db_path: Path, port: int, static_dir: Path) -> None:
         print(f"Error loading database: {e}")
         return
 
-    handler_class = make_handler(db, static_dir)
+    handler_class = make_handler(db)
     server = HTTPServer(("localhost", port), handler_class)
-    print(f"Server running at http://localhost:{port}")
-    print(f"Serving static files from {static_dir}")
+    print(f"Server running at http://localhost:{port}/")
+    print(f"  Original:  http://localhost:{port}/local_attributions.html")
+    print(f"  Alpine.js: http://localhost:{port}/local_attributions_alpine.html")
     print("Press Ctrl+C to stop")
 
     try:
@@ -229,23 +244,25 @@ def run_server(db_path: Path, port: int, static_dir: Path) -> None:
         server.server_close()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Serve local attribution database")
-    parser.add_argument("--db_path", type=Path, required=True, help="Path to SQLite database")
-    parser.add_argument("--port", type=int, default=8765, help="Port to serve on")
-    parser.add_argument(
-        "--static_dir",
-        type=Path,
-        default=Path(__file__).parent.parent / "scripts",
-        help="Directory for static files (default: spd/scripts)",
-    )
+THIS_FILE = Path(__file__)
 
-    args = parser.parse_args()
 
-    assert args.db_path.exists(), f"Database not found: {args.db_path}"
+def main(
+    db_path: str,
+    port: int = 8765,
+) -> None:
+    """Serve local attribution database.
 
-    run_server(args.db_path, args.port, args.static_dir)
+    Args:
+        db_path: Path to SQLite database
+        port: Port to serve on (default 8765)
+    """
+    db_path_ = Path(db_path)
+    assert db_path_.exists(), f"Database not found: {db_path_}"
+    run_server(db_path_, port)
 
 
 if __name__ == "__main__":
-    main()
+    import fire
+
+    fire.Fire(main)

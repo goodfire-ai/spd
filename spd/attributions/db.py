@@ -5,6 +5,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -48,13 +49,16 @@ class LocalAttrDB:
     - Compressed storage for attribution data
     """
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, check_same_thread: bool = True):
         self.db_path = db_path
+        self._check_same_thread = check_same_thread
         self._conn: sqlite3.Connection | None = None
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
+            self._conn = sqlite3.connect(
+                self.db_path, check_same_thread=self._check_same_thread
+            )
             self._conn.row_factory = sqlite3.Row
         return self._conn
 
@@ -140,7 +144,7 @@ class LocalAttrDB:
     def add_prompt(
         self,
         tokens: list[str],
-        pairs: list[dict],
+        pairs: list[dict[str, Any]],
         active_components: dict[str, ComponentActivation],
     ) -> int:
         """Add a prompt to the database.

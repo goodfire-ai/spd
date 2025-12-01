@@ -23,7 +23,6 @@
             flex-direction: column;
             flex-shrink: 0;
         }
-        .sidebar.hidden { display: none; }
         .sidebar-header {
             padding: 1rem;
             border-bottom: 1px solid #e0e0e0;
@@ -78,23 +77,6 @@
             flex-direction: column;
         }
         h1 { margin-top: 0; font-size: 1.5rem; }
-        .mode-toggle {
-            display: inline-flex;
-            background: #e0e0e0;
-            border-radius: 4px;
-            padding: 2px;
-            margin-left: 1rem;
-            vertical-align: middle;
-        }
-        .mode-toggle button {
-            padding: 0.25rem 0.75rem;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            font-size: 0.85rem;
-            border-radius: 3px;
-        }
-        .mode-toggle button.active { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
         .controls {
             display: flex;
             align-items: center;
@@ -265,8 +247,8 @@
     </style>
 </head>
 <body>
-    <!-- Sidebar for database mode -->
-    <div id="sidebar" class="sidebar hidden">
+    <!-- Sidebar for search -->
+    <div id="sidebar" class="sidebar">
         <div class="sidebar-header">
             <h3>Search Prompts</h3>
             <button id="search-btn" class="search-btn" disabled>
@@ -279,17 +261,11 @@
 
     <!-- Main content -->
     <div class="main-content">
-        <h1>
-            Local Attributions Graph
-            <span class="mode-toggle">
-                <button id="mode-file" class="active">File</button>
-                <button id="mode-db">Database</button>
-            </span>
-        </h1>
+        <h1>Local Attributions Graph</h1>
         <div id="loading">Loading data...</div>
         <div id="app" style="display:none;">
             <div class="controls">
-                <label id="prompt-selector-container" style="display:none;">
+                <label id="prompt-selector-container">
                     Prompt:
                     <select id="prompt-selector"></select>
                 </label>
@@ -302,7 +278,7 @@
                     <input type="number" id="topk-edges" min="10" max="10000" step="100" value="1000">
                 </label>
                 <span class="edge-count">Showing <span id="edge-count">0</span> edges</span>
-                <span id="db-info" class="db-info" style="display:none;"></span>
+                <span id="db-info" class="db-info"></span>
             </div>
             <div class="graph-wrapper">
                 <div id="layer-labels" class="layer-labels-container"></div>
@@ -349,15 +325,14 @@
             o_proj: "#3f51b5", c_fc: "#009688", down_proj: "#4caf50"
         };
 
-        // Mode: 'file' or 'db'
-        let mode = 'file';
-        let apiBase = '';  // Set when in db mode
+        // API base URL (use current origin when served, fallback for development)
+        let apiBase = window.location.origin || 'http://localhost:8765';
 
         // Data state
         let data = null;              // Current prompt data (tokens, pairs)
-        let activationContexts = null; // Shared across prompts in db mode
-        let allPrompts = [];          // List of all prompts in db mode
-        let currentPromptId = null;   // Current prompt ID in db mode
+        let activationContexts = null; // Shared across prompts
+        let allPrompts = [];          // List of all prompts
+        let currentPromptId = null;   // Current prompt ID
         let searchResults = [];       // Current search results
 
         let maxAttr = 1;
@@ -378,95 +353,73 @@
         }
 
         // =====================================================================
-        // Mode switching
+        // Load data from server
         // =====================================================================
 
-        document.getElementById('mode-file').addEventListener('click', () => switchMode('file'));
-        document.getElementById('mode-db').addEventListener('click', () => switchMode('db'));
+        let activationContextsLoading = false;
+        let activationContextsCallbacks = [];
 
-        function switchMode(newMode) {
-            if (mode === newMode) return;
-            mode = newMode;
-
-            document.getElementById('mode-file').classList.toggle('active', mode === 'file');
-            document.getElementById('mode-db').classList.toggle('active', mode === 'db');
-            document.getElementById('sidebar').classList.toggle('hidden', mode === 'file');
-            document.getElementById('prompt-selector-container').style.display = mode === 'db' ? '' : 'none';
-            document.getElementById('db-info').style.display = mode === 'db' ? '' : 'none';
-
-            // Reset state
-            data = null;
-            activationContexts = null;
-            allPrompts = [];
-            searchResults = [];
-            document.getElementById('search-results').innerHTML = '';
-            document.getElementById('search-info').style.display = 'none';
-
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('app').style.display = 'none';
-
-            if (mode === 'file') {
-                loadFileMode();
-            } else {
-                loadDbMode();
-            }
-        }
-
-        // =====================================================================
-        // File mode (original behavior)
-        // =====================================================================
-
-        function loadFileMode() {
-            fetch('out/local_attributions.json')
+        function loadData() {
+            // Load meta and first prompt immediately - don't wait for full prompts list
+            fetch(`${apiBase}/api/meta`)
                 .then(r => r.json())
-                .then(d => {
-                    data = d;
-                    activationContexts = d.activation_contexts;
-                    initializeWithData();
+                .then(meta => {
+                    document.getElementById('db-info').textContent = `DB: ${meta.prompt_count} prompts`;
+
+                    // Load first prompt immediately
+                    if (meta.prompt_count > 0) {
+                        loadPrompt(1);  // First prompt ID is typically 1
+                    } else {
+                        document.getElementById('loading').textContent = 'No prompts in database';
+                    }
+
+                    // Load prompts list in background for the selector
+                    fetch(`${apiBase}/api/prompts`).then(r => r.json()).then(prompts => {
+                        allPrompts = prompts;
+                        const selector = document.getElementById('prompt-selector');
+                        selector.innerHTML = prompts.map(p =>
+                            `<option value="${p.id}">${p.id}: ${p.preview}</option>`
+                        ).join('');
+                        // Update selector to current prompt
+                        if (currentPromptId) {
+                            selector.value = currentPromptId;
+                        }
+                    });
                 })
                 .catch(e => {
-                    document.getElementById('loading').textContent = 'Error loading file: ' + e.message;
+                    document.getElementById('loading').textContent =
+                        'Error connecting to database server. Make sure the server is running:\n' +
+                        'python -m spd.attributions.serve --db_path <path> --port 8765';
+                    console.error(e);
                 });
         }
 
-        // =====================================================================
-        // Database mode
-        // =====================================================================
+        function getActivationContexts(callback) {
+            // Lazy-load activation contexts only when needed
+            if (activationContexts) {
+                callback(activationContexts);
+                return;
+            }
 
-        function loadDbMode() {
-            // Try to connect to local server
-            apiBase = 'http://localhost:8765';
+            activationContextsCallbacks.push(callback);
 
-            Promise.all([
-                fetch(`${apiBase}/api/meta`).then(r => r.json()),
-                fetch(`${apiBase}/api/activation_contexts`).then(r => r.json()),
-                fetch(`${apiBase}/api/prompts`).then(r => r.json()),
-            ])
-            .then(([meta, actCtx, prompts]) => {
-                activationContexts = actCtx;
-                allPrompts = prompts;
+            if (activationContextsLoading) return;
+            activationContextsLoading = true;
 
-                document.getElementById('db-info').textContent = `DB: ${meta.prompt_count} prompts`;
-
-                // Populate prompt selector
-                const selector = document.getElementById('prompt-selector');
-                selector.innerHTML = prompts.map(p =>
-                    `<option value="${p.id}">${p.id}: ${p.preview}</option>`
-                ).join('');
-
-                // Load first prompt
-                if (prompts.length > 0) {
-                    loadPrompt(prompts[0].id);
-                } else {
-                    document.getElementById('loading').textContent = 'No prompts in database';
-                }
-            })
-            .catch(e => {
-                document.getElementById('loading').textContent =
-                    'Error connecting to database server. Make sure the server is running:\n' +
-                    'python -m spd.attributions.serve --db_path <path> --port 8765';
-                console.error(e);
-            });
+            fetch(`${apiBase}/api/activation_contexts`)
+                .then(r => r.json())
+                .then(actCtx => {
+                    activationContexts = actCtx;
+                    // Call all waiting callbacks
+                    for (const cb of activationContextsCallbacks) {
+                        cb(activationContexts);
+                    }
+                    activationContextsCallbacks = [];
+                })
+                .catch(e => {
+                    console.error('Error loading activation contexts:', e);
+                    activationContextsLoading = false;
+                });
         }
 
         function loadPrompt(promptId) {
@@ -477,7 +430,6 @@
                     data = {
                         tokens: promptData.tokens,
                         pairs: promptData.pairs,
-                        activation_contexts: activationContexts,
                     };
                     initializeWithData();
 
@@ -488,6 +440,14 @@
                     document.querySelectorAll('.search-result').forEach(el => {
                         el.classList.toggle('active', el.dataset.id === String(promptId));
                     });
+
+                    // Load activation contexts in background for CI filtering and tooltips
+                    if (!activationContexts) {
+                        getActivationContexts(actCtx => {
+                            updateMeanCILookup(actCtx);
+                            render();  // Re-render with CI filtering
+                        });
+                    }
                 })
                 .catch(e => {
                     console.error('Error loading prompt:', e);
@@ -506,14 +466,14 @@
 
         function updateSearchButton() {
             const btn = document.getElementById('search-btn');
-            btn.disabled = pinnedNodes.length === 0 || mode !== 'db';
+            btn.disabled = pinnedNodes.length === 0;
             btn.textContent = pinnedNodes.length === 0
                 ? 'Pin components to search'
                 : `Find prompts with ${pinnedNodes.length} pinned component${pinnedNodes.length > 1 ? 's' : ''}`;
         }
 
         function searchPrompts() {
-            if (pinnedNodes.length === 0 || mode !== 'db') return;
+            if (pinnedNodes.length === 0) return;
 
             const components = pinnedNodes.map(p => `${p.layer}:${p.cIdx}`).join(',');
             fetch(`${apiBase}/api/search?components=${encodeURIComponent(components)}&mode=all`)
@@ -554,6 +514,18 @@
         // Core visualization (shared between modes)
         // =====================================================================
 
+        function updateMeanCILookup(actCtx) {
+            // Build mean CI lookup from activation contexts
+            componentMeanCI = {};
+            if (actCtx) {
+                for (const [layer, subcomps] of Object.entries(actCtx)) {
+                    for (const subcomp of subcomps) {
+                        componentMeanCI[`${layer}:${subcomp.subcomponent_idx}`] = subcomp.mean_ci;
+                    }
+                }
+            }
+        }
+
         function initializeWithData() {
             // Find max attribution
             maxAttr = 1;
@@ -567,15 +539,9 @@
 
             computeComponentImportanceAndEdges();
 
-            // Build mean CI lookup
-            componentMeanCI = {};
-            const actCtx = data.activation_contexts || activationContexts;
-            if (actCtx) {
-                for (const [layer, subcomps] of Object.entries(actCtx)) {
-                    for (const subcomp of subcomps) {
-                        componentMeanCI[`${layer}:${subcomp.subcomponent_idx}`] = subcomp.mean_ci;
-                    }
-                }
+            // Update mean CI lookup if activation contexts already loaded
+            if (activationContexts) {
+                updateMeanCILookup(activationContexts);
             }
 
             computeNodeOutAttrs();
@@ -859,6 +825,17 @@
             const containerEl = document.getElementById('pinned-container');
             const itemsEl = document.getElementById('pinned-items');
 
+            // If activation contexts not loaded, show loading and fetch
+            if (!activationContexts) {
+                itemsEl.innerHTML = '<p>Loading component details...</p>';
+                containerEl.style.display = 'block';
+                getActivationContexts(actCtx => {
+                    updateMeanCILookup(actCtx);
+                    showPinnedDetails();  // Re-render with loaded data
+                });
+                return;
+            }
+
             let html = '';
             for (const pinned of pinnedNodes) {
                 html += buildFullNodeDetailsHtml(pinned.layer, pinned.cIdx);
@@ -883,7 +860,7 @@
             const meanAbsAttr = countEdges > 0 ? sumAbsAttr / countEdges : 0;
             const meanSqAttr = countEdges > 0 ? globalImp / countEdges : 0;
 
-            const actCtx = (data.activation_contexts || activationContexts)?.[layer];
+            const actCtx = activationContexts?.[layer];
             const subcomp = actCtx?.find(s => s.subcomponent_idx === cIdx);
 
             let html = `<div style="border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fafafa;">`;
@@ -1012,7 +989,22 @@
             detailsEl.style.left = left + 'px';
             detailsEl.style.top = top + 'px';
 
-            const actCtx = (data.activation_contexts || activationContexts)?.[layer];
+            // If activation contexts not loaded, show loading and fetch
+            if (!activationContexts) {
+                infoEl.innerHTML = `<p><strong>${layer} : ${cIdx}</strong></p><p>Loading details...</p>`;
+                examplesEl.innerHTML = '';
+                detailsEl.style.display = 'block';
+                getActivationContexts(actCtx => {
+                    updateMeanCILookup(actCtx);
+                    // Re-show if still hovering this node
+                    if (hoveredNodeKey && hoveredNodeKey.startsWith(`${layer}:`) && hoveredNodeKey.endsWith(`:${cIdx}`)) {
+                        showNodeDetails(layer, cIdx, mouseX, mouseY);
+                    }
+                });
+                return;
+            }
+
+            const actCtx = activationContexts?.[layer];
             if (!actCtx) {
                 infoEl.innerHTML = `<p>No activation context data for ${layer}</p>`;
                 examplesEl.innerHTML = '';
@@ -1203,8 +1195,8 @@
         document.getElementById('topk-edges').addEventListener('input', render);
         document.getElementById('max-mean-ci').addEventListener('input', render);
 
-        // Start in file mode
-        loadFileMode();
+        // Load data from server
+        loadData();
     </script>
 </body>
 </html>

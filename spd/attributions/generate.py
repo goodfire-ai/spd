@@ -17,6 +17,7 @@ import argparse
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import torch
 from jaxtyping import Float
@@ -55,9 +56,9 @@ class GenerateConfig:
     act_ctx_importance_threshold: float = 0.1
 
 
-def sparsify_attribution_cross_seq(attr_tensor: Tensor, threshold: float) -> list[list]:
+def sparsify_attribution_cross_seq(attr_tensor: Tensor, threshold: float) -> list[list[float]]:
     """Sparse format for cross-seq pairs: [[s_in, c_in, s_out, c_out, val], ...]"""
-    sparse: list[list] = []
+    sparse: list[list[float]] = []
     attr_np = attr_tensor.cpu().numpy()
     for s_in in range(attr_np.shape[0]):
         for c_in in range(attr_np.shape[1]):
@@ -69,9 +70,9 @@ def sparsify_attribution_cross_seq(attr_tensor: Tensor, threshold: float) -> lis
     return sparse
 
 
-def sparsify_attribution_same_seq(attr_tensor: Tensor, threshold: float) -> list[list]:
+def sparsify_attribution_same_seq(attr_tensor: Tensor, threshold: float) -> list[list[float]]:
     """Sparse format for same-seq pairs: [[s, c_in, c_out, val], ...]"""
-    sparse: list[list] = []
+    sparse: list[list[float]] = []
     attr_np = attr_tensor.cpu().numpy()
     n_seq = attr_np.shape[0]
     for s in range(n_seq):
@@ -83,7 +84,7 @@ def sparsify_attribution_same_seq(attr_tensor: Tensor, threshold: float) -> list
     return sparse
 
 
-def serialize_pair(pair: PairAttribution, threshold: float) -> dict:
+def serialize_pair(pair: PairAttribution, threshold: float) -> dict[str, Any]:
     """Serialize a pair with appropriate sparse format."""
     if pair.is_kv_to_o_pair:
         return {
@@ -191,7 +192,7 @@ def worker_fn(
     db = LocalAttrDB(config.output_path)
 
     # Process prompts
-    for i in tqdm(range(n_prompts_for_worker), desc=f"Worker {worker_id}", position=worker_id):
+    for _ in tqdm(range(n_prompts_for_worker), desc=f"Worker {worker_id}", position=worker_id):
         batch = next(data_iter)
         tokens: Float[Tensor, "1 seq"] = batch["input_ids"].to(device)
 
@@ -243,7 +244,9 @@ def generate_database(config: GenerateConfig) -> None:
 
     existing_count = db.get_prompt_count()
     if existing_count >= config.n_prompts:
-        print(f"\nAlready have {existing_count} prompts (target: {config.n_prompts}), nothing to do.")
+        print(
+            f"\nAlready have {existing_count} prompts (target: {config.n_prompts}), nothing to do."
+        )
         db.close()
         return
 
@@ -343,7 +346,9 @@ def generate_database(config: GenerateConfig) -> None:
     model = ComponentModel.from_run_info(run_info)
     model = model.to(device)
     model.eval()
-    sources_by_target = get_sources_by_target(model, device, run_info.config.sampling, config.n_blocks)
+    sources_by_target = get_sources_by_target(
+        model, device, run_info.config.sampling, config.n_blocks
+    )
     del model
     torch.cuda.empty_cache()
 
@@ -398,34 +403,36 @@ def generate_database(config: GenerateConfig) -> None:
     print(f"\nDone! Database has {final_count} prompts")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate local attribution database")
-    parser.add_argument("--wandb_path", type=str, required=True, help="WandB path to model")
-    parser.add_argument("--n_prompts", type=int, default=100, help="Number of prompts to generate")
-    parser.add_argument("--n_gpus", type=int, default=1, help="Number of GPUs to use")
-    parser.add_argument("--output_path", type=Path, required=True, help="Output database path")
-    parser.add_argument("--n_blocks", type=int, default=4, help="Number of transformer blocks")
-    parser.add_argument("--n_ctx", type=int, default=32, help="Context length")
-    parser.add_argument("--ci_threshold", type=float, default=1e-6, help="CI threshold")
-    parser.add_argument("--attr_threshold", type=float, default=1e-4, help="Attribution sparsity threshold")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
-
-    args = parser.parse_args()
-
-    config = GenerateConfig(
-        wandb_path=args.wandb_path,
-        n_prompts=args.n_prompts,
-        n_gpus=args.n_gpus,
-        output_path=args.output_path,
-        n_blocks=args.n_blocks,
-        n_ctx=args.n_ctx,
-        ci_threshold=args.ci_threshold,
-        attr_threshold=args.attr_threshold,
-        seed=args.seed,
-    )
-    generate_database(config)
-
-
 if __name__ == "__main__":
+    import fire
+
+    def config(
+        wandb_path: str,
+        n_prompts: int,
+        output_path: str,
+        n_gpus: int = 1,
+        n_blocks: int = 4,
+        n_ctx: int = 32,
+        ci_threshold: float = 1e-6,
+        attr_threshold: float = 1e-4,
+        seed: int = 42,
+        n_batches_act_ctx: int = 50,
+        act_ctx_importance_threshold: float = 0.1,
+    ) -> GenerateConfig:
+        return GenerateConfig(
+            wandb_path=wandb_path,
+            n_prompts=n_prompts,
+            output_path=Path(output_path),
+            n_gpus=n_gpus,
+            n_blocks=n_blocks,
+            n_ctx=n_ctx,
+            ci_threshold=ci_threshold,
+            attr_threshold=attr_threshold,
+            seed=seed,
+            n_batches_act_ctx=n_batches_act_ctx,
+            act_ctx_importance_threshold=act_ctx_importance_threshold,
+        )
+
     mp.set_start_method("spawn", force=True)
-    main()
+
+    generate_database(fire.Fire(config))
