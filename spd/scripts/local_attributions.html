@@ -147,6 +147,7 @@
             stroke: #000 !important;
             stroke-width: 2.5 !important;
             filter: brightness(0.7) saturate(1.5);
+            opacity: 1 !important;
         }
         .node-details h3 { margin: 0 0 0.5rem 0; font-size: 0.9rem; }
         #node-info { margin-bottom: 0.5rem; font-size: 0.85rem; }
@@ -456,14 +457,14 @@
         let maxNodeOutAttr = 1;
 
         function hideNodeDetails() {
-            // Don't hide if we have pinned nodes
-            if (pinnedNodes.length > 0) return;
-
             // Delay hiding to allow mouse to move to tooltip
             setTimeout(() => {
-                if (!isHoveringTooltip && !hoveredNodeKey && pinnedNodes.length === 0) {
+                if (!isHoveringTooltip && !hoveredNodeKey) {
                     document.getElementById('node-details').style.display = 'none';
-                    unhighlightAll();
+                    // Only unhighlight if no pinned nodes (pinned highlights restored in mouseleave)
+                    if (pinnedNodes.length === 0) {
+                        unhighlightAll();
+                    }
                 }
             }, 100);
         }
@@ -497,26 +498,38 @@
             svg.querySelectorAll('.edge').forEach(el => el.classList.remove('highlighted'));
             svg.querySelectorAll('.node').forEach(el => el.classList.remove('same-component'));
 
-            // Apply highlights for all pinned nodes
+            // Collect all node keys for all pinned components
+            const allPinnedComponentKeys = new Set();
             for (const pinned of pinnedNodes) {
-                // Highlight edges
-                svg.querySelectorAll('.edge').forEach(el => {
-                    const src = el.getAttribute('data-src');
-                    const tgt = el.getAttribute('data-tgt');
-                    if (src === pinned.nodeKey || tgt === pinned.nodeKey) {
-                        el.classList.add('highlighted');
-                    }
-                });
-
-                // Highlight same-component nodes
                 svg.querySelectorAll('.node').forEach(el => {
                     const nodeLayer = el.getAttribute('data-layer');
                     const nodeCIdx = el.getAttribute('data-cidx');
+                    const nodeSeq = el.getAttribute('data-seq');
                     if (nodeLayer === pinned.layer && nodeCIdx === String(pinned.cIdx)) {
-                        el.classList.add('same-component');
+                        allPinnedComponentKeys.add(`${nodeLayer}:${nodeSeq}:${nodeCIdx}`);
                     }
                 });
             }
+
+            // Highlight edges connected to any pinned component instance
+            svg.querySelectorAll('.edge').forEach(el => {
+                const src = el.getAttribute('data-src');
+                const tgt = el.getAttribute('data-tgt');
+                if (allPinnedComponentKeys.has(src) || allPinnedComponentKeys.has(tgt)) {
+                    el.classList.add('highlighted');
+                }
+            });
+
+            // Highlight same-component nodes
+            svg.querySelectorAll('.node').forEach(el => {
+                const nodeLayer = el.getAttribute('data-layer');
+                const nodeCIdx = el.getAttribute('data-cidx');
+                const nodeSeq = el.getAttribute('data-seq');
+                const nodeKey = `${nodeLayer}:${nodeSeq}:${nodeCIdx}`;
+                if (allPinnedComponentKeys.has(nodeKey)) {
+                    el.classList.add('same-component');
+                }
+            });
 
             // Show details for all pinned nodes
             showPinnedDetails();
@@ -632,11 +645,22 @@
         function highlightForNode(nodeKey, layer, cIdx) {
             const svg = document.getElementById('graph');
 
-            // Highlight edges connected to this node
+            // Collect all node keys for same component
+            const sameComponentKeys = new Set();
+            svg.querySelectorAll('.node').forEach(el => {
+                const nodeLayer = el.getAttribute('data-layer');
+                const nodeCIdx = el.getAttribute('data-cidx');
+                const nodeSeq = el.getAttribute('data-seq');
+                if (nodeLayer === layer && nodeCIdx === String(cIdx)) {
+                    sameComponentKeys.add(`${nodeLayer}:${nodeSeq}:${nodeCIdx}`);
+                }
+            });
+
+            // Highlight edges connected to any same-component node
             svg.querySelectorAll('.edge').forEach(el => {
                 const src = el.getAttribute('data-src');
                 const tgt = el.getAttribute('data-tgt');
-                if (src === nodeKey || tgt === nodeKey) {
+                if (sameComponentKeys.has(src) || sameComponentKeys.has(tgt)) {
                     el.classList.add('highlighted');
                 } else {
                     el.classList.remove('highlighted');
@@ -800,12 +824,6 @@
 
             let html = '';
 
-            // Vertical separator lines between sequence positions
-            for (let i = 1; i < data.tokens.length; i++) {
-                const x = seqXStarts[i];
-                html += `<line x1="${x}" y1="${MARGIN.top - 20}" x2="${x}" y2="${height}" stroke="#ddd" stroke-width="1"/>`;
-            }
-
             // Edges
             for (const e of edges) {
                 const p1 = nodePositions[e.srcKey];
@@ -813,7 +831,7 @@
                 if (p1 && p2) {
                     const color = e.val > 0 ? '#2196f3' : '#f44336';
                     const w = Math.max(0.5, (Math.abs(e.val) / maxAttr) * 2);
-                    const op = 0.2 + (Math.abs(e.val) / maxAttr) * 0.6;
+                    const op = 0.05 + (Math.abs(e.val) / maxAttr) * 0.95;
                     html += `<line class="edge" data-src="${e.srcKey}" data-tgt="${e.tgtKey}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${color}" stroke-width="${w}" opacity="${op}"/>`;
                 }
             }
@@ -835,11 +853,6 @@
 
             // Token labels in sticky container (outside SVG, same width as main SVG)
             let tokenHtml = `<svg width="${width}" height="50" style="display:block;">`;
-            // Separator lines in token labels too
-            for (let i = 1; i < data.tokens.length; i++) {
-                const x = seqXStarts[i];
-                tokenHtml += `<line x1="${x}" y1="0" x2="${x}" y2="50" stroke="#ddd" stroke-width="1"/>`;
-            }
             for (let i = 0; i < data.tokens.length; i++) {
                 // Center token label in its column
                 const colCenter = seqXStarts[i] + seqWidths[i] / 2;
@@ -863,9 +876,6 @@
             const nodes = svg.querySelectorAll('.node');
             nodes.forEach((node, i) => {
                 node.addEventListener('mouseenter', (e) => {
-                    // Don't show hover tooltip if we have pinned nodes
-                    if (pinnedNodes.length > 0) return;
-
                     const layer = node.getAttribute('data-layer');
                     const seqIdx = node.getAttribute('data-seq');
                     const cIdx = parseInt(node.getAttribute('data-cidx'));
@@ -876,9 +886,17 @@
                 });
                 node.addEventListener('mouseleave', () => {
                     hoveredNodeKey = null;
+                    // Restore pinned highlights if any, otherwise clear
+                    if (pinnedNodes.length > 0) {
+                        updatePinnedDisplay();
+                    }
                     hideNodeDetails();
                 });
                 node.addEventListener('click', (e) => {
+                    // Hide hover tooltip when clicking
+                    document.getElementById('node-details').style.display = 'none';
+                    hoveredNodeKey = null;
+
                     const layer = node.getAttribute('data-layer');
                     const seqIdx = node.getAttribute('data-seq');
                     const cIdx = parseInt(node.getAttribute('data-cidx'));
