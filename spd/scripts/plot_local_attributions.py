@@ -12,8 +12,22 @@ from jaxtyping import Float
 from matplotlib.collections import LineCollection
 from torch import Tensor
 
-from spd.scripts.calc_local_attributions import PairAttribution
 from spd.scripts.model_loading import get_out_dir
+
+
+@dataclass
+class PairAttribution:
+    source: str
+    target: str
+    attribution: Float[Tensor, "s_in trimmed_c_in s_out trimmed_c_out"]
+    trimmed_c_in_idxs: list[int]
+    trimmed_c_out_idxs: list[int]
+    is_kv_to_o_pair: bool
+    # Original alive masks (from model CI, before any optimization)
+    # Used to show "ghost" nodes that would have been active without CI optimization
+    # Shape: [n_seq, n_components] where True means alive at that (seq, component)
+    original_alive_mask_in: Float[Tensor, "seq C"] | None = None
+    original_alive_mask_out: Float[Tensor, "seq C"] | None = None
 
 
 @dataclass
@@ -147,26 +161,37 @@ def compute_layer_y_positions(
 def compute_node_importances(
     attr_pairs: list[PairAttribution],
     n_seq: int,
-) -> dict[str, Float[Tensor, "seq C"]]:
+) -> tuple[dict[str, Float[Tensor, "seq C"]], dict[str, Float[Tensor, "seq C"]]]:
     """Compute importance values for nodes based on total attribution flow.
 
-    Returns a dict mapping layer -> tensor of shape [n_seq, max_component_idx+1].
-    Importance is the sum of incoming and outgoing attributions.
+    Returns:
+        importances: Dict mapping layer -> tensor of shape [n_seq, max_component_idx+1].
+            Importance is the sum of incoming and outgoing attributions.
+        original_alive_masks: Dict mapping layer -> bool tensor of shape [n_seq, max_component_idx+1].
+            True means the component was alive at that (seq_pos, component) in original model CI.
     """
-    # First pass: determine max component index per layer
+    # First pass: determine max component index per layer (including original alive)
     layer_max_c: dict[str, int] = {}
     for pair in attr_pairs:
         src_max = max(pair.trimmed_c_in_idxs) if pair.trimmed_c_in_idxs else 0
         tgt_max = max(pair.trimmed_c_out_idxs) if pair.trimmed_c_out_idxs else 0
+        # Also consider original alive mask dimensions
+        if pair.original_alive_mask_in is not None:
+            src_max = max(src_max, pair.original_alive_mask_in.shape[1] - 1)
+        if pair.original_alive_mask_out is not None:
+            tgt_max = max(tgt_max, pair.original_alive_mask_out.shape[1] - 1)
         layer_max_c[pair.source] = max(layer_max_c.get(pair.source, 0), src_max)
         layer_max_c[pair.target] = max(layer_max_c.get(pair.target, 0), tgt_max)
 
-    # Initialize importance tensors
+    # Initialize importance tensors and original alive masks (on same device as attributions)
+    device = attr_pairs[0].attribution.device if attr_pairs else "cpu"
     importances: dict[str, Float[Tensor, "seq C"]] = {}
+    original_alive_masks: dict[str, Float[Tensor, "seq C"]] = {}
     for layer, max_c in layer_max_c.items():
-        importances[layer] = torch.zeros(n_seq, max_c + 1)
+        importances[layer] = torch.zeros(n_seq, max_c + 1, device=device)
+        original_alive_masks[layer] = torch.zeros(n_seq, max_c + 1, device=device, dtype=torch.bool)
 
-    # Accumulate attribution magnitudes
+    # Accumulate attribution magnitudes and original alive masks
     for pair in attr_pairs:
         attr = pair.attribution.abs()  # [s_in, trimmed_c_in, s_out, trimmed_c_out]
 
@@ -180,10 +205,18 @@ def compute_node_importances(
         for j, c_out in enumerate(pair.trimmed_c_out_idxs):
             importances[pair.target][:, c_out] += tgt_importance[:, j]
 
-    return importances
+        # Accumulate original alive masks (OR them together since multiple pairs may have same layer)
+        if pair.original_alive_mask_in is not None:
+            n_c = pair.original_alive_mask_in.shape[1]
+            original_alive_masks[pair.source][:, :n_c] |= pair.original_alive_mask_in
+        if pair.original_alive_mask_out is not None:
+            n_c = pair.original_alive_mask_out.shape[1]
+            original_alive_masks[pair.target][:, :n_c] |= pair.original_alive_mask_out
+
+    return importances, original_alive_masks
 
 
-def plot_local_attribution_graph(
+def plot_local_graph(
     attr_pairs: list[PairAttribution],
     token_strings: list[str],
     min_edge_weight: float = 0.001,
@@ -214,8 +247,8 @@ def plot_local_attribution_graph(
     """
     n_seq = len(token_strings)
 
-    # Compute node importances first
-    importances = compute_node_importances(attr_pairs, n_seq)
+    # Compute node importances and original alive masks (per-position)
+    importances, original_alive_masks = compute_node_importances(attr_pairs, n_seq)
 
     # Compute layout
     layer_y = compute_layer_y_positions(attr_pairs)
@@ -230,6 +263,7 @@ def plot_local_attribution_graph(
 
     # Collect all nodes and their positions
     nodes: list[NodeInfo] = []
+    ghost_nodes: list[NodeInfo] = []  # Nodes originally alive at this position but now dead
     node_lookup: dict[tuple[str, int, int], NodeInfo] = {}  # (layer, seq, comp) -> NodeInfo
 
     # X spacing: spread tokens across the plot
@@ -246,9 +280,22 @@ def plot_local_attribution_graph(
         layer_imp = importances[layer]  # [n_seq, max_c+1]
         alive_mask = layer_imp > 0
 
-        # Find all components that are alive at ANY sequence position
+        # Get original alive mask for this layer (per-position)
+        layer_original_mask = original_alive_masks.get(layer)
+
+        # Find all components that are alive at ANY sequence position (current)
         all_alive_components = torch.where(alive_mask.any(dim=0))[0].tolist()
-        n_components = len(all_alive_components)
+
+        # Find all components that were originally alive at ANY sequence position
+        originally_alive_any_pos: list[int] = []
+        if layer_original_mask is not None:
+            originally_alive_any_pos = torch.where(layer_original_mask.any(dim=0))[0].tolist()
+
+        # Combine for layout purposes
+        all_components_for_layout = sorted(
+            set(all_alive_components) | set(originally_alive_any_pos)
+        )
+        n_components = len(all_components_for_layout)
 
         if n_components == 0:
             continue
@@ -310,8 +357,8 @@ def plot_local_attribution_graph(
                     nodes.append(node)
                     node_lookup[(layer, s, c)] = node
             else:
-                # For other layers: arrange all components in grid
-                for local_idx, c in enumerate(all_alive_components):
+                # For other layers: arrange all components in grid (including ghost nodes)
+                for local_idx, c in enumerate(all_components_for_layout):
                     col = local_idx % layer_max_cols
                     row = local_idx // layer_max_cols
 
@@ -333,7 +380,7 @@ def plot_local_attribution_graph(
                     x = x_base + x_offset
                     y = y_center + y_offset
 
-                    imp = layer_imp[s, c].item()
+                    imp = layer_imp[s, c].item() if c < layer_imp.shape[1] else 0.0
                     node = NodeInfo(
                         layer=layer,
                         seq_pos=s,
@@ -342,7 +389,23 @@ def plot_local_attribution_graph(
                         y=y,
                         importance=imp,
                     )
-                    nodes.append(node)
+
+                    # Check if this is a ghost node at THIS position
+                    # Ghost = originally alive at this (s, c) but not currently alive at this (s, c)
+                    is_currently_alive_here = (
+                        alive_mask[s, c].item() if c < alive_mask.shape[1] else False
+                    )
+                    is_originally_alive_here = (
+                        layer_original_mask is not None
+                        and c < layer_original_mask.shape[1]
+                        and layer_original_mask[s, c].item()
+                    )
+                    is_ghost = is_originally_alive_here and not is_currently_alive_here
+
+                    if is_ghost:
+                        ghost_nodes.append(node)
+                    else:
+                        nodes.append(node)
                     node_lookup[(layer, s, c)] = node
 
     # Collect edges
@@ -408,7 +471,21 @@ def plot_local_attribution_graph(
         )
         ax.add_collection(lc)
 
-    # Draw nodes
+    # Draw ghost nodes first (so they appear behind regular nodes)
+    # Ghost nodes = originally alive (in model CI) but not currently alive (in optimized CI)
+    for node in ghost_nodes:
+        ax.scatter(
+            node.x,
+            node.y,
+            s=node_scale,
+            c="#909090",  # Darker gray than nodes-without-edges
+            edgecolors="white",
+            linewidths=0.5,
+            zorder=1.5,  # Behind regular nodes
+            alpha=0.5,
+        )
+
+    # Draw regular nodes
     for node in nodes:
         node_key = (node.layer, node.seq_pos, node.component_idx)
         has_edges = node_key in nodes_with_edges
@@ -515,6 +592,11 @@ def plot_local_attribution_graph(
         legend_elements.append(
             plt.scatter([], [], c=color, s=50, label=sublayer, edgecolors="white")
         )
+    # Add ghost node to legend if there are any
+    if ghost_nodes:
+        legend_elements.append(
+            plt.scatter([], [], c="#909090", s=50, label="ghost (orig. alive)", edgecolors="white")
+        )
     ax.legend(
         handles=legend_elements,
         loc="upper left",
@@ -554,7 +636,7 @@ def load_and_plot(
     print(f"  Tokens: {token_strings}")
     print(f"  Number of layer pairs: {len(attr_pairs)}")
 
-    fig = plot_local_attribution_graph(
+    fig = plot_local_graph(
         attr_pairs=attr_pairs,
         token_strings=token_strings,
         output_token_labels=output_token_labels,
