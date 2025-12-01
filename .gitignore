@@ -171,3 +171,4 @@ cython_debug/
 #.idea/
 
 **/*.db
+**/*.db*
