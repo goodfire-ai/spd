@@ -88,6 +88,7 @@ def launch_slurm_run(
         snapshot_branch=snapshot_branch,
         commit_hash=commit_hash,
     )
+    return 
 
     slurm_job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
 
@@ -332,6 +333,14 @@ def _wandb_setup(
     commit_hash: str,
 ) -> None:
     """Set up W&B workspace view and optionally a report."""
+
+    print(f"{create_report=}")
+    print(f"{report_title=}")
+    print(f"{project=}")
+    print(f"{run_id=}")
+    print(f"{experiments_list=}")
+    print(f"{snapshot_branch=}")
+    print(f"{commit_hash=}")
 
     match create_report, report_title:
         case True, None:
