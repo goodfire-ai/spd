@@ -9,10 +9,92 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             margin: 0;
-            padding: 1rem;
+            padding: 0;
             background: #fafafa;
+            display: flex;
+            height: 100vh;
         }
-        h1 { margin-top: 0; }
+        /* Sidebar styles */
+        .sidebar {
+            width: 280px;
+            background: #fff;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        .sidebar.hidden { display: none; }
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid #e0e0e0;
+            background: #f5f5f5;
+        }
+        .sidebar-header h3 { margin: 0 0 0.5rem 0; font-size: 0.9rem; }
+        .search-btn {
+            width: 100%;
+            padding: 0.5rem;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .search-btn:hover { background: #1976d2; }
+        .search-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .search-info {
+            padding: 0.5rem 1rem;
+            background: #e3f2fd;
+            font-size: 0.8rem;
+            color: #1565c0;
+        }
+        .search-results {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .search-result {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .search-result:hover { background: #f5f5f5; }
+        .search-result.active { background: #e3f2fd; border-left: 3px solid #2196f3; }
+        .search-result-id { font-size: 0.75rem; color: #666; margin-bottom: 0.25rem; }
+        .search-result-preview {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* Main content */
+        .main-content {
+            flex: 1;
+            padding: 1rem;
+            overflow: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        h1 { margin-top: 0; font-size: 1.5rem; }
+        .mode-toggle {
+            display: inline-flex;
+            background: #e0e0e0;
+            border-radius: 4px;
+            padding: 2px;
+            margin-left: 1rem;
+            vertical-align: middle;
+        }
+        .mode-toggle button {
+            padding: 0.25rem 0.75rem;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-radius: 3px;
+        }
+        .mode-toggle button.active { background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
         .controls {
             display: flex;
             align-items: center;
@@ -36,10 +118,17 @@
             border: 1px solid #ddd;
             border-radius: 4px;
         }
+        .controls select {
+            padding: 0.25rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-width: 200px;
+        }
         .edge-count { color: #666; font-size: 0.9rem; }
+        .db-info { color: #666; font-size: 0.85rem; margin-left: auto; }
         .graph-wrapper {
             display: flex;
-            max-height: 80vh;
+            max-height: 70vh;
             background: white;
             border-radius: 8px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -120,6 +209,9 @@
         .pinned-container h3 {
             margin: 0 0 0.75rem 0;
             font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         #pinned-items {
             display: flex;
@@ -173,52 +265,81 @@
     </style>
 </head>
 <body>
-    <h1>Local Attributions Graph</h1>
-    <div id="loading">Loading data...</div>
-    <div id="app" style="display:none;">
-        <div class="controls">
-            <label>
-                Max mean CI:
-                <input type="number" id="max-mean-ci" min="0" max="1" step="0.01" value="0.5">
-            </label>
-            <label>
-                Top K edges:
-                <input type="number" id="topk-edges" min="10" max="10000" step="100" value="1000">
-            </label>
-            <span class="edge-count">Showing <span id="edge-count">0</span> edges</span>
+    <!-- Sidebar for database mode -->
+    <div id="sidebar" class="sidebar hidden">
+        <div class="sidebar-header">
+            <h3>Search Prompts</h3>
+            <button id="search-btn" class="search-btn" disabled>
+                Find prompts with pinned components
+            </button>
         </div>
-        <div class="graph-wrapper">
-            <div id="layer-labels" class="layer-labels-container"></div>
-            <div class="graph-container">
-                <svg id="graph"></svg>
-                <div id="token-labels" class="token-labels-container"></div>
-            </div>
-        </div>
-        <div class="legend">
-            <h3>Legend</h3>
-            <div class="legend-items" id="legend-items"></div>
-            <div class="legend-edge">
-                <span class="edge-pos"></span> Positive
-                <span class="edge-neg"></span> Negative
-            </div>
-        </div>
+        <div id="search-info" class="search-info" style="display:none;"></div>
+        <div id="search-results" class="search-results"></div>
+    </div>
 
-        <div id="pinned-container" class="pinned-container" style="display:none;">
-            <h3>Pinned Components</h3>
-            <div id="pinned-items"></div>
-        </div>
+    <!-- Main content -->
+    <div class="main-content">
+        <h1>
+            Local Attributions Graph
+            <span class="mode-toggle">
+                <button id="mode-file" class="active">File</button>
+                <button id="mode-db">Database</button>
+            </span>
+        </h1>
+        <div id="loading">Loading data...</div>
+        <div id="app" style="display:none;">
+            <div class="controls">
+                <label id="prompt-selector-container" style="display:none;">
+                    Prompt:
+                    <select id="prompt-selector"></select>
+                </label>
+                <label>
+                    Max mean CI:
+                    <input type="number" id="max-mean-ci" min="0" max="1" step="0.01" value="0.5">
+                </label>
+                <label>
+                    Top K edges:
+                    <input type="number" id="topk-edges" min="10" max="10000" step="100" value="1000">
+                </label>
+                <span class="edge-count">Showing <span id="edge-count">0</span> edges</span>
+                <span id="db-info" class="db-info" style="display:none;"></span>
+            </div>
+            <div class="graph-wrapper">
+                <div id="layer-labels" class="layer-labels-container"></div>
+                <div class="graph-container">
+                    <svg id="graph"></svg>
+                    <div id="token-labels" class="token-labels-container"></div>
+                </div>
+            </div>
+            <div class="legend">
+                <h3>Legend</h3>
+                <div class="legend-items" id="legend-items"></div>
+                <div class="legend-edge">
+                    <span class="edge-pos"></span> Positive
+                    <span class="edge-neg"></span> Negative
+                </div>
+            </div>
 
-        <div id="node-details" class="node-details" style="display:none;">
-            <h3>Component Details</h3>
-            <div id="node-info"></div>
-            <div id="node-examples"></div>
+            <div id="pinned-container" class="pinned-container" style="display:none;">
+                <h3>
+                    <span>Pinned Components</span>
+                    <button id="clear-pinned" style="font-size: 0.8rem; padding: 0.25rem 0.5rem; cursor: pointer;">Clear all</button>
+                </h3>
+                <div id="pinned-items"></div>
+            </div>
+
+            <div id="node-details" class="node-details" style="display:none;">
+                <h3>Component Details</h3>
+                <div id="node-info"></div>
+                <div id="node-examples"></div>
+            </div>
         </div>
     </div>
 
     <script>
-        const COMPONENT_SIZE = 8;  // size of each component node
-        const COMPONENT_GAP = 2;   // gap between components
-        const LAYER_GAP = 30;      // gap between layer rows
+        const COMPONENT_SIZE = 8;
+        const COMPONENT_GAP = 2;
+        const LAYER_GAP = 30;
         const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
         const LABEL_WIDTH = 100;
 
@@ -228,28 +349,255 @@
             o_proj: "#3f51b5", c_fc: "#009688", down_proj: "#4caf50"
         };
 
-        let data = null;
+        // Mode: 'file' or 'db'
+        let mode = 'file';
+        let apiBase = '';  // Set when in db mode
+
+        // Data state
+        let data = null;              // Current prompt data (tokens, pairs)
+        let activationContexts = null; // Shared across prompts in db mode
+        let allPrompts = [];          // List of all prompts in db mode
+        let currentPromptId = null;   // Current prompt ID in db mode
+        let searchResults = [];       // Current search results
+
         let maxAttr = 1;
-        let allEdges = [];         // all edges for topK selection (sorted by |val| desc)
-        let componentImportance = {};  // "layer:cIdx" -> sum of attr^2 (global)
-        let componentImportanceLocal = {};  // "layer:seq:cIdx" -> sum of attr^2 (per position)
-        let componentMeanCI = {};  // "layer:cIdx" -> mean CI from activation contexts
-        let layerYPositions = {};  // layer -> base Y position
-        let nodePositions = {};    // "layer:seq:cIdx" -> {x, y}
-        let nodeOutAttr = {};      // "layer:seq:cIdx" -> summed output attribution
-        let hoveredNodeKey = null; // currently hovered node key
-        let isHoveringTooltip = false; // whether mouse is over tooltip
-        let pinnedNodes = []; // [{ layer, cIdx, nodeKey }, ...] - clicked/pinned components
+        let allEdges = [];
+        let componentImportance = {};
+        let componentImportanceLocal = {};
+        let componentMeanCI = {};
+        let layerYPositions = {};
+        let nodePositions = {};
+        let nodeOutAttr = {};
+        let hoveredNodeKey = null;
+        let isHoveringTooltip = false;
+        let pinnedNodes = [];  // [{ layer, cIdx }, ...] - persists across prompt switches
 
         function parseLayer(name) {
             const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
             return m ? { name, block: +m[1], type: m[2], subtype: m[3] } : null;
         }
 
+        // =====================================================================
+        // Mode switching
+        // =====================================================================
+
+        document.getElementById('mode-file').addEventListener('click', () => switchMode('file'));
+        document.getElementById('mode-db').addEventListener('click', () => switchMode('db'));
+
+        function switchMode(newMode) {
+            if (mode === newMode) return;
+            mode = newMode;
+
+            document.getElementById('mode-file').classList.toggle('active', mode === 'file');
+            document.getElementById('mode-db').classList.toggle('active', mode === 'db');
+            document.getElementById('sidebar').classList.toggle('hidden', mode === 'file');
+            document.getElementById('prompt-selector-container').style.display = mode === 'db' ? '' : 'none';
+            document.getElementById('db-info').style.display = mode === 'db' ? '' : 'none';
+
+            // Reset state
+            data = null;
+            activationContexts = null;
+            allPrompts = [];
+            searchResults = [];
+            document.getElementById('search-results').innerHTML = '';
+            document.getElementById('search-info').style.display = 'none';
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('app').style.display = 'none';
+
+            if (mode === 'file') {
+                loadFileMode();
+            } else {
+                loadDbMode();
+            }
+        }
+
+        // =====================================================================
+        // File mode (original behavior)
+        // =====================================================================
+
+        function loadFileMode() {
+            fetch('out/local_attributions.json')
+                .then(r => r.json())
+                .then(d => {
+                    data = d;
+                    activationContexts = d.activation_contexts;
+                    initializeWithData();
+                })
+                .catch(e => {
+                    document.getElementById('loading').textContent = 'Error loading file: ' + e.message;
+                });
+        }
+
+        // =====================================================================
+        // Database mode
+        // =====================================================================
+
+        function loadDbMode() {
+            // Try to connect to local server
+            apiBase = 'http://localhost:8765';
+
+            Promise.all([
+                fetch(`${apiBase}/api/meta`).then(r => r.json()),
+                fetch(`${apiBase}/api/activation_contexts`).then(r => r.json()),
+                fetch(`${apiBase}/api/prompts`).then(r => r.json()),
+            ])
+            .then(([meta, actCtx, prompts]) => {
+                activationContexts = actCtx;
+                allPrompts = prompts;
+
+                document.getElementById('db-info').textContent = `DB: ${meta.prompt_count} prompts`;
+
+                // Populate prompt selector
+                const selector = document.getElementById('prompt-selector');
+                selector.innerHTML = prompts.map(p =>
+                    `<option value="${p.id}">${p.id}: ${p.preview}</option>`
+                ).join('');
+
+                // Load first prompt
+                if (prompts.length > 0) {
+                    loadPrompt(prompts[0].id);
+                } else {
+                    document.getElementById('loading').textContent = 'No prompts in database';
+                }
+            })
+            .catch(e => {
+                document.getElementById('loading').textContent =
+                    'Error connecting to database server. Make sure the server is running:\n' +
+                    'python -m spd.attributions.serve --db_path <path> --port 8765';
+                console.error(e);
+            });
+        }
+
+        function loadPrompt(promptId) {
+            currentPromptId = promptId;
+            fetch(`${apiBase}/api/prompt/${promptId}`)
+                .then(r => r.json())
+                .then(promptData => {
+                    data = {
+                        tokens: promptData.tokens,
+                        pairs: promptData.pairs,
+                        activation_contexts: activationContexts,
+                    };
+                    initializeWithData();
+
+                    // Update selector
+                    document.getElementById('prompt-selector').value = promptId;
+
+                    // Update search result highlighting
+                    document.querySelectorAll('.search-result').forEach(el => {
+                        el.classList.toggle('active', el.dataset.id === String(promptId));
+                    });
+                })
+                .catch(e => {
+                    console.error('Error loading prompt:', e);
+                });
+        }
+
+        document.getElementById('prompt-selector').addEventListener('change', (e) => {
+            loadPrompt(parseInt(e.target.value));
+        });
+
+        // =====================================================================
+        // Search functionality
+        // =====================================================================
+
+        document.getElementById('search-btn').addEventListener('click', searchPrompts);
+
+        function updateSearchButton() {
+            const btn = document.getElementById('search-btn');
+            btn.disabled = pinnedNodes.length === 0 || mode !== 'db';
+            btn.textContent = pinnedNodes.length === 0
+                ? 'Pin components to search'
+                : `Find prompts with ${pinnedNodes.length} pinned component${pinnedNodes.length > 1 ? 's' : ''}`;
+        }
+
+        function searchPrompts() {
+            if (pinnedNodes.length === 0 || mode !== 'db') return;
+
+            const components = pinnedNodes.map(p => `${p.layer}:${p.cIdx}`).join(',');
+            fetch(`${apiBase}/api/search?components=${encodeURIComponent(components)}&mode=all`)
+                .then(r => r.json())
+                .then(result => {
+                    searchResults = result.results;
+                    renderSearchResults(result);
+                })
+                .catch(e => {
+                    console.error('Search error:', e);
+                });
+        }
+
+        function renderSearchResults(result) {
+            const infoEl = document.getElementById('search-info');
+            const resultsEl = document.getElementById('search-results');
+
+            infoEl.textContent = `Found ${result.count} prompt${result.count !== 1 ? 's' : ''} with all ${result.query.components.length} components`;
+            infoEl.style.display = 'block';
+
+            resultsEl.innerHTML = result.results.map(p => `
+                <div class="search-result ${p.id === currentPromptId ? 'active' : ''}"
+                     data-id="${p.id}"
+                     onclick="loadPrompt(${p.id})">
+                    <div class="search-result-id">Prompt #${p.id}</div>
+                    <div class="search-result-preview">${escapeHtml(p.preview)}</div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // =====================================================================
+        // Core visualization (shared between modes)
+        // =====================================================================
+
+        function initializeWithData() {
+            // Find max attribution
+            maxAttr = 1;
+            for (const pair of data.pairs) {
+                const isCrossSeq = pair.is_cross_seq;
+                for (const entry of pair.attribution) {
+                    const val = isCrossSeq ? entry[4] : entry[3];
+                    if (Math.abs(val) > maxAttr) maxAttr = Math.abs(val);
+                }
+            }
+
+            computeComponentImportanceAndEdges();
+
+            // Build mean CI lookup
+            componentMeanCI = {};
+            const actCtx = data.activation_contexts || activationContexts;
+            if (actCtx) {
+                for (const [layer, subcomps] of Object.entries(actCtx)) {
+                    for (const subcomp of subcomps) {
+                        componentMeanCI[`${layer}:${subcomp.subcomponent_idx}`] = subcomp.mean_ci;
+                    }
+                }
+            }
+
+            computeNodeOutAttrs();
+            maxNodeOutAttr = Math.max(...Object.values(nodeOutAttr), 1);
+
+            // Build legend (only once)
+            const legendEl = document.getElementById('legend-items');
+            if (legendEl.children.length === 0) {
+                for (const [name, color] of Object.entries(COLORS)) {
+                    legendEl.innerHTML += `<div class="legend-item"><span class="legend-dot" style="background:${color}"></span>${name}</div>`;
+                }
+            }
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+
+            render();
+            updatePinnedDisplay();
+            updateSearchButton();
+        }
+
         function computeComponentImportanceAndEdges() {
-            // Compute importance as sum of attr^2 for each component
-            // Also collect all edges for topK selection
-            // Handle both sparse formats: cross-seq [s_in, c_in, s_out, c_out, val] and same-seq [s, c_in, c_out, val]
             componentImportance = {};
             componentImportanceLocal = {};
             allEdges = [];
@@ -262,10 +610,8 @@
                 for (const entry of pair.attribution) {
                     let sIn, cInLocal, sOut, cOutLocal, val;
                     if (isCrossSeq) {
-                        // [s_in, c_in, s_out, c_out, val]
                         [sIn, cInLocal, sOut, cOutLocal, val] = entry;
                     } else {
-                        // [s, c_in, c_out, val]
                         sIn = entry[0];
                         sOut = entry[0];
                         cInLocal = entry[1];
@@ -276,7 +622,6 @@
                     const cInIdx = cInIdxs[cInLocal];
                     const cOutIdx = cOutIdxs[cOutLocal];
 
-                    // Collect edge
                     allEdges.push({
                         srcKey: `${pair.source}:${sIn}:${cInIdx}`,
                         tgtKey: `${pair.target}:${sOut}:${cOutIdx}`,
@@ -285,17 +630,14 @@
 
                     const valSq = val * val;
 
-                    // Add to source component importance (global)
                     const srcKey = `${pair.source}:${cInIdx}`;
                     if (!componentImportance[srcKey]) componentImportance[srcKey] = 0;
                     componentImportance[srcKey] += valSq;
 
-                    // Add to target component importance (global)
                     const tgtKey = `${pair.target}:${cOutIdx}`;
                     if (!componentImportance[tgtKey]) componentImportance[tgtKey] = 0;
                     componentImportance[tgtKey] += valSq;
 
-                    // Add to local (per-position) importance
                     const srcKeyLocal = `${pair.source}:${sIn}:${cInIdx}`;
                     if (!componentImportanceLocal[srcKeyLocal]) componentImportanceLocal[srcKeyLocal] = 0;
                     componentImportanceLocal[srcKeyLocal] += valSq;
@@ -306,12 +648,10 @@
                 }
             }
 
-            // Sort edges by absolute value descending for topK
             allEdges.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
         }
 
         function getFilteredEdgesAndNodes(topK, maxMeanCI) {
-            // Step 1: Filter edges by max mean CI (both endpoints must pass)
             const ciFilteredEdges = allEdges.filter(edge => {
                 const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
                 const [tgtLayer, , tgtCIdx] = edge.tgtKey.split(':');
@@ -322,10 +662,8 @@
                 return srcOk && tgtOk;
             });
 
-            // Step 2: Take top K edges by importance
             const topEdges = ciFilteredEdges.slice(0, topK);
 
-            // Step 3: Collect nodes that appear in these edges (no orphans)
             const activeNodes = new Set();
             for (const edge of topEdges) {
                 activeNodes.add(edge.srcKey);
@@ -336,9 +674,7 @@
         }
 
         function buildLayout(activeNodes) {
-            // Collect components per (layer, seqIdx) from active nodes
-            // activeNodes are keys like "layer:seqIdx:cIdx"
-            const nodesPerLayerSeq = {};  // "layer:seqIdx" -> [cIdx, ...]
+            const nodesPerLayerSeq = {};
             const allLayers = new Set();
 
             for (const nodeKey of activeNodes) {
@@ -349,7 +685,6 @@
                 nodesPerLayerSeq[key].push(+cIdx);
             }
 
-            // Sort layers by (block, subtype)
             const layers = Array.from(allLayers).sort((a, b) => {
                 const infoA = parseLayer(a);
                 const infoB = parseLayer(b);
@@ -359,7 +694,6 @@
                 return SUBTYPE_ORDER.indexOf(infoA.subtype) - SUBTYPE_ORDER.indexOf(infoB.subtype);
             });
 
-            // Compute Y positions (bottom to top, so reverse)
             layerYPositions = {};
             let currentY = MARGIN.top;
             for (const layer of layers.slice().reverse()) {
@@ -367,8 +701,7 @@
                 currentY += COMPONENT_SIZE + LAYER_GAP;
             }
 
-            // Compute max components per sequence position (across all layers)
-            const maxComponentsPerSeq = [];  // [seqIdx] -> max components at that position
+            const maxComponentsPerSeq = [];
             for (let seqIdx = 0; seqIdx < data.tokens.length; seqIdx++) {
                 let maxAtSeq = 0;
                 for (const layer of layers) {
@@ -379,19 +712,16 @@
                 maxComponentsPerSeq.push(maxAtSeq);
             }
 
-            // Compute column widths and cumulative X positions
-            const MIN_COL_WIDTH = 30;  // minimum width even if no components
-            const COL_PADDING = 16;    // padding on each side of components
+            const MIN_COL_WIDTH = 30;
+            const COL_PADDING = 16;
             const seqWidths = maxComponentsPerSeq.map(n =>
                 Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + COMPONENT_GAP) + COL_PADDING * 2)
             );
-            const seqXStarts = [MARGIN.left];  // cumulative X start for each seq position
+            const seqXStarts = [MARGIN.left];
             for (let i = 0; i < seqWidths.length - 1; i++) {
                 seqXStarts.push(seqXStarts[i] + seqWidths[i]);
             }
 
-            // Build node positions
-            // Sort components within each (layer, seqIdx) by local importance
             nodePositions = {};
 
             for (const layer of layers) {
@@ -399,7 +729,6 @@
                     const key = `${layer}:${seqIdx}`;
                     const components = nodesPerLayerSeq[key] || [];
 
-                    // Sort by local importance (descending)
                     components.sort((a, b) => {
                         const impA = componentImportanceLocal[`${layer}:${seqIdx}:${a}`] || 0;
                         const impB = componentImportanceLocal[`${layer}:${seqIdx}:${b}`] || 0;
@@ -423,10 +752,7 @@
             return { layers, seqWidths, seqXStarts };
         }
 
-
         function computeNodeOutAttrs() {
-            // Sum output attributions for each node (as source)
-            // Handle both sparse formats
             nodeOutAttr = {};
             for (const pair of data.pairs) {
                 const isCrossSeq = pair.is_cross_seq;
@@ -435,12 +761,10 @@
                 for (const entry of pair.attribution) {
                     let sIn, cInLocal, val;
                     if (isCrossSeq) {
-                        // [s_in, c_in, s_out, c_out, val]
                         sIn = entry[0];
                         cInLocal = entry[1];
                         val = entry[4];
                     } else {
-                        // [s, c_in, c_out, val]
                         sIn = entry[0];
                         cInLocal = entry[1];
                         val = entry[3];
@@ -457,11 +781,9 @@
         let maxNodeOutAttr = 1;
 
         function hideNodeDetails() {
-            // Delay hiding to allow mouse to move to tooltip
             setTimeout(() => {
                 if (!isHoveringTooltip && !hoveredNodeKey) {
                     document.getElementById('node-details').style.display = 'none';
-                    // Only unhighlight if no pinned nodes (pinned highlights restored in mouseleave)
                     if (pinnedNodes.length === 0) {
                         unhighlightAll();
                     }
@@ -473,16 +795,20 @@
             const existingIdx = pinnedNodes.findIndex(p => p.layer === layer && p.cIdx === cIdx);
 
             if (existingIdx >= 0) {
-                // Clicking same component - unpin it
                 pinnedNodes.splice(existingIdx, 1);
             } else {
-                // Pin this component
                 pinnedNodes.push({ layer, cIdx, nodeKey });
             }
 
-            // Update highlights and panel
             updatePinnedDisplay();
+            updateSearchButton();
         }
+
+        document.getElementById('clear-pinned').addEventListener('click', () => {
+            pinnedNodes = [];
+            updatePinnedDisplay();
+            updateSearchButton();
+        });
 
         function updatePinnedDisplay() {
             if (pinnedNodes.length === 0) {
@@ -491,14 +817,11 @@
                 return;
             }
 
-            // Highlight all pinned components
             const svg = document.getElementById('graph');
 
-            // Reset all highlights first
             svg.querySelectorAll('.edge').forEach(el => el.classList.remove('highlighted'));
             svg.querySelectorAll('.node').forEach(el => el.classList.remove('same-component'));
 
-            // Collect all node keys for all pinned components
             const allPinnedComponentKeys = new Set();
             for (const pinned of pinnedNodes) {
                 svg.querySelectorAll('.node').forEach(el => {
@@ -511,7 +834,6 @@
                 });
             }
 
-            // Highlight edges connected to any pinned component instance
             svg.querySelectorAll('.edge').forEach(el => {
                 const src = el.getAttribute('data-src');
                 const tgt = el.getAttribute('data-tgt');
@@ -520,7 +842,6 @@
                 }
             });
 
-            // Highlight same-component nodes
             svg.querySelectorAll('.node').forEach(el => {
                 const nodeLayer = el.getAttribute('data-layer');
                 const nodeCIdx = el.getAttribute('data-cidx');
@@ -531,7 +852,6 @@
                 }
             });
 
-            // Show details for all pinned nodes
             showPinnedDetails();
         }
 
@@ -549,7 +869,6 @@
         }
 
         function buildFullNodeDetailsHtml(layer, cIdx) {
-            // Get attribution stats for this component
             const globalImp = componentImportance[`${layer}:${cIdx}`] || 0;
             let sumAbsAttr = 0;
             let countEdges = 0;
@@ -564,7 +883,7 @@
             const meanAbsAttr = countEdges > 0 ? sumAbsAttr / countEdges : 0;
             const meanSqAttr = countEdges > 0 ? globalImp / countEdges : 0;
 
-            const actCtx = data.activation_contexts?.[layer];
+            const actCtx = (data.activation_contexts || activationContexts)?.[layer];
             const subcomp = actCtx?.find(s => s.subcomponent_idx === cIdx);
 
             let html = `<div style="border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: #fafafa;">`;
@@ -576,7 +895,6 @@
             if (subcomp) {
                 html += `<p style="margin: 0.25rem 0; font-size: 0.85rem;"><strong>Mean CI:</strong> ${subcomp.mean_ci.toFixed(4)} | <strong>Sum attr²:</strong> ${globalImp.toFixed(6)} | <strong>Mean |attr|:</strong> ${meanAbsAttr.toFixed(6)} | <strong>Mean attr²:</strong> ${meanSqAttr.toFixed(6)} <small>(${countEdges} edges)</small></p>`;
 
-                // Show examples
                 if (subcomp.example_tokens && subcomp.example_tokens.length > 0) {
                     html += '<h4 style="margin: 0.75rem 0 0.25rem 0; font-size: 0.85rem;">Top Activating Examples</h4>';
                     for (let i = 0; i < subcomp.example_tokens.length; i++) {
@@ -590,35 +908,32 @@
                             const ci = ciVals[j];
                             const isActive = j === activePos;
                             const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
-                            html += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}" title="CI: ${ci.toFixed(3)}">${tokens[j]}</span>`;
+                            html += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}" title="CI: ${ci.toFixed(3)}">${escapeHtml(tokens[j])}</span>`;
                         }
                         html += ` <small>(CI: ${activeCi.toFixed(3)})</small></div>`;
                     }
                 }
 
-                // Show top tokens in a horizontal layout
                 html += '<div style="display: flex; gap: 2rem; flex-wrap: wrap;">';
 
-                // Show top tokens by precision (input tokens)
                 if (subcomp.pr_tokens && subcomp.pr_tokens.length > 0) {
                     html += '<div>';
                     html += '<h4 style="margin: 0.75rem 0 0.25rem 0; font-size: 0.85rem;">Top Input Tokens</h4>';
                     html += '<table class="pr-table"><tr><th>Token</th><th title="P(fires | token)">P(fire|tok)</th></tr>';
                     const nShow = Math.min(10, subcomp.pr_tokens.length);
                     for (let i = 0; i < nShow; i++) {
-                        html += `<tr><td><code>${subcomp.pr_tokens[i]}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
+                        html += `<tr><td><code>${escapeHtml(subcomp.pr_tokens[i])}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
                     }
                     html += '</table></div>';
                 }
 
-                // Show top predicted tokens
                 if (subcomp.predicted_tokens && subcomp.predicted_tokens.length > 0) {
                     html += '<div>';
                     html += '<h4 style="margin: 0.75rem 0 0.25rem 0; font-size: 0.85rem;">Top Predicted Tokens</h4>';
                     html += '<table class="pr-table"><tr><th>Token</th><th>P(pred|fire)</th></tr>';
                     const nShow = Math.min(10, subcomp.predicted_tokens.length);
                     for (let i = 0; i < nShow; i++) {
-                        html += `<tr><td><code>${subcomp.predicted_tokens[i]}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
+                        html += `<tr><td><code>${escapeHtml(subcomp.predicted_tokens[i])}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
                     }
                     html += '</table></div>';
                 }
@@ -634,18 +949,13 @@
 
         function unhighlightAll() {
             const svg = document.getElementById('graph');
-            svg.querySelectorAll('.edge').forEach(el => {
-                el.classList.remove('highlighted');
-            });
-            svg.querySelectorAll('.node').forEach(el => {
-                el.classList.remove('same-component');
-            });
+            svg.querySelectorAll('.edge').forEach(el => el.classList.remove('highlighted'));
+            svg.querySelectorAll('.node').forEach(el => el.classList.remove('same-component'));
         }
 
         function highlightForNode(nodeKey, layer, cIdx) {
             const svg = document.getElementById('graph');
 
-            // Collect all node keys for same component
             const sameComponentKeys = new Set();
             svg.querySelectorAll('.node').forEach(el => {
                 const nodeLayer = el.getAttribute('data-layer');
@@ -656,7 +966,6 @@
                 }
             });
 
-            // Highlight edges connected to any same-component node
             svg.querySelectorAll('.edge').forEach(el => {
                 const src = el.getAttribute('data-src');
                 const tgt = el.getAttribute('data-tgt');
@@ -667,7 +976,6 @@
                 }
             });
 
-            // Highlight all nodes with same layer:cIdx (same component, different seq positions)
             svg.querySelectorAll('.node').forEach(el => {
                 const nodeLayer = el.getAttribute('data-layer');
                 const nodeCIdx = el.getAttribute('data-cidx');
@@ -684,32 +992,27 @@
             const infoEl = document.getElementById('node-info');
             const examplesEl = document.getElementById('node-examples');
 
-            // Remove pinned-mode class for hover display
             detailsEl.classList.remove('pinned-mode');
-
-            // Hover mode - near mouse
             detailsEl.style.position = 'fixed';
             detailsEl.style.bottom = '';
             detailsEl.style.maxHeight = '800px';
             detailsEl.style.maxWidth = '1000px';
-            {
-                const padding = 15;
-                let left = mouseX + padding;
-                let top = mouseY + padding;
 
-                if (left + 1000 > window.innerWidth) {
-                    left = mouseX - 1000 - padding;
-                }
-                if (top + 800 > window.innerHeight) {
-                    top = mouseY - 800 - padding;
-                }
+            const padding = 15;
+            let left = mouseX + padding;
+            let top = mouseY + padding;
 
-                detailsEl.style.left = left + 'px';
-                detailsEl.style.top = top + 'px';
+            if (left + 1000 > window.innerWidth) {
+                left = mouseX - 1000 - padding;
+            }
+            if (top + 800 > window.innerHeight) {
+                top = mouseY - 800 - padding;
             }
 
-            // Find activation context for this layer/component
-            const actCtx = data.activation_contexts?.[layer];
+            detailsEl.style.left = left + 'px';
+            detailsEl.style.top = top + 'px';
+
+            const actCtx = (data.activation_contexts || activationContexts)?.[layer];
             if (!actCtx) {
                 infoEl.innerHTML = `<p>No activation context data for ${layer}</p>`;
                 examplesEl.innerHTML = '';
@@ -725,9 +1028,7 @@
                 return;
             }
 
-            // Get attribution stats for this component
             const globalImp = componentImportance[`${layer}:${cIdx}`] || 0;
-            // Count edges involving this component to compute means
             let sumAbsAttr = 0;
             let countEdges = 0;
             for (const edge of allEdges) {
@@ -741,7 +1042,6 @@
             const meanAbsAttr = countEdges > 0 ? sumAbsAttr / countEdges : 0;
             const meanSqAttr = countEdges > 0 ? globalImp / countEdges : 0;
 
-            // Show info
             infoEl.innerHTML = `
                 <p><strong>Layer:</strong> ${layer}</p>
                 <p><strong>Component:</strong> ${cIdx}</p>
@@ -751,7 +1051,6 @@
                 <p><strong>Mean attr²:</strong> ${meanSqAttr.toFixed(6)}</p>
             `;
 
-            // Show examples
             let examplesHtml = '<h4>Top Activating Examples</h4>';
             for (let i = 0; i < subcomp.example_tokens.length; i++) {
                 const tokens = subcomp.example_tokens[i];
@@ -764,30 +1063,28 @@
                     const ci = ciVals[j];
                     const isActive = j === activePos;
                     const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
-                    examplesHtml += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}" title="CI: ${ci.toFixed(3)}">${tokens[j]}</span>`;
+                    examplesHtml += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}" title="CI: ${ci.toFixed(3)}">${escapeHtml(tokens[j])}</span>`;
                 }
                 examplesHtml += ` <small>(CI: ${activeCi.toFixed(3)})</small></div>`;
             }
 
-            // Show top tokens by precision (input tokens)
             if (subcomp.pr_tokens && subcomp.pr_tokens.length > 0) {
                 examplesHtml += '<h4>Top Input Tokens</h4>';
                 examplesHtml += '<table class="pr-table"><tr><th>Token</th><th title="P(fires | token)">P(fire|tok)</th></tr>';
                 const nShow = Math.min(10, subcomp.pr_tokens.length);
                 for (let i = 0; i < nShow; i++) {
-                    examplesHtml += `<tr><td><code>${subcomp.pr_tokens[i]}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
+                    examplesHtml += `<tr><td><code>${escapeHtml(subcomp.pr_tokens[i])}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
                 }
                 examplesHtml += '</table>';
             }
 
-            // Show top predicted tokens
             if (subcomp.predicted_tokens && subcomp.predicted_tokens.length > 0) {
                 examplesHtml += '<h4>Top Predicted Tokens</h4>';
                 examplesHtml += '<p style="font-size:0.8rem;color:#666;margin:0 0 0.5rem 0;">P(token predicted | component fires)</p>';
                 examplesHtml += '<table class="pr-table"><tr><th>Token</th><th>Probability</th></tr>';
                 const nShow = Math.min(10, subcomp.predicted_tokens.length);
                 for (let i = 0; i < nShow; i++) {
-                    examplesHtml += `<tr><td><code>${subcomp.predicted_tokens[i]}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
+                    examplesHtml += `<tr><td><code>${escapeHtml(subcomp.predicted_tokens[i])}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
                 }
                 examplesHtml += '</table>';
             }
@@ -800,18 +1097,14 @@
             const topK = +document.getElementById('topk-edges').value;
             const maxMeanCI = +document.getElementById('max-mean-ci').value;
 
-            // Step 1 & 2: Filter edges by mean CI, take top K, get active nodes
             const { edges, activeNodes } = getFilteredEdgesAndNodes(topK, maxMeanCI);
             document.getElementById('edge-count').textContent = edges.length;
 
-            // Step 3: Build layout from active nodes (removes orphans, sorts locally)
             const { layers, seqWidths, seqXStarts } = buildLayout(activeNodes);
 
-            // Total width is last column start + last column width + margin
             const totalSeqWidth = seqXStarts[seqXStarts.length - 1] + seqWidths[seqWidths.length - 1];
             const width = totalSeqWidth + MARGIN.right;
 
-            // Height based on layer positions
             let maxY = 0;
             for (const layer in layerYPositions) {
                 maxY = Math.max(maxY, layerYPositions[layer] + COMPONENT_SIZE);
@@ -824,7 +1117,6 @@
 
             let html = '';
 
-            // Edges
             for (const e of edges) {
                 const p1 = nodePositions[e.srcKey];
                 const p2 = nodePositions[e.tgtKey];
@@ -836,14 +1128,12 @@
                 }
             }
 
-            // Nodes - colored by summed output attribution
             for (const key in nodePositions) {
                 const pos = nodePositions[key];
                 const [layer, seqIdx, cIdx] = key.split(':');
                 const info = parseLayer(layer);
                 const outAttr = nodeOutAttr[key] || 0;
                 const intensity = Math.min(1, outAttr / maxNodeOutAttr);
-                // Interpolate from gray to layer color based on intensity
                 const baseColor = COLORS[info.subtype] || '#999';
                 const opacity = 0.2 + intensity * 0.8;
                 html += `<rect class="node" data-layer="${layer}" data-seq="${seqIdx}" data-cidx="${cIdx}" x="${pos.x - COMPONENT_SIZE/2}" y="${pos.y - COMPONENT_SIZE/2}" width="${COMPONENT_SIZE}" height="${COMPONENT_SIZE}" fill="${baseColor}" rx="1" opacity="${opacity}" style="cursor:pointer"><title>${layer} seq=${seqIdx} c=${cIdx}\nOut attr: ${outAttr.toFixed(4)}</title></rect>`;
@@ -851,18 +1141,15 @@
 
             svg.innerHTML = html;
 
-            // Token labels in sticky container (outside SVG, same width as main SVG)
             let tokenHtml = `<svg width="${width}" height="50" style="display:block;">`;
             for (let i = 0; i < data.tokens.length; i++) {
-                // Center token label in its column
                 const colCenter = seqXStarts[i] + seqWidths[i] / 2;
-                tokenHtml += `<text x="${colCenter}" y="20" text-anchor="middle" font-size="12" font-family="monospace" font-weight="500">${data.tokens[i]}</text>`;
+                tokenHtml += `<text x="${colCenter}" y="20" text-anchor="middle" font-size="12" font-family="monospace" font-weight="500">${escapeHtml(data.tokens[i])}</text>`;
                 tokenHtml += `<text x="${colCenter}" y="38" text-anchor="middle" font-size="10" fill="#999">[${i}]</text>`;
             }
             tokenHtml += '</svg>';
             document.getElementById('token-labels').innerHTML = tokenHtml;
 
-            // Layer labels in sticky left container
             let layerHtml = `<svg width="${LABEL_WIDTH}" height="${height}" style="display:block;">`;
             for (const layer in layerYPositions) {
                 const info = parseLayer(layer);
@@ -872,7 +1159,6 @@
             layerHtml += '</svg>';
             document.getElementById('layer-labels').innerHTML = layerHtml;
 
-            // Add hover handlers for nodes
             const nodes = svg.querySelectorAll('.node');
             nodes.forEach((node, i) => {
                 node.addEventListener('mouseenter', (e) => {
@@ -886,14 +1172,12 @@
                 });
                 node.addEventListener('mouseleave', () => {
                     hoveredNodeKey = null;
-                    // Restore pinned highlights if any, otherwise clear
                     if (pinnedNodes.length > 0) {
                         updatePinnedDisplay();
                     }
                     hideNodeDetails();
                 });
                 node.addEventListener('click', (e) => {
-                    // Hide hover tooltip when clicking
                     document.getElementById('node-details').style.display = 'none';
                     hoveredNodeKey = null;
 
@@ -905,7 +1189,6 @@
                 });
             });
 
-            // Add hover handlers for tooltip
             const detailsEl = document.getElementById('node-details');
             detailsEl.addEventListener('mouseenter', () => {
                 isHoveringTooltip = true;
@@ -916,52 +1199,12 @@
             });
         }
 
-        // Load JSON
-        fetch('local_attributions.json')
-            .then(r => r.json())
-            .then(d => {
-                data = d;
-                // Find max attribution (sparse format)
-                for (const pair of data.pairs) {
-                    const isCrossSeq = pair.is_cross_seq;
-                    for (const entry of pair.attribution) {
-                        // Cross-seq: [s_in, c_in, s_out, c_out, val], Same-seq: [s, c_in, c_out, val]
-                        const val = isCrossSeq ? entry[4] : entry[3];
-                        if (Math.abs(val) > maxAttr) maxAttr = Math.abs(val);
-                    }
-                }
+        // Initialize
+        document.getElementById('topk-edges').addEventListener('input', render);
+        document.getElementById('max-mean-ci').addEventListener('input', render);
 
-                // Compute component importance and collect all edges for topK
-                computeComponentImportanceAndEdges();
-
-                // Build mean CI lookup from activation contexts
-                componentMeanCI = {};
-                if (data.activation_contexts) {
-                    for (const [layer, subcomps] of Object.entries(data.activation_contexts)) {
-                        for (const subcomp of subcomps) {
-                            componentMeanCI[`${layer}:${subcomp.subcomponent_idx}`] = subcomp.mean_ci;
-                        }
-                    }
-                }
-                computeNodeOutAttrs();
-                maxNodeOutAttr = Math.max(...Object.values(nodeOutAttr), 1);
-
-                // Build legend
-                const legendEl = document.getElementById('legend-items');
-                for (const [name, color] of Object.entries(COLORS)) {
-                    legendEl.innerHTML += `<div class="legend-item"><span class="legend-dot" style="background:${color}"></span>${name}</div>`;
-                }
-
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('app').style.display = 'block';
-                render();
-
-                document.getElementById('topk-edges').addEventListener('input', render);
-                document.getElementById('max-mean-ci').addEventListener('input', render);
-            })
-            .catch(e => {
-                document.getElementById('loading').textContent = 'Error loading data: ' + e.message;
-            });
+        // Start in file mode
+        loadFileMode();
     </script>
 </body>
 </html>
