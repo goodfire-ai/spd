@@ -284,7 +284,7 @@ def compute_local_attributions(
         )
     else:
         pbar = None
-
+    
     for target, sources in list(target_iter):
         if pbar is not None:
             pbar.set_description(f"Source layers by target: {target}")
@@ -325,7 +325,9 @@ def compute_local_attributions(
                             # assert weighted.shape == (n_seq, model.C)
                             weighted = weighted.sum(dim=1, keepdim=True)
 
+                        # s_in_range = range(s_out + 1) if is_kv_to_o_pair_flag else [s_out]
                         s_in_range = range(s_out + 1) if is_kv_to_o_pair_flag else [s_out]
+
                         for s_in in s_in_range:
                             for c_in in source_info.alive_c_idxs:
                                 if not source_info.alive_mask[s_in, c_in]:

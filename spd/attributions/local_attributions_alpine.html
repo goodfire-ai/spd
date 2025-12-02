@@ -136,9 +136,23 @@
             z-index: 10;
         }
         svg { display: block; }
-        .edge-pos, .edge-neg { display: inline-block; width: 30px; height: 3px; margin-right: 0.25rem; }
+        .edge-pos, .edge-neg { display: inline-block; width: 30px; height: 3px; margin-right: 0.25rem; vertical-align: middle; }
         .edge-pos { background: #2196f3; }
         .edge-neg { background: #f44336; }
+        .legend { color: #666; font-size: 0.85rem; display: flex; align-items: center; gap: 0.75rem; }
+        .edge-tooltip {
+            position: fixed;
+            padding: 0.5rem 0.75rem;
+            background: #fff;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1001;
+            pointer-events: none;
+            font-size: 0.85rem;
+        }
+        .edge-tooltip-row { margin: 0.2rem 0; }
+        .edge-tooltip-label { color: #666; margin-right: 0.5rem; }
+        .edge-tooltip code { background: #f5f5f5; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.8rem; }
         .loading { padding: 2rem; text-align: center; color: #666; }
         .error-banner {
             padding: 0.75rem 1rem;
@@ -368,6 +382,11 @@
                     Normalize edges
                 </label>
                 <span class="edge-count">Showing <span x-text="visibleEdgeCount"></span> edges</span>
+                <span class="legend">
+                    <span class="edge-pos"></span><span x-text="normalizeEdges ? '+1' : '+' + maxAbsAttr.toFixed(2)"></span>
+                    <span class="edge-neg"></span><span x-text="normalizeEdges ? '-1' : '-' + maxAbsAttr.toFixed(2)"></span>
+                    <span style="opacity: 0.3;">faint</span> → <span style="opacity: 1;">solid</span> = |strength|
+                </span>
                 <span class="db-info">DB: <span x-text="promptCount"></span> prompts</span>
             </div>
 
@@ -447,6 +466,30 @@
                     <div x-html="buildComponentHtml(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)"></div>
                 </template>
             </div>
+
+            <!-- Edge hover tooltip -->
+            <div
+                class="edge-tooltip"
+                x-show="hoveredEdge"
+                :style="`left: ${edgeTooltipPos.x}px; top: ${edgeTooltipPos.y}px`"
+            >
+                <template x-if="hoveredEdge">
+                    <div>
+                        <div class="edge-tooltip-row">
+                            <span class="edge-tooltip-label">From:</span>
+                            <code x-text="hoveredEdge.src"></code>
+                        </div>
+                        <div class="edge-tooltip-row">
+                            <span class="edge-tooltip-label">To:</span>
+                            <code x-text="hoveredEdge.tgt"></code>
+                        </div>
+                        <div class="edge-tooltip-row">
+                            <span class="edge-tooltip-label">Strength:</span>
+                            <span :style="`color: ${hoveredEdge.val > 0 ? '#2196f3' : '#f44336'}; font-weight: bold;`" x-text="hoveredEdge.val.toFixed(4)"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
         </div>
     </div>
 
@@ -498,6 +541,14 @@
                 promptCount: 0,
                 allPrompts: [],
                 currentPromptId: null,
+                /**
+                 * {
+                 *   "id": number,
+                 *   "tokens": string[],
+                 *   "edges": { src: "layer:seq:cIdx", tgt: "layer:seq:cIdx", val: float }[],
+                 *   "outputProbs": { "seq:cIdx": { prob: float, token: string } },
+                 * }
+                 */
                 promptData: null,
                 activationContexts: null,
                 activationContextsLoading: false,
@@ -518,8 +569,10 @@
                 visibleEdgeCount: 0,
                 pinnedNodes: [],
                 hoveredNode: null,
+                hoveredEdge: null,
                 isHoveringTooltip: false,
                 tooltipPos: { x: 0, y: 0 },
+                edgeTooltipPos: { x: 0, y: 0 },
                 searchResults: [],
 
                 // Layout cache
@@ -568,8 +621,6 @@
                 },
 
                 async loadPrompt(promptId) {
-                    console.log('loadPrompt called with', promptId, new Error().stack);
-
                     if (this.promptLoading) {
                         console.warn('Already loading a prompt, ignoring request');
                         return;
@@ -599,22 +650,18 @@
                             throw new Error(promptData.error);
                         }
 
+                        // {
+                        //     "id": number,
+                        //     "tokens": string[],
+                        //     "edges": { src: "layer:seq:cIdx", tgt: "layer:seq:cIdx", val: float }[],
+                        //     "outputProbs": { "seq:cIdx": { prob: float, token: string } },
+                        // }
                         this.promptData = promptData;
-                        const data = this.promptData;
 
-                        // Check if we got the new format (edges) or old format (pairs)
-                        if (!data.edges) {
-                            console.error('Server returned old format (pairs) instead of new format (edges). Make sure you are running the new server: python -m spd.attributions.server');
-                            console.log('Response keys:', Object.keys(data));
-                            return;
-                        }
-
-                        // New format: edges are pre-filtered and sorted by server
-                        // Each edge: { src: "layer:seq:cIdx", tgt: "layer:seq:cIdx", val: float }
-                        this.allEdges = data.edges.map(e => ({
-                            srcKey: e.src,
-                            tgtKey: e.tgt,
-                            val: e.val,
+                        this.allEdges = promptData.edges.map(edge => ({
+                            srcKey: edge.src,
+                            tgtKey: edge.tgt,
+                            val: edge.val,
                         }));
 
                         // Find max attribution
@@ -630,7 +677,6 @@
                         this.componentImportance = {};
                         this.componentImportanceLocal = {};
                         this.nodeOutAttr = {};
-
                         for (const edge of this.allEdges) {
                             const valSq = edge.val * edge.val;
                             const absVal = Math.abs(edge.val);
@@ -699,8 +745,6 @@
                         }
                         this.activationContexts = data;
                         timeEnd('loadActCtx.fetch');
-                        // No re-render needed - CI filtering is now server-side
-                        // Activation contexts are only used for tooltips/pinned details
                     } catch (e) {
                         console.error('Error loading activation contexts:', e);
                         this.activationContextsError = `Failed to load component details: ${e.message}`;
@@ -881,8 +925,8 @@
                         const isOutput = layer === 'output';
 
                         for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
-                            const components = [...nodesPerLayerSeq[`${layer}:${seqIdx}`]];
-                            if (components.length === 0) continue;
+                            const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
+                            if (nodes === undefined) continue;
 
                             let baseX = seqXStarts[seqIdx] + COL_PADDING;
                             const baseY = this.layerYPositions[layer];
@@ -893,7 +937,8 @@
                                 const subtypeIdx = KVQ_SUBTYPES.indexOf(info.subtype);
                                 for (let i = 0; i < subtypeIdx; i++) {
                                     const prevLayer = `h.${block}.attn.${KVQ_SUBTYPES[i]}`;
-                                    const prevCount = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`].length;
+                                    const prevLayerNodes = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]
+                                    const prevCount = prevLayerNodes?.length ?? 0;
                                     baseX += prevCount * (COMPONENT_SIZE + COMPONENT_GAP);
                                     baseX += KVQ_GROUP_GAP;
                                 }
@@ -902,11 +947,11 @@
                             // Use full column width (minus padding) so jitter spreads across entire seq position
                             const cellWidth = seqWidths[seqIdx] - COL_PADDING * 2;
                             const offsets = this.getComponentOffsetsForLayout(
-                                components, layer, seqIdx, isOutput, cellWidth
+                                nodes, layer, seqIdx, isOutput, cellWidth
                             );
 
-                            for (let i = 0; i < components.length; i++) {
-                                const cIdx = components[i];
+                            for (let i = 0; i < nodes.length; i++) {
+                                const cIdx = nodes[i];
                                 this.nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
                                     x: baseX + offsets[cIdx] + COMPONENT_SIZE / 2,
                                     y: baseY + COMPONENT_SIZE / 2
@@ -1056,9 +1101,15 @@
                         const p2 = this.nodePositions[e.tgtKey];
                         if (p1 && p2) {
                             const color = e.val > 0 ? '#2196f3' : '#f44336';
-                            const w = Math.max(0.5, (Math.abs(e.val) / this.maxAbsAttr) * 2);
+                            const w = Math.max(1, (Math.abs(e.val) / this.maxAbsAttr) * 4);
                             const op = 0.05 + (Math.abs(e.val) / this.maxAbsAttr) * 0.95;
-                            edgesHtml += `<line class="edge" data-src="${e.srcKey}" data-tgt="${e.tgtKey}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${color}" stroke-width="${w}" opacity="${op}"/>`;
+                            // Cubic bezier with vertical tangents at endpoints
+                            const dy = Math.abs(p2.y - p1.y);
+                            const curveOffset = Math.max(20, dy * 0.4);
+                            const cp1y = p1.y - curveOffset;
+                            const cp2y = p2.y + curveOffset;
+                            const d = `M ${p1.x},${p1.y} C ${p1.x},${cp1y} ${p2.x},${cp2y} ${p2.x},${p2.y}`;
+                            edgesHtml += `<path class="edge" data-src="${e.srcKey}" data-tgt="${e.tgtKey}" data-val="${e.val}" d="${d}" stroke="${color}" stroke-width="${w}" opacity="${op}" fill="none"/>`;
                         }
                     }
 
@@ -1152,8 +1203,20 @@
 
                     const svg = this.$refs.graph;
 
-                    // Event delegation for mouse events on nodes
+                    // Event delegation for mouse events on nodes and edges
                     svg.addEventListener('mouseover', (e) => {
+                        // Check for edge hover
+                        const edge = e.target.closest('.edge');
+                        if (edge) {
+                            const src = edge.getAttribute('data-src');
+                            const tgt = edge.getAttribute('data-tgt');
+                            const val = parseFloat(edge.getAttribute('data-val'));
+                            this.hoveredEdge = { src, tgt, val };
+                            this.edgeTooltipPos = { x: e.clientX + 10, y: e.clientY + 10 };
+                            return;
+                        }
+
+                        // Check for node hover
                         const node = e.target.closest('.node');
                         if (!node) return;
 
@@ -1168,6 +1231,14 @@
                     });
 
                     svg.addEventListener('mouseout', (e) => {
+                        // Check for edge mouseout
+                        const edge = e.target.closest('.edge');
+                        if (edge) {
+                            this.hoveredEdge = null;
+                            return;
+                        }
+
+                        // Check for node mouseout
                         const node = e.target.closest('.node');
                         if (!node) return;
                         // Check if we're moving to another node or leaving entirely
@@ -1382,7 +1453,7 @@
 
                     if (subcomp.example_tokens?.length > 0) {
                         html += '<h4>Top Activating Examples</h4>';
-                        for (let i = 0; i < Math.min(5, subcomp.example_tokens.length); i++) {
+                        for (let i = 0; i < Math.min(20, subcomp.example_tokens.length); i++) {
                             const tokens = subcomp.example_tokens[i];
                             const ciVals = subcomp.example_ci[i];
                             const activePos = subcomp.example_active_pos[i];
@@ -1470,7 +1541,7 @@
 
                     if (subcomp.example_tokens?.length > 0) {
                         html += '<h4>Top Activating Examples</h4>';
-                        for (let i = 0; i < Math.min(5, subcomp.example_tokens.length); i++) {
+                        for (let i = 0; i < Math.min(20, subcomp.example_tokens.length); i++) {
                             const tokens = subcomp.example_tokens[i];
                             const ciVals = subcomp.example_ci[i];
                             const activePos = subcomp.example_active_pos[i];

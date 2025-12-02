@@ -205,16 +205,19 @@ def get_prompt(
     prompt = db.get_prompt_simple(prompt_id)
     if prompt is None:
         return JSONResponse({"error": f"Prompt {prompt_id} not found"}, status_code=404)
+    
+    CLAMP = 6
+    token_ids = prompt.token_ids[:CLAMP]
 
     # Decode tokens for display
-    token_strings = [tokenizer.decode([t]) for t in prompt.token_ids]
+    token_strings = [tokenizer.decode([t]) for t in token_ids]
     print(
         f"[API] /api/prompt/{prompt_id} computing attributions for {len(token_strings)} tokens on device={device}...",
         flush=True,
     )
 
     # Compute attribution graph on-demand (needs gradients for autograd.grad)
-    tokens_tensor = torch.tensor([prompt.token_ids], device=device)
+    tokens_tensor = torch.tensor([token_ids], device=device)
     t_compute_start = time.time()
     result = compute_local_attributions(
         model=model,
@@ -315,7 +318,7 @@ def search_prompts(
     for pid in prompt_ids:
         prompt = db.get_prompt_simple(pid)
         assert prompt is not None, f"Prompt {pid} in index but not in DB"
-        token_strings = [tokenizer.decode([t]) for t in prompt.token_ids]
+        token_strings = [tokenizer.decode([t]) for t in token_ids]
         results.append(
             {
                 "id": prompt.id,

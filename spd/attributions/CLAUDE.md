@@ -57,5 +57,4 @@ python -m spd.attributions.server --db_path ./local_attr.db --port 8765
 
 ## TODO
 
-- [ ] Slim down activation_contexts - frontend only uses `mean_ci` and first 5 `example_tokens`, but we store much more (`example_ci`, `example_active_pos`, `pr_tokens`, etc.)
-- [ ] Verify mean_ci computation is principled (check `get_activations_data_streaming`)
+- [ ] Slim down activation_contexts - frontend only uses `mean_ci` and first 20 `example_tokens`, but we store much more (`example_ci`, `example_active_pos`, `pr_tokens`, etc.)
