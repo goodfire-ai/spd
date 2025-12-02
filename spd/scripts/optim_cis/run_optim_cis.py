@@ -332,13 +332,6 @@ def optimize_ci_values(
         total_loss.backward()
         optimizer.step()
 
-    # with torch.no_grad():
-    #     final_ci_outputs = ci_params.create_ci_outputs(model, device)
-
-    # optimized_ci: dict[str, list[list[float]]] = {}
-    # for layer_name, ci_tensor in final_ci_outputs.lower_leaky.items():
-    #     optimized_ci[layer_name] = ci_tensor[0].cpu().tolist()
-
     return ci_params
 
 
@@ -350,9 +343,7 @@ def get_out_dir() -> Path:
 
 
 # %%
-# Example configuration
 if __name__ == "__main__":
-    # Configuration
     config = OptimCIConfig(
         seed=0,
         # wandb_path="wandb:goodfire/spd/runs/jyo9duz5",  # ss_gpt2_simple-1.25M (4L)
@@ -393,7 +384,6 @@ if __name__ == "__main__":
     label_token_ids = tokenizer.encode(config.label, add_special_tokens=False)
     assert len(label_token_ids) == 1, f"Expected single token for label, got {len(label_token_ids)}"
     label_token = label_token_ids[0]
-    print(f"Label token: {label_token}")
 
     # Run optimization
     ci_params = optimize_ci_values(
@@ -427,7 +417,6 @@ if __name__ == "__main__":
     for name, value in final_metrics.items():
         print(f"  {name}: {value:.6f}")
 
-    # Save results
     out_dir = get_out_dir()
     output_path = out_dir / f"optimized_ci_{loaded.wandb_id}.json"
 
