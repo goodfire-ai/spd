@@ -20,6 +20,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from spd.attributions.db import LocalAttrDB
+from spd.attributions.edge_normalization import normalize_edges_by_target
 
 THIS_DIR = Path(__file__).parent
 
@@ -101,6 +102,7 @@ def get_prompt(
     prompt_id: int,
     top_k: Annotated[int, Query(ge=10, le=50000)] = 1000,
     max_mean_ci: Annotated[float, Query(ge=0, le=1)] = 1.0,
+    normalize: Annotated[bool, Query()] = True,
 ):
     """Return prompt data with server-side top-k edge filtering.
 
@@ -108,6 +110,7 @@ def get_prompt(
         prompt_id: The prompt ID to fetch
         top_k: Maximum number of edges to return (sorted by |attribution|)
         max_mean_ci: Filter out edges where either endpoint has mean_ci > this value
+        normalize: If True, normalize incoming edges to each node to sum to 1
     """
     assert db is not None
     prompt = db.get_prompt(prompt_id)
@@ -160,6 +163,10 @@ def get_prompt(
             all_edges.append(
                 (source, target, c_in_idx, c_out_idx, s_in, s_out, val, is_cross_seq)
             )
+
+    # Normalize edges before filtering (if enabled)
+    if normalize:
+        all_edges = normalize_edges_by_target(all_edges)
 
     # Sort by |val| descending, take top_k
     all_edges.sort(key=lambda e: abs(e[6]), reverse=True)

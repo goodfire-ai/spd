@@ -304,6 +304,10 @@
                         <option value="importance">By importance</option>
                     </select>
                 </label>
+                <label style="display: flex; align-items: center; gap: 0.25rem;">
+                    <input type="checkbox" x-model="normalizeEdges" @change="reloadWithFilters()">
+                    Normalize edges
+                </label>
                 <span class="edge-count">Showing <span x-text="visibleEdgeCount"></span> edges</span>
                 <span class="db-info">DB: <span x-text="promptCount"></span> prompts</span>
             </div>
@@ -443,6 +447,7 @@
                 // UI state
                 maxMeanCI: 1.0,  // No CI filtering by default
                 topK: 1000,
+                normalizeEdges: true,  // Normalize incoming edges to each node
                 nodeLayout: 'jittered',  // 'importance' | 'shuffled' | 'jittered'
                 visibleEdgeCount: 0,
                 pinnedNodes: [],
@@ -499,6 +504,7 @@
                     const params = new URLSearchParams({
                         top_k: this.topK,
                         max_mean_ci: this.maxMeanCI,
+                        normalize: this.normalizeEdges,
                     });
 
                     timeStart('loadPrompt.fetch');
