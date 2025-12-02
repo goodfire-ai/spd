@@ -44,20 +44,6 @@ def _choose_master_port(run_id_local: str, idx: int) -> int:
     return base + (h % span)
 
 
-def format_runtime_str(runtime_minutes: int) -> str:
-    """Format runtime in minutes to a human-readable string like '2h30m' or '45m'.
-
-    Args:
-        runtime_minutes: Runtime in minutes
-
-    Returns:
-        Formatted string like '2h30m' for 150 minutes or '45m' for 45 minutes
-    """
-    minutes = runtime_minutes % 60
-    hours = runtime_minutes // 60
-    return f"{hours}h{minutes}m" if hours > 0 else f"{minutes}m"
-
-
 def get_command(
     run_id: str,
     job: TrainingJob,
@@ -263,45 +249,3 @@ def submit_slurm_array(script_path: Path) -> str:
     # Extract job ID from sbatch output (format: "Submitted batch job 12345")
     job_id = result.stdout.strip().split()[-1]
     return job_id
-
-
-def submit_slurm_job(script_path: Path) -> str:
-    """Submit a SLURM job and return the job ID.
-
-    Args:
-        script_path: Path to SLURM batch script
-
-    Returns:
-        Job ID from submitted job
-    """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=True
-    )
-    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
-    job_id = result.stdout.strip().split()[-1]
-    return job_id
-
-
-def print_job_summary(job_info_list: list[str]) -> None:
-    """Print summary of submitted jobs.
-
-    Args:
-        job_info_list: List of job information strings (can be just job IDs
-                      or formatted as "experiment:job_id")
-    """
-    logger.section("DEPLOYMENT SUMMARY")
-
-    job_info_dict: dict[str, str] = {}
-    for job_info in job_info_list:
-        if ":" in job_info:
-            experiment, job_id = job_info.split(":", 1)
-            job_info_dict[experiment] = job_id
-        else:
-            job_info_dict["Job ID"] = job_info
-
-    logger.values(
-        msg=f"Deployed {len(job_info_list)} jobs:",
-        data=job_info_dict,
-    )
-
-    logger.info("View logs in: ~/slurm_logs/slurm-<job_id>.out")
