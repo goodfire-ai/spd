@@ -21,7 +21,6 @@ import torch
 from fastapi import FastAPI, Query
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
@@ -318,7 +317,7 @@ def search_prompts(
     for pid in prompt_ids:
         prompt = db.get_prompt_simple(pid)
         assert prompt is not None, f"Prompt {pid} in index but not in DB"
-        token_strings = [tokenizer.decode([t]) for t in token_ids]
+        token_strings = [tokenizer.decode([t]) for t in prompt.token_ids]
         results.append(
             {
                 "id": prompt.id,
