@@ -136,18 +136,6 @@
             z-index: 10;
         }
         svg { display: block; }
-        .legend {
-            margin-top: 1rem;
-            padding: 1rem;
-            background: #fff;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .legend h3 { margin: 0 0 0.5rem 0; font-size: 0.9rem; }
-        .legend-items { display: flex; flex-wrap: wrap; gap: 1rem; }
-        .legend-item { display: flex; align-items: center; gap: 0.25rem; font-size: 0.85rem; }
-        .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
-        .legend-edge { margin-top: 0.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 1rem; }
         .edge-pos, .edge-neg { display: inline-block; width: 30px; height: 3px; margin-right: 0.25rem; }
         .edge-pos { background: #2196f3; }
         .edge-neg { background: #f44336; }
@@ -317,22 +305,6 @@
                 <div class="graph-container">
                     <svg x-ref="graph"></svg>
                     <div class="token-labels-container" x-ref="tokenLabels"></div>
-                </div>
-            </div>
-
-            <div class="legend">
-                <h3>Legend</h3>
-                <div class="legend-items">
-                    <template x-for="(color, name) in COLORS" :key="name">
-                        <div class="legend-item">
-                            <span class="legend-dot" :style="`background: ${color}`"></span>
-                            <span x-text="name"></span>
-                        </div>
-                    </template>
-                </div>
-                <div class="legend-edge">
-                    <span class="edge-pos"></span> Positive
-                    <span class="edge-neg"></span> Negative
                 </div>
             </div>
 
