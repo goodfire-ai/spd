@@ -216,7 +216,7 @@ def optimize_ci_values(
     label_token: int,
     config: OptimCIConfig,
     device: str,
-) -> tuple[dict[str, list[list[float]]], dict[str, float]]:
+) -> OptimizableCIParams:
     """Optimize CI values for a single prompt.
 
     Args:
@@ -226,9 +226,7 @@ def optimize_ci_values(
         config: Optimization configuration.
         device: Device to run on.
     Returns:
-        Tuple of:
-        - Optimized CI values as dict of layer_name -> [seq][C] nested lists
-        - Final metrics dict
+        The OptimizableCIParams object.
     """
     imp_min_coeff = config.imp_min_config.coeff
     assert imp_min_coeff is not None, "Importance minimality loss coefficient must be set"
@@ -267,8 +265,6 @@ def optimize_ci_values(
     params = ci_params.get_parameters()
     optimizer = optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
 
-    final_metrics: dict[str, float] = {}
-
     for step in tqdm(range(config.steps), desc="Optimizing CI values"):
         optimizer.zero_grad()
 
@@ -296,14 +292,8 @@ def optimize_ci_values(
             out[0, -1, :].unsqueeze(0), torch.tensor([label_token], device=device)
         )
         total_loss = ce_loss_coeff * ce_loss + imp_min_coeff * imp_min_loss
-        loss_terms = {
-            "imp_min_loss": imp_min_loss.item(),
-            "ce_loss": ce_loss.item(),
-            "total_loss": total_loss.item(),
-        }
-
-        total_loss.backward()
-        optimizer.step()
+        # Get the output probability for the label_token in the final seq position
+        label_prob = F.softmax(out[0, -1, :], dim=-1)[label_token]
 
         if step % config.log_freq == 0 or step == config.steps - 1:
             l0_stats = compute_l0_stats(ci_outputs, config.ci_threshold)
@@ -318,25 +308,38 @@ def optimize_ci_values(
                     rounding_threshold=config.ce_kl_rounding_threshold,
                 )
 
+            # Also calculate the ci-masked label probability
+            with torch.no_grad():
+                mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
+                out = model(tokens, mask_infos=mask_infos)
+                ci_masked_label_prob = F.softmax(out[0, -1, :], dim=-1)[label_token]
+
+            log_terms = {
+                "imp_min_loss": imp_min_loss.item(),
+                "ce_loss": ce_loss.item(),
+                "total_loss": total_loss.item(),
+                "stoch_masked_label_prob": label_prob.item(),
+                "ci_masked_label_prob": ci_masked_label_prob.item(),
+            }
             tqdm.write(f"\n--- Step {step} ---")
-            for name, value in loss_terms.items():
+            for name, value in log_terms.items():
                 tqdm.write(f"  {name}: {value:.6f}")
             for name, value in l0_stats.items():
                 tqdm.write(f"  {name}: {value:.2f}")
             for name, value in ce_kl_stats.items():
                 tqdm.write(f"  {name}: {value:.6f}")
 
-            if step == config.steps - 1:
-                final_metrics = {**loss_terms, **l0_stats, **ce_kl_stats}
+        total_loss.backward()
+        optimizer.step()
 
-    with torch.no_grad():
-        final_ci_outputs = ci_params.create_ci_outputs(model, device)
+    # with torch.no_grad():
+    #     final_ci_outputs = ci_params.create_ci_outputs(model, device)
 
-    optimized_ci: dict[str, list[list[float]]] = {}
-    for layer_name, ci_tensor in final_ci_outputs.lower_leaky.items():
-        optimized_ci[layer_name] = ci_tensor[0].cpu().tolist()
+    # optimized_ci: dict[str, list[list[float]]] = {}
+    # for layer_name, ci_tensor in final_ci_outputs.lower_leaky.items():
+    #     optimized_ci[layer_name] = ci_tensor[0].cpu().tolist()
 
-    return optimized_ci, final_metrics
+    return ci_params
 
 
 def get_out_dir() -> Path:
@@ -361,7 +364,7 @@ if __name__ == "__main__":
         lr_schedule="cosine",
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
-        steps=10000,
+        steps=2000,
         log_freq=500,
         imp_min_config=ImportanceMinimalityLossConfig(coeff=1e-1, pnorm=0.3),
         ce_loss_coeff=1,
@@ -369,7 +372,6 @@ if __name__ == "__main__":
         sampling="continuous",
         n_mask_samples=1,
         output_loss_type="kl",
-        use_delta_component=True,
         ce_kl_rounding_threshold=0.5,
     )
 
@@ -394,13 +396,36 @@ if __name__ == "__main__":
     print(f"Label token: {label_token}")
 
     # Run optimization
-    optimized_ci, final_metrics = optimize_ci_values(
+    ci_params = optimize_ci_values(
         model=model,
         tokens=tokens,
         label_token=label_token,
         config=config,
         device=device,
     )
+
+    # Get final metrics
+    ci_outputs = ci_params.create_ci_outputs(model, device)
+    l0_stats = compute_l0_stats(ci_outputs, config.ci_threshold)
+
+    with torch.no_grad():
+        target_out = model(tokens)
+        ce_kl_stats = compute_final_token_ce_kl(
+            model=model,
+            batch=tokens,
+            target_out=target_out,
+            ci=ci_outputs.lower_leaky,
+            rounding_threshold=config.ce_kl_rounding_threshold,
+        )
+        # Use ci-masked model to get final label probability
+        mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
+        out = model(tokens, mask_infos=mask_infos)
+        label_prob = F.softmax(out[0, -1, :], dim=-1)[label_token]
+
+    final_metrics = {**l0_stats, **ce_kl_stats, "ci_masked_label_prob": label_prob.item()}
+    print(f"\nFinal metrics after {config.steps} steps:")
+    for name, value in final_metrics.items():
+        print(f"  {name}: {value:.6f}")
 
     # Save results
     out_dir = get_out_dir()
@@ -410,8 +435,7 @@ if __name__ == "__main__":
         "config": config.model_dump(),
         "prompt": config.prompt,
         "token_strings": token_strings,
-        "optimized_ci": optimized_ci,
-        "final_metrics": final_metrics,
+        "optimized_ci": {k: v[0].cpu().tolist() for k, v in ci_outputs.lower_leaky.items()},
         "wandb_id": loaded.wandb_id,
     }
 

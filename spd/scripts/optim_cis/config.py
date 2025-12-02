@@ -89,11 +89,6 @@ class OptimCIConfig(BaseConfig):
         description="Loss type for reconstruction: 'kl' for LMs, 'mse' for vectors",
     )
 
-    use_delta_component: bool = Field(
-        ...,
-        description="Whether to use delta component in reconstruction losses",
-    )
-
     ce_kl_rounding_threshold: float = Field(
         ...,
         description="Threshold for rounding CI values in CE/KL metric computation",
