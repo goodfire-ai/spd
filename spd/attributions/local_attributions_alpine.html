@@ -140,6 +140,64 @@
         .edge-pos { background: #2196f3; }
         .edge-neg { background: #f44336; }
         .loading { padding: 2rem; text-align: center; color: #666; }
+        .error-banner {
+            padding: 0.75rem 1rem;
+            background: #ffebee;
+            border: 1px solid #f44336;
+            border-radius: 4px;
+            color: #c62828;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .error-banner button {
+            margin-left: auto;
+            padding: 0.25rem 0.5rem;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .error-banner button:hover { background: #d32f2f; }
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #e0e0e0;
+            border-top-color: #2196f3;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .loading-text {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #666;
+        }
+        .search-error {
+            padding: 0.5rem 1rem;
+            background: #ffebee;
+            color: #c62828;
+            font-size: 0.8rem;
+        }
         .node-details {
             position: fixed;
             padding: 1rem;
@@ -236,12 +294,19 @@
             <h3>Search Prompts</h3>
             <button
                 class="search-btn"
-                :disabled="pinnedNodes.length === 0"
+                :disabled="pinnedNodes.length === 0 || searchLoading"
                 @click="searchPrompts"
-                x-text="pinnedNodes.length === 0 ? 'Pin components to search' : `Find prompts with ${pinnedNodes.length} pinned component${pinnedNodes.length > 1 ? 's' : ''}`"
-            ></button>
+            >
+                <template x-if="searchLoading">
+                    <span class="loading-text"><span class="loading-spinner"></span> Searching...</span>
+                </template>
+                <template x-if="!searchLoading">
+                    <span x-text="pinnedNodes.length === 0 ? 'Pin components to search' : `Find prompts with ${pinnedNodes.length} pinned component${pinnedNodes.length > 1 ? 's' : ''}`"></span>
+                </template>
+            </button>
         </div>
-        <div class="search-info" x-show="searchResults.length > 0">
+        <div class="search-error" x-show="searchError" x-text="searchError"></div>
+        <div class="search-info" x-show="searchResults.length > 0 && !searchError">
             Found <span x-text="searchResults.length"></span> prompt<span x-show="searchResults.length !== 1">s</span>
         </div>
         <div class="search-results">
@@ -267,6 +332,12 @@
 
         <!-- Main app -->
         <div x-show="!loading">
+            <!-- Error banner for prompt loading -->
+            <div class="error-banner" x-show="promptError">
+                <span x-text="promptError"></span>
+                <button @click="loadPrompt(currentPromptId)">Retry</button>
+            </div>
+
             <div class="controls">
                 <label>
                     Prompt:
@@ -300,7 +371,11 @@
                 <span class="db-info">DB: <span x-text="promptCount"></span> prompts</span>
             </div>
 
-            <div class="graph-wrapper">
+            <div class="graph-wrapper" style="position: relative;">
+                <!-- Loading overlay -->
+                <div class="loading-overlay" x-show="promptLoading">
+                    <span class="loading-text"><span class="loading-spinner"></span> Loading prompt...</span>
+                </div>
                 <div class="layer-labels-container" x-ref="layerLabels"></div>
                 <div class="graph-container">
                     <svg x-ref="graph"></svg>
@@ -324,8 +399,14 @@
                             <template x-if="pinned.layer === 'output' || activationContexts">
                                 <div x-html="buildComponentHtmlNoSeq(pinned.layer, pinned.cIdx)"></div>
                             </template>
-                            <template x-if="pinned.layer !== 'output' && !activationContexts">
-                                <div>Loading details...</div>
+                            <template x-if="pinned.layer !== 'output' && !activationContexts && activationContextsLoading">
+                                <div class="loading-text"><span class="loading-spinner"></span> Loading details...</div>
+                            </template>
+                            <template x-if="pinned.layer !== 'output' && !activationContexts && !activationContextsLoading && activationContextsError">
+                                <div style="color: #c62828; font-size: 0.85rem;" x-text="activationContextsError"></div>
+                            </template>
+                            <template x-if="pinned.layer !== 'output' && !activationContexts && !activationContextsLoading && !activationContextsError">
+                                <div style="color: #666; font-size: 0.85rem;">No component details available</div>
                             </template>
                         </div>
                     </template>
@@ -344,10 +425,22 @@
                 <template x-if="hoveredNode && hoveredNode.layer === 'output'">
                     <div x-html="buildComponentHtml(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)"></div>
                 </template>
-                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContexts">
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContexts && activationContextsLoading">
                     <div>
                         <p><strong x-text="`${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`"></strong></p>
-                        <p>Loading details...</p>
+                        <p class="loading-text"><span class="loading-spinner"></span> Loading details...</p>
+                    </div>
+                </template>
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContexts && !activationContextsLoading && activationContextsError">
+                    <div>
+                        <p><strong x-text="`${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`"></strong></p>
+                        <p style="color: #c62828;" x-text="activationContextsError"></p>
+                    </div>
+                </template>
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContexts && !activationContextsLoading && !activationContextsError">
+                    <div>
+                        <p><strong x-text="`${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`"></strong></p>
+                        <p style="color: #666;">No component details available</p>
                     </div>
                 </template>
                 <template x-if="hoveredNode && hoveredNode.layer !== 'output' && activationContexts">
@@ -399,6 +492,13 @@
                 loading: true,
                 loadingMessage: 'Loading data...',
 
+                // Per-operation loading/error states
+                promptLoading: false,
+                promptError: null,
+                searchLoading: false,
+                searchError: null,
+                activationContextsError: null,
+
                 // Data
                 promptCount: 0,
                 allPrompts: [],
@@ -439,7 +539,11 @@
                     timeStart('init.total');
                     try {
                         timeStart('init.fetchMeta');
-                        const meta = await fetch(`${this.apiBase}/api/meta`).then(r => r.json());
+                        const metaResponse = await fetch(`${this.apiBase}/api/meta`);
+                        if (!metaResponse.ok) {
+                            throw new Error(`Server error: ${metaResponse.status} ${metaResponse.statusText}`);
+                        }
+                        const meta = await metaResponse.json();
                         timeEnd('init.fetchMeta');
                         this.promptCount = meta.prompt_count;
 
@@ -450,10 +554,17 @@
                             // Load prompts list in background
                             timeStart('init.fetchPromptsList');
                             fetch(`${this.apiBase}/api/prompts`)
-                                .then(r => r.json())
+                                .then(r => {
+                                    if (!r.ok) throw new Error(`Server error: ${r.status}`);
+                                    return r.json();
+                                })
                                 .then(prompts => {
                                     timeEnd('init.fetchPromptsList');
                                     this.allPrompts = prompts;
+                                })
+                                .catch(e => {
+                                    console.error('Error loading prompts list:', e);
+                                    // Non-blocking error - list will just be empty
                                 });
 
                             // Load activation contexts in background
@@ -462,7 +573,7 @@
                             this.loadingMessage = 'No prompts in database';
                         }
                     } catch (e) {
-                        this.loadingMessage = 'Error connecting to server. Make sure it is running.';
+                        this.loadingMessage = `Error connecting to server: ${e.message}. Make sure the server is running.`;
                         console.error(e);
                     }
                     timeEnd('init.total');
@@ -471,32 +582,51 @@
                 async loadPrompt(promptId) {
                     timeStart('loadPrompt.total');
                     this.currentPromptId = promptId;
+                    this.promptLoading = true;
+                    this.promptError = null;
 
-                    // Fetch with server-side filtering
-                    const params = new URLSearchParams({
-                        top_k: this.topK,
-                        max_mean_ci: this.maxMeanCI,
-                        normalize: this.normalizeEdges,
-                    });
+                    try {
+                        // Fetch with server-side filtering
+                        const params = new URLSearchParams({
+                            top_k: this.topK,
+                            max_mean_ci: this.maxMeanCI,
+                            normalize: this.normalizeEdges,
+                        });
 
-                    timeStart('loadPrompt.fetch');
-                    const promptData = await fetch(`${this.apiBase}/api/prompt/${promptId}?${params}`).then(r => r.json());
-                    timeEnd('loadPrompt.fetch');
+                        timeStart('loadPrompt.fetch');
+                        const response = await fetch(`${this.apiBase}/api/prompt/${promptId}?${params}`);
+                        if (!response.ok) {
+                            throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                        }
+                        const promptData = await response.json();
+                        timeEnd('loadPrompt.fetch');
 
-                    this.promptData = promptData;
-                    this.outputProbs = promptData.output_probs || {};
+                        if (promptData.error) {
+                            throw new Error(promptData.error);
+                        }
 
-                    timeStart('loadPrompt.process');
-                    this.processPromptData();
-                    timeEnd('loadPrompt.process');
+                        this.promptData = promptData;
+                        this.outputProbs = promptData.output_probs || {};
 
-                    this.loading = false;
-                    this.$nextTick(() => {
-                        timeStart('loadPrompt.render');
-                        this.render();
-                        timeEnd('loadPrompt.render');
+                        timeStart('loadPrompt.process');
+                        this.processPromptData();
+                        timeEnd('loadPrompt.process');
+
+                        this.loading = false;
+                        this.$nextTick(() => {
+                            timeStart('loadPrompt.render');
+                            this.render();
+                            timeEnd('loadPrompt.render');
+                            timeEnd('loadPrompt.total');
+                        });
+                    } catch (e) {
+                        console.error('Error loading prompt:', e);
+                        this.promptError = `Failed to load prompt: ${e.message}`;
+                        this.loading = false;
                         timeEnd('loadPrompt.total');
-                    });
+                    } finally {
+                        this.promptLoading = false;
+                    }
                 },
 
                 async reloadWithFilters() {
@@ -509,17 +639,29 @@
                 async loadActivationContexts() {
                     if (this.activationContexts || this.activationContextsLoading) return;
                     this.activationContextsLoading = true;
+                    this.activationContextsError = null;
 
                     timeStart('loadActCtx.fetch');
                     try {
-                        this.activationContexts = await fetch(`${this.apiBase}/api/activation_contexts`).then(r => r.json());
+                        const response = await fetch(`${this.apiBase}/api/activation_contexts`);
+                        if (!response.ok) {
+                            throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                        }
+                        const data = await response.json();
+                        if (data.error) {
+                            throw new Error(data.error);
+                        }
+                        this.activationContexts = data;
                         timeEnd('loadActCtx.fetch');
                         // No re-render needed - CI filtering is now server-side
                         // Activation contexts are only used for tooltips/pinned details
                     } catch (e) {
                         console.error('Error loading activation contexts:', e);
+                        this.activationContextsError = `Failed to load component details: ${e.message}`;
+                        timeEnd('loadActCtx.fetch');
+                    } finally {
+                        this.activationContextsLoading = false;
                     }
-                    this.activationContextsLoading = false;
                 },
 
                 processPromptData() {
@@ -1147,16 +1289,36 @@
                 async searchPrompts() {
                     if (this.pinnedNodes.length === 0) return;
 
-                    timeStart('search.total');
-                    const components = this.pinnedNodes.map(p => `${p.layer}:${p.cIdx}`).join(',');
+                    this.searchLoading = true;
+                    this.searchError = null;
 
-                    timeStart('search.fetch');
-                    const result = await fetch(`${this.apiBase}/api/search?components=${encodeURIComponent(components)}&mode=all`).then(r => r.json());
-                    timeEnd('search.fetch');
+                    try {
+                        timeStart('search.total');
+                        const components = this.pinnedNodes.map(p => `${p.layer}:${p.cIdx}`).join(',');
 
-                    this.searchResults = result.results;
-                    timeEnd('search.total');
-                    console.log(`[timing] search found ${result.results.length} results`);
+                        timeStart('search.fetch');
+                        const response = await fetch(`${this.apiBase}/api/search?components=${encodeURIComponent(components)}&mode=all`);
+                        if (!response.ok) {
+                            throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                        }
+                        const result = await response.json();
+                        timeEnd('search.fetch');
+
+                        if (result.error) {
+                            throw new Error(result.error);
+                        }
+
+                        this.searchResults = result.results;
+                        timeEnd('search.total');
+                        console.log(`[timing] search found ${result.results.length} results`);
+                    } catch (e) {
+                        console.error('Error searching prompts:', e);
+                        this.searchError = `Search failed: ${e.message}`;
+                        this.searchResults = [];
+                        timeEnd('search.total');
+                    } finally {
+                        this.searchLoading = false;
+                    }
                 },
 
                 buildComponentHtml(layer, seqIdx, cIdx) {
