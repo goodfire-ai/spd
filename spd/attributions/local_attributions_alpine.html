@@ -554,6 +554,12 @@
         const QKV_SUBTYPES = ['q_proj', 'k_proj', 'v_proj'];
         const NODE_COLOR = "#333";
 
+        // Display limits
+        const MAX_EXAMPLES_DISPLAY = 50;
+        const MAX_TOP_TOKENS_DISPLAY = 30;
+        const MAX_PREDICTED_TOKENS_DISPLAY = 30;
+        const DEFAULT_TOP_K_EDGES = 800;
+
         // Simple timing utility that avoids duplicate timer warnings
         const timers = {};
         function timeStart(label) {
@@ -613,7 +619,7 @@
 
                 // UI state
                 maxMeanCI: 1.0,  // No CI filtering by default
-                topK: 800,
+                topK: DEFAULT_TOP_K_EDGES,
                 normalizeEdges: true,  // Normalize incoming edges to each node
                 nodeLayout: 'importance',  // 'importance' | 'shuffled' | 'jittered'
                 visibleEdgeCount: 0,
@@ -1595,7 +1601,7 @@
                     if (detail) {
                         if (detail.example_tokens?.length > 0) {
                             html += '<h4>Top Activating Examples</h4>';
-                            for (let i = 0; i < Math.min(50, detail.example_tokens.length); i++) {
+                            for (let i = 0; i < Math.min(MAX_EXAMPLES_DISPLAY, detail.example_tokens.length); i++) {
                                 const tokens = detail.example_tokens[i];
                                 const ciVals = detail.example_ci[i];
                                 const activePos = detail.example_active_pos[i];
@@ -1619,7 +1625,7 @@
                                 .sort((a, b) => b[0] - a[0])
                                 .map(x => x[1]);
                             html += '<div><h4>Top Input Tokens</h4><table class="pr-table"><tr><th>Token</th><th>P(fire|tok)</th></tr>';
-                            for (let j = 0; j < Math.min(5, prIndices.length); j++) {
+                            for (let j = 0; j < Math.min(MAX_TOP_TOKENS_DISPLAY, prIndices.length); j++) {
                                 const i = prIndices[j];
                                 html += `<tr><td><code>${this.escapeHtml(detail.pr_tokens[i])}</code></td><td>${detail.pr_precisions[i].toFixed(3)}</td></tr>`;
                             }
@@ -1627,7 +1633,7 @@
                         }
                         if (detail.predicted_tokens?.length > 0) {
                             html += '<div><h4>Top Predicted</h4><table class="pr-table"><tr><th>Token</th><th>P</th></tr>';
-                            for (let i = 0; i < Math.min(5, detail.predicted_tokens.length); i++) {
+                            for (let i = 0; i < Math.min(MAX_PREDICTED_TOKENS_DISPLAY, detail.predicted_tokens.length); i++) {
                                 html += `<tr><td><code>${this.escapeHtml(detail.predicted_tokens[i])}</code></td><td>${detail.predicted_probs[i].toFixed(3)}</td></tr>`;
                             }
                             html += '</table></div>';
@@ -1701,7 +1707,7 @@
                     if (detail) {
                         if (detail.example_tokens?.length > 0) {
                             html += '<h4>Top Activating Examples</h4>';
-                            for (let i = 0; i < Math.min(50, detail.example_tokens.length); i++) {
+                            for (let i = 0; i < Math.min(MAX_EXAMPLES_DISPLAY, detail.example_tokens.length); i++) {
                                 const tokens = detail.example_tokens[i];
                                 const ciVals = detail.example_ci[i];
                                 const activePos = detail.example_active_pos[i];
@@ -1725,7 +1731,7 @@
                                 .sort((a, b) => b[0] - a[0])
                                 .map(x => x[1]);
                             html += '<div><h4>Top Input Tokens</h4><table class="pr-table"><tr><th>Token</th><th>P(fire|tok)</th></tr>';
-                            for (let j = 0; j < Math.min(5, prIndices.length); j++) {
+                            for (let j = 0; j < Math.min(MAX_TOP_TOKENS_DISPLAY, prIndices.length); j++) {
                                 const i = prIndices[j];
                                 html += `<tr><td><code>${this.escapeHtml(detail.pr_tokens[i])}</code></td><td>${detail.pr_precisions[i].toFixed(3)}</td></tr>`;
                             }
@@ -1733,7 +1739,7 @@
                         }
                         if (detail.predicted_tokens?.length > 0) {
                             html += '<div><h4>Top Predicted</h4><table class="pr-table"><tr><th>Token</th><th>P</th></tr>';
-                            for (let i = 0; i < Math.min(5, detail.predicted_tokens.length); i++) {
+                            for (let i = 0; i < Math.min(MAX_PREDICTED_TOKENS_DISPLAY, detail.predicted_tokens.length); i++) {
                                 html += `<tr><td><code>${this.escapeHtml(detail.predicted_tokens[i])}</code></td><td>${detail.predicted_probs[i].toFixed(3)}</td></tr>`;
                             }
                             html += '</table></div>';
