@@ -18,9 +18,10 @@ from spd.configs import ImportanceMinimalityLossConfig
 from spd.metrics import importance_minimality_loss
 from spd.models.component_model import CIOutputs, ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
+from spd.routing import AllLayersRouter
 from spd.scripts.model_loading import load_model_from_wandb
 from spd.scripts.optim_cis.config import OptimCIConfig
-from spd.utils.component_utils import calc_ci_l_zero
+from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
 from spd.utils.general_utils import set_seed
 
 
@@ -261,6 +262,8 @@ def optimize_ci_values(
         print(f"  {layer_name}: {layer_total} total across {len(counts)} positions")
     print(f"  Total: {total_alive}")
 
+    weight_deltas = model.calc_weight_deltas()
+
     params = ci_params.get_parameters()
     optimizer = optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
 
@@ -272,9 +275,11 @@ def optimize_ci_values(
         # Create CI outputs from current parameters
         ci_outputs = ci_params.create_ci_outputs(model, device)
 
-        mask_infos = make_mask_infos(
-            component_masks=ci_outputs.lower_leaky,
-            routing_masks="all",
+        mask_infos = calc_stochastic_component_mask_info(
+            causal_importances=ci_outputs.lower_leaky,
+            component_mask_sampling=config.sampling,
+            weight_deltas=weight_deltas,
+            router=AllLayersRouter(),
         )
         out = model(tokens, mask_infos=mask_infos)
 
@@ -351,7 +356,7 @@ if __name__ == "__main__":
         wandb_path="wandb:goodfire/spd/runs/33n6xjjt",  # ss_gpt2_simple-1L
         prompt="They walked hand in",
         label="hand",
-        lr=1e-3,
+        lr=1e-2,
         weight_decay=0.0,
         lr_schedule="cosine",
         lr_exponential_halflife=None,
