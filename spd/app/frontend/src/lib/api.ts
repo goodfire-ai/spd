@@ -1,4 +1,5 @@
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:8000";
 
 export type TrainRun = {
     wandb_path: string;
@@ -25,29 +26,23 @@ export async function loadRun(wandbRunPath: string): Promise<void> {
     }
 }
 
-export type ActivationContext = {
-    token_strings: string[];
-    token_ci_values: number[];
-    active_position: number;
-    ci_value: number;
-    __id: string;
-};
-
+// Columnar data structure for efficiency
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
-    examples: ActivationContext[];
-    token_prs: TokenPR[];
     mean_ci: number;
+    // Examples - columnar arrays (n_examples, window_size)
+    example_tokens: string[][];      // [n_examples][window_size]
+    example_ci: number[][];          // [n_examples][window_size]
+    example_active_pos: number[];    // [n_examples]
+    example_active_ci: number[];     // [n_examples]
+    // Token precision/recall - columnar arrays sorted by recall descending
+    pr_tokens: string[];             // [n_unique_tokens]
+    pr_recalls: number[];            // [n_unique_tokens]
+    pr_precisions: number[];         // [n_unique_tokens]
 };
 
 export type ModelActivationContexts = {
     layers: Record<string, SubcomponentActivationContexts[]>;
-};
-
-export type TokenPR = {
-    token: string;
-    recall: number;
-    precision: number;
 };
 
 export type ActivationContextsConfig = {
@@ -59,8 +54,8 @@ export type ActivationContextsConfig = {
 };
 
 export type ProgressUpdate = {
-    current: number;
-    total: number;
+    /** Progress as a float from 0.0 to 1.0 */
+    progress: number;
 };
 
 // New types for lazy-loading
@@ -75,12 +70,7 @@ export type HarvestMetadata = {
 };
 
 // Full component detail (matches SubcomponentActivationContexts on backend)
-export type ComponentDetail = {
-    subcomponent_idx: number;
-    examples: ActivationContext[];
-    token_prs: TokenPR[];
-    mean_ci: number;
-};
+export type ComponentDetail = SubcomponentActivationContexts;
 
 // Streaming version with lazy-loading support
 export async function getSubcomponentActivationContexts(
@@ -122,7 +112,7 @@ export async function getSubcomponentActivationContexts(
             const data = JSON.parse(line.substring(6)); // Remove "data: " prefix
 
             if (data.type === "progress" && onProgress) {
-                onProgress({ current: data.current, total: data.total });
+                onProgress({ progress: data.progress });
             } else if (data.type === "complete") {
                 result = data.result as HarvestMetadata;
                 // Close the reader early - we got what we need
@@ -154,13 +144,5 @@ export async function getComponentDetail(
         const error = await response.json();
         throw new Error(error.detail || `Failed to get component ${componentIdx} for layer ${layer}`);
     }
-
-    const detail = (await response.json()) as ComponentDetail;
-
-    // Add IDs to examples
-    for (const example of detail.examples) {
-        example.__id = crypto.randomUUID();
-    }
-
-    return detail;
+    return (await response.json()) as ComponentDetail;
 }

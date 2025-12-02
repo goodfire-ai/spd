@@ -197,8 +197,6 @@ class ModelComparator:
             batch_size=self.config.eval_batch_size,
             buffer_size=task_config.buffer_size,
             global_seed=self.current_config.seed + 1,
-            ddp_rank=0,
-            ddp_world_size=1,
         )
         return iter(loader)
 
@@ -301,6 +299,7 @@ class ModelComparator:
             # Filter out components that aren't active enough in the current model
             alive_mask = activation_densities[layer_name] > self.config.density_threshold
             C_curr_alive = int(alive_mask.sum().item())
+            logger.info(f"Number of active components in {layer_name}: {C_curr_alive}")
             if C_curr_alive == 0:
                 logger.warning(
                     f"No components are active enough in {layer_name} for density threshold {self.config.density_threshold}. Skipping."

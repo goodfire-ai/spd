@@ -113,9 +113,21 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 
 ## Common Usage Patterns
 
-**Running SPD experiments:**
+### Running Experiments Locally (`spd-simple`)
 
-The unified `spd-run` command provides a single entry point for running SPD experiments, supporting fixed configurations, parameter sweeps, and evaluation runs:
+For collaborators and simple local execution, use `spd-simple`:
+
+```bash
+spd-simple tms_5-2           # Run on single GPU (default)
+spd-simple tms_5-2 --cpu     # Run on CPU
+spd-simple tms_5-2 --dp 4    # Run on 4 GPUs (single node DDP)
+```
+
+This runs experiments directly without SLURM, git snapshots, or W&B views/reports.
+
+### Running on SLURM Cluster (`spd-run`)
+
+For the core team, `spd-run` provides full-featured SLURM orchestration:
 
 ```bash
 spd-run --experiments tms_5-2                    # Run a specific experiment
@@ -123,13 +135,10 @@ spd-run --experiments tms_5-2,resid_mlp1         # Run multiple experiments
 spd-run                                          # Run all experiments
 ```
 
-Alternatively, you can run individual experiments directly:
-
-```bash
-uv run spd/experiments/tms/tms_decomposition.py spd/experiments/tms/tms_5-2_config.yaml
-uv run spd/experiments/resid_mlp/resid_mlp_decomposition.py spd/experiments/resid_mlp/resid_mlp1_config.yaml
-uv run spd/experiments/lm/lm_decomposition.py spd/experiments/lm/ss_emb_config.yaml
-```
+All `spd-run` executions:
+- Submit jobs to SLURM
+- Create a git snapshot for reproducibility
+- Create W&B workspace views
 
 A run will output the important losses and the paths to which important figures are saved. Use these
 to analyse the result of the runs.
@@ -139,20 +148,20 @@ to analyse the result of the runs.
 Metrics and figures are defined in `spd/metrics.py` and `spd/figures.py`.  These files expose dictionaries of functions that can be selected and parameterized in
 the config of a given experiment.  This allows for easy extension and customization of metrics and figures, without modifying the core framework code.
 
-**Sweeps**
+### Sweeps
 
-Run hyperparameter sweeps using WandB on the GPU cluster:
+Run hyperparameter sweeps on the GPU cluster:
 
 ```bash
-spd-run --experiments <experiment_name> --sweep --n-agents <n-agents> [--cpu] [--job_suffix <suffix>]
+spd-run --experiments <experiment_name> --sweep --n_agents <n-agents> [--cpu]
 ```
 
 Examples:
 ```bash
-spd-run --experiments tms_5-2 --sweep --n-agents 4            # Run TMS 5-2 sweep with 4 GPU agents
-spd-run --experiments resid_mlp2 --sweep --n-agents 3 --cpu   # Run ResidualMLP2 sweep with 3 CPU agents
-spd-run --sweep --n-agents 10                                 # Sweep all experiments with 10 agents
-spd-run --experiments tms_5-2 --sweep custom.yaml --n-agents 2 # Use custom sweep params file
+spd-run --experiments tms_5-2 --sweep --n_agents 4            # Run TMS 5-2 sweep with 4 GPU agents
+spd-run --experiments resid_mlp2 --sweep --n_agents 3 --cpu   # Run ResidualMLP2 sweep with 3 CPU agents
+spd-run --sweep --n_agents 10                                 # Sweep all experiments with 10 agents
+spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom sweep params file
 ```
 
 **Supported experiments:** `tms_5-2`, `tms_5-2-id`, `tms_40-10`, `tms_40-10-id`, `resid_mlp1`, `resid_mlp2`, `resid_mlp3`, `ss_emb`
@@ -176,7 +185,7 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n-agents 2 # Use custom swee
       values: [0, 1, 2]
     lr:
       values: [0.001, 0.01]
-  
+
   # Experiment-specific parameters (override global)
   tms_5-2:
     seed:
@@ -186,28 +195,9 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n-agents 2 # Use custom swee
         values: [0.05, 0.1]
   ```
 
-**Logs:** Agent logs are found in `~/slurm_logs/slurm-<job_id>_<task_id>.out`
+**Logs:** logs are found in `~/slurm_logs/slurm-<job_id>_<task_id>.out`
 
-**Evaluation Runs**
-
-To run SPD with default hyperparameters for each experiment:
-
-```bash
-spd-run                                                    # Run all experiments
-spd-run --experiments tms_5-2-id,resid_mlp2,resid_mlp3     # Run specific experiments
-```
-
-When multiple experiments are run without `--sweep`, it creates a W&B report with aggregated visualizations across all experiments.
-
-**Additional Options:**
-
-```bash
-spd-run --project my-project                 # Use custom W&B project
-spd-run --job_suffix test                    # Add suffix to SLURM job names
-spd-run --no-create_report                   # Skip W&B report creation
-```
-
-**Cluster Usage Guidelines:**
+### Cluster Usage Guidelines
 
 - DO NOT use more than 8 GPUs at one time
 - This includes not setting off multiple sweeps/evals that total >8 GPUs

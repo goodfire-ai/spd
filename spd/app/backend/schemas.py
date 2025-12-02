@@ -1,29 +1,22 @@
 from pydantic import BaseModel
 
 
-class ActivationContext(BaseModel):
-    token_strings: list[str]
-    token_ci_values: list[float]
-    active_position: int
-    ci_value: float
-
-
-class TokenPR(BaseModel):
-    """Token Precision and Recall for a given subcomponent"""
-
-    token: str
-    """Token string"""
-    recall: float
-    """Recall: P(token | subcomponent firing)"""
-    precision: float
-    """Precision: P(subcomponent firing | token)"""
-
-
 class SubcomponentActivationContexts(BaseModel):
+    """Activation context data for a single subcomponent, using columnar layout for efficiency."""
+
     subcomponent_idx: int
-    examples: list[ActivationContext]
-    token_prs: list[TokenPR]
     mean_ci: float
+
+    # Examples - columnar arrays (n_examples ~ topk, window_size ~ 2*n_tokens_either_side+1)
+    example_tokens: list[list[str]]  # [n_examples][window_size]
+    example_ci: list[list[float]]  # [n_examples][window_size]
+    example_active_pos: list[int]  # [n_examples] - index into window
+    example_active_ci: list[float]  # [n_examples]
+
+    # Token precision/recall - columnar arrays sorted by recall descending
+    pr_tokens: list[str]  # [n_unique_tokens]
+    pr_recalls: list[float]  # [n_unique_tokens]
+    pr_precisions: list[float]  # [n_unique_tokens]
 
 
 class ModelActivationContexts(BaseModel):

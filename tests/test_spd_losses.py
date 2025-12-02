@@ -5,6 +5,7 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.configs import UniformKSubsetRoutingConfig
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
@@ -383,6 +384,7 @@ class TestCIMaskedReconSubsetLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         # Subset routing should produce a valid loss
@@ -400,7 +402,12 @@ class TestCIMaskedReconSubsetLoss:
         # Run multiple times
         losses = [
             ci_masked_recon_subset_loss(
-                model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+                model=model,
+                output_loss_type="mse",
+                batch=batch,
+                target_out=target_out,
+                ci=ci,
+                routing=UniformKSubsetRoutingConfig(),
             )
             for _ in range(3)
         ]
@@ -585,6 +592,7 @@ class TestStochasticReconSubsetLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         assert result >= 0.0
@@ -608,6 +616,7 @@ class TestStochasticReconSubsetLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         assert result >= 0.0
@@ -632,6 +641,7 @@ class TestStochasticReconSubsetLoss:
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=weight_deltas,
+                routing=UniformKSubsetRoutingConfig(),
             )
             for _ in range(3)
         ]

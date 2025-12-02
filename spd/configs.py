@@ -43,8 +43,23 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     eps: float = 1e-12
 
 
+class UniformKSubsetRoutingConfig(BaseConfig):
+    type: Literal["uniform_k_subset"] = "uniform_k_subset"
+
+
+class StaticProbabilityRoutingConfig(BaseConfig):
+    type: Literal["static_probability"] = "static_probability"
+    p: Probability
+
+
+SubsetRoutingType = UniformKSubsetRoutingConfig | StaticProbabilityRoutingConfig
+
+
 class CIMaskedReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
 
 
 class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
@@ -61,10 +76,17 @@ class StochasticReconLossConfig(LossMetricConfig):
 
 class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
 
 
 class StochasticReconLayerwiseLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+
+
+class UnmaskedReconLossConfig(LossMetricConfig):
+    classname: Literal["UnmaskedReconLoss"] = "UnmaskedReconLoss"
 
 
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
@@ -85,6 +107,9 @@ class PGDReconLossConfig(PGDConfig):
 
 class PGDReconSubsetLossConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
 
 
 class PGDReconLayerwiseLossConfig(PGDConfig):
@@ -104,6 +129,9 @@ class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
 
 class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
@@ -164,25 +192,21 @@ class UVPlotsConfig(BaseConfig):
     dense_patterns: list[str] | None
 
 
-LossMetricConfigType = (
-    FaithfulnessLossConfig
-    | ImportanceMinimalityLossConfig
-    # Recon losses:
-    # CI masked recon
+ReconLossConfigType = (
+    UnmaskedReconLossConfig
     | CIMaskedReconLossConfig
     | CIMaskedReconSubsetLossConfig
     | CIMaskedReconLayerwiseLossConfig
-    # Stochastic
     | StochasticReconLossConfig
     | StochasticReconSubsetLossConfig
     | StochasticReconLayerwiseLossConfig
-    # PGD
     | PGDReconLossConfig
     | PGDReconSubsetLossConfig
     | PGDReconLayerwiseLossConfig
-    # Hidden acts
     | StochasticHiddenActsReconLossConfig
 )
+
+LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig

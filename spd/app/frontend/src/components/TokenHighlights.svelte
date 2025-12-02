@@ -1,37 +1,21 @@
 <script lang="ts">
     interface Props {
         tokenStrings: string[];
-        tokenCiValues: number[];
-        activePosition?: number;
-        precision?: number;
+        tokenCi: number[]; // CI values (0-1 floats)
+        activePosition: number;
     }
 
-    let { tokenStrings, tokenCiValues, activePosition = -1, precision = 3 }: Props = $props();
-
-    const getHighlightColor = (importance: number): string => {
-        return `rgba(0, 200, 0, ${importance * 0.5})`;
-    };
-
-    function fmtTokenString(s: string): string {
-        // handle wordpieces chunked tokenization
-        if (s.startsWith("##")) {
-            return s.slice(2);
-        } else {
-            return ` ${s}`;
-        }
-    }
+    let { tokenStrings, tokenCi, activePosition }: Props = $props();
 </script>
 
-<span class="token-highlights">
-    {#each tokenStrings as tokenString, idx (idx)}
-        <span
+<span class="token-highlights"
+    >{#each tokenStrings as tok, i (i)}<span
             class="token-highlight"
-            class:active-token={idx === activePosition}
-            style={`background-color:${getHighlightColor(tokenCiValues[idx])};`}
-            data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}>{fmtTokenString(tokenString)}</span
-        >
-    {/each}
-</span>
+            class:active-token={i === activePosition}
+            style="background-color:rgba(0,200,0,{tokenCi[i] * 0.5})"
+            data-ci="CI: {tokenCi[i].toFixed(3)}">{tok}</span
+        >{/each}</span
+>
 
 <style>
     .token-highlights {
@@ -41,8 +25,8 @@
 
     .token-highlight {
         display: inline;
-        padding: 2px 4px;
-        border-radius: 3px;
+        padding: 2px 0px;
+        border-radius: 2px;
         position: relative;
     }
 
@@ -60,7 +44,6 @@
         white-space: nowrap;
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0s;
         margin-bottom: 4px;
         z-index: 1000;
     }
