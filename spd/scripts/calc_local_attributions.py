@@ -52,7 +52,9 @@ def compute_layer_alive_info(
 ) -> list[LayerAliveInfo]:
     """Compute alive info for a layer across all batch items.
 
-    Returns list of LayerAliveInfo, one per batch item.
+    For wte, we create a pseudo-component that is always alive at all positions.
+
+    Returns list of LayerAliveInfo, one per sample.
     """
     if layer_name == "wte":
         # WTE: single pseudo-component, always alive at all positions
@@ -62,28 +64,20 @@ def compute_layer_alive_info(
         # Same info for all batch items
         return [LayerAliveInfo(alive_mask, alive_c_idxs, c_to_trimmed) for _ in range(n_batch)]
 
-    elif layer_name == "output":
+    full_alive_mask: Bool[Tensor, "N seq C"] | Bool[Tensor, "N seq vocab"]
+    if layer_name == "output":
         assert output_probs is not None
-        # output_probs: [N, seq, vocab]
         full_alive_mask = output_probs >= output_prob_threshold  # [N, seq, vocab]
-        results = []
-        for b in range(n_batch):
-            batch_mask = full_alive_mask[b]  # [seq, vocab]
-            alive_c_idxs = torch.where(batch_mask.any(dim=0))[0].tolist()
-            c_to_trimmed = {c: i for i, c in enumerate(alive_c_idxs)}
-            results.append(LayerAliveInfo(batch_mask, alive_c_idxs, c_to_trimmed))
-        return results
-
     else:
-        ci = ci_lower_leaky[layer_name]  # [N, seq, C]
-        full_alive_mask = ci >= ci_threshold  # [N, seq, C]
-        results = []
-        for b in range(n_batch):
-            batch_mask = full_alive_mask[b]  # [seq, C]
-            alive_c_idxs = torch.where(batch_mask.any(dim=0))[0].tolist()
-            c_to_trimmed = {c: i for i, c in enumerate(alive_c_idxs)}
-            results.append(LayerAliveInfo(batch_mask, alive_c_idxs, c_to_trimmed))
-        return results
+        full_alive_mask = ci_lower_leaky[layer_name] >= ci_threshold  # [N, seq, C]
+
+    results = []
+    for b in range(n_batch):
+        batch_mask: Bool[Tensor, "seq C"] | Bool[Tensor, "seq vocab"] = full_alive_mask[b]
+        alive_c_idxs: list[int] = torch.where(batch_mask.any(dim=0))[0].tolist()
+        c_to_trimmed: dict[int, int] = {c: i for i, c in enumerate(alive_c_idxs)}
+        results.append(LayerAliveInfo(batch_mask, alive_c_idxs, c_to_trimmed))
+    return results
 
 
 def load_ci_from_json(
@@ -330,9 +324,7 @@ def compute_local_attributions(
         alive_c_union[layer] = sorted(all_alive)
 
     # Initialize output dictionary
-    local_attributions_by_sample: dict[str, list[PairAttribution]] = {
-        name: [] for name in sample_names
-    }
+    local_attributions: dict[str, list[PairAttribution]] = {name: [] for name in sample_names}
 
     for target, sources in tqdm(sources_by_target.items(), desc="Target layers"):
         target_infos = alive_info[target]  # list of LayerAliveInfo per batch
@@ -393,11 +385,10 @@ def compute_local_attributions(
                             strict=True,
                         )
                     ):
-                        # grad and in_post_detach: [N, seq, dim]
-                        weighted: Float[Tensor, "N s dim"] = grad * in_post_detach
+                        weighted: Float[Tensor, "N s C"] = grad * in_post_detach
                         if source == "wte":
                             # Sum over embedding_dim to get single pseudo-component
-                            weighted = weighted.sum(dim=2, keepdim=True)
+                            weighted = weighted.sum(dim=-1, keepdim=True)
 
                         # Store attributions per-batch
                         for b in range(n_batch):
@@ -427,7 +418,7 @@ def compute_local_attributions(
             original_source_infos = original_alive_info[source]
             original_target_infos = original_alive_info[target]
             for b, sample_name in enumerate(sample_names):
-                local_attributions_by_sample[sample_name].append(
+                local_attributions[sample_name].append(
                     PairAttribution(
                         source=source,
                         target=target,
@@ -440,7 +431,7 @@ def compute_local_attributions(
                     )
                 )
 
-    return local_attributions_by_sample, output_probs
+    return local_attributions, output_probs
 
 
 def main(

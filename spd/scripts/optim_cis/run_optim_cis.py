@@ -378,7 +378,6 @@ if __name__ == "__main__":
     tokens = tokenizer.encode(config.prompt, return_tensors="pt", add_special_tokens=False)
     assert isinstance(tokens, Tensor), "Expected Tensor"
     tokens = tokens.to(device)
-    print(f"Tokens shape: {tokens.shape}")
     token_strings = [tokenizer.decode([t]) for t in tokens[0].tolist()]
     print(f"Token strings: {token_strings}")
     label_token_ids = tokenizer.encode(config.label, add_special_tokens=False)
