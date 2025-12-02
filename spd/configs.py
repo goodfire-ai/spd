@@ -15,6 +15,7 @@ from pydantic import (
 from spd.base_config import BaseConfig
 from spd.experiments.ih.configs import IHTaskConfig
 from spd.experiments.lm.configs import LMTaskConfig
+from spd.experiments.mem.configs import MemTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
@@ -223,7 +224,7 @@ EvalOnlyMetricConfigType = (
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
-TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
+TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig | MemTaskConfig
 
 SamplingType = Literal["continuous", "binomial"]
 
