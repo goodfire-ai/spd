@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 from jaxtyping import Bool, Float, Int
@@ -35,7 +35,7 @@ class TokensAndCI:
 
     tokens: Int[Tensor, "N seq"]
     ci_lower_leaky: dict[str, Float[Tensor, "N seq C"]]
-    set_names: list[str]
+    sample_names: list[str]
     prompts: list[str]
     all_token_strings: list[list[str]]
 
@@ -94,55 +94,55 @@ def load_ci_from_json(
 
     Expected format:
         {
-            "ci_sets": {
-                "set_name_1": {
-                    "prompt": "...",  # Each set has its own prompt
+            "samples": {
+                "sample_name_1": {
+                    "prompt": "...",  # Each sample has its own prompt
                     "ci_vals": {"layer1": [[...]], ...},
-                    ...
+                    "metadata": {...},
                 },
-                "set_name_2": {...},
+                "sample_name_2": {...},
             }
         }
 
     Args:
-        ci_vals_path: Path to JSON file with ci_sets structure
+        ci_vals_path: Path to JSON file with samples structure
         device: Device to load tensors to
 
     Returns:
         Tuple of:
-            - Dict mapping layer_name -> CI tensor of shape [N, seq, C] where N = number of sets
-            - List of set names in batch order
-            - List of prompts in batch order (one per set)
+            - Dict mapping layer_name -> CI tensor of shape [N, seq, C] where N = number of samples
+            - List of sample names in batch order
+            - List of prompts in batch order (one per sample)
     """
     with open(ci_vals_path) as f:
         data = json.load(f)
 
-    ci_sets: dict[str, dict[str, Any]] = data["ci_sets"]
-    set_names = list(ci_sets.keys())
-    assert len(set_names) > 0, "No CI sets found in JSON"
+    samples: dict[str, dict[str, Any]] = data["samples"]
+    sample_names = list(samples.keys())
+    assert len(sample_names) > 0, "No samples found in JSON"
 
-    # Extract prompt from each set
-    prompts: list[str] = [ci_sets[set_name]["prompt"] for set_name in set_names]
+    # Extract prompt from each sample
+    prompts: list[str] = [samples[sample_name]["prompt"] for sample_name in sample_names]
 
-    # Get layer names from first set
-    first_set = ci_sets[set_names[0]]
-    layer_names = list(first_set["ci_vals"].keys())
+    # Get layer names from first sample
+    first_sample = samples[sample_names[0]]
+    layer_names = list(first_sample["ci_vals"].keys())
 
     # Stack tensors along batch dimension
     ci_lower_leaky: dict[str, Tensor] = {}
     for layer_name in layer_names:
-        # Collect [seq, C] tensors from each set
+        # Collect [seq, C] tensors from each sample
         layer_tensors = [
-            torch.tensor(ci_sets[set_name]["ci_vals"][layer_name], device=device)
-            for set_name in set_names
+            torch.tensor(samples[sample_name]["ci_vals"][layer_name], device=device)
+            for sample_name in sample_names
         ]
         # Stack to [N, seq, C]
         ci_lower_leaky[layer_name] = torch.stack(layer_tensors, dim=0)
 
-    return ci_lower_leaky, set_names, prompts
+    return ci_lower_leaky, sample_names, prompts
 
 
-def get_tokens_and_ci(
+def get_tokens_and_ci_vals(
     model: ComponentModel,
     tokenizer: PreTrainedTokenizerFast,
     sampling: SamplingType,
@@ -162,42 +162,27 @@ def get_tokens_and_ci(
         prompts: List of prompts to use when ci_vals_path is None.
 
     Returns:
-        TokensAndCI containing tokens, CI values, set names, prompts, and token strings.
+        TokensAndCI containing tokens, CI values, sample names, prompts, and token strings.
     """
     if ci_vals_path is not None:
         print(f"\nLoading precomputed CI values from {ci_vals_path}")
-        ci_lower_leaky, set_names, prompts = load_ci_from_json(ci_vals_path, device)
-        print(f"Loaded CI values for layers: {list(ci_lower_leaky.keys())}")
-        print(f"CI sets: {set_names}")
+        ci_lower_leaky, sample_names, prompts = load_ci_from_json(ci_vals_path, device)
     else:
         assert prompts is not None, "prompts is required when ci_vals_path is None"
-        set_names = [f"prompt_{i}" for i in range(len(prompts))]
+        sample_names = [f"prompt_{i}" for i in range(len(prompts))]
         ci_lower_leaky = None
 
-    # Tokenize each prompt
-    tokens_list: list[Tensor] = []
-    all_token_strings: list[list[str]] = []
-    for i, p in enumerate(prompts):
-        if ci_vals_path is not None:
-            print(f"\nPrompt for {set_names[i]}: {p!r}")
-        toks = tokenizer.encode(p, return_tensors="pt", add_special_tokens=False)
-        assert isinstance(toks, Tensor), "Expected Tensor"
-        tokens_list.append(toks)
-        first_row = toks[0]
-        assert isinstance(first_row, Tensor), "Expected 2D tensor"
-        all_token_strings.append([tokenizer.decode([t]) for t in first_row.tolist()])
-        if ci_vals_path is not None:
-            print(f"  Token strings: {all_token_strings[-1]}")
+    try:
+        tokens: Int[Tensor, "N seq"] = cast(
+            Tensor, tokenizer(prompts, return_tensors="pt", add_special_tokens=False)["input_ids"]
+        )
+    except ValueError as e:
+        e.add_note("NOTE: This script only supports prompts which tokenize to the same length")
+        raise e
 
-    # Validate all prompts have the same token length
-    token_lengths = [t.shape[1] for t in tokens_list]
-    assert all(length == token_lengths[0] for length in token_lengths), (
-        f"All prompts must tokenize to the same length, got {token_lengths}"
-    )
-
-    tokens = torch.cat(tokens_list, dim=0).to(device)  # [N, seq]
-    print(f"\nTokens shape: {tokens.shape}")
-
+    all_token_strings: list[list[str]] = [
+        [tokenizer.decode(t) for t in sample] for sample in tokens
+    ]
     # Compute CI values from model if not provided
     if ci_lower_leaky is None:
         print("\nComputing CI values from model...")
@@ -212,7 +197,7 @@ def get_tokens_and_ci(
     return TokensAndCI(
         tokens=tokens,
         ci_lower_leaky=ci_lower_leaky,
-        set_names=set_names,
+        sample_names=sample_names,
         prompts=prompts,
         all_token_strings=all_token_strings,
     )
@@ -227,9 +212,9 @@ def compute_local_attributions(
     sampling: SamplingType,
     device: str,
     ci_lower_leaky: dict[str, Float[Tensor, "N seq C"]],
-    set_names: list[str],
+    sample_names: list[str],
 ) -> tuple[dict[str, list[PairAttribution]], Float[Tensor, "N seq vocab"]]:
-    """Compute local attributions for multiple prompts across multiple CI sets.
+    """Compute local attributions for multiple prompts across multiple samples.
 
     For each valid layer pair (in_layer, out_layer), computes the gradient-based
     attribution of output component activations with respect to input component
@@ -244,18 +229,20 @@ def compute_local_attributions(
         sampling: Sampling type to use for causal importances.
         device: Device to run on.
         ci_lower_leaky: Precomputed/optimized CI values with shape [N, seq, C].
-        set_names: Ordered list of set names corresponding to batch dimension.
+        sample_names: Ordered list of sample names corresponding to batch dimension.
 
     Returns:
         Tuple of:
-            - Dict mapping set_name -> list of PairAttribution objects
+            - Dict mapping sample_name -> list of PairAttribution objects
             - Output probabilities of shape [N, seq, vocab]
     """
     n_batch, n_seq = tokens.shape
     # Validate batch size matches CI tensors
     first_ci = next(iter(ci_lower_leaky.values()))
     assert first_ci.shape[0] == n_batch, f"CI batch size {first_ci.shape[0]} != tokens {n_batch}"
-    assert len(set_names) == n_batch, f"set_names length {len(set_names)} != n_batch {n_batch}"
+    assert len(sample_names) == n_batch, (
+        f"sample_names length {len(sample_names)} != n_batch {n_batch}"
+    )
 
     with torch.no_grad():
         output_with_cache: OutputWithCache = model(tokens, cache_type="input")
@@ -271,7 +258,7 @@ def compute_local_attributions(
     ci_original = ci.lower_leaky  # [N, seq, C]
 
     # Log the l0 (lower_leaky values > ci_threshold) for each layer
-    print("L0 values for final seq position (first CI set):")
+    print("L0 values for final seq position (first sample):")
     for layer, ci_vals in ci_lower_leaky.items():
         # We only care about the final position, show first batch item
         l0_vals = (ci_vals[0, -1] > ci_threshold).sum().item()
@@ -343,7 +330,9 @@ def compute_local_attributions(
         alive_c_union[layer] = sorted(all_alive)
 
     # Initialize output dictionary
-    local_attributions_by_set: dict[str, list[PairAttribution]] = {name: [] for name in set_names}
+    local_attributions_by_sample: dict[str, list[PairAttribution]] = {
+        name: [] for name in sample_names
+    }
 
     for target, sources in tqdm(sources_by_target.items(), desc="Target layers"):
         target_infos = alive_info[target]  # list of LayerAliveInfo per batch
@@ -431,14 +420,14 @@ def compute_local_attributions(
                                         s_in, trimmed_c_in, s_out, trimmed_c_out
                                     ] = weighted[b, s_in, c_in]
 
-        # Build output per set
+        # Build output per sample
         for source_idx, (source, source_infos) in enumerate(
             zip(sources, all_source_infos, strict=True)
         ):
             original_source_infos = original_alive_info[source]
             original_target_infos = original_alive_info[target]
-            for b, set_name in enumerate(set_names):
-                local_attributions_by_set[set_name].append(
+            for b, sample_name in enumerate(sample_names):
+                local_attributions_by_sample[sample_name].append(
                     PairAttribution(
                         source=source,
                         target=target,
@@ -451,7 +440,7 @@ def compute_local_attributions(
                     )
                 )
 
-    return local_attributions_by_set, output_probs
+    return local_attributions_by_sample, output_probs
 
 
 def main(
@@ -485,7 +474,7 @@ def main(
     for out_layer, in_layers in sources_by_target.items():
         print(f"  {out_layer} <- {in_layers}")
 
-    data = get_tokens_and_ci(
+    data = get_tokens_and_ci_vals(
         model=model,
         tokenizer=tokenizer,
         sampling=config.sampling,
@@ -496,7 +485,7 @@ def main(
 
     # Compute local attributions
     print("\nComputing local attributions...")
-    attr_pairs_by_set, output_probs = compute_local_attributions(
+    attr_pairs_by_sample, output_probs = compute_local_attributions(
         model=model,
         tokens=data.tokens,
         sources_by_target=sources_by_target,
@@ -505,12 +494,12 @@ def main(
         sampling=config.sampling,
         device=device,
         ci_lower_leaky=data.ci_lower_leaky,
-        set_names=data.set_names,
+        sample_names=data.sample_names,
     )
 
-    # Print summary statistics per set
-    for set_name, attr_pairs in attr_pairs_by_set.items():
-        print(f"\nAttribution summary for {set_name}:")
+    # Print summary statistics per sample
+    for sample_name, attr_pairs in attr_pairs_by_sample.items():
+        print(f"\nAttribution summary for {sample_name}:")
         for attr_pair in attr_pairs:
             total = attr_pair.attribution.numel()
             if total == 0:
@@ -527,13 +516,13 @@ def main(
                 f"max={attr_pair.attribution.max():.6f}"
             )
 
-    # Save and plot per set
+    # Save and plot per sample
     out_dir = get_out_dir()
 
-    for b, set_name in enumerate(data.set_names):
-        attr_pairs = attr_pairs_by_set[set_name]
-        pt_path = out_dir / f"local_attributions_{loaded.wandb_id}_{set_name}.pt"
-        output_path = out_dir / f"local_attribution_graph_{loaded.wandb_id}_{set_name}.png"
+    for b, sample_name in enumerate(data.sample_names):
+        attr_pairs = attr_pairs_by_sample[sample_name]
+        pt_path = out_dir / f"local_attributions_{loaded.wandb_id}_{sample_name}.pt"
+        output_path = out_dir / f"local_attribution_graph_{loaded.wandb_id}_{sample_name}.png"
 
         output_token_labels: dict[int, str] = {}
         output_probs_by_pos: dict[tuple[int, int], float] = {}
@@ -558,10 +547,10 @@ def main(
             "output_token_labels": output_token_labels,
             "output_probs_by_pos": output_probs_by_pos,
             "wandb_id": loaded.wandb_id,
-            "set_name": set_name,
+            "sample_name": sample_name,
         }
         torch.save(save_data, pt_path)
-        print(f"\nSaved local attributions for {set_name} to {pt_path}")
+        print(f"\nSaved local attributions for {sample_name} to {pt_path}")
 
         fig = plot_local_graph(
             attr_pairs=attr_pairs,
@@ -575,7 +564,7 @@ def main(
         )
 
         fig.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="white")
-        print(f"Saved figure for {set_name} to {output_path}")
+        print(f"Saved figure for {sample_name} to {output_path}")
 
 
 if __name__ == "__main__":

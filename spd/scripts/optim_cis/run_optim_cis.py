@@ -421,14 +421,14 @@ if __name__ == "__main__":
     output_path = out_dir / f"optimized_ci_{loaded.wandb_id}.json"
 
     output_data = {
-        "ci_sets": {
+        "samples": {
             f"imp_min_{config.imp_min_config.coeff:.0e}": {
-                "config": config.model_dump(),
                 "prompt": config.prompt,
-                "tokens": tokens[0].tolist(),
-                "token_strings": token_strings,
                 "ci_vals": {k: v[0].cpu().tolist() for k, v in ci_outputs.lower_leaky.items()},
-                "wandb_id": loaded.wandb_id,
+                "metadata": {
+                    "config": config.model_dump(),
+                    "wandb_id": loaded.wandb_id,
+                },
             },
         },
     }
