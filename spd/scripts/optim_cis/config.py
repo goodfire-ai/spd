@@ -1,11 +1,11 @@
 """Configuration for CI optimization on single prompts."""
 
-from typing import Annotated, Literal, Self
+from typing import Literal, Self
 
 from pydantic import Field, NonNegativeFloat, PositiveFloat, PositiveInt, model_validator
 
 from spd.base_config import BaseConfig
-from spd.configs import LossMetricConfigType, SamplingType
+from spd.configs import ImportanceMinimalityLossConfig, SamplingType
 from spd.spd_types import Probability
 
 
@@ -60,12 +60,14 @@ class OptimCIConfig(BaseConfig):
         description="Frequency of logging during optimization",
     )
 
-    # Loss configuration
-    loss_metric_configs: list[Annotated[LossMetricConfigType, Field(discriminator="classname")]] = (
-        Field(
-            ...,
-            description="List of loss metric configs (must have coeff set)",
-        )
+    # Loss configs
+    imp_min_config: ImportanceMinimalityLossConfig = Field(
+        ...,
+        description="Configuration for the importance minimality loss",
+    )
+    ce_loss_coeff: float = Field(
+        ...,
+        description="Coefficient for the CE loss",
     )
 
     # CI thresholds and sampling
@@ -87,17 +89,11 @@ class OptimCIConfig(BaseConfig):
         description="Loss type for reconstruction: 'kl' for LMs, 'mse' for vectors",
     )
 
-    # Delta component
     use_delta_component: bool = Field(
         ...,
         description="Whether to use delta component in reconstruction losses",
     )
 
-    # CE/KL metrics
-    ce_loss_coeff: float = Field(
-        ...,
-        description="Coefficient for the CE loss",
-    )
     ce_kl_rounding_threshold: float = Field(
         ...,
         description="Threshold for rounding CI values in CE/KL metric computation",

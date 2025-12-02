@@ -15,7 +15,7 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.configs import ImportanceMinimalityLossConfig
-from spd.losses import compute_total_loss
+from spd.metrics import importance_minimality_loss
 from spd.models.component_model import CIOutputs, ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.scripts.model_loading import load_model_from_wandb
@@ -215,7 +215,6 @@ def optimize_ci_values(
     label_token: int,
     config: OptimCIConfig,
     device: str,
-    ce_loss_coeff: float,
 ) -> tuple[dict[str, list[list[float]]], dict[str, float]]:
     """Optimize CI values for a single prompt.
 
@@ -225,12 +224,15 @@ def optimize_ci_values(
         label_token: The token to optimize CI values for.
         config: Optimization configuration.
         device: Device to run on.
-        ce_loss_coeff: Coefficient for the CE loss.
     Returns:
         Tuple of:
         - Optimized CI values as dict of layer_name -> [seq][C] nested lists
         - Final metrics dict
     """
+    imp_min_coeff = config.imp_min_config.coeff
+    assert imp_min_coeff is not None, "Importance minimality loss coefficient must be set"
+    ce_loss_coeff = config.ce_loss_coeff
+
     # Freeze all model parameters
     model.requires_grad_(False)
 
@@ -259,14 +261,9 @@ def optimize_ci_values(
         print(f"  {layer_name}: {layer_total} total across {len(counts)} positions")
     print(f"  Total: {total_alive}")
 
-    # Get weight deltas for losses that need them
-    weight_deltas = model.calc_weight_deltas()
-
-    # Setup optimizer
     params = ci_params.get_parameters()
     optimizer = optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
 
-    # Optimization loop
     final_metrics: dict[str, float] = {}
 
     for step in tqdm(range(config.steps), desc="Optimizing CI values"):
@@ -275,38 +272,34 @@ def optimize_ci_values(
         # Create CI outputs from current parameters
         ci_outputs = ci_params.create_ci_outputs(model, device)
 
-        # Compute losses
-        total_loss, loss_terms = compute_total_loss(
-            loss_metric_configs=config.loss_metric_configs,
-            model=model,
-            batch=tokens,
-            ci=ci_outputs,
-            target_out=target_out,
-            weight_deltas=weight_deltas,
-            pre_weight_acts=output_with_cache.cache,
-            current_frac_of_training=step / config.steps,
-            sampling=config.sampling,
-            use_delta_component=config.use_delta_component,
-            n_mask_samples=config.n_mask_samples,
-            output_loss_type=config.output_loss_type,
-        )
-        # Make a new loss which is the CE diff on the final sequence position between the given label
-        # and the outut logits
         mask_infos = make_mask_infos(
             component_masks=ci_outputs.lower_leaky,
             routing_masks="all",
         )
-        # TODO: Support stochastic recon and e.g. subset recon.
         out = model(tokens, mask_infos=mask_infos)
+
+        imp_min_loss = importance_minimality_loss(
+            ci_upper_leaky=ci_outputs.upper_leaky,
+            current_frac_of_training=step / config.steps,
+            pnorm=config.imp_min_config.pnorm,
+            eps=config.imp_min_config.eps,
+            p_anneal_start_frac=config.imp_min_config.p_anneal_start_frac,
+            p_anneal_final_p=config.imp_min_config.p_anneal_final_p,
+            p_anneal_end_frac=config.imp_min_config.p_anneal_end_frac,
+        )
         ce_loss = F.cross_entropy(
             out[0, -1, :].unsqueeze(0), torch.tensor([label_token], device=device)
         )
-        total_loss += ce_loss_coeff * ce_loss
+        total_loss = ce_loss_coeff * ce_loss + imp_min_coeff * imp_min_loss
+        loss_terms = {
+            "imp_min_loss": imp_min_loss.item(),
+            "ce_loss": ce_loss.item(),
+            "total_loss": total_loss.item(),
+        }
 
         total_loss.backward()
         optimizer.step()
 
-        # Logging
         if step % config.log_freq == 0 or step == config.steps - 1:
             l0_stats = compute_l0_stats(ci_outputs, config.ci_threshold)
 
@@ -331,14 +324,11 @@ def optimize_ci_values(
             if step == config.steps - 1:
                 final_metrics = {**loss_terms, **l0_stats, **ce_kl_stats}
 
-    # Extract final CI values
     with torch.no_grad():
         final_ci_outputs = ci_params.create_ci_outputs(model, device)
 
-    # Convert to nested lists for JSON serialization
     optimized_ci: dict[str, list[list[float]]] = {}
     for layer_name, ci_tensor in final_ci_outputs.lower_leaky.items():
-        # ci_tensor is [1, seq, C], convert to [seq][C]
         optimized_ci[layer_name] = ci_tensor[0].cpu().tolist()
 
     return optimized_ci, final_metrics
@@ -368,11 +358,8 @@ if __name__ == "__main__":
         lr_warmup_pct=0.01,
         steps=10000,
         log_freq=500,
-        loss_metric_configs=[
-            # StochasticReconSubsetLossConfig(coeff=1.0, routing=UniformKSubsetRoutingConfig()),
-            ImportanceMinimalityLossConfig(coeff=1e-1, pnorm=0.3),
-        ],
-        ce_loss_coeff=1.0,
+        imp_min_config=ImportanceMinimalityLossConfig(coeff=1e-1, pnorm=0.3),
+        ce_loss_coeff=1,
         ci_threshold=1e-6,
         sampling="continuous",
         n_mask_samples=1,
@@ -408,7 +395,6 @@ if __name__ == "__main__":
         label_token=label_token,
         config=config,
         device=device,
-        ce_loss_coeff=config.ce_loss_coeff,
     )
 
     # Save results
