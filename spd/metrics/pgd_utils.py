@@ -22,7 +22,7 @@ def pgd_masked_recon_loss_update(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     router: Router,
     pgd_config: PGDConfig,
 ) -> tuple[Float[Tensor, ""], int]:
@@ -88,7 +88,7 @@ def calc_multibatch_pgd_masked_recon_loss(
     model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     create_data_iter: CreateDataIter,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     router: Router,
     sampling: SamplingType,
     use_delta_component: bool,
@@ -157,7 +157,7 @@ def _forward_with_adv_sources(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing_masks: RoutingMasks,
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     batch_dims: tuple[int, ...],
 ):
     expanded_adv_sources = adv_sources.expand(-1, *batch_dims, -1)
@@ -182,9 +182,12 @@ def _forward_with_adv_sources(
 
     sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
 
-    n_examples = (
-        target_out.shape.numel() if output_loss_type == "mse" else target_out.shape[:-1].numel()
-    )
+    if output_loss_type == "mse":
+        n_examples = target_out.shape.numel()
+    elif output_loss_type == "mem":
+        n_examples = target_out.shape[0]  # batch size only for mem
+    else:  # kl
+        n_examples = target_out.shape[:-1].numel()
 
     return sum_loss, n_examples
 
@@ -197,7 +200,7 @@ def _multibatch_pgd_fwd_bwd(
     data_iter: Iterator[Int[Tensor, "..."]]
     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: torch.device | str,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     router: Router,
     sampling: SamplingType,
     batch_dims: tuple[int, ...],
