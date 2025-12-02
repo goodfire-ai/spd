@@ -18,7 +18,7 @@ def pgd_recon_subset_loss(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
@@ -47,14 +47,14 @@ class PGDReconSubsetLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: Literal["mse", "kl", "mem"],
         use_delta_component: bool,
         pgd_config: PGDConfig,
         routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.output_loss_type: Literal["mse", "kl", "mem"] = output_loss_type
         self.use_delta_component: bool = use_delta_component
         self.router = get_subset_router(routing, device)
 

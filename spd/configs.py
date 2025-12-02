@@ -15,6 +15,7 @@ from pydantic import (
 from spd.base_config import BaseConfig
 from spd.experiments.ih.configs import IHTaskConfig
 from spd.experiments.lm.configs import LMTaskConfig
+from spd.experiments.mem.configs import MemTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
@@ -223,7 +224,7 @@ EvalOnlyMetricConfigType = (
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
-TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
+TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig | MemTaskConfig
 
 SamplingType = Literal["continuous", "binomial"]
 
@@ -301,9 +302,10 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
+    output_loss_type: Literal["mse", "kl", "mem"] = Field(
         ...,
-        description="Metric used to measure recon error between model outputs and targets",
+        description="Metric used to measure recon error between model outputs and targets. "
+        "Use 'mem' for tasks that only care about the final sequence position.",
     )
 
     # --- Training ---
