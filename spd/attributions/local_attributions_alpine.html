@@ -136,7 +136,7 @@
             z-index: 10;
         }
         svg { display: block; }
-        .edge-pos, .edge-neg { display: inline-block; width: 30px; height: 3px; margin-right: 0.25rem; vertical-align: middle; }
+        .edge-pos, .edge-neg { display: line-block; width: 30px; height: 3px; margin-right: 0.25rem; vertical-align: middle; }
         .edge-pos { background: #2196f3; }
         .edge-neg { background: #f44336; }
         .legend { color: #666; font-size: 0.85rem; display: flex; align-items: center; gap: 0.75rem; }
@@ -153,6 +153,16 @@
         .edge-tooltip-row { margin: 0.2rem 0; }
         .edge-tooltip-label { color: #666; margin-right: 0.5rem; }
         .edge-tooltip code { background: #f5f5f5; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.8rem; }
+        .node-local-section {
+            background: #e3f2fd;
+            border: 1px solid #90caf9;
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+        }
+        .node-local-section h4 { margin: 0 0 0.25rem 0; font-size: 0.8rem; color: #1565c0; }
+        .component-section h4 { margin: 0.75rem 0 0.25rem 0; font-size: 0.85rem; color: #333; }
         .loading { padding: 2rem; text-align: center; color: #666; }
         .error-banner {
             padding: 0.75rem 1rem;
@@ -381,6 +391,48 @@
                     <input type="checkbox" x-model="normalizeEdges" @change="reloadWithFilters()">
                     Normalize edges
                 </label>
+                <label style="display: flex; align-items: center; gap: 0.25rem;">
+                    <input type="checkbox" x-model="useOptimized">
+                    Optimize CI
+                </label>
+                <template x-if="useOptimized">
+                    <div style="display: flex; gap: 1rem; align-items: center; padding: 0.5rem; background: #e8f5e9; border-radius: 4px;">
+                        <label style="display: flex; align-items: center; gap: 0.25rem;">
+                            imp_min:
+                            <input type="number" x-model.number="impMinCoeff" min="0.001" max="10" step="0.01" style="width: 70px;">
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.25rem;">
+                            ce:
+                            <input type="number" x-model.number="ceLossCoeff" min="0.001" max="10" step="0.1" style="width: 70px;">
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.25rem;">
+                            steps:
+                            <input type="number" x-model.number="optimSteps" min="10" max="5000" step="100" style="width: 70px;">
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.25rem;">
+                            pnorm:
+                            <input type="number" x-model.number="optimPnorm" min="0.1" max="1" step="0.1" style="width: 60px;">
+                        </label>
+                        <button
+                            @click="reloadWithFilters()"
+                            :disabled="promptLoading"
+                            style="padding: 0.4rem 0.8rem; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;"
+                        >
+                            Run
+                        </button>
+                    </div>
+                </template>
+                <template x-if="optimizationResult">
+                    <div style="display: flex; gap: 1rem; align-items: center; padding: 0.5rem 0.75rem; background: #fff3e0; border-radius: 4px; font-size: 0.85rem;">
+                        <span>
+                            <strong>Target:</strong> "<span x-text="optimizationResult.label_str"></span>"
+                            @ <span x-text="(optimizationResult.label_prob * 100).toFixed(1)"></span>%
+                        </span>
+                        <span>
+                            <strong>L0:</strong> <span x-text="optimizationResult.l0_total.toFixed(0)"></span> active
+                        </span>
+                    </div>
+                </template>
                 <span class="edge-count">Showing <span x-text="visibleEdgeCount"></span> edges</span>
                 <span class="legend">
                     <span class="edge-pos"></span><span x-text="normalizeEdges ? '+1' : '+' + maxAbsAttr.toFixed(2)"></span>
@@ -415,16 +467,16 @@
                                 <strong x-text="`${pinned.layer}:${pinned.cIdx}`"></strong>
                                 <button class="unpin-btn" @click="unpinNode(pinned.layer, pinned.cIdx)">✕ unpin</button>
                             </div>
-                            <template x-if="pinned.layer === 'output' || activationContexts">
+                            <template x-if="pinned.layer === 'output' || activationContextsSummary">
                                 <div x-html="buildComponentHtmlNoSeq(pinned.layer, pinned.cIdx)"></div>
                             </template>
-                            <template x-if="pinned.layer !== 'output' && !activationContexts && activationContextsLoading">
+                            <template x-if="pinned.layer !== 'output' && !activationContextsSummary && activationContextsLoading">
                                 <div class="loading-text"><span class="loading-spinner"></span> Loading details...</div>
                             </template>
-                            <template x-if="pinned.layer !== 'output' && !activationContexts && !activationContextsLoading && activationContextsError">
+                            <template x-if="pinned.layer !== 'output' && !activationContextsSummary && !activationContextsLoading && activationContextsError">
                                 <div style="color: #c62828; font-size: 0.85rem;" x-text="activationContextsError"></div>
                             </template>
-                            <template x-if="pinned.layer !== 'output' && !activationContexts && !activationContextsLoading && !activationContextsError">
+                            <template x-if="pinned.layer !== 'output' && !activationContextsSummary && !activationContextsLoading && !activationContextsError">
                                 <div style="color: #666; font-size: 0.85rem;">No component details available</div>
                             </template>
                         </div>
@@ -440,29 +492,26 @@
                 @mouseenter="isHoveringTooltip = true"
                 @mouseleave="isHoveringTooltip = false; maybeHideTooltip()"
             >
+                <!-- Local section first (for non-output nodes) -->
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output'">
+                    <div x-html="buildLocalSectionHtml(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)"></div>
+                </template>
+
                 <h3>Component Details</h3>
+
                 <template x-if="hoveredNode && hoveredNode.layer === 'output'">
                     <div x-html="buildComponentHtml(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)"></div>
                 </template>
-                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContexts && activationContextsLoading">
-                    <div>
-                        <p><strong x-text="`${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`"></strong></p>
-                        <p class="loading-text"><span class="loading-spinner"></span> Loading details...</p>
-                    </div>
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContextsSummary && activationContextsLoading">
+                    <p class="loading-text"><span class="loading-spinner"></span> Loading component details...</p>
                 </template>
-                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContexts && !activationContextsLoading && activationContextsError">
-                    <div>
-                        <p><strong x-text="`${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`"></strong></p>
-                        <p style="color: #c62828;" x-text="activationContextsError"></p>
-                    </div>
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContextsSummary && !activationContextsLoading && activationContextsError">
+                    <p style="color: #c62828;" x-text="activationContextsError"></p>
                 </template>
-                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContexts && !activationContextsLoading && !activationContextsError">
-                    <div>
-                        <p><strong x-text="`${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`"></strong></p>
-                        <p style="color: #666;">No component details available</p>
-                    </div>
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && !activationContextsSummary && !activationContextsLoading && !activationContextsError">
+                    <p style="color: #666;">No component details available</p>
                 </template>
-                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && activationContexts">
+                <template x-if="hoveredNode && hoveredNode.layer !== 'output' && activationContextsSummary">
                     <div x-html="buildComponentHtml(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)"></div>
                 </template>
             </div>
@@ -499,10 +548,10 @@
         const LAYER_GAP = 30;
         const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
         const LABEL_WIDTH = 100;
-        // Row order for layout (kvq share a row)
-        const ROW_ORDER = ['wte', 'kvq', 'o_proj', 'c_fc', 'down_proj', 'output'];
-        // Within kvq row, order is k, v, q (left to right)
-        const KVQ_SUBTYPES = ['k_proj', 'v_proj', 'q_proj'];
+        // Row order for layout (qkv share a row)
+        const ROW_ORDER = ['wte', 'qkv', 'o_proj', 'c_fc', 'down_proj', 'output'];
+        // Within qkv row, order is q, k, v
+        const QKV_SUBTYPES = ['q_proj', 'k_proj', 'v_proj'];
         const NODE_COLOR = "#333";
 
         // Simple timing utility that avoids duplicate timer warnings
@@ -550,23 +599,33 @@
                  * }
                  */
                 promptData: null,
-                activationContexts: null,
+                activationContextsSummary: null,  // Just {subcomponent_idx, mean_ci} per component
+                componentDetailsCache: {},  // layer:idx -> full component data (lazy-loaded)
+                componentDetailsLoading: {},  // layer:idx -> true if currently loading
                 activationContextsLoading: false,
 
                 // Computed from prompt data
                 allEdges: [],
                 componentImportance: {},
                 componentImportanceLocal: {},
-                nodeOutAttr: {},
                 maxAbsAttr: 1,
-                maxAbsNodeOutAttr: 1,
+                maxImportanceLocal: 1,
 
                 // UI state
                 maxMeanCI: 1.0,  // No CI filtering by default
-                topK: 4000,
+                topK: 800,
                 normalizeEdges: true,  // Normalize incoming edges to each node
                 nodeLayout: 'importance',  // 'importance' | 'shuffled' | 'jittered'
                 visibleEdgeCount: 0,
+
+                // Optimization controls
+                useOptimized: false,
+                impMinCoeff: 0.1,
+                ceLossCoeff: 1.0,
+                optimSteps: 500,
+                optimLr: 0.01,
+                optimPnorm: 0.3,
+                optimizationResult: null,  // Stats from optimization endpoint
                 pinnedNodes: [],
                 hoveredNode: null,
                 hoveredEdge: null,
@@ -638,8 +697,19 @@
                             normalize: this.normalizeEdges,
                         });
 
+                        // Add optimization params if using optimized endpoint
+                        let endpoint = `/api/prompt/${promptId}`;
+                        if (this.useOptimized) {
+                            endpoint = `/api/prompt/${promptId}/optimized`;
+                            params.set('imp_min_coeff', this.impMinCoeff);
+                            params.set('ce_loss_coeff', this.ceLossCoeff);
+                            params.set('steps', this.optimSteps);
+                            params.set('lr', this.optimLr);
+                            params.set('pnorm', this.optimPnorm);
+                        }
+
                         timeStart('loadPrompt.fetch');
-                        const response = await fetch(`${this.apiBase}/api/prompt/${promptId}?${params}`);
+                        const response = await fetch(`${this.apiBase}${endpoint}?${params}`);
                         if (!response.ok) {
                             throw new Error(`Server error: ${response.status} ${response.statusText}`);
                         }
@@ -657,6 +727,9 @@
                         //     "outputProbs": { "seq:cIdx": { prob: float, token: string } },
                         // }
                         this.promptData = promptData;
+
+                        // Store optimization results if present
+                        this.optimizationResult = promptData.optimization || null;
 
                         this.allEdges = promptData.edges.map(edge => ({
                             srcKey: edge.src,
@@ -676,10 +749,8 @@
                         // Build importance maps from edges
                         this.componentImportance = {};
                         this.componentImportanceLocal = {};
-                        this.nodeOutAttr = {};
                         for (const edge of this.allEdges) {
                             const valSq = edge.val * edge.val;
-                            const absVal = Math.abs(edge.val);
 
                             // Parse keys to get global component key (layer:cIdx without seq)
                             const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
@@ -687,19 +758,16 @@
                             const srcGlobalKey = `${srcLayer}:${srcCIdx}`;
                             const tgtGlobalKey = `${tgtLayer}:${tgtCIdx}`;
 
-                            this.componentImportance[srcGlobalKey] = this.componentImportance[srcGlobalKey] + valSq;
-                            this.componentImportance[tgtGlobalKey] = this.componentImportance[tgtGlobalKey] + valSq;
-                            this.componentImportanceLocal[edge.srcKey] = this.componentImportanceLocal[edge.srcKey] + valSq;
-                            this.componentImportanceLocal[edge.tgtKey] = this.componentImportanceLocal[edge.tgtKey] + valSq;
-
-                            this.nodeOutAttr[edge.srcKey] = this.nodeOutAttr[edge.srcKey] + absVal;
+                            this.componentImportance[srcGlobalKey] = (this.componentImportance[srcGlobalKey] || 0) + valSq;
+                            this.componentImportance[tgtGlobalKey] = (this.componentImportance[tgtGlobalKey] || 0) + valSq;
+                            this.componentImportanceLocal[edge.srcKey] = (this.componentImportanceLocal[edge.srcKey] || 0) + valSq;
+                            this.componentImportanceLocal[edge.tgtKey] = (this.componentImportanceLocal[edge.tgtKey] || 0) + valSq;
                         }
 
-                        this.maxAbsNodeOutAttr = 1
-                        for (const outAttr of Object.values(this.nodeOutAttr)) {
-                            const absOutAttr = Math.abs(outAttr);
-                            if (absOutAttr > this.maxAbsNodeOutAttr) {
-                                this.maxAbsNodeOutAttr = absOutAttr;
+                        this.maxImportanceLocal = 1;
+                        for (const imp of Object.values(this.componentImportanceLocal)) {
+                            if (imp > this.maxImportanceLocal) {
+                                this.maxImportanceLocal = imp;
                             }
                         }
 
@@ -729,13 +797,14 @@
                 },
 
                 async loadActivationContexts() {
-                    if (this.activationContexts || this.activationContextsLoading) return;
+                    // Load lightweight summary (just idx + mean_ci per component)
+                    if (this.activationContextsSummary || this.activationContextsLoading) return;
                     this.activationContextsLoading = true;
                     this.activationContextsError = null;
 
                     timeStart('loadActCtx.fetch');
                     try {
-                        const response = await fetch(`${this.apiBase}/api/activation_contexts`);
+                        const response = await fetch(`${this.apiBase}/api/activation_contexts/summary`);
                         if (!response.ok) {
                             throw new Error(`Server error: ${response.status} ${response.statusText}`);
                         }
@@ -743,7 +812,7 @@
                         if (data.error) {
                             throw new Error(data.error);
                         }
-                        this.activationContexts = data;
+                        this.activationContextsSummary = data;
                         timeEnd('loadActCtx.fetch');
                     } catch (e) {
                         console.error('Error loading activation contexts:', e);
@@ -752,6 +821,41 @@
                     } finally {
                         this.activationContextsLoading = false;
                     }
+                },
+
+                async loadComponentDetail(layer, cIdx) {
+                    // Lazy-load full component details on hover/pin
+                    const cacheKey = `${layer}:${cIdx}`;
+                    if (this.componentDetailsCache[cacheKey] || this.componentDetailsLoading[cacheKey]) return;
+
+                    this.componentDetailsLoading[cacheKey] = true;
+                    try {
+                        const response = await fetch(`${this.apiBase}/api/activation_contexts/${encodeURIComponent(layer)}/${cIdx}`);
+                        if (!response.ok) {
+                            throw new Error(`Server error: ${response.status}`);
+                        }
+                        const data = await response.json();
+                        if (data.error) {
+                            console.warn(`Component detail error: ${data.error}`);
+                            return;
+                        }
+                        this.componentDetailsCache[cacheKey] = data;
+                    } catch (e) {
+                        console.error(`Error loading component detail for ${cacheKey}:`, e);
+                    } finally {
+                        this.componentDetailsLoading[cacheKey] = false;
+                    }
+                },
+
+                getComponentDetail(layer, cIdx) {
+                    // Get cached component detail, or trigger load if not available
+                    const cacheKey = `${layer}:${cIdx}`;
+                    if (this.componentDetailsCache[cacheKey]) {
+                        return this.componentDetailsCache[cacheKey];
+                    }
+                    // Trigger async load (will cause re-render when complete)
+                    this.loadComponentDetail(layer, cIdx);
+                    return null;
                 },
 
                 parseLayer(name) {
@@ -769,10 +873,10 @@
 
                 getRowKey(layer) {
                     // Returns the row key for layout purposes
-                    // k_proj, v_proj, q_proj all map to 'kvq' row
+                    // q_proj, k_proj, v_proj all map to 'qkv' row
                     const info = this.parseLayer(layer);
-                    if (KVQ_SUBTYPES.includes(info.subtype)) {
-                        return `h.${info.block}.kvq`;
+                    if (QKV_SUBTYPES.includes(info.subtype)) {
+                        return `h.${info.block}.qkv`;
                     }
                     return layer;
                 },
@@ -843,17 +947,18 @@
                     }
 
                     // Sort rows (not individual layers) for Y positioning
+                    const parseRow = (r) => {
+                        if (r === 'wte') return { block: -1, subtype: 'wte' };
+                        if (r === 'output') return { block: Infinity, subtype: 'output' };
+                        // qkv rows: h.0.qkv
+                        const mQkv = r.match(/h\.(\d+)\.qkv/); if (mQkv) return { block: +mQkv[1], subtype: 'qkv' };
+                        // Regular rows: h.0.attn.o_proj or h.0.mlp.c_fc
+                        const m = r.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
+                        if (!m) throw new Error(`parseRow: unrecognized row key: ${r}`);
+                        return { block: +m[1], subtype: m[3] };
+                    };
+
                     const rows = Array.from(allRows).sort((a, b) => {
-                        const parseRow = (r) => {
-                            if (r === 'wte') return { block: -1, subtype: 'wte' };
-                            if (r === 'output') return { block: Infinity, subtype: 'output' };
-                            // kvq rows: h.0.kvq
-                            const mKvq = r.match(/h\.(\d+)\.kvq/); if (mKvq) return { block: +mKvq[1], subtype: 'kvq' };
-                            // Regular rows: h.0.attn.o_proj or h.0.mlp.c_fc
-                            const m = r.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-                            if (!m) throw new Error(`parseRow: unrecognized row key: ${r}`);
-                            return { block: +m[1], subtype: m[3] };
-                        };
                         const infoA = parseRow(a);
                         const infoB = parseRow(b);
                         if (infoA.block !== infoB.block) return infoA.block - infoB.block;
@@ -864,7 +969,7 @@
                         return idxA - idxB;
                     });
 
-                    // Assign Y positions to rows (k,v,q share same Y)
+                    // Assign Y positions to rows (q,k,v share same Y)
                     const rowYPositions = {};
                     let currentY = MARGIN.top;
                     for (const row of rows.slice().reverse()) {
@@ -881,20 +986,20 @@
 
                     const tokens = this.promptData.tokens;
 
-                    // Calculate column widths - for kvq rows, need space for all 3 subtypes
+                    // Calculate column widths - for qkv rows, need space for all 3 subtypes
                     const maxComponentsPerSeq = tokens.map((_, seqIdx) => {
                         let maxAtSeq = 0;
                         for (const row of rows) {
-                            if (row.endsWith('.kvq')) {
+                            if (row.endsWith('.qkv')) {
                                 const block = row.match(/h\.(\d+)/)[1];
-                                let totalKvq = 0;
-                                for (const subtype of KVQ_SUBTYPES) {
+                                let totalQkv = 0;
+                                for (const subtype of QKV_SUBTYPES) {
                                     const layer = `h.${block}.attn.${subtype}`;
                                     const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
-                                    totalKvq += nodes.length;
+                                    totalQkv += nodes.length;
                                 }
-                                totalKvq += 2; // gaps between groups
-                                maxAtSeq = Math.max(maxAtSeq, totalKvq);
+                                totalQkv += 2; // gaps between groups
+                                maxAtSeq = Math.max(maxAtSeq, totalQkv);
                             } else {
                                 for (const layer of allLayers) {
                                     if (this.getRowKey(layer) === row) {
@@ -917,11 +1022,11 @@
                     }
 
                     this.nodePositions = {};
-                    const KVQ_GROUP_GAP = COMPONENT_SIZE + COMPONENT_GAP;
+                    const QkV_GROUP_GAP = COMPONENT_SIZE + COMPONENT_GAP;
 
                     for (const layer of allLayers) {
                         const info = this.parseLayer(layer);
-                        const isKvq = info && KVQ_SUBTYPES.includes(info.subtype);
+                        const isQkv = info && QKV_SUBTYPES.includes(info.subtype);
                         const isOutput = layer === 'output';
 
                         for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
@@ -931,16 +1036,16 @@
                             let baseX = seqXStarts[seqIdx] + COL_PADDING;
                             const baseY = this.layerYPositions[layer];
 
-                            // For kvq layers, offset X based on which subtype (k, v, q order)
-                            if (isKvq) {
+                            // For qkv layers, offset X based on which subtype (k, v, q order)
+                            if (isQkv) {
                                 const block = info.block;
-                                const subtypeIdx = KVQ_SUBTYPES.indexOf(info.subtype);
+                                const subtypeIdx = QKV_SUBTYPES.indexOf(info.subtype);
                                 for (let i = 0; i < subtypeIdx; i++) {
-                                    const prevLayer = `h.${block}.attn.${KVQ_SUBTYPES[i]}`;
+                                    const prevLayer = `h.${block}.attn.${QKV_SUBTYPES[i]}`;
                                     const prevLayerNodes = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]
                                     const prevCount = prevLayerNodes?.length ?? 0;
                                     baseX += prevCount * (COMPONENT_SIZE + COMPONENT_GAP);
-                                    baseX += KVQ_GROUP_GAP;
+                                    baseX += QkV_GROUP_GAP;
                                 }
                             }
 
@@ -1064,6 +1169,10 @@
                     return arr;
                 },
 
+                linearInterpolate(min, max, x) {
+                    return min + (max - min) * x;
+                },
+
                 render() {
                     if (!this.promptData) {
                         console.error('No prompt data available');
@@ -1101,8 +1210,8 @@
                         const p2 = this.nodePositions[e.tgtKey];
                         if (p1 && p2) {
                             const color = e.val > 0 ? '#2196f3' : '#f44336';
-                            const w = Math.max(1, (Math.abs(e.val) / this.maxAbsAttr) * 4);
-                            const op = 0.05 + (Math.abs(e.val) / this.maxAbsAttr) * 0.95;
+                            const w = this.linearInterpolate(1, 4, Math.abs(e.val) / this.maxAbsAttr);
+                            const op = this.linearInterpolate(0, 0.5, Math.abs(e.val) / this.maxAbsAttr);
                             // Cubic bezier with vertical tangents at endpoints
                             const dy = Math.abs(p2.y - p1.y);
                             const curveOffset = Math.max(20, dy * 0.4);
@@ -1116,8 +1225,8 @@
                     for (const key in this.nodePositions) {
                         const pos = this.nodePositions[key];
                         const [layer, seqIdx, cIdx] = key.split(':');
-                        const outAttr = this.nodeOutAttr[key];
-                        const intensity = Math.min(1, outAttr / this.maxAbsNodeOutAttr);
+                        const importance = this.componentImportanceLocal[key] || 0;
+                        const intensity = Math.min(1, importance / this.maxImportanceLocal);
 
                         let fillColor;
                         let opacity;
@@ -1173,9 +1282,9 @@
                     for (const [y, rowKey] of rowYSet) {
                         const yCenter = y + COMPONENT_SIZE / 2;
                         let label;
-                        if (rowKey.endsWith('.kvq')) {
+                        if (rowKey.endsWith('.qkv')) {
                             const blockIdx = rowKey.split('.')[1];
-                            label = `${blockIdx} k v q`;
+                            label = `${blockIdx}.q/k/v`;
                         } else if (rowKey === 'wte' || rowKey === 'output') {
                             label = rowKey;
                         } else {
@@ -1227,7 +1336,7 @@
                         this.tooltipPos = this.calcTooltipPos(e.clientX, e.clientY);
                         this.updateHighlights();
                         // Only load activation contexts for non-output nodes
-                        if (layer !== 'output' && !this.activationContexts) this.loadActivationContexts();
+                        if (layer !== 'output' && !this.activationContextsSummary) this.loadActivationContexts();
                     });
 
                     svg.addEventListener('mouseout', (e) => {
@@ -1284,7 +1393,7 @@
                         this.pinnedNodes.splice(idx, 1);
                     } else {
                         this.pinnedNodes.push({ layer, cIdx });
-                        if (!this.activationContexts) this.loadActivationContexts();
+                        if (!this.activationContextsSummary) this.loadActivationContexts();
                     }
                     this.hoveredNode = null;
                     this.updateHighlights();
@@ -1384,6 +1493,27 @@
                     }
                 },
 
+                // Helper to build just the local section (always available, doesn't need activation contexts)
+                buildLocalSectionHtml(layer, seqIdx, cIdx) {
+                    let countEdges = 0;
+                    for (const edge of this.allEdges) {
+                        const [srcLayer, srcSeq, srcCIdx] = edge.srcKey.split(':');
+                        const [tgtLayer, tgtSeq, tgtCIdx] = edge.tgtKey.split(':');
+                        if ((srcLayer === layer && +srcSeq === seqIdx && +srcCIdx === cIdx) ||
+                            (tgtLayer === layer && +tgtSeq === seqIdx && +tgtCIdx === cIdx)) {
+                            countEdges++;
+                        }
+                    }
+                    const nodeKey = `${layer}:${seqIdx}:${cIdx}`;
+                    const importance = this.componentImportanceLocal[nodeKey] || 0;
+
+                    let html = `<div class="node-local-section">`;
+                    html += `<h4>Node @ Position ${seqIdx}</h4>`;
+                    html += `<div><strong>Edges:</strong> ${countEdges} | <strong>Importance:</strong> ${importance.toFixed(4)}</div>`;
+                    html += `</div>`;
+                    return html;
+                },
+
                 buildComponentHtml(layer, seqIdx, cIdx) {
                     // Count edges for this component at this position
                     let countEdges = 0;
@@ -1442,49 +1572,72 @@
                     }
 
                     // Regular component handling
-                    const actCtx = this.activationContexts?.[layer];
-                    const subcomp = actCtx?.find(s => s.subcomponent_idx === cIdx);
+                    // Note: local section is rendered separately before the h3
+                    // Get summary data for mean_ci
+                    const summary = this.activationContextsSummary?.[layer]?.find(s => s.subcomponent_idx === cIdx);
+                    // Get detail data (lazy-loaded) for examples, pr_tokens, etc.
+                    const detail = this.getComponentDetail(layer, cIdx);
+                    const cacheKey = `${layer}:${cIdx}`;
+                    const isLoading = this.componentDetailsLoading[cacheKey];
 
-                    if (!subcomp) {
-                        return `<p><strong>${layer} : ${cIdx}</strong></p><p class="stats"><strong>Edges:</strong> ${countEdges}</p><p style="color: #666;">No activation context data</p>`;
+                    if (!summary && !detail) {
+                        return `<p style="color: #666;">No activation context data</p>`;
                     }
 
-                    let html = `<p class="stats"><strong>Mean CI:</strong> ${subcomp.mean_ci.toFixed(4)} | <strong>Edges:</strong> ${countEdges}</p>`;
+                    // Component-wide section
+                    let html = `<div class="component-section">`;
+                    const meanCi = detail?.mean_ci ?? summary?.mean_ci;
+                    if (meanCi !== undefined) {
+                        html += `<p class="stats"><strong>Mean CI:</strong> ${meanCi.toFixed(4)}</p>`;
+                    }
 
-                    if (subcomp.example_tokens?.length > 0) {
-                        html += '<h4>Top Activating Examples</h4>';
-                        for (let i = 0; i < Math.min(20, subcomp.example_tokens.length); i++) {
-                            const tokens = subcomp.example_tokens[i];
-                            const ciVals = subcomp.example_ci[i];
-                            const activePos = subcomp.example_active_pos[i];
+                    // Detail section (lazy-loaded)
+                    if (detail) {
+                        if (detail.example_tokens?.length > 0) {
+                            html += '<h4>Top Activating Examples</h4>';
+                            for (let i = 0; i < Math.min(50, detail.example_tokens.length); i++) {
+                                const tokens = detail.example_tokens[i];
+                                const ciVals = detail.example_ci[i];
+                                const activePos = detail.example_active_pos[i];
 
-                            html += `<div class="example-row">`;
-                            for (let j = 0; j < tokens.length; j++) {
-                                const ci = ciVals[j];
-                                const isActive = j === activePos;
-                                const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
-                                html += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}">${this.escapeHtml(tokens[j])}</span>`;
+                                html += `<div class="example-row">`;
+                                for (let j = 0; j < tokens.length; j++) {
+                                    const ci = ciVals[j];
+                                    const isActive = j === activePos;
+                                    const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
+                                    html += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}">${this.escapeHtml(tokens[j])}</span>`;
+                                }
+                                html += `</div>`;
                             }
-                            html += `</div>`;
                         }
+
+                        html += '<div class="tables-row">';
+                        if (detail.pr_tokens?.length > 0) {
+                            // Sort by precision descending (backend sorts by recall)
+                            const prIndices = detail.pr_precisions
+                                .map((p, i) => [p, i])
+                                .sort((a, b) => b[0] - a[0])
+                                .map(x => x[1]);
+                            html += '<div><h4>Top Input Tokens</h4><table class="pr-table"><tr><th>Token</th><th>P(fire|tok)</th></tr>';
+                            for (let j = 0; j < Math.min(5, prIndices.length); j++) {
+                                const i = prIndices[j];
+                                html += `<tr><td><code>${this.escapeHtml(detail.pr_tokens[i])}</code></td><td>${detail.pr_precisions[i].toFixed(3)}</td></tr>`;
+                            }
+                            html += '</table></div>';
+                        }
+                        if (detail.predicted_tokens?.length > 0) {
+                            html += '<div><h4>Top Predicted</h4><table class="pr-table"><tr><th>Token</th><th>P</th></tr>';
+                            for (let i = 0; i < Math.min(5, detail.predicted_tokens.length); i++) {
+                                html += `<tr><td><code>${this.escapeHtml(detail.predicted_tokens[i])}</code></td><td>${detail.predicted_probs[i].toFixed(3)}</td></tr>`;
+                            }
+                            html += '</table></div>';
+                        }
+                        html += '</div>';
+                    } else if (isLoading) {
+                        html += '<p class="loading-text"><span class="loading-spinner"></span> Loading examples...</p>';
                     }
 
-                    html += '<div class="tables-row">';
-                    if (subcomp.pr_tokens?.length > 0) {
-                        html += '<div><h4>Top Input Tokens</h4><table class="pr-table"><tr><th>Token</th><th>P(fire|tok)</th></tr>';
-                        for (let i = 0; i < Math.min(5, subcomp.pr_tokens.length); i++) {
-                            html += `<tr><td><code>${this.escapeHtml(subcomp.pr_tokens[i])}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
-                        }
-                        html += '</table></div>';
-                    }
-                    if (subcomp.predicted_tokens?.length > 0) {
-                        html += '<div><h4>Top Predicted</h4><table class="pr-table"><tr><th>Token</th><th>P</th></tr>';
-                        for (let i = 0; i < Math.min(5, subcomp.predicted_tokens.length); i++) {
-                            html += `<tr><td><code>${this.escapeHtml(subcomp.predicted_tokens[i])}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
-                        }
-                        html += '</table></div>';
-                    }
-                    html += '</div>';
+                    html += '</div>'; // close component-section
 
                     return html;
                 },
@@ -1530,49 +1683,65 @@
                     }
 
                     // Regular component handling (same as buildComponentHtml but without seq-specific edge counting)
-                    const actCtx = this.activationContexts?.[layer];
-                    const subcomp = actCtx?.find(s => s.subcomponent_idx === cIdx);
+                    // Get summary data for mean_ci
+                    const summary = this.activationContextsSummary?.[layer]?.find(s => s.subcomponent_idx === cIdx);
+                    // Get detail data (lazy-loaded) for examples, pr_tokens, etc.
+                    const detail = this.getComponentDetail(layer, cIdx);
+                    const cacheKey = `${layer}:${cIdx}`;
+                    const isLoading = this.componentDetailsLoading[cacheKey];
 
-                    if (!subcomp) {
-                        return `<p><strong>${layer} : ${cIdx}</strong></p><p class="stats"><strong>Edges:</strong> ${countEdges}</p><p style="color: #666;">No activation context data</p>`;
+                    if (!summary && !detail) {
+                        return `<p class="stats"><strong>Edges:</strong> ${countEdges}</p><p style="color: #666;">No activation context data</p>`;
                     }
 
-                    let html = `<p class="stats"><strong>Mean CI:</strong> ${subcomp.mean_ci.toFixed(4)} | <strong>Edges:</strong> ${countEdges}</p>`;
+                    const meanCi = detail?.mean_ci ?? summary?.mean_ci;
+                    let html = `<p class="stats"><strong>Mean CI:</strong> ${meanCi?.toFixed(4) ?? '?'} | <strong>Edges:</strong> ${countEdges}</p>`;
 
-                    if (subcomp.example_tokens?.length > 0) {
-                        html += '<h4>Top Activating Examples</h4>';
-                        for (let i = 0; i < Math.min(20, subcomp.example_tokens.length); i++) {
-                            const tokens = subcomp.example_tokens[i];
-                            const ciVals = subcomp.example_ci[i];
-                            const activePos = subcomp.example_active_pos[i];
+                    // Detail section (lazy-loaded)
+                    if (detail) {
+                        if (detail.example_tokens?.length > 0) {
+                            html += '<h4>Top Activating Examples</h4>';
+                            for (let i = 0; i < Math.min(50, detail.example_tokens.length); i++) {
+                                const tokens = detail.example_tokens[i];
+                                const ciVals = detail.example_ci[i];
+                                const activePos = detail.example_active_pos[i];
 
-                            html += `<div class="example-row">`;
-                            for (let j = 0; j < tokens.length; j++) {
-                                const ci = ciVals[j];
-                                const isActive = j === activePos;
-                                const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
-                                html += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}">${this.escapeHtml(tokens[j])}</span>`;
+                                html += `<div class="example-row">`;
+                                for (let j = 0; j < tokens.length; j++) {
+                                    const ci = ciVals[j];
+                                    const isActive = j === activePos;
+                                    const bg = `rgba(255, 100, 100, ${Math.min(1, ci * 5)})`;
+                                    html += `<span class="example-token${isActive ? ' active' : ''}" style="background:${bg}">${this.escapeHtml(tokens[j])}</span>`;
+                                }
+                                html += `</div>`;
                             }
-                            html += `</div>`;
                         }
-                    }
 
-                    html += '<div class="tables-row">';
-                    if (subcomp.pr_tokens?.length > 0) {
-                        html += '<div><h4>Top Input Tokens</h4><table class="pr-table"><tr><th>Token</th><th>P(fire|tok)</th></tr>';
-                        for (let i = 0; i < Math.min(5, subcomp.pr_tokens.length); i++) {
-                            html += `<tr><td><code>${this.escapeHtml(subcomp.pr_tokens[i])}</code></td><td>${subcomp.pr_precisions[i].toFixed(3)}</td></tr>`;
+                        html += '<div class="tables-row">';
+                        if (detail.pr_tokens?.length > 0) {
+                            // Sort by precision descending (backend sorts by recall)
+                            const prIndices = detail.pr_precisions
+                                .map((p, i) => [p, i])
+                                .sort((a, b) => b[0] - a[0])
+                                .map(x => x[1]);
+                            html += '<div><h4>Top Input Tokens</h4><table class="pr-table"><tr><th>Token</th><th>P(fire|tok)</th></tr>';
+                            for (let j = 0; j < Math.min(5, prIndices.length); j++) {
+                                const i = prIndices[j];
+                                html += `<tr><td><code>${this.escapeHtml(detail.pr_tokens[i])}</code></td><td>${detail.pr_precisions[i].toFixed(3)}</td></tr>`;
+                            }
+                            html += '</table></div>';
                         }
-                        html += '</table></div>';
-                    }
-                    if (subcomp.predicted_tokens?.length > 0) {
-                        html += '<div><h4>Top Predicted</h4><table class="pr-table"><tr><th>Token</th><th>P</th></tr>';
-                        for (let i = 0; i < Math.min(5, subcomp.predicted_tokens.length); i++) {
-                            html += `<tr><td><code>${this.escapeHtml(subcomp.predicted_tokens[i])}</code></td><td>${subcomp.predicted_probs[i].toFixed(3)}</td></tr>`;
+                        if (detail.predicted_tokens?.length > 0) {
+                            html += '<div><h4>Top Predicted</h4><table class="pr-table"><tr><th>Token</th><th>P</th></tr>';
+                            for (let i = 0; i < Math.min(5, detail.predicted_tokens.length); i++) {
+                                html += `<tr><td><code>${this.escapeHtml(detail.predicted_tokens[i])}</code></td><td>${detail.predicted_probs[i].toFixed(3)}</td></tr>`;
+                            }
+                            html += '</table></div>';
                         }
-                        html += '</table></div>';
+                        html += '</div>';
+                    } else if (isLoading) {
+                        html += '<p class="loading-text"><span class="loading-spinner"></span> Loading examples...</p>';
                     }
-                    html += '</div>';
 
                     return html;
                 },

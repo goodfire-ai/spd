@@ -7,11 +7,14 @@ Usage:
     python -m spd.attributions.server --db_path ./local_attr.db --port 8765
 
 API Endpoints:
-    GET /api/meta                  - Database metadata
-    GET /api/activation_contexts   - Activation contexts for all components
-    GET /api/prompts               - List all prompts (id, tokens preview)
-    GET /api/prompt/{id}           - Prompt data with on-demand graph computation
-    GET /api/search                - Find prompts with specific components
+    GET /api/meta                              - Database metadata
+    GET /api/activation_contexts/summary      - Lightweight summary (idx + mean_ci per component)
+    GET /api/activation_contexts/{layer}/{idx} - Full component detail (lazy-loaded on hover)
+    GET /api/activation_contexts              - [deprecated] All activation contexts at once
+    GET /api/prompts                          - List all prompts (id, tokens preview)
+    GET /api/prompt/{id}                      - Prompt data with on-demand graph computation
+    GET /api/prompt/{id}/optimized            - Prompt data with optimized sparse CI values
+    GET /api/search                           - Find prompts with specific components
 """
 
 from pathlib import Path
@@ -24,9 +27,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
-from spd.attributions.compute import compute_local_attributions, get_sources_by_target
+from spd.attributions.compute import (
+    compute_local_attributions,
+    compute_local_attributions_optimized,
+    get_sources_by_target,
+)
 from spd.attributions.db import LocalAttrDB
 from spd.attributions.edge_normalization import normalize_edges_by_target
+from spd.attributions.optim_cis.run_optim_cis import OptimCIConfigArgs
+from spd.configs import ImportanceMinimalityLossConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 if TYPE_CHECKING:
@@ -117,25 +126,67 @@ def get_meta() -> dict[str, Any]:
     return result
 
 
-@app.get("/api/activation_contexts")
-def get_activation_contexts():
-    """Return activation contexts (component metadata). Cached after first load."""
-    print("[API] /api/activation_contexts called")
+def _ensure_activation_contexts_cached() -> dict[str, Any] | None:
+    """Load activation contexts into cache if not already loaded."""
     global _activation_contexts_cache
     assert db is not None
 
-    if _activation_contexts_cache is not None:
-        print("[API] /api/activation_contexts returning cached")
-        return _activation_contexts_cache
+    if _activation_contexts_cache is None:
+        contexts = db.get_activation_contexts()
+        if contexts is not None:
+            _activation_contexts_cache = contexts
+    return _activation_contexts_cache
 
-    print("[API] /api/activation_contexts fetching from DB...")
-    contexts = db.get_activation_contexts()
+
+@app.get("/api/activation_contexts/summary")
+def get_activation_contexts_summary():
+    """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
+    contexts = _ensure_activation_contexts_cached()
     if contexts is None:
-        print("[API] /api/activation_contexts not found")
         return JSONResponse({"error": "No activation contexts found"}, status_code=404)
 
-    print(f"[API] /api/activation_contexts done: {len(contexts)} layers")
-    _activation_contexts_cache = contexts
+    # Extract just the summary fields
+    summary: dict[str, list[dict[str, Any]]] = {}
+    for layer, subcomps in contexts.items():
+        summary[layer] = [
+            {"subcomponent_idx": s["subcomponent_idx"], "mean_ci": s["mean_ci"]}
+            for s in subcomps
+        ]
+    return summary
+
+
+@app.get("/api/activation_contexts/{layer}/{component_idx}")
+def get_activation_context_detail(layer: str, component_idx: int):
+    """Return full activation context data for a single component (lazy-loaded on hover/pin)."""
+    contexts = _ensure_activation_contexts_cached()
+    if contexts is None:
+        return JSONResponse({"error": "No activation contexts found"}, status_code=404)
+
+    layer_data = contexts.get(layer)
+    if layer_data is None:
+        return JSONResponse({"error": f"Layer '{layer}' not found"}, status_code=404)
+
+    # Find the component by index
+    for subcomp in layer_data:
+        if subcomp["subcomponent_idx"] == component_idx:
+            return subcomp
+
+    return JSONResponse(
+        {"error": f"Component {component_idx} not found in layer '{layer}'"}, status_code=404
+    )
+
+
+@app.get("/api/activation_contexts")
+def get_activation_contexts():
+    """Return activation contexts (component metadata). Cached after first load.
+
+    DEPRECATED: Use /api/activation_contexts/summary for initial load,
+    then /api/activation_contexts/{layer}/{idx} for details on hover.
+    """
+    print("[API] /api/activation_contexts called (deprecated - use summary + detail endpoints)")
+    contexts = _ensure_activation_contexts_cached()
+    if contexts is None:
+        return JSONResponse({"error": "No activation contexts found"}, status_code=404)
     return contexts
 
 
@@ -288,6 +339,158 @@ def get_prompt(
         "tokens": token_strings,
         "edges": edges_dicts,
         "outputProbs": output_probs,
+    }
+
+
+@app.get("/api/prompt/{prompt_id}/optimized")
+def get_prompt_optimized(
+    prompt_id: int,
+    # Optimization parameters
+    label_token: Annotated[int | None, Query()] = None,
+    imp_min_coeff: Annotated[float, Query(gt=0)] = 0.1,
+    ce_loss_coeff: Annotated[float, Query(gt=0)] = 1.0,
+    steps: Annotated[int, Query(gt=0)] = 500,
+    lr: Annotated[float, Query(gt=0)] = 1e-2,
+    pnorm: Annotated[float, Query(gt=0, le=1)] = 0.3,
+    # Graph parameters
+    normalize: Annotated[bool, Query()] = True,
+    ci_threshold: Annotated[float, Query(ge=0)] = 1e-6,
+    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+):
+    """Return prompt data with optimized sparse CI values.
+
+    Runs prompt-local CI optimization to find a minimal sparse mask that
+    preserves the model's prediction, then computes the attribution graph.
+
+    Args:
+        prompt_id: The prompt ID to fetch
+        label_token: Token ID to optimize for. If None, uses argmax at final position.
+        imp_min_coeff: Importance minimality coefficient (higher = sparser)
+        ce_loss_coeff: Cross-entropy loss coefficient (higher = preserve accuracy)
+        steps: Number of optimization steps
+        lr: Learning rate
+        pnorm: P-norm for importance minimality loss (lower = more aggressive sparsity)
+        normalize: If True, normalize incoming edges to each node to sum to 1
+        ci_threshold: Threshold for considering a component alive
+        output_prob_threshold: Threshold for considering an output token alive
+    """
+    import time
+
+    assert db is not None
+    assert model is not None
+    assert tokenizer is not None
+    assert sources_by_target is not None
+    assert sampling is not None
+
+    # Get token IDs from DB
+    prompt = db.get_prompt_simple(prompt_id)
+    if prompt is None:
+        return JSONResponse({"error": f"Prompt {prompt_id} not found"}, status_code=404)
+
+    CLAMP = 6
+    token_ids = prompt.token_ids[:CLAMP]
+    tokens_tensor = torch.tensor([token_ids], device=device)
+
+    # Determine label token (default to argmax at final position)
+    if label_token is None:
+        with torch.no_grad():
+            logits = model(tokens_tensor)
+            label_token = int(logits[0, -1, :].argmax().item())
+
+    label_str = tokenizer.decode([label_token])
+    token_strings = [tokenizer.decode([t]) for t in token_ids]
+
+    print(
+        f"[API] /api/prompt/{prompt_id}/optimized called"
+        f"\n  - label_token={label_token} ({label_str!r})"
+        f"\n  - imp_min_coeff={imp_min_coeff}, ce_loss_coeff={ce_loss_coeff}"
+        f"\n  - steps={steps}, lr={lr}, pnorm={pnorm}"
+        f"\n  - tokens: {token_strings}",
+        flush=True,
+    )
+
+    # Build OptimCIConfig
+    # Note: some fields (wandb_path, prompt, label) are unused by optimize_ci_values
+    # but required by the config schema
+    optim_config = OptimCIConfigArgs(
+        seed=0,
+        lr=lr,
+        steps=steps,
+        weight_decay=0.0,
+        lr_schedule="cosine",
+        lr_exponential_halflife=None,
+        lr_warmup_pct=0.01,
+        log_freq=max(1, steps // 4),
+        imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm),
+        ce_loss_coeff=ce_loss_coeff,
+        ci_threshold=ci_threshold,
+        sampling=sampling,
+        n_mask_samples=1,
+        output_loss_type="kl",
+        ce_kl_rounding_threshold=0.5,
+    )
+
+    # Run optimization and compute graph
+    t_start = time.time()
+    result = compute_local_attributions_optimized(
+        model=model,
+        tokens=tokens_tensor,
+        label_token=label_token,
+        sources_by_target=sources_by_target,
+        optim_config=optim_config,
+        ci_threshold=ci_threshold,
+        output_prob_threshold=output_prob_threshold,
+        device=device,
+        show_progress=True,
+    )
+    t_end = time.time()
+
+    print(
+        f"[API] /api/prompt/{prompt_id}/optimized completed in {t_end - t_start:.2f}s, "
+        f"{len(result.edges)} edges",
+        flush=True,
+    )
+
+    edges = result.edges
+    edges.sort(key=lambda x: abs(x[6]), reverse=True)
+    edges = edges[:30_000]
+
+    if normalize:
+        edges = normalize_edges_by_target(edges)
+
+    edges_dicts = [
+        {
+            "src": f"{e[0]}:{e[4]}:{e[2]}",
+            "tgt": f"{e[1]}:{e[5]}:{e[3]}",
+            "val": e[6],
+        }
+        for e in edges
+    ]
+
+    # Extract output_probs for display
+    output_probs: dict[str, dict[str, float | str]] = {}
+    output_probs_tensor = result.output_probs[0].cpu()
+    for s in range(output_probs_tensor.shape[0]):
+        for c_idx in range(output_probs_tensor.shape[1]):
+            prob = float(output_probs_tensor[s, c_idx].item())
+            key = f"{s}:{c_idx}"
+            output_probs[key] = {"prob": round(prob, 6), "token": tokenizer.decode([c_idx])}
+
+    return {
+        "id": prompt.id,
+        "tokens": token_strings,
+        "edges": edges_dicts,
+        "outputProbs": output_probs,
+        "optimization": {
+            "label_token": label_token,
+            "label_str": label_str,
+            "imp_min_coeff": imp_min_coeff,
+            "ce_loss_coeff": ce_loss_coeff,
+            "steps": steps,
+            "label_prob": result.stats.label_prob,
+            "l0_total": result.stats.l0_total,
+            "l0_per_layer": result.stats.l0_per_layer,
+        },
     }
 
 

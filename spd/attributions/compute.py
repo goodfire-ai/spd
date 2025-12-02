@@ -13,10 +13,10 @@ from jaxtyping import Bool, Float
 from torch import Tensor, nn
 from tqdm.auto import tqdm
 
+from spd.attributions.optim_cis.run_optim_cis import OptimCIConfigArgs, optimize_ci_values
 from spd.configs import SamplingType
-from spd.models.component_model import ComponentModel, OutputWithCache, SPDRunInfo
+from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
-from spd.scripts.model_loading import create_data_loader_from_config
 
 
 @dataclass
@@ -66,6 +66,24 @@ class LocalAttributionResult:
 
     edges: list[Edge]
     output_probs: Float[Tensor, "seq vocab"]  # Softmax probabilities for output logits
+
+
+@dataclass
+class OptimizationStats:
+    """Statistics from CI optimization."""
+
+    label_prob: float  # P(label_token) with optimized CI mask
+    l0_total: float  # Total L0 across all layers
+    l0_per_layer: dict[str, float]  # L0 per layer
+
+
+@dataclass
+class OptimizedLocalAttributionResult:
+    """Result of computing local attributions with optimized CI values."""
+
+    edges: list[Edge]
+    output_probs: Float[Tensor, "seq vocab"]
+    stats: OptimizationStats
 
 
 def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
@@ -182,53 +200,27 @@ def get_sources_by_target(
     return dict(sources_by_target)
 
 
-def compute_local_attributions(
+def compute_edges_from_ci(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
+    ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
     sources_by_target: dict[str, list[str]],
     ci_threshold: float,
     output_prob_threshold: float,
-    sampling: SamplingType,
     device: str,
-    show_progress: bool = True,
+    show_progress: bool,
 ) -> LocalAttributionResult:
-    """Compute local attributions for a single prompt.
+    """Core edge computation from pre-computed CI values.
 
-    For each valid layer pair (in_layer, out_layer), computes the gradient-based
-    attribution of output component activations with respect to input component
-    activations, preserving sequence position information.
+    Computes gradient-based attribution edges between components using the
+    provided CI values for masking and thresholding.
 
-    Supports three layer types:
-    - wte: Input embeddings (single pseudo-component per position)
-    - Regular component layers (h.{i}.attn.*, h.{i}.mlp.*)
-    - output: Output logits (vocab tokens as components)
-
-    Args:
-        model: The ComponentModel to analyze.
-        tokens: Tokenized prompt of shape [1, seq_len].
-        sources_by_target: Dict mapping out_layer -> list of in_layers.
-        ci_threshold: Threshold for considering a component alive at a position.
-        output_prob_threshold: Threshold for considering an output logit alive (on softmax probs).
-        sampling: Sampling type to use for causal importances.
-        device: Device to run on.
-        show_progress: Whether to show progress bars.
-
-    Returns:
-        LocalAttributionResult containing pairs and output_probs.
+    Use compute_local_attributions() for automatic CI computation, or
+    compute_local_attributions_optimized() for optimized sparse CI values.
     """
     n_seq = tokens.shape[1]
 
-    with torch.no_grad():
-        pre_weight_acts = model(tokens, cache_type="input").cache
-
-    with torch.no_grad():
-        ci = model.calc_causal_importances(
-            pre_weight_acts=pre_weight_acts,
-            sampling=sampling,
-            detach_inputs=False,
-        )
-
-    ci_masked_infos = make_mask_infos(component_masks=ci.lower_leaky, routing_masks="all")
+    ci_masked_infos = make_mask_infos(component_masks=ci_lower_leaky, routing_masks="all")
 
     # Hook to capture wte output with gradients
     # this is gross but basedpyright reports unreachable if we make this a `Tensor | None`
@@ -269,7 +261,7 @@ def compute_local_attributions(
     alive_info: dict[str, LayerAliveInfo] = {}
     for layer in all_layers:
         alive_info[layer] = compute_layer_alive_info(
-            layer, ci.lower_leaky, output_probs, ci_threshold, output_prob_threshold, n_seq, device
+            layer, ci_lower_leaky, output_probs, ci_threshold, output_prob_threshold, n_seq, device
         )
 
     edges: list[Edge] = []
@@ -284,7 +276,7 @@ def compute_local_attributions(
         )
     else:
         pbar = None
-    
+
     for target, sources in list(target_iter):
         if pbar is not None:
             pbar.set_description(f"Source layers by target: {target}")
@@ -325,7 +317,6 @@ def compute_local_attributions(
                             # assert weighted.shape == (n_seq, model.C)
                             weighted = weighted.sum(dim=1, keepdim=True)
 
-                        # s_in_range = range(s_out + 1) if is_kv_to_o_pair_flag else [s_out]
                         s_in_range = range(s_out + 1) if is_kv_to_o_pair_flag else [s_out]
 
                         for s_in in s_in_range:
@@ -352,6 +343,104 @@ def compute_local_attributions(
         pbar.close()
 
     return LocalAttributionResult(edges=edges, output_probs=output_probs)
+
+
+def compute_local_attributions(
+    model: ComponentModel,
+    tokens: Float[Tensor, "1 seq"],
+    sources_by_target: dict[str, list[str]],
+    ci_threshold: float,
+    output_prob_threshold: float,
+    sampling: SamplingType,
+    device: str,
+    show_progress: bool,
+) -> LocalAttributionResult:
+    """Compute local attributions using the model's natural CI values.
+
+    Computes CI via forward pass, then delegates to compute_edges_from_ci().
+    For optimized sparse CI values, use compute_local_attributions_optimized().
+    """
+    with torch.no_grad():
+        pre_weight_acts = model(tokens, cache_type="input").cache
+        ci = model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            sampling=sampling,
+            detach_inputs=False,
+        )
+
+    return compute_edges_from_ci(
+        model=model,
+        tokens=tokens,
+        ci_lower_leaky=ci.lower_leaky,
+        sources_by_target=sources_by_target,
+        ci_threshold=ci_threshold,
+        output_prob_threshold=output_prob_threshold,
+        device=device,
+        show_progress=show_progress,
+    )
+
+
+def compute_local_attributions_optimized(
+    model: ComponentModel,
+    tokens: Float[Tensor, "1 seq"],
+    label_token: int,
+    sources_by_target: dict[str, list[str]],
+    optim_config: OptimCIConfigArgs,
+    ci_threshold: float,
+    output_prob_threshold: float,
+    device: str,
+    show_progress: bool,
+) -> OptimizedLocalAttributionResult:
+    """Compute local attributions using optimized sparse CI values.
+
+    Runs CI optimization to find a minimal sparse mask that preserves
+    the model's prediction of label_token, then computes edges.
+    """
+    ci_params = optimize_ci_values(
+        model=model,
+        tokens=tokens,
+        label_token=label_token,
+        config=optim_config,
+        device=device,
+    )
+    ci_outputs = ci_params.create_ci_outputs(model, device)
+
+    # Compute optimization stats
+    l0_per_layer: dict[str, float] = {}
+    for layer_name, ci_tensor in ci_outputs.lower_leaky.items():
+        # L0 = count of components with CI > threshold, averaged over sequence
+        l0_per_layer[layer_name] = float((ci_tensor > ci_threshold).float().sum().item())
+    l0_total = sum(l0_per_layer.values())
+
+    # Get label probability with optimized CI mask
+    with torch.no_grad():
+        mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
+        logits = model(tokens, mask_infos=mask_infos)
+        probs = torch.softmax(logits[0, -1, :], dim=-1)
+        label_prob = float(probs[label_token].item())
+
+    stats = OptimizationStats(
+        label_prob=label_prob,
+        l0_total=l0_total,
+        l0_per_layer=l0_per_layer,
+    )
+
+    result = compute_edges_from_ci(
+        model=model,
+        tokens=tokens,
+        ci_lower_leaky=ci_outputs.lower_leaky,
+        sources_by_target=sources_by_target,
+        ci_threshold=ci_threshold,
+        output_prob_threshold=output_prob_threshold,
+        device=device,
+        show_progress=show_progress,
+    )
+
+    return OptimizedLocalAttributionResult(
+        edges=result.edges,
+        output_probs=result.output_probs,
+        stats=stats,
+    )
 
 
 @dataclass
@@ -443,62 +532,62 @@ def extract_active_from_ci(
     return active
 
 
-def test():
-    device = "cuda:0"
+# def test():
+#     device = "cuda:0"
 
-    model, _, dataset, sources_by_target, sampling = load_model_and_data()
+#     model, _, dataset, sources_by_target, sampling = load_model_and_data()
 
-    tokens = next(iter(dataset))["input_ids"].to(device)
+#     tokens = next(iter(dataset))["input_ids"].to(device)
 
-    result = compute_local_attributions(
-        model,
-        tokens,
-        sources_by_target,
-        ci_threshold=0.01,
-        output_prob_threshold=0.01,
-        sampling=sampling,
-        device=device,
-        show_progress=True,
-    )
-    print(result)
-
-
-def load_model_and_data():
-    device = "cuda:0"
-
-    # db = LocalAttrDB(Path("../../../test_attr.db"), check_same_thread=False)
-
-    # Load model from wandb_path stored in DB meta
-    # wandb_info = db.get_meta("wandb_path")
-    # n_blocks_info = db.get_meta("n_blocks")
-    # assert wandb_info is not None, "DB must have wandb_path in meta"
-    # wandb_path = wandb_info["path"]
-    # assert wandb_path is not None, "wandb_path must be set"
-
-    # assert n_blocks_info is not None, "DB must have n_blocks in meta"
-    # n_blocks = n_blocks_info["n_blocks"]
-    # assert isinstance(n_blocks, int), "n_blocks must be int"
-
-    # print(f"Loading model from {wandb_path}...")
-
-    wandb_path = "wandb:goodfire/spd/runs/jyo9duz5"
-    n_blocks = 4
-
-    run_info = SPDRunInfo.from_path(wandb_path)
-    model = ComponentModel.from_run_info(run_info)
-    model = model.to(device)
-    model.eval()
-
-    # Build sources_by_target mapping
-    spd_config = run_info.config
-    sampling = spd_config.sampling
-    sources_by_target = get_sources_by_target(model, device, sampling, n_blocks)
-    print(f"Model loaded on {device}, ready for on-demand computation")
-
-    dataset, tokenizer = create_data_loader_from_config(spd_config, 1, 32)
-
-    return model, tokenizer, dataset, sources_by_target, sampling
+#     result = compute_local_attributions(
+#         model,
+#         tokens,
+#         sources_by_target,
+#         ci_threshold=0.01,
+#         output_prob_threshold=0.01,
+#         sampling=sampling,
+#         device=device,
+#         show_progress=True,
+#     )
+#     print(result)
 
 
-if __name__ == "__main__":
-    test()
+# def load_model_and_data():
+#     device = "cuda:0"
+
+#     # db = LocalAttrDB(Path("../../../test_attr.db"), check_same_thread=False)
+
+#     # Load model from wandb_path stored in DB meta
+#     # wandb_info = db.get_meta("wandb_path")
+#     # n_blocks_info = db.get_meta("n_blocks")
+#     # assert wandb_info is not None, "DB must have wandb_path in meta"
+#     # wandb_path = wandb_info["path"]
+#     # assert wandb_path is not None, "wandb_path must be set"
+
+#     # assert n_blocks_info is not None, "DB must have n_blocks in meta"
+#     # n_blocks = n_blocks_info["n_blocks"]
+#     # assert isinstance(n_blocks, int), "n_blocks must be int"
+
+#     # print(f"Loading model from {wandb_path}...")
+
+#     wandb_path = "wandb:goodfire/spd/runs/jyo9duz5"
+#     n_blocks = 4
+
+#     run_info = SPDRunInfo.from_path(wandb_path)
+#     model = ComponentModel.from_run_info(run_info)
+#     model = model.to(device)
+#     model.eval()
+
+#     # Build sources_by_target mapping
+#     spd_config = run_info.config
+#     sampling = spd_config.sampling
+#     sources_by_target = get_sources_by_target(model, device, sampling, n_blocks)
+#     print(f"Model loaded on {device}, ready for on-demand computation")
+
+#     dataset, tokenizer = create_data_loader_from_config(spd_config, 1, 32)
+
+#     return model, tokenizer, dataset, sources_by_target, sampling
+
+
+# if __name__ == "__main__":
+#     test()

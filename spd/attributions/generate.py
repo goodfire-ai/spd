@@ -49,8 +49,12 @@ class GenerateConfig:
     ci_threshold: float = 1e-6
     output_prob_threshold: float = 0.01
     seed: int = 42
-    n_batches_act_ctx: int = 50
+    act_ctx_n_batches: int = 50
+    act_ctx_n_tokens_either_side: int = 5
+    act_ctx_batch_size: int = 128
+    act_ctx_topk_examples: int = 100
     act_ctx_importance_threshold: float = 0.1
+    act_ctx_separation_tokens: int = 0
 
 
 def worker_fn(
@@ -170,12 +174,19 @@ def generate_database(config: GenerateConfig) -> None:
     db.init_schema_simple()
 
     existing_count = db.get_prompt_count()
-    if existing_count >= config.n_prompts:
-        print(
-            f"\nAlready have {existing_count} prompts (target: {config.n_prompts}), nothing to do."
-        )
-        db.close()
-        return
+    if existing_count > 0:
+        print(f"\nDB already has {existing_count} prompts, delete it and re-run?")
+        input_ = input("y/n: ")
+        if input_ == "y":
+            db.close()
+            config.output_path.unlink()
+            db = LocalAttrDB(config.output_path)
+            db.init_schema_simple()
+            existing_count = 0
+        else:
+            print("Exiting...")
+            db.close()
+            return
 
     # Store metadata
     db.set_meta("wandb_path", {"path": config.wandb_path})
@@ -243,10 +254,11 @@ def generate_database(config: GenerateConfig) -> None:
         for result in get_activations_data_streaming(
             run_context=run_context,
             importance_threshold=config.act_ctx_importance_threshold,
-            n_batches=config.n_batches_act_ctx,
-            n_tokens_either_side=5,
-            batch_size=8,
-            topk_examples=10,
+            n_batches=config.act_ctx_n_batches,
+            n_tokens_either_side=config.act_ctx_n_tokens_either_side,
+            batch_size=config.act_ctx_batch_size,
+            topk_examples=config.act_ctx_topk_examples,
+            separation_tokens=config.act_ctx_separation_tokens,
         ):
             if result[0] == "complete":
                 activation_contexts = result[1]
@@ -326,8 +338,12 @@ if __name__ == "__main__":
         ci_threshold: float = 1e-6,
         output_prob_threshold: float = 0.01,
         seed: int = 42,
-        n_batches_act_ctx: int = 50,
-        act_ctx_importance_threshold: float = 0.1,
+        act_ctx_n_batches: int = 50,
+        act_ctx_n_tokens_either_side: int = 8,
+        act_ctx_batch_size: int = 32,
+        act_ctx_topk_examples: int = 100,
+        act_ctx_importance_threshold: float = 0.3,
+        act_ctx_separation_tokens: int = 0,
     ) -> GenerateConfig:
         return GenerateConfig(
             wandb_path=wandb_path,
@@ -339,8 +355,12 @@ if __name__ == "__main__":
             ci_threshold=ci_threshold,
             output_prob_threshold=output_prob_threshold,
             seed=seed,
-            n_batches_act_ctx=n_batches_act_ctx,
+            act_ctx_n_batches=act_ctx_n_batches,
+            act_ctx_n_tokens_either_side=act_ctx_n_tokens_either_side,
+            act_ctx_batch_size=act_ctx_batch_size,
+            act_ctx_topk_examples=act_ctx_topk_examples,
             act_ctx_importance_threshold=act_ctx_importance_threshold,
+            act_ctx_separation_tokens=act_ctx_separation_tokens,
         )
 
     mp.set_start_method("spawn", force=True)

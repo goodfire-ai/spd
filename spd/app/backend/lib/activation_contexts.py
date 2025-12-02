@@ -23,6 +23,44 @@ from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 
 
+def _apply_position_separation(
+    seq_positions: NDArray[np.int64],
+    batch_indices: NDArray[np.int64],
+    min_separation: int,
+) -> NDArray[np.bool_]:
+    """Filter firings to ensure minimum token separation within same batch example.
+
+    Since torch.where returns indices in lexicographic order, positions within
+    each batch are already sorted ascending. We just track the last kept position
+    per batch and reject any firing too close to it.
+
+    Args:
+        seq_positions: Sequence position for each firing
+        batch_indices: Batch index for each firing
+        min_separation: Minimum token separation between kept firings
+
+    Returns:
+        Boolean mask indicating which firings to keep
+    """
+    n = len(seq_positions)
+    if n == 0 or min_separation <= 0:
+        return np.ones(n, dtype=bool)
+
+    keep = np.ones(n, dtype=bool)
+    last_kept: dict[int, int] = {}  # batch_idx -> last kept position
+
+    for i in range(n):
+        b = int(batch_indices[i])
+        pos = int(seq_positions[i])
+
+        if b in last_kept and pos < last_kept[b] + min_separation:
+            keep[i] = False
+        else:
+            last_kept[b] = pos
+
+    return keep
+
+
 @dataclass
 class SubcomponentExample:
     window_token_ids: list[int]
@@ -157,13 +195,16 @@ def get_activations_data_streaming(
     n_tokens_either_side: int,
     batch_size: int,
     topk_examples: int,
+    separation_tokens: int = 0,
 ) -> Generator[
     tuple[Literal["progress"], float] | tuple[Literal["complete"], ModelActivationContexts],
 ]:
     logger.info(
         f"Getting activations data: {n_batches=}, {importance_threshold=}, "
-        f"{n_tokens_either_side=}, {batch_size=}, {topk_examples=}"
+        f"{n_tokens_either_side=}, {batch_size=}, {topk_examples=}, {separation_tokens=}"
     )
+    if separation_tokens > 0:
+        print(f"[activation_contexts] Position separation enabled: {separation_tokens} tokens")
 
     device = next(run_context.cm.parameters()).device
 
@@ -294,6 +335,8 @@ def get_activations_data_streaming(
             ci_at_active = window_ci_values[:, n_tokens_either_side]
 
             # Move to CPU/numpy once (faster than .tolist())
+            batch_idx_np = batch_idx.cpu().numpy()
+            seq_idx_np = seq_idx.cpu().numpy()
             comp_idx_np = comp_idx.cpu().numpy()
             window_token_ids_np = window_token_ids.cpu().numpy()
             window_ci_values_np = window_ci_values.cpu().numpy()
@@ -311,7 +354,7 @@ def get_activations_data_streaming(
                 c_idx_int = int(c_idx)
                 mask_c = comp_idx_np == c_idx
 
-                # Update activation counts
+                # Update activation counts (all firings)
                 n_firings_for_component = int(mask_c.sum())
                 component_activation_counts[module_name][c_idx_int] += n_firings_for_component
 
@@ -329,12 +372,26 @@ def get_activations_data_streaming(
                 for tok_id, count in zip(unique_predicted, predicted_counts, strict=True):
                     component_predicted_tokens[module_name][c_idx_int][int(tok_id)] += int(count)
 
+                # Apply position separation filter for example diversity only
+                if separation_tokens > 0:
+                    component_indices = np.where(mask_c)[0]
+                    sep_keep = _apply_position_separation(
+                        seq_positions=seq_idx_np[component_indices],
+                        batch_indices=batch_idx_np[component_indices],
+                        min_separation=separation_tokens,
+                    )
+                    mask_c_examples = np.zeros_like(mask_c)
+                    mask_c_examples[component_indices[sep_keep]] = True
+                else:
+                    mask_c_examples = mask_c
+
                 # Add examples in batch (with early termination optimization)
+                n_examples_to_add = int(mask_c_examples.sum())
                 examples[module_name][c_idx_int].add_batch(
-                    window_token_ids=window_token_ids_np[mask_c],
-                    window_ci_values=window_ci_values_np[mask_c],
-                    active_positions=np.full(n_firings_for_component, n_tokens_either_side),
-                    ci_at_active=ci_at_active_np[mask_c],
+                    window_token_ids=window_token_ids_np[mask_c_examples],
+                    window_ci_values=window_ci_values_np[mask_c_examples],
+                    active_positions=np.full(n_examples_to_add, n_tokens_either_side),
+                    ci_at_active=ci_at_active_np[mask_c_examples],
                     pad_token_id=pad_token_id,
                 )
 
