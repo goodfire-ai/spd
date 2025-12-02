@@ -27,6 +27,14 @@ class PromptSummary:
 
 
 @dataclass
+class PromptRecordSimple:
+    """A prompt record for the simplified schema (token IDs only, no pairs)."""
+
+    id: int
+    token_ids: list[int]
+
+
+@dataclass
 class ComponentActivation:
     """Record of a component being active in a prompt."""
 
@@ -357,3 +365,96 @@ class LocalAttrDB:
 
         count_after = self.get_prompt_count()
         return count_after - count_before
+
+    # -------------------------------------------------------------------------
+    # Simplified schema operations (CI-only storage, on-demand graph computation)
+    # -------------------------------------------------------------------------
+
+    def init_schema_simple(self) -> None:
+        """Initialize the simplified schema (token IDs only, no pairs).
+
+        This schema stores just token IDs and the inverted index.
+        Attribution graphs are computed on-demand at serve time.
+        """
+        conn = self._get_conn()
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS meta (
+                key TEXT PRIMARY KEY,
+                value BLOB NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS prompts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_ids TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS component_activations (
+                prompt_id INTEGER NOT NULL,
+                component_key TEXT NOT NULL,
+                max_ci REAL NOT NULL,
+                positions TEXT NOT NULL,
+                FOREIGN KEY (prompt_id) REFERENCES prompts(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_component_key
+                ON component_activations(component_key);
+            CREATE INDEX IF NOT EXISTS idx_prompt_id
+                ON component_activations(prompt_id);
+        """)
+        conn.commit()
+
+    def add_prompt_simple(
+        self,
+        token_ids: list[int],
+        active_components: dict[str, tuple[float, list[int]]],
+    ) -> int:
+        """Add a prompt with token IDs only (no pairs).
+
+        Args:
+            token_ids: List of token IDs for this prompt.
+            active_components: Dict mapping component_key -> (max_ci, positions).
+
+        Returns:
+            The prompt ID.
+        """
+        conn = self._get_conn()
+
+        cursor = conn.execute(
+            "INSERT INTO prompts (token_ids) VALUES (?)",
+            (json.dumps(token_ids),),
+        )
+        prompt_id = cursor.lastrowid
+        assert prompt_id is not None
+
+        for component_key, (max_ci, positions) in active_components.items():
+            conn.execute(
+                """INSERT INTO component_activations
+                   (prompt_id, component_key, max_ci, positions)
+                   VALUES (?, ?, ?, ?)""",
+                (prompt_id, component_key, max_ci, json.dumps(positions)),
+            )
+
+        conn.commit()
+        return prompt_id
+
+    def get_prompt_simple(self, prompt_id: int) -> PromptRecordSimple | None:
+        """Get a prompt's token IDs by ID (simplified schema)."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT id, token_ids FROM prompts WHERE id = ?",
+            (prompt_id,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        return PromptRecordSimple(
+            id=row["id"],
+            token_ids=json.loads(row["token_ids"]),
+        )
+
+    def get_all_prompt_ids(self) -> list[int]:
+        """Get all prompt IDs in the database."""
+        conn = self._get_conn()
+        rows = conn.execute("SELECT id FROM prompts ORDER BY id").fetchall()
+        return [row["id"] for row in rows]

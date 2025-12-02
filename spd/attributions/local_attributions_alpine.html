@@ -287,7 +287,7 @@
         .tables-row { display: flex; gap: 2rem; flex-wrap: wrap; }
     </style>
 </head>
-<body x-data="app()" x-init="init()">
+<body x-data="app()">
     <!-- Sidebar -->
     <div class="sidebar">
         <div class="sidebar-header">
@@ -353,7 +353,7 @@
                 </label>
                 <label>
                     Top K edges:
-                    <input type="number" x-model.number="topK" min="10" max="10000" step="100" @change="reloadWithFilters()">
+                    <input type="number" x-model.number="topK" min="10" max="10000" step="100" @change="render()">
                 </label>
                 <label>
                     Node layout:
@@ -460,12 +460,7 @@
         const ROW_ORDER = ['wte', 'kvq', 'o_proj', 'c_fc', 'down_proj', 'output'];
         // Within kvq row, order is k, v, q (left to right)
         const KVQ_SUBTYPES = ['k_proj', 'v_proj', 'q_proj'];
-        const COLORS = {
-            wte: "#333",
-            q_proj: "#333", k_proj: "#333", v_proj: "#333",
-            o_proj: "#333", c_fc: "#333", down_proj: "#333",
-            output: "#333"
-        };
+        const NODE_COLOR = "#333";
 
         // Simple timing utility that avoids duplicate timer warnings
         const timers = {};
@@ -483,7 +478,7 @@
         function app() {
             return {
                 // Constants
-                COLORS,
+                NODE_COLOR,
 
                 // API
                 apiBase: window.location.origin || 'http://localhost:8765',
@@ -504,7 +499,6 @@
                 allPrompts: [],
                 currentPromptId: null,
                 promptData: null,
-                outputProbs: {},  // {"s:c": {prob: float, token: str}} for output logit nodes
                 activationContexts: null,
                 activationContextsLoading: false,
 
@@ -513,14 +507,14 @@
                 componentImportance: {},
                 componentImportanceLocal: {},
                 nodeOutAttr: {},
-                maxAttr: 1,
-                maxNodeOutAttr: 1,
+                maxAbsAttr: 1,
+                maxAbsNodeOutAttr: 1,
 
                 // UI state
                 maxMeanCI: 1.0,  // No CI filtering by default
-                topK: 1000,
+                topK: 4000,
                 normalizeEdges: true,  // Normalize incoming edges to each node
-                nodeLayout: 'jittered',  // 'importance' | 'shuffled' | 'jittered'
+                nodeLayout: 'importance',  // 'importance' | 'shuffled' | 'jittered'
                 visibleEdgeCount: 0,
                 pinnedNodes: [],
                 hoveredNode: null,
@@ -549,23 +543,17 @@
 
                         if (meta.prompt_count > 0) {
                             // Load first prompt immediately
-                            await this.loadPrompt(1);
+                            // await this.loadPrompt(1);
 
                             // Load prompts list in background
                             timeStart('init.fetchPromptsList');
-                            fetch(`${this.apiBase}/api/prompts`)
-                                .then(r => {
-                                    if (!r.ok) throw new Error(`Server error: ${r.status}`);
-                                    return r.json();
-                                })
-                                .then(prompts => {
-                                    timeEnd('init.fetchPromptsList');
-                                    this.allPrompts = prompts;
-                                })
-                                .catch(e => {
-                                    console.error('Error loading prompts list:', e);
-                                    // Non-blocking error - list will just be empty
-                                });
+                            const promptsResponse = await fetch(`${this.apiBase}/api/prompts`)
+                                // .then(r => {
+                            if (!promptsResponse.ok) throw new Error(`Server error: ${promptsResponse.status}`);
+                            this.allPrompts = await promptsResponse.json();
+                            timeEnd('init.fetchPromptsList');
+
+                            await this.loadPrompt(1);
 
                             // Load activation contexts in background
                             this.loadActivationContexts();
@@ -580,6 +568,13 @@
                 },
 
                 async loadPrompt(promptId) {
+                    console.log('loadPrompt called with', promptId, new Error().stack);
+
+                    if (this.promptLoading) {
+                        console.warn('Already loading a prompt, ignoring request');
+                        return;
+                    }
+
                     timeStart('loadPrompt.total');
                     this.currentPromptId = promptId;
                     this.promptLoading = true;
@@ -588,7 +583,6 @@
                     try {
                         // Fetch with server-side filtering
                         const params = new URLSearchParams({
-                            top_k: this.topK,
                             max_mean_ci: this.maxMeanCI,
                             normalize: this.normalizeEdges,
                         });
@@ -606,11 +600,62 @@
                         }
 
                         this.promptData = promptData;
-                        this.outputProbs = promptData.output_probs || {};
+                        const data = this.promptData;
 
-                        timeStart('loadPrompt.process');
-                        this.processPromptData();
-                        timeEnd('loadPrompt.process');
+                        // Check if we got the new format (edges) or old format (pairs)
+                        if (!data.edges) {
+                            console.error('Server returned old format (pairs) instead of new format (edges). Make sure you are running the new server: python -m spd.attributions.server');
+                            console.log('Response keys:', Object.keys(data));
+                            return;
+                        }
+
+                        // New format: edges are pre-filtered and sorted by server
+                        // Each edge: { src: "layer:seq:cIdx", tgt: "layer:seq:cIdx", val: float }
+                        this.allEdges = data.edges.map(e => ({
+                            srcKey: e.src,
+                            tgtKey: e.tgt,
+                            val: e.val,
+                        }));
+
+                        // Find max attribution
+                        this.maxAbsAttr = 1
+                        for (const edge of this.allEdges) {
+                            const absVal = Math.abs(edge.val);
+                            if (absVal > this.maxAbsAttr) {
+                                this.maxAbsAttr = absVal;
+                            }
+                        }
+
+                        // Build importance maps from edges
+                        this.componentImportance = {};
+                        this.componentImportanceLocal = {};
+                        this.nodeOutAttr = {};
+
+                        for (const edge of this.allEdges) {
+                            const valSq = edge.val * edge.val;
+                            const absVal = Math.abs(edge.val);
+
+                            // Parse keys to get global component key (layer:cIdx without seq)
+                            const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
+                            const [tgtLayer, , tgtCIdx] = edge.tgtKey.split(':');
+                            const srcGlobalKey = `${srcLayer}:${srcCIdx}`;
+                            const tgtGlobalKey = `${tgtLayer}:${tgtCIdx}`;
+
+                            this.componentImportance[srcGlobalKey] = this.componentImportance[srcGlobalKey] + valSq;
+                            this.componentImportance[tgtGlobalKey] = this.componentImportance[tgtGlobalKey] + valSq;
+                            this.componentImportanceLocal[edge.srcKey] = this.componentImportanceLocal[edge.srcKey] + valSq;
+                            this.componentImportanceLocal[edge.tgtKey] = this.componentImportanceLocal[edge.tgtKey] + valSq;
+
+                            this.nodeOutAttr[edge.srcKey] = this.nodeOutAttr[edge.srcKey] + absVal;
+                        }
+
+                        this.maxAbsNodeOutAttr = 1
+                        for (const outAttr of Object.values(this.nodeOutAttr)) {
+                            const absOutAttr = Math.abs(outAttr);
+                            if (absOutAttr > this.maxAbsNodeOutAttr) {
+                                this.maxAbsNodeOutAttr = absOutAttr;
+                            }
+                        }
 
                         this.loading = false;
                         this.$nextTick(() => {
@@ -631,9 +676,10 @@
 
                 async reloadWithFilters() {
                     // Re-fetch current prompt with new filter params
-                    if (this.currentPromptId) {
-                        await this.loadPrompt(this.currentPromptId);
+                    if (!this.currentPromptId) {
+                        throw new Error('No prompt ID to reload');
                     }
+                    await this.loadPrompt(this.currentPromptId);
                 },
 
                 async loadActivationContexts() {
@@ -664,53 +710,6 @@
                     }
                 },
 
-                processPromptData() {
-                    const data = this.promptData;
-
-                    // Check if we got the new format (edges) or old format (pairs)
-                    if (!data.edges) {
-                        console.error('Server returned old format (pairs) instead of new format (edges). Make sure you are running the new server: python -m spd.attributions.server');
-                        console.log('Response keys:', Object.keys(data));
-                        return;
-                    }
-
-                    // New format: edges are pre-filtered and sorted by server
-                    // Each edge: { src: "layer:seq:cIdx", tgt: "layer:seq:cIdx", val: float }
-                    this.allEdges = data.edges.map(e => ({
-                        srcKey: e.src,
-                        tgtKey: e.tgt,
-                        val: e.val,
-                    }));
-
-                    // Find max attribution
-                    this.maxAttr = Math.max(...this.allEdges.map(e => Math.abs(e.val)), 1);
-
-                    // Build importance maps from edges
-                    this.componentImportance = {};
-                    this.componentImportanceLocal = {};
-                    this.nodeOutAttr = {};
-
-                    for (const edge of this.allEdges) {
-                        const valSq = edge.val * edge.val;
-                        const absVal = Math.abs(edge.val);
-
-                        // Parse keys to get global component key (layer:cIdx without seq)
-                        const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
-                        const [tgtLayer, , tgtCIdx] = edge.tgtKey.split(':');
-                        const srcGlobalKey = `${srcLayer}:${srcCIdx}`;
-                        const tgtGlobalKey = `${tgtLayer}:${tgtCIdx}`;
-
-                        this.componentImportance[srcGlobalKey] = (this.componentImportance[srcGlobalKey] || 0) + valSq;
-                        this.componentImportance[tgtGlobalKey] = (this.componentImportance[tgtGlobalKey] || 0) + valSq;
-                        this.componentImportanceLocal[edge.srcKey] = (this.componentImportanceLocal[edge.srcKey] || 0) + valSq;
-                        this.componentImportanceLocal[edge.tgtKey] = (this.componentImportanceLocal[edge.tgtKey] || 0) + valSq;
-
-                        this.nodeOutAttr[edge.srcKey] = (this.nodeOutAttr[edge.srcKey] || 0) + absVal;
-                    }
-
-                    this.maxNodeOutAttr = Math.max(...Object.values(this.nodeOutAttr), 1);
-                },
-
                 parseLayer(name) {
                     // Handle special layers: wte (input embeddings) and output (logits)
                     if (name === 'wte') {
@@ -735,10 +734,15 @@
                 },
 
                 getFilteredEdgesAndNodes() {
-                    // Server already filtered by top_k and max_mean_ci
+                    // Server already filtered by max_mean_ci
                     // Build the active nodes set from edges
+
+                    // topK
+                    const sortedEdges = [...this.allEdges].sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+                    const filteredEdges = sortedEdges.slice(0, this.topK);
+
                     const activeNodes = new Set();
-                    for (const edge of this.allEdges) {
+                    for (const edge of filteredEdges) {
                         activeNodes.add(edge.srcKey);
                         activeNodes.add(edge.tgtKey);
                     }
@@ -758,9 +762,10 @@
                         for (const nodeKey of outputNodesWithEdges) {
                             const [, seqIdx, cIdx] = nodeKey.split(':');
                             const probKey = `${seqIdx}:${cIdx}`;
-                            const entry = this.outputProbs[probKey];
+                            const entry = this.promptData.outputProbs[probKey];
                             if (entry === undefined) {
-                                throw new Error(`Output node ${nodeKey} has edge but no entry in outputProbs`);
+                                const nodeEdges = this.allEdges.filter(e => e.tgtKey === nodeKey);
+                                throw new Error(`Output node ${nodeKey} has edge but no entry in outputProbs: ${nodeEdges.slice(0, 30)}`)
                             }
                             if (entry.prob < minProb) {
                                 minProb = entry.prob;
@@ -768,7 +773,7 @@
                         }
 
                         // Add all output nodes with prob >= minProb
-                        for (const [probKey, entry] of Object.entries(this.outputProbs)) {
+                        for (const [probKey, entry] of Object.entries(this.promptData.outputProbs)) {
                             if (entry.prob >= minProb) {
                                 const [seqIdx, cIdx] = probKey.split(':');
                                 activeNodes.add(`output:${seqIdx}:${cIdx}`);
@@ -776,7 +781,7 @@
                         }
                     }
 
-                    return { edges: this.allEdges, activeNodes };
+                    return { edges: filteredEdges, activeNodes };
                 },
 
                 buildLayout(activeNodes) {
@@ -841,15 +846,16 @@
                                 let totalKvq = 0;
                                 for (const subtype of KVQ_SUBTYPES) {
                                     const layer = `h.${block}.attn.${subtype}`;
-                                    totalKvq += (nodesPerLayerSeq[`${layer}:${seqIdx}`] || []).length;
+                                    const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
+                                    totalKvq += nodes.length;
                                 }
                                 totalKvq += 2; // gaps between groups
                                 maxAtSeq = Math.max(maxAtSeq, totalKvq);
                             } else {
                                 for (const layer of allLayers) {
                                     if (this.getRowKey(layer) === row) {
-                                        const count = (nodesPerLayerSeq[`${layer}:${seqIdx}`] || []).length;
-                                        maxAtSeq = Math.max(maxAtSeq, count);
+                                        const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
+                                        maxAtSeq = Math.max(maxAtSeq, nodes.length);
                                     }
                                 }
                             }
@@ -875,7 +881,7 @@
                         const isOutput = layer === 'output';
 
                         for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
-                            const components = [...(nodesPerLayerSeq[`${layer}:${seqIdx}`] || [])];
+                            const components = [...nodesPerLayerSeq[`${layer}:${seqIdx}`]];
                             if (components.length === 0) continue;
 
                             let baseX = seqXStarts[seqIdx] + COL_PADDING;
@@ -887,7 +893,7 @@
                                 const subtypeIdx = KVQ_SUBTYPES.indexOf(info.subtype);
                                 for (let i = 0; i < subtypeIdx; i++) {
                                     const prevLayer = `h.${block}.attn.${KVQ_SUBTYPES[i]}`;
-                                    const prevCount = (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`] || []).length;
+                                    const prevCount = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`].length;
                                     baseX += prevCount * (COMPONENT_SIZE + COMPONENT_GAP);
                                     baseX += KVQ_GROUP_GAP;
                                 }
@@ -922,14 +928,14 @@
                         // Sort by importance/probability, place evenly
                         const sorted = [...components].sort((a, b) => {
                             if (isOutput) {
-                                const entryA = this.outputProbs[`${seqIdx}:${a}`];
-                                const entryB = this.outputProbs[`${seqIdx}:${b}`];
+                                const entryA = this.promptData.outputProbs[`${seqIdx}:${a}`];
+                                const entryB = this.promptData.outputProbs[`${seqIdx}:${b}`];
                                 if (entryA === undefined) throw new Error(`Missing entry for output node ${seqIdx}:${a}`);
                                 if (entryB === undefined) throw new Error(`Missing entry for output node ${seqIdx}:${b}`);
                                 return entryB.prob - entryA.prob;
                             }
-                            const impA = this.componentImportanceLocal[`${layer}:${seqIdx}:${a}`] || 0;
-                            const impB = this.componentImportanceLocal[`${layer}:${seqIdx}:${b}`] || 0;
+                            const impA = this.componentImportanceLocal[`${layer}:${seqIdx}:${a}`];
+                            const impB = this.componentImportanceLocal[`${layer}:${seqIdx}:${b}`];
                             return impB - impA;
                         });
                         for (let i = 0; i < n; i++) {
@@ -1014,7 +1020,11 @@
                 },
 
                 render() {
-                    if (!this.promptData) return;
+                    if (!this.promptData) {
+                        console.error('No prompt data available');
+                        return;
+                    }
+                    console.log('rendering')
 
                     timeStart('render.filter');
                     const { edges, activeNodes } = this.getFilteredEdgesAndNodes();
@@ -1046,8 +1056,8 @@
                         const p2 = this.nodePositions[e.tgtKey];
                         if (p1 && p2) {
                             const color = e.val > 0 ? '#2196f3' : '#f44336';
-                            const w = Math.max(0.5, (Math.abs(e.val) / this.maxAttr) * 2);
-                            const op = 0.05 + (Math.abs(e.val) / this.maxAttr) * 0.95;
+                            const w = Math.max(0.5, (Math.abs(e.val) / this.maxAbsAttr) * 2);
+                            const op = 0.05 + (Math.abs(e.val) / this.maxAbsAttr) * 0.95;
                             edgesHtml += `<line class="edge" data-src="${e.srcKey}" data-tgt="${e.tgtKey}" x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="${color}" stroke-width="${w}" opacity="${op}"/>`;
                         }
                     }
@@ -1055,27 +1065,22 @@
                     for (const key in this.nodePositions) {
                         const pos = this.nodePositions[key];
                         const [layer, seqIdx, cIdx] = key.split(':');
-                        const info = this.parseLayer(layer);
-                        const outAttr = this.nodeOutAttr[key] || 0;
-                        const intensity = Math.min(1, outAttr / this.maxNodeOutAttr);
+                        const outAttr = this.nodeOutAttr[key];
+                        const intensity = Math.min(1, outAttr / this.maxAbsNodeOutAttr);
 
                         let fillColor;
                         let opacity;
                         if (layer === 'output') {
                             // Color output nodes by probability (green gradient)
-                            const probEntry = this.outputProbs[`${seqIdx}:${cIdx}`];
+                            const probEntry = this.promptData.outputProbs[`${seqIdx}:${cIdx}`];
                             if (!probEntry) throw new Error(`Missing outputProbs for ${seqIdx}:${cIdx}`);
                             const prob = probEntry.prob;
-                            // Interpolate from light gray (low prob) to green (high prob)
-                            // Using HSL: green is ~120deg, vary saturation/lightness by prob
-                            const saturation = 20 + prob * 60;  // 20% to 80%
-                            const lightness = 70 - prob * 35;   // 70% to 35%
+                            const saturation = 20 + prob * 60;
+                            const lightness = 70 - prob * 35;
                             fillColor = `hsl(120, ${saturation}%, ${lightness}%)`;
                             opacity = 0.4 + prob * 0.6;
                         } else {
-                            const baseColor = COLORS[info.subtype];
-                            if (!baseColor) throw new Error(`Unknown subtype color: ${info.subtype}`);
-                            fillColor = baseColor;
+                            fillColor = NODE_COLOR;
                             opacity = 0.2 + intensity * 0.8;
                         }
 
@@ -1116,31 +1121,18 @@
                     let layerHtml = `<svg width="${LABEL_WIDTH}" height="${height}" style="display:block;">`;
                     for (const [y, rowKey] of rowYSet) {
                         const yCenter = y + COMPONENT_SIZE / 2;
+                        let label;
                         if (rowKey.endsWith('.kvq')) {
                             const blockIdx = rowKey.split('.')[1];
-                            // For kvq rows, show colored labels for each: k v q
-                            layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="10">`;
-                            layerHtml += `<tspan fill="${COLORS.k_proj}">${blockIdx}</tspan>`;
-                            layerHtml += `<tspan fill="#666"> </tspan>`;
-                            layerHtml += `<tspan fill="${COLORS.k_proj}">k</tspan>`;
-                            layerHtml += `<tspan fill="#666"> </tspan>`;
-                            layerHtml += `<tspan fill="${COLORS.v_proj}">v</tspan>`;
-                            layerHtml += `<tspan fill="#666"> </tspan>`;
-                            layerHtml += `<tspan fill="${COLORS.q_proj}">q</tspan>`;
-                            layerHtml += `</text>`;
-                        } else if (rowKey === 'wte') {
-                            layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${COLORS.wte}">wte</text>`;
-                        } else if (rowKey === 'output') {
-                            layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${COLORS.output}">output</text>`;
+                            label = `${blockIdx} k v q`;
+                        } else if (rowKey === 'wte' || rowKey === 'output') {
+                            label = rowKey;
                         } else {
-                            const m = rowKey.match(/h\.\d+\.(attn|mlp)\.(\w+)/);
+                            const m = rowKey.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
                             if (!m) throw new Error(`Layer label: unrecognized rowKey format: ${rowKey}`);
-                            const subtype = m[2];
-                            const color = COLORS[subtype];
-                            if (!color) throw new Error(`Layer label: unknown subtype color: ${subtype}`);
-                            const blockIdx = rowKey.split('.')[1];
-                            layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${color}">${blockIdx}.${subtype}</text>`;
+                            label = `${m[1]}.${m[3]}`;
                         }
+                        layerHtml += `<text x="${LABEL_WIDTH - 10}" y="${yCenter}" text-anchor="end" dominant-baseline="middle" font-size="11" font-weight="500" fill="${NODE_COLOR}">${label}</text>`;
                     }
                     layerHtml += '</svg>';
                     this.$refs.layerLabels.innerHTML = layerHtml;
@@ -1337,7 +1329,7 @@
                     if (layer === 'output') {
                         // Collect all tokens at this sequence position
                         const tokensAtPos = [];
-                        for (const [probKey, entry] of Object.entries(this.outputProbs)) {
+                        for (const [probKey, entry] of Object.entries(this.promptData.outputProbs)) {
                             const [s, tokenId] = probKey.split(':');
                             if (+s === seqIdx) {
                                 tokensAtPos.push({ tokenId: +tokenId, prob: entry.prob, token: entry.token });
@@ -1443,7 +1435,7 @@
                     if (layer === 'output') {
                         // Find all positions where this token appears
                         const positions = [];
-                        for (const [probKey, entry] of Object.entries(this.outputProbs)) {
+                        for (const [probKey, entry] of Object.entries(this.promptData.outputProbs)) {
                             const [seqIdx, tokenId] = probKey.split(':');
                             if (+tokenId === cIdx) {
                                 positions.push({ seqIdx: +seqIdx, prob: entry.prob, token: entry.token });

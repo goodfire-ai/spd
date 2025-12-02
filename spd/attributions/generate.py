@@ -2,8 +2,11 @@
 
 Single entrypoint that:
 1. Loads model and computes activation contexts once
-2. Spawns parallel workers (one per GPU) for attribution computation
+2. Spawns parallel workers (one per GPU) for CI computation
 3. All workers write to same SQLite DB (WAL mode handles concurrency)
+
+Attribution graphs are computed on-demand at serve time, not during generation.
+This makes generation much faster since CI computation is cheap and batchable.
 
 Usage:
     python -m spd.attributions.generate \\
@@ -17,24 +20,17 @@ import fcntl
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import torch
-from jaxtyping import Float
+from jaxtyping import Int
 from torch import Tensor
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
 from spd.app.backend.services.run_context_service import TrainRunContext, _build_token_lookup
-from spd.attributions.compute import (
-    LocalAttributionResult,
-    PairAttribution,
-    compute_local_attributions,
-    get_sources_by_target,
-)
-from spd.attributions.db import ComponentActivation, LocalAttrDB
+from spd.attributions.compute import compute_ci_only, extract_active_from_ci
+from spd.attributions.db import LocalAttrDB
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import SPDRunInfo
@@ -42,7 +38,7 @@ from spd.models.component_model import SPDRunInfo
 
 @dataclass
 class GenerateConfig:
-    """Configuration for attribution generation."""
+    """Configuration for CI-only database generation."""
 
     wandb_path: str
     n_prompts: int
@@ -52,133 +48,22 @@ class GenerateConfig:
     n_ctx: int = 32
     ci_threshold: float = 1e-6
     output_prob_threshold: float = 0.01
-    attr_threshold: float = 1e-4
     seed: int = 42
     n_batches_act_ctx: int = 50
     act_ctx_importance_threshold: float = 0.1
-
-
-def sparsify_attribution_cross_seq(attr_tensor: Tensor, threshold: float) -> list[list[float]]:
-    """Sparse format for cross-seq pairs: [[s_in, c_in, s_out, c_out, val], ...]"""
-    sparse: list[list[float]] = []
-    attr_np = attr_tensor.cpu().numpy()
-    for s_in in range(attr_np.shape[0]):
-        for c_in in range(attr_np.shape[1]):
-            for s_out in range(attr_np.shape[2]):
-                for c_out in range(attr_np.shape[3]):
-                    val = float(attr_np[s_in, c_in, s_out, c_out])
-                    if abs(val) >= threshold:
-                        sparse.append([s_in, c_in, s_out, c_out, round(val, 6)])
-    return sparse
-
-
-def sparsify_attribution_same_seq(attr_tensor: Tensor, threshold: float) -> list[list[float]]:
-    """Sparse format for same-seq pairs: [[s, c_in, c_out, val], ...]"""
-    sparse: list[list[float]] = []
-    attr_np = attr_tensor.cpu().numpy()
-    n_seq = attr_np.shape[0]
-    for s in range(n_seq):
-        for c_in in range(attr_np.shape[1]):
-            for c_out in range(attr_np.shape[3]):
-                val = float(attr_np[s, c_in, s, c_out])
-                if abs(val) >= threshold:
-                    sparse.append([s, c_in, c_out, round(val, 6)])
-    return sparse
-
-
-def serialize_pair(pair: PairAttribution, threshold: float) -> dict[str, Any]:
-    """Serialize a pair with appropriate sparse format."""
-    if pair.is_kv_to_o_pair:
-        return {
-            "source": pair.source,
-            "target": pair.target,
-            "is_cross_seq": True,
-            "attribution": sparsify_attribution_cross_seq(pair.attribution, threshold),
-            "trimmed_c_in_idxs": pair.trimmed_c_in_idxs,
-            "trimmed_c_out_idxs": pair.trimmed_c_out_idxs,
-        }
-    else:
-        return {
-            "source": pair.source,
-            "target": pair.target,
-            "is_cross_seq": False,
-            "attribution": sparsify_attribution_same_seq(pair.attribution, threshold),
-            "trimmed_c_in_idxs": pair.trimmed_c_in_idxs,
-            "trimmed_c_out_idxs": pair.trimmed_c_out_idxs,
-        }
-
-
-def extract_active_components(attr_pairs: list[PairAttribution]) -> dict[str, ComponentActivation]:
-    """Extract which components are active in this prompt for the inverted index."""
-    active: dict[str, ComponentActivation] = {}
-
-    for pair in attr_pairs:
-        for c_local, c_idx in enumerate(pair.trimmed_c_in_idxs):
-            key = f"{pair.source}:{c_idx}"
-            attr_slice = pair.attribution[:, c_local, :, :]
-            positions = torch.where(attr_slice.abs().sum(dim=(1, 2)) > 0)[0].tolist()
-            if positions:
-                if key not in active:
-                    active[key] = ComponentActivation(
-                        prompt_id=-1, component_key=key, max_ci=0.0, positions=[]
-                    )
-                active[key].positions = list(set(active[key].positions + positions))
-
-        for c_local, c_idx in enumerate(pair.trimmed_c_out_idxs):
-            key = f"{pair.target}:{c_idx}"
-            attr_slice = pair.attribution[:, :, :, c_local]
-            positions = torch.where(attr_slice.abs().sum(dim=(0, 1)) > 0)[0].tolist()
-            if positions:
-                if key not in active:
-                    active[key] = ComponentActivation(
-                        prompt_id=-1, component_key=key, max_ci=0.0, positions=[]
-                    )
-                active[key].positions = list(set(active[key].positions + positions))
-
-    return active
-
-
-def extract_output_probs(
-    result: LocalAttributionResult,
-    tokenizer: PreTrainedTokenizerFast,
-) -> dict[str, dict[str, float | str]]:
-    """Extract probabilities and token strings for output tokens in attribution edges.
-
-    Args:
-        result: The LocalAttributionResult containing pairs and output_probs tensor.
-        tokenizer: Tokenizer to decode token IDs to strings.
-
-    Returns:
-        Dict mapping "s:c" -> {"prob": float, "token": str} for output logit nodes.
-    """
-    probs: dict[str, dict[str, float | str]] = {}
-    output_probs_tensor = result.output_probs  # [1, seq, vocab]
-
-    for pair in result.pairs:
-        if pair.target != "output":
-            continue
-        for c_local, c_idx in enumerate(pair.trimmed_c_out_idxs):
-            # Check which positions have non-zero attribution for this output token
-            attr_slice = pair.attribution[:, :, :, c_local]
-            positions = torch.where(attr_slice.abs().sum(dim=(0, 1)) > 0)[0].tolist()
-            for s in positions:
-                key = f"{s}:{c_idx}"
-                if key not in probs:
-                    prob = round(float(output_probs_tensor[0, s, c_idx].detach().cpu().item()), 6)
-                    token_str = tokenizer.decode([c_idx])
-                    probs[key] = {"prob": prob, "token": token_str}
-    return probs
 
 
 def worker_fn(
     worker_id: int,
     n_workers: int,
     config: GenerateConfig,
-    sources_by_target: dict[str, list[str]],
     start_prompt_idx: int,
     n_prompts_for_worker: int,
 ) -> None:
-    """Worker function that runs in a separate process on its own GPU."""
+    """Worker function that runs in a separate process on its own GPU.
+
+    Uses CI-only computation - much faster than full attribution graph computation.
+    """
     device = f"cuda:{worker_id}" if torch.cuda.is_available() else "cpu"
     print(f"[Worker {worker_id}] Starting on {device}, processing {n_prompts_for_worker} prompts")
 
@@ -195,15 +80,12 @@ def worker_fn(
         model.eval()
         fcntl.flock(lock_file, fcntl.LOCK_UN)
 
-    # Load tokenizer
     spd_config = run_info.config
-    assert spd_config.tokenizer_name is not None
-    tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
-    assert isinstance(tokenizer, PreTrainedTokenizerFast)
 
     # Create data loader - use worker-specific seed offset
     task_config = spd_config.task_config
     assert isinstance(task_config, LMTaskConfig)
+    assert spd_config.tokenizer_name is not None
     dataset_config = DatasetConfig(
         name=task_config.dataset_name,
         hf_tokenizer_path=spd_config.tokenizer_name,
@@ -232,29 +114,29 @@ def worker_fn(
 
     # Process prompts
     for _ in tqdm(range(n_prompts_for_worker), desc=f"Worker {worker_id}", position=worker_id):
-        tokens: Float[Tensor, "1 seq"] = next(data_iter)["input_ids"].to(device)
+        token_ids: Int[Tensor, "1 seq"] = next(data_iter)["input_ids"].to(device)
 
-        result = compute_local_attributions(
+        # Fast CI-only computation (no gradient loop)
+        result = compute_ci_only(
             model=model,
-            tokens=tokens,
-            sources_by_target=sources_by_target,
-            ci_threshold=config.ci_threshold,
-            output_prob_threshold=config.output_prob_threshold,
+            tokens=token_ids,
             sampling=spd_config.sampling,
-            device=device,
-            show_progress=False,
         )
 
-        token_strings = [tokenizer.decode([t]) for t in tokens[0].tolist()]
-        pairs_data = [serialize_pair(pair, config.attr_threshold) for pair in result.pairs]
-        active_components = extract_active_components(result.pairs)
-        output_probs = extract_output_probs(result, tokenizer)
+        # Extract active components from CI
+        n_seq = token_ids.shape[1]
+        active_components = extract_active_from_ci(
+            ci_lower_leaky=result.ci_lower_leaky,
+            output_probs=result.output_probs,
+            ci_threshold=config.ci_threshold,
+            output_prob_threshold=config.output_prob_threshold,
+            n_seq=n_seq,
+        )
 
-        db.add_prompt(
-            tokens=token_strings,
-            pairs=pairs_data,
+        # Store token IDs (not strings) - decode only at display time
+        db.add_prompt_simple(
+            token_ids=token_ids[0].tolist(),
             active_components=active_components,
-            output_probs=output_probs,
         )
 
         # Skip prompts assigned to other workers
@@ -269,9 +151,13 @@ def worker_fn(
 
 
 def generate_database(config: GenerateConfig) -> None:
-    """Main entry point for database generation."""
+    """Main entry point for database generation.
+
+    Uses CI-only computation for fast generation. Attribution graphs
+    are computed on-demand at serve time.
+    """
     print("=" * 60)
-    print("Generating local attribution database")
+    print("Generating local attribution database (CI-only)")
     print(f"  wandb_path: {config.wandb_path}")
     print(f"  n_prompts: {config.n_prompts}")
     print(f"  n_gpus: {config.n_gpus}")
@@ -281,7 +167,7 @@ def generate_database(config: GenerateConfig) -> None:
     # Initialize DB and check existing state
     config.output_path.parent.mkdir(parents=True, exist_ok=True)
     db = LocalAttrDB(config.output_path)
-    db.init_schema()
+    db.init_schema_simple()
 
     existing_count = db.get_prompt_count()
     if existing_count >= config.n_prompts:
@@ -378,21 +264,6 @@ def generate_database(config: GenerateConfig) -> None:
         del model
         torch.cuda.empty_cache()
 
-    # Build sources_by_target mapping (need model briefly)
-    print("\nBuilding layer mapping...")
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    run_info = SPDRunInfo.from_path(config.wandb_path)
-    from spd.models.component_model import ComponentModel
-
-    model = ComponentModel.from_run_info(run_info)
-    model = model.to(device)
-    model.eval()
-    sources_by_target = get_sources_by_target(
-        model, device, run_info.config.sampling, config.n_blocks
-    )
-    del model
-    torch.cuda.empty_cache()
-
     db.close()
 
     # Calculate work distribution
@@ -408,7 +279,6 @@ def generate_database(config: GenerateConfig) -> None:
             worker_id=0,
             n_workers=1,
             config=config,
-            sources_by_target=sources_by_target,
             start_prompt_idx=existing_count,
             n_prompts_for_worker=remaining,
         )
@@ -426,7 +296,6 @@ def generate_database(config: GenerateConfig) -> None:
                     worker_id,
                     config.n_gpus,
                     config,
-                    sources_by_target,
                     existing_count + worker_id,
                     n_for_this_worker,
                 ),
@@ -456,7 +325,6 @@ if __name__ == "__main__":
         n_ctx: int = 32,
         ci_threshold: float = 1e-6,
         output_prob_threshold: float = 0.01,
-        attr_threshold: float = 1e-4,
         seed: int = 42,
         n_batches_act_ctx: int = 50,
         act_ctx_importance_threshold: float = 0.1,
@@ -470,7 +338,6 @@ if __name__ == "__main__":
             n_ctx=n_ctx,
             ci_threshold=ci_threshold,
             output_prob_threshold=output_prob_threshold,
-            attr_threshold=attr_threshold,
             seed=seed,
             n_batches_act_ctx=n_batches_act_ctx,
             act_ctx_importance_threshold=act_ctx_importance_threshold,

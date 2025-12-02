@@ -103,6 +103,7 @@ def compute_local_attributions(
             torch.where(alive_in_mask[0].any(dim=0))[0].tolist() for alive_in_mask in alive_in_masks
         ]
 
+        # 🟢
         for s_out in tqdm(range(n_seq), desc=f"{out_layer} -> {in_layers}", leave=False):
             # Get alive output components at this position
             s_out_alive_c_idxs: list[int] = torch.where(alive_out_mask[0, s_out])[0].tolist()
@@ -118,6 +119,7 @@ def compute_local_attributions(
                 # Handle causal attention mask
                 s_in_range = range(s_out + 1) if is_attention_output else range(s_out, s_out + 1)
 
+                # 🟢🟢🟢
                 with torch.no_grad():
                     for in_post_detach_grad, in_post_detach, alive_in_mask, attribution in zip(
                         in_post_detach_grads,
