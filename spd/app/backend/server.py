@@ -23,7 +23,7 @@ import fire
 import torch
 import uvicorn
 import yaml
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -916,7 +916,7 @@ def tokenize_text(text: str):
 @app.post("/api/prompt/custom")
 @log_errors
 def compute_custom_prompt(
-    token_ids: list[int],
+    token_ids: Annotated[list[int], Body(embed=True)],
     normalize: Annotated[bool, Query()] = True,
     ci_threshold: Annotated[float, Query(ge=0)] = 1e-6,
     output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,

@@ -261,20 +261,26 @@ def get_activations_data_streaming(
         for token_id, count in zip(token_ids_in_batch.tolist(), counts.tolist(), strict=True):
             total_token_counts[token_id] += count
 
-        result = _get_importances_and_logits(run_context.cm, batch, run_context.config)
-        importances_by_module = result.importances
+        with torch.no_grad():
+            output_with_cache = run_context.cm(batch, cache_type="input")
+            logits = output_with_cache.output
+            ci_vals = run_context.cm.calc_causal_importances(
+                pre_weight_acts=output_with_cache.cache,
+                detach_inputs=True,
+                sampling=run_context.config.sampling,
+            ).lower_leaky
 
         # Get predicted tokens (argmax of logits at each position)
-        predicted_token_ids: Int[Tensor, "B S"] = result.logits.argmax(dim=-1)
+        predicted_token_ids: Int[Tensor, "B S"] = logits.argmax(dim=-1)
 
-        for module_idx, (module_name, ci) in enumerate(importances_by_module.items()):
+        for module_idx, (module_name, ci_val) in enumerate(ci_vals.items()):
             pbar.update(1)
-            assert ci.shape == (B, S, C), "Expected (B,S,C) per module"
+            assert ci_val.shape == (B, S, C), "Expected (B,S,C) per module"
 
-            component_sum_cis[module_name] += ci.sum(dim=(0, 1))
+            component_sum_cis[module_name] += ci_val.sum(dim=(0, 1))
 
             # Thresholding to find "firings"
-            mask = ci > importance_threshold
+            mask = ci_val > importance_threshold
             if not mask.any():
                 continue
 
@@ -293,7 +299,7 @@ def get_activations_data_streaming(
             )
 
             ci_padded = torch.nn.functional.pad(
-                ci, (0, 0, n_tokens_either_side, n_tokens_either_side), value=0.0
+                ci_val, (0, 0, n_tokens_either_side, n_tokens_either_side), value=0.0
             )
             assert ci_padded.shape == (B, S + 2 * n_tokens_either_side, C), (
                 "Expected (B,S+2*n_tokens_either_side,C) per module"
@@ -445,28 +451,6 @@ def get_activations_data_streaming(
 
     logger.info("Completed streaming activation contexts")
     yield ("complete", ModelActivationContexts(layers=model_ctxs))
-
-
-@dataclass
-class ImportancesAndLogits:
-    importances: dict[str, Float[Tensor, "B S C"]]
-    logits: Float[Tensor, "B S V"]
-
-
-def _get_importances_and_logits(
-    cm: ComponentModel, batch: Tensor, config: Config
-) -> ImportancesAndLogits:
-    """Returns importances by module and logits for predicted token tracking."""
-
-    with torch.no_grad():
-        output_with_cache = cm(batch, cache_type="input")
-        logits = output_with_cache.output
-        importances_by_module = cm.calc_causal_importances(
-            pre_weight_acts=output_with_cache.cache,
-            detach_inputs=True,
-            sampling=config.sampling,
-        ).lower_leaky
-    return ImportancesAndLogits(importances=importances_by_module, logits=logits)
 
 
 def _get_component_token_pr(

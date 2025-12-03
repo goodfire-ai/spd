@@ -146,13 +146,16 @@ export type ComputeCustomPromptParams = {
 
 export async function computeCustomPrompt(params: ComputeCustomPromptParams): Promise<PromptData> {
     const url = new URL(`${LOCAL_ATTR_API_URL}/api/prompt/custom`);
-    url.searchParams.set("token_ids", JSON.stringify(params.tokenIds));
     if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
     if (params.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(params.ciThreshold));
     if (params.outputProbThreshold !== undefined)
         url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
 
-    return fetchJson<PromptData>(url.toString(), { method: "POST" });
+    return fetchJson<PromptData>(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token_ids: params.tokenIds }),
+    });
 }
 
 // Prompt generation with CI harvesting
