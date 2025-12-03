@@ -10,7 +10,7 @@ from spd.routing import Router
 def calc_stochastic_component_mask_info(
     causal_importances: dict[str, Float[Tensor, "... C"]],
     component_mask_sampling: SamplingType,
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     router: Router,
 ) -> dict[str, ComponentsMaskInfo]:
     ci_sample = next(iter(causal_importances.values()))

@@ -3,7 +3,7 @@ from typing import Any, ClassVar, override
 import einops
 import torch
 import torch.nn.functional as F
-from jaxtyping import Int
+from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
@@ -68,7 +68,7 @@ class CEandKLLosses(Metric):
         batch: Tensor,
         target_out: Tensor,
         ci: CIOutputs,
-        weight_deltas: dict[str, Tensor],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
         ce_losses = self._calc_ce_and_kl_losses(
@@ -96,7 +96,7 @@ class CEandKLLosses(Metric):
         batch: Tensor,
         target_out: Tensor,
         ci: dict[str, Tensor],
-        weight_deltas: dict[str, Tensor],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     ) -> dict[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
         masked_batch = batch.clone()
