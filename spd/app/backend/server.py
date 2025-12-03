@@ -48,6 +48,8 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.db import LocalAttrDB, Run
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
+from spd.app.backend.lib.edge_normalization import normalize_edges_by_target
+from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
     HarvestMetadata,
@@ -65,8 +67,6 @@ from spd.attributions.compute import (
     extract_active_from_ci,
     get_sources_by_target,
 )
-from spd.attributions.edge_normalization import normalize_edges_by_target
-from spd.attributions.optim_cis.run_optim_cis import OptimCIConfig
 from spd.configs import Config, ImportanceMinimalityLossConfig, SamplingType
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig

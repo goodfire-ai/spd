@@ -52,13 +52,16 @@
     // Pinned nodes (for search)
     let pinnedNodes = $state<PinnedNode[]>([]);
 
-    // Search state
-    let searchResults = $state<PromptPreview[]>([]);
-    let searchLoading = $state(false);
-    let searchError = $state<string | null>(null);
+    // Search/filter state
+    let filterByPinned = $state(false);
+    let filteredPrompts = $state<PromptPreview[]>([]);
+    let filterLoading = $state(false);
 
     // Derived: is a run loaded?
     const loadedRun = $derived(serverStatus?.loaded_run ?? null);
+
+    // Derived: prompts to display (filtered or all)
+    const displayedPrompts = $derived(filterByPinned ? filteredPrompts : prompts);
 
     // Load server status once on mount (App.svelte handles polling)
     $effect(() => {
@@ -173,16 +176,6 @@
         }
     }
 
-    function handlePromptSelect(event: Event) {
-        const target = event.target as HTMLSelectElement;
-        const promptId = parseInt(target.value);
-        console.log(`[LocalAttr] handlePromptSelect: selected ${promptId}`);
-        if (!isNaN(promptId)) {
-            currentPromptId = promptId;
-            // Don't auto-load - let user click "Compute Graph"
-        }
-    }
-
     async function reloadWithFilters() {
         console.log(`[LocalAttr] reloadWithFilters: currentPromptId=${currentPromptId}`);
         if (currentPromptId !== null) {
@@ -190,30 +183,43 @@
         }
     }
 
-    async function searchPrompts() {
-        if (pinnedNodes.length === 0) return;
+    async function filterPromptsByPinned() {
+        if (pinnedNodes.length === 0) {
+            filteredPrompts = [];
+            return;
+        }
 
-        searchLoading = true;
-        searchError = null;
+        filterLoading = true;
 
         const t0 = performance.now();
         const components = pinnedNodes.map((p) => `${p.layer}:${p.cIdx}`);
-        console.log(`[LocalAttr] searchPrompts: searching for ${components.length} components...`);
+        console.log(`[LocalAttr] filterPromptsByPinned: filtering for ${components.length} components...`);
 
         try {
             const result = await api.searchPrompts(components, "all");
-            searchResults = result.results;
-            console.log(`[LocalAttr] searchPrompts: found ${searchResults.length} results in ${(performance.now() - t0).toFixed(0)}ms`);
+            filteredPrompts = result.results;
+            console.log(`[LocalAttr] filterPromptsByPinned: found ${filteredPrompts.length} results in ${(performance.now() - t0).toFixed(0)}ms`);
         } catch (e) {
-            searchError = e instanceof Error ? e.message : "Search failed";
-            console.error(`[LocalAttr] searchPrompts FAILED (${(performance.now() - t0).toFixed(0)}ms):`, e);
+            console.error(`[LocalAttr] filterPromptsByPinned FAILED (${(performance.now() - t0).toFixed(0)}ms):`, e);
+            filteredPrompts = [];
         } finally {
-            searchLoading = false;
+            filterLoading = false;
         }
     }
 
     function handlePinnedNodesChange(nodes: PinnedNode[]) {
         pinnedNodes = nodes;
+        // Re-filter when pins change if filter is active
+        if (filterByPinned) {
+            filterPromptsByPinned();
+        }
+    }
+
+    function handleFilterToggle() {
+        filterByPinned = !filterByPinned;
+        if (filterByPinned && pinnedNodes.length > 0) {
+            filterPromptsByPinned();
+        }
     }
 
     // Custom prompt functions
@@ -318,42 +324,126 @@
             {/if}
         </div>
     {:else}
-        <!-- Sidebar -->
+        <!-- Sidebar: All prompt selection UI -->
         <div class="sidebar">
-            {#if pinnedNodes.length > 0}
+            <!-- Custom prompt input -->
             <div class="sidebar-section">
-                <h3>Search Prompts</h3>
-                <button class="search-btn" onclick={searchPrompts} disabled={searchLoading}>
-                    {searchLoading ? "Searching..." : `Find prompts with ${pinnedNodes.length} pinned`}
-                </button>
-                {#if searchError}
-                    <div class="search-error">{searchError}</div>
-                {/if}
-                {#if searchResults.length > 0}
-                    <div class="search-info">Found {searchResults.length} prompts</div>
-                    <div class="search-results">
-                        {#each searchResults as p}
-                            <button
-                                class="search-result"
-                                class:active={p.id === currentPromptId}
-                                onclick={() => loadPrompt(p.id)}
-                            >
-                                <div class="search-result-id">#{p.id}</div>
-                                <div class="search-result-preview">{p.preview}</div>
+                <div class="custom-prompt-input-row">
+                    <input
+                        type="text"
+                        bind:value={customPromptText}
+                        placeholder="Custom text..."
+                        onkeydown={(e) => e.key === "Enter" && tokenizeCustomPrompt()}
+                        class="custom-prompt-input"
+                        disabled={tokenizeLoading}
+                    />
+                    <button onclick={tokenizeCustomPrompt} disabled={!customPromptText.trim() || tokenizeLoading} class="tokenize-btn">
+                        {tokenizeLoading ? "..." : "→"}
+                    </button>
+                </div>
+
+                {#if tokenizedPreview}
+                    <div class="tokenization-preview">
+                        <div class="token-preview-list">
+                            {#each tokenizedPreview.tokens as tok}
+                                <span class="token-preview-item">{tok}</span>
+                            {/each}
+                        </div>
+                        <div class="tokenization-actions">
+                            <button onclick={computeCustomPromptGraph} disabled={loadingPrompt} class="compute-btn small">
+                                {loadingPrompt ? "..." : "Compute"}
                             </button>
-                        {/each}
+                            <button onclick={cancelTokenization} class="cancel-btn small">×</button>
+                        </div>
                     </div>
                 {/if}
+
+                {#if customPromptError}
+                    <div class="sidebar-error">{customPromptError}</div>
+                {/if}
             </div>
-        {/if}
+
+            <!-- Divider -->
+            <div class="sidebar-divider">or from dataset</div>
+
+            <!-- Generate prompts -->
+            <div class="sidebar-section">
+                {#if generatingPrompts}
+                    <div class="generate-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {generateProgress * 100}%"></div>
+                        </div>
+                        <span class="progress-text">{generateCount}</span>
+                    </div>
+                {:else}
+                    <button class="generate-btn" onclick={() => handleGeneratePrompts(100)} disabled={generatingPrompts}>
+                        Generate 100 prompts
+                    </button>
+                {/if}
+
+                {#if generateError}
+                    <div class="sidebar-error">{generateError}</div>
+                {/if}
+            </div>
+
+            <!-- Filter by pinned -->
+            {#if pinnedNodes.length > 0}
+                <div class="sidebar-section filter-section">
+                    <label class="filter-checkbox">
+                        <input type="checkbox" checked={filterByPinned} onchange={handleFilterToggle} />
+                        Filter by {pinnedNodes.length} pinned
+                    </label>
+                    {#if filterLoading}
+                        <span class="filter-loading">...</span>
+                    {/if}
+                </div>
+            {/if}
+
+            <!-- Prompt list -->
+            <div class="sidebar-section prompt-list-section">
+                <div class="prompt-list-header">
+                    Prompts ({displayedPrompts.length})
+                </div>
+                <div class="prompt-list">
+                    {#each displayedPrompts as p}
+                        <button
+                            class="prompt-item"
+                            class:selected={p.id === currentPromptId}
+                            onclick={() => { currentPromptId = p.id; }}
+                        >
+                            <span class="prompt-id">#{p.id}</span>
+                            <span class="prompt-preview">{p.preview}</span>
+                        </button>
+                    {/each}
+                    {#if displayedPrompts.length === 0}
+                        <div class="prompt-list-empty">
+                            {filterByPinned ? "No matching prompts" : "No prompts yet"}
+                        </div>
+                    {/if}
+                </div>
+            </div>
+
+            <!-- Compute button -->
+            <div class="sidebar-section compute-section">
+                <button
+                    class="compute-graph-btn"
+                    onclick={() => currentPromptId && loadPrompt(currentPromptId)}
+                    disabled={loadingPrompt || currentPromptId === null}
+                >
+                    {#if loadingPrompt}
+                        Computing...
+                    {:else}
+                        Compute Graph
+                    {/if}
+                </button>
+            </div>
         </div>
 
         <!-- Main content -->
         <div class="main-content">
         {#if activationContextsMissing}
             <div class="warning-banner">
-                <strong>⚠️ Activation contexts not generated.</strong>
-                Component hover info will be unavailable. Generate via the API or batch script.
+                Activation contexts not generated. Component hover info unavailable.
             </div>
         {/if}
 
@@ -364,122 +454,34 @@
             </div>
         {/if}
 
-        {#if generateError}
-            <div class="error-banner">
-                {generateError}
-                <button onclick={() => (generateError = null)}>Dismiss</button>
-            </div>
-        {/if}
-
-        <!-- Custom prompt input section -->
-        <div class="custom-prompt-section">
-            <div class="custom-prompt-input-row">
-                <input
-                    type="text"
-                    bind:value={customPromptText}
-                    placeholder="Enter custom text to analyze..."
-                    onkeydown={(e) => e.key === "Enter" && tokenizeCustomPrompt()}
-                    class="custom-prompt-input"
-                    disabled={tokenizeLoading}
-                />
-                <button onclick={tokenizeCustomPrompt} disabled={!customPromptText.trim() || tokenizeLoading} class="tokenize-btn">
-                    {#if tokenizeLoading}
-                        <span class="loading-spinner small"></span>
-                    {:else}
-                        Tokenize
-                    {/if}
-                </button>
-            </div>
-
-            {#if tokenizedPreview}
-                <div class="tokenization-preview">
-                    <div class="tokenization-header">
-                        <span><strong>{tokenizedPreview.tokens.length}</strong> tokens:</span>
-                        <button onclick={computeCustomPromptGraph} disabled={loadingPrompt} class="compute-btn">
-                            {#if loadingPrompt}
-                                <span class="loading-spinner small"></span> Computing...
-                            {:else}
-                                Compute Graph
-                            {/if}
-                        </button>
-                        <button onclick={cancelTokenization} class="cancel-btn">Cancel</button>
-                    </div>
-                    <div class="token-preview-list">
-                        {#each tokenizedPreview.tokens as tok}
-                            <span class="token-preview-item">{tok}</span>
-                        {/each}
-                    </div>
-                </div>
-            {/if}
-
-            {#if customPromptError}
-                <div class="custom-prompt-error">{customPromptError}</div>
-            {/if}
-        </div>
-
         <div class="controls">
-            <div class="prompt-controls">
-                {#if prompts.length === 0 && !generatingPrompts}
-                    <button class="generate-btn" onclick={() => handleGeneratePrompts(100)}>
-                        Generate 100 prompts
-                    </button>
-                {:else if generatingPrompts}
-                    <div class="generate-progress">
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: {generateProgress * 100}%"></div>
-                        </div>
-                        <span class="progress-text">{generateCount} prompts...</span>
-                    </div>
-                {:else}
-                    <select onchange={handlePromptSelect} disabled={loadingPrompt}>
-                        <option value="">Select a prompt...</option>
-                        {#each prompts as p}
-                            <option value={p.id} selected={p.id === currentPromptId}>
-                                {p.id}: {p.preview}
-                            </option>
-                        {/each}
-                    </select>
-                    <button
-                        class="compute-graph-btn"
-                        onclick={() => currentPromptId && loadPrompt(currentPromptId)}
-                        disabled={loadingPrompt || currentPromptId === null}
-                    >
-                        {#if loadingPrompt}
-                            Computing...
-                        {:else}
-                            Compute Graph
-                        {/if}
-                    </button>
-                {/if}
-            </div>
-
             <label>
-                Max mean CI:
-                <input type="number" bind:value={maxMeanCI} min={0} max={1} step={0.01} onchange={reloadWithFilters} />
+                Max CI:
+                <input type="number" bind:value={maxMeanCI} min={0} max={1} step={0.01} />
             </label>
 
             <label>
-                Top K edges:
+                Top K:
                 <input type="number" bind:value={topK} min={10} max={10000} step={100} />
             </label>
 
             <label>
                 Layout:
                 <select bind:value={nodeLayout}>
-                    <option value="importance">By importance</option>
+                    <option value="importance">Importance</option>
                     <option value="shuffled">Shuffled</option>
                     <option value="jittered">Jittered</option>
                 </select>
             </label>
 
             <label class="checkbox-label">
-                <input type="checkbox" bind:checked={normalizeEdges} onchange={reloadWithFilters} />
-                Normalize edges
+                <input type="checkbox" bind:checked={normalizeEdges} />
+                Normalize
             </label>
 
             <label class="checkbox-label">
                 <input type="checkbox" bind:checked={useOptimized} />
-                Optimize CI
+                Optimize
             </label>
         </div>
 
@@ -554,8 +556,8 @@
     }
 
     .sidebar {
-        width: 280px;
-        background: #fff;
+        width: 260px;
+        background: #fafafa;
         border-right: 1px solid #e0e0e0;
         display: flex;
         flex-direction: column;
@@ -564,73 +566,275 @@
     }
 
     .sidebar-section {
-        padding: 1rem;
+        padding: 0.75rem;
+    }
+
+    .sidebar-divider {
+        text-align: center;
+        font-size: 0.75rem;
+        color: #999;
+        padding: 0.25rem 0;
+        border-top: 1px solid #e0e0e0;
         border-bottom: 1px solid #e0e0e0;
+        background: #f5f5f5;
     }
 
-    .sidebar-section h3 {
-        margin: 0 0 0.5rem 0;
-        font-size: 0.9rem;
-        color: #333;
+    .sidebar-error {
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        background: #ffebee;
+        color: #c62828;
+        font-size: 0.8rem;
+        border-radius: 4px;
     }
 
-    .main-content {
+    .custom-prompt-input-row {
+        display: flex;
+        gap: 0.25rem;
+    }
+
+    .custom-prompt-input {
         flex: 1;
-        display: flex;
-        flex-direction: column;
+        padding: 0.5rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.85rem;
         min-width: 0;
-        padding: 1rem;
-        gap: 0.75rem;
     }
 
-    .controls {
-        display: flex;
-        align-items: center;
-        gap: 1.5rem;
-        padding: 0.75rem 1rem;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        flex-wrap: wrap;
+    .custom-prompt-input:focus {
+        outline: none;
+        border-color: #2196f3;
     }
 
-    .controls label {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.9rem;
-    }
-
-    .controls input[type="number"] {
-        width: 80px;
-        padding: 0.25rem 0.5rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-    }
-
-    .controls select {
-        padding: 0.25rem 0.5rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        min-width: 150px;
-    }
-
-    .prompt-controls {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .compute-graph-btn {
-        padding: 0.4rem 0.8rem;
+    .tokenize-btn {
+        padding: 0.5rem 0.75rem;
         background: #2196f3;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .tokenize-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+
+    .tokenization-preview {
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+    }
+
+    .token-preview-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        margin-bottom: 0.5rem;
+    }
+
+    .token-preview-item {
+        padding: 1px 4px;
+        background: #e3f2fd;
+        border: 1px solid #90caf9;
+        border-radius: 2px;
+        font-family: monospace;
+        font-size: 0.75rem;
+    }
+
+    .tokenization-actions {
+        display: flex;
+        gap: 0.25rem;
+    }
+
+    .compute-btn.small,
+    .cancel-btn.small {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+    }
+
+    .compute-btn {
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .compute-btn:hover:not(:disabled) {
+        background: #388e3c;
+    }
+
+    .compute-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+
+    .cancel-btn {
+        background: transparent;
+        color: #666;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .cancel-btn:hover {
+        background: #f5f5f5;
+    }
+
+    .generate-btn {
+        width: 100%;
+        padding: 0.5rem;
+        background: #4caf50;
         color: white;
         border: none;
         border-radius: 4px;
         cursor: pointer;
         font-size: 0.85rem;
         font-weight: 500;
+    }
+
+    .generate-btn:hover:not(:disabled) {
+        background: #388e3c;
+    }
+
+    .generate-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+
+    .generate-progress {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .progress-bar {
+        flex: 1;
+        height: 6px;
+        background: #e0e0e0;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: #4caf50;
+        transition: width 0.1s ease;
+    }
+
+    .progress-text {
+        font-size: 0.75rem;
+        color: #666;
+    }
+
+    .filter-section {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        border-top: 1px solid #e0e0e0;
+        background: #fff3e0;
+    }
+
+    .filter-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+
+    .filter-loading {
+        font-size: 0.8rem;
+        color: #999;
+    }
+
+    .prompt-list-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-top: 1px solid #e0e0e0;
+        padding: 0;
+    }
+
+    .prompt-list-header {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: #666;
+        background: #f5f5f5;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .prompt-list {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 150px;
+        max-height: 300px;
+    }
+
+    .prompt-item {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+        text-align: left;
+        display: flex;
+        gap: 0.5rem;
+        align-items: baseline;
+    }
+
+    .prompt-item:hover {
+        background: #f5f5f5;
+    }
+
+    .prompt-item.selected {
+        background: #e3f2fd;
+    }
+
+    .prompt-id {
+        font-size: 0.7rem;
+        color: #999;
+        flex-shrink: 0;
+    }
+
+    .prompt-preview {
+        font-family: monospace;
+        font-size: 0.8rem;
         white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .prompt-list-empty {
+        padding: 1rem;
+        text-align: center;
+        color: #999;
+        font-size: 0.85rem;
+    }
+
+    .compute-section {
+        border-top: 1px solid #e0e0e0;
+        background: #fff;
+    }
+
+    .compute-graph-btn {
+        width: 100%;
+        padding: 0.75rem;
+        background: #2196f3;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
     }
 
     .compute-graph-btn:hover:not(:disabled) {
@@ -642,52 +846,50 @@
         cursor: not-allowed;
     }
 
-    .generate-btn {
-        padding: 0.4rem 0.8rem;
-        background: #4caf50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85rem;
-        font-weight: 500;
+    .main-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        padding: 0.75rem;
+        gap: 0.5rem;
     }
 
-    .generate-btn:hover {
-        background: #388e3c;
-    }
-
-    .generate-progress {
+    .controls {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        min-width: 180px;
+        gap: 1rem;
+        padding: 0.5rem 0.75rem;
+        background: #fff;
+        border-radius: 6px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        flex-wrap: wrap;
     }
 
-    .progress-bar {
-        flex: 1;
-        height: 8px;
-        background: #e0e0e0;
+    .controls label {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.85rem;
+    }
+
+    .controls input[type="number"] {
+        width: 65px;
+        padding: 0.2rem 0.4rem;
+        border: 1px solid #ddd;
         border-radius: 4px;
-        overflow: hidden;
     }
 
-    .progress-fill {
-        height: 100%;
-        background: #4caf50;
-        transition: width 0.1s ease;
-    }
-
-    .progress-text {
-        font-size: 0.8rem;
-        color: #666;
-        white-space: nowrap;
+    .controls select {
+        padding: 0.2rem 0.4rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
     }
 
     .checkbox-label {
         display: flex;
         align-items: center;
-        gap: 0.25rem;
+        gap: 0.2rem;
     }
 
     .optim-controls {
@@ -966,75 +1168,4 @@
         cursor: pointer;
     }
 
-    .search-btn {
-        width: 100%;
-        padding: 0.5rem;
-        background: #2196f3;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-
-    .search-btn:disabled {
-        background: #ccc;
-        cursor: not-allowed;
-    }
-
-    .search-error {
-        padding: 0.5rem;
-        background: #ffebee;
-        color: #c62828;
-        font-size: 0.8rem;
-        border-radius: 4px;
-        margin-top: 0.5rem;
-    }
-
-    .search-info {
-        padding: 0.5rem;
-        background: #e3f2fd;
-        color: #1565c0;
-        font-size: 0.8rem;
-        border-radius: 4px;
-        margin-top: 0.5rem;
-    }
-
-    .search-results {
-        max-height: 300px;
-        overflow-y: auto;
-        margin-top: 0.5rem;
-    }
-
-    .search-result {
-        width: 100%;
-        padding: 0.5rem;
-        background: #fafafa;
-        border: 1px solid #eee;
-        border-radius: 4px;
-        cursor: pointer;
-        text-align: left;
-        margin-bottom: 0.25rem;
-    }
-
-    .search-result:hover {
-        background: #f5f5f5;
-    }
-
-    .search-result.active {
-        background: #e3f2fd;
-        border-color: #2196f3;
-    }
-
-    .search-result-id {
-        font-size: 0.75rem;
-        color: #666;
-    }
-
-    .search-result-preview {
-        font-family: monospace;
-        font-size: 0.8rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
 </style>
