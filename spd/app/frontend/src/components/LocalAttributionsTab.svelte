@@ -277,7 +277,7 @@
     }
 
     // Prompt generation
-    async function handleGeneratePrompts(nPrompts: number = 100) {
+    async function handleGeneratePrompts(nPrompts: number) {
         if (generatingPrompts) {
             console.log("[LocalAttr] handleGeneratePrompts: skipped, already generating");
             return;

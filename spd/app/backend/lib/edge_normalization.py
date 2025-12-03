@@ -2,8 +2,7 @@
 
 from collections import defaultdict
 
-# Edge tuple format: (source, target, c_in_idx, c_out_idx, s_in, s_out, val, is_cross_seq)
-Edge = tuple[str, str, int, int, int, int, float, bool]
+from spd.app.backend.compute import Edge
 
 
 def normalize_edges_by_target(edges: list[Edge]) -> list[Edge]:
@@ -24,7 +23,8 @@ def normalize_edges_by_target(edges: list[Edge]) -> list[Edge]:
     # Group edges by target node
     edges_by_target: dict[str, list[tuple[int, Edge]]] = defaultdict(list)
     for i, edge in enumerate(edges):
-        target, c_out_idx, s_out = edge[1], edge[3], edge[5]
+        # edge: (source, target, c_in, c_out, s_in, s_out, strength, is_cross_seq)
+        _, target, _, c_out_idx, _, s_out, _, _ = edge
         target_key = f"{target}:{s_out}:{c_out_idx}"
         edges_by_target[target_key].append((i, edge))
 

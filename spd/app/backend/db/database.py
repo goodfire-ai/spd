@@ -59,9 +59,7 @@ class LocalAttrDB:
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(
-                self.db_path, check_same_thread=self._check_same_thread
-            )
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=self._check_same_thread)
             self._conn.row_factory = sqlite3.Row
         return self._conn
 
@@ -356,9 +354,7 @@ class LocalAttrDB:
                 GROUP BY ca.prompt_id
                 HAVING COUNT(DISTINCT ca.component_key) = ?
             """
-            rows = conn.execute(
-                query, (run_id, *component_keys, len(component_keys))
-            ).fetchall()
+            rows = conn.execute(query, (run_id, *component_keys, len(component_keys))).fetchall()
         else:
             query = f"""
                 SELECT DISTINCT ca.prompt_id

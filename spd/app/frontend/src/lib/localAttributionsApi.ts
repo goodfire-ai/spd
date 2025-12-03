@@ -162,7 +162,6 @@ export async function computeCustomPrompt(params: ComputeCustomPromptParams): Pr
 
 export type GeneratePromptsConfig = {
     nPrompts?: number;
-    seqLength?: number;
     ciThreshold?: number;
     outputProbThreshold?: number;
 };
@@ -178,7 +177,6 @@ export async function generatePrompts(
 ): Promise<GeneratePromptsResult> {
     const url = new URL(`${LOCAL_ATTR_API_URL}/api/prompts/generate`);
     if (config.nPrompts !== undefined) url.searchParams.set("n_prompts", String(config.nPrompts));
-    if (config.seqLength !== undefined) url.searchParams.set("seq_length", String(config.seqLength));
     if (config.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(config.ciThreshold));
     if (config.outputProbThreshold !== undefined)
         url.searchParams.set("output_prob_threshold", String(config.outputProbThreshold));

@@ -17,9 +17,7 @@ from spd.app.backend.schemas import (
     SubcomponentActivationContexts,
 )
 from spd.app.backend.services.run_context_service import TrainRunContext
-from spd.configs import Config
 from spd.log import logger
-from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 
 

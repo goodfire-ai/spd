@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import yaml
 from torch.utils.data import DataLoader
@@ -125,8 +125,8 @@ class RunContextService:
 
         # Pre-build token string lookup for fast stringification
         # Cast tokenizer to base type (create_data_loader returns PreTrainedTokenizer)
-        tokenizer_base = cast(PreTrainedTokenizerBase, cast(object, tokenizer))
-        vocab_size: int = tokenizer_base.vocab_size  # pyright: ignore[reportAssignmentType]
+        tokenizer_base = runtime_cast(PreTrainedTokenizerBase, tokenizer)
+        vocab_size: int = runtime_cast(int, tokenizer_base.vocab_size)
         logger.info(f"Building token lookup table for vocab size {vocab_size}")
         tokenizer_name = run_info.config.tokenizer_name
         assert tokenizer_name is not None

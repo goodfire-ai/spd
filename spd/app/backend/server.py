@@ -549,7 +549,6 @@ def get_prompts():
 @log_errors
 def generate_prompts(
     n_prompts: int = 100,
-    seq_length: int | None = None,
     batch_size: int = 32,
     ci_threshold: float = 1e-6,
     output_prob_threshold: float = 0.01,
