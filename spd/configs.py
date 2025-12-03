@@ -320,9 +320,13 @@ class Config(BaseConfig):
         default=1,
         description="Number of steps to accumulate gradients over before updating parameters",
     )
-    grad_clip_norm: PositiveFloat | None = Field(
+    grad_clip_norm_components: PositiveFloat | None = Field(
         default=None,
-        description="If set, clip gradient norm to this value before each optimiser step",
+        description="If set, apply grad norm clipping to the parameters of the components",
+    )
+    grad_clip_norm_ci_fns: PositiveFloat | None = Field(
+        default=None,
+        description="If set, apply grad norm clipping to the parameters of the CI functions",
     )
 
     # --- Faithfulness Warmup ---
@@ -465,6 +469,7 @@ class Config(BaseConfig):
         "dist_backend",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
+        "grad_clip_norm": "grad_clip_norm_components",
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
         "recon_coeff": "ci_recon_coeff",

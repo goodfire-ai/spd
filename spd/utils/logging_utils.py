@@ -47,7 +47,6 @@ def get_grad_norms_dict(
     out: dict[str, float] = {}
 
     comp_grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
-    comp_n_params = 0
     for target_module_path, component in component_model.components.items():
         for local_param_name, local_param in component.named_parameters():
             param_grad = runtime_cast(Tensor, local_param.grad)
@@ -55,10 +54,8 @@ def get_grad_norms_dict(
             key = f"components/{target_module_path}.{local_param_name}"
             out[key] = param_grad_sum_sq.sqrt().item()
             comp_grad_norm_sq_sum += param_grad_sum_sq
-            comp_n_params += param_grad.numel()
 
     ci_fn_grad_norm_sq_sum: Float[Tensor, ""] = torch.zeros((), device=device)
-    ci_fn_n_params = 0
     for target_module_path, ci_fn in component_model.ci_fns.items():
         for local_param_name, local_param in ci_fn.named_parameters():
             ci_fn_grad = runtime_cast(Tensor, local_param.grad)
@@ -67,13 +64,11 @@ def get_grad_norms_dict(
             assert key not in out, f"Key {key} already exists in grad norms log"
             out[key] = ci_fn_grad_sum_sq.sqrt().item()
             ci_fn_grad_norm_sq_sum += ci_fn_grad_sum_sq
-            ci_fn_n_params += ci_fn_grad.numel()
 
-    out["summary/components"] = (comp_grad_norm_sq_sum / comp_n_params).sqrt().item()
-    out["summary/ci_fns"] = (ci_fn_grad_norm_sq_sum / ci_fn_n_params).sqrt().item()
+    out["summary/components"] = comp_grad_norm_sq_sum.sqrt().item()
+    out["summary/ci_fns"] = ci_fn_grad_norm_sq_sum.sqrt().item()
 
     total_grad_norm_sq_sum = comp_grad_norm_sq_sum + ci_fn_grad_norm_sq_sum
-    total_n_params = comp_n_params + ci_fn_n_params
-    out["summary/total"] = (total_grad_norm_sq_sum / total_n_params).sqrt().item()
+    out["summary/total"] = total_grad_norm_sq_sum.sqrt().item()
 
     return out

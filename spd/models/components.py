@@ -112,7 +112,7 @@ class VectorSharedMLPCiFn(nn.Module):
         return self.layers(x)
 
 
-WeightDeltaAndMask = tuple[Float[Tensor, " d_out d_in"], Float[Tensor, "..."]]
+WeightDeltaAndMask = tuple[Float[Tensor, "d_out d_in"], Float[Tensor, "..."]]
 
 
 class Components(ABC, nn.Module):
