@@ -4,10 +4,10 @@ import time
 from pathlib import Path
 
 import torch
-from spd.attributions.compute import compute_local_attributions, get_sources_by_target
-from spd.attributions.db import LocalAttrDB
 from transformers import AutoTokenizer
 
+from spd.attributions.compute import compute_local_attributions, get_sources_by_target
+from spd.attributions.db import LocalAttrDB
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 # Load model

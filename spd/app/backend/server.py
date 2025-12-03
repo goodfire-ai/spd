@@ -508,7 +508,7 @@ def generate_activation_contexts(
         separation_tokens=separation_tokens,
     )
 
-    def generate() -> Generator[str, None, None]:
+    def generate() -> Generator[str]:
         for res in get_activations_data_streaming(
             run_context,
             importance_threshold=importance_threshold,
