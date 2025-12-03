@@ -34,6 +34,11 @@
 
     let { data, topK, nodeLayout, activationContextsSummary, pinnedNodes, onPinnedNodesChange }: Props = $props();
 
+    // Debug: track reactivity (remove when done debugging)
+    $inspect({ prop: "data", id: data.id, edgeCount: data.edges.length });
+    $inspect({ prop: "topK", topK });
+    $inspect({ prop: "nodeLayout", nodeLayout });
+
     // UI state
     let hoveredNode = $state<HoveredNode | null>(null);
     let hoveredEdge = $state<HoveredEdge | null>(null);
@@ -90,6 +95,7 @@
 
         return { componentImportanceLocal, maxImportanceLocal, maxAbsAttr };
     });
+    $inspect({ derived: "importance", componentCount: Object.keys(componentImportanceLocal).length });
 
     // Filter edges by topK and build active nodes set
     const { filteredEdges, activeNodes } = $derived.by(() => {
@@ -131,6 +137,7 @@
 
         return { filteredEdges, activeNodes };
     });
+    $inspect({ derived: "filteredEdges", edgeCount: filteredEdges.length, nodeCount: activeNodes.size });
 
     // Build layout
     const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height } = $derived.by(() => {
@@ -269,6 +276,7 @@
 
         return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal };
     });
+    $inspect({ derived: "layout", nodeCount: Object.keys(nodePositions).length, width, height });
 
     // Get component offsets based on layout strategy
     function getComponentOffsets(
@@ -383,6 +391,7 @@
         }
         return svg;
     });
+    $inspect({ derived: "edgesSvgString", length: edgesSvgString.length });
 
     // Highlighted node keys (from pinned + hovered)
     const highlightedKeys = $derived.by(() => {
@@ -563,7 +572,7 @@
     </div>
 
     <div class="graph-container">
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_mouse_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions, a11y_mouse_events_have_key_events -->
         <svg {width} {height} onmouseover={handleEdgeMouseEnter} onmouseout={handleEdgeMouseLeave}>
             <!-- Edges (bulk rendered for performance) -->
             <g class="edges-layer">

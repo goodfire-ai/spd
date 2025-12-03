@@ -2,14 +2,6 @@
 
 // Server API types
 
-export type RunInfo = {
-    id: number;
-    wandb_path: string;
-    n_blocks: number;
-    prompt_count: number;
-    has_activation_contexts: boolean;
-};
-
 export type PromptPreview = {
     id: number;
     tokens: string[];
@@ -77,20 +69,6 @@ export type TokenizeResult = {
     token_ids: number[];
     tokens: string[];
     text: string;
-};
-
-export type LoadedRunInfo = {
-    id: number;
-    wandb_path: string;
-    n_blocks: number;
-    has_activation_contexts: boolean;
-    has_prompts: boolean;
-    prompt_count: number;
-};
-
-export type ServerStatus = {
-    train_run: { wandb_path: string; config_yaml: string } | null;
-    loaded_run: LoadedRunInfo | null;
 };
 
 // Client-side computed types

@@ -45,14 +45,11 @@ from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
     HarvestMetadata,
-    LoadedRunInfo,
+    LoadedRun,
     ModelActivationContexts,
     RunInfo,
-    Status,
     SubcomponentMetadata,
-    TrainRun,
 )
-from spd.app.backend.services.run_context_service import _build_token_lookup
 from spd.configs import Config, ImportanceMinimalityLossConfig, SamplingType
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -62,7 +59,7 @@ from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import runtime_cast
 
 DEVICE = get_device()
-
+GLOBAL_EDGE_LIMIT = 5_000
 
 def log_errors[T: Callable[..., Any]](func: T) -> T:
     """Decorator to log errors with full traceback for easier debugging."""
@@ -127,8 +124,8 @@ def parse_wandb_run_path(input_str: str) -> str:
 
 
 @dataclass
-class LoadedRun:
-    """State for a loaded run (model, tokenizer, etc.)"""
+class RunState:
+    """Runtime state for a loaded run (model, tokenizer, etc.)"""
 
     run: Run
     model: ComponentModel
@@ -145,7 +142,7 @@ class AppState:
     """Server state. DB is always available; loaded_run is set after /api/runs/load."""
 
     db: LocalAttrDB
-    loaded_run: LoadedRun | None = field(default=None)
+    run_state: RunState | None = field(default=None)
 
 
 _state: AppState | None = None
@@ -160,12 +157,12 @@ def get_state() -> AppState:
     return _state
 
 
-def get_loaded_run() -> LoadedRun:
+def get_loaded_run() -> RunState:
     """Get loaded run. Fails fast if no run is loaded."""
     state = get_state()
-    if state.loaded_run is None:
+    if state.run_state is None:
         raise ValueError("No run loaded. Call POST /api/runs/load first.")
-    return state.loaded_run
+    return state.run_state
 
 
 @asynccontextmanager
@@ -192,7 +189,7 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     _state.db.close()
 
 
-app = FastAPI(title="SPD App API", lifespan=lifespan)
+app = FastAPI(title="SPD App API", lifespan=lifespan, debug=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -217,12 +214,54 @@ def list_runs() -> list[RunInfo]:
         RunInfo(
             id=run.id,
             wandb_path=run.wandb_path,
-            n_blocks=run.n_blocks,
             prompt_count=state.db.get_prompt_count(run.id),
             has_activation_contexts=state.db.has_activation_contexts(run.id),
         )
         for run in runs
     ]
+
+
+# Characters that don't get a space prefix in wordpiece
+
+_PUNCT_NO_SPACE = set(".,!?;:'\")-]}>/")
+
+
+def _build_token_lookup(
+    tokenizer: PreTrainedTokenizerBase,
+    tokenizer_name: str,
+) -> dict[int, str]:
+    """Build token ID -> string lookup.
+
+    Uses tokenizer-specific strategy to produce strings that concatenate correctly.
+    """
+    lookup: dict[int, str] = {}
+    vocab_size: int = tokenizer.vocab_size  # pyright: ignore[reportAssignmentType]
+
+    for tid in range(vocab_size):
+        decoded: str = tokenizer.decode([tid], skip_special_tokens=False)
+
+        # Tokenizer name -> decode strategy
+        # "wordpiece": ## = continuation (strip ##), punctuation = no space, others = space prefix
+        # "bpe": spaces encoded in token via Ġ, just decode directly
+        match tokenizer_name:
+            case "SimpleStories/test-SimpleStories-gpt2-1.25M":
+                # WordPiece handling:
+                if decoded.startswith("##"):
+                    # Continuation token - strip ## prefix, no space
+                    lookup[tid] = decoded[2:]
+                elif decoded and decoded[0] in _PUNCT_NO_SPACE:
+                    # Punctuation - no space prefix
+                    lookup[tid] = decoded
+                else:
+                    # Regular token - add space prefix
+                    lookup[tid] = " " + decoded
+            case "openai-community/gpt2":
+                # BPE (GPT-2 style): spaces encoded in token via Ġ -> space
+                lookup[tid] = decoded
+            case _:
+                raise ValueError(f"Unsupported tokenizer name: {tokenizer_name}")
+
+    return lookup
 
 
 @app.post("/api/runs/load")
@@ -251,11 +290,9 @@ def load_run(wandb_path: str):
     except Exception as e:
         return JSONResponse({"error": f"Failed to load run from W&B: {e}"}, status_code=400)
 
-    # Get or create run in DB (default n_blocks=4 for new runs)
-    DEFAULT_N_BLOCKS = 4
     run = state.db.get_run_by_wandb_path(full_wandb_path)
     if run is None:
-        run_id = state.db.create_run(full_wandb_path, DEFAULT_N_BLOCKS)
+        run_id = state.db.create_run(full_wandb_path)
         run = state.db.get_run(run_id)
         assert run is not None
         logger.info(f"[API] Created new run in DB: {run.id}")
@@ -263,16 +300,16 @@ def load_run(wandb_path: str):
         logger.info(f"[API] Found existing run in DB: {run.id}")
 
     # If already loaded, skip model load
-    if state.loaded_run is not None and state.loaded_run.run.id == run.id:
+    if state.run_state is not None and state.run_state.run.id == run.id:
         logger.info(f"[API] Run {run.id} already loaded, skipping")
         return {"status": "already_loaded", "run_id": run.id, "wandb_path": run.wandb_path}
 
     # Unload previous run if any
-    if state.loaded_run is not None:
-        logger.info(f"[API] Unloading previous run {state.loaded_run.run.id}")
-        del state.loaded_run.model
+    if state.run_state is not None:
+        logger.info(f"[API] Unloading previous run {state.run_state.run.id}")
+        del state.run_state.model
         torch.cuda.empty_cache()
-        state.loaded_run = None
+        state.run_state = None
 
     # Load the model
     logger.info(f"[API] Loading model for run {run.id}: {run.wandb_path}")
@@ -288,12 +325,12 @@ def load_run(wandb_path: str):
 
     # Build sources_by_target mapping
     sampling = spd_config.sampling
-    sources_by_target = get_sources_by_target(model, DEVICE, sampling, run.n_blocks)
+    sources_by_target = get_sources_by_target(model, DEVICE, sampling)
 
     # Build token lookup for activation contexts
     token_strings = _build_token_lookup(loaded_tokenizer, spd_config.tokenizer_name)
 
-    state.loaded_run = LoadedRun(
+    state.run_state = RunState(
         run=run,
         model=model,
         tokenizer=loaded_tokenizer,
@@ -309,30 +346,26 @@ def load_run(wandb_path: str):
 
 @app.get("/api/status")
 @log_errors
-def get_status() -> Status:
+def get_status() -> LoadedRun | None:
     """Get current server status."""
     state = get_state()
 
-    train_run = None
-    loaded_run_info = None
+    if state.run_state is None:
+        return None
 
-    if state.loaded_run is not None:
-        run = state.loaded_run.run
-        config_yaml = yaml.dump(
-            state.loaded_run.config.model_dump(), default_flow_style=False, sort_keys=False
-        )
-        train_run = TrainRun(wandb_path=run.wandb_path, config_yaml=config_yaml)
+    run = state.run_state.run
+    config_yaml = yaml.dump(
+        state.run_state.config.model_dump(), default_flow_style=False, sort_keys=False
+    )
 
-        loaded_run_info = LoadedRunInfo(
-            id=run.id,
-            wandb_path=run.wandb_path,
-            n_blocks=run.n_blocks,
-            has_activation_contexts=state.db.has_activation_contexts(run.id),
-            has_prompts=state.db.has_prompts(run.id),
-            prompt_count=state.db.get_prompt_count(run.id),
-        )
-
-    return Status(train_run=train_run, loaded_run=loaded_run_info)
+    return LoadedRun(
+        id=run.id,
+        wandb_path=run.wandb_path,
+        config_yaml=config_yaml,
+        has_activation_contexts=state.db.has_activation_contexts(run.id),
+        has_prompts=state.db.has_prompts(run.id),
+        prompt_count=state.db.get_prompt_count(run.id),
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -446,17 +479,10 @@ def generate_activation_contexts(
     )
 
     # Create a temporary run context for generation
-    from spd.app.backend.services.run_context_service import TrainRunContext
+    # from spd.app.backend.services.run_context_service import TrainRunContext
 
-    run_context = TrainRunContext(
-        wandb_id=loaded.run.wandb_path,
-        wandb_path=loaded.run.wandb_path,
-        config=loaded.config,
-        cm=loaded.model,
-        tokenizer=loaded.tokenizer,
-        train_loader=train_loader,
-        token_strings=loaded.token_strings,
-    )
+    # run_context = TrainRunContext(
+    # )
 
     config = ActivationContextsGenerationConfig(
         importance_threshold=importance_threshold,
@@ -469,7 +495,11 @@ def generate_activation_contexts(
 
     def generate() -> Generator[str]:
         for res in get_activations_data_streaming(
-            run_context,
+            config=loaded.config,
+            cm=loaded.model,
+            tokenizer=loaded.tokenizer,
+            train_loader=train_loader,
+            token_strings=loaded.token_strings,
             importance_threshold=importance_threshold,
             n_batches=n_batches,
             n_tokens_either_side=n_tokens_either_side,
@@ -521,7 +551,7 @@ def generate_activation_contexts(
 def get_prompts():
     """Return list of all prompts for the loaded run."""
     state = get_state()
-    assert state.loaded_run is not None, "No run loaded"
+    assert state.run_state is not None, "No run loaded"
 
     try:
         loaded = get_loaded_run()
@@ -534,7 +564,7 @@ def get_prompts():
     for pid in prompt_ids:
         prompt = state.db.get_prompt(pid)
         assert prompt is not None, f"Prompt {pid} in index but not in DB"
-        token_strings = [state.loaded_run.token_strings[t] for t in prompt.token_ids]
+        token_strings = [state.run_state.token_strings[t] for t in prompt.token_ids]
         results.append(
             {
                 "id": prompt.id,
@@ -548,10 +578,7 @@ def get_prompts():
 @app.post("/api/prompts/generate")
 @log_errors
 def generate_prompts(
-    n_prompts: int = 100,
-    batch_size: int = 32,
-    ci_threshold: float = 1e-6,
-    output_prob_threshold: float = 0.01,
+    n_prompts: int,
 ) -> StreamingResponse:
     """Generate prompts from training data with CI harvesting.
 
@@ -565,6 +592,7 @@ def generate_prompts(
         ci_threshold: Threshold for component activation
         output_prob_threshold: Threshold for output token activation
     """
+
     state = get_state()
     try:
         loaded = get_loaded_run()
@@ -587,7 +615,7 @@ def generate_prompts(
     )
     train_loader, _ = create_data_loader(
         dataset_config=train_data_config,
-        batch_size=batch_size,
+        batch_size=32,  # somewhat arbitrary, could be made configurable
         buffer_size=task_config.buffer_size,
         global_seed=loaded.config.seed,
     )
@@ -626,8 +654,8 @@ def generate_prompts(
                 active_components = extract_active_from_ci(
                     ci_lower_leaky=ci_single,
                     output_probs=probs_single,
-                    ci_threshold=ci_threshold,
-                    output_prob_threshold=output_prob_threshold,
+                    ci_threshold=0.0,  # consider removing this arg entirely
+                    output_prob_threshold=0.01,  # TODO change me to topP (cumulative probability threshold)
                     n_seq=n_seq,
                 )
 
@@ -728,7 +756,7 @@ def get_prompt(
         ]
 
     edges.sort(key=lambda x: abs(x[6]), reverse=True)
-    edges = edges[:30_000]
+    edges = edges[:GLOBAL_EDGE_LIMIT]
 
     if normalize:
         edges = normalize_edges_by_target(edges)
@@ -845,7 +873,7 @@ def get_prompt_optimized(
 
     edges = result.edges
     edges.sort(key=lambda x: abs(x[6]), reverse=True)
-    edges = edges[:30_000]
+    edges = edges[:GLOBAL_EDGE_LIMIT]
 
     if normalize:
         edges = normalize_edges_by_target(edges)
@@ -953,7 +981,7 @@ def compute_custom_prompt(
 
     edges = result.edges
     edges.sort(key=lambda x: abs(x[6]), reverse=True)
-    edges = edges[:30_000]
+    edges = edges[:GLOBAL_EDGE_LIMIT]
 
     if normalize:
         edges = normalize_edges_by_target(edges)
@@ -1034,19 +1062,11 @@ def search_prompts(
     }
 
 
-# -----------------------------------------------------------------------------
-# Legacy endpoints (backward compatibility with old app)
-# -----------------------------------------------------------------------------
-
-
-@app.get("/")
-def healthcheck() -> str:
-    return "Hello, World!"
-
-
-# -----------------------------------------------------------------------------
-# Server startup
-# -----------------------------------------------------------------------------
+@app.get("/api/health")
+@log_errors
+def health_check() -> dict[str, str]:
+    """Health check endpoint."""
+    return {"status": "ok"}
 
 
 def cli(port: int = 8000) -> None:

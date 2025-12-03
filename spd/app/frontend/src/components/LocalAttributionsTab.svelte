@@ -1,5 +1,6 @@
 <script lang="ts">
-    import * as api from "../lib/localAttributionsApi";
+    import * as attrApi from "../lib/localAttributionsApi";
+    import * as mainApi from "../lib/api";
     import type {
         PromptPreview,
         PromptData,
@@ -10,7 +11,7 @@
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
     // Server state
-    let serverStatus = $state<api.ServerStatus | null>(null);
+    let loadedRun = $state<mainApi.LoadedRun | null>(null);
     let serverError = $state<string | null>(null);
 
     // Prompt state
@@ -57,9 +58,6 @@
     let filteredPrompts = $state<PromptPreview[]>([]);
     let filterLoading = $state(false);
 
-    // Derived: is a run loaded?
-    const loadedRun = $derived(serverStatus?.loaded_run ?? null);
-
     // Derived: prompts to display (filtered or all)
     const displayedPrompts = $derived(filterByPinned ? filteredPrompts : prompts);
 
@@ -92,9 +90,9 @@
     async function loadServerStatus() {
         const t0 = performance.now();
         try {
-            serverStatus = await api.getStatus();
+            loadedRun = await mainApi.getStatus();
             serverError = null;
-            console.log(`[LocalAttr] loadServerStatus: ${(performance.now() - t0).toFixed(0)}ms, run=${serverStatus?.loaded_run?.id ?? "none"}`);
+            console.log(`[LocalAttr] loadServerStatus: ${(performance.now() - t0).toFixed(0)}ms, run=${loadedRun?.id ?? "none"}`);
         } catch (e) {
             serverError = e instanceof Error ? e.message : "Failed to connect to server";
             console.error(`[LocalAttr] loadServerStatus FAILED (${(performance.now() - t0).toFixed(0)}ms):`, e);
@@ -105,7 +103,7 @@
         const t0 = performance.now();
         console.log("[LocalAttr] loadPromptsList: starting...");
         try {
-            prompts = await api.listPrompts();
+            prompts = await attrApi.listPrompts();
             console.log(`[LocalAttr] loadPromptsList: got ${prompts.length} prompts in ${(performance.now() - t0).toFixed(0)}ms`);
             // Don't auto-load first prompt - let user click "Compute Graph"
             if (prompts.length > 0 && currentPromptId === null) {
@@ -120,13 +118,14 @@
         const t0 = performance.now();
         console.log("[LocalAttr] loadActivationContextsSummary: starting...");
         try {
-            activationContextsSummary = await api.getActivationContextsSummary();
+            activationContextsSummary = await attrApi.getActivationContextsSummary();
             activationContextsMissing = false;
             const layerCount = Object.keys(activationContextsSummary).length;
             console.log(`[LocalAttr] loadActivationContextsSummary: got ${layerCount} layers in ${(performance.now() - t0).toFixed(0)}ms`);
         } catch (e) {
-            // Check if it's a "missing" error (404 with missing flag)
-            if (e instanceof Error && e.message.includes("404")) {
+            // Check if it's a "missing" error (404) - this is expected when activation contexts haven't been generated
+            const status = (e as { status?: number }).status;
+            if (status === 404) {
                 activationContextsMissing = true;
                 activationContextsSummary = null;
                 console.log(`[LocalAttr] loadActivationContextsSummary: not found (${(performance.now() - t0).toFixed(0)}ms)`);
@@ -152,7 +151,7 @@
 
         try {
             if (useOptimized) {
-                promptData = await api.getPromptOptimized(promptId, {
+                promptData = await attrApi.getPromptOptimized(promptId, {
                     maxMeanCI,
                     normalize: normalizeEdges,
                     impMinCoeff,
@@ -161,7 +160,7 @@
                     pnorm: optimPnorm,
                 });
             } else {
-                promptData = await api.getPrompt(promptId, {
+                promptData = await attrApi.getPrompt(promptId, {
                     maxMeanCI,
                     normalize: normalizeEdges,
                 });
@@ -196,7 +195,7 @@
         console.log(`[LocalAttr] filterPromptsByPinned: filtering for ${components.length} components...`);
 
         try {
-            const result = await api.searchPrompts(components, "all");
+            const result = await attrApi.searchPrompts(components, "all");
             filteredPrompts = result.results;
             console.log(`[LocalAttr] filterPromptsByPinned: found ${filteredPrompts.length} results in ${(performance.now() - t0).toFixed(0)}ms`);
         } catch (e) {
@@ -234,7 +233,7 @@
         console.log(`[LocalAttr] tokenizeCustomPrompt: tokenizing ${customPromptText.length} chars...`);
 
         try {
-            tokenizedPreview = await api.tokenizeText(customPromptText);
+            tokenizedPreview = await attrApi.tokenizeText(customPromptText);
             console.log(`[LocalAttr] tokenizeCustomPrompt: got ${tokenizedPreview.tokens.length} tokens in ${(performance.now() - t0).toFixed(0)}ms`);
         } catch (e) {
             customPromptError = e instanceof Error ? e.message : "Failed to tokenize";
@@ -255,7 +254,7 @@
         console.log(`[LocalAttr] computeCustomPromptGraph: computing for ${tokenizedPreview.tokens.length} tokens...`);
 
         try {
-            promptData = await api.computeCustomPrompt({
+            promptData = await attrApi.computeCustomPrompt({
                 tokenIds: tokenizedPreview.token_ids,
                 normalize: normalizeEdges,
             });
@@ -292,7 +291,7 @@
         console.log(`[LocalAttr] handleGeneratePrompts: starting generation of ${nPrompts} prompts...`);
 
         try {
-            await api.generatePrompts(
+            await attrApi.generatePrompts(
                 { nPrompts },
                 (progress, count) => {
                     generateProgress = progress;
@@ -363,29 +362,6 @@
                 {/if}
             </div>
 
-            <!-- Divider -->
-            <div class="sidebar-divider">or from dataset</div>
-
-            <!-- Generate prompts -->
-            <div class="sidebar-section">
-                {#if generatingPrompts}
-                    <div class="generate-progress">
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: {generateProgress * 100}%"></div>
-                        </div>
-                        <span class="progress-text">{generateCount}</span>
-                    </div>
-                {:else}
-                    <button class="generate-btn" onclick={() => handleGeneratePrompts(100)} disabled={generatingPrompts}>
-                        Generate 100 prompts
-                    </button>
-                {/if}
-
-                {#if generateError}
-                    <div class="sidebar-error">{generateError}</div>
-                {/if}
-            </div>
-
             <!-- Filter by pinned -->
             {#if pinnedNodes.length > 0}
                 <div class="sidebar-section filter-section">
@@ -419,6 +395,23 @@
                         <div class="prompt-list-empty">
                             {filterByPinned ? "No matching prompts" : "No prompts yet"}
                         </div>
+                    {/if}
+                </div>
+                <div class="generate-section">
+                    {#if generatingPrompts}
+                        <div class="generate-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: {generateProgress * 100}%"></div>
+                            </div>
+                            <span class="progress-text">{generateCount}</span>
+                        </div>
+                    {:else}
+                        <button class="generate-btn" onclick={() => handleGeneratePrompts(100)} disabled={generatingPrompts}>
+                            + Generate 100
+                        </button>
+                    {/if}
+                    {#if generateError}
+                        <div class="sidebar-error">{generateError}</div>
                     {/if}
                 </div>
             </div>
@@ -551,7 +544,7 @@
 <style>
     .local-attributions-tab {
         display: flex;
-        height: 100%;
+        flex: 1;
         min-height: 0;
     }
 
@@ -567,16 +560,6 @@
 
     .sidebar-section {
         padding: 0.75rem;
-    }
-
-    .sidebar-divider {
-        text-align: center;
-        font-size: 0.75rem;
-        color: #999;
-        padding: 0.25rem 0;
-        border-top: 1px solid #e0e0e0;
-        border-bottom: 1px solid #e0e0e0;
-        background: #f5f5f5;
     }
 
     .sidebar-error {
@@ -686,6 +669,12 @@
         background: #f5f5f5;
     }
 
+    .generate-section {
+        padding: 0.5rem 0.75rem;
+        border-top: 1px solid #e0e0e0;
+        background: #f5f5f5;
+    }
+
     .generate-btn {
         width: 100%;
         padding: 0.5rem;
@@ -774,8 +763,7 @@
     .prompt-list {
         flex: 1;
         overflow-y: auto;
-        min-height: 150px;
-        max-height: 300px;
+        min-height: 0;
     }
 
     .prompt-item {
@@ -1020,14 +1008,6 @@
         margin-top: 0.5rem;
     }
 
-    /* Custom prompt section */
-    .custom-prompt-section {
-        padding: 0.75rem 1rem;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
-
     .custom-prompt-input-row {
         display: flex;
         gap: 0.5rem;
@@ -1100,13 +1080,6 @@
         border-radius: 4px;
     }
 
-    .tokenization-header {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-bottom: 0.5rem;
-    }
-
     .token-preview-list {
         display: flex;
         flex-wrap: wrap;
@@ -1120,22 +1093,6 @@
         border-radius: 3px;
         font-family: monospace;
         font-size: 0.85rem;
-    }
-
-    .custom-prompt-error {
-        margin-top: 0.5rem;
-        padding: 0.5rem 0.75rem;
-        background: #ffebee;
-        border: 1px solid #f44336;
-        border-radius: 4px;
-        color: #c62828;
-        font-size: 0.85rem;
-    }
-
-    .loading-spinner.small {
-        width: 16px;
-        height: 16px;
-        border-width: 2px;
     }
 
     .warning-banner {

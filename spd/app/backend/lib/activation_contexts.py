@@ -11,13 +11,19 @@ import tqdm
 from jaxtyping import Float, Int
 from numpy.typing import NDArray
 from torch import Tensor
+from torch.utils.data import DataLoader
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.schemas import (
     ModelActivationContexts,
     SubcomponentActivationContexts,
 )
-from spd.app.backend.services.run_context_service import TrainRunContext
+
+# from spd.app.backend.services.run_context_service import
+# TrainRunContext
+from spd.configs import Config
 from spd.log import logger
+from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -187,7 +193,11 @@ PROGRESS_THROTTLE_INTERVAL_SECONDS = 0.1
 
 
 def get_activations_data_streaming(
-    run_context: TrainRunContext,
+    config: Config,
+    cm: ComponentModel,
+    tokenizer: PreTrainedTokenizerBase,
+    train_loader: DataLoader[Int[Tensor, "B S"]],
+    token_strings: dict[int, str],
     importance_threshold: float,
     n_batches: int,
     n_tokens_either_side: int,
@@ -203,8 +213,11 @@ def get_activations_data_streaming(
     )
     if separation_tokens > 0:
         print(f"[activation_contexts] Position separation enabled: {separation_tokens} tokens")
+        assert separation_tokens <= n_tokens_either_side, (
+            "separation_tokens must be less than or equal to n_tokens_either_side"
+        )
 
-    device = next(run_context.cm.parameters()).device
+    device = next(cm.parameters()).device
 
     # for each (module_name, component_idx), track:
     # - the top-k activating examples
@@ -222,7 +235,7 @@ def get_activations_data_streaming(
         lambda: defaultdict(lambda: defaultdict(int))
     )
     # - the sum of causal importances
-    C = run_context.cm.C
+    C = cm.C
     component_sum_cis = defaultdict[str, Float[Tensor, " C"]](
         lambda: torch.zeros(C, device=device, dtype=torch.float)
     )
@@ -231,15 +244,15 @@ def get_activations_data_streaming(
     total_token_counts = defaultdict[int, int](int)
     n_toks_seen = 0
 
-    pad_token_id = int(getattr(run_context.tokenizer, "pad_token_id", None) or DEFAULT_PAD_TOKEN_ID)
+    pad_token_id = int(getattr(tokenizer, "pad_token_id", None) or DEFAULT_PAD_TOKEN_ID)
 
     batches = roll_batch_size_1_into_x(
-        singleton_batches=(extract_batch_data(b).to(device) for b in run_context.train_loader),
+        singleton_batches=(extract_batch_data(b).to(device) for b in train_loader),
         batch_size=batch_size,
     )
 
     last_progress_time = 0.0
-    n_modules = len(run_context.cm.target_module_paths)
+    n_modules = len(cm.target_module_paths)
 
     pbar = tqdm.tqdm(total=n_batches * n_modules, desc="Processing batches", unit="batch,layer")
 
@@ -260,12 +273,12 @@ def get_activations_data_streaming(
             total_token_counts[token_id] += count
 
         with torch.no_grad():
-            output_with_cache = run_context.cm(batch, cache_type="input")
+            output_with_cache = cm(batch, cache_type="input")
             logits = output_with_cache.output
-            ci_vals = run_context.cm.calc_causal_importances(
+            ci_vals = cm.calc_causal_importances(
                 pre_weight_acts=output_with_cache.cache,
                 detach_inputs=True,
-                sampling=run_context.config.sampling,
+                sampling=config.sampling,
             ).lower_leaky
 
         # Get predicted tokens (argmax of logits at each position)
@@ -419,17 +432,17 @@ def get_activations_data_streaming(
             pr_tokens, pr_recalls, pr_precisions = _get_component_token_pr(
                 component_token_acts=module_acts[component_idx],
                 total_token_counts=total_token_counts,
-                token_strings=run_context.token_strings,
+                token_strings=token_strings,
                 component_activation_count=module_activation_counts[component_idx],
             )
             predicted_tokens, predicted_probs = _get_component_predicted_tokens(
                 component_predicted_counts=module_predicted[component_idx],
-                token_strings=run_context.token_strings,
+                token_strings=token_strings,
                 component_activation_count=module_activation_counts[component_idx],
             )
             example_tokens, example_ci, example_active_pos, example_active_ci = module_examples[
                 component_idx
-            ].as_columnar(run_context.token_strings)
+            ].as_columnar(token_strings)
             subcomponent_ctx = SubcomponentActivationContexts(
                 subcomponent_idx=component_idx,
                 mean_ci=round(module_mean_cis[component_idx], 3),

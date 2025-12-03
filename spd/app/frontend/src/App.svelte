@@ -1,5 +1,6 @@
 <script lang="ts">
-    import type { Status } from "./lib/api";
+    import type { LoadedRun } from "./lib/api";
+    import { RenderScan } from "svelte-render-scan";
     import * as api from "./lib/api";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
@@ -11,28 +12,28 @@
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>(null);
 
-    let status = $state<Status>({ train_run: null, loaded_run: null });
+    let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
 
     async function loadStatus() {
         if (loadingTrainRun) return;
         try {
-            const newStatus = await api.getStatus();
+            const newLoadedRun = await api.getStatus();
             loadingTrainRun = false;
 
             // if we have a run, but the backend says null, then we're out of sync (backend likely restarted)
             // in this case, we keep the local state so the user can still see what they were looking at
-            if (status.train_run && !newStatus.train_run) {
+            if (loadedRun && !newLoadedRun) {
                 backendError = "Backend state lost (restarted). Showing cached view.";
                 return;
             }
 
             // otherwise, we update the status
-            status = newStatus;
+            loadedRun = newLoadedRun;
             backendError = null;
 
-            if (!status.train_run) return;
-            trainWandbRunEntry = status.train_run.wandb_path;
+            if (!loadedRun) return;
+            trainWandbRunEntry = loadedRun.wandb_path;
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
@@ -46,7 +47,7 @@
         if (!input) return;
         try {
             loadingTrainRun = true;
-            status = { train_run: null, loaded_run: null };
+            loadedRun = null;
             const wandbRunPath = parseWandbRunPath(input);
             console.log("loading run", wandbRunPath);
             trainWandbRunEntry = wandbRunPath;
@@ -64,6 +65,7 @@
     let activeTab = $state<"activation-contexts" | "local-attributions" | null>(null);
 </script>
 
+<RenderScan />
 <div class="app-layout">
     <aside class="sidebar">
         <div class="section-heading">W&B Run ID</div>
@@ -81,7 +83,7 @@
             </button>
         </form>
         <div class="tab-navigation">
-            {#if status.loaded_run}
+            {#if loadedRun}
                 <button
                     class="tab-button"
                     class:active={activeTab === "local-attributions"}
@@ -91,8 +93,6 @@
                 >
                     Local Attributions
                 </button>
-            {/if}
-            {#if status.train_run}
                 <button
                     class="tab-button"
                     class:active={activeTab === "activation-contexts"}
@@ -104,10 +104,10 @@
                 </button>
             {/if}
         </div>
-        {#if status.train_run}
+        {#if loadedRun}
             <div class="config">
                 <div class="section-heading">Config</div>
-                <pre>{status.train_run?.config_yaml}</pre>
+                <pre>{loadedRun.config_yaml}</pre>
             </div>
         {/if}
     </aside>
@@ -118,9 +118,9 @@
                 {backendError}
             </div>
         {/if}
-        {#if status.loaded_run && activeTab === "local-attributions"}
+        {#if loadedRun && activeTab === "local-attributions"}
             <LocalAttributionsTab />
-        {:else if status.train_run && activeTab === "activation-contexts"}
+        {:else if loadedRun && activeTab === "activation-contexts"}
             <ActivationContextsTab />
         {/if}
     </div>
@@ -129,7 +129,7 @@
 <style>
     .app-layout {
         display: flex;
-        min-height: 100vh;
+        height: 100vh;
     }
 
     .sidebar {
@@ -151,6 +151,7 @@
     .main-content {
         flex: 1;
         min-width: 0;
+        min-height: 0;
         padding: 1rem;
         display: flex;
         flex-direction: column;

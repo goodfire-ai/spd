@@ -3,21 +3,14 @@
  */
 
 import type {
-    RunInfo,
     PromptPreview,
     PromptData,
     ActivationContextsSummary,
     ComponentDetail,
     SearchResult,
-    ServerStatus,
     TokenizeResult,
 } from "./localAttributionsTypes";
 import { API_URL } from "./api";
-
-export type { ServerStatus };
-
-// Use the same API URL as the main app (unified backend on port 8000)
-const LOCAL_ATTR_API_URL = API_URL;
 
 class LocalAttributionsApiError extends Error {
     constructor(
@@ -40,26 +33,8 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     return data as T;
 }
 
-// Run management
-
-export async function listRuns(): Promise<RunInfo[]> {
-    return fetchJson<RunInfo[]>(`${LOCAL_ATTR_API_URL}/api/runs`);
-}
-
-export async function loadRun(wandbPath: string): Promise<{ status: string; run_id?: number; wandb_path?: string }> {
-    const url = new URL(`${LOCAL_ATTR_API_URL}/api/runs/load`);
-    url.searchParams.set("wandb_path", wandbPath);
-    return fetchJson(`${url}`, { method: "POST" });
-}
-
-export async function getStatus(): Promise<ServerStatus> {
-    return fetchJson<ServerStatus>(`${LOCAL_ATTR_API_URL}/api/status`);
-}
-
-// Prompts
-
 export async function listPrompts(): Promise<PromptPreview[]> {
-    return fetchJson<PromptPreview[]>(`${LOCAL_ATTR_API_URL}/api/prompts`);
+    return fetchJson<PromptPreview[]>(`${API_URL}/api/prompts`);
 }
 
 export type GetPromptParams = {
@@ -70,7 +45,7 @@ export type GetPromptParams = {
 };
 
 export async function getPrompt(promptId: number, params: GetPromptParams = {}): Promise<PromptData> {
-    const url = new URL(`${LOCAL_ATTR_API_URL}/api/prompt/${promptId}`);
+    const url = new URL(`${API_URL}/api/prompt/${promptId}`);
 
     if (params.maxMeanCI !== undefined) url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
     if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
@@ -91,7 +66,7 @@ export type GetPromptOptimizedParams = GetPromptParams & {
 };
 
 export async function getPromptOptimized(promptId: number, params: GetPromptOptimizedParams = {}): Promise<PromptData> {
-    const url = new URL(`${LOCAL_ATTR_API_URL}/api/prompt/${promptId}/optimized`);
+    const url = new URL(`${API_URL}/api/prompt/${promptId}/optimized`);
 
     if (params.labelToken !== undefined) url.searchParams.set("label_token", String(params.labelToken));
     if (params.impMinCoeff !== undefined) url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
@@ -111,19 +86,19 @@ export async function getPromptOptimized(promptId: number, params: GetPromptOpti
 // Activation contexts
 
 export async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {
-    return fetchJson<ActivationContextsSummary>(`${LOCAL_ATTR_API_URL}/api/activation_contexts/summary`);
+    return fetchJson<ActivationContextsSummary>(`${API_URL}/api/activation_contexts/summary`);
 }
 
 export async function getComponentDetail(layer: string, componentIdx: number): Promise<ComponentDetail> {
     return fetchJson<ComponentDetail>(
-        `${LOCAL_ATTR_API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`,
+        `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`,
     );
 }
 
 // Search
 
 export async function searchPrompts(components: string[], mode: "all" | "any" = "all"): Promise<SearchResult> {
-    const url = new URL(`${LOCAL_ATTR_API_URL}/api/search`);
+    const url = new URL(`${API_URL}/api/search`);
     url.searchParams.set("components", components.join(","));
     url.searchParams.set("mode", mode);
     return fetchJson<SearchResult>(url.toString());
@@ -132,7 +107,7 @@ export async function searchPrompts(components: string[], mode: "all" | "any" = 
 // Custom prompts
 
 export async function tokenizeText(text: string): Promise<TokenizeResult> {
-    const url = new URL(`${LOCAL_ATTR_API_URL}/api/tokenize`);
+    const url = new URL(`${API_URL}/api/tokenize`);
     url.searchParams.set("text", text);
     return fetchJson<TokenizeResult>(url.toString(), { method: "POST" });
 }
@@ -145,7 +120,7 @@ export type ComputeCustomPromptParams = {
 };
 
 export async function computeCustomPrompt(params: ComputeCustomPromptParams): Promise<PromptData> {
-    const url = new URL(`${LOCAL_ATTR_API_URL}/api/prompt/custom`);
+    const url = new URL(`${API_URL}/api/prompt/custom`);
     if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
     if (params.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(params.ciThreshold));
     if (params.outputProbThreshold !== undefined)
@@ -161,9 +136,7 @@ export async function computeCustomPrompt(params: ComputeCustomPromptParams): Pr
 // Prompt generation with CI harvesting
 
 export type GeneratePromptsConfig = {
-    nPrompts?: number;
-    ciThreshold?: number;
-    outputProbThreshold?: number;
+    nPrompts: number;
 };
 
 export type GeneratePromptsResult = {
@@ -175,11 +148,8 @@ export async function generatePrompts(
     config: GeneratePromptsConfig,
     onProgress?: (progress: number, count: number) => void,
 ): Promise<GeneratePromptsResult> {
-    const url = new URL(`${LOCAL_ATTR_API_URL}/api/prompts/generate`);
-    if (config.nPrompts !== undefined) url.searchParams.set("n_prompts", String(config.nPrompts));
-    if (config.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(config.ciThreshold));
-    if (config.outputProbThreshold !== undefined)
-        url.searchParams.set("output_prob_threshold", String(config.outputProbThreshold));
+    const url = new URL(`${API_URL}/api/prompts/generate`);
+    url.searchParams.set("n_prompts", String(config.nPrompts));
 
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {

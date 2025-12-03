@@ -105,23 +105,8 @@ As an example, let's trace how loading a W&B run works:
    - Creates data loader with tokenizer
    - Stores in `RunContextService` singleton
 
-5. **State Update** ([App.svelte](frontend/src/App.svelte))
 
-   - Frontend polls `/status` endpoint every 5s using `$effect` rune
-   - Receives updated status with loaded run info
-   - Reactive state update triggers UI re-render
-
-   ```typescript
-   let status = $state<Status>({ train_run: null });
-
-   $effect(() => {
-     loadStatus();
-     const interval = setInterval(loadStatus, 5000);
-     return () => clearInterval(interval);
-   });
-   ```
-
-6. **UI Renders** ([App.svelte](frontend/src/App.svelte))
+5. **UI Renders** ([App.svelte](frontend/src/App.svelte))
    - Sidebar shows config YAML
    - "Activation Contexts" tab becomes available
 

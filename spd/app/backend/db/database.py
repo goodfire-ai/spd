@@ -25,7 +25,6 @@ class Run:
 
     id: int
     wandb_path: str
-    n_blocks: int
 
 
 @dataclass
@@ -87,7 +86,6 @@ class LocalAttrDB:
             CREATE TABLE IF NOT EXISTS runs (
                 id INTEGER PRIMARY KEY,
                 wandb_path TEXT NOT NULL UNIQUE,
-                n_blocks INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -123,12 +121,12 @@ class LocalAttrDB:
     # Run operations
     # -------------------------------------------------------------------------
 
-    def create_run(self, wandb_path: str, n_blocks: int) -> int:
+    def create_run(self, wandb_path: str) -> int:
         """Create a new run. Returns the run ID."""
         conn = self._get_conn()
         cursor = conn.execute(
-            "INSERT INTO runs (wandb_path, n_blocks) VALUES (?, ?)",
-            (wandb_path, n_blocks),
+            "INSERT INTO runs (wandb_path) VALUES (?)",
+            (wandb_path,),
         )
         conn.commit()
         run_id = cursor.lastrowid
@@ -139,41 +137,29 @@ class LocalAttrDB:
         """Get a run by its wandb path."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT id, wandb_path, n_blocks FROM runs WHERE wandb_path = ?",
+            "SELECT id, wandb_path FROM runs WHERE wandb_path = ?",
             (wandb_path,),
         ).fetchone()
         if row is None:
             return None
-        return Run(id=row["id"], wandb_path=row["wandb_path"], n_blocks=row["n_blocks"])
+        return Run(id=row["id"], wandb_path=row["wandb_path"])
 
     def get_run(self, run_id: int) -> Run | None:
         """Get a run by ID."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT id, wandb_path, n_blocks FROM runs WHERE id = ?",
+            "SELECT id, wandb_path FROM runs WHERE id = ?",
             (run_id,),
         ).fetchone()
         if row is None:
             return None
-        return Run(id=row["id"], wandb_path=row["wandb_path"], n_blocks=row["n_blocks"])
-
-    def get_or_create_run(self, wandb_path: str, n_blocks: int) -> int:
-        """Get existing run by wandb_path or create new one. Returns run ID."""
-        existing = self.get_run_by_wandb_path(wandb_path)
-        if existing is not None:
-            return existing.id
-        return self.create_run(wandb_path, n_blocks)
+        return Run(id=row["id"], wandb_path=row["wandb_path"])
 
     def get_all_runs(self) -> list[Run]:
         """Get all runs in the database."""
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT id, wandb_path, n_blocks FROM runs ORDER BY created_at DESC"
-        ).fetchall()
-        return [
-            Run(id=row["id"], wandb_path=row["wandb_path"], n_blocks=row["n_blocks"])
-            for row in rows
-        ]
+        rows = conn.execute("SELECT id, wandb_path FROM runs ORDER BY created_at DESC").fetchall()
+        return [Run(id=row["id"], wandb_path=row["wandb_path"]) for row in rows]
 
     # -------------------------------------------------------------------------
     # Activation contexts operations

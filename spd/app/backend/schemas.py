@@ -46,17 +46,12 @@ class ModelActivationContexts(BaseModel):
     layers: dict[str, list[SubcomponentActivationContexts]]
 
 
-class TrainRun(BaseModel):
-    wandb_path: str
-    config_yaml: str
-
-
-class LoadedRunInfo(BaseModel):
-    """Info about a loaded run for the frontend."""
+class LoadedRun(BaseModel):
+    """Info about the currently loaded run."""
 
     id: int
     wandb_path: str
-    n_blocks: int
+    config_yaml: str
     has_activation_contexts: bool
     has_prompts: bool
     prompt_count: int
@@ -67,14 +62,8 @@ class RunInfo(BaseModel):
 
     id: int
     wandb_path: str
-    n_blocks: int
     prompt_count: int
     has_activation_contexts: bool
-
-
-class Status(BaseModel):
-    train_run: TrainRun | None
-    loaded_run: LoadedRunInfo | None = None
 
 
 class SubcomponentMetadata(BaseModel):

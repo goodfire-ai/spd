@@ -107,7 +107,6 @@ def get_sources_by_target(
     model: ComponentModel,
     device: str,
     sampling: SamplingType,
-    n_blocks: int,
 ) -> dict[str, list[str]]:
     """Find valid gradient connections grouped by target layer.
 
@@ -171,6 +170,7 @@ def get_sources_by_target(
         "mlp.c_fc",
         "mlp.down_proj",
     ]
+    n_blocks = get_model_n_blocks(model.target_model)
     for i in range(n_blocks):
         layers.extend([f"h.{i}.{layer_name}" for layer_name in component_layer_names])
     layers.append("output")
@@ -485,7 +485,7 @@ def extract_active_from_ci(
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]],
     output_probs: Float[Tensor, "1 seq vocab"],
     ci_threshold: float,
-    output_prob_threshold: float,
+    output_prob_threshold: float,  # TODO change me to topP (cumulative probability threshold)
     n_seq: int,
 ) -> dict[str, tuple[float, list[int]]]:
     """Build inverted index data directly from CI values.
@@ -530,3 +530,18 @@ def extract_active_from_ci(
     active["wte:0"] = (1.0, list(range(n_seq)))
 
     return active
+
+
+def get_model_n_blocks(model: nn.Module) -> int:
+    """Get the number of blocks in the model."""
+    from simple_stories_train.models.gpt2_simple import GPT2Simple
+    from simple_stories_train.models.llama_simple import LlamaSimple
+    from transformers.models.gpt2 import GPT2LMHeadModel
+
+    match model:
+        case GPT2LMHeadModel():
+            return len(model.transformer.h)
+        case GPT2Simple() | LlamaSimple():
+            return len(model.h)
+        case _:
+            raise ValueError(f"Unsupported model: {type(model)}")
