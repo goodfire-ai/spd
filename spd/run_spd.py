@@ -399,8 +399,10 @@ def optimize(
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
             sync_across_processes()
-            if config.grad_clip_norm is not None:
-                clip_grad_norm_(optimized_params, config.grad_clip_norm)
+            if config.grad_clip_norm_components is not None:
+                clip_grad_norm_(component_params, config.grad_clip_norm_components)
+            if config.grad_clip_norm_ci_fns is not None:
+                clip_grad_norm_(ci_fn_params, config.grad_clip_norm_ci_fns)
             optimizer.step()
 
     if is_main_process():
