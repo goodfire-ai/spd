@@ -6,7 +6,7 @@ to avoid importing script files with global execution.
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from jaxtyping import Bool, Float
@@ -200,6 +200,9 @@ def get_sources_by_target(
     return dict(sources_by_target)
 
 
+ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
+
+
 def compute_edges_from_ci(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
@@ -209,6 +212,7 @@ def compute_edges_from_ci(
     output_prob_threshold: float,
     device: str,
     show_progress: bool,
+    on_progress: ProgressCallback | None = None,
 ) -> LocalAttributionResult:
     """Core edge computation from pre-computed CI values.
 
@@ -267,10 +271,12 @@ def compute_edges_from_ci(
     edges: list[Edge] = []
 
     target_iter = sources_by_target.items()
+    total_source_layers = sum(len(sources) for sources in sources_by_target.values())
+    progress_count = 0
 
     if show_progress:
         pbar = tqdm(
-            total=sum(len(sources) for sources in sources_by_target.values()),
+            total=total_source_layers,
             desc="Source layers by target",
             leave=True,
         )
@@ -335,9 +341,12 @@ def compute_edges_from_ci(
                                     is_kv_to_o_pair_flag,
                                 )
                                 edges.append(edge)
+        progress_count += len(sources)
         if pbar is not None:
             # different targets have different number of sources so this makes the progress bar more accurate
             pbar.update(len(sources))
+        if on_progress is not None:
+            on_progress(progress_count, total_source_layers, target)
 
     if pbar is not None:
         pbar.close()
@@ -354,6 +363,7 @@ def compute_local_attributions(
     sampling: SamplingType,
     device: str,
     show_progress: bool,
+    on_progress: ProgressCallback | None = None,
 ) -> LocalAttributionResult:
     """Compute local attributions using the model's natural CI values.
 
@@ -377,6 +387,7 @@ def compute_local_attributions(
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
+        on_progress=on_progress,
     )
 
 

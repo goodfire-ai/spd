@@ -1,6 +1,6 @@
 <script lang="ts">
-    import type { LoadedRun } from "./lib/api";
     import { RenderScan } from "svelte-render-scan";
+    import type { LoadedRun } from "./lib/api";
     import * as api from "./lib/api";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";

@@ -18,173 +18,10 @@ from spd.app.backend.schemas import (
     ModelActivationContexts,
     SubcomponentActivationContexts,
 )
-
-# from spd.app.backend.services.run_context_service import
-# TrainRunContext
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
-
-
-def _apply_position_separation(
-    seq_positions: NDArray[np.int64],
-    batch_indices: NDArray[np.int64],
-    min_separation: int,
-) -> NDArray[np.bool_]:
-    """Filter firings to ensure minimum token separation within same batch example.
-
-    Since torch.where returns indices in lexicographic order, positions within
-    each batch are already sorted ascending. We just track the last kept position
-    per batch and reject any firing too close to it.
-
-    Args:
-        seq_positions: Sequence position for each firing
-        batch_indices: Batch index for each firing
-        min_separation: Minimum token separation between kept firings
-
-    Returns:
-        Boolean mask indicating which firings to keep
-    """
-    n = len(seq_positions)
-    if n == 0 or min_separation <= 0:
-        return np.ones(n, dtype=bool)
-
-    keep = np.ones(n, dtype=bool)
-    last_kept: dict[int, int] = {}  # batch_idx -> last kept position
-
-    for i in range(n):
-        b = int(batch_indices[i])
-        pos = int(seq_positions[i])
-
-        if b in last_kept and pos < last_kept[b] + min_separation:
-            keep[i] = False
-        else:
-            last_kept[b] = pos
-
-    return keep
-
-
-@dataclass
-class SubcomponentExample:
-    window_token_ids: list[int]
-    """Windowed tokens around the firing position"""
-    active_pos_in_window: int
-    """Position within window_token_ids corresponding to pos"""
-    token_ci_values: list[float]
-    """CI values aligned to window_token_ids"""
-
-    @property
-    def active_pos_ci(self) -> float:
-        return self.token_ci_values[self.active_pos_in_window]
-
-
-class _TopKExamples:
-    """Maintains top-k examples by CI value using a min-heap."""
-
-    def __init__(self, k: int):
-        self.k = k
-        # Min-heap of tuples (importance, counter, example)
-        self.heap: list[tuple[float, int, SubcomponentExample]] = []
-        self._counter: int = 0
-
-    def add_batch(
-        self,
-        window_token_ids: NDArray[np.int64],
-        window_ci_values: NDArray[np.float32],
-        active_positions: NDArray[np.int64],
-        ci_at_active: NDArray[np.float32],
-        pad_token_id: int,
-    ) -> None:
-        """Add a batch of examples, keeping only top-k overall.
-
-        This is more efficient than calling maybe_add() repeatedly because:
-        1. We pre-sort by CI value and only process candidates that could make top-k
-        2. We use numpy arrays directly instead of Python lists where possible
-        """
-        n_examples = len(ci_at_active)
-        if n_examples == 0:
-            return
-
-        # Sort by CI descending - we only need to consider examples that could make top-k
-        sorted_indices = np.argsort(ci_at_active)[::-1]
-
-        # Early termination threshold: if heap is full, we can skip examples below min
-        min_threshold = self.heap[0][0] if len(self.heap) >= self.k else float("-inf")
-
-        for idx in sorted_indices:
-            ci_val = float(ci_at_active[idx])
-
-            # Early termination: since sorted descending, if we're below threshold, stop
-            if len(self.heap) >= self.k and ci_val <= min_threshold:
-                break
-
-            # Trim padding from this example
-            tokens = window_token_ids[idx]
-            ci_vals = window_ci_values[idx]
-            active_pos = int(active_positions[idx])
-
-            start_idx, end_idx = _get_pad_indices_numpy(tokens, pad_token_id)
-
-            ex = SubcomponentExample(
-                active_pos_in_window=active_pos - start_idx,
-                window_token_ids=tokens[start_idx:end_idx].tolist(),
-                token_ci_values=ci_vals[start_idx:end_idx].tolist(),
-            )
-
-            key = (ci_val, self._counter, ex)
-            self._counter += 1
-
-            if len(self.heap) < self.k:
-                heapq.heappush(self.heap, key)
-                min_threshold = self.heap[0][0]
-            elif ci_val > self.heap[0][0]:
-                heapq.heapreplace(self.heap, key)
-                min_threshold = self.heap[0][0]
-
-    def as_columnar(
-        self,
-        token_strings: dict[int, str],
-    ) -> tuple[list[list[str]], list[list[float]], list[int], list[float]]:
-        """Return columnar data: (example_tokens, example_ci, active_pos, active_ci)"""
-        sorted_examples = [ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)]
-
-        example_tokens = []
-        example_ci = []
-        active_pos = []
-        active_ci = []
-        for ex in sorted_examples:
-            example_tokens.append([token_strings[tid] for tid in ex.window_token_ids])
-            example_ci.append([round(v, 3) for v in ex.token_ci_values])
-            active_pos.append(ex.active_pos_in_window)
-            active_ci.append(round(ex.active_pos_ci, 3))
-
-        return example_tokens, example_ci, active_pos, active_ci
-
-
-def _get_pad_indices_numpy(arr: NDArray[np.int64], pad_val: int) -> tuple[int, int]:
-    """Find start/end indices excluding padding. Vectorized version."""
-    non_pad = arr != pad_val
-    if not non_pad.any():
-        return 0, 0
-    non_pad_indices = np.where(non_pad)[0]
-    return int(non_pad_indices[0]), int(non_pad_indices[-1]) + 1
-
-
-def roll_batch_size_1_into_x(
-    singleton_batches: Iterable[Tensor],
-    batch_size: int,
-) -> Generator[Tensor]:
-    examples = []
-    for batch in singleton_batches:
-        assert batch.shape[0] == 1, "Batch size must be 1"
-        examples.append(batch[0])
-        if len(examples) == batch_size:
-            yield torch.stack(examples)
-            examples = []
-    if examples:
-        yield torch.stack(examples)
-
 
 DEFAULT_PAD_TOKEN_ID = 0
 
@@ -462,6 +299,165 @@ def get_activations_data_streaming(
 
     logger.info("Completed streaming activation contexts")
     yield ("complete", ModelActivationContexts(layers=model_ctxs))
+
+
+def _apply_position_separation(
+    seq_positions: NDArray[np.int64],
+    batch_indices: NDArray[np.int64],
+    min_separation: int,
+) -> NDArray[np.bool_]:
+    """Filter firings to ensure minimum token separation within same batch example.
+
+    Since torch.where returns indices in lexicographic order, positions within
+    each batch are already sorted ascending. We just track the last kept position
+    per batch and reject any firing too close to it.
+
+    Args:
+        seq_positions: Sequence position for each firing
+        batch_indices: Batch index for each firing
+        min_separation: Minimum token separation between kept firings
+
+    Returns:
+        Boolean mask indicating which firings to keep
+    """
+    n = len(seq_positions)
+    if n == 0 or min_separation <= 0:
+        return np.ones(n, dtype=bool)
+
+    keep = np.ones(n, dtype=bool)
+    last_kept: dict[int, int] = {}  # batch_idx -> last kept position
+
+    for i in range(n):
+        b = int(batch_indices[i])
+        pos = int(seq_positions[i])
+
+        if b in last_kept and pos < last_kept[b] + min_separation:
+            keep[i] = False
+        else:
+            last_kept[b] = pos
+
+    return keep
+
+
+@dataclass
+class _SubcomponentExample:
+    window_token_ids: list[int]
+    """Windowed tokens around the firing position"""
+    active_pos_in_window: int
+    """Position within window_token_ids corresponding to pos"""
+    token_ci_values: list[float]
+    """CI values aligned to window_token_ids"""
+
+    @property
+    def active_pos_ci(self) -> float:
+        return self.token_ci_values[self.active_pos_in_window]
+
+
+class _TopKExamples:
+    """Maintains top-k examples by CI value using a min-heap."""
+
+    def __init__(self, k: int):
+        self.k = k
+        # Min-heap of tuples (importance, counter, example)
+        self.heap: list[tuple[float, int, _SubcomponentExample]] = []
+        self._counter: int = 0
+
+    def add_batch(
+        self,
+        window_token_ids: NDArray[np.int64],
+        window_ci_values: NDArray[np.float32],
+        active_positions: NDArray[np.int64],
+        ci_at_active: NDArray[np.float32],
+        pad_token_id: int,
+    ) -> None:
+        """Add a batch of examples, keeping only top-k overall.
+
+        This is more efficient than calling maybe_add() repeatedly because:
+        1. We pre-sort by CI value and only process candidates that could make top-k
+        2. We use numpy arrays directly instead of Python lists where possible
+        """
+        n_examples = len(ci_at_active)
+        if n_examples == 0:
+            return
+
+        # Sort by CI descending - we only need to consider examples that could make top-k
+        sorted_indices = np.argsort(ci_at_active)[::-1]
+
+        # Early termination threshold: if heap is full, we can skip examples below min
+        min_threshold = self.heap[0][0] if len(self.heap) >= self.k else float("-inf")
+
+        for idx in sorted_indices:
+            ci_val = float(ci_at_active[idx])
+
+            # Early termination: since sorted descending, if we're below threshold, stop
+            if len(self.heap) >= self.k and ci_val <= min_threshold:
+                break
+
+            # Trim padding from this example
+            tokens = window_token_ids[idx]
+            ci_vals = window_ci_values[idx]
+            active_pos = int(active_positions[idx])
+
+            start_idx, end_idx = _get_pad_indices_numpy(tokens, pad_token_id)
+
+            ex = _SubcomponentExample(
+                active_pos_in_window=active_pos - start_idx,
+                window_token_ids=tokens[start_idx:end_idx].tolist(),
+                token_ci_values=ci_vals[start_idx:end_idx].tolist(),
+            )
+
+            key = (ci_val, self._counter, ex)
+            self._counter += 1
+
+            if len(self.heap) < self.k:
+                heapq.heappush(self.heap, key)
+                min_threshold = self.heap[0][0]
+            elif ci_val > self.heap[0][0]:
+                heapq.heapreplace(self.heap, key)
+                min_threshold = self.heap[0][0]
+
+    def as_columnar(
+        self,
+        token_strings: dict[int, str],
+    ) -> tuple[list[list[str]], list[list[float]], list[int], list[float]]:
+        """Return columnar data: (example_tokens, example_ci, active_pos, active_ci)"""
+        sorted_examples = [ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)]
+
+        example_tokens = []
+        example_ci = []
+        active_pos = []
+        active_ci = []
+        for ex in sorted_examples:
+            example_tokens.append([token_strings[tid] for tid in ex.window_token_ids])
+            example_ci.append([round(v, 3) for v in ex.token_ci_values])
+            active_pos.append(ex.active_pos_in_window)
+            active_ci.append(round(ex.active_pos_ci, 3))
+
+        return example_tokens, example_ci, active_pos, active_ci
+
+
+def _get_pad_indices_numpy(arr: NDArray[np.int64], pad_val: int) -> tuple[int, int]:
+    """Find start/end indices excluding padding. Vectorized version."""
+    non_pad = arr != pad_val
+    if not non_pad.any():
+        return 0, 0
+    non_pad_indices = np.where(non_pad)[0]
+    return int(non_pad_indices[0]), int(non_pad_indices[-1]) + 1
+
+
+def roll_batch_size_1_into_x(
+    singleton_batches: Iterable[Tensor],
+    batch_size: int,
+) -> Generator[Tensor]:
+    examples = []
+    for batch in singleton_batches:
+        assert batch.shape[0] == 1, "Batch size must be 1"
+        examples.append(batch[0])
+        if len(examples) == batch_size:
+            yield torch.stack(examples)
+            examples = []
+    if examples:
+        yield torch.stack(examples)
 
 
 def _get_component_token_pr(

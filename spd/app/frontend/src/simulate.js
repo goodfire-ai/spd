@@ -12,6 +12,7 @@ async function main() {
         n_tokens_either_side: 10,
         importance_threshold: 0.0,
         topk_examples: 40,
+        separation_tokens: 0,
     });
     console.log("subcomponent activation contexts got");
 }

@@ -34,11 +34,6 @@
 
     let { data, topK, nodeLayout, activationContextsSummary, pinnedNodes, onPinnedNodesChange }: Props = $props();
 
-    // Debug: track reactivity (remove when done debugging)
-    $inspect({ prop: "data", id: data.id, edgeCount: data.edges.length });
-    $inspect({ prop: "topK", topK });
-    $inspect({ prop: "nodeLayout", nodeLayout });
-
     // UI state
     let hoveredNode = $state<HoveredNode | null>(null);
     let hoveredEdge = $state<HoveredEdge | null>(null);
@@ -95,11 +90,14 @@
 
         return { componentImportanceLocal, maxImportanceLocal, maxAbsAttr };
     });
-    $inspect({ derived: "importance", componentCount: Object.keys(componentImportanceLocal).length });
 
     // Filter edges by topK and build active nodes set
     const { filteredEdges, activeNodes } = $derived.by(() => {
-        const sortedEdges = [...data.edges].sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+
+        const edgesCopy = [...data.edges];
+
+        const sortedEdges = edgesCopy.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+
         const filteredEdges = sortedEdges.slice(0, topK);
 
         const activeNodes = new Set<string>();
@@ -127,7 +125,8 @@
                 }
             }
 
-            for (const [probKey, entry] of Object.entries(data.outputProbs)) {
+            const outputProbsPlain = $state.snapshot(data.outputProbs);
+            for (const [probKey, entry] of Object.entries(outputProbsPlain)) {
                 if (entry.prob >= minProb) {
                     const [seqIdx, cIdx] = probKey.split(":");
                     activeNodes.add(`output:${seqIdx}:${cIdx}`);
@@ -137,7 +136,6 @@
 
         return { filteredEdges, activeNodes };
     });
-    $inspect({ derived: "filteredEdges", edgeCount: filteredEdges.length, nodeCount: activeNodes.size });
 
     // Build layout
     const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height } = $derived.by(() => {
@@ -276,7 +274,6 @@
 
         return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal };
     });
-    $inspect({ derived: "layout", nodeCount: Object.keys(nodePositions).length, width, height });
 
     // Get component offsets based on layout strategy
     function getComponentOffsets(
@@ -391,12 +388,10 @@
         }
         return svg;
     });
-    $inspect({ derived: "edgesSvgString", length: edgesSvgString.length });
 
-    // Highlighted node keys (from pinned + hovered)
-    const highlightedKeys = $derived.by(() => {
+    // Pinned node keys (stable - only changes when user clicks to pin/unpin)
+    const pinnedKeys = $derived.by(() => {
         const keys = new Set<string>();
-
         for (const pinned of pinnedNodes) {
             for (const nodeKey of Object.keys(nodePositions)) {
                 const [layer, , cIdx] = nodeKey.split(":");
@@ -405,47 +400,68 @@
                 }
             }
         }
-
-        if (hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.cIdx)) {
-            for (const nodeKey of Object.keys(nodePositions)) {
-                const [layer, , cIdx] = nodeKey.split(":");
-                if (layer === hoveredNode.layer && +cIdx === hoveredNode.cIdx) {
-                    keys.add(nodeKey);
-                }
-            }
-        }
-
         return keys;
     });
+
+    // Hovered node keys (changes frequently but kept separate to minimize re-renders)
+    const hoveredKeys = $derived.by(() => {
+        if (!hoveredNode || isNodePinned(hoveredNode.layer, hoveredNode.cIdx)) {
+            return new Set<string>();
+        }
+        const keys = new Set<string>();
+        for (const nodeKey of Object.keys(nodePositions)) {
+            const [layer, , cIdx] = nodeKey.split(":");
+            if (layer === hoveredNode.layer && +cIdx === hoveredNode.cIdx) {
+                keys.add(nodeKey);
+            }
+        }
+        return keys;
+    });
+
+    // Helper to check if a key is highlighted (avoids creating new Set on every hover)
+    function isKeyHighlighted(key: string): boolean {
+        return pinnedKeys.has(key) || hoveredKeys.has(key);
+    }
+
+    // Combined set for edge highlighting effect only
+    const highlightedKeys = $derived(new Set([...pinnedKeys, ...hoveredKeys]));
 
     function isNodePinned(layer: string, cIdx: number): boolean {
         return pinnedNodes.some((p) => p.layer === layer && p.cIdx === cIdx);
     }
 
-    function getNodeFill(layer: string, seqIdx: number, cIdx: number): string {
-        if (layer === "output") {
-            const probEntry = data.outputProbs[`${seqIdx}:${cIdx}`];
-            if (probEntry) {
-                const prob = probEntry.prob;
-                const saturation = 20 + prob * 60;
-                const lightness = 70 - prob * 35;
-                return `hsl(120, ${saturation}%, ${lightness}%)`;
-            }
-        }
-        return NODE_COLOR;
-    }
+    // Pre-compute node styles (fill, opacity) - only recomputes when data/layout changes, not on hover
+    const nodeStyles = $derived.by(() => {
+        const styles: Record<string, { fill: string; opacity: number }> = {};
 
-    function getNodeOpacity(layer: string, seqIdx: number, cIdx: number): number {
-        if (layer === "output") {
-            const probEntry = data.outputProbs[`${seqIdx}:${cIdx}`];
-            if (probEntry) {
-                return 0.4 + probEntry.prob * 0.6;
+        for (const nodeKey of Object.keys(nodePositions)) {
+            const [layer, seqIdxStr, cIdxStr] = nodeKey.split(":");
+            const seqIdx = parseInt(seqIdxStr);
+            const cIdx = parseInt(cIdxStr);
+
+            let fill = NODE_COLOR;
+            let opacity = 0.2;
+
+            if (layer === "output") {
+                const probEntry = data.outputProbs[`${seqIdx}:${cIdx}`];
+                if (probEntry) {
+                    const prob = probEntry.prob;
+                    const saturation = 20 + prob * 60;
+                    const lightness = 70 - prob * 35;
+                    fill = `hsl(120, ${saturation}%, ${lightness}%)`;
+                    opacity = 0.4 + prob * 0.6;
+                }
+            } else {
+                const importance = componentImportanceLocal[`${layer}:${seqIdx}:${cIdx}`] || 0;
+                const intensity = Math.min(1, importance / maxImportanceLocal);
+                opacity = 0.2 + intensity * 0.8;
             }
+
+            styles[nodeKey] = { fill, opacity };
         }
-        const importance = componentImportanceLocal[`${layer}:${seqIdx}:${cIdx}`] || 0;
-        const intensity = Math.min(1, importance / maxImportanceLocal);
-        return 0.2 + intensity * 0.8;
-    }
+
+        return styles;
+    });
 
     // Event handlers
     function handleNodeMouseEnter(event: MouseEvent, layer: string, seqIdx: number, cIdx: number) {
@@ -526,20 +542,43 @@
         return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
-    // Update edge highlighting via $effect (DOM manipulation for performance)
-    $effect(() => {
-        if (!graphContainer) return;
+    // Track previously highlighted edges to minimize DOM updates
+    let prevHighlightedEdges = new Set<Element>();
 
+    // Update edge highlighting via $effect (DOM manipulation for performance)
+    // Only updates edges that actually changed state
+    $effect(() => {
+        if (!graphContainer) {
+            return;
+        }
+
+        const currentHighlighted = new Set<Element>();
         const edges = graphContainer.querySelectorAll(".edge");
+
+        // Build set of currently highlighted edges
         edges.forEach((el) => {
             const src = el.getAttribute("data-src") || "";
             const tgt = el.getAttribute("data-tgt") || "";
             if (highlightedKeys.has(src) || highlightedKeys.has(tgt)) {
-                el.classList.add("highlighted");
-            } else {
-                el.classList.remove("highlighted");
+                currentHighlighted.add(el);
             }
         });
+
+        // Remove highlight from edges no longer highlighted
+        for (const el of prevHighlightedEdges) {
+            if (!currentHighlighted.has(el)) {
+                el.classList.remove("highlighted");
+            }
+        }
+
+        // Add highlight to newly highlighted edges
+        for (const el of currentHighlighted) {
+            if (!prevHighlightedEdges.has(el)) {
+                el.classList.add("highlighted");
+            }
+        }
+
+        prevHighlightedEdges = currentHighlighted;
     });
 </script>
 
@@ -585,7 +624,8 @@
                     {@const [layer, seqIdxStr, cIdxStr] = key.split(":")}
                     {@const seqIdx = parseInt(seqIdxStr)}
                     {@const cIdx = parseInt(cIdxStr)}
-                    {@const isHighlighted = highlightedKeys.has(key)}
+                    {@const isHighlighted = isKeyHighlighted(key)}
+                    {@const style = nodeStyles[key]}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <rect
@@ -595,9 +635,9 @@
                         y={pos.y - COMPONENT_SIZE / 2}
                         width={COMPONENT_SIZE}
                         height={COMPONENT_SIZE}
-                        fill={getNodeFill(layer, seqIdx, cIdx)}
+                        fill={style.fill}
                         rx="1"
-                        opacity={getNodeOpacity(layer, seqIdx, cIdx)}
+                        opacity={style.opacity}
                         onmouseenter={(e) => handleNodeMouseEnter(e, layer, seqIdx, cIdx)}
                         onmouseleave={handleNodeMouseLeave}
                         onclick={() => handleNodeClick(layer, cIdx)}

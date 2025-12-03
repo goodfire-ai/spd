@@ -12,6 +12,7 @@
     let nTokensEitherSide = $state(10);
     let importanceThreshold = $state(0.0);
     let topkExamples = $state(1000);
+    let separationTokens = $state(0);
 
     async function loadContexts() {
         loading = true;
@@ -25,6 +26,7 @@
                     n_tokens_either_side: nTokensEitherSide,
                     importance_threshold: importanceThreshold,
                     topk_examples: topkExamples,
+                    separation_tokens: separationTokens,
                 },
                 (p) => {
                     progress = p;
@@ -108,6 +110,18 @@
                         step="1"
                         min="1"
                         bind:value={topkExamples}
+                        onkeydown={handleKeydown}
+                    />
+                </div>
+
+                <div class="config-item">
+                    <label for="separation-tokens">Token Separation:</label>
+                    <input
+                        id="separation-tokens"
+                        type="number"
+                        step="1"
+                        min="0"
+                        bind:value={separationTokens}
                         onkeydown={handleKeydown}
                     />
                 </div>

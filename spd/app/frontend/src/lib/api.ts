@@ -52,6 +52,7 @@ export type ActivationContextsConfig = {
     n_batches: number;
     batch_size: number;
     n_tokens_either_side: number;
+    separation_tokens: number;
 };
 
 export type ProgressUpdate = {

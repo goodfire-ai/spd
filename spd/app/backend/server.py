@@ -773,9 +773,12 @@ def get_prompt(
     output_probs: dict[str, dict[str, float | str]] = {}
     output_probs_tensor = result.output_probs[0].cpu()
 
+    # Only send output probs above threshold to avoid sending entire vocab
     for s in range(output_probs_tensor.shape[0]):
         for c_idx in range(output_probs_tensor.shape[1]):
             prob = float(output_probs_tensor[s, c_idx].item())
+            if prob < output_prob_threshold:
+                continue
             key = f"{s}:{c_idx}"
             output_probs[key] = {
                 "prob": round(prob, 6),
@@ -788,6 +791,141 @@ def get_prompt(
         "edges": edges_dicts,
         "outputProbs": output_probs,
     }
+
+
+@app.get("/api/prompt/{prompt_id}/stream")
+@log_errors
+def get_prompt_stream(
+    prompt_id: int,
+    max_mean_ci: Annotated[float, Query(ge=0, le=1)] = 1.0,
+    normalize: Annotated[bool, Query()] = True,
+    ci_threshold: Annotated[float, Query(ge=0)] = 1e-6,
+    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+):
+    """Return prompt data with streaming progress updates via SSE."""
+    import queue
+    import threading
+
+    state = get_state()
+    try:
+        loaded = get_loaded_run()
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    prompt = state.db.get_prompt(prompt_id)
+    if prompt is None:
+        return JSONResponse({"error": f"Prompt {prompt_id} not found"}, status_code=404)
+
+    if prompt.run_id != loaded.run.id:
+        return JSONResponse(
+            {"error": f"Prompt {prompt_id} belongs to run {prompt.run_id}, not loaded run {loaded.run.id}"},
+            status_code=400,
+        )
+
+    token_ids = prompt.token_ids
+    token_strings = [loaded.tokenizer.decode([t]) for t in token_ids]
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+
+    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+
+    def on_progress(current: int, total: int, stage: str) -> None:
+        progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
+
+    def compute_thread() -> None:
+        try:
+            result = compute_local_attributions(
+                model=loaded.model,
+                tokens=tokens_tensor,
+                sources_by_target=loaded.sources_by_target,
+                ci_threshold=ci_threshold,
+                output_prob_threshold=output_prob_threshold,
+                sampling=loaded.sampling,
+                device=DEVICE,
+                show_progress=False,
+                on_progress=on_progress,
+            )
+            progress_queue.put({"type": "result", "result": result})
+        except Exception as e:
+            progress_queue.put({"type": "error", "error": str(e)})
+
+    def generate() -> Generator[str, None, None]:
+        thread = threading.Thread(target=compute_thread)
+        thread.start()
+
+        while True:
+            try:
+                msg = progress_queue.get(timeout=0.1)
+            except queue.Empty:
+                if not thread.is_alive():
+                    break
+                continue
+
+            if msg["type"] == "progress":
+                yield f"data: {json.dumps(msg)}\n\n"
+            elif msg["type"] == "error":
+                yield f"data: {json.dumps(msg)}\n\n"
+                break
+            elif msg["type"] == "result":
+                result = msg["result"]
+
+                # Build mean CI lookup for filtering
+                mean_ci_lookup: dict[str, float] = {}
+                if max_mean_ci < 1.0:
+                    activation_contexts = _ensure_activation_contexts_cached()
+                    if activation_contexts:
+                        for layer, subcomps in activation_contexts.items():
+                            for subcomp in subcomps:
+                                mean_ci_lookup[f"{layer}:{subcomp['subcomponent_idx']}"] = subcomp["mean_ci"]
+
+                edges = result.edges
+
+                if max_mean_ci < 1.0 and mean_ci_lookup:
+                    edges = [
+                        e for e in edges
+                        if mean_ci_lookup.get(f"{e[0]}:{e[2]}", 0.0) <= max_mean_ci
+                        and mean_ci_lookup.get(f"{e[1]}:{e[3]}", 0.0) <= max_mean_ci
+                    ]
+
+                edges.sort(key=lambda x: abs(x[6]), reverse=True)
+                edges = edges[:GLOBAL_EDGE_LIMIT]
+
+                if normalize:
+                    edges = normalize_edges_by_target(edges)
+
+                edges_dicts = [
+                    {"src": f"{e[0]}:{e[4]}:{e[2]}", "tgt": f"{e[1]}:{e[5]}:{e[3]}", "val": e[6]}
+                    for e in edges
+                ]
+
+                output_probs: dict[str, dict[str, float | str]] = {}
+                output_probs_tensor = result.output_probs[0].cpu()
+
+                for s in range(output_probs_tensor.shape[0]):
+                    for c_idx in range(output_probs_tensor.shape[1]):
+                        prob = float(output_probs_tensor[s, c_idx].item())
+                        if prob < output_prob_threshold:
+                            continue
+                        key = f"{s}:{c_idx}"
+                        output_probs[key] = {
+                            "prob": round(prob, 6),
+                            "token": loaded.tokenizer.decode([c_idx]),
+                        }
+
+                complete_data = {
+                    "type": "complete",
+                    "data": {
+                        "id": prompt.id,
+                        "tokens": token_strings,
+                        "edges": edges_dicts,
+                        "outputProbs": output_probs,
+                    },
+                }
+                yield f"data: {json.dumps(complete_data)}\n\n"
+                break
+
+        thread.join()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.get("/api/prompt/{prompt_id}/optimized")
@@ -889,9 +1027,13 @@ def get_prompt_optimized(
 
     output_probs: dict[str, dict[str, float | str]] = {}
     output_probs_tensor = result.output_probs[0].cpu()
+
+    # Only send output probs above threshold to avoid sending entire vocab
     for s in range(output_probs_tensor.shape[0]):
         for c_idx in range(output_probs_tensor.shape[1]):
             prob = float(output_probs_tensor[s, c_idx].item())
+            if prob < output_prob_threshold:
+                continue
             key = f"{s}:{c_idx}"
             output_probs[key] = {
                 "prob": round(prob, 6),
@@ -998,9 +1140,12 @@ def compute_custom_prompt(
     output_probs: dict[str, dict[str, float | str]] = {}
     output_probs_tensor = result.output_probs[0].cpu()
 
+    # Only send output probs above threshold to avoid sending entire vocab
     for s in range(output_probs_tensor.shape[0]):
         for c_idx in range(output_probs_tensor.shape[1]):
             prob = float(output_probs_tensor[s, c_idx].item())
+            if prob < output_prob_threshold:
+                continue
             key = f"{s}:{c_idx}"
             output_probs[key] = {
                 "prob": round(prob, 6),
