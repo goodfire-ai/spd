@@ -13,7 +13,7 @@ from jaxtyping import Bool, Float
 from torch import Tensor, nn
 from tqdm.auto import tqdm
 
-from spd.attributions.optim_cis.run_optim_cis import OptimCIConfigArgs, optimize_ci_values
+from spd.attributions.optim_cis.run_optim_cis import OptimCIConfig, optimize_ci_values
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
@@ -385,7 +385,7 @@ def compute_local_attributions_optimized(
     tokens: Float[Tensor, "1 seq"],
     label_token: int,
     sources_by_target: dict[str, list[str]],
-    optim_config: OptimCIConfigArgs,
+    optim_config: OptimCIConfig,
     ci_threshold: float,
     output_prob_threshold: float,
     device: str,

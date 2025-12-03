@@ -1,10 +1,9 @@
 # %%
 """Optimize CI values for a single prompt while keeping component weights fixed."""
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 
 import torch
 import torch.nn.functional as F
@@ -12,21 +11,16 @@ import torch.optim as optim
 from jaxtyping import Bool, Float
 from torch import Tensor
 from tqdm.auto import tqdm
-from transformers import AutoTokenizer
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
-from spd.base_config import BaseConfig
 from spd.configs import ImportanceMinimalityLossConfig, SamplingType
 from spd.metrics import importance_minimality_loss
 from spd.models.component_model import CIOutputs, ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.routing import AllLayersRouter
-from spd.scripts.model_loading import load_model_from_wandb
 
 # from spd.attributions.optim_cis.config import OptimCIConfig
 from spd.spd_types import Probability
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
-from spd.utils.general_utils import set_seed
 
 
 @dataclass
@@ -215,14 +209,10 @@ def compute_final_token_ce_kl(
 
 
 @dataclass
-class OptimCIConfigArgs:
+class OptimCIConfig:
     """Configuration for optimizing CI values on a single prompt."""
 
     seed: int
-    # Model and prompt
-    # wandb_path: str
-    # prompt: str
-    # label: str
 
     # Optimization hyperparameters
     lr: float
@@ -241,8 +231,6 @@ class OptimCIConfigArgs:
     # CI thresholds and sampling
     ci_threshold: float
     sampling: SamplingType
-    n_mask_samples: int
-    output_loss_type: Literal["mse", "kl"]
 
     ce_kl_rounding_threshold: float
 
@@ -251,7 +239,7 @@ def optimize_ci_values(
     model: ComponentModel,
     tokens: Tensor,
     label_token: int,
-    config: OptimCIConfigArgs,
+    config: OptimCIConfig,
     device: str,
 ) -> OptimizableCIParams:
     """Optimize CI values for a single prompt.
@@ -377,4 +365,3 @@ def get_out_dir() -> Path:
     out_dir = Path(__file__).parent / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
-

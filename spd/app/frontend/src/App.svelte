@@ -11,7 +11,7 @@
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>(null);
 
-    let status = $state<Status>({ train_run: null });
+    let status = $state<Status>({ train_run: null, loaded_run: null });
     let backendError = $state<string | null>(null);
 
     async function loadStatus() {
@@ -46,7 +46,7 @@
         if (!input) return;
         try {
             loadingTrainRun = true;
-            status = { train_run: null };
+            status = { train_run: null, loaded_run: null };
             const wandbRunPath = parseWandbRunPath(input);
             console.log("loading run", wandbRunPath);
             trainWandbRunEntry = wandbRunPath;
@@ -59,13 +59,7 @@
         }
     }
 
-    //   when the page loads, and every 5 seconds thereafter, load the status
-    $effect(() => {
-        loadStatus();
-        const interval = setInterval(loadStatus, 5000);
-        // return cleanup function to stop the polling
-        return () => clearInterval(interval);
-    });
+    $effect(() => void loadStatus());
 
     let activeTab = $state<"activation-contexts" | "local-attributions" | null>(null);
 </script>
@@ -87,27 +81,28 @@
             </button>
         </form>
         <div class="tab-navigation">
+            {#if status.loaded_run}
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "local-attributions"}
+                    onclick={() => {
+                        activeTab = "local-attributions";
+                    }}
+                >
+                    Local Attributions
+                </button>
+            {/if}
             {#if status.train_run}
                 <button
                     class="tab-button"
                     class:active={activeTab === "activation-contexts"}
                     onclick={() => {
-                        console.log("clicking activation contexts tab");
                         activeTab = "activation-contexts";
                     }}
                 >
                     Activation Contexts
                 </button>
             {/if}
-            <button
-                class="tab-button"
-                class:active={activeTab === "local-attributions"}
-                onclick={() => {
-                    activeTab = "local-attributions";
-                }}
-            >
-                Local Attributions
-            </button>
         </div>
         {#if status.train_run}
             <div class="config">
@@ -120,14 +115,13 @@
     <div class="main-content">
         {#if backendError}
             <div class="warning-banner">
-                ⚠️ {backendError}
+                {backendError}
             </div>
         {/if}
-        {#if status.train_run && activeTab === "activation-contexts"}
-            <ActivationContextsTab />
-        {/if}
-        {#if activeTab === "local-attributions"}
+        {#if status.loaded_run && activeTab === "local-attributions"}
             <LocalAttributionsTab />
+        {:else if status.train_run && activeTab === "activation-contexts"}
+            <ActivationContextsTab />
         {/if}
     </div>
 </div>

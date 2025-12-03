@@ -9,10 +9,10 @@ Attribution graphs are computed on-demand at serve time, not during generation.
 This makes generation much faster since CI computation is cheap and batchable.
 
 Usage:
-    python -m spd.attributions.generate \\
-        --wandb_path wandb:goodfire/spd/runs/jyo9duz5 \\
-        --n_prompts 100 \\
-        --n_gpus 4 \\
+    python -m spd.app.backend.scripts.generate_local_attr_db \
+        --wandb_path wandb:goodfire/spd/runs/jyo9duz5 \
+        --n_prompts 100 \
+        --n_gpus 4 \
         --output_path ./local_attr.db
 """
 
@@ -20,20 +20,23 @@ import fcntl
 import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import torch
 from jaxtyping import Int
 from torch import Tensor
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.app.backend.db import LocalAttrDB
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
+from spd.app.backend.schemas import ActivationContextsGenerationConfig
 from spd.app.backend.services.run_context_service import TrainRunContext, _build_token_lookup
 from spd.attributions.compute import compute_ci_only, extract_active_from_ci
-from spd.attributions.db import LocalAttrDB
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
-from spd.models.component_model import SPDRunInfo
+from spd.models.component_model import ComponentModel, SPDRunInfo
 
 
 @dataclass
@@ -78,8 +81,6 @@ def worker_fn(
     with open(lock_path, "w") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         run_info = SPDRunInfo.from_path(config.wandb_path)
-        from spd.models.component_model import ComponentModel
-
         model = ComponentModel.from_run_info(run_info)
         model = model.to(device)
         model.eval()
@@ -192,29 +193,24 @@ def generate_database(config: GenerateConfig) -> None:
     # This prevents race conditions when multiple workers try to download simultaneously
     print("\nLoading model (ensures cache is populated for workers)...")
     run_info = SPDRunInfo.from_path(config.wandb_path)
-    from spd.models.component_model import ComponentModel
-
     model = ComponentModel.from_run_info(run_info)
 
     # Compute activation contexts if not present
     existing_act_ctx = db.get_activation_contexts(run_id)
     if existing_act_ctx is not None:
-        print(f"Activation contexts already in DB ({len(existing_act_ctx)} layers), skipping...")
+        print(f"Activation contexts already in DB ({len(existing_act_ctx.layers)} layers), skipping...")
     else:
         print("\nComputing activation contexts (this only happens once)...")
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-        run_info = SPDRunInfo.from_path(config.wandb_path)
-        from spd.models.component_model import ComponentModel
-
-        model = ComponentModel.from_run_info(run_info)
         model = model.to(device)
         model.eval()
 
         spd_config = run_info.config
         assert spd_config.tokenizer_name is not None
         tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
-        token_string_lookup = _build_token_lookup(tokenizer, spd_config.tokenizer_name)
+        tokenizer_base = cast(PreTrainedTokenizerBase, cast(object, tokenizer))
+        token_string_lookup = _build_token_lookup(tokenizer_base, spd_config.tokenizer_name)
 
         task_config = spd_config.task_config
         assert isinstance(task_config, LMTaskConfig)
@@ -241,7 +237,7 @@ def generate_database(config: GenerateConfig) -> None:
             wandb_path=config.wandb_path,
             config=spd_config,
             cm=model,
-            tokenizer=tokenizer,
+            tokenizer=tokenizer_base,
             train_loader=act_ctx_loader,
             token_strings=token_string_lookup,
         )
@@ -261,12 +257,18 @@ def generate_database(config: GenerateConfig) -> None:
                 break
 
         assert activation_contexts is not None
-        act_ctx_dict = {
-            layer_name: [subcomp.model_dump() for subcomp in subcomps]
-            for layer_name, subcomps in activation_contexts.layers.items()
-        }
-        db.set_activation_contexts(run_id, act_ctx_dict)
-        print(f"  Stored activation contexts for {len(act_ctx_dict)} layers")
+
+        # Store with generation config
+        gen_config = ActivationContextsGenerationConfig(
+            importance_threshold=config.act_ctx_importance_threshold,
+            n_batches=config.act_ctx_n_batches,
+            batch_size=config.act_ctx_batch_size,
+            n_tokens_either_side=config.act_ctx_n_tokens_either_side,
+            topk_examples=config.act_ctx_topk_examples,
+            separation_tokens=config.act_ctx_separation_tokens,
+        )
+        db.set_activation_contexts(run_id, activation_contexts, gen_config)
+        print(f"  Stored activation contexts for {len(activation_contexts.layers)} layers")
 
         # Clean up model from main process (workers will load their own)
         del model

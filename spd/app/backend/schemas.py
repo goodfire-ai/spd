@@ -1,6 +1,24 @@
 from pydantic import BaseModel
 
 
+class ActivationContextsGenerationConfig(BaseModel):
+    """Configuration for generating activation contexts."""
+
+    importance_threshold: float = 0.01
+    n_batches: int = 100
+    batch_size: int = 32
+    n_tokens_either_side: int = 5
+    topk_examples: int = 20
+    separation_tokens: int = 0
+
+
+class PromptsGenerationConfig(BaseModel):
+    """Configuration for generating prompts."""
+
+    n_prompts: int = 1000
+    seq_length: int | None = None  # None = use model's max_seq_len
+
+
 class SubcomponentActivationContexts(BaseModel):
     """Activation context data for a single subcomponent, using columnar layout for efficiency."""
 
@@ -33,8 +51,30 @@ class TrainRun(BaseModel):
     config_yaml: str
 
 
+class LoadedRunInfo(BaseModel):
+    """Info about a loaded run for the frontend."""
+
+    id: int
+    wandb_path: str
+    n_blocks: int
+    has_activation_contexts: bool
+    has_prompts: bool
+    prompt_count: int
+
+
+class RunInfo(BaseModel):
+    """Info about a run in the database."""
+
+    id: int
+    wandb_path: str
+    n_blocks: int
+    prompt_count: int
+    has_activation_contexts: bool
+
+
 class Status(BaseModel):
     train_run: TrainRun | None
+    loaded_run: LoadedRunInfo | None = None
 
 
 class SubcomponentMetadata(BaseModel):

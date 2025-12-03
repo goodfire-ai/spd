@@ -6,19 +6,30 @@ export type TrainRun = {
     config_yaml: string;
 };
 
-export type Status = { train_run: TrainRun | null };
+export type LoadedRunInfo = {
+    id: number;
+    wandb_path: string;
+    n_blocks: number;
+    has_activation_contexts: boolean;
+    has_prompts: boolean;
+    prompt_count: number;
+};
+
+export type Status = {
+    train_run: TrainRun | null;
+    loaded_run: LoadedRunInfo | null;
+};
 
 export async function getStatus(): Promise<Status> {
-    const response = await fetch(`${API_URL}/status`);
+    const response = await fetch(`${API_URL}/api/status`);
     const data = await response.json();
     return data;
 }
 
 export async function loadRun(wandbRunPath: string): Promise<void> {
-    const url = new URL(`${API_URL}/runs/load`);
-    // url-encode the wandb run path because it contains slashes
-    const encodedWandbRunPath = encodeURIComponent(wandbRunPath);
-    url.searchParams.set("wandb_run_path", encodedWandbRunPath);
+    const url = new URL(`${API_URL}/api/runs/load`);
+    // searchParams.set handles URL encoding automatically
+    url.searchParams.set("wandb_path", wandbRunPath);
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
         const error = await response.json();
@@ -77,7 +88,7 @@ export async function getSubcomponentActivationContexts(
     config: ActivationContextsConfig,
     onProgress?: (progress: ProgressUpdate) => void,
 ): Promise<HarvestMetadata> {
-    const url = new URL(`${API_URL}/activation_contexts/subcomponents`);
+    const url = new URL(`${API_URL}/api/activation_contexts/subcomponents`);
     for (const [key, value] of Object.entries(config)) {
         url.searchParams.set(key, String(value));
     }
@@ -134,11 +145,12 @@ export async function getSubcomponentActivationContexts(
 
 // Lazy-load individual component data
 export async function getComponentDetail(
-    harvestId: string,
+    _harvestId: string,  // Kept for API compatibility but not used in unified server
     layer: string,
     componentIdx: number,
 ): Promise<ComponentDetail> {
-    const url = `${API_URL}/activation_contexts/${encodeURIComponent(harvestId)}/${encodeURIComponent(layer)}/${componentIdx}`;
+    // Unified server doesn't use harvest_id - component detail is per loaded run
+    const url = `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`;
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
@@ -146,27 +158,3 @@ export async function getComponentDetail(
     }
     return (await response.json()) as ComponentDetail;
 }
-
-// // Local attributions types
-// export type PairAttribution = {
-//     source: string;
-//     target: string;
-//     attribution: number[][][][]; // [s_in, trimmed_c_in, s_out, trimmed_c_out]
-//     trimmed_c_in_idxs: number[];
-//     trimmed_c_out_idxs: number[];
-//     is_kv_to_o_pair: boolean;
-// };
-
-// export type LocalAttributions = {
-//     tokens: string[];
-//     pairs: PairAttribution[];
-// };
-
-// export async function getLocalAttributions(): Promise<LocalAttributions> {
-//     const response = await fetch(`${API_URL}/local_attributions`);
-//     if (!response.ok) {
-//         const error = await response.json();
-//         throw new Error(error.detail || "Failed to get local attributions");
-//     }
-//     return (await response.json()) as LocalAttributions;
-// }

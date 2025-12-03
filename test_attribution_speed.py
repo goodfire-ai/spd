@@ -38,7 +38,7 @@ sources_by_target = get_sources_by_target(model, device, sampling, n_blocks)
 print(f"sources_by_target computed in {time.time() - t0:.1f}s")
 
 # Get a prompt
-prompt = db.get_prompt_simple(1)
+prompt = db.get_prompt(1)
 assert prompt is not None
 print(f"Prompt has {len(prompt.token_ids)} tokens")
 

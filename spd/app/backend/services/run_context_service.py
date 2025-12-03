@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizer
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.schemas import Status, TrainRun
 from spd.configs import Config
@@ -21,7 +21,7 @@ _PUNCT_NO_SPACE = set(".,!?;:'\")-]}>/")
 
 
 def _build_token_lookup(
-    tokenizer: PreTrainedTokenizer,
+    tokenizer: PreTrainedTokenizerBase,
     tokenizer_name: str,
 ) -> dict[int, str]:
     """Build token ID -> string lookup.
@@ -29,9 +29,10 @@ def _build_token_lookup(
     Uses tokenizer-specific strategy to produce strings that concatenate correctly.
     """
     lookup: dict[int, str] = {}
+    vocab_size: int = tokenizer.vocab_size  # pyright: ignore[reportAssignmentType]
 
-    for tid in range(tokenizer.vocab_size):  # pyright: ignore[reportAttributeAccessIssue]
-        decoded = tokenizer.decode([tid], skip_special_tokens=False)  # pyright: ignore[reportAttributeAccessIssue]
+    for tid in range(vocab_size):
+        decoded: str = tokenizer.decode([tid], skip_special_tokens=False)
 
         # Tokenizer name -> decode strategy
         # "wordpiece": ## = continuation (strip ##), punctuation = no space, others = space prefix
@@ -63,7 +64,7 @@ class TrainRunContext:
     wandb_path: str
     config: Config
     cm: ComponentModel
-    tokenizer: PreTrainedTokenizer
+    tokenizer: PreTrainedTokenizerBase
     train_loader: DataLoader[Any]
     token_strings: dict[int, str]  # Pre-built lookup for fast token stringification
 
@@ -123,18 +124,20 @@ class RunContextService:
         logger.info(f"Component model created on device: {DEVICE}")
 
         # Pre-build token string lookup for fast stringification
-        vocab_size: int = tokenizer.vocab_size  # pyright: ignore[reportAttributeAccessIssue]
+        # Cast tokenizer to base type (create_data_loader returns PreTrainedTokenizer)
+        tokenizer_base = cast(PreTrainedTokenizerBase, cast(object, tokenizer))
+        vocab_size: int = tokenizer_base.vocab_size  # pyright: ignore[reportAssignmentType]
         logger.info(f"Building token lookup table for vocab size {vocab_size}")
         tokenizer_name = run_info.config.tokenizer_name
         assert tokenizer_name is not None
-        token_strings = _build_token_lookup(tokenizer, tokenizer_name)
+        token_strings = _build_token_lookup(tokenizer_base, tokenizer_name)
 
         return TrainRunContext(
             wandb_id=wandb_path,
             wandb_path=wandb_path,
             config=run_info.config,
             cm=cm,
-            tokenizer=tokenizer,
+            tokenizer=tokenizer_base,
             train_loader=train_loader,
             token_strings=token_strings,
         )

@@ -1,4 +1,8 @@
-"""SQLite database for local attribution graphs."""
+"""SQLite database for local attribution data.
+
+Stores runs, activation contexts, prompts, and component activations.
+Attribution graphs are computed on-demand at serve time, not stored.
+"""
 
 import gzip
 import json
@@ -6,6 +10,13 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from spd.app.backend.schemas import (
+    ActivationContextsGenerationConfig,
+    ModelActivationContexts,
+)
+
+DEFAULT_DB_PATH = Path.home() / ".spd" / "local_attr.db"
 
 
 @dataclass
@@ -31,17 +42,20 @@ class LocalAttrDB:
 
     Schema:
     - runs: One row per SPD run (keyed by wandb_path)
-    - activation_contexts: Component metadata, 1:1 with runs
+    - activation_contexts: Component metadata + generation config, 1:1 with runs
     - prompts: One row per prompt, keyed by run_id
     - component_activations: Inverted index mapping components to prompts
 
     Attribution graphs are computed on-demand at serve time, not stored.
     """
 
-    def __init__(self, db_path: Path, check_same_thread: bool = True):
-        self.db_path = db_path
+    def __init__(self, db_path: Path | None = None, check_same_thread: bool = True):
+        self.db_path = db_path or DEFAULT_DB_PATH
         self._check_same_thread = check_same_thread
         self._conn: sqlite3.Connection | None = None
+
+        # Ensure parent directory exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
@@ -81,7 +95,8 @@ class LocalAttrDB:
 
             CREATE TABLE IF NOT EXISTS activation_contexts (
                 run_id INTEGER PRIMARY KEY REFERENCES runs(id),
-                data BLOB NOT NULL
+                data BLOB NOT NULL,
+                config TEXT
             );
 
             CREATE TABLE IF NOT EXISTS prompts (
@@ -166,8 +181,20 @@ class LocalAttrDB:
     # Activation contexts operations
     # -------------------------------------------------------------------------
 
-    def get_activation_contexts(self, run_id: int) -> dict[str, Any] | None:
-        """Get the stored activation contexts for a run."""
+    def get_activation_contexts(self, run_id: int) -> ModelActivationContexts | None:
+        """Get the stored activation contexts for a run as a Pydantic model."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT data FROM activation_contexts WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        decompressed = gzip.decompress(row["data"])
+        json_data = json.loads(decompressed.decode("utf-8"))
+        return ModelActivationContexts.model_validate(json_data)
+
+    def get_activation_contexts_raw(self, run_id: int) -> dict[str, Any] | None:
+        """Get the stored activation contexts for a run as raw dict."""
         conn = self._get_conn()
         row = conn.execute(
             "SELECT data FROM activation_contexts WHERE run_id = ?", (run_id,)
@@ -179,16 +206,43 @@ class LocalAttrDB:
         assert isinstance(json_data, dict)
         return json_data
 
-    def set_activation_contexts(self, run_id: int, contexts: dict[str, Any]) -> None:
-        """Store activation contexts for a run (computed once per model)."""
+    def get_activation_contexts_config(
+        self, run_id: int
+    ) -> ActivationContextsGenerationConfig | None:
+        """Get the generation config used for activation contexts."""
         conn = self._get_conn()
-        json_bytes = json.dumps(contexts).encode("utf-8")
+        row = conn.execute(
+            "SELECT config FROM activation_contexts WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if row is None or row["config"] is None:
+            return None
+        config_dict = json.loads(row["config"])
+        return ActivationContextsGenerationConfig.model_validate(config_dict)
+
+    def set_activation_contexts(
+        self,
+        run_id: int,
+        contexts: ModelActivationContexts,
+        config: ActivationContextsGenerationConfig | None = None,
+    ) -> None:
+        """Store activation contexts for a run."""
+        conn = self._get_conn()
+        json_bytes = json.dumps(contexts.model_dump()).encode("utf-8")
         compressed = gzip.compress(json_bytes)
+        config_json = json.dumps(config.model_dump()) if config else None
         conn.execute(
-            "INSERT OR REPLACE INTO activation_contexts (run_id, data) VALUES (?, ?)",
-            (run_id, compressed),
+            "INSERT OR REPLACE INTO activation_contexts (run_id, data, config) VALUES (?, ?, ?)",
+            (run_id, compressed, config_json),
         )
         conn.commit()
+
+    def has_activation_contexts(self, run_id: int) -> bool:
+        """Check if activation contexts exist for a run."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT 1 FROM activation_contexts WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        return row is not None
 
     # -------------------------------------------------------------------------
     # Prompt operations
@@ -198,14 +252,14 @@ class LocalAttrDB:
         self,
         run_id: int,
         token_ids: list[int],
-        active_components: dict[str, tuple[float, list[int]]],
+        active_components: dict[str, tuple[float, list[int]]] | None = None,
     ) -> int:
         """Add a prompt to the database.
 
         Args:
             run_id: The run this prompt belongs to.
             token_ids: List of token IDs for this prompt.
-            active_components: Dict mapping component_key -> (max_ci, positions).
+            active_components: Optional dict mapping component_key -> (max_ci, positions).
 
         Returns:
             The prompt ID.
@@ -219,13 +273,14 @@ class LocalAttrDB:
         prompt_id = cursor.lastrowid
         assert prompt_id is not None
 
-        for component_key, (max_ci, positions) in active_components.items():
-            conn.execute(
-                """INSERT INTO component_activations
-                   (prompt_id, component_key, max_ci, positions)
-                   VALUES (?, ?, ?, ?)""",
-                (prompt_id, component_key, max_ci, json.dumps(positions)),
-            )
+        if active_components:
+            for component_key, (max_ci, positions) in active_components.items():
+                conn.execute(
+                    """INSERT INTO component_activations
+                       (prompt_id, component_key, max_ci, positions)
+                       VALUES (?, ?, ?, ?)""",
+                    (prompt_id, component_key, max_ci, json.dumps(positions)),
+                )
 
         conn.commit()
         return prompt_id
@@ -261,6 +316,10 @@ class LocalAttrDB:
             "SELECT id FROM prompts WHERE run_id = ? ORDER BY id", (run_id,)
         ).fetchall()
         return [row["id"] for row in rows]
+
+    def has_prompts(self, run_id: int) -> bool:
+        """Check if any prompts exist for a run."""
+        return self.get_prompt_count(run_id) > 0
 
     # -------------------------------------------------------------------------
     # Query operations
@@ -312,11 +371,7 @@ class LocalAttrDB:
         return [row["prompt_id"] for row in rows]
 
     def get_component_stats(self, run_id: int, component_key: str) -> dict[str, Any]:
-        """Get statistics about a component across all prompts in a run.
-
-        Returns:
-            Dict with: prompt_count, avg_max_ci, prompt_ids
-        """
+        """Get statistics about a component across all prompts in a run."""
         conn = self._get_conn()
         rows = conn.execute(
             """SELECT ca.prompt_id, ca.max_ci, ca.positions
@@ -337,16 +392,3 @@ class LocalAttrDB:
             "avg_max_ci": avg_max_ci,
             "prompt_ids": prompt_ids,
         }
-
-    def get_unique_components(self, run_id: int) -> list[str]:
-        """Get all unique component keys for a run."""
-        conn = self._get_conn()
-        rows = conn.execute(
-            """SELECT DISTINCT ca.component_key
-               FROM component_activations ca
-               JOIN prompts p ON ca.prompt_id = p.id
-               WHERE p.run_id = ?
-               ORDER BY ca.component_key""",
-            (run_id,),
-        ).fetchall()
-        return [row["component_key"] for row in rows]

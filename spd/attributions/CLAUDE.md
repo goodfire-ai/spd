@@ -58,3 +58,6 @@ python -m spd.attributions.server --db_path ./local_attr.db --port 8765
 ## TODO
 
 - [ ] Slim down activation_contexts - frontend only uses `mean_ci` and first 20 `example_tokens`, but we store much more (`example_ci`, `example_active_pos`, `pr_tokens`, etc.)
+- [ ] Use proper FastAPI startup events / lifecycle handling approach
+- [ ] Clean up db schema (this will be interactive with the user). The meta table is messy, and we
+  may not be handling global keying (by run id, etc.) correctly

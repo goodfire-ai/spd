@@ -309,11 +309,264 @@
         .stats { margin: 0.25rem 0; font-size: 0.85rem; }
         h4 { margin: 0.75rem 0 0.25rem 0; font-size: 0.85rem; }
         .tables-row { display: flex; gap: 2rem; flex-wrap: wrap; }
+        /* Run selection overlay */
+        .run-selection-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        .run-selection-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            max-width: 600px;
+            width: 90%;
+        }
+        .run-selection-card h2 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.5rem;
+        }
+        .run-input-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .run-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+        .run-input:focus {
+            outline: none;
+            border-color: #2196f3;
+        }
+        .run-load-btn {
+            padding: 0.75rem 1.5rem;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .run-load-btn:hover:not(:disabled) { background: #1976d2; }
+        .run-load-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .run-error {
+            margin-top: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: #ffebee;
+            border: 1px solid #f44336;
+            border-radius: 4px;
+            color: #c62828;
+            font-size: 0.9rem;
+        }
+        .available-runs-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .available-run {
+            padding: 0.75rem 1rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .available-run:hover {
+            border-color: #2196f3;
+            background: #e3f2fd;
+        }
+        .available-run-path {
+            font-family: monospace;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        .available-run-meta {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 0.25rem;
+            display: flex;
+            gap: 1rem;
+        }
+        /* Loaded run indicator */
+        .loaded-run-indicator {
+            padding: 0.5rem 1rem;
+            background: #e8f5e9;
+            border-bottom: 1px solid #c8e6c9;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .loaded-run-indicator code {
+            background: rgba(0,0,0,0.05);
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.8rem;
+        }
+        .change-run-btn {
+            padding: 0.25rem 0.5rem;
+            background: transparent;
+            border: 1px solid #4caf50;
+            color: #4caf50;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .change-run-btn:hover { background: rgba(76, 175, 80, 0.1); }
+        /* Custom prompt input */
+        .custom-prompt-section {
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .custom-prompt-input-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .custom-prompt-input {
+            flex: 1;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        .custom-prompt-input:focus {
+            outline: none;
+            border-color: #2196f3;
+        }
+        .tokenize-btn, .compute-btn {
+            padding: 0.5rem 1rem;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .tokenize-btn:hover:not(:disabled), .compute-btn:hover:not(:disabled) { background: #1976d2; }
+        .tokenize-btn:disabled, .compute-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .compute-btn { background: #4caf50; }
+        .compute-btn:hover:not(:disabled) { background: #388e3c; }
+        .cancel-btn {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            color: #666;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .cancel-btn:hover { background: #f5f5f5; }
+        .tokenization-preview {
+            margin-top: 0.75rem;
+            padding: 0.75rem;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        .tokenization-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .token-preview-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+        }
+        .token-preview-item {
+            padding: 2px 6px;
+            background: #e3f2fd;
+            border: 1px solid #90caf9;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+        .custom-prompt-error {
+            margin-top: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: #ffebee;
+            border: 1px solid #f44336;
+            border-radius: 4px;
+            color: #c62828;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 <body x-data="app()">
-    <!-- Sidebar -->
-    <div class="sidebar">
+    <!-- Run selection overlay (shown when no run is loaded) -->
+    <div x-show="!loadedRun" class="run-selection-overlay">
+        <div class="run-selection-card">
+            <h2>Select a Run</h2>
+            <p style="color: #666; margin-bottom: 1rem;">Enter a W&B run path or select from available runs below.</p>
+
+            <div class="run-input-group">
+                <input
+                    type="text"
+                    x-model="runPathInput"
+                    placeholder="entity/project/runid or https://wandb.ai/..."
+                    @keydown.enter="loadRun(runPathInput)"
+                    class="run-input"
+                >
+                <button
+                    @click="loadRun(runPathInput)"
+                    :disabled="runLoading || !runPathInput.trim()"
+                    class="run-load-btn"
+                >
+                    <template x-if="runLoading">
+                        <span class="loading-text"><span class="loading-spinner"></span></span>
+                    </template>
+                    <template x-if="!runLoading">
+                        <span>Load</span>
+                    </template>
+                </button>
+            </div>
+
+            <div class="run-error" x-show="runError" x-text="runError"></div>
+
+            <div x-show="availableRuns.length > 0" style="margin-top: 1.5rem;">
+                <h3 style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">Available Runs</h3>
+                <div class="available-runs-list">
+                    <template x-for="run in availableRuns" :key="run.id">
+                        <div class="available-run" @click="loadRun(run.wandb_path)">
+                            <div class="available-run-path" x-text="run.wandb_path.replace('wandb:', '')"></div>
+                            <div class="available-run-meta">
+                                <span x-text="`${run.prompt_count} prompts`"></span>
+                                <span x-text="`${run.n_blocks} blocks`"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div x-show="availableRuns.length === 0 && !runsLoading" style="margin-top: 1rem; color: #666;">
+                No runs in database. Generate some data first with <code>python -m spd.attributions.generate</code>
+            </div>
+
+            <div x-show="runsLoading" class="loading-text" style="margin-top: 1rem;">
+                <span class="loading-spinner"></span> Loading runs...
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar (only shown when run is loaded) -->
+    <div class="sidebar" x-show="loadedRun">
         <div class="sidebar-header">
             <h3>Search Prompts</h3>
             <button
@@ -347,8 +600,14 @@
         </div>
     </div>
 
-    <!-- Main content -->
-    <div class="main-content">
+    <!-- Main content (only shown when run is loaded) -->
+    <div class="main-content" x-show="loadedRun">
+        <!-- Loaded run indicator -->
+        <div class="loaded-run-indicator" x-show="loadedRun">
+            <span>Run: <code x-text="loadedRun?.wandb_path?.replace('wandb:', '')"></code></span>
+            <button class="change-run-btn" @click="loadedRun = null">Change Run</button>
+        </div>
+
         <h1>Local Attributions Graph</h1>
 
         <!-- Loading state -->
@@ -365,7 +624,8 @@
             <div class="controls">
                 <label>
                     Prompt:
-                    <select x-model="currentPromptId" @change="loadPrompt(parseInt($event.target.value))">
+                    <select x-model="currentPromptId" @change="$event.target.value && loadPrompt(parseInt($event.target.value))">
+                        <option value="">Select a prompt...</option>
                         <template x-for="p in allPrompts" :key="p.id">
                             <option :value="p.id" x-text="`${p.id}: ${p.preview}`"></option>
                         </template>
@@ -442,13 +702,72 @@
                 <span class="db-info">DB: <span x-text="promptCount"></span> prompts</span>
             </div>
 
+            <!-- Custom prompt input -->
+            <div class="custom-prompt-section">
+                <div class="custom-prompt-input-row">
+                    <input
+                        type="text"
+                        x-model="customPromptText"
+                        placeholder="Enter custom text to analyze..."
+                        @keydown.enter="tokenizeCustomPrompt()"
+                        class="custom-prompt-input"
+                    >
+                    <button
+                        @click="tokenizeCustomPrompt()"
+                        :disabled="!customPromptText.trim() || tokenizeLoading"
+                        class="tokenize-btn"
+                    >
+                        <template x-if="tokenizeLoading">
+                            <span class="loading-text"><span class="loading-spinner"></span></span>
+                        </template>
+                        <template x-if="!tokenizeLoading">
+                            <span>Tokenize</span>
+                        </template>
+                    </button>
+                </div>
+
+                <!-- Tokenization preview -->
+                <div x-show="tokenizedPreview" class="tokenization-preview">
+                    <div class="tokenization-header">
+                        <span><strong x-text="tokenizedPreview?.tokens?.length"></strong> tokens:</span>
+                        <button
+                            @click="computeCustomPrompt()"
+                            :disabled="promptLoading"
+                            class="compute-btn"
+                        >
+                            <template x-if="promptLoading">
+                                <span class="loading-text"><span class="loading-spinner"></span> Computing...</span>
+                            </template>
+                            <template x-if="!promptLoading">
+                                <span>Compute Graph</span>
+                            </template>
+                        </button>
+                        <button @click="tokenizedPreview = null" class="cancel-btn">Cancel</button>
+                    </div>
+                    <div class="token-preview-list">
+                        <template x-for="(tok, i) in tokenizedPreview?.tokens || []" :key="i">
+                            <span class="token-preview-item" x-text="tok"></span>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="custom-prompt-error" x-show="customPromptError" x-text="customPromptError"></div>
+            </div>
+
             <div class="graph-wrapper" style="position: relative;">
+                <!-- Empty state -->
+                <div x-show="!promptData && !promptLoading" style="display: flex; align-items: center; justify-content: center; min-height: 300px; color: #666;">
+                    <div style="text-align: center;">
+                        <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">Select a prompt above to view its attribution graph</p>
+                        <p style="font-size: 0.9rem; color: #999;" x-text="`${allPrompts.length} prompts available`"></p>
+                    </div>
+                </div>
                 <!-- Loading overlay -->
                 <div class="loading-overlay" x-show="promptLoading">
                     <span class="loading-text"><span class="loading-spinner"></span> Loading prompt...</span>
                 </div>
-                <div class="layer-labels-container" x-ref="layerLabels"></div>
-                <div class="graph-container">
+                <div x-show="promptData" class="layer-labels-container" x-ref="layerLabels"></div>
+                <div x-show="promptData" class="graph-container">
                     <svg x-ref="graph"></svg>
                     <div class="token-labels-container" x-ref="tokenLabels"></div>
                 </div>
@@ -581,6 +900,14 @@
                 // API
                 apiBase: window.location.origin || 'http://localhost:8765',
 
+                // Run selection state
+                availableRuns: [],
+                runsLoading: false,
+                runPathInput: '',
+                runLoading: false,
+                runError: null,
+                loadedRun: null,  // { id, wandb_path, n_blocks, prompt_count }
+
                 // Loading state
                 loading: true,
                 loadingMessage: 'Loading data...',
@@ -592,10 +919,16 @@
                 searchError: null,
                 activationContextsError: null,
 
+                // Custom prompt state
+                customPromptText: '',
+                tokenizedPreview: null,  // { token_ids, tokens, text }
+                tokenizeLoading: false,
+                customPromptError: null,
+
                 // Data
                 promptCount: 0,
                 allPrompts: [],
-                currentPromptId: null,
+                currentPromptId: '',
                 /**
                  * {
                  *   "id": number,
@@ -648,41 +981,83 @@
                 svgListenersBound: false,
 
                 async init() {
-                    timeStart('init.total');
+                    // Fetch available runs on startup
+                    await this.fetchAvailableRuns();
+                },
+
+                async fetchAvailableRuns() {
+                    this.runsLoading = true;
                     try {
-                        timeStart('init.fetchMeta');
-                        const metaResponse = await fetch(`${this.apiBase}/api/meta`);
-                        if (!metaResponse.ok) {
-                            throw new Error(`Server error: ${metaResponse.status} ${metaResponse.statusText}`);
+                        const response = await fetch(`${this.apiBase}/api/runs`);
+                        if (!response.ok) {
+                            throw new Error(`Server error: ${response.status} ${response.statusText}`);
                         }
-                        const meta = await metaResponse.json();
-                        timeEnd('init.fetchMeta');
-                        this.promptCount = meta.prompt_count;
-
-                        if (meta.prompt_count > 0) {
-                            // Load first prompt immediately
-                            // await this.loadPrompt(1);
-
-                            // Load prompts list in background
-                            timeStart('init.fetchPromptsList');
-                            const promptsResponse = await fetch(`${this.apiBase}/api/prompts`)
-                                // .then(r => {
-                            if (!promptsResponse.ok) throw new Error(`Server error: ${promptsResponse.status}`);
-                            this.allPrompts = await promptsResponse.json();
-                            timeEnd('init.fetchPromptsList');
-
-                            await this.loadPrompt(1);
-
-                            // Load activation contexts in background
-                            this.loadActivationContexts();
-                        } else {
-                            this.loadingMessage = 'No prompts in database';
-                        }
+                        this.availableRuns = await response.json();
                     } catch (e) {
-                        this.loadingMessage = `Error connecting to server: ${e.message}. Make sure the server is running.`;
-                        console.error(e);
+                        console.error('Error fetching runs:', e);
+                        this.runError = `Failed to fetch runs: ${e.message}`;
+                    } finally {
+                        this.runsLoading = false;
                     }
-                    timeEnd('init.total');
+                },
+
+                async loadRun(wandbPath) {
+                    if (!wandbPath || !wandbPath.trim()) return;
+
+                    this.runLoading = true;
+                    this.runError = null;
+
+                    try {
+                        // POST to load the run (this loads the model on server)
+                        const response = await fetch(`${this.apiBase}/api/runs/load?wandb_path=${encodeURIComponent(wandbPath)}`, {
+                            method: 'POST',
+                        });
+
+                        const result = await response.json();
+
+                        if (!response.ok) {
+                            throw new Error(result.error || `Server error: ${response.status}`);
+                        }
+
+                        // Get status to get full run info
+                        const statusResponse = await fetch(`${this.apiBase}/api/status`);
+                        const status = await statusResponse.json();
+
+                        if (!status.loaded_run) {
+                            throw new Error('Run loaded but status shows no loaded run');
+                        }
+
+                        this.loadedRun = status.loaded_run;
+                        this.promptCount = status.loaded_run.prompt_count;
+
+                        // Now load prompts for this run
+                        await this.loadPromptsForRun();
+
+                    } catch (e) {
+                        console.error('Error loading run:', e);
+                        this.runError = e.message;
+                    } finally {
+                        this.runLoading = false;
+                    }
+                },
+
+                async loadPromptsForRun() {
+                    try {
+                        const promptsResponse = await fetch(`${this.apiBase}/api/prompts`);
+                        if (!promptsResponse.ok) {
+                            const err = await promptsResponse.json();
+                            throw new Error(err.error || `Server error: ${promptsResponse.status}`);
+                        }
+                        this.allPrompts = await promptsResponse.json();
+                        this.loading = false;
+
+                        // Load activation contexts in background (doesn't require prompt)
+                        this.loadActivationContexts();
+                    } catch (e) {
+                        this.loadingMessage = `Error loading prompts: ${e.message}`;
+                        console.error(e);
+                        this.loading = false;
+                    }
                 },
 
                 async loadPrompt(promptId) {
@@ -800,6 +1175,117 @@
                         throw new Error('No prompt ID to reload');
                     }
                     await this.loadPrompt(this.currentPromptId);
+                },
+
+                async tokenizeCustomPrompt() {
+                    if (!this.customPromptText.trim()) return;
+
+                    this.tokenizeLoading = true;
+                    this.customPromptError = null;
+                    this.tokenizedPreview = null;
+
+                    try {
+                        const response = await fetch(
+                            `${this.apiBase}/api/tokenize?text=${encodeURIComponent(this.customPromptText)}`,
+                            { method: 'POST' }
+                        );
+                        const result = await response.json();
+
+                        if (!response.ok) {
+                            throw new Error(result.error || `Server error: ${response.status}`);
+                        }
+
+                        this.tokenizedPreview = result;
+                    } catch (e) {
+                        console.error('Error tokenizing:', e);
+                        this.customPromptError = `Tokenization failed: ${e.message}`;
+                    } finally {
+                        this.tokenizeLoading = false;
+                    }
+                },
+
+                async computeCustomPrompt() {
+                    if (!this.tokenizedPreview) return;
+
+                    this.promptLoading = true;
+                    this.promptError = null;
+                    this.customPromptError = null;
+
+                    try {
+                        const params = new URLSearchParams({
+                            normalize: this.normalizeEdges,
+                        });
+                        // Add token_ids as repeated query params
+                        for (const id of this.tokenizedPreview.token_ids) {
+                            params.append('token_ids', id);
+                        }
+
+                        const response = await fetch(
+                            `${this.apiBase}/api/prompt/custom?${params}`,
+                            { method: 'POST' }
+                        );
+                        const promptData = await response.json();
+
+                        if (!response.ok) {
+                            throw new Error(promptData.error || `Server error: ${response.status}`);
+                        }
+
+                        // Clear the custom prompt UI state
+                        this.tokenizedPreview = null;
+                        this.customPromptText = '';
+
+                        // Use same processing logic as loadPrompt
+                        this.currentPromptId = 'custom';
+                        this.promptData = promptData;
+                        this.optimizationResult = null;
+
+                        this.allEdges = promptData.edges.map(edge => ({
+                            srcKey: edge.src,
+                            tgtKey: edge.tgt,
+                            val: edge.val,
+                        }));
+
+                        // Find max attribution
+                        this.maxAbsAttr = 1;
+                        for (const edge of this.allEdges) {
+                            const absVal = Math.abs(edge.val);
+                            if (absVal > this.maxAbsAttr) {
+                                this.maxAbsAttr = absVal;
+                            }
+                        }
+
+                        // Build importance maps from edges
+                        this.componentImportance = {};
+                        this.componentImportanceLocal = {};
+                        for (const edge of this.allEdges) {
+                            const valSq = edge.val * edge.val;
+
+                            const [srcLayer, , srcCIdx] = edge.srcKey.split(':');
+                            const [tgtLayer, , tgtCIdx] = edge.tgtKey.split(':');
+                            const srcGlobalKey = `${srcLayer}:${srcCIdx}`;
+                            const tgtGlobalKey = `${tgtLayer}:${tgtCIdx}`;
+
+                            this.componentImportance[srcGlobalKey] = (this.componentImportance[srcGlobalKey] || 0) + valSq;
+                            this.componentImportance[tgtGlobalKey] = (this.componentImportance[tgtGlobalKey] || 0) + valSq;
+                            this.componentImportanceLocal[edge.srcKey] = (this.componentImportanceLocal[edge.srcKey] || 0) + valSq;
+                            this.componentImportanceLocal[edge.tgtKey] = (this.componentImportanceLocal[edge.tgtKey] || 0) + valSq;
+                        }
+
+                        this.maxImportanceLocal = 1;
+                        for (const imp of Object.values(this.componentImportanceLocal)) {
+                            if (imp > this.maxImportanceLocal) {
+                                this.maxImportanceLocal = imp;
+                            }
+                        }
+
+                        this.loading = false;
+                        this.$nextTick(() => this.render());
+                    } catch (e) {
+                        console.error('Error computing custom prompt:', e);
+                        this.customPromptError = `Computation failed: ${e.message}`;
+                    } finally {
+                        this.promptLoading = false;
+                    }
                 },
 
                 async loadActivationContexts() {
