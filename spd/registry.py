@@ -109,13 +109,13 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/gpt2_config.yaml"),
-        expected_runtime=60,
+        expected_runtime=4400,
     ),
     "ss_gpt2_simple": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_gpt2_simple_config.yaml"),
-        expected_runtime=330,
+        expected_runtime=3000,
     ),
     "ss_gpt2_simple_noln": ExperimentConfig(
         task_name="lm",
@@ -140,6 +140,12 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ts_config.yaml"),
         expected_runtime=120,
+    ),
+    "mem": ExperimentConfig(
+        task_name="mem",
+        decomp_script=Path("spd/experiments/mem/mem_decomposition.py"),
+        config_path=Path("spd/experiments/mem/mem_config.yaml"),
+        expected_runtime=15,
     ),
 }
 

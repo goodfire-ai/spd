@@ -111,7 +111,11 @@ def get_lr_schedule_fn(
     elif lr_schedule == "constant":
         return lambda *_: 1.0
     elif lr_schedule == "cosine":
-        return lambda step, steps: 1.0 if steps == 1 else np.cos(0.5 * np.pi * step / (steps - 1))
+        return (
+            lambda step, steps: 1.0
+            if steps == 1
+            else 0.1 + (1 - 0.1) * 0.5 * np.cos(np.pi * step / (steps - 1))
+        )
     else:
         # Exponential
         assert lr_exponential_halflife is not None  # Should have been caught by model validator
@@ -231,14 +235,32 @@ def calc_kl_divergence_lm(
 def calc_sum_recon_loss_lm(
     pred: Float[Tensor, "... vocab"],
     target: Float[Tensor, "... vocab"],
-    loss_type: Literal["mse", "kl"],
+    loss_type: Literal["mse", "kl", "mem"],
 ) -> Float[Tensor, ""]:
-    """Calculate the reconstruction loss for a language model without reduction."""
+    """Calculate the reconstruction loss for a language model without reduction.
+
+    Args:
+        pred: The predicted logits
+        target: The target logits
+        loss_type: The type of loss to compute:
+            - "mse": Mean squared error across all positions
+            - "kl": KL divergence across all positions
+            - "mem": KL divergence at the final sequence position only (for mem task)
+
+    Returns:
+        The summed loss (not yet divided by number of examples)
+    """
     match loss_type:
         case "mse":
             loss = ((pred - target) ** 2).sum()
         case "kl":
             loss = calc_kl_divergence_lm(pred=pred, target=target, reduce=False).sum()
+        case "mem":
+            # Only compute KL at the final sequence position
+            # pred/target shape: [batch, seq_len, vocab] -> take [:, -1, :]
+            pred_final = pred[:, -1, :]  # [batch, vocab]
+            target_final = target[:, -1, :]  # [batch, vocab]
+            loss = calc_kl_divergence_lm(pred=pred_final, target=target_final, reduce=False).sum()
     return loss
 
 
