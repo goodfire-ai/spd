@@ -1,13 +1,11 @@
 """Run SPD on a model."""
 
 import gc
-import random
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -264,17 +262,9 @@ def optimize(
     # Fast-forward data iterators and handle alive_tracker batch if resuming from checkpoint
     # IMPORTANT: Do this BEFORE the main training loop to position data correctly
     if dataloader_steps_consumed > 0:
-        # Save RNG state before fast-forwarding to avoid contaminating model RNG
-        # Fast-forwarding generates batches which advances the RNG, but we want
-        # to preserve the exact RNG state from the checkpoint for model training
-        saved_torch_rng = torch.get_rng_state()
-        saved_numpy_rng = np.random.get_state()
-        saved_python_rng = random.getstate()
-        saved_cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-
         # Fast-forward to skip already-consumed batches
         # We skip (dataloader_steps_consumed - 1) because we'll consume one more for alive_tracker
-        # but we do it BEFORE restoring RNG so it doesn't contaminate model training
+        # The fast-forward naturally advances the RNG state, which is what we want for deterministic resume
         steps_to_skip = dataloader_steps_consumed - 1
         logger.info(f"Fast-forwarding data iterators by {steps_to_skip} steps...")
         for _ in tqdm(
@@ -285,17 +275,8 @@ def optimize(
             next(train_iterator)
         logger.info("Data iterator fast-forward complete")
 
-        # Consume the alive_tracker batch BEFORE restoring RNG
-        # This ensures alive_tracker doesn't advance the model's RNG state
+        # Consume the alive_tracker batch
         sample_batch = extract_batch_data(next(train_iterator))
-
-        # Now restore RNG state for model training
-        torch.set_rng_state(saved_torch_rng)
-        np.random.set_state(saved_numpy_rng)
-        random.setstate(saved_python_rng)
-        if saved_cuda_rng is not None:
-            torch.cuda.set_rng_state_all(saved_cuda_rng)
-        logger.info("Restored RNG states after fast-forward and alive_tracker batch")
     else:
         # Normal case: just consume batch for alive_tracker
         sample_batch = extract_batch_data(next(train_iterator))
