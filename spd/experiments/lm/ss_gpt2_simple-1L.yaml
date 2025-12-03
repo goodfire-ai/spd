@@ -43,7 +43,7 @@ loss_metric_configs:
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr: 0.0002
-steps: 400_000
+steps: 40_000
 batch_size: 64
 gradient_accumulation_steps: 1
 faithfulness_warmup_steps: 200

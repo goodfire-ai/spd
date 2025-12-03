@@ -68,10 +68,11 @@ class CEandKLLosses(Metric):
         batch: Tensor,
         target_out: Tensor,
         ci: CIOutputs,
+        weight_deltas: dict[str, Tensor],
         **_: Any,
     ) -> None:
         ce_losses = self._calc_ce_and_kl_losses(
-            batch=batch, target_out=target_out, ci=ci.lower_leaky
+            batch=batch, target_out=target_out, ci=ci.lower_leaky, weight_deltas=weight_deltas
         )
 
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
@@ -91,7 +92,11 @@ class CEandKLLosses(Metric):
         return losses
 
     def _calc_ce_and_kl_losses(
-        self, batch: Tensor, target_out: Tensor, ci: dict[str, Tensor]
+        self,
+        batch: Tensor,
+        target_out: Tensor,
+        ci: dict[str, Tensor],
+        weight_deltas: dict[str, Tensor],
     ) -> dict[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
         masked_batch = batch.clone()
@@ -117,7 +122,7 @@ class CEandKLLosses(Metric):
             causal_importances=ci,
             component_mask_sampling=self.sampling,
             router=AllLayersRouter(),
-            weight_deltas=None,
+            weight_deltas=weight_deltas,
         )
         stoch_masked_logits = self.model(batch, mask_infos=mask_infos)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)
