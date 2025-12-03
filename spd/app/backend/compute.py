@@ -401,6 +401,7 @@ def compute_local_attributions_optimized(
     output_prob_threshold: float,
     device: str,
     show_progress: bool,
+    on_progress: ProgressCallback | None = None,
 ) -> OptimizedLocalAttributionResult:
     """Compute local attributions using optimized sparse CI values.
 
@@ -413,6 +414,7 @@ def compute_local_attributions_optimized(
         label_token=label_token,
         config=optim_config,
         device=device,
+        on_progress=on_progress,
     )
     ci_outputs = ci_params.create_ci_outputs(model, device)
 

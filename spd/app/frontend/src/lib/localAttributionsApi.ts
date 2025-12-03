@@ -153,6 +153,76 @@ export async function getPromptOptimized(promptId: number, params: GetPromptOpti
     return fetchJson<PromptData>(url.toString());
 }
 
+export async function getPromptOptimizedStreaming(
+    promptId: number,
+    params: GetPromptOptimizedParams = {},
+    onProgress?: (progress: PromptProgress) => void,
+): Promise<PromptData> {
+    const url = new URL(`${API_URL}/api/prompt/${promptId}/optimized/stream`);
+
+    if (params.labelToken !== undefined) url.searchParams.set("label_token", String(params.labelToken));
+    if (params.impMinCoeff !== undefined) url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
+    if (params.ceLossCoeff !== undefined) url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
+    if (params.steps !== undefined) url.searchParams.set("steps", String(params.steps));
+    if (params.lr !== undefined) url.searchParams.set("lr", String(params.lr));
+    if (params.pnorm !== undefined) url.searchParams.set("pnorm", String(params.pnorm));
+    if (params.maxMeanCI !== undefined) url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
+    if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
+    if (params.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(params.ciThreshold));
+    if (params.outputProbThreshold !== undefined)
+        url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+        const error = await response.json();
+        throw new LocalAttributionsApiError(error.error || `HTTP ${response.status}`, response.status);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("Response body is not readable");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: PromptData | null = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE messages
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+
+            const data = JSON.parse(line.substring(6));
+
+            if (data.type === "progress" && onProgress) {
+                onProgress({ current: data.current, total: data.total, stage: data.stage });
+            } else if (data.type === "error") {
+                throw new LocalAttributionsApiError(data.error, 500);
+            } else if (data.type === "complete") {
+                result = data.data;
+                await reader.cancel();
+                break;
+            }
+        }
+
+        if (result) break;
+    }
+
+    if (!result) {
+        throw new Error("No result received from stream");
+    }
+
+    return result;
+}
+
 // Activation contexts
 
 export async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {

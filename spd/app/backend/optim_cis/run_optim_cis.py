@@ -3,7 +3,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 import torch
 import torch.nn.functional as F
@@ -235,12 +235,16 @@ class OptimCIConfig:
     ce_kl_rounding_threshold: float
 
 
+ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
+
+
 def optimize_ci_values(
     model: ComponentModel,
     tokens: Tensor,
     label_token: int,
     config: OptimCIConfig,
     device: str,
+    on_progress: ProgressCallback | None = None,
 ) -> OptimizableCIParams:
     """Optimize CI values for a single prompt.
 
@@ -290,7 +294,11 @@ def optimize_ci_values(
     params = ci_params.get_parameters()
     optimizer = optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
 
+    progress_interval = max(1, config.steps // 20)  # Report ~20 times during optimization
     for step in tqdm(range(config.steps), desc="Optimizing CI values"):
+        if on_progress is not None and step % progress_interval == 0:
+            on_progress(step, config.steps, "optimizing")
+
         optimizer.zero_grad()
 
         # Create CI outputs from current parameters
