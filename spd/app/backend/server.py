@@ -615,7 +615,7 @@ def generate_prompts(
 
     # Create a data loader for generation
     task_config = runtime_cast(LMTaskConfig, loaded.config.task_config)
-    actual_seq_length = seq_length or task_config.max_seq_len
+    actual_seq_length = 8 # seq_length or task_config.max_seq_len
 
     train_data_config = DatasetConfig(
         name=task_config.dataset_name,
@@ -728,6 +728,7 @@ def get_prompt(
     token_strings = [loaded.tokenizer.decode([t]) for t in token_ids]
 
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+    print(f"[API] /api/prompt/{prompt_id} Running for prompt {token_strings} on device {DEVICE}")
     t_compute_start = time.time()
     result = compute_local_attributions(
         model=loaded.model,
@@ -737,7 +738,7 @@ def get_prompt(
         output_prob_threshold=output_prob_threshold,
         sampling=loaded.sampling,
         device=DEVICE,
-        show_progress=False,
+        show_progress=True,
     )
     t_compute_end = time.time()
 
