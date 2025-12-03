@@ -6,21 +6,6 @@ and activation contexts generation.
 
 Usage:
     python -m spd.app.backend.server --port 8000
-
-API Endpoints:
-    GET  /api/runs                             - List all runs in the database
-    POST /api/runs/load                        - Load a run by wandb_path
-    GET  /api/status                           - Current status (loaded run, if any)
-    GET  /api/activation_contexts/summary      - Component summary for loaded run
-    GET  /api/activation_contexts/{layer}/{idx} - Component detail (lazy-loaded)
-    POST /api/activation_contexts/generate     - Generate activation contexts
-    GET  /api/prompts                          - List prompts for loaded run
-    POST /api/prompts/generate                 - Generate prompts from data
-    GET  /api/prompt/{id}                      - Prompt with on-demand graph computation
-    GET  /api/prompt/{id}/optimized            - Prompt with optimized sparse CI
-    POST /api/prompt/custom                    - Compute graph for custom tokens
-    POST /api/tokenize                         - Tokenize text
-    GET  /api/search                           - Find prompts with specific components
 """
 
 import functools
@@ -67,6 +52,7 @@ from spd.app.backend.schemas import (
     SubcomponentMetadata,
     TrainRun,
 )
+from spd.app.backend.services.run_context_service import _build_token_lookup
 from spd.configs import Config, ImportanceMinimalityLossConfig, SamplingType
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
@@ -138,31 +124,6 @@ def parse_wandb_run_path(input_str: str) -> str:
         f' - "https://wandb.ai/<entity>/<project>/runs/<8-char id>"\n'
         f"Got: {input_str}"
     )
-
-
-# Characters that don't get a space prefix in wordpiece
-_PUNCT_NO_SPACE = set(".,!?;:'\")-]}>/")
-
-
-def _build_token_lookup(tokenizer: PreTrainedTokenizerBase, tokenizer_name: str) -> dict[int, str]:
-    """Build token ID -> string lookup for activation contexts generation."""
-    lookup: dict[int, str] = {}
-    vocab_size: int = tokenizer.vocab_size  # pyright: ignore[reportAssignmentType]
-    for tid in range(vocab_size):
-        decoded: str = tokenizer.decode([tid], skip_special_tokens=False)
-        match tokenizer_name:
-            case "SimpleStories/test-SimpleStories-gpt2-1.25M":
-                if decoded.startswith("##"):
-                    lookup[tid] = decoded[2:]
-                elif decoded and decoded[0] in _PUNCT_NO_SPACE:
-                    lookup[tid] = decoded
-                else:
-                    lookup[tid] = " " + decoded
-            case "openai-community/gpt2":
-                lookup[tid] = decoded
-            case _:
-                lookup[tid] = decoded
-    return lookup
 
 
 @dataclass
@@ -445,7 +406,6 @@ def get_activation_context_detail(layer: str, component_idx: int):
 
 
 @app.get("/api/activation_contexts/subcomponents")
-@app.post("/api/activation_contexts/generate")
 @log_errors
 def generate_activation_contexts(
     importance_threshold: float = 0.01,
@@ -561,6 +521,7 @@ def generate_activation_contexts(
 def get_prompts():
     """Return list of all prompts for the loaded run."""
     state = get_state()
+    assert state.loaded_run is not None, "No run loaded"
 
     try:
         loaded = get_loaded_run()
@@ -573,7 +534,7 @@ def get_prompts():
     for pid in prompt_ids:
         prompt = state.db.get_prompt(pid)
         assert prompt is not None, f"Prompt {pid} in index but not in DB"
-        token_strings = [loaded.tokenizer.decode([t]) for t in prompt.token_ids]
+        token_strings = [state.loaded_run.token_strings[t] for t in prompt.token_ids]
         results.append(
             {
                 "id": prompt.id,
