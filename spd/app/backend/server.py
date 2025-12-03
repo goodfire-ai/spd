@@ -46,6 +46,13 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
+from spd.app.backend.compute import (
+    compute_ci_only,
+    compute_local_attributions,
+    compute_local_attributions_optimized,
+    extract_active_from_ci,
+    get_sources_by_target,
+)
 from spd.app.backend.db import LocalAttrDB, Run
 from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
 from spd.app.backend.lib.edge_normalization import normalize_edges_by_target
@@ -59,13 +66,6 @@ from spd.app.backend.schemas import (
     Status,
     SubcomponentMetadata,
     TrainRun,
-)
-from spd.attributions.compute import (
-    compute_ci_only,
-    compute_local_attributions,
-    compute_local_attributions_optimized,
-    extract_active_from_ci,
-    get_sources_by_target,
 )
 from spd.configs import Config, ImportanceMinimalityLossConfig, SamplingType
 from spd.data import DatasetConfig, create_data_loader
@@ -132,7 +132,7 @@ def parse_wandb_run_path(input_str: str) -> str:
         return f"{entity}/{project}/{run_id}"
 
     raise ValueError(
-        f'Invalid W&B run reference. Expected either:\n'
+        f"Invalid W&B run reference. Expected either:\n"
         f' - "entity/project/xxxxxxxx" (8-char lowercase id)\n'
         f' - "wandb:entity/project/runs/xxxxxxxx"\n'
         f' - "https://wandb.ai/<entity>/<project>/runs/<8-char id>"\n'
@@ -411,8 +411,7 @@ def get_activation_contexts_summary():
     summary: dict[str, list[dict[str, Any]]] = {}
     for layer, subcomps in layers.items():
         summary[layer] = [
-            {"subcomponent_idx": s["subcomponent_idx"], "mean_ci": s["mean_ci"]}
-            for s in subcomps
+            {"subcomponent_idx": s["subcomponent_idx"], "mean_ci": s["mean_ci"]} for s in subcomps
         ]
     return summary
 
@@ -464,7 +463,7 @@ def generate_activation_contexts(
     try:
         loaded = get_loaded_run()
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
     # Create a data loader for generation
     task_config = runtime_cast(LMTaskConfig, loaded.config.task_config)
@@ -579,8 +578,7 @@ def get_prompts():
             {
                 "id": prompt.id,
                 "tokens": token_strings,
-                "preview": "".join(token_strings[:10])
-                + ("..." if len(token_strings) > 10 else ""),
+                "preview": "".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
             }
         )
     return results
@@ -615,7 +613,7 @@ def generate_prompts(
 
     # Create a data loader for generation
     task_config = runtime_cast(LMTaskConfig, loaded.config.task_config)
-    actual_seq_length = 8 # seq_length or task_config.max_seq_len
+    actual_seq_length = 8  # seq_length or task_config.max_seq_len
 
     train_data_config = DatasetConfig(
         name=task_config.dataset_name,
@@ -706,6 +704,7 @@ def get_prompt(
 ):
     """Return prompt data with on-demand graph computation."""
     import time
+
     print(f"[API] /api/prompt/{prompt_id} called")
 
     state = get_state()
@@ -720,7 +719,9 @@ def get_prompt(
 
     if prompt.run_id != loaded.run.id:
         return JSONResponse(
-            {"error": f"Prompt {prompt_id} belongs to run {prompt.run_id}, not loaded run {loaded.run.id}"},
+            {
+                "error": f"Prompt {prompt_id} belongs to run {prompt.run_id}, not loaded run {loaded.run.id}"
+            },
             status_code=400,
         )
 
@@ -830,7 +831,9 @@ def get_prompt_optimized(
 
     if prompt.run_id != loaded.run.id:
         return JSONResponse(
-            {"error": f"Prompt {prompt_id} belongs to run {prompt.run_id}, not loaded run {loaded.run.id}"},
+            {
+                "error": f"Prompt {prompt_id} belongs to run {prompt.run_id}, not loaded run {loaded.run.id}"
+            },
             status_code=400,
         )
 
@@ -1060,8 +1063,7 @@ def search_prompts(
             {
                 "id": prompt.id,
                 "tokens": token_strings,
-                "preview": "".join(token_strings[:10])
-                + ("..." if len(token_strings) > 10 else ""),
+                "preview": "".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
             }
         )
 
