@@ -38,21 +38,14 @@ export async function listPrompts(): Promise<PromptPreview[]> {
 }
 
 export type GetPromptParams = {
-    maxMeanCI?: number;
-    normalize?: boolean;
-    ciThreshold?: number;
-    outputProbThreshold?: number;
+    maxMeanCI: number;
+    normalize: boolean;
 };
 
-export async function getPrompt(promptId: number, params: GetPromptParams = {}): Promise<PromptData> {
+export async function getPrompt(promptId: number, params: GetPromptParams): Promise<PromptData> {
     const url = new URL(`${API_URL}/api/prompt/${promptId}`);
-
-    if (params.maxMeanCI !== undefined) url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
-    if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
-    if (params.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(params.ciThreshold));
-    if (params.outputProbThreshold !== undefined)
-        url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
-
+    url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
+    url.searchParams.set("normalize", String(params.normalize));
     return fetchJson<PromptData>(url.toString());
 }
 
@@ -64,16 +57,12 @@ export type PromptProgress = {
 
 export async function getPromptStreaming(
     promptId: number,
-    params: GetPromptParams = {},
+    params: GetPromptParams,
     onProgress?: (progress: PromptProgress) => void,
 ): Promise<PromptData> {
     const url = new URL(`${API_URL}/api/prompt/${promptId}/stream`);
-
-    if (params.maxMeanCI !== undefined) url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
-    if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
-    if (params.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(params.ciThreshold));
-    if (params.outputProbThreshold !== undefined)
-        url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
+    url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
+    url.searchParams.set("normalize", String(params.normalize));
 
     const response = await fetch(url.toString());
     if (!response.ok) {
@@ -126,33 +115,29 @@ export async function getPromptStreaming(
     return result;
 }
 
-export type GetPromptOptimizedParams = GetPromptParams & {
-    labelToken?: number;
-    impMinCoeff?: number;
-    ceLossCoeff?: number;
-    steps?: number;
-    lr?: number;
-    pnorm?: number;
+export type GetPromptOptimizedParams = {
+    labelToken: number;
+    impMinCoeff: number;
+    ceLossCoeff: number;
+    steps: number;
+    pnorm: number;
+    normalize: boolean;
+    outputProbThreshold: number;
 };
 
 export async function getPromptOptimizedStreaming(
     promptId: number,
-    params: GetPromptOptimizedParams = {},
+    params: GetPromptOptimizedParams,
     onProgress?: (progress: PromptProgress) => void,
 ): Promise<PromptData> {
     const url = new URL(`${API_URL}/api/prompt/${promptId}/optimized/stream`);
-
-    if (params.labelToken !== undefined) url.searchParams.set("label_token", String(params.labelToken));
-    if (params.impMinCoeff !== undefined) url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
-    if (params.ceLossCoeff !== undefined) url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
-    if (params.steps !== undefined) url.searchParams.set("steps", String(params.steps));
-    if (params.lr !== undefined) url.searchParams.set("lr", String(params.lr));
-    if (params.pnorm !== undefined) url.searchParams.set("pnorm", String(params.pnorm));
-    if (params.maxMeanCI !== undefined) url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
-    if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
-    if (params.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(params.ciThreshold));
-    if (params.outputProbThreshold !== undefined)
-        url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
+    url.searchParams.set("label_token", String(params.labelToken));
+    url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
+    url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
+    url.searchParams.set("steps", String(params.steps));
+    url.searchParams.set("pnorm", String(params.pnorm));
+    url.searchParams.set("normalize", String(params.normalize));
+    url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
 
     const response = await fetch(url.toString());
     if (!response.ok) {
@@ -236,23 +221,95 @@ export async function tokenizeText(text: string): Promise<TokenizeResult> {
 
 export type ComputeCustomPromptParams = {
     tokenIds: number[];
-    normalize?: boolean;
-    ciThreshold?: number;
-    outputProbThreshold?: number;
+    normalize: boolean;
 };
 
 export async function computeCustomPrompt(params: ComputeCustomPromptParams): Promise<PromptData> {
     const url = new URL(`${API_URL}/api/prompt/custom`);
-    if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
-    if (params.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(params.ciThreshold));
-    if (params.outputProbThreshold !== undefined)
-        url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
-
+    url.searchParams.set("normalize", String(params.normalize));
     return fetchJson<PromptData>(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token_ids: params.tokenIds }),
     });
+}
+
+export type ComputeCustomPromptOptimizedParams = {
+    tokenIds: number[];
+    labelToken: number;
+    impMinCoeff: number;
+    ceLossCoeff: number;
+    steps: number;
+    pnorm: number;
+    normalize: boolean;
+    outputProbThreshold: number;
+};
+
+export async function computeCustomPromptOptimizedStreaming(
+    params: ComputeCustomPromptOptimizedParams,
+    onProgress?: (progress: PromptProgress) => void,
+): Promise<PromptData> {
+    const url = new URL(`${API_URL}/api/prompt/custom/optimized/stream`);
+    url.searchParams.set("label_token", String(params.labelToken));
+    url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
+    url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
+    url.searchParams.set("steps", String(params.steps));
+    url.searchParams.set("pnorm", String(params.pnorm));
+    url.searchParams.set("normalize", String(params.normalize));
+    url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
+
+    const response = await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token_ids: params.tokenIds }),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new LocalAttributionsApiError(error.error || `HTTP ${response.status}`, response.status);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("Response body is not readable");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: PromptData | null = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+
+            const data = JSON.parse(line.substring(6));
+
+            if (data.type === "progress" && onProgress) {
+                onProgress({ current: data.current, total: data.total, stage: data.stage });
+            } else if (data.type === "error") {
+                throw new LocalAttributionsApiError(data.error, 500);
+            } else if (data.type === "complete") {
+                result = data.data;
+                await reader.cancel();
+                break;
+            }
+        }
+
+        if (result) break;
+    }
+
+    if (!result) {
+        throw new Error("No result received from stream");
+    }
+
+    return result;
 }
 
 // Prompt generation with CI harvesting

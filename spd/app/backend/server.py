@@ -427,12 +427,12 @@ def get_activation_context_detail(
 @app.get("/api/activation_contexts/subcomponents")
 @log_errors
 def generate_activation_contexts(
-    importance_threshold: float = 0.01,
-    n_batches: int = 100,
-    batch_size: int = 32,
-    n_tokens_either_side: int = 5,
-    topk_examples: int = 20,
-    separation_tokens: int = 0,
+    importance_threshold: Annotated[float, Query(gt=0, le=1)],
+    n_batches: Annotated[int, Query(gt=0)],
+    batch_size: Annotated[int, Query(gt=0)],
+    n_tokens_either_side: Annotated[int, Query(ge=0)],
+    topk_examples: Annotated[int, Query(gt=0)],
+    separation_tokens: Annotated[int, Query(ge=0)],
 ) -> StreamingResponse:
     """Generate activation contexts from training data.
 
@@ -665,15 +665,14 @@ def generate_prompts(
 @log_errors
 def get_prompt(
     prompt_id: int,
-    max_mean_ci: Annotated[float, Query(ge=0, le=1)] = 1.0,
-    normalize: Annotated[bool, Query()] = True,
-    ci_threshold: Annotated[float, Query(ge=0)] = 1e-6,
-    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+    max_mean_ci: Annotated[float, Query(ge=0, le=1)],
+    normalize: Annotated[bool, Query()],
 ):
     """Return prompt data with on-demand graph computation."""
     import time
 
-    print(f"[API] /api/prompt/{prompt_id} called")
+    ci_threshold = 1e-6
+    output_prob_threshold = 0.01
 
     state = get_state()
     try:
@@ -697,7 +696,6 @@ def get_prompt(
     token_strings = [loaded.tokenizer.decode([t]) for t in token_ids]
 
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
-    print(f"[API] /api/prompt/{prompt_id} Running for prompt {token_strings} on device {DEVICE}")
     t_compute_start = time.time()
     result = compute_local_attributions(
         model=loaded.model,
@@ -773,14 +771,15 @@ def get_prompt(
 @log_errors
 def get_prompt_stream(
     prompt_id: int,
-    max_mean_ci: Annotated[float, Query(ge=0, le=1)] = 1.0,
-    normalize: Annotated[bool, Query()] = True,
-    ci_threshold: Annotated[float, Query(ge=0)] = 1e-6,
-    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+    max_mean_ci: Annotated[float, Query(ge=0, le=1)],
+    normalize: Annotated[bool, Query()],
 ):
     """Return prompt data with streaming progress updates via SSE."""
     import queue
     import threading
+
+    ci_threshold = 1e-6
+    output_prob_threshold = 0.01
 
     state = get_state()
     try:
@@ -906,17 +905,19 @@ def get_prompt_stream(
 @log_errors
 def get_prompt_optimized(
     prompt_id: int,
-    label_token: Annotated[int | None, Query()] = None,
-    imp_min_coeff: Annotated[float, Query(gt=0)] = 0.1,
-    ce_loss_coeff: Annotated[float, Query(gt=0)] = 1.0,
-    steps: Annotated[int, Query(gt=0)] = 500,
-    lr: Annotated[float, Query(gt=0)] = 1e-2,
-    pnorm: Annotated[float, Query(gt=0, le=1)] = 0.3,
-    normalize: Annotated[bool, Query()] = True,
-    ci_threshold: Annotated[float, Query(ge=0)] = 1e-6,
-    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+    label_token: Annotated[int, Query()],
+    imp_min_coeff: Annotated[float, Query(gt=0)],
+    ce_loss_coeff: Annotated[float, Query(gt=0)],
+    steps: Annotated[int, Query(gt=0)],
+    pnorm: Annotated[float, Query(gt=0, le=1)],
+    normalize: Annotated[bool, Query()],
+    output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
 ):
     """Return prompt data with optimized sparse CI values."""
+
+    lr = 1e-2
+    ci_threshold = 1e-6
+
     import time
 
     state = get_state()
@@ -939,11 +940,6 @@ def get_prompt_optimized(
 
     token_ids = prompt.token_ids
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
-
-    if label_token is None:
-        with torch.no_grad():
-            logits = loaded.model(tokens_tensor)
-            label_token = int(logits[0, -1, :].argmax().item())
 
     label_str = loaded.tokenizer.decode([label_token])
     token_strings = [loaded.tokenizer.decode([t]) for t in token_ids]
@@ -1032,19 +1028,20 @@ def get_prompt_optimized(
 @log_errors
 def get_prompt_optimized_stream(
     prompt_id: int,
-    label_token: Annotated[int | None, Query()] = None,
-    imp_min_coeff: Annotated[float, Query(gt=0)] = 0.1,
-    ce_loss_coeff: Annotated[float, Query(gt=0)] = 1.0,
-    steps: Annotated[int, Query(gt=0)] = 500,
-    lr: Annotated[float, Query(gt=0)] = 1e-2,
-    pnorm: Annotated[float, Query(gt=0, le=1)] = 0.3,
-    normalize: Annotated[bool, Query()] = True,
-    ci_threshold: Annotated[float, Query(ge=0)] = 1e-6,
-    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+    label_token: Annotated[int, Query()],
+    imp_min_coeff: Annotated[float, Query(gt=0)],
+    ce_loss_coeff: Annotated[float, Query(gt=0)],
+    steps: Annotated[int, Query(gt=0)],
+    pnorm: Annotated[float, Query(gt=0, le=1)],
+    normalize: Annotated[bool, Query()],
+    output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
 ):
     """Return optimized prompt data with streaming progress updates via SSE."""
     import queue
     import threading
+
+    lr = 1e-2
+    ci_threshold = 1e-6
 
     state = get_state()
     try:
@@ -1064,15 +1061,7 @@ def get_prompt_optimized_stream(
 
     token_ids = prompt.token_ids
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
-
-    # Determine label token
-    resolved_label_token = label_token
-    if resolved_label_token is None:
-        with torch.no_grad():
-            logits = loaded.model(tokens_tensor)
-            resolved_label_token = int(logits[0, -1, :].argmax().item())
-
-    label_str = loaded.tokenizer.decode([resolved_label_token])
+    label_str = loaded.tokenizer.decode([label_token])
     token_strings = [loaded.tokenizer.decode([t]) for t in token_ids]
 
     optim_config = OptimCIConfig(
@@ -1101,7 +1090,7 @@ def get_prompt_optimized_stream(
             result = compute_local_attributions_optimized(
                 model=loaded.model,
                 tokens=tokens_tensor,
-                label_token=resolved_label_token,
+                label_token=label_token,
                 sources_by_target=loaded.sources_by_target,
                 optim_config=optim_config,
                 ci_threshold=ci_threshold,
@@ -1114,7 +1103,7 @@ def get_prompt_optimized_stream(
         except Exception as e:
             progress_queue.put({"type": "error", "error": str(e)})
 
-    def generate() -> Generator[str, None, None]:
+    def generate() -> Generator[str]:
         thread = threading.Thread(target=compute_thread)
         thread.start()
 
@@ -1166,7 +1155,7 @@ def get_prompt_optimized_stream(
                     edges=edges_typed,
                     outputProbs=output_probs,
                     optimization=OptimizationResult(
-                        label_token=resolved_label_token,
+                        label_token=label_token,
                         label_str=label_str,
                         imp_min_coeff=imp_min_coeff,
                         ce_loss_coeff=ce_loss_coeff,
@@ -1212,12 +1201,13 @@ def tokenize_text(text: str) -> TokenizeResponse:
 @log_errors
 def compute_custom_prompt(
     token_ids: Annotated[list[int], Body(embed=True)],
-    normalize: Annotated[bool, Query()] = True,
-    ci_threshold: Annotated[float, Query(ge=0)] = 1e-6,
-    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+    normalize: Annotated[bool, Query()],
 ):
     """Compute attribution graph for custom token IDs (not stored in DB)."""
     import time
+
+    ci_threshold = 1e-6
+    output_prob_threshold = 0.01
 
     try:
         loaded = get_loaded_run()
@@ -1280,6 +1270,147 @@ def compute_custom_prompt(
         edges=edges_typed,
         outputProbs=output_probs,
     )
+
+
+@app.post("/api/prompt/custom/optimized/stream")
+@log_errors
+def compute_custom_prompt_optimized_stream(
+    token_ids: Annotated[list[int], Body(embed=True)],
+    label_token: Annotated[int, Query()],
+    imp_min_coeff: Annotated[float, Query(gt=0)],
+    ce_loss_coeff: Annotated[float, Query(gt=0)],
+    steps: Annotated[int, Query(gt=0)],
+    pnorm: Annotated[float, Query(gt=0, le=1)],
+    normalize: Annotated[bool, Query()],
+    output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
+):
+    """Compute optimized attribution graph for custom token IDs with streaming progress."""
+    import queue
+    import threading
+
+    lr = 1e-2
+    ci_threshold = 1e-6
+
+    try:
+        loaded = get_loaded_run()
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+    if not token_ids:
+        return JSONResponse({"error": "No token IDs provided"}, status_code=400)
+
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+    label_str = loaded.tokenizer.decode([label_token])
+    token_strings = [loaded.tokenizer.decode([t]) for t in token_ids]
+
+    optim_config = OptimCIConfig(
+        seed=0,
+        lr=lr,
+        steps=steps,
+        weight_decay=0.0,
+        lr_schedule="cosine",
+        lr_exponential_halflife=None,
+        lr_warmup_pct=0.01,
+        log_freq=max(1, steps // 4),
+        imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm),
+        ce_loss_coeff=ce_loss_coeff,
+        ci_threshold=ci_threshold,
+        sampling=loaded.sampling,
+        ce_kl_rounding_threshold=0.5,
+    )
+
+    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+
+    def on_progress(current: int, total: int, stage: str) -> None:
+        progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
+
+    def compute_thread() -> None:
+        try:
+            result = compute_local_attributions_optimized(
+                model=loaded.model,
+                tokens=tokens_tensor,
+                label_token=label_token,
+                sources_by_target=loaded.sources_by_target,
+                optim_config=optim_config,
+                ci_threshold=ci_threshold,
+                output_prob_threshold=output_prob_threshold,
+                device=DEVICE,
+                show_progress=False,
+                on_progress=on_progress,
+            )
+            progress_queue.put({"type": "result", "result": result})
+        except Exception as e:
+            progress_queue.put({"type": "error", "error": str(e)})
+
+    def generate() -> Generator[str, None, None]:
+        thread = threading.Thread(target=compute_thread)
+        thread.start()
+
+        while True:
+            try:
+                msg = progress_queue.get(timeout=0.1)
+            except queue.Empty:
+                if not thread.is_alive():
+                    break
+                continue
+
+            if msg["type"] == "progress":
+                yield f"data: {json.dumps(msg)}\n\n"
+            elif msg["type"] == "error":
+                yield f"data: {json.dumps(msg)}\n\n"
+                break
+            elif msg["type"] == "result":
+                result = msg["result"]
+
+                edges = result.edges
+                edges.sort(key=lambda x: abs(x[6]), reverse=True)
+                edges = edges[:GLOBAL_EDGE_LIMIT]
+
+                if normalize:
+                    edges = normalize_edges_by_target(edges)
+
+                edges_typed = [
+                    EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
+                    for e in edges
+                ]
+
+                output_probs: dict[str, OutputProbability] = {}
+                output_probs_tensor = result.output_probs[0].cpu()
+
+                for s in range(output_probs_tensor.shape[0]):
+                    for c_idx in range(output_probs_tensor.shape[1]):
+                        prob = float(output_probs_tensor[s, c_idx].item())
+                        if prob < output_prob_threshold:
+                            continue
+                        key = f"{s}:{c_idx}"
+                        output_probs[key] = OutputProbability(
+                            prob=round(prob, 6),
+                            token=loaded.tokenizer.decode([c_idx]),
+                        )
+
+                response_data = PromptDataWithOptimization(
+                    id=-1,  # Custom prompts have no ID
+                    tokens=token_strings,
+                    edges=edges_typed,
+                    outputProbs=output_probs,
+                    optimization=OptimizationResult(
+                        label_token=label_token,
+                        label_str=label_str,
+                        imp_min_coeff=imp_min_coeff,
+                        ce_loss_coeff=ce_loss_coeff,
+                        steps=steps,
+                        label_prob=result.stats.label_prob,
+                        l0_total=result.stats.l0_total,
+                        l0_per_layer=result.stats.l0_per_layer,
+                    ),
+                )
+                complete_data = {"type": "complete", "data": response_data.model_dump()}
+                yield f"data: {json.dumps(complete_data)}\n\n"
+                break
+
+        thread.join()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # -----------------------------------------------------------------------------

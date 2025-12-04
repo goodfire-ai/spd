@@ -68,7 +68,7 @@
     let labelTokenPreview = $state<string | null>(null);  // Preview of resolved token
     let impMinCoeff = $state(0.1);
     let ceLossCoeff = $state(1.0);
-    let optimSteps = $state(500);
+    let optimSteps = $state(2000);
     let optimPnorm = $state(0.3);
 
     // Pinned nodes (for search)
@@ -245,10 +245,29 @@
             let data: PromptData;
 
             if (activeCard.isCustom && activeCard.tokenIds) {
-                data = await attrApi.computeCustomPrompt({
-                    tokenIds: activeCard.tokenIds,
-                    normalize: normalizeEdges,
-                });
+                if (useOptimized) {
+                    if (!labelTokenId) throw new Error("Label token required for optimization");
+                    data = await attrApi.computeCustomPromptOptimizedStreaming(
+                        {
+                            tokenIds: activeCard.tokenIds,
+                            labelToken: labelTokenId,
+                            normalize: normalizeEdges,
+                            impMinCoeff,
+                            ceLossCoeff,
+                            steps: optimSteps,
+                            pnorm: optimPnorm,
+                            outputProbThreshold: 0.01,
+                        },
+                        (progress) => {
+                            loadingProgress = progress;
+                        },
+                    );
+                } else {
+                    data = await attrApi.computeCustomPrompt({
+                        tokenIds: activeCard.tokenIds,
+                        normalize: normalizeEdges,
+                    });
+                }
             } else if (activeCard.promptId !== null) {
                 if (useOptimized) {
                     if (!labelTokenId) throw new Error("Label token required for optimization");
@@ -256,12 +275,12 @@
                         activeCard.promptId,
                         {
                             labelToken: labelTokenId,
-                            maxMeanCI,
                             normalize: normalizeEdges,
                             impMinCoeff,
                             ceLossCoeff,
                             steps: optimSteps,
                             pnorm: optimPnorm,
+                            outputProbThreshold: 0.01,
                         },
                         (progress) => {
                             loadingProgress = progress;
