@@ -125,179 +125,199 @@
     }
 
     .btn-add-prompt {
-        padding: 0.4rem 0.75rem;
-        background: #2196f3;
-        color: white;
+        padding: var(--space-1) var(--space-3);
+        background: var(--accent-amber);
+        color: var(--bg-base);
         border: none;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        font-weight: 500;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        font-weight: 600;
         cursor: pointer;
         white-space: nowrap;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .btn-add-prompt:hover {
-        background: #1976d2;
+        background: var(--text-primary);
     }
 
     .prompt-picker {
         position: absolute;
         top: 100%;
         right: 0;
-        margin-top: 0.5rem;
-        width: 320px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        margin-top: var(--space-2);
+        width: 340px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
         z-index: 1000;
         overflow: hidden;
     }
 
     .picker-header {
         display: flex;
-        gap: 0.5rem;
-        padding: 0.75rem;
-        border-bottom: 1px solid #e0e0e0;
+        gap: var(--space-2);
+        padding: var(--space-3);
+        border-bottom: 1px solid var(--border-default);
     }
 
     .picker-input {
         flex: 1;
-        padding: 0.5rem 0.75rem;
-        border: 1px solid #e0e0e0;
-        border-radius: 4px;
-        font-size: 0.85rem;
+        padding: var(--space-2);
+        border: 1px solid var(--border-default);
+        background: var(--bg-inset);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
     }
 
     .picker-input:focus {
         outline: none;
-        border-color: #2196f3;
+        border-color: var(--accent-amber-dim);
+    }
+
+    .picker-input::placeholder {
+        color: var(--text-muted);
     }
 
     .btn-tokenize {
-        padding: 0.5rem 0.75rem;
-        background: #2196f3;
-        color: white;
+        padding: var(--space-2) var(--space-3);
+        background: var(--accent-amber);
+        color: var(--bg-base);
         border: none;
-        border-radius: 4px;
-        font-size: 0.85rem;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        font-weight: 600;
         cursor: pointer;
+        text-transform: uppercase;
     }
 
     .btn-tokenize:hover:not(:disabled) {
-        background: #1976d2;
+        background: var(--text-primary);
     }
 
     .btn-tokenize:disabled {
-        background: #bdbdbd;
+        background: var(--border-default);
+        color: var(--text-muted);
         cursor: not-allowed;
     }
 
     .picker-filter {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 0.75rem;
-        background: #fafafa;
-        border-bottom: 1px solid #e0e0e0;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-default);
     }
 
     .filter-checkbox {
         display: flex;
         align-items: center;
-        gap: 0.3rem;
-        font-size: 0.8rem;
-        color: #616161;
+        gap: var(--space-1);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
         cursor: pointer;
     }
 
     .filter-loading {
-        font-size: 0.75rem;
-        color: #999;
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        font-family: var(--font-mono);
     }
 
     .picker-list {
-        max-height: 240px;
+        max-height: 260px;
         overflow-y: auto;
+        background: var(--bg-inset);
     }
 
     .picker-item {
         width: 100%;
-        padding: 0.5rem 0.75rem;
+        padding: var(--space-2) var(--space-3);
         background: transparent;
         border: none;
-        border-bottom: 1px solid #f0f0f0;
+        border-bottom: 1px solid var(--border-subtle);
         cursor: pointer;
         text-align: left;
         display: flex;
-        gap: 0.5rem;
+        gap: var(--space-2);
         align-items: baseline;
+        color: var(--text-primary);
     }
 
     .picker-item:hover {
-        background: #f5f5f5;
+        background: var(--bg-surface);
     }
 
     .picker-item-id {
-        font-size: 0.7rem;
-        color: #9e9e9e;
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
         flex-shrink: 0;
     }
 
     .picker-item-preview {
-        font-family: "SF Mono", Monaco, monospace;
-        font-size: 0.8rem;
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        color: #424242;
+        color: var(--text-primary);
     }
 
     .picker-empty {
-        padding: 1.5rem;
+        padding: var(--space-4);
         text-align: center;
-        color: #9e9e9e;
-        font-size: 0.85rem;
+        color: var(--text-muted);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
     }
 
     .picker-footer {
-        padding: 0.5rem 0.75rem;
-        border-top: 1px solid #e0e0e0;
-        background: #fafafa;
+        padding: var(--space-2) var(--space-3);
+        border-top: 1px solid var(--border-default);
+        background: var(--bg-surface);
     }
 
     .btn-generate {
         width: 100%;
-        padding: 0.5rem;
-        background: #4caf50;
-        color: white;
+        padding: var(--space-2);
+        background: var(--status-positive);
+        color: var(--text-primary);
         border: none;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        font-weight: 500;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        font-weight: 600;
         cursor: pointer;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .btn-generate:hover {
-        background: #43a047;
+        background: var(--status-positive-bright);
     }
 
     .generate-progress {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: var(--space-2);
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
     }
 
     .mini-progress-bar {
         flex: 1;
-        height: 6px;
-        background: #e0e0e0;
-        border-radius: 3px;
+        height: 4px;
+        background: var(--border-default);
         overflow: hidden;
     }
 
     .mini-progress-fill {
         height: 100%;
-        background: #4caf50;
+        background: var(--status-positive);
         transition: width 0.1s ease;
     }
 </style>

@@ -182,50 +182,69 @@
 
 <style>
     .component-detail-card {
-        font-size: 0.9rem;
+        font-size: var(--text-base);
+        font-family: var(--font-sans);
+        color: var(--text-primary);
     }
 
     .component-detail-card.compact {
-        font-size: 0.85rem;
+        font-size: var(--text-sm);
     }
 
     .output-header {
-        padding: 8px 12px;
-        border-radius: 4px;
-        margin-bottom: 10px;
+        padding: var(--space-2) var(--space-3);
+        margin-bottom: var(--space-2);
+        border-left: 2px solid var(--status-positive);
     }
 
     .output-token {
-        font-size: 1.2em;
-        font-weight: bold;
+        font-size: 1.1em;
+        font-weight: 600;
+        font-family: var(--font-mono);
+        color: var(--status-positive-bright);
     }
 
     .output-prob {
-        font-size: 1em;
-        color: #333;
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        font-family: var(--font-mono);
     }
 
     .stats {
-        margin: 0.25rem 0;
-        font-size: 0.85rem;
+        margin: var(--space-1) 0;
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        font-family: var(--font-mono);
+    }
+
+    .stats strong {
+        color: var(--text-muted);
+        font-weight: 500;
+        text-transform: uppercase;
+        font-size: var(--text-xs);
+        letter-spacing: 0.05em;
     }
 
     h4 {
-        margin: 0.75rem 0 0.25rem 0;
-        font-size: 0.85rem;
-        color: #333;
+        margin: var(--space-3) 0 var(--space-1) 0;
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-family: var(--font-sans);
     }
 
     .compact h4 {
-        margin: 0.5rem 0 0.25rem 0;
-        font-size: 0.8rem;
+        margin: var(--space-2) 0 var(--space-1) 0;
+        font-size: var(--text-xs);
     }
 
     .examples-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 0.5rem;
+        gap: var(--space-2);
     }
 
     .examples-header h4 {
@@ -233,44 +252,66 @@
     }
 
     .example-row {
-        margin: 0.5rem 0;
-        font-family: monospace;
-        font-size: 0.8rem;
+        margin: var(--space-2) 0;
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
     }
 
     .expand-btn,
     .collapse-btn {
-        font-size: 0.75rem;
-        color: #1976d2;
+        font-size: var(--text-xs);
+        color: var(--accent-amber);
         background: none;
         border: none;
-        padding: 0.25rem 0;
+        padding: var(--space-1) 0;
         cursor: pointer;
-        text-decoration: underline;
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .expand-btn:hover,
     .collapse-btn:hover {
-        color: #1565c0;
+        color: var(--text-primary);
     }
 
     .tables-row {
         display: flex;
-        gap: 1.5rem;
+        gap: var(--space-4);
         flex-wrap: wrap;
     }
 
     .data-table {
-        font-size: 0.8rem;
-        margin-top: 0.25rem;
+        font-size: var(--text-sm);
+        margin-top: var(--space-1);
+        font-family: var(--font-mono);
+        border-collapse: collapse;
     }
 
     .data-table td {
-        padding: 0.15rem 0.5rem;
+        padding: var(--space-1) var(--space-2);
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .data-table td:first-child {
+        color: var(--text-primary);
+    }
+
+    .data-table td:last-child {
+        color: var(--text-secondary);
+        text-align: right;
+    }
+
+    .data-table code {
+        color: var(--text-primary);
+        font-family: var(--font-mono);
     }
 
     .loading-text {
-        font-size: 0.85rem;
-        color: #666;
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 </style>

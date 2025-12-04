@@ -31,7 +31,7 @@
 <style>
     .card-tabs {
         display: flex;
-        gap: 0.25rem;
+        gap: var(--space-1);
         flex: 1;
         overflow-x: auto;
     }
@@ -39,40 +39,45 @@
     .card-tab {
         display: flex;
         align-items: center;
-        background: #e0e0e0;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        color: #616161;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
         flex-shrink: 0;
     }
 
     .card-tab:hover {
-        background: #d5d5d5;
+        background: var(--bg-inset);
+        border-color: var(--border-strong);
     }
 
     .card-tab.active {
-        background: #fff;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        background: var(--bg-elevated);
+        border-color: var(--accent-amber-dim);
+        color: var(--text-primary);
     }
 
     .card-tab-label {
-        padding: 0.4rem 0.6rem;
+        padding: var(--space-1) var(--space-2);
         background: transparent;
         border: none;
         font-size: inherit;
+        font-family: inherit;
         color: inherit;
         cursor: pointer;
-        max-width: 120px;
+        max-width: 140px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
     .card-tab-close {
-        padding: 0.4rem 0.4rem;
+        padding: var(--space-1);
         background: transparent;
         border: none;
-        font-size: 0.85rem;
+        border-left: 1px solid var(--border-subtle);
+        font-size: var(--text-sm);
         line-height: 1;
         opacity: 0.5;
         cursor: pointer;
@@ -81,5 +86,6 @@
 
     .card-tab-close:hover {
         opacity: 1;
+        color: var(--status-negative-bright);
     }
 </style>

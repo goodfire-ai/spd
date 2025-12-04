@@ -12,7 +12,7 @@
     >{#each tokenStrings as tok, i (i)}<span
             class="token-highlight"
             class:active-token={i === activePosition}
-            style="background-color:rgba(0,200,0,{tokenCi[i] * 0.5})"
+            style="background-color:rgba(74,124,78,{tokenCi[i] * 0.6})"
             data-ci="CI: {tokenCi[i].toFixed(3)}">{tok}</span
         >{/each}</span
 >
@@ -21,12 +21,12 @@
     .token-highlights {
         display: inline;
         white-space: pre-wrap;
+        font-family: var(--font-mono);
     }
 
     .token-highlight {
         display: inline;
-        padding: 2px 0px;
-        border-radius: 2px;
+        padding: 1px 0;
         position: relative;
         white-space: pre;
     }
@@ -37,11 +37,12 @@
         bottom: 100%;
         left: 50%;
         transform: translateX(-50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 12px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        color: var(--text-primary);
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
         white-space: nowrap;
         opacity: 0;
         pointer-events: none;
@@ -54,6 +55,7 @@
     }
 
     .token-highlight.active-token {
-        border: 2px solid rgba(255, 100, 0, 0.6);
+        outline: 1px solid var(--accent-amber);
+        outline-offset: 1px;
     }
 </style>

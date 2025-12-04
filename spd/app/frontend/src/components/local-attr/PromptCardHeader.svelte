@@ -162,70 +162,83 @@
     .staged-header {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
-        padding: 0.75rem 1rem;
-        background: #fafafa;
-        border-bottom: 1px solid #e0e0e0;
+        gap: var(--space-2);
+        padding: var(--space-3);
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-default);
     }
 
     .staged-tokens {
         display: flex;
         flex-wrap: wrap;
-        gap: 2px;
+        gap: 1px;
         align-items: center;
     }
 
     .staged-token {
-        padding: 2px 2px;
-        background: #e8e8e8;
-        border-radius: 3px;
-        font-family: "SF Mono", Monaco, monospace;
-        font-size: 0.8rem;
-        color: #424242;
+        padding: 2px 3px;
+        background: var(--bg-elevated);
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--text-primary);
         white-space: pre;
+        border: 1px solid var(--border-subtle);
     }
 
     .staged-token.custom {
-        background: #e3f2fd;
-        color: #1565c0;
+        background: var(--bg-inset);
+        border-color: var(--status-info);
+        color: var(--status-info-bright);
     }
 
     .staged-controls {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 1rem;
+        gap: var(--space-4);
     }
 
     .compute-options {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
+        gap: var(--space-3);
         flex-wrap: wrap;
     }
 
     .compute-options label {
         display: flex;
         align-items: center;
-        gap: 0.3rem;
-        font-size: 0.8rem;
-        color: #616161;
+        gap: var(--space-1);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
     }
 
     .compute-options label span {
         font-weight: 500;
+        text-transform: uppercase;
+        font-size: var(--text-xs);
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
     }
 
     .compute-options input[type="number"] {
         width: 55px;
-        padding: 0.2rem 0.35rem;
-        border: 1px solid #e0e0e0;
-        border-radius: 4px;
-        font-size: 0.8rem;
+        padding: var(--space-1);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+    }
+
+    .compute-options input[type="number"]:focus {
+        outline: none;
+        border-color: var(--accent-amber-dim);
     }
 
     .compute-options label.checkbox {
-        gap: 0.2rem;
+        gap: var(--space-1);
     }
 
     .compute-options .label-token-input {
@@ -234,93 +247,107 @@
 
     .compute-options .label-token-input .text-input {
         width: 80px;
-        padding: 0.2rem 0.35rem;
-        border: 1px solid #e0e0e0;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        font-family: "SF Mono", Monaco, monospace;
+        padding: var(--space-1);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+    }
+
+    .compute-options .label-token-input .text-input:focus {
+        outline: none;
+        border-color: var(--accent-amber-dim);
     }
 
     .compute-options .token-preview {
-        font-size: 0.75rem;
-        color: #4caf50;
-        font-family: "SF Mono", Monaco, monospace;
+        font-size: var(--text-xs);
+        color: var(--status-positive-bright);
+        font-family: var(--font-mono);
     }
 
     .compute-options .token-preview.error {
-        color: #f44336;
+        color: var(--status-negative-bright);
     }
 
     .btn-compute {
-        padding: 0.5rem 1rem;
-        background: #2196f3;
-        color: white;
+        padding: var(--space-2) var(--space-3);
+        background: var(--accent-amber);
+        color: var(--bg-base);
         border: none;
-        border-radius: 6px;
         cursor: pointer;
-        font-size: 0.85rem;
-        font-weight: 500;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        font-weight: 600;
         white-space: nowrap;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .btn-compute:hover:not(:disabled) {
-        background: #1976d2;
+        background: var(--text-primary);
     }
 
     .btn-compute:disabled {
-        background: #bdbdbd;
+        background: var(--border-default);
+        color: var(--text-muted);
         cursor: not-allowed;
     }
 
     .graph-tabs {
         display: flex;
-        gap: 0.25rem;
+        gap: var(--space-1);
     }
 
     .graph-tab {
         display: flex;
         align-items: center;
-        background: #e0e0e0;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        color: #616161;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
     }
 
     .graph-tab:hover {
-        background: #d5d5d5;
+        background: var(--bg-inset);
+        border-color: var(--border-strong);
     }
 
     .graph-tab.active {
-        background: #2196f3;
-        color: white;
+        background: var(--accent-amber-dim);
+        border-color: var(--accent-amber);
+        color: var(--text-primary);
     }
 
     .tab-label {
-        padding: 0.35rem 0.5rem;
+        padding: var(--space-1) var(--space-2);
         background: transparent;
         border: none;
         font-size: inherit;
+        font-family: inherit;
         color: inherit;
         cursor: pointer;
     }
 
     .tab-close {
-        padding: 0.35rem 0.4rem;
+        padding: var(--space-1);
         background: transparent;
         border: none;
-        font-size: 0.85rem;
+        border-left: 1px solid var(--border-subtle);
+        font-size: var(--text-sm);
         line-height: 1;
         opacity: 0.6;
         cursor: pointer;
         color: inherit;
-        border-left: 1px solid rgba(0, 0, 0, 0.1);
     }
 
     .graph-tab.active .tab-close {
-        border-left-color: rgba(255, 255, 255, 0.3);
+        border-left-color: var(--accent-amber);
     }
 
     .tab-close:hover {
         opacity: 1;
+        color: var(--status-negative-bright);
     }
 </style>

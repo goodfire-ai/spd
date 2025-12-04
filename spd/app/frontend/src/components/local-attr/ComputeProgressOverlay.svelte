@@ -45,7 +45,7 @@
     .loading-overlay {
         position: absolute;
         inset: 0;
-        background: rgba(255, 255, 255, 0.95);
+        background: rgba(13, 15, 18, 0.95);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -55,7 +55,7 @@
     .stages {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: var(--space-4);
         width: 280px;
     }
 
@@ -71,70 +71,71 @@
     .stage-header {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 0.35rem;
+        gap: var(--space-2);
+        margin-bottom: var(--space-1);
     }
 
     .stage-number {
         width: 20px;
         height: 20px;
-        border-radius: 50%;
-        background: #e0e0e0;
-        color: #757575;
-        font-size: 0.7rem;
+        background: var(--border-default);
+        color: var(--text-muted);
+        font-size: var(--text-xs);
         font-weight: 600;
+        font-family: var(--font-mono);
         display: flex;
         align-items: center;
         justify-content: center;
     }
 
     .stage.current .stage-number {
-        background: #2196f3;
-        color: white;
+        background: var(--accent-amber);
+        color: var(--bg-base);
     }
 
     .stage.complete .stage-number {
-        background: #4caf50;
-        color: white;
+        background: var(--status-positive);
+        color: var(--text-primary);
     }
 
     .stage-name {
-        font-size: 0.85rem;
-        color: #616161;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-muted);
         font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .stage.current .stage-name {
-        color: #212121;
+        color: var(--text-primary);
     }
 
     .stage-check {
-        color: #4caf50;
-        font-size: 0.85rem;
+        color: var(--status-positive-bright);
+        font-size: var(--text-sm);
         margin-left: auto;
     }
 
     .progress-bar {
-        height: 6px;
-        background: #e0e0e0;
-        border-radius: 3px;
+        height: 4px;
+        background: var(--border-default);
         overflow: hidden;
         margin-left: 28px;
     }
 
     .progress-bar.empty {
-        background: #eeeeee;
+        background: var(--border-subtle);
     }
 
     .progress-fill {
         height: 100%;
-        background: #2196f3;
-        border-radius: 3px;
+        background: var(--accent-amber);
         transition: width 0.15s ease-out;
     }
 
     .stage.complete .progress-fill {
-        background: #4caf50;
+        background: var(--status-positive);
     }
 
     .progress-fill.indeterminate {

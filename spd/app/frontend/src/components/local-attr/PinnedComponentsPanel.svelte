@@ -52,58 +52,91 @@
 
 <style>
     .pinned-container {
-        margin-top: 1rem;
+        margin-top: var(--space-4);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        padding: var(--space-3);
     }
 
     .pinned-container h3 {
-        margin: 0 0 0.75rem 0;
-        font-size: 0.9rem;
+        margin: 0 0 var(--space-3) 0;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary);
         display: flex;
         justify-content: space-between;
         align-items: center;
+        border-bottom: 1px solid var(--border-subtle);
+        padding-bottom: var(--space-2);
     }
 
     .pinned-container h3 button {
-        font-size: 0.8rem;
-        padding: 0.25rem 0.5rem;
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        padding: var(--space-1) var(--space-2);
         cursor: pointer;
-        background: #f5f5f5;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .pinned-container h3 button:hover {
+        background: var(--bg-inset);
+        color: var(--text-primary);
+        border-color: var(--border-strong);
     }
 
     .pinned-items {
         display: flex;
         flex-direction: row;
-        gap: 1rem;
+        gap: var(--space-3);
         overflow-x: auto;
-        padding-bottom: 0.5rem;
+        padding-bottom: var(--space-2);
     }
 
     .pinned-item {
         flex-shrink: 0;
         min-width: 300px;
         max-width: 400px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        padding: 0.75rem;
-        background: #fafafa;
+        border: 1px solid var(--border-default);
+        padding: var(--space-3);
+        background: var(--bg-elevated);
     }
 
     .pinned-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.5rem;
+        margin-bottom: var(--space-2);
+        padding-bottom: var(--space-2);
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .pinned-header strong {
+        font-family: var(--font-mono);
+        font-size: var(--text-base);
+        color: var(--accent-amber);
+        font-weight: 600;
     }
 
     .unpin-btn {
         cursor: pointer;
-        background: #f44336;
-        color: white;
+        background: var(--status-negative);
+        color: var(--text-primary);
         border: none;
-        border-radius: 4px;
-        padding: 0.2rem 0.5rem;
-        font-size: 0.75rem;
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .unpin-btn:hover {
+        background: var(--status-negative-bright);
     }
 </style>

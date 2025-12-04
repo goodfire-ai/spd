@@ -20,7 +20,7 @@
     const LAYER_GAP = 30;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
-    const NODE_COLOR = "#333";
+    const NODE_COLOR = "#9a9c97";
 
     // Row order for layout (qkv share a row)
     const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "output"];
@@ -386,7 +386,7 @@
             const p1 = nodePositions[edge.src];
             const p2 = nodePositions[edge.tgt];
             if (p1 && p2) {
-                const color = edge.val > 0 ? "#2196f3" : "#f44336";
+                const color = edge.val > 0 ? "#5588aa" : "#a84444";
                 const w = lerp(1, 4, Math.abs(edge.val) / maxAbsAttr);
                 const op = lerp(0, 0.5, Math.abs(edge.val) / maxAbsAttr);
                 const dy = Math.abs(p2.y - p1.y);
@@ -457,9 +457,11 @@
                 const probEntry = data.outputProbs[`${seqIdx}:${cIdx}`];
                 if (probEntry) {
                     const prob = probEntry.prob;
-                    const saturation = 20 + prob * 60;
-                    const lightness = 70 - prob * 35;
-                    fill = `hsl(120, ${saturation}%, ${lightness}%)`;
+                    // Tactical green gradient based on probability
+                    const r = Math.round(74 + prob * 16);
+                    const g = Math.round(124 + prob * 32);
+                    const b = Math.round(78 + prob * 16);
+                    fill = `rgb(${r}, ${g}, ${b})`;
                     opacity = 0.4 + prob * 0.6;
                 }
             } else {
@@ -611,9 +613,10 @@
                     y={yCenter}
                     text-anchor="end"
                     dominant-baseline="middle"
-                    font-size="11"
+                    font-size="10"
                     font-weight="500"
-                    fill={NODE_COLOR}
+                    font-family="'IBM Plex Mono', monospace"
+                    fill="#9a9c97"
                 >
                     {label}
                 </text>
@@ -672,7 +675,14 @@
                     >
                         {token}
                     </text>
-                    <text x={colCenter} y="38" text-anchor="middle" font-size="10" fill="#999">[{i}]</text>
+                    <text
+                        x={colCenter}
+                        y="36"
+                        text-anchor="middle"
+                        font-size="9"
+                        font-family="'IBM Plex Mono', monospace"
+                        fill="#5c5e5a">[{i}]</text
+                    >
                 {/each}
             </svg>
         </div>
@@ -682,16 +692,16 @@
     {#if hoveredEdge}
         <div class="edge-tooltip" style="left: {edgeTooltipPos.x}px; top: {edgeTooltipPos.y}px;">
             <div class="edge-tooltip-row">
-                <span class="edge-tooltip-label">From:</span>
+                <span class="edge-tooltip-label">Src</span>
                 <code>{hoveredEdge.src}</code>
             </div>
             <div class="edge-tooltip-row">
-                <span class="edge-tooltip-label">To:</span>
+                <span class="edge-tooltip-label">Tgt</span>
                 <code>{hoveredEdge.tgt}</code>
             </div>
             <div class="edge-tooltip-row">
-                <span class="edge-tooltip-label">Strength:</span>
-                <span style="color: {hoveredEdge.val > 0 ? '#2196f3' : '#f44336'}; font-weight: bold;">
+                <span class="edge-tooltip-label">Val</span>
+                <span style="color: {hoveredEdge.val > 0 ? '#6699bb' : '#c85555'}; font-weight: 600;">
                     {hoveredEdge.val.toFixed(4)}
                 </span>
             </div>
@@ -731,23 +741,21 @@
     {/if}
 </div>
 
-<!-- Pinned components panel -->
 <PinnedComponentsPanel {pinnedNodes} {componentDetailsCache} outputProbs={data.outputProbs} {onPinnedNodesChange} />
 
 <style>
     .graph-wrapper {
         display: flex;
-        /* background: white; */
-        border: 1px solid #eee;
-        border-radius: 8px;
+        border: 1px solid var(--border-default);
+        background: var(--bg-surface);
         overflow: hidden;
     }
 
     .layer-labels-container {
         position: sticky;
         left: 0;
-        background: white;
-        border-right: 1px solid #eee;
+        background: var(--bg-surface);
+        border-right: 1px solid var(--border-default);
         z-index: 11;
         flex-shrink: 0;
     }
@@ -756,13 +764,14 @@
         overflow: auto;
         flex: 1;
         position: relative;
+        background: var(--bg-inset);
     }
 
     .token-labels-container {
         position: sticky;
         bottom: 0;
-        background: white;
-        border-top: 1px solid #eee;
+        background: var(--bg-surface);
+        border-top: 1px solid var(--border-default);
         z-index: 10;
     }
 
@@ -772,8 +781,8 @@
 
     :global(.edge) {
         transition:
-            opacity 0.15s,
-            stroke-width 0.15s;
+            opacity 0.1s,
+            stroke-width 0.1s;
     }
 
     :global(.edge.highlighted) {
@@ -783,40 +792,50 @@
 
     .node {
         transition:
-            stroke-width 0.15s,
-            filter 0.15s;
+            stroke-width 0.1s,
+            filter 0.1s;
         cursor: pointer;
     }
 
     .node.highlighted {
-        stroke: #000 !important;
-        stroke-width: 2.5 !important;
-        filter: brightness(0.7) saturate(1.5);
+        stroke: var(--accent-amber) !important;
+        stroke-width: 2px !important;
+        filter: brightness(1.2);
         opacity: 1 !important;
     }
 
     .edge-tooltip,
     .node-tooltip {
         position: fixed;
-        padding: 0.75rem;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        padding: var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
         z-index: 1000;
         pointer-events: auto;
+        font-family: var(--font-mono);
     }
 
     .edge-tooltip {
-        font-size: 0.85rem;
+        font-size: var(--text-sm);
     }
 
     .edge-tooltip-row {
-        margin: 0.2rem 0;
+        margin: var(--space-1) 0;
+        display: flex;
+        gap: var(--space-2);
     }
 
     .edge-tooltip-label {
-        color: #666;
-        margin-right: 0.5rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        font-size: var(--text-xs);
+        letter-spacing: 0.05em;
+        min-width: 4em;
+    }
+
+    .edge-tooltip code {
+        color: var(--text-primary);
+        font-size: var(--text-sm);
     }
 
     .node-tooltip {
@@ -826,7 +845,13 @@
     }
 
     .node-tooltip h3 {
-        margin: 0 0 0.5rem 0;
-        font-size: 0.95rem;
+        margin: 0 0 var(--space-2) 0;
+        font-size: var(--text-base);
+        font-family: var(--font-mono);
+        color: var(--accent-amber);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        border-bottom: 1px solid var(--border-subtle);
+        padding-bottom: var(--space-2);
     }
 </style>

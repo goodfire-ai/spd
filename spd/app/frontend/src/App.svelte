@@ -150,36 +150,44 @@
         display: flex;
         flex-direction: column;
         height: 100vh;
+        background: var(--bg-base);
     }
 
     .top-bar {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        padding: 0.5rem 1rem;
-        background: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
+        gap: var(--space-4);
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-default);
         flex-shrink: 0;
     }
 
     .run-input {
         display: flex;
-        align-items: center;
-        gap: 0.5rem;
+        gap: var(--space-1);
     }
 
+    /* CHECK */
     .run-input label {
-        font-size: 0.85rem;
-        color: #495057;
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
         white-space: nowrap;
+        font-family: var(--font-mono);
     }
 
     .run-input input[type="text"] {
-        width: 180px;
-        padding: 0.4rem 0.6rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 0.85rem;
+        width: 200px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+    }
+
+    .run-input input[type="text"]::placeholder {
+        color: var(--text-muted);
     }
 
     .run-input input[type="number"] {
@@ -193,55 +201,61 @@
     .run-input input[type="text"]:focus,
     .run-input input[type="number"]:focus {
         outline: none;
-        border-color: #4a90e2;
+        border-color: var(--accent-amber-dim);
     }
 
     .run-input button {
-        padding: 0.4rem 0.75rem;
-        background-color: #4a90e2;
-        color: white;
+        padding: var(--space-1) var(--space-3);
+        background: var(--accent-amber);
+        color: var(--bg-base);
         border: none;
-        border-radius: 4px;
-        font-size: 0.85rem;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        font-weight: 600;
         cursor: pointer;
         white-space: nowrap;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .run-input button:hover:not(:disabled) {
-        background-color: #357abd;
+        background: var(--text-primary);
     }
 
     .run-input button:disabled {
-        background-color: #ccc;
+        background: var(--border-default);
+        color: var(--text-muted);
         cursor: not-allowed;
     }
 
     .tab-navigation {
         display: flex;
-        gap: 0.25rem;
+        gap: var(--space-1);
     }
 
     .tab-button {
-        padding: 0.4rem 0.75rem;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
+        padding: var(--space-1) var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
         cursor: pointer;
-        font-size: 0.85rem;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
         font-weight: 500;
-        color: #495057;
-        transition: all 0.15s ease;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .tab-button:hover {
-        color: #007bff;
-        border-color: #007bff;
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+        background: var(--bg-inset);
     }
 
     .tab-button.active {
-        color: white;
-        background: #007bff;
-        border-color: #007bff;
+        color: var(--bg-base);
+        background: var(--accent-amber);
+        border-color: var(--accent-amber);
     }
 
     .config-wrapper {
@@ -250,39 +264,41 @@
     }
 
     .config-button {
-        padding: 0.4rem 0.75rem;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
+        padding: var(--space-1) var(--space-2);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
         cursor: pointer;
-        font-size: 0.85rem;
-        color: #495057;
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .config-button:hover {
-        border-color: #adb5bd;
-        background: #f8f9fa;
+        border-color: var(--border-strong);
+        color: var(--text-primary);
     }
 
     .config-dropdown {
         position: absolute;
         top: 100%;
         right: 0;
-        padding-top: 0.5rem;
+        padding-top: var(--space-2);
         z-index: 1000;
     }
 
     .config-dropdown pre {
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        max-width: 400px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        max-width: 420px;
         max-height: 70vh;
         overflow: auto;
         margin: 0;
-        padding: 0.75rem;
-        font-size: 0.75rem;
+        padding: var(--space-3);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-primary);
         white-space: pre-wrap;
         word-wrap: break-word;
     }
@@ -291,19 +307,19 @@
         flex: 1;
         min-width: 0;
         min-height: 0;
-        padding: 1rem;
         display: flex;
         flex-direction: column;
     }
 
     .warning-banner {
-        background: #fff3cd;
-        color: #856404;
-        padding: 0.5rem 1rem;
-        border: 1px solid #ffeeba;
-        border-radius: 4px;
-        margin-bottom: 0.5rem;
-        font-size: 0.85rem;
+        background: var(--bg-elevated);
+        color: var(--accent-amber);
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--accent-amber-dim);
+        border-left: 3px solid var(--accent-amber);
+        margin: var(--space-3);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
         flex-shrink: 0;
     }
 
@@ -312,6 +328,7 @@
         align-items: center;
         justify-content: center;
         flex: 1;
-        color: #6c757d;
+        color: var(--text-muted);
+        font-family: var(--font-sans);
     }
 </style>
