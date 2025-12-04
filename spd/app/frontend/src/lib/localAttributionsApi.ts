@@ -135,24 +135,6 @@ export type GetPromptOptimizedParams = GetPromptParams & {
     pnorm?: number;
 };
 
-export async function getPromptOptimized(promptId: number, params: GetPromptOptimizedParams = {}): Promise<PromptData> {
-    const url = new URL(`${API_URL}/api/prompt/${promptId}/optimized`);
-
-    if (params.labelToken !== undefined) url.searchParams.set("label_token", String(params.labelToken));
-    if (params.impMinCoeff !== undefined) url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
-    if (params.ceLossCoeff !== undefined) url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
-    if (params.steps !== undefined) url.searchParams.set("steps", String(params.steps));
-    if (params.lr !== undefined) url.searchParams.set("lr", String(params.lr));
-    if (params.pnorm !== undefined) url.searchParams.set("pnorm", String(params.pnorm));
-    if (params.maxMeanCI !== undefined) url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
-    if (params.normalize !== undefined) url.searchParams.set("normalize", String(params.normalize));
-    if (params.ciThreshold !== undefined) url.searchParams.set("ci_threshold", String(params.ciThreshold));
-    if (params.outputProbThreshold !== undefined)
-        url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
-
-    return fetchJson<PromptData>(url.toString());
-}
-
 export async function getPromptOptimizedStreaming(
     promptId: number,
     params: GetPromptOptimizedParams = {},

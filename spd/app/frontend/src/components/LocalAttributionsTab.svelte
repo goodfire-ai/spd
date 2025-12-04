@@ -71,9 +71,13 @@
     // Pinned nodes (for search)
     let pinnedNodes = $state<PinnedNode[]>([]);
 
-    // Derived
+    // Derived - compute activeGraph directly from promptCards to ensure reactivity
     const activeCard = $derived(promptCards.find((c) => c.id === activeCardId) ?? null);
-    const activeGraph = $derived(activeCard?.graphs.find((g) => g.id === activeCard.activeGraphId) ?? null);
+    const activeGraph = $derived.by(() => {
+        const card = promptCards.find((c) => c.id === activeCardId);
+        if (!card) return null;
+        return card.graphs.find((g) => g.id === card.activeGraphId) ?? null;
+    });
     const displayedPrompts = $derived(filterByPinned ? filteredPrompts : prompts);
 
     // Load server status on mount
