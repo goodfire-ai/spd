@@ -120,20 +120,27 @@ class GPTMLP(nn.Module):
 
 
 class GPTBlock(nn.Module):
-    """A single GPT transformer block with pre-norm architecture."""
+    """A single GPT transformer block with optional pre-norm architecture."""
 
-    def __init__(self, d_model: int, d_mlp: int, n_heads: int):
+    def __init__(self, d_model: int, d_mlp: int, n_heads: int, use_layer_norm: bool = True):
         super().__init__()
-        self.ln1 = nn.LayerNorm(d_model)
+        self.use_layer_norm = use_layer_norm
+        if use_layer_norm:
+            self.ln1 = nn.LayerNorm(d_model)
+            self.ln2 = nn.LayerNorm(d_model)
         self.attn = GPTAttention(d_model, n_heads)
-        self.ln2 = nn.LayerNorm(d_model)
         self.mlp = GPTMLP(d_model, d_mlp)
 
     @override
     def forward(self, x: Float[Tensor, "B S D"]) -> Float[Tensor, "B S D"]:  # noqa: F821
-        # Pre-norm architecture (GPT-2 style)
-        x = x + self.attn(self.ln1(x))
-        x = x + self.mlp(self.ln2(x))
+        if self.use_layer_norm:
+            # Pre-norm architecture (GPT-2 style)
+            x = x + self.attn(self.ln1(x))
+            x = x + self.mlp(self.ln2(x))
+        else:
+            # No normalization
+            x = x + self.attn(x)
+            x = x + self.mlp(x)
         return x
 
 
@@ -159,10 +166,12 @@ class MemTransformer(LoadableModule):
             d_model=config.d_model,
             d_mlp=config.d_mlp,
             n_heads=config.n_heads,
+            use_layer_norm=config.use_layer_norm,
         )
 
-        # Final layer norm
-        self.ln_f = nn.LayerNorm(config.d_model)
+        # Final layer norm (optional)
+        if config.use_layer_norm:
+            self.ln_f = nn.LayerNorm(config.d_model)
 
         # Unembedding layer (separate from embedding, NOT tied)
         self.unembed = nn.Linear(config.d_model, config.vocab_size, bias=False)
@@ -206,7 +215,8 @@ class MemTransformer(LoadableModule):
         x = self.embed(tokens) + self.pos_embed(positions)
 
         x = self.block(x)
-        x = self.ln_f(x)
+        if self.config.use_layer_norm:
+            x = self.ln_f(x)
         logits = self.unembed(x)
         return logits
 
