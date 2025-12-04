@@ -207,7 +207,17 @@ def test_compute_graph(app_with_state: TestClient):
         params={"normalize": False},
     )
     assert response.status_code == 200
-    data = response.json()
+
+    # Parse SSE stream
+    lines = response.text.strip().split("\n")
+    events = [line for line in lines if line.startswith("data:")]
+    assert len(events) >= 1
+
+    # Final event should be complete with graph data
+    final_data = json.loads(events[-1].replace("data: ", ""))
+    assert final_data["type"] == "complete"
+
+    data = final_data["data"]
     assert "edges" in data
     assert "tokens" in data
     assert "outputProbs" in data

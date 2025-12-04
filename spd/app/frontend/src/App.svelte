@@ -71,14 +71,15 @@
 <div class="app-layout">
     <header class="top-bar">
         <form onsubmit={loadRun} class="run-input">
+            <label for="wandb-run-id">W&B Run ID:</label>
             <input
                 type="text"
                 id="wandb-run-id"
                 list="run-options"
                 bind:value={trainWandbRunEntry}
                 disabled={loadingTrainRun}
-                placeholder="W&B Run ID"
             />
+            <label for="context-length">Context Length:</label>
             <input
                 type="number"
                 id="context-length"
@@ -86,7 +87,6 @@
                 disabled={loadingTrainRun}
                 min="1"
                 max="2048"
-                placeholder="Ctx"
             />
             <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
                 {loadingTrainRun ? "..." : "Load"}
@@ -164,7 +164,14 @@
 
     .run-input {
         display: flex;
-        gap: 0.25rem;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .run-input label {
+        font-size: 0.85rem;
+        color: #495057;
+        white-space: nowrap;
     }
 
     .run-input input[type="text"] {
