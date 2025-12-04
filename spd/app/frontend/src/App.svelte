@@ -63,56 +63,60 @@
     $effect(() => void loadStatus());
 
     let activeTab = $state<"activation-contexts" | "local-attributions" | null>(null);
+    let showConfig = $state(false);
 </script>
 
 <RenderScan />
 <div class="app-layout">
-    <aside class="sidebar">
-        <div class="section-heading">W&B Run ID</div>
-        <form onsubmit={loadRun} class="input-group">
+    <header class="top-bar">
+        <form onsubmit={loadRun} class="run-input">
             <input
                 type="text"
                 id="wandb-run-id"
                 list="run-options"
                 bind:value={trainWandbRunEntry}
                 disabled={loadingTrainRun}
-                placeholder="Select or enter run ID"
+                placeholder="W&B Run ID"
             />
             <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
-                {loadingTrainRun ? "Loading..." : "Load Run"}
+                {loadingTrainRun ? "..." : "Load"}
             </button>
         </form>
-        <div class="tab-navigation">
-            {#if loadedRun}
+
+        {#if loadedRun}
+            <nav class="tab-navigation">
                 <button
                     class="tab-button"
                     class:active={activeTab === "local-attributions"}
-                    onclick={() => {
-                        activeTab = "local-attributions";
-                    }}
+                    onclick={() => (activeTab = "local-attributions")}
                 >
                     Local Attributions
                 </button>
                 <button
                     class="tab-button"
                     class:active={activeTab === "activation-contexts"}
-                    onclick={() => {
-                        activeTab = "activation-contexts";
-                    }}
+                    onclick={() => (activeTab = "activation-contexts")}
                 >
                     Activation Contexts
                 </button>
-            {/if}
-        </div>
-        {#if loadedRun}
-            <div class="config">
-                <div class="section-heading">Config</div>
-                <pre>{loadedRun.config_yaml}</pre>
+            </nav>
+
+            <div
+                class="config-wrapper"
+                onmouseenter={() => (showConfig = true)}
+                onmouseleave={() => (showConfig = false)}
+            >
+                <button class="config-button">Config</button>
+                {#if showConfig}
+                    <div class="config-dropdown">
+                        <pre>{loadedRun.config_yaml}</pre>
+                    </div>
+                {/if}
             </div>
         {/if}
-    </aside>
+    </header>
 
-    <div class="main-content">
+    <main class="main-content">
         {#if backendError}
             <div class="warning-banner">
                 {backendError}
@@ -122,30 +126,138 @@
             <LocalAttributionsTab />
         {:else if loadedRun && activeTab === "activation-contexts"}
             <ActivationContextsTab />
+        {:else if !loadedRun}
+            <div class="empty-state">
+                <p>Enter a W&B Run ID above to get started</p>
+            </div>
         {/if}
-    </div>
+    </main>
 </div>
 
 <style>
     .app-layout {
         display: flex;
+        flex-direction: column;
         height: 100vh;
     }
 
-    .sidebar {
-        width: 25vw;
-        min-width: 200px;
-        max-width: 400px;
-        background: #f8f9fa;
-        border-right: 1px solid #dee2e6;
-        padding: 1.5rem;
+    .top-bar {
         display: flex;
-        gap: 0.5rem;
-        flex-direction: column;
-        position: sticky;
-        top: 0;
-        height: 100vh;
-        overflow-y: auto;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.5rem 1rem;
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        flex-shrink: 0;
+    }
+
+    .run-input {
+        display: flex;
+        gap: 0.25rem;
+    }
+
+    .run-input input[type="text"] {
+        width: 180px;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+
+    .run-input input[type="text"]:focus {
+        outline: none;
+        border-color: #4a90e2;
+    }
+
+    .run-input button {
+        padding: 0.4rem 0.75rem;
+        background-color: #4a90e2;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .run-input button:hover:not(:disabled) {
+        background-color: #357abd;
+    }
+
+    .run-input button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+    }
+
+    .tab-navigation {
+        display: flex;
+        gap: 0.25rem;
+    }
+
+    .tab-button {
+        padding: 0.4rem 0.75rem;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: #495057;
+        transition: all 0.15s ease;
+    }
+
+    .tab-button:hover {
+        color: #007bff;
+        border-color: #007bff;
+    }
+
+    .tab-button.active {
+        color: white;
+        background: #007bff;
+        border-color: #007bff;
+    }
+
+    .config-wrapper {
+        position: relative;
+        margin-left: auto;
+    }
+
+    .config-button {
+        padding: 0.4rem 0.75rem;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        color: #495057;
+    }
+
+    .config-button:hover {
+        border-color: #adb5bd;
+        background: #f8f9fa;
+    }
+
+    .config-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        padding-top: 0.5rem;
+        z-index: 1000;
+    }
+
+    .config-dropdown pre {
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        max-width: 400px;
+        max-height: 70vh;
+        overflow: auto;
+        margin: 0;
+        padding: 0.75rem;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        word-wrap: break-word;
     }
 
     .main-content {
@@ -155,112 +267,25 @@
         padding: 1rem;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        overflow: hidden;
     }
 
     .warning-banner {
         background: #fff3cd;
         color: #856404;
-        padding: 0.75rem 1rem;
+        padding: 0.5rem 1rem;
         border: 1px solid #ffeeba;
         border-radius: 4px;
         margin-bottom: 0.5rem;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
+        flex-shrink: 0;
     }
 
-    .tab-navigation {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .tab-button {
-        padding: 0.75rem 0.5rem;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: #495057;
-        transition: all 0.15s ease;
-        text-align: left;
+    .empty-state {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-    }
-    .tab-button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .tab-button:hover {
-        color: #007bff;
-        background: #f8f9fa;
-        border-color: #007bff;
-    }
-
-    .tab-button.active {
-        color: white;
-        background: #007bff;
-        border-color: #007bff;
-        box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
-    }
-
-    .section-heading {
-        font-weight: 600;
-        color: #333;
-        font-size: 0.9rem;
-    }
-
-    .input-group {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .input-group input[type="text"] {
+        justify-content: center;
         flex: 1;
-        padding: 0.5rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 1rem;
-    }
-
-    .input-group input[type="text"]:focus {
-        outline: none;
-        border-color: #4a90e2;
-        box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
-    }
-
-    .input-group button {
-        padding: 0.5rem 0.5rem;
-        background-color: #4a90e2;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-size: 1rem;
-        cursor: pointer;
-        white-space: nowrap;
-    }
-
-    .input-group button:hover:not(:disabled) {
-        background-color: #357abd;
-    }
-
-    .input-group button:disabled {
-        background-color: #ccc;
-        cursor: not-allowed;
-    }
-
-    .config {
-        margin-top: 0.5rem;
-    }
-
-    .config pre {
-        margin: 0;
-        font-size: 0.8rem;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
+        color: #6c757d;
     }
 </style>

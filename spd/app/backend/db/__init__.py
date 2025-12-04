@@ -4,8 +4,5 @@ from spd.app.backend.db.database import (
     LocalAttrDB as LocalAttrDB,
 )
 from spd.app.backend.db.database import (
-    PromptRecord as PromptRecord,
-)
-from spd.app.backend.db.database import (
     Run as Run,
 )
