@@ -223,7 +223,6 @@ def compute_edges_from_ci(
     Use compute_local_attributions() for automatic CI computation, or
     compute_local_attributions_optimized() for optimized sparse CI values.
     """
-    # Add break for debugger to attach here
     n_seq = tokens.shape[1]
 
     ci_masked_infos = make_mask_infos(component_masks=ci_lower_leaky, routing_masks="all")
