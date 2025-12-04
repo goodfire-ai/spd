@@ -3,7 +3,6 @@
 import json
 import queue
 import threading
-import time
 from collections.abc import Generator
 from typing import Annotated, Any
 
@@ -12,6 +11,7 @@ from fastapi import APIRouter, Body, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from spd.app.backend.compute import (
+    LocalAttributionResult,
     OptimizedLocalAttributionResult,
     compute_local_attributions,
     compute_local_attributions_optimized,
@@ -29,7 +29,6 @@ from spd.app.backend.schemas import (
 )
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
-from spd.log import logger
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import runtime_cast
 
@@ -54,12 +53,12 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
 
 @router.post("")
 @log_errors
-def compute_graph(
+def compute_graph_stream(
     token_ids: Annotated[list[int], Body(embed=True)],
     normalize: Annotated[bool, Query()],
     loaded: DepLoadedRun,
 ):
-    """Compute attribution graph for given token IDs."""
+    """Compute attribution graph for given token IDs with streaming progress."""
     ci_threshold = 1e-6
     output_prob_threshold = 0.01
 
@@ -67,55 +66,89 @@ def compute_graph(
         return JSONResponse({"error": "No token IDs provided"}, status_code=400)
 
     token_strings = [loaded.token_strings[t] for t in token_ids]
-
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
-    t_start = time.time()
-    result = compute_local_attributions(
-        model=loaded.model,
-        tokens=tokens_tensor,
-        sources_by_target=loaded.sources_by_target,
-        ci_threshold=ci_threshold,
-        output_prob_threshold=output_prob_threshold,
-        sampling=loaded.config.sampling,
-        device=DEVICE,
-        show_progress=False,
-    )
-    t_end = time.time()
 
-    logger.info(f"[API] /api/graphs completed in {t_end - t_start:.2f}s, {len(result.edges)} edges")
+    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
 
-    edges = result.edges
-    edges.sort(key=lambda x: abs(x[6]), reverse=True)
-    edges = edges[:GLOBAL_EDGE_LIMIT]
+    def on_progress(current: int, total: int, stage: str) -> None:
+        progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
 
-    if normalize:
-        edges = normalize_edges_by_target(edges)
-
-    edges_typed = [
-        EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6]) for e in edges
-    ]
-
-    output_probs: dict[str, OutputProbability] = {}
-    output_probs_tensor = result.output_probs[0].cpu()
-
-    # Only send output probs above threshold to avoid sending entire vocab
-    for s in range(output_probs_tensor.shape[0]):
-        for c_idx in range(output_probs_tensor.shape[1]):
-            prob = float(output_probs_tensor[s, c_idx].item())
-            if prob < output_prob_threshold:
-                continue
-            key = f"{s}:{c_idx}"
-            output_probs[key] = OutputProbability(
-                prob=round(prob, 6),
-                token=loaded.token_strings[c_idx],
+    def compute_thread() -> None:
+        try:
+            result = compute_local_attributions(
+                model=loaded.model,
+                tokens=tokens_tensor,
+                sources_by_target=loaded.sources_by_target,
+                ci_threshold=ci_threshold,
+                output_prob_threshold=output_prob_threshold,
+                sampling=loaded.config.sampling,
+                device=DEVICE,
+                show_progress=False,
+                on_progress=on_progress,
             )
+            progress_queue.put({"type": "result", "result": result})
+        except Exception as e:
+            progress_queue.put({"type": "error", "error": str(e)})
 
-    return GraphData(
-        id=-1,  # Custom prompts have no ID
-        tokens=token_strings,
-        edges=edges_typed,
-        outputProbs=output_probs,
-    )
+    def generate() -> Generator[str]:
+        thread = threading.Thread(target=compute_thread)
+        thread.start()
+
+        while True:
+            try:
+                msg = progress_queue.get(timeout=0.1)
+            except queue.Empty:
+                if not thread.is_alive():
+                    break
+                continue
+
+            if msg["type"] == "progress":
+                yield f"data: {json.dumps(msg)}\n\n"
+            elif msg["type"] == "error":
+                yield f"data: {json.dumps(msg)}\n\n"
+                break
+            elif msg["type"] == "result":
+                result = runtime_cast(LocalAttributionResult, msg["result"])
+
+                edges = result.edges
+                edges.sort(key=lambda x: abs(x[6]), reverse=True)
+                edges = edges[:GLOBAL_EDGE_LIMIT]
+
+                if normalize:
+                    edges = normalize_edges_by_target(edges)
+
+                edges_typed = [
+                    EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
+                    for e in edges
+                ]
+
+                output_probs: dict[str, OutputProbability] = {}
+                output_probs_tensor = result.output_probs[0].cpu()
+
+                for s in range(output_probs_tensor.shape[0]):
+                    for c_idx in range(output_probs_tensor.shape[1]):
+                        prob = float(output_probs_tensor[s, c_idx].item())
+                        if prob < output_prob_threshold:
+                            continue
+                        key = f"{s}:{c_idx}"
+                        output_probs[key] = OutputProbability(
+                            prob=round(prob, 6),
+                            token=loaded.token_strings[c_idx],
+                        )
+
+                response_data = GraphData(
+                    id=-1,
+                    tokens=token_strings,
+                    edges=edges_typed,
+                    outputProbs=output_probs,
+                )
+                complete_data = {"type": "complete", "data": response_data.model_dump()}
+                yield f"data: {json.dumps(complete_data)}\n\n"
+                break
+
+        thread.join()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/optimized/stream")

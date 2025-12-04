@@ -28,6 +28,7 @@
         padding: 2px 0px;
         border-radius: 2px;
         position: relative;
+        white-space: pre;
     }
 
     .token-highlight::after {

@@ -77,14 +77,65 @@ export type ComputeGraphParams = {
     normalize: boolean;
 };
 
-export async function computeGraph(params: ComputeGraphParams): Promise<GraphData> {
+export async function computeGraphStreaming(
+    params: ComputeGraphParams,
+    onProgress?: (progress: GraphProgress) => void,
+): Promise<GraphData> {
     const url = new URL(`${API_URL}/api/graphs`);
     url.searchParams.set("normalize", String(params.normalize));
-    return fetchJson<GraphData>(url.toString(), {
+
+    const response = await fetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token_ids: params.tokenIds }),
     });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new LocalAttributionsApiError(error.error || `HTTP ${response.status}`, response.status);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("Response body is not readable");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: GraphData | null = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+
+            const data = JSON.parse(line.substring(6));
+
+            if (data.type === "progress" && onProgress) {
+                onProgress({ current: data.current, total: data.total, stage: data.stage });
+            } else if (data.type === "error") {
+                throw new LocalAttributionsApiError(data.error, 500);
+            } else if (data.type === "complete") {
+                result = data.data;
+                await reader.cancel();
+                break;
+            }
+        }
+
+        if (result) break;
+    }
+
+    if (!result) {
+        throw new Error("No result received from stream");
+    }
+
+    return result;
 }
 
 export type ComputeGraphOptimizedParams = {
