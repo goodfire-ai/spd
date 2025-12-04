@@ -16,7 +16,7 @@ from spd.experiments.tms.models import TMSModel, TMSTargetRunInfo
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
-from spd.utils.distributed_utils import get_device
+from spd.utils.distributed_utils import get_device, init_distributed
 from spd.utils.general_utils import save_pre_run_info, set_seed
 from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
@@ -41,6 +41,9 @@ def main(
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
     )
+
+    dist_state = init_distributed()
+    logger.info(f"Distributed state: {dist_state}")
 
     device = get_device()
     logger.info(f"Using device: {device}")
