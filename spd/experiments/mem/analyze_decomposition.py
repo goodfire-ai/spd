@@ -3,6 +3,8 @@
 Shows which memorized inputs each component activates on with high causal importance.
 """
 
+from pathlib import Path
+
 import fire
 import torch
 from jaxtyping import Float
@@ -18,6 +20,7 @@ def analyze_decomposition(
     spd_run_path: str,
     ci_threshold: float = 0.1,
     max_facts_to_show: int = 10,
+    output_file: str | None = None,
     device: str | None = None,
 ) -> None:
     """Analyze which memorized inputs each component activates on.
@@ -26,17 +29,25 @@ def analyze_decomposition(
         spd_run_path: Path to the SPD decomposition run (wandb path or local path)
         ci_threshold: Causal importance threshold for considering a component "active"
         max_facts_to_show: Maximum number of facts to show per component
+        output_file: Path to write output to (if None, prints to stdout)
         device: Device to use (defaults to auto-detection)
     """
     if device is None:
         device = get_device()
 
-    print(f"Loading SPD decomposition from: {spd_run_path}")
-    print(f"Using device: {device}")
-    print(f"Causal importance threshold: {ci_threshold}")
-    print()
+    # Set up output: either file or stdout
+    lines: list[str] = []
+
+    def out(s: str = "") -> None:
+        lines.append(s)
+
+    out(f"Loading SPD decomposition from: {spd_run_path}")
+    out(f"Using device: {device}")
+    out(f"Causal importance threshold: {ci_threshold}")
+    out()
 
     # Load the SPD run info and component model
+    print("Loading SPD decomposition...")
     spd_run_info = SPDRunInfo.from_path(spd_run_path)
     spd_config = spd_run_info.config
     comp_model = ComponentModel.from_run_info(spd_run_info)
@@ -58,11 +69,11 @@ def analyze_decomposition(
         seed=target_run_info.config.seed,
     )
 
-    print(f"Loaded dataset with {dataset.n_facts} facts")
-    print(f"Vocab size: {target_model.config.vocab_size}")
-    print(f"Sequence length: {target_model.config.seq_len}")
-    print(f"Number of components (C): {spd_config.C}")
-    print()
+    out(f"Loaded dataset with {dataset.n_facts} facts")
+    out(f"Vocab size: {target_model.config.vocab_size}")
+    out(f"Sequence length: {target_model.config.seq_len}")
+    out(f"Number of components (C): {spd_config.C}")
+    out()
 
     # Get all facts
     all_inputs, all_labels = dataset.get_all_facts()
@@ -83,18 +94,18 @@ def analyze_decomposition(
     # Get the lower leaky sigmoid causal importances (more interpretable)
     importances_by_module = ci_outputs.lower_leaky
 
-    print()
-    print("=" * 80)
-    print("COMPONENT ACTIVATION ANALYSIS")
-    print("=" * 80)
+    out()
+    out("=" * 80)
+    out("COMPONENT ACTIVATION ANALYSIS")
+    out("=" * 80)
 
     # For each module, analyze each component
     for module_name, ci_values in importances_by_module.items():
         # ci_values shape: [n_facts, seq_len, C]
-        print()
-        print(f"\n{'='*80}")
-        print(f"MODULE: {module_name}")
-        print(f"{'='*80}")
+        out()
+        out(f"\n{'='*80}")
+        out(f"MODULE: {module_name}")
+        out(f"{'='*80}")
 
         _, _, _ = ci_values.shape  # n_facts, seq_len, n_components
 
@@ -117,7 +128,7 @@ def analyze_decomposition(
             mean_ci = mean_ci_per_comp[comp_idx].item()
 
             if n_active == 0:
-                print(f"\n  [Rank {rank+1}] Component {comp_idx} (mean CI={mean_ci:.3f}): No facts above threshold")
+                out(f"\n  [Rank {rank+1}] Component {comp_idx} (mean CI={mean_ci:.3f}): No facts above threshold")
                 continue
 
             # Sort by causal importance (descending)
@@ -126,8 +137,8 @@ def analyze_decomposition(
             active_indices = active_indices[sorted_order]
             active_cis = active_cis[sorted_order]
 
-            print(f"\n  [Rank {rank+1}] Component {comp_idx} (mean CI={mean_ci:.3f}): {n_active} facts above threshold")
-            print(f"  {'─'*60}")
+            out(f"\n  [Rank {rank+1}] Component {comp_idx} (mean CI={mean_ci:.3f}): {n_active} facts above threshold")
+            out(f"  {'─'*60}")
 
             # Show up to max_facts_to_show
             n_to_show = min(n_active, max_facts_to_show)
@@ -137,21 +148,21 @@ def analyze_decomposition(
                 input_tokens = all_inputs[fact_idx].tolist()
                 label_token = int(all_labels[fact_idx].item())
 
-                print(f"    Fact {fact_idx:4d}: input={input_tokens} → label={label_token}  (CI={ci_val:.3f})")
+                out(f"    Fact {fact_idx:4d}: input={input_tokens} → label={label_token}  (CI={ci_val:.3f})")
 
             if n_active > max_facts_to_show:
-                print(f"    ... and {n_active - max_facts_to_show} more facts")
+                out(f"    ... and {n_active - max_facts_to_show} more facts")
 
     # Summary statistics
-    print()
-    print("=" * 80)
-    print("SUMMARY STATISTICS")
-    print("=" * 80)
+    out()
+    out("=" * 80)
+    out("SUMMARY STATISTICS")
+    out("=" * 80)
 
     for module_name, ci_values in importances_by_module.items():
         ci_final_pos = ci_values[:, -1, :]  # [n_facts, C]
 
-        print(f"\n{module_name}:")
+        out(f"\n{module_name}:")
 
         # Compute mean CI per component and sort by it (descending)
         mean_ci_per_comp = ci_final_pos.mean(dim=0)  # [C]
@@ -163,13 +174,23 @@ def analyze_decomposition(
             n_active = (comp_ci > ci_threshold).sum().item()
             mean_ci = mean_ci_per_comp[comp_idx].item()
             max_ci = comp_ci.max().item()
-            print(
+            out(
                 f"  [Rank {rank+1:2d}] Component {comp_idx:3d}: "
                 f"active on {n_active:4d}/{dataset.n_facts} facts, "
                 f"mean CI={mean_ci:.3f}, max CI={max_ci:.3f}"
             )
 
+    # Write output
+    output_text = "\n".join(lines)
+
+    if output_file is not None:
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(output_text)
+        print(f"Output written to: {output_path}")
+    else:
+        print(output_text)
+
 
 if __name__ == "__main__":
     fire.Fire(analyze_decomposition)
-
