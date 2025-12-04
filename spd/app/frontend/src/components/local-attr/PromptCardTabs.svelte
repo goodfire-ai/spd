@@ -33,7 +33,7 @@
 <style>
     .card-tabs {
         display: flex;
-        gap: var(--space-1);
+        gap: var(--space-2);
         flex: 1;
         overflow-x: auto;
     }

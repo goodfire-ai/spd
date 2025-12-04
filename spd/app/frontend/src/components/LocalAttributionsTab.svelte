@@ -493,6 +493,7 @@
         display: flex;
         flex-direction: column;
         min-width: 0;
+        padding: var(--space-6);
     }
 
     .graph-container {
@@ -500,17 +501,13 @@
         display: flex;
         flex-direction: column;
         min-height: 0;
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
     }
 
     .card-tabs-row {
         display: flex;
         align-items: center;
-        gap: var(--space-2);
-        padding: var(--space-2) var(--space-3);
+        margin-bottom: var(--space-2);
         background: var(--bg-elevated);
-        border-bottom: 1px solid var(--border-default);
         position: relative;
     }
 
@@ -519,12 +516,12 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
-        padding: var(--space-3);
-        margin: var(--space-3);
         min-height: 0;
+        padding: var(--space-6);
         border: 1px solid var(--border-default);
         border-radius: var(--radius-md);
     }
+    
 
     .optim-results {
         display: flex;

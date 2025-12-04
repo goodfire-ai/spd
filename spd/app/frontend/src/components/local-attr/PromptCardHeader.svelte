@@ -163,7 +163,6 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
-        padding: var(--space-3);
         background: var(--bg-surface);
     }
 
