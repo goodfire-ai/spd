@@ -85,9 +85,9 @@
                         class="text-input"
                     />
                     {#if optConfig.labelTokenPreview}
-                        <code class="token-preview" class:error={!optConfig.labelTokenId}>
+                        <span class="token-preview" class:error={!optConfig.labelTokenId}>
                             → {optConfig.labelTokenPreview}
-                        </code>
+                        </span>
                     {/if}
                 </label>
                 <label>
@@ -214,7 +214,6 @@
 
     .compute-options label span {
         font-weight: 500;
-        text-transform: uppercase;
         font-size: var(--text-xs);
         letter-spacing: 0.05em;
         color: var(--text-muted);

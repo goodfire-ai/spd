@@ -8,6 +8,7 @@ export type LoadedRun = {
     has_activation_contexts: boolean;
     has_prompts: boolean;
     prompt_count: number;
+    context_length: number;
 };
 
 export async function getStatus(): Promise<LoadedRun | null> {

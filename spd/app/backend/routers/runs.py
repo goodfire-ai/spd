@@ -148,6 +148,7 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         has_activation_contexts=manager.db.has_activation_contexts(run.id),
         has_prompts=prompt_count > 0,
         prompt_count=prompt_count,
+        context_length=context_length,
     )
 
 

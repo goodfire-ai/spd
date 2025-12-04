@@ -7,7 +7,7 @@ to avoid importing script files with global execution.
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
 import torch
 from jaxtyping import Bool, Float
@@ -56,9 +56,25 @@ def compute_layer_alive_info(
     return LayerAliveInfo(alive_mask, alive_c_idxs)
 
 
-# tuple for speed
-Edge = tuple[str, str, int, int, int, int, float, bool]
-"""(source, target, c_in, c_out, s_in, s_out, strength, is_cross_seq)"""
+@dataclass
+class Node:
+    layer: str
+    seq_pos: int
+    component_idx: int
+
+    @override
+    def __str__(self) -> str:
+        return f"{self.layer}:{self.seq_pos}:{self.component_idx}"
+
+
+@dataclass
+class Edge:
+    """Edge in the attribution graph."""
+
+    source: Node
+    target: Node
+    strength: float
+    is_cross_seq: bool
 
 
 @dataclass
@@ -331,15 +347,11 @@ def compute_edges_from_ci(
                                 if not source_info.alive_mask[s_in, c_in]:
                                     continue
                                 strength = weighted[s_in, c_in].item()
-                                edge: Edge = (
-                                    source,
-                                    target,
-                                    c_in,
-                                    c_out,
-                                    s_in,
-                                    s_out,
-                                    strength,
-                                    is_kv_to_o_pair_flag,
+                                edge = Edge(
+                                    source=Node(layer=source, seq_pos=s_in, component_idx=c_in),
+                                    target=Node(layer=target, seq_pos=s_out, component_idx=c_out),
+                                    strength=strength,
+                                    is_cross_seq=is_kv_to_o_pair_flag,
                                 )
                                 edges.append(edge)
         progress_count += len(sources)

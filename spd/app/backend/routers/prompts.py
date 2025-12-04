@@ -13,6 +13,7 @@ from spd.app.backend.schemas import PromptPreview, PromptSearchQuery, PromptSear
 from spd.app.backend.utils import log_errors
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
+from spd.utils.general_utils import extract_batch_data
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
@@ -59,15 +60,13 @@ def generate_prompts(
 
     def generate() -> Generator[str]:
         added_count = 0
-        from spd.utils.general_utils import extract_batch_data
 
         for batch in train_loader:
             if added_count >= n_prompts:
                 break
 
             tokens = extract_batch_data(batch).to(DEVICE)
-            actual_batch_size = tokens.shape[0]
-            n_seq = tokens.shape[1]
+            batch_size, n_seq = tokens.shape
 
             # Compute CI for the whole batch
             ci_result = compute_ci_only(
@@ -77,7 +76,13 @@ def generate_prompts(
             )
 
             # Process each sequence in the batch
-            for i in range(actual_batch_size):
+            prompts = []
+            for i in range(batch_size):
+                if i % 5 == 0:
+                    progress = min(added_count / n_prompts, 1.0)
+                    progress_data = {"type": "progress", "progress": progress, "count": added_count}
+                    yield f"data: {json.dumps(progress_data)}\n\n"
+
                 if added_count >= n_prompts:
                     break
 
@@ -97,13 +102,10 @@ def generate_prompts(
                 )
 
                 # Add to DB with active components
-                db.add_prompt(loaded.run.id, token_ids, loaded.context_length, active_components)
+                prompts.append((token_ids, active_components))
                 added_count += 1
 
-            # Stream progress after each batch
-            progress = min(added_count / n_prompts, 1.0)
-            progress_data = {"type": "progress", "progress": progress, "count": added_count}
-            yield f"data: {json.dumps(progress_data)}\n\n"
+            db.add_prompts(loaded.run.id, prompts, loaded.context_length)
 
         # Final result
         total = db.get_prompt_count(loaded.run.id, loaded.context_length)

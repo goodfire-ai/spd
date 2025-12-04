@@ -27,7 +27,7 @@
             <button class="card-tab-close" onclick={() => onCloseCard(card.id)}>×</button>
         </div>
     {/each}
-    <button class="btn-add-tab" onclick={onAddClick}>+</button>
+    <button class="btn-add-tab" onclick={onAddClick}>+{cards.length > 0 ? "" : " First Prompt"}</button>
 </div>
 
 <style>
@@ -45,7 +45,7 @@
         border: 1px solid var(--border-default);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
-        color: var(--text-secondary);
+        color: var(--text-muted);
         flex-shrink: 0;
     }
 
@@ -56,7 +56,7 @@
 
     .card-tab.active {
         background: var(--bg-elevated);
-        border-color: var(--accent-primary-dim);
+        border-color: var(--border-strong);
         color: var(--text-primary);
     }
 

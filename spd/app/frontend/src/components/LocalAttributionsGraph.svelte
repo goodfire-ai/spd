@@ -855,7 +855,7 @@
 
     .edge-tooltip-label {
         color: var(--text-muted);
-        text-transform: uppercase;
+
         font-size: var(--text-xs);
         letter-spacing: 0.05em;
         min-width: 4em;
@@ -867,7 +867,7 @@
     }
 
     .node-tooltip {
-        max-width: 600px;
+        max-width: 400px;
         max-height: 500px;
         overflow-y: auto;
     }

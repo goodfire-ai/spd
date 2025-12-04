@@ -35,6 +35,8 @@ from spd.utils.general_utils import runtime_cast
 router = APIRouter(prefix="/api/graphs", tags=["graphs"])
 
 DEVICE = get_device()
+
+# This is a bit of a hack. We want to limit the number of edges returned to avoid overwhelming the frontend.
 GLOBAL_EDGE_LIMIT = 5_000
 
 
@@ -111,15 +113,14 @@ def compute_graph_stream(
                 result = runtime_cast(LocalAttributionResult, msg["result"])
 
                 edges = result.edges
-                edges.sort(key=lambda x: abs(x[6]), reverse=True)
+                edges.sort(key=lambda e: abs(e.strength), reverse=True)
                 edges = edges[:GLOBAL_EDGE_LIMIT]
 
                 if normalize:
                     edges = normalize_edges_by_target(edges)
 
                 edges_typed = [
-                    EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
-                    for e in edges
+                    EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges
                 ]
 
                 output_probs: dict[str, OutputProbability] = {}
@@ -235,15 +236,14 @@ def compute_graph_optimized_stream(
                 result = runtime_cast(OptimizedLocalAttributionResult, msg["result"])
 
                 edges = result.edges
-                edges.sort(key=lambda x: abs(x[6]), reverse=True)
+                edges.sort(key=lambda e: abs(e.strength), reverse=True)
                 edges = edges[:GLOBAL_EDGE_LIMIT]
 
                 if normalize:
                     edges = normalize_edges_by_target(edges)
 
                 edges_typed = [
-                    EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
-                    for e in edges
+                    EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges
                 ]
 
                 output_probs: dict[str, OutputProbability] = {}

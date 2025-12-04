@@ -45,10 +45,10 @@ export function getTokenHighlightBg(ci: number): string {
 }
 
 /** Get output header gradient background based on probability */
-export function getOutputHeaderGradient(prob: number): string {
+export function getOutputHeaderColor(prob: number): string {
     const { r, g, b } = colors.outputBase;
-    const opacity = Math.min(0.8, prob + 0.1);
-    return `linear-gradient(90deg, rgba(${r},${g},${b},${opacity}) 0%, rgba(${r},${g},${b},0.1) 100%)`;
+    const opacity = Math.min(0.8, prob + 0.05);
+    return `rgba(${r},${g},${b},${opacity})`;
 }
 
 /** Background color with opacity for overlays */

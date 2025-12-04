@@ -61,7 +61,6 @@
     .controls-label {
         font-size: var(--text-xs);
         font-weight: 600;
-        text-transform: uppercase;
         letter-spacing: 0.08em;
         color: var(--text-muted);
         font-family: var(--font-sans);
@@ -78,7 +77,6 @@
 
     label span {
         font-weight: 500;
-        text-transform: uppercase;
         font-size: var(--text-xs);
         letter-spacing: 0.05em;
         color: var(--text-muted);
@@ -128,7 +126,6 @@
         display: flex;
         align-items: center;
         gap: var(--space-1);
-        text-transform: uppercase;
         font-size: var(--text-xs);
         letter-spacing: 0.05em;
     }

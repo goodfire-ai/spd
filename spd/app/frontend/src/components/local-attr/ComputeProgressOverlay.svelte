@@ -105,7 +105,6 @@
         font-family: var(--font-sans);
         color: var(--text-muted);
         font-weight: 500;
-        text-transform: uppercase;
         letter-spacing: 0.05em;
     }
 

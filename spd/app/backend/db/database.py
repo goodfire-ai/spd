@@ -200,44 +200,47 @@ class LocalAttrDB:
     # Prompt operations
     # -------------------------------------------------------------------------
 
-    def add_prompt(
+    def add_prompts(
         self,
         run_id: int,
-        token_ids: list[int],
+        prompts: list[tuple[list[int], dict[str, tuple[float, list[int]]]]],
         context_length: int,
-        active_components: dict[str, tuple[float, list[int]]] | None = None,
-    ) -> int:
-        """Add a prompt to the database.
+    ) -> list[int]:
+        """Add multiple prompts to the database in a single transaction.
 
         Args:
-            run_id: The run this prompt belongs to.
-            token_ids: List of token IDs for this prompt.
-            context_length: The context length setting used when generating this prompt.
-            active_components: Optional dict mapping component_key -> (max_ci, positions).
+            run_id: The run these prompts belong to.
+            prompts: List of (token_ids, active_components) tuples.
+            context_length: The context length setting used when generating these prompts.
 
         Returns:
-            The prompt ID.
+            List of prompt IDs.
         """
         conn = self._get_conn()
+        prompt_ids: list[int] = []
+        component_rows: list[tuple[int, str, float, str]] = []
 
-        cursor = conn.execute(
-            "INSERT INTO prompts (run_id, token_ids, context_length) VALUES (?, ?, ?)",
-            (run_id, json.dumps(token_ids), context_length),
-        )
-        prompt_id = cursor.lastrowid
-        assert prompt_id is not None
+        for token_ids, active_components in prompts:
+            cursor = conn.execute(
+                "INSERT INTO prompts (run_id, token_ids, context_length) VALUES (?, ?, ?)",
+                (run_id, json.dumps(token_ids), context_length),
+            )
+            prompt_id = cursor.lastrowid
+            assert prompt_id is not None
+            prompt_ids.append(prompt_id)
 
-        if active_components:
             for component_key, (max_ci, positions) in active_components.items():
-                conn.execute(
-                    """INSERT INTO component_activations
-                       (prompt_id, component_key, max_ci, positions)
-                       VALUES (?, ?, ?, ?)""",
-                    (prompt_id, component_key, max_ci, json.dumps(positions)),
-                )
+                component_rows.append((prompt_id, component_key, max_ci, json.dumps(positions)))
+
+        if component_rows:
+            conn.executemany(
+                """INSERT INTO component_activations
+                   (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)""",
+                component_rows,
+            )
 
         conn.commit()
-        return prompt_id
+        return prompt_ids
 
     def get_prompt(self, prompt_id: int) -> PromptRecord | None:
         """Get a prompt by ID."""

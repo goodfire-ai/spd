@@ -17,8 +17,8 @@ class OutputProbability(BaseModel):
 class EdgeData(BaseModel):
     """Edge in the attribution graph."""
 
-    src: str  # Format: "layer:component_idx:position"
-    tgt: str
+    src: str  # "layer:seq:cIdx"
+    tgt: str  # "layer:seq:cIdx"
     val: float
 
 
@@ -184,6 +184,7 @@ class LoadedRun(BaseModel):
     has_activation_contexts: bool
     has_prompts: bool
     prompt_count: int
+    context_length: int
 
 
 class SubcomponentMetadata(BaseModel):

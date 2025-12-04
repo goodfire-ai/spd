@@ -113,7 +113,7 @@
                     <span>{generateCount}</span>
                 </div>
             {:else}
-                <button class="btn-generate" onclick={() => onGenerate(100)}> + Generate 100 </button>
+                <button class="btn-generate" onclick={() => onGenerate(50)}> + Generate 50 </button>
             {/if}
         </div>
     </div>

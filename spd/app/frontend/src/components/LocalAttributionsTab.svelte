@@ -407,8 +407,8 @@
                     />
                 </div>
 
-                {#if activeCard}
-                    <div class="card-content">
+                <div class="card-content">
+                    {#if activeCard}
                         <PromptCardHeader
                             card={activeCard}
                             options={computeOptions}
@@ -427,7 +427,10 @@
                                         activeGraph.data.optimization.label_prob * 100
                                     ).toFixed(1)}%</span
                                 >
-                                <span><strong>L0:</strong> {activeGraph.data.optimization.l0_total.toFixed(0)} active</span>
+                                <span
+                                    ><strong>L0:</strong>
+                                    {activeGraph.data.optimization.l0_total.toFixed(0)} active</span
+                                >
                             </div>
                         {/if}
 
@@ -468,13 +471,13 @@
                                 </div>
                             {/if}
                         </div>
-                    </div>
-                {:else}
-                    <div class="empty-state full">
-                        <p>Click <strong>+ Add Prompt</strong> to get started</p>
-                        <p class="hint">{prompts.length} prompts available</p>
-                    </div>
-                {/if}
+                    {:else}
+                        <div class="empty-state">
+                            <p>Click <strong>+ Add Prompt</strong> to get started</p>
+                            <p class="hint">{prompts.length} prompts available</p>
+                        </div>
+                    {/if}
+                </div>
             </div>
         </div>
     {/if}
@@ -490,6 +493,7 @@
 
     .main-content {
         flex: 1;
+        gap: var(--space-4);
         display: flex;
         flex-direction: column;
         min-width: 0;
@@ -517,11 +521,9 @@
         flex-direction: column;
         gap: var(--space-2);
         min-height: 0;
-        padding: var(--space-6);
+        padding: var(--space-4);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
     }
-    
 
     .optim-results {
         display: flex;
@@ -540,6 +542,7 @@
         flex: 1;
         position: relative;
         min-height: 400px;
+        border: 1px solid var(--border-default);
     }
 
     .graph-area.loading {
@@ -548,6 +551,7 @@
 
     .empty-state {
         display: flex;
+        flex: 1;
         flex-direction: column;
         align-items: center;
         justify-content: center;
@@ -556,12 +560,7 @@
         text-align: center;
         padding: var(--space-4);
         font-family: var(--font-sans);
-        border: 1px solid var(--border-default);
         background: var(--bg-surface);
-    }
-
-    .empty-state.full {
-        flex: 1;
     }
 
     .empty-state p {
@@ -598,7 +597,6 @@
     }
 
     .warning-banner {
-        margin: var(--space-2) var(--space-3);
         padding: var(--space-2) var(--space-3);
         background: var(--bg-elevated);
         border: 1px solid var(--accent-primary-dim);

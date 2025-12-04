@@ -12,7 +12,7 @@
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>(null);
-    let contextLength = $state<number>(64);
+    let contextLength = $state<number | null>(null);
 
     let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
@@ -36,6 +36,7 @@
 
             if (!loadedRun) return;
             trainWandbRunEntry = loadedRun.wandb_path;
+            contextLength = loadedRun.context_length;
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
@@ -46,7 +47,7 @@
     async function loadRun(event: Event) {
         event.preventDefault();
         const input = trainWandbRunEntry?.trim();
-        if (!input) return;
+        if (!input || !contextLength) return;
         try {
             loadingTrainRun = true;
             loadedRun = null;
@@ -156,7 +157,7 @@
     .app-layout {
         display: flex;
         flex-direction: column;
-        height: 100vh;
+        min-height: 100vh;
         background: var(--bg-base);
     }
 
@@ -185,7 +186,7 @@
     }
 
     .run-input input[type="text"] {
-        width: 200px;
+        width: 250px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
         border-radius: var(--radius-sm);

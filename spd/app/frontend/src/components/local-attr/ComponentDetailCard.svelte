@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { ComponentDetail, OutputProbEntry, ComponentSummary } from "../../lib/localAttributionsTypes";
-    import { getOutputHeaderGradient } from "../../lib/colors";
+    import { getOutputHeaderColor } from "../../lib/colors";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import TokenHighlights from "../TokenHighlights.svelte";
 
@@ -64,7 +64,7 @@
         {#if outputProbEntry}
             <div
                 class="output-header"
-                style="background: {getOutputHeaderGradient(outputProbEntry.prob)};"
+                style="background: {getOutputHeaderColor(outputProbEntry.prob)};"
             >
                 <div class="output-token">"{escapeHtml(outputProbEntry.token)}"</div>
                 <div class="output-prob">{(outputProbEntry.prob * 100).toFixed(1)}% probability</div>
@@ -122,15 +122,17 @@
                 {:else}
                     <!-- Compact collapsed mode: simple inline examples -->
                     <h4>Top Activating Examples</h4>
-                    {#each detail.example_tokens.slice(0, COMPACT_MAX_EXAMPLES) as tokens, i (i)}
-                        <div class="example-row">
-                            <TokenHighlights
-                                tokenStrings={tokens}
-                                tokenCi={detail.example_ci[i]}
-                                activePosition={detail.example_active_pos[i]}
-                            />
-                        </div>
-                    {/each}
+                    <div class="examples-scroll-container">
+                        {#each detail.example_tokens.slice(0, COMPACT_MAX_EXAMPLES) as tokens, i (i)}
+                            <div class="example-row">
+                                <TokenHighlights
+                                    tokenStrings={tokens}
+                                    tokenCi={detail.example_ci[i]}
+                                    activePosition={detail.example_active_pos[i]}
+                                />
+                            </div>
+                        {/each}
+                    </div>
                     {#if detail.example_tokens.length > COMPACT_MAX_EXAMPLES}
                         <button class="expand-btn" onclick={() => (expanded = true)}>
                             Show all {detail.example_tokens.length} examples...
@@ -199,7 +201,7 @@
         font-size: 1.1em;
         font-weight: 600;
         font-family: var(--font-mono);
-        color: var(--status-positive-bright);
+        color: var(--text-primary);
     }
 
     .output-prob {
@@ -218,7 +220,6 @@
     .stats strong {
         color: var(--text-muted);
         font-weight: 500;
-        text-transform: uppercase;
         font-size: var(--text-xs);
         letter-spacing: 0.05em;
     }
@@ -228,7 +229,6 @@
         font-size: var(--text-sm);
         color: var(--text-secondary);
         font-weight: 600;
-        text-transform: uppercase;
         letter-spacing: 0.05em;
         font-family: var(--font-sans);
     }
@@ -249,10 +249,20 @@
         margin: 0;
     }
 
+    .examples-scroll-container {
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .examples-scroll-container::-webkit-scrollbar {
+        display: none;
+    }
+
     .example-row {
         margin: var(--space-2) 0;
         font-family: var(--font-mono);
         font-size: var(--text-sm);
+        white-space: nowrap;
     }
 
     .expand-btn,
@@ -305,7 +315,6 @@
         font-size: var(--text-sm);
         color: var(--text-muted);
         font-family: var(--font-mono);
-        text-transform: uppercase;
         letter-spacing: 0.05em;
     }
 </style>
