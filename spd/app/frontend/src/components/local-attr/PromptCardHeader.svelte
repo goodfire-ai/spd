@@ -1,12 +1,12 @@
 <script lang="ts">
-    import type { PromptCard, ComputeOptions } from "./types";
+    import type { PromptCard, ComputeOptions, OptimizeConfig } from "./types";
 
     type Props = {
         card: PromptCard;
         options: ComputeOptions;
         isLoading: boolean;
-        loadingMode: "standard" | "optimized";
-        onOptionsChange: (options: Partial<ComputeOptions>) => void;
+        onOptionsChange: (update: Partial<ComputeOptions>) => void;
+        onOptimizeConfigChange: (update: Partial<OptimizeConfig>) => void;
         onCompute: () => void;
         onSelectGraph: (graphId: string) => void;
         onCloseGraph: (graphId: string) => void;
@@ -16,22 +16,24 @@
         card,
         options,
         isLoading,
-        loadingMode,
         onOptionsChange,
+        onOptimizeConfigChange,
         onCompute,
         onSelectGraph,
         onCloseGraph,
     }: Props = $props();
 
+    const optConfig = $derived(options.optimizeConfig);
+
     const canCompute = $derived(
-        !isLoading && (!options.useOptimized || options.labelTokenId !== null)
+        !isLoading && (!options.useOptimized || optConfig.labelTokenId !== null)
     );
 
     const buttonText = $derived.by(() => {
         if (isLoading) {
-            return loadingMode === "optimized" ? "Optimizing..." : "Computing...";
+            return "Computing...";
         }
-        if (options.useOptimized && !options.labelTokenId) {
+        if (options.useOptimized && !optConfig.labelTokenId) {
             return "Enter label token";
         }
         return options.useOptimized ? "Compute (Optimized)" : "Compute";
@@ -79,14 +81,14 @@
                     <span>Label</span>
                     <input
                         type="text"
-                        value={options.labelTokenText}
-                        oninput={(e) => onOptionsChange({ labelTokenText: e.currentTarget.value })}
+                        value={optConfig.labelTokenText}
+                        oninput={(e) => onOptimizeConfigChange({ labelTokenText: e.currentTarget.value })}
                         placeholder="e.g. ' world'"
                         class="text-input"
                     />
-                    {#if options.labelTokenPreview}
-                        <span class="token-preview" class:error={!options.labelTokenId}>
-                            → {options.labelTokenPreview}
+                    {#if optConfig.labelTokenPreview}
+                        <span class="token-preview" class:error={!optConfig.labelTokenId}>
+                            → {optConfig.labelTokenPreview}
                         </span>
                     {/if}
                 </label>
@@ -94,8 +96,8 @@
                     <span>imp_min</span>
                     <input
                         type="number"
-                        value={options.impMinCoeff}
-                        oninput={(e) => onOptionsChange({ impMinCoeff: parseFloat(e.currentTarget.value) || 0.1 })}
+                        value={optConfig.impMinCoeff}
+                        oninput={(e) => onOptimizeConfigChange({ impMinCoeff: parseFloat(e.currentTarget.value) || 0.1 })}
                         min={0.001}
                         max={10}
                         step={0.01}
@@ -105,8 +107,8 @@
                     <span>ce</span>
                     <input
                         type="number"
-                        value={options.ceLossCoeff}
-                        oninput={(e) => onOptionsChange({ ceLossCoeff: parseFloat(e.currentTarget.value) || 1.0 })}
+                        value={optConfig.ceLossCoeff}
+                        oninput={(e) => onOptimizeConfigChange({ ceLossCoeff: parseFloat(e.currentTarget.value) || 1.0 })}
                         min={0.001}
                         max={10}
                         step={0.1}
@@ -116,8 +118,8 @@
                     <span>steps</span>
                     <input
                         type="number"
-                        value={options.optimSteps}
-                        oninput={(e) => onOptionsChange({ optimSteps: parseInt(e.currentTarget.value) || 2000 })}
+                        value={optConfig.steps}
+                        oninput={(e) => onOptimizeConfigChange({ steps: parseInt(e.currentTarget.value) || 2000 })}
                         min={10}
                         max={5000}
                         step={100}
@@ -127,8 +129,8 @@
                     <span>pnorm</span>
                     <input
                         type="number"
-                        value={options.optimPnorm}
-                        oninput={(e) => onOptionsChange({ optimPnorm: parseFloat(e.currentTarget.value) || 0.3 })}
+                        value={optConfig.pnorm}
+                        oninput={(e) => onOptimizeConfigChange({ pnorm: parseFloat(e.currentTarget.value) || 0.3 })}
                         min={0.1}
                         max={1}
                         step={0.1}

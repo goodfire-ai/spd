@@ -16,21 +16,29 @@ export type PromptCard = {
     activeGraphId: string | null;
 };
 
-export type ComputeOptions = {
-    maxMeanCI: number;
-    normalizeEdges: boolean;
-    useOptimized: boolean;
+export type OptimizeConfig = {
     labelTokenText: string;
     labelTokenId: number | null;
     labelTokenPreview: string | null;
     impMinCoeff: number;
     ceLossCoeff: number;
-    optimSteps: number;
-    optimPnorm: number;
+    steps: number;
+    pnorm: number;
 };
 
-export type LoadingProgress = {
-    current: number;
-    total: number;
-    stage: string;
+export type ComputeOptions = {
+    maxMeanCI: number;
+    normalizeEdges: boolean;
+    useOptimized: boolean;
+    optimizeConfig: OptimizeConfig;
+};
+
+export type LoadingStage = {
+    name: string;
+    progress: number | null; // 0-1, or null for indeterminate
+};
+
+export type LoadingState = {
+    stages: LoadingStage[];
+    currentStage: number; // 0-indexed
 };

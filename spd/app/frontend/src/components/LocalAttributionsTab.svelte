@@ -7,7 +7,7 @@
         ActivationContextsSummary,
         PinnedNode,
     } from "../lib/localAttributionsTypes";
-    import type { PromptCard, ComputeOptions, LoadingProgress } from "./local-attr/types";
+    import type { PromptCard, ComputeOptions, OptimizeConfig, LoadingState } from "./local-attr/types";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import PromptPicker from "./local-attr/PromptPicker.svelte";
@@ -33,8 +33,7 @@
 
     // Loading state
     let loadingCardId = $state<string | null>(null);
-    let loadingMode = $state<"standard" | "optimized">("standard");
-    let loadingProgress = $state<LoadingProgress | null>(null);
+    let loadingState = $state<LoadingState | null>(null);
     let computeError = $state<string | null>(null);
 
     // Graph generation state
@@ -55,13 +54,15 @@
         maxMeanCI: 1.0,
         normalizeEdges: true,
         useOptimized: false,
-        labelTokenText: "",
-        labelTokenId: null,
-        labelTokenPreview: null,
-        impMinCoeff: 0.1,
-        ceLossCoeff: 1.0,
-        optimSteps: 2000,
-        optimPnorm: 0.3,
+        optimizeConfig: {
+            labelTokenText: "",
+            labelTokenId: null,
+            labelTokenPreview: null,
+            impMinCoeff: 0.1,
+            ceLossCoeff: 1.0,
+            steps: 2000,
+            pnorm: 0.3,
+        },
     });
 
     // Pinned nodes (for search)
@@ -70,10 +71,10 @@
     // Tokenize label text when it changes
     let labelTokenizeTimeout: ReturnType<typeof setTimeout> | null = null;
     $effect(() => {
-        const text = computeOptions.labelTokenText.trim();
+        const text = computeOptions.optimizeConfig.labelTokenText.trim();
         if (!text) {
-            computeOptions.labelTokenId = null;
-            computeOptions.labelTokenPreview = null;
+            computeOptions.optimizeConfig.labelTokenId = null;
+            computeOptions.optimizeConfig.labelTokenPreview = null;
             return;
         }
 
@@ -82,18 +83,18 @@
             try {
                 const result = await attrApi.tokenizeText(text);
                 if (result.token_ids.length === 1) {
-                    computeOptions.labelTokenId = result.token_ids[0];
-                    computeOptions.labelTokenPreview = result.tokens[0];
+                    computeOptions.optimizeConfig.labelTokenId = result.token_ids[0];
+                    computeOptions.optimizeConfig.labelTokenPreview = result.tokens[0];
                 } else if (result.token_ids.length > 1) {
-                    computeOptions.labelTokenId = result.token_ids[0];
-                    computeOptions.labelTokenPreview = `${result.tokens[0]} (${result.token_ids.length} tokens, using first)`;
+                    computeOptions.optimizeConfig.labelTokenId = result.token_ids[0];
+                    computeOptions.optimizeConfig.labelTokenPreview = `${result.tokens[0]} (${result.token_ids.length} tokens, using first)`;
                 } else {
-                    computeOptions.labelTokenId = null;
-                    computeOptions.labelTokenPreview = "(no tokens)";
+                    computeOptions.optimizeConfig.labelTokenId = null;
+                    computeOptions.optimizeConfig.labelTokenPreview = "(no tokens)";
                 }
             } catch {
-                computeOptions.labelTokenId = null;
-                computeOptions.labelTokenPreview = "(error)";
+                computeOptions.optimizeConfig.labelTokenId = null;
+                computeOptions.optimizeConfig.labelTokenPreview = "(error)";
             }
         }, 300);
     });
@@ -218,32 +219,59 @@
         computeOptions = { ...computeOptions, ...partial };
     }
 
+    function handleOptimizeConfigChange(partial: Partial<OptimizeConfig>) {
+        computeOptions.optimizeConfig = { ...computeOptions.optimizeConfig, ...partial };
+    }
+
     async function computeGraphForCard() {
         if (!activeCard || !activeCard.tokenIds || loadingCardId) return;
 
         loadingCardId = activeCard.id;
-        loadingMode = computeOptions.useOptimized ? "optimized" : "standard";
-        loadingProgress = null;
         computeError = null;
+
+        const optConfig = computeOptions.optimizeConfig;
+        const isOptimized = computeOptions.useOptimized;
+
+        // Set up stages
+        if (isOptimized) {
+            loadingState = {
+                stages: [
+                    { name: "Optimizing", progress: 0 },
+                    { name: "Computing graph", progress: null },
+                ],
+                currentStage: 0,
+            };
+        } else {
+            loadingState = {
+                stages: [{ name: "Computing graph", progress: null }],
+                currentStage: 0,
+            };
+        }
 
         try {
             let data: GraphData;
 
-            if (computeOptions.useOptimized) {
-                if (!computeOptions.labelTokenId) throw new Error("Label token required for optimization");
+            if (isOptimized) {
+                if (!optConfig.labelTokenId) throw new Error("Label token required for optimization");
                 data = await attrApi.computeGraphOptimizedStreaming(
                     {
                         tokenIds: activeCard.tokenIds,
-                        labelToken: computeOptions.labelTokenId,
+                        labelToken: optConfig.labelTokenId,
                         normalize: computeOptions.normalizeEdges,
-                        impMinCoeff: computeOptions.impMinCoeff,
-                        ceLossCoeff: computeOptions.ceLossCoeff,
-                        steps: computeOptions.optimSteps,
-                        pnorm: computeOptions.optimPnorm,
+                        impMinCoeff: optConfig.impMinCoeff,
+                        ceLossCoeff: optConfig.ceLossCoeff,
+                        steps: optConfig.steps,
+                        pnorm: optConfig.pnorm,
                         outputProbThreshold: 0.01,
                     },
                     (progress) => {
-                        loadingProgress = progress;
+                        if (loadingState) {
+                            loadingState.stages[0].progress = progress.current / progress.total;
+                            // Move to stage 2 when optimization completes
+                            if (progress.stage === "graph") {
+                                loadingState.currentStage = 1;
+                            }
+                        }
                     },
                 );
             } else {
@@ -254,7 +282,7 @@
             }
 
             const graphId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const label = computeOptions.useOptimized ? `Optimized (${computeOptions.optimSteps} steps)` : "Standard";
+            const label = isOptimized ? `Optimized (${optConfig.steps} steps)` : "Standard";
 
             promptCards = promptCards.map((card) => {
                 if (card.id !== activeCard.id) return card;
@@ -268,7 +296,7 @@
             computeError = e instanceof Error ? e.message : "Failed to compute graph";
         } finally {
             loadingCardId = null;
-            loadingProgress = null;
+            loadingState = null;
         }
     }
 
@@ -380,8 +408,8 @@
                         card={activeCard}
                         options={computeOptions}
                         isLoading={loadingCardId === activeCard.id}
-                        {loadingMode}
                         onOptionsChange={handleOptionsChange}
+                        onOptimizeConfigChange={handleOptimizeConfigChange}
                         onCompute={computeGraphForCard}
                         onSelectGraph={handleSelectGraph}
                         onCloseGraph={handleCloseGraph}
@@ -402,8 +430,8 @@
                     {/if}
 
                     <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
-                        {#if loadingCardId === activeCard.id}
-                            <ComputeProgressOverlay mode={loadingMode} progress={loadingProgress} />
+                        {#if loadingCardId === activeCard.id && loadingState}
+                            <ComputeProgressOverlay state={loadingState} />
                         {/if}
 
                         {#if activeGraph}
