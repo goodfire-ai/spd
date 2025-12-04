@@ -22,6 +22,7 @@ def _pgd_recon_layerwise_loss_update(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> tuple[Float[Tensor, ""], Int[Tensor, ""]]:
     device = next(iter(ci.values())).device
     sum_loss = torch.tensor(0.0, device=device)
@@ -36,6 +37,7 @@ def _pgd_recon_layerwise_loss_update(
             output_loss_type=output_loss_type,
             router=LayerRouter(device=device, layer_name=layer),
             pgd_config=pgd_config,
+            labels=labels,
         )
         sum_loss += sum_loss_layer
         n_examples += n_examples_layer
@@ -51,6 +53,7 @@ def pgd_recon_layerwise_loss(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _pgd_recon_layerwise_loss_update(
         model=model,
@@ -60,6 +63,7 @@ def pgd_recon_layerwise_loss(
         ci=ci,
         weight_deltas=weight_deltas,
         pgd_config=pgd_config,
+        labels=labels,
     )
     return sum_loss / n_examples
 
@@ -93,6 +97,7 @@ class PGDReconLayerwiseLoss(Metric):
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+        labels: Int[Tensor, "batch"] | None = None,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _pgd_recon_layerwise_loss_update(
@@ -103,6 +108,7 @@ class PGDReconLayerwiseLoss(Metric):
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
             pgd_config=self.pgd_config,
+            labels=labels,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

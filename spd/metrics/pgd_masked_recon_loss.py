@@ -22,6 +22,7 @@ def pgd_recon_loss(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = pgd_masked_recon_loss_update(
         model=model,
@@ -32,6 +33,7 @@ def pgd_recon_loss(
         output_loss_type=output_loss_type,
         router=AllLayersRouter(),
         pgd_config=pgd_config,
+        labels=labels,
     )
     return sum_loss / n_examples
 
@@ -65,6 +67,7 @@ class PGDReconLoss(Metric):
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+        labels: Int[Tensor, "batch"] | None = None,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = pgd_masked_recon_loss_update(
@@ -76,6 +79,7 @@ class PGDReconLoss(Metric):
             output_loss_type=self.output_loss_type,
             router=AllLayersRouter(),
             pgd_config=self.pgd_config,
+            labels=labels,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples
