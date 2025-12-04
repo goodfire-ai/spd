@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { getTokenHighlightBg } from "../lib/colors";
+
     interface Props {
         tokenStrings: string[];
         tokenCi: number[]; // CI values (0-1 floats)
@@ -12,7 +14,7 @@
     >{#each tokenStrings as tok, i (i)}<span
             class="token-highlight"
             class:active-token={i === activePosition}
-            style="background-color:rgba(42,125,76,{tokenCi[i] * 0.35})"
+            style="background-color:{getTokenHighlightBg(tokenCi[i])}"
             data-ci="CI: {tokenCi[i].toFixed(3)}">{tok}</span
         >{/each}</span
 >
@@ -27,6 +29,8 @@
     .token-highlight {
         display: inline;
         padding: 1px 0;
+        margin-right: 1px;
+        border-right: 1px solid var(--border-subtle);
         position: relative;
         white-space: pre;
     }

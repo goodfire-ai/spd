@@ -22,9 +22,9 @@ DEVICE = get_device()
 @router.get("")
 @log_errors
 def list_prompts(manager: DepStateManager, loaded: DepLoadedRun) -> list[PromptPreview]:
-    """Return list of all prompts for the loaded run."""
+    """Return list of all prompts for the loaded run with matching context length."""
     db = manager.db
-    prompt_ids = db.get_all_prompt_ids(loaded.run.id)
+    prompt_ids = db.get_all_prompt_ids(loaded.run.id, loaded.context_length)
 
     results: list[PromptPreview] = []
     for pid in prompt_ids:
@@ -97,7 +97,7 @@ def generate_prompts(
                 )
 
                 # Add to DB with active components
-                db.add_prompt(loaded.run.id, token_ids, active_components)
+                db.add_prompt(loaded.run.id, token_ids, loaded.context_length, active_components)
                 added_count += 1
 
             # Stream progress after each batch
@@ -106,7 +106,7 @@ def generate_prompts(
             yield f"data: {json.dumps(progress_data)}\n\n"
 
         # Final result
-        total = db.get_prompt_count(loaded.run.id)
+        total = db.get_prompt_count(loaded.run.id, loaded.context_length)
         complete_data = {
             "type": "complete",
             "prompts_added": added_count,

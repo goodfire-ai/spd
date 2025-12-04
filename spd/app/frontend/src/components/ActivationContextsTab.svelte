@@ -154,117 +154,128 @@
     .tab-content {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: var(--space-2);
+        padding: var(--space-3);
     }
 
     .controls {
         display: flex;
-        gap: 0.5rem;
-        padding: 0.5rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
+        gap: var(--space-2);
+        padding: var(--space-3);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
         flex-direction: column;
     }
 
     .config-section {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: var(--space-2);
     }
 
     .config-section h4 {
         margin: 0;
-        font-size: 1rem;
-        color: #495057;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .config-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-        gap: 0.5rem;
+        gap: var(--space-2);
     }
 
     .config-item {
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
+        gap: var(--space-1);
     }
 
     .config-item label {
-        font-size: 0.875rem;
-        color: #495057;
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
         font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .config-item input {
-        padding: 0.5rem;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        font-size: 0.9rem;
-        background: white;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+    }
+
+    .config-item input:focus {
+        outline: none;
+        border-color: var(--accent-warm-dim);
     }
 
     .load-button {
-        padding: 0.75rem 1.5rem;
-        border: 1px solid #0d6efd;
-        border-radius: 4px;
-        background: #0d6efd;
-        color: white;
+        padding: var(--space-2) var(--space-4);
+        border: none;
+        background: var(--accent-warm);
+        color: var(--bg-base);
         cursor: pointer;
-        font-size: 1rem;
-        font-weight: 500;
-        transition: background 0.2s;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
         align-self: flex-start;
     }
 
     .load-button:hover:not(:disabled) {
-        background: #0b5ed7;
+        background: var(--text-primary);
     }
 
     .load-button:disabled {
-        opacity: 0.6;
+        background: var(--border-default);
+        color: var(--text-muted);
         cursor: not-allowed;
     }
 
     .progress-container {
-        padding: 0.5rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
+        padding: var(--space-3);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
     }
 
     .progress-text {
-        margin-bottom: 0.5rem;
-        font-size: 0.9rem;
-        color: #495057;
+        margin-bottom: var(--space-2);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
         font-weight: 500;
     }
 
     .progress-bar {
         width: 100%;
-        height: 24px;
-        background: #e9ecef;
-        border-radius: 4px;
+        height: 4px;
+        background: var(--border-default);
         overflow: hidden;
     }
 
     .progress-fill {
         height: 100%;
-        background: linear-gradient(90deg, #0d6efd 0%, #0b5ed7 100%);
-        transition: width 0.3s ease;
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        padding-right: 0.5rem;
-        color: white;
-        font-size: 0.875rem;
-        font-weight: 500;
+        background: var(--accent-warm);
+        transition: width 0.15s ease-out;
     }
 
     .loading {
-        padding: 0.5rem;
+        padding: var(--space-3);
         text-align: center;
-        color: #6c757d;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 </style>

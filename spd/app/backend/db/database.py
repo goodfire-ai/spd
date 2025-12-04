@@ -98,7 +98,8 @@ class LocalAttrDB:
             CREATE TABLE IF NOT EXISTS prompts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id INTEGER NOT NULL REFERENCES runs(id),
-                token_ids TEXT NOT NULL
+                token_ids TEXT NOT NULL,
+                context_length INTEGER NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS component_activations (
@@ -236,6 +237,7 @@ class LocalAttrDB:
         self,
         run_id: int,
         token_ids: list[int],
+        context_length: int,
         active_components: dict[str, tuple[float, list[int]]] | None = None,
     ) -> int:
         """Add a prompt to the database.
@@ -243,6 +245,7 @@ class LocalAttrDB:
         Args:
             run_id: The run this prompt belongs to.
             token_ids: List of token IDs for this prompt.
+            context_length: The context length setting used when generating this prompt.
             active_components: Optional dict mapping component_key -> (max_ci, positions).
 
         Returns:
@@ -251,8 +254,8 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         cursor = conn.execute(
-            "INSERT INTO prompts (run_id, token_ids) VALUES (?, ?)",
-            (run_id, json.dumps(token_ids)),
+            "INSERT INTO prompts (run_id, token_ids, context_length) VALUES (?, ?, ?)",
+            (run_id, json.dumps(token_ids), context_length),
         )
         prompt_id = cursor.lastrowid
         assert prompt_id is not None
@@ -285,25 +288,27 @@ class LocalAttrDB:
             token_ids=json.loads(row["token_ids"]),
         )
 
-    def get_prompt_count(self, run_id: int) -> int:
-        """Get total number of prompts for a run."""
+    def get_prompt_count(self, run_id: int, context_length: int) -> int:
+        """Get total number of prompts for a run with a specific context length."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM prompts WHERE run_id = ?", (run_id,)
+            "SELECT COUNT(*) as cnt FROM prompts WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
         ).fetchone()
         return row["cnt"]
 
-    def get_all_prompt_ids(self, run_id: int) -> list[int]:
-        """Get all prompt IDs for a run."""
+    def get_all_prompt_ids(self, run_id: int, context_length: int) -> list[int]:
+        """Get all prompt IDs for a run with a specific context length."""
         conn = self._get_conn()
         rows = conn.execute(
-            "SELECT id FROM prompts WHERE run_id = ? ORDER BY id", (run_id,)
+            "SELECT id FROM prompts WHERE run_id = ? AND context_length = ? ORDER BY id",
+            (run_id, context_length),
         ).fetchall()
         return [row["id"] for row in rows]
 
-    def has_prompts(self, run_id: int) -> bool:
-        """Check if any prompts exist for a run."""
-        return self.get_prompt_count(run_id) > 0
+    def has_prompts(self, run_id: int, context_length: int) -> bool:
+        """Check if any prompts exist for a run with a specific context length."""
+        return self.get_prompt_count(run_id, context_length) > 0
 
     # -------------------------------------------------------------------------
     # Query operations

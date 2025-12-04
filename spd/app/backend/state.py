@@ -29,6 +29,7 @@ class RunState:
     config: Config
     token_strings: dict[int, str]
     train_loader: DataLoader[Any]
+    context_length: int
     activation_contexts_cache: ModelActivationContexts | None = None
 
 

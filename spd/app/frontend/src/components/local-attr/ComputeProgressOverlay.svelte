@@ -1,14 +1,17 @@
 <script lang="ts">
     import type { LoadingState } from "./types";
+    import { bgBaseRgb } from "../../lib/colors";
 
     type Props = {
         state: LoadingState;
     };
 
     let { state }: Props = $props();
+
+    const overlayBg = `rgba(${bgBaseRgb.r}, ${bgBaseRgb.g}, ${bgBaseRgb.b}, 0.95)`;
 </script>
 
-<div class="loading-overlay">
+<div class="loading-overlay" style="background: {overlayBg};">
     <div class="stages">
         {#each state.stages as stage, i (i)}
             {@const isCurrent = i === state.currentStage}
@@ -45,7 +48,6 @@
     .loading-overlay {
         position: absolute;
         inset: 0;
-        background: rgba(245, 243, 239, 0.95);
         display: flex;
         align-items: center;
         justify-content: center;

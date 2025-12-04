@@ -139,6 +139,10 @@
             <LocalAttributionsTab />
         {:else if loadedRun && activeTab === "activation-contexts"}
             <ActivationContextsTab />
+        {:else if loadingTrainRun}
+            <div class="empty-state">
+                <p>Loading run...</p>
+            </div>
         {:else if !loadedRun}
             <div class="empty-state">
                 <p>Enter a W&B Run ID above to get started</p>
@@ -167,15 +171,17 @@
 
     .run-input {
         display: flex;
-        gap: var(--space-1);
+        align-items: center;
+        gap: var(--space-2);
     }
 
-    /* CHECK */
     .run-input label {
-        font-size: var(--text-sm);
-        color: var(--text-secondary);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
         white-space: nowrap;
         font-family: var(--font-mono);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .run-input input[type="text"] {
@@ -193,11 +199,13 @@
     }
 
     .run-input input[type="number"] {
-        width: 60px;
-        padding: 0.4rem 0.6rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 0.85rem;
+        width: 70px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
     }
 
     .run-input input[type="text"]:focus,

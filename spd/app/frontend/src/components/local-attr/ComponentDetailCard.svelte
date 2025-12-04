@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { ComponentDetail, OutputProbEntry, ComponentSummary } from "../../lib/localAttributionsTypes";
+    import { getOutputHeaderGradient } from "../../lib/colors";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import TokenHighlights from "../TokenHighlights.svelte";
 
@@ -63,10 +64,7 @@
         {#if outputProbEntry}
             <div
                 class="output-header"
-                style="background: linear-gradient(90deg, rgba(76, 175, 80, {Math.min(
-                    0.8,
-                    outputProbEntry.prob + 0.1,
-                )}) 0%, rgba(76, 175, 80, 0.1) 100%);"
+                style="background: {getOutputHeaderGradient(outputProbEntry.prob)};"
             >
                 <div class="output-token">"{escapeHtml(outputProbEntry.token)}"</div>
                 <div class="output-prob">{(outputProbEntry.prob * 100).toFixed(1)}% probability</div>

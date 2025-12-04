@@ -11,6 +11,7 @@
         ComponentDetail,
     } from "../lib/localAttributionsTypes";
     import * as api from "../lib/localAttributionsApi";
+    import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
     import ComponentDetailCard from "./local-attr/ComponentDetailCard.svelte";
     import PinnedComponentsPanel from "./local-attr/PinnedComponentsPanel.svelte";
 
@@ -20,7 +21,6 @@
     const LAYER_GAP = 30;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
-    const NODE_COLOR = "#8a867e";
 
     // Row order for layout (qkv share a row)
     const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "output"];
@@ -386,7 +386,7 @@
             const p1 = nodePositions[edge.src];
             const p2 = nodePositions[edge.tgt];
             if (p1 && p2) {
-                const color = edge.val > 0 ? "#2868a0" : "#c43c3c";
+                const color = getEdgeColor(edge.val);
                 const w = lerp(1, 4, Math.abs(edge.val) / maxAbsAttr);
                 const op = lerp(0, 0.5, Math.abs(edge.val) / maxAbsAttr);
                 const dy = Math.abs(p2.y - p1.y);
@@ -450,19 +450,14 @@
             const seqIdx = parseInt(seqIdxStr);
             const cIdx = parseInt(cIdxStr);
 
-            let fill = NODE_COLOR;
+            let fill: string = colors.nodeDefault;
             let opacity = 0.2;
 
             if (layer === "output") {
                 const probEntry = data.outputProbs[`${seqIdx}:${cIdx}`];
                 if (probEntry) {
-                    const prob = probEntry.prob;
-                    // Clean green gradient based on probability
-                    const r = Math.round(42 + prob * 10);
-                    const g = Math.round(125 + prob * 25);
-                    const b = Math.round(76 + prob * 16);
-                    fill = `rgb(${r}, ${g}, ${b})`;
-                    opacity = 0.4 + prob * 0.6;
+                    fill = getOutputNodeColor(probEntry.prob);
+                    opacity = 0.4 + probEntry.prob * 0.6;
                 }
             } else {
                 const importance = componentImportanceLocal[`${layer}:${seqIdx}:${cIdx}`] || 0;
@@ -616,7 +611,7 @@
                     font-size="10"
                     font-weight="500"
                     font-family="'Berkeley Mono', 'SF Mono', monospace"
-                    fill="#4a4844"
+                    fill={colors.textSecondary}
                 >
                     {label}
                 </text>
@@ -672,7 +667,7 @@
                         font-size="11"
                         font-family="'Berkeley Mono', 'SF Mono', monospace"
                         font-weight="500"
-                        fill="#1a1918"
+                        fill={colors.textPrimary}
                         style="white-space: pre"
                     >
                         {token}
@@ -683,7 +678,7 @@
                         text-anchor="middle"
                         font-size="9"
                         font-family="'Berkeley Mono', 'SF Mono', monospace"
-                        fill="#8a867e">[{i}]</text
+                        fill={colors.textMuted}>[{i}]</text
                     >
                 {/each}
             </svg>
@@ -703,7 +698,7 @@
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>
-                <span style="color: {hoveredEdge.val > 0 ? '#2868a0' : '#c43c3c'}; font-weight: 600;">
+                <span style="color: {getEdgeColor(hoveredEdge.val)}; font-weight: 600;">
                     {hoveredEdge.val.toFixed(4)}
                 </span>
             </div>

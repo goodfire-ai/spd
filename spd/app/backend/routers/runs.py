@@ -118,6 +118,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         config=spd_config,
         token_strings=token_strings,
         train_loader=train_loader,
+        context_length=context_length,
     )
 
     logger.info(f"[API] Run {run.id} loaded on {DEVICE}")
@@ -136,13 +137,14 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         manager.run_state.config.model_dump(), default_flow_style=False, sort_keys=False
     )
 
+    context_length = manager.run_state.context_length
     return LoadedRun(
         id=run.id,
         wandb_path=run.wandb_path,
         config_yaml=config_yaml,
         has_activation_contexts=manager.db.has_activation_contexts(run.id),
-        has_prompts=manager.db.has_prompts(run.id),
-        prompt_count=manager.db.get_prompt_count(run.id),
+        has_prompts=manager.db.has_prompts(run.id, context_length),
+        prompt_count=manager.db.get_prompt_count(run.id, context_length),
     )
 
 

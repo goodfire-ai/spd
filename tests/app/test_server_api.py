@@ -151,6 +151,7 @@ def app_with_state():
         run_state = RunState(
             run=run,
             model=model,
+            context_length=1,
             tokenizer=None,  # pyright: ignore[reportArgumentType]
             sources_by_target=sources_by_target,
             config=config,
