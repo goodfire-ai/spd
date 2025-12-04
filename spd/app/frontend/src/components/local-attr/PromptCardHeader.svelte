@@ -85,9 +85,9 @@
                         class="text-input"
                     />
                     {#if optConfig.labelTokenPreview}
-                        <span class="token-preview" class:error={!optConfig.labelTokenId}>
+                        <code class="token-preview" class:error={!optConfig.labelTokenId}>
                             → {optConfig.labelTokenPreview}
-                        </span>
+                        </code>
                     {/if}
                 </label>
                 <label>

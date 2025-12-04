@@ -54,10 +54,11 @@
             console.log("loading run", wandbRunPath);
             trainWandbRunEntry = wandbRunPath;
             await api.loadRun(wandbRunPath, contextLength);
+            // Set loading false before calling loadStatus, otherwise the guard returns early
+            loadingTrainRun = false;
             await loadStatus();
         } catch (error) {
             console.error("error loading run", error);
-        } finally {
             loadingTrainRun = false;
         }
     }
