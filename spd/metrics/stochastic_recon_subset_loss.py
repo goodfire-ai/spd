@@ -24,6 +24,7 @@ def _stochastic_recon_subset_loss_update(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
     router: Router,
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     device = get_obj_device(ci)
@@ -43,7 +44,7 @@ def _stochastic_recon_subset_loss_update(
     for stoch_mask_infos in stoch_mask_infos_list:
         out = model(batch, mask_infos=stoch_mask_infos)
         loss_type = output_loss_type
-        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
+        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type, labels=labels)
         if loss_type == "mse":
             n_examples += out.shape.numel()
         elif loss_type == "mem":
@@ -72,6 +73,7 @@ def stochastic_recon_subset_loss(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
     routing: SubsetRoutingType,
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _stochastic_recon_subset_loss_update(
         model=model,
@@ -83,6 +85,7 @@ def stochastic_recon_subset_loss(
         ci=ci,
         weight_deltas=weight_deltas,
         router=get_subset_router(routing, batch.device),
+        labels=labels,
     )
     return _stochastic_recon_subset_loss_compute(sum_loss, n_examples)
 
@@ -119,6 +122,7 @@ class StochasticReconSubsetLoss(Metric):
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+        labels: Int[Tensor, "batch"] | None = None,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _stochastic_recon_subset_loss_update(
@@ -131,6 +135,7 @@ class StochasticReconSubsetLoss(Metric):
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
             router=self.router,
+            labels=labels,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples
