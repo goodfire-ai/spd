@@ -52,6 +52,7 @@ def compute_total_loss(
     use_delta_component: bool,
     n_mask_samples: int,
     output_loss_type: Literal["mse", "kl", "mem"],
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -140,6 +141,7 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     routing=cfg.routing,
+                    labels=labels,
                 )
             case PGDReconLossConfig():
                 loss = pgd_recon_loss(
@@ -161,6 +163,7 @@ def compute_total_loss(
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
                     routing=cfg.routing,
+                    labels=labels,
                 )
             case PGDReconLayerwiseLossConfig():
                 loss = pgd_recon_layerwise_loss(

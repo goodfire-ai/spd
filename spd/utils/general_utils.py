@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import wandb
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from pydantic import BaseModel, PositiveFloat
 from pydantic.v1.utils import deep_update
 from torch import Tensor
@@ -114,7 +114,8 @@ def get_lr_schedule_fn(
         return (
             lambda step, steps: 1.0
             if steps == 1
-            else 0.1 + (1 - 0.1) * 0.5 * np.cos(np.pi * step / (steps - 1))
+            else 0.1 + (1 - 0.1) * 0.5*(1+np.cos(np.pi * step / (steps - 1)))
+
         )
     else:
         # Exponential
@@ -206,6 +207,32 @@ def extract_batch_data(
     return tensor
 
 
+def extract_batch_labels(
+    batch_item: dict[str, Any] | tuple[Tensor, ...] | Tensor,
+    label_key: str = "labels",
+) -> Tensor | None:
+    """Extract labels from various batch formats.
+
+    This utility function handles different batch formats commonly used across the codebase:
+    1. Dictionary format: {"labels": Tensor, "..."} - common in LM tasks
+    2. Tuple format: (input_tensor, labels) - common in SPD optimization
+    3. Direct tensor: no labels available
+
+    Args:
+        batch_item: The batch item from a data loader
+        label_key: Key to use for dictionary format (default: "labels")
+
+    Returns:
+        The labels tensor extracted from the batch, or None if not available
+    """
+    if isinstance(batch_item, dict):
+        return batch_item.get(label_key)
+    elif isinstance(batch_item, tuple) and len(batch_item) >= 2:
+        return batch_item[1]
+    else:
+        return None
+
+
 def calc_kl_divergence_lm(
     pred: Float[Tensor, "... vocab"],
     target: Float[Tensor, "... vocab"],
@@ -236,6 +263,7 @@ def calc_sum_recon_loss_lm(
     pred: Float[Tensor, "... vocab"],
     target: Float[Tensor, "... vocab"],
     loss_type: Literal["mse", "kl", "mem"],
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> Float[Tensor, ""]:
     """Calculate the reconstruction loss for a language model without reduction.
 
@@ -245,7 +273,8 @@ def calc_sum_recon_loss_lm(
         loss_type: The type of loss to compute:
             - "mse": Mean squared error across all positions
             - "kl": KL divergence across all positions
-            - "mem": KL divergence at the final sequence position only (for mem task)
+            - "mem": Cross-entropy at the final sequence position using labels
+        labels: Ground truth labels for cross-entropy (required for "mem" loss type)
 
     Returns:
         The summed loss (not yet divided by number of examples)
@@ -256,11 +285,12 @@ def calc_sum_recon_loss_lm(
         case "kl":
             loss = calc_kl_divergence_lm(pred=pred, target=target, reduce=False).sum()
         case "mem":
-            # Only compute KL at the final sequence position
-            # pred/target shape: [batch, seq_len, vocab] -> take [:, -1, :]
+            # Cross-entropy at the final sequence position using ground truth labels
+            # pred shape: [batch, seq_len, vocab] -> take [:, -1, :]
+            if labels is None:
+                raise ValueError("labels must be provided for 'mem' loss type")
             pred_final = pred[:, -1, :]  # [batch, vocab]
-            target_final = target[:, -1, :]  # [batch, vocab]
-            loss = calc_kl_divergence_lm(pred=pred_final, target=target_final, reduce=False).sum()
+            loss = F.cross_entropy(pred_final, labels, reduction="sum")
     return loss
 
 
