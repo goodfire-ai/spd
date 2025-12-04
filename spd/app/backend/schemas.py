@@ -186,15 +186,6 @@ class LoadedRun(BaseModel):
     prompt_count: int
 
 
-class RunInfo(BaseModel):
-    """Info about a run in the database."""
-
-    id: int
-    wandb_path: str
-    prompt_count: int
-    has_activation_contexts: bool
-
-
 class SubcomponentMetadata(BaseModel):
     """Lightweight metadata for a subcomponent (without examples/token_prs)"""
 

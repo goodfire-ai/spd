@@ -48,6 +48,7 @@
     // View controls
     let topK = $state(800);
     let nodeLayout = $state<"importance" | "shuffled" | "jittered">("importance");
+    let filteredEdgeCount = $state<number | null>(null);
 
     // Compute options
     let computeOptions = $state<ComputeOptions>({
@@ -232,18 +233,18 @@
         const optConfig = computeOptions.optimizeConfig;
         const isOptimized = computeOptions.useOptimized;
 
-        // Set up stages
+        // Set up stages - optimized has 2 stages, standard has 1
         if (isOptimized) {
             loadingState = {
                 stages: [
                     { name: "Optimizing", progress: 0 },
-                    { name: "Computing graph", progress: null },
+                    { name: "Computing graph", progress: 0 },
                 ],
                 currentStage: 0,
             };
         } else {
             loadingState = {
-                stages: [{ name: "Computing graph", progress: null }],
+                stages: [{ name: "Computing graph", progress: 0 }],
                 currentStage: 0,
             };
         }
@@ -265,20 +266,28 @@
                         outputProbThreshold: 0.01,
                     },
                     (progress) => {
-                        if (loadingState) {
+                        if (!loadingState) return;
+                        if (progress.stage === "graph") {
+                            // Graph computation stage
+                            loadingState.currentStage = 1;
+                            loadingState.stages[1].progress = progress.current / progress.total;
+                        } else {
+                            // Optimization stage
                             loadingState.stages[0].progress = progress.current / progress.total;
-                            // Move to stage 2 when optimization completes
-                            if (progress.stage === "graph") {
-                                loadingState.currentStage = 1;
-                            }
                         }
                     },
                 );
             } else {
-                data = await attrApi.computeGraph({
-                    tokenIds: activeCard.tokenIds,
-                    normalize: computeOptions.normalizeEdges,
-                });
+                data = await attrApi.computeGraphStreaming(
+                    {
+                        tokenIds: activeCard.tokenIds,
+                        normalize: computeOptions.normalizeEdges,
+                    },
+                    (progress) => {
+                        if (!loadingState) return;
+                        loadingState.stages[0].progress = progress.current / progress.total;
+                    },
+                );
             }
 
             const graphId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -375,6 +384,7 @@
             <ViewControls
                 {topK}
                 {nodeLayout}
+                {filteredEdgeCount}
                 onTopKChange={(v) => (topK = v)}
                 onLayoutChange={(v) => (nodeLayout = v)}
             />
@@ -443,6 +453,7 @@
                                     {activationContextsSummary}
                                     {pinnedNodes}
                                     onPinnedNodesChange={handlePinnedNodesChange}
+                                    onEdgeCountChange={(count) => (filteredEdgeCount = count)}
                                 />
                             {/key}
                         {:else if !loadingCardId}
@@ -484,8 +495,7 @@
         min-height: 0;
         background: #fff;
         border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-        overflow: hidden;
+        /* box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); */
     }
 
     .card-tabs-row {
@@ -510,7 +520,6 @@
         flex: 1;
         position: relative;
         min-height: 400px;
-        overflow: hidden;
     }
 
     .graph-area.loading {

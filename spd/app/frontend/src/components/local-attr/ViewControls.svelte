@@ -2,11 +2,12 @@
     type Props = {
         topK: number;
         nodeLayout: "importance" | "shuffled" | "jittered";
+        filteredEdgeCount: number | null;
         onTopKChange: (value: number) => void;
         onLayoutChange: (value: "importance" | "shuffled" | "jittered") => void;
     };
 
-    let { topK, nodeLayout, onTopKChange, onLayoutChange }: Props = $props();
+    let { topK, nodeLayout, filteredEdgeCount, onTopKChange, onLayoutChange }: Props = $props();
 </script>
 
 <div class="controls-bar">
@@ -33,6 +34,18 @@
             <option value="jittered">Jittered</option>
         </select>
     </label>
+
+    {#if filteredEdgeCount !== null}
+        <div class="legend">
+            <span class="edge-count">Showing {filteredEdgeCount} edges</span>
+            <span class="legend-item">
+                <span class="edge-pos"></span> Positive
+            </span>
+            <span class="legend-item">
+                <span class="edge-neg"></span> Negative
+            </span>
+        </div>
+    {/if}
 </div>
 
 <style>
@@ -79,5 +92,39 @@
         border: 1px solid #e0e0e0;
         border-radius: 4px;
         font-size: 0.8rem;
+    }
+
+    .legend {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-left: auto;
+        font-size: 0.8rem;
+        color: #666;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .edge-pos,
+    .edge-neg {
+        display: inline-block;
+        width: 20px;
+        height: 3px;
+    }
+
+    .edge-pos {
+        background: #2196f3;
+    }
+
+    .edge-neg {
+        background: #f44336;
+    }
+
+    .edge-count {
+        font-weight: 500;
     }
 </style>

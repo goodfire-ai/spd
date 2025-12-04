@@ -439,6 +439,10 @@ def compute_local_attributions_optimized(
         l0_per_layer=l0_per_layer,
     )
 
+    # Signal transition to graph computation stage
+    if on_progress is not None:
+        on_progress(0, 1, "graph")
+
     result = compute_edges_from_ci(
         model=model,
         tokens=tokens,
@@ -448,6 +452,7 @@ def compute_local_attributions_optimized(
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
+        on_progress=on_progress,
     )
 
     return OptimizedLocalAttributionResult(

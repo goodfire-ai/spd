@@ -176,12 +176,13 @@
     }
 
     .staged-token {
-        padding: 2px 6px;
+        padding: 2px 2px;
         background: #e8e8e8;
         border-radius: 3px;
         font-family: "SF Mono", Monaco, monospace;
         font-size: 0.8rem;
         color: #424242;
+        white-space: pre;
     }
 
     .staged-token.custom {

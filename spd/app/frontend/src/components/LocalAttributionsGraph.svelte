@@ -7,9 +7,11 @@
         HoveredEdge,
         LayerInfo,
         NodePosition,
+        ComponentDetail,
     } from "../lib/localAttributionsTypes";
     import * as api from "../lib/localAttributionsApi";
-    import type { ComponentDetail } from "../lib/localAttributionsTypes";
+    import ComponentDetailCard from "./local-attr/ComponentDetailCard.svelte";
+    import PinnedComponentsPanel from "./local-attr/PinnedComponentsPanel.svelte";
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -30,9 +32,10 @@
         activationContextsSummary: ActivationContextsSummary | null;
         pinnedNodes: PinnedNode[];
         onPinnedNodesChange: (nodes: PinnedNode[]) => void;
+        onEdgeCountChange?: (count: number) => void;
     };
 
-    let { data, topK, nodeLayout, activationContextsSummary, pinnedNodes, onPinnedNodesChange }: Props = $props();
+    let { data, topK, nodeLayout, activationContextsSummary, pinnedNodes, onPinnedNodesChange, onEdgeCountChange }: Props = $props();
 
     // UI state
     let hoveredNode = $state<HoveredNode | null>(null);
@@ -538,10 +541,6 @@
         }
     }
 
-    function escapeHtml(text: string): string {
-        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    }
-
     // Track previously highlighted edges to minimize DOM updates
     let prevHighlightedEdges = new Set<Element>();
 
@@ -579,6 +578,11 @@
         }
 
         prevHighlightedEdges = currentHighlighted;
+    });
+
+    // Notify parent of edge count changes
+    $effect(() => {
+        onEdgeCountChange?.(filteredEdges.length);
     });
 </script>
 
@@ -650,7 +654,7 @@
             <svg {width} height="50" style="display: block;">
                 {#each data.tokens as token, i}
                     {@const colCenter = seqXStarts[i] + seqWidths[i] / 2}
-                    <text x={colCenter} y="20" text-anchor="middle" font-size="12" font-family="monospace" font-weight="500">
+                    <text x={colCenter} y="20" text-anchor="middle" font-size="12" font-family="monospace" font-weight="500" style="white-space: pre">
                         {token}
                     </text>
                     <text x={colCenter} y="38" text-anchor="middle" font-size="10" fill="#999">[{i}]</text>
@@ -681,6 +685,11 @@
 
     <!-- Node tooltip -->
     {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.cIdx)}
+        {@const summary = activationContextsSummary?.[hoveredNode.layer]?.find(
+            (s) => s.subcomponent_idx === hoveredNode?.cIdx,
+        )}
+        {@const detail = componentDetailsCache[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
+        {@const isLoading = componentDetailsLoading[`${hoveredNode.layer}:${hoveredNode.cIdx}`] ?? false}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
             class="node-tooltip"
@@ -693,188 +702,34 @@
         >
             <h3>{hoveredNode.layer}:{hoveredNode.cIdx}</h3>
 
-            {#if hoveredNode.layer === "output"}
-                {@const probEntry = data.outputProbs[`${hoveredNode.seqIdx}:${hoveredNode.cIdx}`]}
-                {#if probEntry}
-                    <div class="output-header" style="background: linear-gradient(90deg, rgba(76, 175, 80, {Math.min(0.8, probEntry.prob + 0.1)}) 0%, rgba(76, 175, 80, 0.1) 100%);">
-                        <div class="output-token">"{escapeHtml(probEntry.token)}"</div>
-                        <div class="output-prob">{(probEntry.prob * 100).toFixed(1)}% probability</div>
-                    </div>
-                    <p class="stats">
-                        <strong>Position:</strong>
-                        {hoveredNode.seqIdx} |
-                        <strong>Vocab ID:</strong>
-                        {hoveredNode.cIdx}
-                    </p>
-                {/if}
-            {:else}
-                {@const summary = activationContextsSummary?.[hoveredNode.layer]?.find(
-                    (s) => s.subcomponent_idx === hoveredNode?.cIdx,
-                )}
-                {@const detail = componentDetailsCache[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
-                {@const isLoading = componentDetailsLoading[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
-
-                <p class="stats">
-                    <strong>Position:</strong>
-                    {hoveredNode.seqIdx}
-                    {#if summary}
-                        | <strong>Mean CI:</strong>
-                        {summary.mean_ci.toFixed(4)}
-                    {/if}
-                </p>
-
-                {#if detail}
-                    {#if detail.example_tokens?.length > 0}
-                        <h4>Top Activating Examples</h4>
-                        {#each detail.example_tokens.slice(0, 5) as tokens, i}
-                            {@const ciVals = detail.example_ci[i]}
-                            {@const activePos = detail.example_active_pos[i]}
-                            <div class="example-row">
-                                {#each tokens as token, j}
-                                    {@const ci = ciVals[j]}
-                                    {@const isActive = j === activePos}
-                                    <span
-                                        class="example-token"
-                                        class:active={isActive}
-                                        style="background: rgba(255, 100, 100, {Math.min(1, ci * 5)});"
-                                    >
-                                        {token}
-                                    </span>
-                                {/each}
-                            </div>
-                        {/each}
-                    {/if}
-
-                    <div class="tables-row">
-                        {#if detail.pr_tokens?.length > 0}
-                            <div>
-                                <h4>Top Input Tokens</h4>
-                                <table class="pr-table">
-                                    <tbody>
-                                        {#each detail.pr_tokens.slice(0, 10) as token, i}
-                                            <tr>
-                                                <td><code>{token}</code></td>
-                                                <td>{detail.pr_precisions[i]?.toFixed(3)}</td>
-                                            </tr>
-                                        {/each}
-                                    </tbody>
-                                </table>
-                            </div>
-                        {/if}
-
-                        {#if detail.predicted_tokens?.length}
-                            <div>
-                                <h4>Top Predicted</h4>
-                                <table class="pr-table">
-                                    <tbody>
-                                        {#each detail.predicted_tokens.slice(0, 10) as token, i}
-                                            <tr>
-                                                <td><code>{token}</code></td>
-                                                <td>{detail.predicted_probs?.[i]?.toFixed(3)}</td>
-                                            </tr>
-                                        {/each}
-                                    </tbody>
-                                </table>
-                            </div>
-                        {/if}
-                    </div>
-                {:else if isLoading}
-                    <p class="loading-text">Loading details...</p>
-                {/if}
-            {/if}
+            <ComponentDetailCard
+                layer={hoveredNode.layer}
+                cIdx={hoveredNode.cIdx}
+                seqIdx={hoveredNode.seqIdx}
+                {detail}
+                {isLoading}
+                outputProbs={data.outputProbs}
+                {summary}
+                compact
+            />
         </div>
     {/if}
 </div>
 
 <!-- Pinned components panel -->
-{#if pinnedNodes.length > 0}
-    <div class="pinned-container">
-        <h3>
-            <span>Pinned Components ({pinnedNodes.length})</span>
-            <button onclick={() => onPinnedNodesChange([])}>Clear all</button>
-        </h3>
-        <div class="pinned-items">
-            {#each pinnedNodes as pinned}
-                {@const detail = componentDetailsCache[`${pinned.layer}:${pinned.cIdx}`]}
-                <div class="pinned-item">
-                    <div class="pinned-header">
-                        <strong>{pinned.layer}:{pinned.cIdx}</strong>
-                        <button
-                            class="unpin-btn"
-                            onclick={() => onPinnedNodesChange(pinnedNodes.filter((p) => p !== pinned))}
-                        >
-                            ✕
-                        </button>
-                    </div>
-
-                    {#if pinned.layer === "output"}
-                        <!-- Find all positions where this token appears -->
-                        {@const positions = Object.entries(data.outputProbs)
-                            .filter(([key]) => key.endsWith(`:${pinned.cIdx}`))
-                            .map(([key, entry]) => ({
-                                seqIdx: parseInt(key.split(":")[0]),
-                                prob: entry.prob,
-                                token: entry.token,
-                            }))
-                            .sort((a, b) => b.prob - a.prob)}
-                        {#if positions.length > 0}
-                            <p><strong>"{positions[0].token}"</strong></p>
-                            <table class="pr-table">
-                                <tbody>
-                                    {#each positions as pos}
-                                        <tr>
-                                            <td>Pos {pos.seqIdx}</td>
-                                            <td>{(pos.prob * 100).toFixed(2)}%</td>
-                                        </tr>
-                                    {/each}
-                                </tbody>
-                            </table>
-                        {/if}
-                    {:else if detail}
-                        {#if detail.example_tokens?.length > 0}
-                            <h4>Examples</h4>
-                            {#each detail.example_tokens.slice(0, 3) as tokens, i}
-                                {@const ciVals = detail.example_ci[i]}
-                                {@const activePos = detail.example_active_pos[i]}
-                                <div class="example-row">
-                                    {#each tokens as token, j}
-                                        {@const ci = ciVals[j]}
-                                        {@const isActive = j === activePos}
-                                        <span
-                                            class="example-token"
-                                            class:active={isActive}
-                                            style="background: rgba(255, 100, 100, {Math.min(1, ci * 5)});"
-                                        >
-                                            {token}
-                                        </span>
-                                    {/each}
-                                </div>
-                            {/each}
-                        {/if}
-                    {:else}
-                        <p class="loading-text">Loading...</p>
-                    {/if}
-                </div>
-            {/each}
-        </div>
-    </div>
-{/if}
-
-<div class="legend">
-    <span class="edge-count">Showing {filteredEdges.length} edges</span>
-    <span class="legend-item">
-        <span class="edge-pos"></span> Positive
-    </span>
-    <span class="legend-item">
-        <span class="edge-neg"></span> Negative
-    </span>
-</div>
+<PinnedComponentsPanel
+    {pinnedNodes}
+    {componentDetailsCache}
+    outputProbs={data.outputProbs}
+    {onPinnedNodesChange}
+/>
 
 <style>
     .graph-wrapper {
         display: flex;
-        max-height: 70vh;
-        background: white;
+        /* background: white; */
+        border: 1px solid #eee;
+        border-radius: 8px;
         overflow: hidden;
     }
 
@@ -963,170 +818,5 @@
     .node-tooltip h3 {
         margin: 0 0 0.5rem 0;
         font-size: 0.95rem;
-    }
-
-    .node-tooltip h4 {
-        margin: 0.75rem 0 0.25rem 0;
-        font-size: 0.85rem;
-        color: #333;
-    }
-
-    .output-header {
-        padding: 8px 12px;
-        border-radius: 4px;
-        margin-bottom: 10px;
-    }
-
-    .output-token {
-        font-size: 1.2em;
-        font-weight: bold;
-    }
-
-    .output-prob {
-        font-size: 1em;
-        color: #333;
-    }
-
-    .stats {
-        margin: 0.25rem 0;
-        font-size: 0.85rem;
-    }
-
-    .example-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 2px;
-        margin: 0.5rem 0;
-        font-family: monospace;
-        font-size: 0.8rem;
-    }
-
-    .example-token {
-        padding: 2px 4px;
-        border-radius: 2px;
-    }
-
-    .example-token.active {
-        font-weight: bold;
-        border: 1px solid #333;
-    }
-
-    .tables-row {
-        display: flex;
-        gap: 1.5rem;
-        flex-wrap: wrap;
-    }
-
-    .pr-table {
-        font-size: 0.8rem;
-        margin-top: 0.25rem;
-    }
-
-    .pr-table td {
-        padding: 0.15rem 0.5rem;
-    }
-
-    .loading-text {
-        font-size: 0.85rem;
-        color: #666;
-    }
-
-    .pinned-container {
-        margin-top: 1rem;
-        padding: 1rem;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
-
-    .pinned-container h3 {
-        margin: 0 0 0.75rem 0;
-        font-size: 0.9rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .pinned-container h3 button {
-        font-size: 0.8rem;
-        padding: 0.25rem 0.5rem;
-        cursor: pointer;
-        background: #f5f5f5;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-    }
-
-    .pinned-items {
-        display: flex;
-        flex-direction: row;
-        gap: 1rem;
-        overflow-x: auto;
-        padding-bottom: 0.5rem;
-    }
-
-    .pinned-item {
-        flex-shrink: 0;
-        min-width: 300px;
-        max-width: 400px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        padding: 0.75rem;
-        background: #fafafa;
-    }
-
-    .pinned-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.5rem;
-    }
-
-    .unpin-btn {
-        cursor: pointer;
-        background: #f44336;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 0.2rem 0.5rem;
-        font-size: 0.75rem;
-    }
-
-    .pinned-item h4 {
-        margin: 0.5rem 0 0.25rem 0;
-        font-size: 0.8rem;
-    }
-
-    .legend {
-        display: flex;
-        align-items: center;
-        gap: 1.5rem;
-        padding: 0.5rem 1rem;
-        font-size: 0.85rem;
-        color: #666;
-    }
-
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-
-    .edge-pos,
-    .edge-neg {
-        display: inline-block;
-        width: 24px;
-        height: 3px;
-    }
-
-    .edge-pos {
-        background: #2196f3;
-    }
-
-    .edge-neg {
-        background: #f44336;
-    }
-
-    .edge-count {
-        font-weight: 500;
     }
 </style>

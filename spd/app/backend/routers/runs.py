@@ -11,7 +11,7 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
-from spd.app.backend.schemas import LoadedRun, RunInfo
+from spd.app.backend.schemas import LoadedRun
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import build_token_lookup, log_errors, validate_wandb_path
 from spd.log import logger
@@ -21,23 +21,6 @@ from spd.utils.distributed_utils import get_device
 router = APIRouter(prefix="/api", tags=["runs"])
 
 DEVICE = get_device()
-
-
-@router.get("/runs")
-@log_errors
-def list_runs(manager: DepStateManager) -> list[RunInfo]:
-    """List all runs in the database."""
-    db = manager.db
-    runs = db.get_all_runs()
-    return [
-        RunInfo(
-            id=run.id,
-            wandb_path=run.wandb_path,
-            prompt_count=db.get_prompt_count(run.id),
-            has_activation_contexts=db.has_activation_contexts(run.id),
-        )
-        for run in runs
-    ]
 
 
 @router.post("/runs/load")

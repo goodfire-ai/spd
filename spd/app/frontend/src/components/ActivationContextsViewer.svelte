@@ -359,7 +359,7 @@
         color: #212529;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
+        white-space: pre;
     }
 
     .density-bar-container {

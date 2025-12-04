@@ -267,7 +267,6 @@
         padding: 1rem;
         display: flex;
         flex-direction: column;
-        overflow: hidden;
     }
 
     .warning-banner {
