@@ -29,14 +29,15 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
+from spd.settings import SPD_CACHE_DIR
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
 from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class, runtime_cast
 from spd.utils.module_utils import get_target_module_paths
-from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
     download_wandb_file,
     fetch_latest_wandb_checkpoint,
     fetch_wandb_run_dir,
+    parse_wandb_run_path,
 )
 
 
@@ -47,21 +48,29 @@ class SPDRunInfo(RunInfo[Config]):
     @override
     @classmethod
     def from_path(cls, path: ModelPath) -> "SPDRunInfo":
-        """Load the run info from a wandb run or a local path to a checkpoint."""
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            # Check if run exists in shared filesystem first
-            run_dir = check_run_exists(path)
-            if run_dir:
+        """Load the run info from a wandb run or a local path to a checkpoint.
+
+        If passing a wandb path, it will first check if the run exists in the shared filesystem.
+        If it does, it will use the local files from the shared filesystem.
+        If it does not, it will download the files from wandb.
+        """
+        try:
+            _entity, project, run_id = parse_wandb_run_path(str(path))
+        except ValueError:
+            # Not a wandb path
+            comp_model_path = Path(path)
+            config_path = Path(path).parent / "final_config.yaml"
+        else:
+            run_dir = SPD_CACHE_DIR / "runs" / f"{project}-{run_id}"
+            if run_dir.exists():
                 # Use local files from shared filesystem
                 comp_model_path = fetch_latest_local_checkpoint(run_dir, prefix="model")
                 config_path = run_dir / "final_config.yaml"
             else:
                 # Download from wandb
+                assert isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX)
                 wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
                 comp_model_path, config_path = ComponentModel._download_wandb_files(wandb_path)
-        else:
-            comp_model_path = Path(path)
-            config_path = Path(path).parent / "final_config.yaml"
 
         with open(config_path) as f:
             config = Config(**yaml.safe_load(f))

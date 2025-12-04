@@ -13,12 +13,13 @@ from wandb.apis.public import Run
 from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.log import logger
+from spd.settings import SPD_CACHE_DIR
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
     download_wandb_file,
     fetch_latest_wandb_checkpoint,
     fetch_wandb_run_dir,
+    parse_wandb_run_path,
 )
 
 
@@ -29,23 +30,30 @@ class TMSTargetRunInfo(RunInfo[TMSTrainConfig]):
     @override
     @classmethod
     def from_path(cls, path: ModelPath) -> "TMSTargetRunInfo":
-        """Load the run info from a wandb run or a local path to a checkpoint."""
+        """Load the run info from a wandb run or a local path to a checkpoint.
+
+        If passing a wandb path, it will first check if the run exists in the shared filesystem.
+        If it does, it will use the local files from the shared filesystem.
+        If it does not, it will download the files from wandb.
+        """
         task_name = TMSTaskConfig.model_fields["task_name"].default
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            # Check if run exists in shared filesystem first
-            run_dir = check_run_exists(path)
-            if run_dir:
+        try:
+            _entity, project, run_id = parse_wandb_run_path(str(path))
+        except ValueError:
+            # Not a wandb path
+            tms_train_config_path = Path(path).parent / f"{task_name}_train_config.yaml"
+            checkpoint_path = Path(path)
+        else:
+            run_dir = SPD_CACHE_DIR / "runs" / f"{project}-{run_id}"
+            if run_dir.exists():
                 # Use local files from shared filesystem
                 tms_train_config_path = run_dir / f"{task_name}_train_config.yaml"
                 checkpoint_path = run_dir / f"{task_name}.pth"
             else:
                 # Download from wandb
+                assert isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX)
                 wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
                 tms_train_config_path, checkpoint_path = TMSModel._download_wandb_files(wandb_path)
-        else:
-            # `path` should be a local path to a checkpoint
-            tms_train_config_path = Path(path).parent / f"{task_name}_train_config.yaml"
-            checkpoint_path = Path(path)
 
         with open(tms_train_config_path) as f:
             tms_train_config_dict = yaml.safe_load(f)
