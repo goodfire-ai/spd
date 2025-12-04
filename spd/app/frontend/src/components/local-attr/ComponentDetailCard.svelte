@@ -17,16 +17,7 @@
         compact?: boolean; // When true, starts with simplified inline view (expandable)
     };
 
-    let {
-        layer,
-        cIdx,
-        seqIdx,
-        detail,
-        isLoading,
-        outputProbs,
-        summary,
-        compact = false,
-    }: Props = $props();
+    let { layer, cIdx, seqIdx, detail, isLoading, outputProbs, summary, compact = false }: Props = $props();
 
     let isOutput = $derived(layer === "output");
 
@@ -72,7 +63,10 @@
         {#if outputProbEntry}
             <div
                 class="output-header"
-                style="background: linear-gradient(90deg, rgba(76, 175, 80, {Math.min(0.8, outputProbEntry.prob + 0.1)}) 0%, rgba(76, 175, 80, 0.1) 100%);"
+                style="background: linear-gradient(90deg, rgba(76, 175, 80, {Math.min(
+                    0.8,
+                    outputProbEntry.prob + 0.1,
+                )}) 0%, rgba(76, 175, 80, 0.1) 100%);"
             >
                 <div class="output-token">"{escapeHtml(outputProbEntry.token)}"</div>
                 <div class="output-prob">{(outputProbEntry.prob * 100).toFixed(1)}% probability</div>
@@ -88,7 +82,7 @@
             <p><strong>"{allOutputPositions[0].token}"</strong></p>
             <table class="data-table">
                 <tbody>
-                    {#each allOutputPositions as pos}
+                    {#each allOutputPositions as pos (pos.seqIdx)}
                         <tr>
                             <td>Pos {pos.seqIdx}</td>
                             <td>{(pos.prob * 100).toFixed(2)}%</td>
@@ -130,7 +124,7 @@
                 {:else}
                     <!-- Compact collapsed mode: simple inline examples -->
                     <h4>Top Activating Examples</h4>
-                    {#each detail.example_tokens.slice(0, COMPACT_MAX_EXAMPLES) as tokens, i}
+                    {#each detail.example_tokens.slice(0, COMPACT_MAX_EXAMPLES) as tokens, i (i)}
                         <div class="example-row">
                             <TokenHighlights
                                 tokenStrings={tokens}
@@ -153,7 +147,7 @@
                         <h4>Top Input Tokens</h4>
                         <table class="data-table">
                             <tbody>
-                                {#each detail.pr_tokens.slice(0, 10) as token, i}
+                                {#each detail.pr_tokens.slice(0, 10) as token, i (i)}
                                     <tr>
                                         <td><code>{token}</code></td>
                                         <td>{detail.pr_precisions[i]?.toFixed(3)}</td>
@@ -169,7 +163,7 @@
                         <h4>Top Predicted</h4>
                         <table class="data-table">
                             <tbody>
-                                {#each detail.predicted_tokens.slice(0, 10) as token, i}
+                                {#each detail.predicted_tokens.slice(0, 10) as token, i (i)}
                                     <tr>
                                         <td><code>{token}</code></td>
                                         <td>{detail.predicted_probs?.[i]?.toFixed(3)}</td>

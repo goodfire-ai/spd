@@ -2,7 +2,7 @@ import * as api from "./lib/api";
 
 async function main() {
     console.log("loading run");
-    await api.loadRun("goodfire/spd/lxs77xye");
+    await api.loadRun("goodfire/spd/lxs77xye", 64);
     console.log("run loaded");
 
     console.log("getting subcomponent activation contexts");

@@ -27,7 +27,7 @@
             <button onclick={clearAll}>Clear all</button>
         </h3>
         <div class="pinned-items">
-            {#each pinnedNodes as pinned}
+            {#each pinnedNodes as pinned (`${pinned.layer}:${pinned.cIdx}`)}
                 {@const detail = componentDetailsCache[`${pinned.layer}:${pinned.cIdx}`]}
                 {@const isLoading = !detail && pinned.layer !== "output"}
                 <div class="pinned-item">

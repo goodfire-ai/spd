@@ -197,7 +197,7 @@
     function handleSelectGraph(graphId: string) {
         if (!activeCard) return;
         promptCards = promptCards.map((card) =>
-            card.id === activeCard.id ? { ...card, activeGraphId: graphId } : card
+            card.id === activeCard.id ? { ...card, activeGraphId: graphId } : card,
         );
     }
 
@@ -209,9 +209,12 @@
             return {
                 ...card,
                 graphs: newGraphs,
-                activeGraphId: card.activeGraphId === graphId
-                    ? (newGraphs.length > 0 ? newGraphs[newGraphs.length - 1].id : null)
-                    : card.activeGraphId,
+                activeGraphId:
+                    card.activeGraphId === graphId
+                        ? newGraphs.length > 0
+                            ? newGraphs[newGraphs.length - 1].id
+                            : null
+                        : card.activeGraphId,
             };
         });
     }
@@ -349,13 +352,10 @@
         generateCount = 0;
 
         try {
-            await attrApi.generatePrompts(
-                { nPrompts },
-                (progress: number, count: number) => {
-                    generateProgress = progress;
-                    generateCount = count;
-                },
-            );
+            await attrApi.generatePrompts({ nPrompts }, (progress: number, count: number) => {
+                generateProgress = progress;
+                generateCount = count;
+            });
             await loadPromptsList();
         } catch (e) {
             console.error("[LocalAttr] generatePrompts FAILED:", e);
@@ -376,9 +376,7 @@
     {:else}
         <div class="main-content">
             {#if activationContextsMissing}
-                <div class="warning-banner">
-                    Activation contexts not generated. Component hover info unavailable.
-                </div>
+                <div class="warning-banner">Activation contexts not generated. Component hover info unavailable.</div>
             {/if}
 
             <ViewControls
@@ -427,7 +425,11 @@
 
                     {#if activeGraph?.data.optimization}
                         <div class="optim-results">
-                            <span><strong>Target:</strong> "{activeGraph.data.optimization.label_str}" @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span>
+                            <span
+                                ><strong>Target:</strong> "{activeGraph.data.optimization.label_str}" @ {(
+                                    activeGraph.data.optimization.label_prob * 100
+                                ).toFixed(1)}%</span
+                            >
                             <span><strong>L0:</strong> {activeGraph.data.optimization.l0_total.toFixed(0)} active</span>
                         </div>
                     {/if}

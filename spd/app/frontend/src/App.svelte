@@ -11,6 +11,7 @@
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>(null);
+    let contextLength = $state<number>(64);
 
     let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
@@ -51,7 +52,7 @@
             const wandbRunPath = parseWandbRunPath(input);
             console.log("loading run", wandbRunPath);
             trainWandbRunEntry = wandbRunPath;
-            await api.loadRun(wandbRunPath);
+            await api.loadRun(wandbRunPath, contextLength);
             await loadStatus();
         } catch (error) {
             console.error("error loading run", error);
@@ -70,13 +71,22 @@
 <div class="app-layout">
     <header class="top-bar">
         <form onsubmit={loadRun} class="run-input">
+            <label for="wandb-run-id">W&B Run ID:</label>
             <input
                 type="text"
                 id="wandb-run-id"
                 list="run-options"
                 bind:value={trainWandbRunEntry}
                 disabled={loadingTrainRun}
-                placeholder="W&B Run ID"
+            />
+            <label for="context-length">Context Length:</label>
+            <input
+                type="number"
+                id="context-length"
+                bind:value={contextLength}
+                disabled={loadingTrainRun}
+                min="1"
+                max="2048"
             />
             <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
                 {loadingTrainRun ? "..." : "Load"}
@@ -103,6 +113,7 @@
 
             <div
                 class="config-wrapper"
+                role="group"
                 onmouseenter={() => (showConfig = true)}
                 onmouseleave={() => (showConfig = false)}
             >
@@ -153,7 +164,14 @@
 
     .run-input {
         display: flex;
-        gap: 0.25rem;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .run-input label {
+        font-size: 0.85rem;
+        color: #495057;
+        white-space: nowrap;
     }
 
     .run-input input[type="text"] {
@@ -164,7 +182,16 @@
         font-size: 0.85rem;
     }
 
-    .run-input input[type="text"]:focus {
+    .run-input input[type="number"] {
+        width: 60px;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+
+    .run-input input[type="text"]:focus,
+    .run-input input[type="number"]:focus {
         outline: none;
         border-color: #4a90e2;
     }

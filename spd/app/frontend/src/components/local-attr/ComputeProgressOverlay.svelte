@@ -10,7 +10,7 @@
 
 <div class="loading-overlay">
     <div class="stages">
-        {#each state.stages as stage, i}
+        {#each state.stages as stage, i (i)}
             {@const isCurrent = i === state.currentStage}
             {@const isComplete = i < state.currentStage}
             <div class="stage" class:current={isCurrent} class:complete={isComplete}>

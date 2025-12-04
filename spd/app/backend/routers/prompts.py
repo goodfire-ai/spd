@@ -11,11 +11,8 @@ from spd.app.backend.compute import compute_ci_only, extract_active_from_ci
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.schemas import PromptPreview, PromptSearchQuery, PromptSearchResponse
 from spd.app.backend.utils import log_errors
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import runtime_cast
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
@@ -58,27 +55,7 @@ def generate_prompts(
     (for the inverted index used by search).
     """
     db = manager.db
-
-    # Create a data loader for generation
-    task_config = runtime_cast(LMTaskConfig, loaded.config.task_config)
-    actual_seq_length = 8
-
-    train_data_config = DatasetConfig(
-        name=task_config.dataset_name,
-        hf_tokenizer_path=loaded.config.tokenizer_name,
-        split=task_config.train_data_split,
-        n_ctx=actual_seq_length,
-        is_tokenized=task_config.is_tokenized,
-        streaming=task_config.streaming,
-        column_name=task_config.column_name,
-        shuffle_each_epoch=task_config.shuffle_each_epoch,
-    )
-    train_loader, _ = create_data_loader(
-        dataset_config=train_data_config,
-        batch_size=32,
-        buffer_size=task_config.buffer_size,
-        global_seed=loaded.config.seed,
-    )
+    train_loader = loaded.train_loader
 
     def generate() -> Generator[str]:
         added_count = 0

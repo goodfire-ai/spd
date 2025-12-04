@@ -25,9 +25,7 @@
 
     const optConfig = $derived(options.optimizeConfig);
 
-    const canCompute = $derived(
-        !isLoading && (!options.useOptimized || optConfig.labelTokenId !== null)
-    );
+    const canCompute = $derived(!isLoading && (!options.useOptimized || optConfig.labelTokenId !== null));
 
     const buttonText = $derived.by(() => {
         if (isLoading) {
@@ -42,7 +40,7 @@
 
 <div class="staged-header">
     <div class="staged-tokens">
-        {#each card.tokens as tok}
+        {#each card.tokens as tok, i (i)}
             <span class="staged-token" class:custom={card.isCustom}>{tok}</span>
         {/each}
     </div>
@@ -97,7 +95,8 @@
                     <input
                         type="number"
                         value={optConfig.impMinCoeff}
-                        oninput={(e) => onOptimizeConfigChange({ impMinCoeff: parseFloat(e.currentTarget.value) || 0.1 })}
+                        oninput={(e) =>
+                            onOptimizeConfigChange({ impMinCoeff: parseFloat(e.currentTarget.value) || 0.1 })}
                         min={0.001}
                         max={10}
                         step={0.01}
@@ -108,7 +107,8 @@
                     <input
                         type="number"
                         value={optConfig.ceLossCoeff}
-                        oninput={(e) => onOptimizeConfigChange({ ceLossCoeff: parseFloat(e.currentTarget.value) || 1.0 })}
+                        oninput={(e) =>
+                            onOptimizeConfigChange({ ceLossCoeff: parseFloat(e.currentTarget.value) || 1.0 })}
                         min={0.001}
                         max={10}
                         step={0.1}
@@ -146,7 +146,7 @@
 
     {#if card.graphs.length > 0}
         <div class="graph-tabs">
-            {#each card.graphs as graph}
+            {#each card.graphs as graph (graph.id)}
                 <div class="graph-tab" class:active={graph.id === card.activeGraphId}>
                     <button class="tab-label" onclick={() => onSelectGraph(graph.id)}>
                         {graph.label}

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { SvelteSet } from "svelte/reactivity";
     import type {
         GraphData,
         ActivationContextsSummary,
@@ -35,7 +36,15 @@
         onEdgeCountChange?: (count: number) => void;
     };
 
-    let { data, topK, nodeLayout, activationContextsSummary, pinnedNodes, onPinnedNodesChange, onEdgeCountChange }: Props = $props();
+    let {
+        data,
+        topK,
+        nodeLayout,
+        activationContextsSummary,
+        pinnedNodes,
+        onPinnedNodesChange,
+        onEdgeCountChange,
+    }: Props = $props();
 
     // UI state
     let hoveredNode = $state<HoveredNode | null>(null);
@@ -96,21 +105,20 @@
 
     // Filter edges by topK and build active nodes set
     const { filteredEdges, activeNodes } = $derived.by(() => {
-
         const edgesCopy = [...data.edges];
 
         const sortedEdges = edgesCopy.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
 
         const filteredEdges = sortedEdges.slice(0, topK);
 
-        const activeNodes = new Set<string>();
+        const activeNodes = new SvelteSet<string>();
         for (const edge of filteredEdges) {
             activeNodes.add(edge.src);
             activeNodes.add(edge.tgt);
         }
 
         // For output nodes: include all tokens with prob >= min prob of kept tokens
-        const outputNodesWithEdges = new Set<string>();
+        const outputNodesWithEdges = new SvelteSet<string>();
         for (const nodeKey of activeNodes) {
             if (nodeKey.startsWith("output:")) {
                 outputNodesWithEdges.add(nodeKey);
@@ -143,8 +151,8 @@
     // Build layout
     const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height } = $derived.by(() => {
         const nodesPerLayerSeq: Record<string, number[]> = {};
-        const allLayers = new Set<string>();
-        const allRows = new Set<string>();
+        const allLayers = new SvelteSet<string>();
+        const allRows = new SvelteSet<string>();
 
         for (const nodeKey of activeNodes) {
             const [layer, seqIdx, cIdx] = nodeKey.split(":");
@@ -394,7 +402,7 @@
 
     // Pinned node keys (stable - only changes when user clicks to pin/unpin)
     const pinnedKeys = $derived.by(() => {
-        const keys = new Set<string>();
+        const keys = new SvelteSet<string>();
         for (const pinned of pinnedNodes) {
             for (const nodeKey of Object.keys(nodePositions)) {
                 const [layer, , cIdx] = nodeKey.split(":");
@@ -409,9 +417,9 @@
     // Hovered node keys (changes frequently but kept separate to minimize re-renders)
     const hoveredKeys = $derived.by(() => {
         if (!hoveredNode || isNodePinned(hoveredNode.layer, hoveredNode.cIdx)) {
-            return new Set<string>();
+            return new SvelteSet<string>();
         }
-        const keys = new Set<string>();
+        const keys = new SvelteSet<string>();
         for (const nodeKey of Object.keys(nodePositions)) {
             const [layer, , cIdx] = nodeKey.split(":");
             if (layer === hoveredNode.layer && +cIdx === hoveredNode.cIdx) {
@@ -427,7 +435,7 @@
     }
 
     // Combined set for edge highlighting effect only
-    const highlightedKeys = $derived(new Set([...pinnedKeys, ...hoveredKeys]));
+    const highlightedKeys = $derived(new SvelteSet([...pinnedKeys, ...hoveredKeys]));
 
     function isNodePinned(layer: string, cIdx: number): boolean {
         return pinnedNodes.some((p) => p.layer === layer && p.cIdx === cIdx);
@@ -542,7 +550,7 @@
     }
 
     // Track previously highlighted edges to minimize DOM updates
-    let prevHighlightedEdges = new Set<Element>();
+    let prevHighlightedEdges = new SvelteSet<Element>();
 
     // Update edge highlighting via $effect (DOM manipulation for performance)
     // Only updates edges that actually changed state
@@ -551,7 +559,7 @@
             return;
         }
 
-        const currentHighlighted = new Set<Element>();
+        const currentHighlighted = new SvelteSet<Element>();
         const edges = graphContainer.querySelectorAll(".edge");
 
         // Build set of currently highlighted edges
@@ -589,16 +597,15 @@
 <div class="graph-wrapper" bind:this={graphContainer}>
     <div class="layer-labels-container" style="width: {LABEL_WIDTH}px;">
         <svg width={LABEL_WIDTH} {height} style="display: block;">
-            {#each Object.entries(layerYPositions) as [layer, y]}
+            {#each Object.entries(layerYPositions) as [layer, y] (layer)}
                 {@const info = parseLayer(layer)}
                 {@const yCenter = y + COMPONENT_SIZE / 2}
                 {@const rowKey = getRowKey(layer)}
-                {@const label =
-                    rowKey.endsWith(".qkv")
-                        ? `${info.block}.q/k/v`
-                        : layer === "wte" || layer === "output"
-                          ? layer
-                          : `${info.block}.${info.subtype}`}
+                {@const label = rowKey.endsWith(".qkv")
+                    ? `${info.block}.q/k/v`
+                    : layer === "wte" || layer === "output"
+                      ? layer
+                      : `${info.block}.${info.subtype}`}
                 <text
                     x={LABEL_WIDTH - 10}
                     y={yCenter}
@@ -617,14 +624,15 @@
     <div class="graph-container">
         <!-- svelte-ignore a11y_no_static_element_interactions, a11y_mouse_events_have_key_events -->
         <svg {width} {height} onmouseover={handleEdgeMouseEnter} onmouseout={handleEdgeMouseLeave}>
-            <!-- Edges (bulk rendered for performance) -->
+            <!-- Edges (bulk rendered for performance, uses @html for large SVG performance) -->
             <g class="edges-layer">
+                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                 {@html edgesSvgString}
             </g>
 
             <!-- Nodes (reactive for interactivity) -->
             <g class="nodes-layer">
-                {#each Object.entries(nodePositions) as [key, pos]}
+                {#each Object.entries(nodePositions) as [key, pos] (key)}
                     {@const [layer, seqIdxStr, cIdxStr] = key.split(":")}
                     {@const seqIdx = parseInt(seqIdxStr)}
                     {@const cIdx = parseInt(cIdxStr)}
@@ -652,9 +660,16 @@
 
         <div class="token-labels-container">
             <svg {width} height="50" style="display: block;">
-                {#each data.tokens as token, i}
+                {#each data.tokens as token, i (i)}
                     {@const colCenter = seqXStarts[i] + seqWidths[i] / 2}
-                    <text x={colCenter} y="20" text-anchor="middle" font-size="12" font-family="monospace" font-weight="500" style="white-space: pre">
+                    <text
+                        x={colCenter}
+                        y="20"
+                        text-anchor="middle"
+                        font-size="12"
+                        font-family="monospace"
+                        font-weight="500"
+                    >
                         {token}
                     </text>
                     <text x={colCenter} y="38" text-anchor="middle" font-size="10" fill="#999">[{i}]</text>
@@ -717,12 +732,7 @@
 </div>
 
 <!-- Pinned components panel -->
-<PinnedComponentsPanel
-    {pinnedNodes}
-    {componentDetailsCache}
-    outputProbs={data.outputProbs}
-    {onPinnedNodesChange}
-/>
+<PinnedComponentsPanel {pinnedNodes} {componentDetailsCache} outputProbs={data.outputProbs} {onPinnedNodesChange} />
 
 <style>
     .graph-wrapper {
