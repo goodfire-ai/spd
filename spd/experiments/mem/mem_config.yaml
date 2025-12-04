@@ -6,7 +6,7 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1000
+C: 100
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
 ci_fn_hidden_dims: [200]
@@ -25,14 +25,14 @@ use_delta_component: true
 
 # --- Loss config ---
 loss_metric_configs:
-- coeff: 5e-2
+- coeff: 3e-2
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.5
   p_anneal_end_frac: 1.0
   eps: 1.0e-12
-- coeff: 1.0
+- coeff: 0.5
   classname: StochasticReconSubsetLoss
 - coeff: 0.5
   init: random
@@ -40,8 +40,8 @@ loss_metric_configs:
   n_steps: 1
   mask_scope: shared_across_batch
   classname: PGDReconSubsetLoss
-- coeff: 10.0
-  classname: FaithfulnessLoss
+# - coeff: 100.0
+#   classname: FaithfulnessLoss
 output_loss_type: mem  # Only compute KL at final sequence position
 
 # --- Training ---
@@ -49,7 +49,7 @@ batch_size: 500
 eval_batch_size: 500
 steps: 20_000
 lr: 1e-3
-lr_schedule: constant
+lr_schedule: cosine
 lr_warmup_pct: 0.0
 
 # --- Faithfulness Warmup ---
@@ -59,9 +59,9 @@ faithfulness_warmup_weight_decay: 0.1
 
 # --- Logging & Saving ---
 train_log_freq: 100
-eval_freq: 500
-n_eval_steps: 50
-slow_eval_freq: 2_500
+eval_freq: 1000
+n_eval_steps: 1
+slow_eval_freq: 2000
 slow_eval_on_first_step: true
 save_freq: null
 ci_alive_threshold: 0.01
@@ -73,14 +73,20 @@ eval_metric_configs:
   - classname: "CI_L0"
     groups: null
   - classname: "CIMeanPerComponent"
-  # NOTE: CEandKLLosses is NOT compatible with the mem task because it computes
-  # next-token prediction CE, but mem uses a separate label token at the final position.
-  # - classname: "CEandKLLosses"  
-  #   rounding_threshold: 0.0
+  - coeff: null
+    classname: CIMaskedReconLoss
+  - coeff: null
+    classname: StochasticReconLoss
+  - coeff: null
+    init: random
+    step_size: 0.1
+    n_steps: 20
+    mask_scope: shared_across_batch
+    classname: PGDReconLoss
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.mem.models.MemTransformer"
-pretrained_model_path: "wandb:goodfire/spd/runs/vkl7m64f"  # Set this to the path of a trained mem model
+pretrained_model_path: "wandb:goodfire/spd/runs/15a0kums"  # Set this to the path of a trained mem model
 
 # --- Task Specific ---
 task_config:
