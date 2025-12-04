@@ -63,6 +63,9 @@
     let maxMeanCI = $state(1.0);
     let normalizeEdges = $state(true);
     let useOptimized = $state(false);
+    let labelTokenText = $state("");  // Text input for label token (required for optimization)
+    let labelTokenId = $state<number | null>(null);  // Resolved token ID
+    let labelTokenPreview = $state<string | null>(null);  // Preview of resolved token
     let impMinCoeff = $state(0.1);
     let ceLossCoeff = $state(1.0);
     let optimSteps = $state(500);
@@ -70,6 +73,39 @@
 
     // Pinned nodes (for search)
     let pinnedNodes = $state<PinnedNode[]>([]);
+
+    // Tokenize label text when it changes
+    let labelTokenizeTimeout: ReturnType<typeof setTimeout> | null = null;
+    $effect(() => {
+        const text = labelTokenText.trim();
+        if (!text) {
+            labelTokenId = null;
+            labelTokenPreview = null;
+            return;
+        }
+
+        // Debounce tokenization
+        if (labelTokenizeTimeout) clearTimeout(labelTokenizeTimeout);
+        labelTokenizeTimeout = setTimeout(async () => {
+            try {
+                const result = await attrApi.tokenizeText(text);
+                if (result.token_ids.length === 1) {
+                    labelTokenId = result.token_ids[0];
+                    labelTokenPreview = result.tokens[0];
+                } else if (result.token_ids.length > 1) {
+                    // Multiple tokens - use the first one but warn
+                    labelTokenId = result.token_ids[0];
+                    labelTokenPreview = `${result.tokens[0]} (${result.token_ids.length} tokens, using first)`;
+                } else {
+                    labelTokenId = null;
+                    labelTokenPreview = "(no tokens)";
+                }
+            } catch {
+                labelTokenId = null;
+                labelTokenPreview = "(error)";
+            }
+        }, 300);
+    });
 
     // Derived - compute activeGraph directly from promptCards to ensure reactivity
     const activeCard = $derived(promptCards.find((c) => c.id === activeCardId) ?? null);
@@ -215,9 +251,11 @@
                 });
             } else if (activeCard.promptId !== null) {
                 if (useOptimized) {
+                    if (!labelTokenId) throw new Error("Label token required for optimization");
                     data = await attrApi.getPromptOptimizedStreaming(
                         activeCard.promptId,
                         {
+                            labelToken: labelTokenId,
                             maxMeanCI,
                             normalize: normalizeEdges,
                             impMinCoeff,
@@ -469,6 +507,20 @@
                                     <span>Optimize</span>
                                 </label>
                                 {#if useOptimized}
+                                    <label class="label-token-input">
+                                        <span>Label</span>
+                                        <input
+                                            type="text"
+                                            bind:value={labelTokenText}
+                                            placeholder="e.g. ' world'"
+                                            class="text-input"
+                                        />
+                                        {#if labelTokenPreview}
+                                            <span class="token-preview" class:error={!labelTokenId}>
+                                                → {labelTokenPreview}
+                                            </span>
+                                        {/if}
+                                    </label>
                                     <label>
                                         <span>imp_min</span>
                                         <input type="number" bind:value={impMinCoeff} min={0.001} max={10} step={0.01} />
@@ -491,10 +543,12 @@
                             <button
                                 class="btn-compute"
                                 onclick={computeGraph}
-                                disabled={loadingCardId !== null}
+                                disabled={loadingCardId !== null || (useOptimized && !labelTokenId)}
                             >
                                 {#if loadingCardId === activeCard.id}
                                     {loadingMode === "optimized" ? "Optimizing..." : "Computing..."}
+                                {:else if useOptimized && !labelTokenId}
+                                    Enter label token
                                 {:else}
                                     Compute{useOptimized ? " (Optimized)" : ""}
                                 {/if}
@@ -960,6 +1014,29 @@
 
     .compute-options label.checkbox {
         gap: 0.2rem;
+    }
+
+    .compute-options .label-token-input {
+        flex-wrap: wrap;
+    }
+
+    .compute-options .label-token-input .text-input {
+        width: 80px;
+        padding: 0.2rem 0.35rem;
+        border: 1px solid #e0e0e0;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-family: "SF Mono", Monaco, monospace;
+    }
+
+    .compute-options .token-preview {
+        font-size: 0.75rem;
+        color: #4caf50;
+        font-family: "SF Mono", Monaco, monospace;
+    }
+
+    .compute-options .token-preview.error {
+        color: #f44336;
     }
 
     .btn-compute {

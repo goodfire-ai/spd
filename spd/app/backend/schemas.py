@@ -1,4 +1,133 @@
+from typing import Literal
+
 from pydantic import BaseModel
+
+
+# =============================================================================
+# API Response Models
+# =============================================================================
+
+
+class OutputProbability(BaseModel):
+    """Output probability for a specific token at a specific position."""
+
+    prob: float
+    token: str
+
+
+class EdgeData(BaseModel):
+    """Edge in the attribution graph."""
+
+    src: str  # Format: "layer:component_idx:position"
+    tgt: str
+    val: float
+
+
+class PromptPreview(BaseModel):
+    """Preview of a prompt for listing."""
+
+    id: int
+    tokens: list[str]
+    preview: str
+
+
+class PromptDataResponse(BaseModel):
+    """Full prompt data with attribution graph."""
+
+    id: int
+    tokens: list[str]
+    edges: list[EdgeData]
+    outputProbs: dict[str, OutputProbability]
+
+
+class OptimizationResult(BaseModel):
+    """Results from optimized CI computation."""
+
+    label_token: int
+    label_str: str
+    imp_min_coeff: float
+    ce_loss_coeff: float
+    steps: int
+    label_prob: float
+    l0_total: float
+    l0_per_layer: dict[str, float]
+
+
+class PromptDataWithOptimization(BaseModel):
+    """Prompt data with optimization results."""
+
+    id: int
+    tokens: list[str]
+    edges: list[EdgeData]
+    outputProbs: dict[str, OutputProbability]
+    optimization: OptimizationResult
+
+
+class ComponentStats(BaseModel):
+    """Statistics for a component across prompts."""
+
+    prompt_count: int
+    avg_max_ci: float
+    prompt_ids: list[int]
+
+
+class PromptSearchQuery(BaseModel):
+    """Query parameters for prompt search."""
+
+    components: list[str]
+    mode: str
+
+
+class PromptSearchResponse(BaseModel):
+    """Response from prompt search endpoint."""
+
+    query: PromptSearchQuery
+    count: int
+    results: list[PromptPreview]
+
+
+class TokenizeResponse(BaseModel):
+    """Response from tokenize endpoint."""
+
+    token_ids: list[int]
+    tokens: list[str]
+    text: str
+
+
+# SSE streaming message types
+class ProgressMessage(BaseModel):
+    """Progress update during streaming computation."""
+
+    type: Literal["progress"]
+    current: int
+    total: int
+    stage: str
+
+
+class ErrorMessage(BaseModel):
+    """Error message during streaming computation."""
+
+    type: Literal["error"]
+    error: str
+
+
+class CompleteMessage(BaseModel):
+    """Completion message with result data."""
+
+    type: Literal["complete"]
+    data: PromptDataResponse
+
+
+class CompleteMessageWithOptimization(BaseModel):
+    """Completion message with optimization result data."""
+
+    type: Literal["complete"]
+    data: PromptDataWithOptimization
+
+
+# =============================================================================
+# Configuration Models
+# =============================================================================
 
 
 class ActivationContextsGenerationConfig(BaseModel):

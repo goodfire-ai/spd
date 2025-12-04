@@ -44,11 +44,21 @@ from spd.app.backend.lib.edge_normalization import normalize_edges_by_target
 from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
+    EdgeData,
     HarvestMetadata,
     LoadedRun,
     ModelActivationContexts,
+    OptimizationResult,
+    OutputProbability,
+    PromptDataResponse,
+    PromptDataWithOptimization,
+    PromptPreview,
+    PromptSearchQuery,
+    PromptSearchResponse,
     RunInfo,
+    SubcomponentActivationContexts,
     SubcomponentMetadata,
+    TokenizeResponse,
 )
 from spd.configs import Config, ImportanceMinimalityLossConfig, SamplingType
 from spd.data import DatasetConfig, create_data_loader
@@ -78,49 +88,25 @@ def log_errors[T: Callable[..., Any]](func: T) -> T:
     return wrapper  # pyright: ignore[reportReturnType]
 
 
-# Regex patterns for W&B path parsing
-RUN_ID_RE = re.compile(r"^[a-z0-9]{8}$")
+# Expected format from frontend: entity/project/runId (8-char lowercase alphanumeric)
 WANDB_PATH_RE = re.compile(r"^([^/\s]+)/([^/\s]+)/([a-z0-9]{8})$")
-WANDB_PATH_WITH_RUNS_RE = re.compile(r"^([^/\s]+)/([^/\s]+)/runs/([a-z0-9]{8})$")
-WANDB_URL_RE = re.compile(
-    r"^https://wandb\.ai/([^/]+)/([^/]+)/runs/([a-z0-9]{8})(?:/[^?]*)?(?:\?.*)?$"
-)
 
 
-def parse_wandb_run_path(input_str: str) -> str:
-    """Parse various W&B run reference formats into normalized entity/project/runId."""
-    s = input_str.strip()
-    if s.startswith("wandb:"):
-        s = s[6:]
+def validate_wandb_path(path: str) -> tuple[str, str, str]:
+    """Validate that path is in expected entity/project/runId format.
 
-    m = WANDB_PATH_RE.match(s)
-    if m:
-        entity, project, run_id = m.groups()
-        if not RUN_ID_RE.match(run_id):
-            raise ValueError(f"Invalid run id: {run_id}")
-        return f"{entity}/{project}/{run_id}"
+    The frontend handles all format parsing and normalization.
+    Backend just validates the expected normalized format.
 
-    m = WANDB_PATH_WITH_RUNS_RE.match(s)
-    if m:
-        entity, project, run_id = m.groups()
-        if not RUN_ID_RE.match(run_id):
-            raise ValueError(f"Invalid run id: {run_id}")
-        return f"{entity}/{project}/{run_id}"
-
-    m = WANDB_URL_RE.match(s)
-    if m:
-        entity, project, run_id = m.groups()
-        if not RUN_ID_RE.match(run_id):
-            raise ValueError(f"Invalid run id in URL: {run_id}")
-        return f"{entity}/{project}/{run_id}"
-
-    raise ValueError(
-        f"Invalid W&B run reference. Expected either:\n"
-        f' - "entity/project/xxxxxxxx" (8-char lowercase id)\n'
-        f' - "wandb:entity/project/runs/xxxxxxxx"\n'
-        f' - "https://wandb.ai/<entity>/<project>/runs/<8-char id>"\n'
-        f"Got: {input_str}"
-    )
+    Returns (entity, project, run_id) tuple.
+    """
+    m = WANDB_PATH_RE.match(path.strip())
+    if not m:
+        raise ValueError(
+            f'Invalid W&B path format. Expected "entity/project/runId" '
+            f"(8-char lowercase alphanumeric run id). Got: {path}"
+        )
+    return m.groups()  # pyright: ignore[reportReturnType]
 
 
 @dataclass
@@ -134,7 +120,7 @@ class RunState:
     sampling: SamplingType
     config: Config
     token_strings: dict[int, str]
-    activation_contexts_cache: dict[str, Any] | None = None
+    activation_contexts_cache: ModelActivationContexts | None = None
 
 
 @dataclass
@@ -269,19 +255,21 @@ def _build_token_lookup(
 def load_run(wandb_path: str):
     """Load a run by its wandb path. Creates the run in DB if not found.
 
+    Expects path in normalized format: entity/project/runId
+    (Frontend handles parsing various formats into this normalized form)
+
     This loads the model onto GPU and makes it available for attribution computation.
     """
     state = get_state()
 
-    # Parse and normalize the wandb path
+    # Validate the path format (frontend has already normalized it)
     try:
-        normalized_path = parse_wandb_run_path(unquote(wandb_path))
+        entity, project, run_id = validate_wandb_path(unquote(wandb_path))
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
     # Construct full path as stored in DB: wandb:entity/project/runs/runid
-    parts = normalized_path.split("/")
-    full_wandb_path = f"wandb:{parts[0]}/{parts[1]}/runs/{parts[2]}"
+    full_wandb_path = f"wandb:{entity}/{project}/runs/{run_id}"
 
     # Load the model from W&B to get config info
     logger.info(f"[API] Loading run info from W&B: {full_wandb_path}")
@@ -373,12 +361,12 @@ def get_status() -> LoadedRun | None:
 # -----------------------------------------------------------------------------
 
 
-def _ensure_activation_contexts_cached() -> dict[str, Any] | None:
+def _ensure_activation_contexts_cached() -> ModelActivationContexts | None:
     """Load activation contexts into cache if not already loaded."""
     loaded = get_loaded_run()
     state = get_state()
     if loaded.activation_contexts_cache is None:
-        contexts = state.db.get_activation_contexts_raw(loaded.run.id)
+        contexts = state.db.get_activation_contexts(loaded.run.id)
         if contexts is not None:
             loaded.activation_contexts_cache = contexts
     return loaded.activation_contexts_cache
@@ -386,53 +374,51 @@ def _ensure_activation_contexts_cached() -> dict[str, Any] | None:
 
 @app.get("/api/activation_contexts/summary")
 @log_errors
-def get_activation_contexts_summary():
+def get_activation_contexts_summary() -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
     try:
         contexts = _ensure_activation_contexts_cached()
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"error": str(e)}, status_code=400)  # pyright: ignore[reportReturnType]
 
     if contexts is None:
-        return JSONResponse(
+        return JSONResponse(  # pyright: ignore[reportReturnType]
             {"error": "No activation contexts found. Generate them first.", "missing": True},
             status_code=404,
         )
 
-    # Raw dict has {"layers": {...}} structure
-    layers = contexts.get("layers", contexts)
-
-    summary: dict[str, list[dict[str, Any]]] = {}
-    for layer, subcomps in layers.items():
+    summary: dict[str, list[SubcomponentMetadata]] = {}
+    for layer, subcomps in contexts.layers.items():
         summary[layer] = [
-            {"subcomponent_idx": s["subcomponent_idx"], "mean_ci": s["mean_ci"]} for s in subcomps
+            SubcomponentMetadata(subcomponent_idx=s.subcomponent_idx, mean_ci=s.mean_ci)
+            for s in subcomps
         ]
     return summary
 
 
 @app.get("/api/activation_contexts/{layer}/{component_idx}")
 @log_errors
-def get_activation_context_detail(layer: str, component_idx: int):
+def get_activation_context_detail(
+    layer: str, component_idx: int
+) -> SubcomponentActivationContexts:
     """Return full activation context data for a single component."""
     try:
         contexts = _ensure_activation_contexts_cached()
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"error": str(e)}, status_code=400)  # pyright: ignore[reportReturnType]
 
     if contexts is None:
-        return JSONResponse({"error": "No activation contexts found"}, status_code=404)
+        return JSONResponse({"error": "No activation contexts found"}, status_code=404)  # pyright: ignore[reportReturnType]
 
-    # Raw dict has {"layers": {...}} structure
-    layers = contexts.get("layers", contexts)  # Handle both raw dict and direct layers
-    layer_data = layers.get(layer)
+    layer_data = contexts.layers.get(layer)
     if layer_data is None:
-        return JSONResponse({"error": f"Layer '{layer}' not found"}, status_code=404)
+        return JSONResponse({"error": f"Layer '{layer}' not found"}, status_code=404)  # pyright: ignore[reportReturnType]
 
     for subcomp in layer_data:
-        if subcomp["subcomponent_idx"] == component_idx:
+        if subcomp.subcomponent_idx == component_idx:
             return subcomp
 
-    return JSONResponse(
+    return JSONResponse(  # pyright: ignore[reportReturnType]
         {"error": f"Component {component_idx} not found in layer '{layer}'"},
         status_code=404,
     )
@@ -477,12 +463,6 @@ def generate_activation_contexts(
         buffer_size=task_config.buffer_size,
         global_seed=loaded.config.seed,
     )
-
-    # Create a temporary run context for generation
-    # from spd.app.backend.services.run_context_service import TrainRunContext
-
-    # run_context = TrainRunContext(
-    # )
 
     config = ActivationContextsGenerationConfig(
         importance_threshold=importance_threshold,
@@ -548,7 +528,7 @@ def generate_activation_contexts(
 
 @app.get("/api/prompts")
 @log_errors
-def get_prompts():
+def get_prompts() -> list[PromptPreview]:
     """Return list of all prompts for the loaded run."""
     state = get_state()
     assert state.run_state is not None, "No run loaded"
@@ -556,21 +536,21 @@ def get_prompts():
     try:
         loaded = get_loaded_run()
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"error": str(e)}, status_code=400)  # pyright: ignore[reportReturnType]
 
     prompt_ids = state.db.get_all_prompt_ids(loaded.run.id)
 
-    results: list[dict[str, Any]] = []
+    results: list[PromptPreview] = []
     for pid in prompt_ids:
         prompt = state.db.get_prompt(pid)
         assert prompt is not None, f"Prompt {pid} in index but not in DB"
         token_strings = [state.run_state.token_strings[t] for t in prompt.token_ids]
         results.append(
-            {
-                "id": prompt.id,
-                "tokens": token_strings,
-                "preview": "".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
-            }
+            PromptPreview(
+                id=prompt.id,
+                tokens=token_strings,
+                preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
+            )
         )
     return results
 
@@ -741,9 +721,9 @@ def get_prompt(
     if max_mean_ci < 1.0:
         activation_contexts = _ensure_activation_contexts_cached()
         if activation_contexts:
-            for layer, subcomps in activation_contexts.items():
+            for layer, subcomps in activation_contexts.layers.items():
                 for subcomp in subcomps:
-                    mean_ci_lookup[f"{layer}:{subcomp['subcomponent_idx']}"] = subcomp["mean_ci"]
+                    mean_ci_lookup[f"{layer}:{subcomp.subcomponent_idx}"] = subcomp.mean_ci
 
     edges = result.edges
 
@@ -761,16 +741,12 @@ def get_prompt(
     if normalize:
         edges = normalize_edges_by_target(edges)
 
-    edges_dicts = [
-        {
-            "src": f"{e[0]}:{e[4]}:{e[2]}",
-            "tgt": f"{e[1]}:{e[5]}:{e[3]}",
-            "val": e[6],
-        }
+    edges_typed = [
+        EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
         for e in edges
     ]
 
-    output_probs: dict[str, dict[str, float | str]] = {}
+    output_probs: dict[str, OutputProbability] = {}
     output_probs_tensor = result.output_probs[0].cpu()
 
     # Only send output probs above threshold to avoid sending entire vocab
@@ -780,17 +756,17 @@ def get_prompt(
             if prob < output_prob_threshold:
                 continue
             key = f"{s}:{c_idx}"
-            output_probs[key] = {
-                "prob": round(prob, 6),
-                "token": loaded.tokenizer.decode([c_idx]),
-            }
+            output_probs[key] = OutputProbability(
+                prob=round(prob, 6),
+                token=loaded.tokenizer.decode([c_idx]),
+            )
 
-    return {
-        "id": prompt.id,
-        "tokens": token_strings,
-        "edges": edges_dicts,
-        "outputProbs": output_probs,
-    }
+    return PromptDataResponse(
+        id=prompt.id,
+        tokens=token_strings,
+        edges=edges_typed,
+        outputProbs=output_probs,
+    )
 
 
 @app.get("/api/prompt/{prompt_id}/stream")
@@ -873,9 +849,9 @@ def get_prompt_stream(
                 if max_mean_ci < 1.0:
                     activation_contexts = _ensure_activation_contexts_cached()
                     if activation_contexts:
-                        for layer, subcomps in activation_contexts.items():
+                        for layer, subcomps in activation_contexts.layers.items():
                             for subcomp in subcomps:
-                                mean_ci_lookup[f"{layer}:{subcomp['subcomponent_idx']}"] = subcomp["mean_ci"]
+                                mean_ci_lookup[f"{layer}:{subcomp.subcomponent_idx}"] = subcomp.mean_ci
 
                 edges = result.edges
 
@@ -892,12 +868,12 @@ def get_prompt_stream(
                 if normalize:
                     edges = normalize_edges_by_target(edges)
 
-                edges_dicts = [
-                    {"src": f"{e[0]}:{e[4]}:{e[2]}", "tgt": f"{e[1]}:{e[5]}:{e[3]}", "val": e[6]}
+                edges_typed = [
+                    EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
                     for e in edges
                 ]
 
-                output_probs: dict[str, dict[str, float | str]] = {}
+                output_probs: dict[str, OutputProbability] = {}
                 output_probs_tensor = result.output_probs[0].cpu()
 
                 for s in range(output_probs_tensor.shape[0]):
@@ -906,20 +882,18 @@ def get_prompt_stream(
                         if prob < output_prob_threshold:
                             continue
                         key = f"{s}:{c_idx}"
-                        output_probs[key] = {
-                            "prob": round(prob, 6),
-                            "token": loaded.tokenizer.decode([c_idx]),
-                        }
+                        output_probs[key] = OutputProbability(
+                            prob=round(prob, 6),
+                            token=loaded.tokenizer.decode([c_idx]),
+                        )
 
-                complete_data = {
-                    "type": "complete",
-                    "data": {
-                        "id": prompt.id,
-                        "tokens": token_strings,
-                        "edges": edges_dicts,
-                        "outputProbs": output_probs,
-                    },
-                }
+                response_data = PromptDataResponse(
+                    id=prompt.id,
+                    tokens=token_strings,
+                    edges=edges_typed,
+                    outputProbs=output_probs,
+                )
+                complete_data = {"type": "complete", "data": response_data.model_dump()}
                 yield f"data: {json.dumps(complete_data)}\n\n"
                 break
 
@@ -1016,16 +990,12 @@ def get_prompt_optimized(
     if normalize:
         edges = normalize_edges_by_target(edges)
 
-    edges_dicts = [
-        {
-            "src": f"{e[0]}:{e[4]}:{e[2]}",
-            "tgt": f"{e[1]}:{e[5]}:{e[3]}",
-            "val": e[6],
-        }
+    edges_typed = [
+        EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
         for e in edges
     ]
 
-    output_probs: dict[str, dict[str, float | str]] = {}
+    output_probs: dict[str, OutputProbability] = {}
     output_probs_tensor = result.output_probs[0].cpu()
 
     # Only send output probs above threshold to avoid sending entire vocab
@@ -1035,27 +1005,27 @@ def get_prompt_optimized(
             if prob < output_prob_threshold:
                 continue
             key = f"{s}:{c_idx}"
-            output_probs[key] = {
-                "prob": round(prob, 6),
-                "token": loaded.tokenizer.decode([c_idx]),
-            }
+            output_probs[key] = OutputProbability(
+                prob=round(prob, 6),
+                token=loaded.tokenizer.decode([c_idx]),
+            )
 
-    return {
-        "id": prompt.id,
-        "tokens": token_strings,
-        "edges": edges_dicts,
-        "outputProbs": output_probs,
-        "optimization": {
-            "label_token": label_token,
-            "label_str": label_str,
-            "imp_min_coeff": imp_min_coeff,
-            "ce_loss_coeff": ce_loss_coeff,
-            "steps": steps,
-            "label_prob": result.stats.label_prob,
-            "l0_total": result.stats.l0_total,
-            "l0_per_layer": result.stats.l0_per_layer,
-        },
-    }
+    return PromptDataWithOptimization(
+        id=prompt.id,
+        tokens=token_strings,
+        edges=edges_typed,
+        outputProbs=output_probs,
+        optimization=OptimizationResult(
+            label_token=label_token,
+            label_str=label_str,
+            imp_min_coeff=imp_min_coeff,
+            ce_loss_coeff=ce_loss_coeff,
+            steps=steps,
+            label_prob=result.stats.label_prob,
+            l0_total=result.stats.l0_total,
+            l0_per_layer=result.stats.l0_per_layer,
+        ),
+    )
 
 
 @app.get("/api/prompt/{prompt_id}/optimized/stream")
@@ -1171,12 +1141,12 @@ def get_prompt_optimized_stream(
                 if normalize:
                     edges = normalize_edges_by_target(edges)
 
-                edges_dicts = [
-                    {"src": f"{e[0]}:{e[4]}:{e[2]}", "tgt": f"{e[1]}:{e[5]}:{e[3]}", "val": e[6]}
+                edges_typed = [
+                    EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
                     for e in edges
                 ]
 
-                output_probs: dict[str, dict[str, float | str]] = {}
+                output_probs: dict[str, OutputProbability] = {}
                 output_probs_tensor = result.output_probs[0].cpu()
 
                 for s in range(output_probs_tensor.shape[0]):
@@ -1185,30 +1155,28 @@ def get_prompt_optimized_stream(
                         if prob < output_prob_threshold:
                             continue
                         key = f"{s}:{c_idx}"
-                        output_probs[key] = {
-                            "prob": round(prob, 6),
-                            "token": loaded.tokenizer.decode([c_idx]),
-                        }
+                        output_probs[key] = OutputProbability(
+                            prob=round(prob, 6),
+                            token=loaded.tokenizer.decode([c_idx]),
+                        )
 
-                complete_data = {
-                    "type": "complete",
-                    "data": {
-                        "id": prompt.id,
-                        "tokens": token_strings,
-                        "edges": edges_dicts,
-                        "outputProbs": output_probs,
-                        "optimization": {
-                            "label_token": resolved_label_token,
-                            "label_str": label_str,
-                            "imp_min_coeff": imp_min_coeff,
-                            "ce_loss_coeff": ce_loss_coeff,
-                            "steps": steps,
-                            "label_prob": result.stats.label_prob,
-                            "l0_total": result.stats.l0_total,
-                            "l0_per_layer": result.stats.l0_per_layer,
-                        },
-                    },
-                }
+                response_data = PromptDataWithOptimization(
+                    id=prompt.id,
+                    tokens=token_strings,
+                    edges=edges_typed,
+                    outputProbs=output_probs,
+                    optimization=OptimizationResult(
+                        label_token=resolved_label_token,
+                        label_str=label_str,
+                        imp_min_coeff=imp_min_coeff,
+                        ce_loss_coeff=ce_loss_coeff,
+                        steps=steps,
+                        label_prob=result.stats.label_prob,
+                        l0_total=result.stats.l0_total,
+                        l0_per_layer=result.stats.l0_per_layer,
+                    ),
+                )
+                complete_data = {"type": "complete", "data": response_data.model_dump()}
                 yield f"data: {json.dumps(complete_data)}\n\n"
                 break
 
@@ -1224,20 +1192,20 @@ def get_prompt_optimized_stream(
 
 @app.post("/api/tokenize")
 @log_errors
-def tokenize_text(text: str):
+def tokenize_text(text: str) -> TokenizeResponse:
     """Tokenize text and return tokens for preview (special tokens filtered)."""
     try:
         loaded = get_loaded_run()
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"error": str(e)}, status_code=400)  # pyright: ignore[reportReturnType]
 
     token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
 
-    return {
-        "text": text,
-        "token_ids": token_ids,
-        "tokens": [loaded.tokenizer.decode([t]) for t in token_ids],
-    }
+    return TokenizeResponse(
+        text=text,
+        token_ids=token_ids,
+        tokens=[loaded.tokenizer.decode([t]) for t in token_ids],
+    )
 
 
 @app.post("/api/prompt/custom")
@@ -1286,16 +1254,12 @@ def compute_custom_prompt(
     if normalize:
         edges = normalize_edges_by_target(edges)
 
-    edges_dicts = [
-        {
-            "src": f"{e[0]}:{e[4]}:{e[2]}",
-            "tgt": f"{e[1]}:{e[5]}:{e[3]}",
-            "val": e[6],
-        }
+    edges_typed = [
+        EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
         for e in edges
     ]
 
-    output_probs: dict[str, dict[str, float | str]] = {}
+    output_probs: dict[str, OutputProbability] = {}
     output_probs_tensor = result.output_probs[0].cpu()
 
     # Only send output probs above threshold to avoid sending entire vocab
@@ -1305,17 +1269,17 @@ def compute_custom_prompt(
             if prob < output_prob_threshold:
                 continue
             key = f"{s}:{c_idx}"
-            output_probs[key] = {
-                "prob": round(prob, 6),
-                "token": loaded.tokenizer.decode([c_idx]),
-            }
+            output_probs[key] = OutputProbability(
+                prob=round(prob, 6),
+                token=loaded.tokenizer.decode([c_idx]),
+            )
 
-    return {
-        "id": None,
-        "tokens": token_strings,
-        "edges": edges_dicts,
-        "outputProbs": output_probs,
-    }
+    return PromptDataResponse(
+        id=-1,  # Custom prompts have no ID
+        tokens=token_strings,
+        edges=edges_typed,
+        outputProbs=output_probs,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -1328,41 +1292,41 @@ def compute_custom_prompt(
 def search_prompts(
     components: str = "",
     mode: Annotated[str, Query(pattern="^(all|any)$")] = "all",
-):
+) -> PromptSearchResponse:
     """Search for prompts with specified components in the loaded run."""
     state = get_state()
     try:
         loaded = get_loaded_run()
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"error": str(e)}, status_code=400)  # pyright: ignore[reportReturnType]
 
     component_list = [c.strip() for c in components.split(",") if c.strip()]
     if not component_list:
-        return JSONResponse({"error": "No components specified"}, status_code=400)
+        return JSONResponse({"error": "No components specified"}, status_code=400)  # pyright: ignore[reportReturnType]
 
     require_all = mode == "all"
     prompt_ids = state.db.find_prompts_with_components(
         loaded.run.id, component_list, require_all=require_all
     )
 
-    results: list[dict[str, Any]] = []
+    results: list[PromptPreview] = []
     for pid in prompt_ids:
         prompt = state.db.get_prompt(pid)
         assert prompt is not None, f"Prompt {pid} in index but not in DB"
         token_strings = [loaded.tokenizer.decode([t]) for t in prompt.token_ids]
         results.append(
-            {
-                "id": prompt.id,
-                "tokens": token_strings,
-                "preview": "".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
-            }
+            PromptPreview(
+                id=prompt.id,
+                tokens=token_strings,
+                preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
+            )
         )
 
-    return {
-        "query": {"components": component_list, "mode": mode},
-        "count": len(results),
-        "results": results,
-    }
+    return PromptSearchResponse(
+        query=PromptSearchQuery(components=component_list, mode=mode),
+        count=len(results),
+        results=results,
+    )
 
 
 @app.get("/api/health")

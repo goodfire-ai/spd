@@ -1,9 +1,10 @@
 # %%
 """Optimize CI values for a single prompt while keeping component weights fixed."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 import torch
 import torch.nn.functional as F
@@ -17,8 +18,6 @@ from spd.metrics import importance_minimality_loss
 from spd.models.component_model import CIOutputs, ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.routing import AllLayersRouter
-
-# from spd.attributions.optim_cis.config import OptimCIConfig
 from spd.spd_types import Probability
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
 
