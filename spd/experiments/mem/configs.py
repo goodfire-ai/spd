@@ -41,7 +41,7 @@ class MemTaskConfig(BaseConfig):
         description="Identifier for the mem decomposition task",
     )
     expand: bool = Field(
-        default=False,
+        default=True,
         description="Whether to expand model dimensions before decomposition",
     )
     d_model_new: int | None = Field(
@@ -49,6 +49,6 @@ class MemTaskConfig(BaseConfig):
         description="New d_model dimension (must be >= original d_model). Required if expand=True.",
     )
     d_mlp_new: int | None = Field(
-        default=None,
+        default=256,
         description="New d_mlp dimension (must be >= original d_mlp). Required if expand=True.",
     )
