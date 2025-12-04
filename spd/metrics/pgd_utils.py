@@ -25,6 +25,7 @@ def pgd_masked_recon_loss_update(
     output_loss_type: Literal["mse", "kl", "mem"],
     router: Router,
     pgd_config: PGDConfig,
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> tuple[Float[Tensor, ""], int]:
     """Central implementation of PGD masked reconstruction loss.
 
@@ -61,6 +62,7 @@ def pgd_masked_recon_loss_update(
         target_out=target_out,
         output_loss_type=output_loss_type,
         batch_dims=batch_dims,
+        labels=labels,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -159,6 +161,7 @@ def _forward_with_adv_sources(
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl", "mem"],
     batch_dims: tuple[int, ...],
+    labels: Int[Tensor, "batch"] | None = None,
 ):
     expanded_adv_sources = adv_sources.expand(-1, *batch_dims, -1)
     adv_sources_components: Float[Tensor, "n_layers *batch_dims C"]
@@ -180,7 +183,7 @@ def _forward_with_adv_sources(
     )
     out = model(batch, mask_infos=mask_infos)
 
-    sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+    sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type, labels=labels)
 
     if output_loss_type == "mse":
         n_examples = target_out.shape.numel()

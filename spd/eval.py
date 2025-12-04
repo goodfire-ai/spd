@@ -64,7 +64,7 @@ from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
-from spd.utils.general_utils import dict_safe_update_, extract_batch_data
+from spd.utils.general_utils import dict_safe_update_, extract_batch_data, extract_batch_labels
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
 DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
@@ -305,6 +305,9 @@ def evaluate(
     for _ in range(n_eval_steps):
         batch_raw = next(eval_iterator)
         batch = extract_batch_data(batch_raw).to(device)
+        batch_labels = extract_batch_labels(batch_raw)
+        if batch_labels is not None:
+            batch_labels = batch_labels.to(device)
 
         target_output: OutputWithCache = model(batch, cache_type="input")
         ci = model.calc_causal_importances(
@@ -321,6 +324,7 @@ def evaluate(
                 ci=ci,
                 current_frac_of_training=current_frac_of_training,
                 weight_deltas=weight_deltas,
+                labels=batch_labels,
             )
 
     outputs: MetricOutType = {}

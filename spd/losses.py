@@ -52,6 +52,7 @@ def compute_total_loss(
     use_delta_component: bool,
     n_mask_samples: int,
     output_loss_type: Literal["mse", "kl", "mem"],
+    labels: Int[Tensor, "batch"] | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -81,6 +82,7 @@ def compute_total_loss(
                     output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
+                    labels=labels,
                 )
             case CIMaskedReconSubsetLossConfig():
                 loss = ci_masked_recon_subset_loss(
@@ -90,6 +92,7 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     routing=cfg.routing,
+                    labels=labels,
                 )
             case CIMaskedReconLayerwiseLossConfig():
                 loss = ci_masked_recon_layerwise_loss(
@@ -98,6 +101,7 @@ def compute_total_loss(
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
+                    labels=labels,
                 )
             case CIMaskedReconLossConfig():
                 loss = ci_masked_recon_loss(
@@ -106,6 +110,7 @@ def compute_total_loss(
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
+                    labels=labels,
                 )
             case StochasticReconLayerwiseLossConfig():
                 loss = stochastic_recon_layerwise_loss(
@@ -117,6 +122,7 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                    labels=labels,
                 )
             case StochasticReconLossConfig():
                 loss = stochastic_recon_loss(
@@ -128,6 +134,7 @@ def compute_total_loss(
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                    labels=labels,
                 )
             case StochasticReconSubsetLossConfig():
                 loss = stochastic_recon_subset_loss(
@@ -140,6 +147,7 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     routing=cfg.routing,
+                    labels=labels,
                 )
             case PGDReconLossConfig():
                 loss = pgd_recon_loss(
@@ -150,6 +158,7 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
+                    labels=labels,
                 )
             case PGDReconSubsetLossConfig():
                 loss = pgd_recon_subset_loss(
@@ -161,6 +170,7 @@ def compute_total_loss(
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
                     routing=cfg.routing,
+                    labels=labels,
                 )
             case PGDReconLayerwiseLossConfig():
                 loss = pgd_recon_layerwise_loss(
@@ -171,6 +181,7 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
+                    labels=labels,
                 )
             case StochasticHiddenActsReconLossConfig():
                 loss = stochastic_hidden_acts_recon_loss(
