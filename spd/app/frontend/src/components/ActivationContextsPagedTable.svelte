@@ -136,6 +136,7 @@
         padding: var(--space-2);
         background: var(--bg-inset);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
@@ -148,6 +149,7 @@
         padding: var(--space-2);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
         flex-wrap: wrap;
     }
 
@@ -160,17 +162,17 @@
 
     .filter-control label,
     .page-size-control label {
-        font-size: var(--text-xs);
+        font-size: var(--text-sm);
         font-family: var(--font-sans);
-        color: var(--text-muted);
+        color: var(--text-secondary);
         white-space: nowrap;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        font-weight: 500;
     }
 
     .filter-control select,
     .page-size-control select {
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         padding: var(--space-1) var(--space-2);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
@@ -195,11 +197,12 @@
     .pagination button {
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         background: var(--bg-elevated);
         color: var(--text-secondary);
         cursor: pointer;
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
     }
 
     .pagination button:hover:not(:disabled) {
@@ -215,7 +218,7 @@
 
     .pagination span {
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
         color: var(--text-muted);
         white-space: nowrap;
     }
@@ -224,6 +227,7 @@
         width: 50px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         text-align: center;
         font-size: var(--text-sm);
         font-family: var(--font-mono);

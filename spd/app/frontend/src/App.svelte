@@ -176,18 +176,18 @@
     }
 
     .run-input label {
-        font-size: var(--text-xs);
-        color: var(--text-muted);
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
         white-space: nowrap;
-        font-family: var(--font-mono);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        font-family: var(--font-sans);
+        font-weight: 500;
     }
 
     .run-input input[type="text"] {
         width: 200px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         background: var(--bg-elevated);
         color: var(--text-primary);
         font-size: var(--text-sm);
@@ -202,6 +202,7 @@
         width: 70px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         background: var(--bg-elevated);
         color: var(--text-primary);
         font-size: var(--text-sm);
@@ -217,15 +218,14 @@
     .run-input button {
         padding: var(--space-1) var(--space-3);
         background: var(--accent-warm);
-        color: var(--bg-base);
+        color: white;
         border: none;
+        border-radius: var(--radius-sm);
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        font-weight: 600;
+        font-family: var(--font-sans);
+        font-weight: 500;
         cursor: pointer;
         white-space: nowrap;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     .run-input button:hover:not(:disabled) {
@@ -247,13 +247,12 @@
         padding: var(--space-1) var(--space-3);
         background: var(--bg-elevated);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         cursor: pointer;
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         font-weight: 500;
         color: var(--text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     .tab-button:hover {
@@ -277,12 +276,12 @@
         padding: var(--space-1) var(--space-2);
         background: var(--bg-elevated);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         cursor: pointer;
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
         color: var(--text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        font-weight: 500;
     }
 
     .config-button:hover {
@@ -301,6 +300,8 @@
     .config-dropdown pre {
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         max-width: 420px;
         max-height: 70vh;
         overflow: auto;
@@ -322,14 +323,14 @@
     }
 
     .warning-banner {
-        background: var(--bg-elevated);
+        background: var(--bg-surface);
         color: var(--accent-warm);
         padding: var(--space-2) var(--space-3);
         border: 1px solid var(--accent-warm-dim);
-        border-left: 3px solid var(--accent-warm);
+        border-radius: var(--radius-md);
         margin: var(--space-3);
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
         flex-shrink: 0;
     }
 

@@ -13,12 +13,12 @@ export const colors = {
     positive: "#2868a0",
     negative: "#c43c3c",
 
-    // Output node gradient (green) - brighter for better visibility
-    outputBase: { r: 34, g: 170, b: 90 },
+    // Output node gradient (green) - Apple-style bright green
+    outputBase: { r: 52, g: 199, b: 89 },
 
-    // Token highlight - brighter green
-    tokenHighlight: { r: 34, g: 170, b: 90 },
-    tokenHighlightOpacity: 0.4,
+    // Token highlight - Apple-style bright green
+    tokenHighlight: { r: 52, g: 199, b: 89 },
+    tokenHighlightOpacity: 0.35,
 
     // Node default
     nodeDefault: "#8a867e",
@@ -52,4 +52,4 @@ export function getOutputHeaderGradient(prob: number): string {
 }
 
 /** Background color with opacity for overlays */
-export const bgBaseRgb = { r: 245, g: 243, b: 239 };
+export const bgBaseRgb = { r: 255, g: 255, b: 255 };

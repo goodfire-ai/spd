@@ -198,20 +198,20 @@
         padding: var(--space-2);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
         flex-wrap: wrap;
     }
 
     .layer-select-section label {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--text-muted);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
         font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     #layer-select {
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         padding: var(--space-1) var(--space-2);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
@@ -230,6 +230,7 @@
         display: flex;
         gap: 0;
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         overflow: hidden;
     }
 
@@ -239,10 +240,8 @@
         background: var(--bg-elevated);
         color: var(--text-secondary);
         cursor: pointer;
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
         border-right: 1px solid var(--border-default);
     }
 
@@ -257,8 +256,8 @@
 
     .toggle-buttons button.active {
         background: var(--accent-warm);
-        color: var(--bg-base);
-        font-weight: 600;
+        color: white;
+        font-weight: 500;
     }
 
     .pagination-controls {
@@ -268,16 +267,18 @@
         padding: var(--space-2);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
     }
 
     .pagination-controls button {
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         background: var(--bg-elevated);
         color: var(--text-secondary);
         cursor: pointer;
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
     }
 
     .pagination-controls button:hover:not(:disabled) {
@@ -293,7 +294,7 @@
 
     .pagination-controls span {
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
         color: var(--text-muted);
         white-space: nowrap;
     }
@@ -302,6 +303,7 @@
         width: 50px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         text-align: center;
         font-size: var(--text-sm);
         font-family: var(--font-mono);
@@ -330,7 +332,7 @@
     .subcomponent-section-header h4 {
         margin: 0;
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
         color: var(--text-secondary);
         font-weight: 600;
     }
@@ -339,6 +341,7 @@
         padding: var(--space-3);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
     }
 
     .token-densities-header {
@@ -354,10 +357,8 @@
         margin: 0;
         font-size: var(--text-sm);
         font-family: var(--font-sans);
-        color: var(--text-muted);
+        color: var(--text-secondary);
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     .math-notation {
@@ -394,12 +395,14 @@
     .density-bar-container {
         height: 4px;
         background: var(--border-default);
+        border-radius: 2px;
         overflow: hidden;
     }
 
     .density-bar {
         height: 100%;
         background: var(--status-info);
+        border-radius: 2px;
         transition: width 0.15s ease-out;
     }
 
@@ -414,9 +417,7 @@
         padding: var(--space-4);
         text-align: center;
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
         color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 </style>

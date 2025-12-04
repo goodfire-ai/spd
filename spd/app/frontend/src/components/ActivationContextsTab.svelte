@@ -164,6 +164,7 @@
         padding: var(--space-3);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
         flex-direction: column;
     }
 
@@ -177,10 +178,8 @@
         margin: 0;
         font-size: var(--text-sm);
         font-family: var(--font-sans);
-        color: var(--text-muted);
+        color: var(--text-secondary);
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     .config-grid {
@@ -196,17 +195,16 @@
     }
 
     .config-item label {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--text-muted);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
         font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     .config-item input {
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         background: var(--bg-elevated);
@@ -221,14 +219,13 @@
     .load-button {
         padding: var(--space-2) var(--space-4);
         border: none;
+        border-radius: var(--radius-sm);
         background: var(--accent-warm);
-        color: var(--bg-base);
+        color: white;
         cursor: pointer;
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        font-family: var(--font-sans);
+        font-weight: 500;
         align-self: flex-start;
     }
 
@@ -246,12 +243,13 @@
         padding: var(--space-3);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
     }
 
     .progress-text {
         margin-bottom: var(--space-2);
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
         color: var(--text-secondary);
         font-weight: 500;
     }
@@ -260,12 +258,14 @@
         width: 100%;
         height: 4px;
         background: var(--border-default);
+        border-radius: 2px;
         overflow: hidden;
     }
 
     .progress-fill {
         height: 100%;
         background: var(--accent-warm);
+        border-radius: 2px;
         transition: width 0.15s ease-out;
     }
 
@@ -273,9 +273,7 @@
         padding: var(--space-3);
         text-align: center;
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-family: var(--font-sans);
         color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 </style>
