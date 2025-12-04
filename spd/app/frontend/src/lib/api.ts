@@ -16,10 +16,11 @@ export async function getStatus(): Promise<LoadedRun | null> {
     return data;
 }
 
-export async function loadRun(wandbRunPath: string): Promise<void> {
+export async function loadRun(wandbRunPath: string, contextLength: number): Promise<void> {
     const url = new URL(`${API_URL}/api/runs/load`);
     // searchParams.set handles URL encoding automatically
     url.searchParams.set("wandb_path", wandbRunPath);
+    url.searchParams.set("context_length", String(contextLength));
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
         const error = await response.json();

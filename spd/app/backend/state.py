@@ -6,7 +6,9 @@ Contains:
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
+from torch.utils.data import DataLoader
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.db import LocalAttrDB
@@ -26,6 +28,7 @@ class RunState:
     sources_by_target: dict[str, list[str]]
     config: Config
     token_strings: dict[int, str]
+    train_loader: DataLoader[Any]
     activation_contexts_cache: ModelActivationContexts | None = None
 
 

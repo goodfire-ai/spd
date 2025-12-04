@@ -11,6 +11,7 @@
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>(null);
+    let contextLength = $state<number>(64);
 
     let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
@@ -51,7 +52,7 @@
             const wandbRunPath = parseWandbRunPath(input);
             console.log("loading run", wandbRunPath);
             trainWandbRunEntry = wandbRunPath;
-            await api.loadRun(wandbRunPath);
+            await api.loadRun(wandbRunPath, contextLength);
             await loadStatus();
         } catch (error) {
             console.error("error loading run", error);
@@ -77,6 +78,15 @@
                 bind:value={trainWandbRunEntry}
                 disabled={loadingTrainRun}
                 placeholder="W&B Run ID"
+            />
+            <input
+                type="number"
+                id="context-length"
+                bind:value={contextLength}
+                disabled={loadingTrainRun}
+                min="1"
+                max="2048"
+                placeholder="Ctx"
             />
             <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
                 {loadingTrainRun ? "..." : "Load"}
@@ -164,7 +174,16 @@
         font-size: 0.85rem;
     }
 
-    .run-input input[type="text"]:focus {
+    .run-input input[type="number"] {
+        width: 60px;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.85rem;
+    }
+
+    .run-input input[type="text"]:focus,
+    .run-input input[type="number"]:focus {
         outline: none;
         border-color: #4a90e2;
     }

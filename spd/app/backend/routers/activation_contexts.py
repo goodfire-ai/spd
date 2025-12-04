@@ -8,6 +8,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse, StreamingResponse
+from torch.utils.data import DataLoader
 
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
@@ -20,9 +21,6 @@ from spd.app.backend.schemas import (
 )
 from spd.app.backend.state import RunState, StateManager
 from spd.app.backend.utils import log_errors
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.utils.general_utils import runtime_cast
 
 router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts"])
 
@@ -94,11 +92,11 @@ def get_activation_context_detail(
 @router.get("/subcomponents")
 @log_errors
 def generate_activation_contexts(
-    importance_threshold: Annotated[float, Query(gt=0, le=1)],
-    n_batches: Annotated[int, Query(gt=0)],
-    batch_size: Annotated[int, Query(gt=0)],
+    importance_threshold: Annotated[float, Query(ge=0, le=1)],
+    n_batches: Annotated[int, Query(ge=1)],
+    batch_size: Annotated[int, Query(ge=1)],
     n_tokens_either_side: Annotated[int, Query(ge=0)],
-    topk_examples: Annotated[int, Query(gt=0)],
+    topk_examples: Annotated[int, Query(ge=1)],
     separation_tokens: Annotated[int, Query(ge=0)],
     manager: DepStateManager,
     loaded: DepLoadedRun,
@@ -107,26 +105,16 @@ def generate_activation_contexts(
 
     This streams progress updates and saves the result to DB when complete.
     """
+    assert separation_tokens <= n_tokens_either_side, (
+        "separation_tokens must be less than or equal to n_tokens_either_side"
+    )
     db = manager.db
 
-    # Create a data loader for generation
-    task_config = runtime_cast(LMTaskConfig, loaded.config.task_config)
-    train_data_config = DatasetConfig(
-        name=task_config.dataset_name,
-        hf_tokenizer_path=loaded.config.tokenizer_name,
-        split=task_config.train_data_split,
-        n_ctx=task_config.max_seq_len,
-        is_tokenized=task_config.is_tokenized,
-        streaming=task_config.streaming,
-        column_name=task_config.column_name,
-        shuffle_each_epoch=task_config.shuffle_each_epoch,
-        seed=None,
-    )
-    train_loader, _ = create_data_loader(
-        dataset_config=train_data_config,
-        batch_size=1,
-        buffer_size=task_config.buffer_size,
-        global_seed=loaded.config.seed,
+    # Create a data loader with user-specified batch size using the existing dataset
+    train_loader = DataLoader(
+        loaded.train_loader.dataset,
+        batch_size=batch_size,
+        shuffle=False,  # Dataset already shuffled, don't double-shuffle
     )
 
     config = ActivationContextsGenerationConfig(
@@ -154,7 +142,6 @@ def generate_activation_contexts(
                 importance_threshold=importance_threshold,
                 n_batches=n_batches,
                 n_tokens_either_side=n_tokens_either_side,
-                batch_size=batch_size,
                 topk_examples=topk_examples,
                 separation_tokens=separation_tokens,
                 onprogress=on_progress,

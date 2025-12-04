@@ -14,6 +14,8 @@ from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.schemas import LoadedRun, RunInfo
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import build_token_lookup, log_errors, validate_wandb_path
+from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
@@ -42,7 +44,7 @@ def list_runs(manager: DepStateManager) -> list[RunInfo]:
 
 @router.post("/runs/load")
 @log_errors
-def load_run(wandb_path: str, manager: DepStateManager):
+def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     """Load a run by its wandb path. Creates the run in DB if not found.
 
     Expects path in normalized format: entity/project/runId
@@ -107,6 +109,24 @@ def load_run(wandb_path: str, manager: DepStateManager):
     # Build token lookup for activation contexts
     token_strings = build_token_lookup(loaded_tokenizer, spd_config.tokenizer_name)
 
+    task_config = spd_config.task_config
+    assert isinstance(task_config, LMTaskConfig)
+    train_data_config = DatasetConfig(
+        name=task_config.dataset_name,
+        hf_tokenizer_path=spd_config.tokenizer_name,
+        split=task_config.train_data_split,
+        n_ctx=context_length,
+        is_tokenized=task_config.is_tokenized,
+        streaming=task_config.streaming,
+        column_name=task_config.column_name,
+        shuffle_each_epoch=task_config.shuffle_each_epoch,
+    )
+    train_loader, _ = create_data_loader(
+        dataset_config=train_data_config,
+        batch_size=32,
+        buffer_size=task_config.buffer_size,
+        global_seed=spd_config.seed,
+    )
     manager.run_state = RunState(
         run=run,
         model=model,
@@ -114,6 +134,7 @@ def load_run(wandb_path: str, manager: DepStateManager):
         sources_by_target=sources_by_target,
         config=spd_config,
         token_strings=token_strings,
+        train_loader=train_loader,
     )
 
     logger.info(f"[API] Run {run.id} loaded on {DEVICE}")

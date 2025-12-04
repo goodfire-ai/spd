@@ -1,7 +1,7 @@
 import heapq
 import time
 from collections import defaultdict
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -37,14 +37,13 @@ def get_activations_data(
     importance_threshold: float,
     n_batches: int,
     n_tokens_either_side: int,
-    batch_size: int,
     topk_examples: int,
     separation_tokens: int = 0,
     onprogress: Callable[[float], None] | None = None,
 ) -> ModelActivationContexts:
     logger.info(
         f"Getting activations data: {n_batches=}, {importance_threshold=}, "
-        f"{n_tokens_either_side=}, {batch_size=}, {topk_examples=}, {separation_tokens=}"
+        f"{n_tokens_either_side=}, {topk_examples=}, {separation_tokens=}"
     )
     if separation_tokens > 0:
         print(f"[activation_contexts] Position separation enabled: {separation_tokens} tokens")
@@ -81,18 +80,14 @@ def get_activations_data(
 
     pad_token_id = int(getattr(tokenizer, "pad_token_id", None) or DEFAULT_PAD_TOKEN_ID)
 
-    batches = roll_batch_size_1_into_x(
-        singleton_batches=(extract_batch_data(b).to(device) for b in train_loader),
-        batch_size=batch_size,
-    )
-
     last_progress_time = 0.0
     n_modules = len(cm.target_module_paths)
 
     pbar = tqdm.tqdm(total=n_batches * n_modules, desc="Processing batches", unit="batch,layer")
 
+    train_iter = iter(train_loader)
     for i in range(n_batches):
-        batch: Int[Tensor, "B S"] = next(batches)
+        batch: Int[Tensor, "B S"] = extract_batch_data(next(train_iter)).to(device)
         assert not batch.requires_grad, "Batch tensors with requires_grad are not supported"
         assert isinstance(batch, Tensor)
         assert batch.ndim == 2, "Expected batch tensor of shape (B, S)"
@@ -440,21 +435,6 @@ def _get_pad_indices_numpy(arr: NDArray[np.int64], pad_val: int) -> tuple[int, i
         return 0, 0
     non_pad_indices = np.where(non_pad)[0]
     return int(non_pad_indices[0]), int(non_pad_indices[-1]) + 1
-
-
-def roll_batch_size_1_into_x(
-    singleton_batches: Iterable[Tensor],
-    batch_size: int,
-) -> Generator[Tensor]:
-    examples = []
-    for batch in singleton_batches:
-        assert batch.shape[0] == 1, "Batch size must be 1"
-        examples.append(batch[0])
-        if len(examples) == batch_size:
-            yield torch.stack(examples)
-            examples = []
-    if examples:
-        yield torch.stack(examples)
 
 
 def _get_component_token_pr(

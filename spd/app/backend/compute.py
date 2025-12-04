@@ -16,6 +16,7 @@ from tqdm.auto import tqdm
 
 from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig, optimize_ci_values
 from spd.configs import SamplingType
+from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 
@@ -223,6 +224,8 @@ def compute_edges_from_ci(
     Use compute_local_attributions() for automatic CI computation, or
     compute_local_attributions_optimized() for optimized sparse CI values.
     """
+    logger.info("Inside compute_edges_from_ci")
+    # Add break for debugger to attach here
     n_seq = tokens.shape[1]
 
     ci_masked_infos = make_mask_infos(component_masks=ci_lower_leaky, routing_masks="all")
@@ -352,6 +355,7 @@ def compute_edges_from_ci(
     if pbar is not None:
         pbar.close()
 
+    logger.info("Exiting compute_edges_from_ci")
     return LocalAttributionResult(edges=edges, output_probs=output_probs)
 
 
