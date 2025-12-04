@@ -72,16 +72,16 @@ def main(
 
     # Expand model dimensions if requested
     if task_config.expand:
-        assert task_config.d_model_new is not None, "d_model_new must be set when expand=True"
-        assert task_config.d_mlp_new is not None, "d_mlp_new must be set when expand=True"
+        # assert task_config.d_model_new is not None, "d_model_new must be set when expand=True"
+        # assert task_config.d_mlp_new is not None, "d_mlp_new must be set when expand=True"
         logger.info(
-            f"Expanding model: d_model {target_model.config.d_model} -> {task_config.d_model_new}, "
-            f"d_mlp {target_model.config.d_mlp} -> {task_config.d_mlp_new}"
+            f"Expanding model: d_model {target_model.config.d_model} -> {16}, "
+            f"d_mlp {target_model.config.d_mlp} -> {256}"
         )
         target_model = expand_model(
             target_model,
-            d_model_new=task_config.d_model_new,
-            d_mlp_new=task_config.d_mlp_new,
+            d_model_new=16,
+            d_mlp_new=256,
         )
 
     target_model = target_model.to(device)
