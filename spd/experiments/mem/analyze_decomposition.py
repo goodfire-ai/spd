@@ -180,6 +180,54 @@ def analyze_decomposition(
                 f"mean CI={mean_ci:.3f}, max CI={max_ci:.3f}"
             )
 
+    # Per-fact analysis: which components activate on each fact
+    out()
+    out("=" * 80)
+    out("PER-FACT COMPONENT ANALYSIS")
+    out("=" * 80)
+
+    for module_name, ci_values in importances_by_module.items():
+        ci_final_pos = ci_values[:, -1, :]  # [n_facts, C]
+
+        out(f"\n{'='*80}")
+        out(f"MODULE: {module_name}")
+        out(f"{'='*80}")
+
+        for fact_idx in range(dataset.n_facts):
+            fact_ci = ci_final_pos[fact_idx, :]  # [C]
+
+            # Find components that activate above threshold on this fact
+            active_mask = fact_ci > ci_threshold
+            active_comp_indices = torch.where(active_mask)[0]
+            n_active = len(active_comp_indices)
+
+            input_tokens = all_inputs[fact_idx].tolist()
+            label_token = int(all_labels[fact_idx].item())
+
+            if n_active == 0:
+                out(f"\n  Fact {fact_idx:4d}: input={input_tokens} → label={label_token}")
+                out("    No components above threshold")
+                continue
+
+            # Sort by causal importance (descending)
+            active_cis = fact_ci[active_comp_indices]
+            sorted_order = torch.argsort(active_cis, descending=True)
+            active_comp_indices = active_comp_indices[sorted_order]
+            active_cis = active_cis[sorted_order]
+
+            out(f"\n  Fact {fact_idx:4d}: input={input_tokens} → label={label_token}")
+            out(f"    {n_active} components above threshold:")
+
+            # List all active components
+            comp_strs = [
+                f"C{int(active_comp_indices[i].item())}({active_cis[i].item():.3f})"
+                for i in range(n_active)
+            ]
+            # Print in rows of ~8 components each for readability
+            for row_start in range(0, len(comp_strs), 8):
+                row_end = min(row_start + 8, len(comp_strs))
+                out(f"      {', '.join(comp_strs[row_start:row_end])}")
+
     # Write output
     output_text = "\n".join(lines)
 
