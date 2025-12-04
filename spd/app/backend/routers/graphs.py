@@ -1,180 +1,247 @@
-"""Graph listing and generation endpoints."""
+"""Graph computation endpoints for tokenization and attribution graphs."""
 
 import json
+import queue
+import threading
+import time
 from collections.abc import Generator
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
+import torch
+from fastapi import APIRouter, Body, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from spd.app.backend.compute import compute_ci_only, extract_active_from_ci
-from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
-from spd.app.backend.schemas import GraphPreview, GraphSearchQuery, GraphSearchResponse
+from spd.app.backend.compute import compute_local_attributions, compute_local_attributions_optimized
+from spd.app.backend.dependencies import DepLoadedRun
+from spd.app.backend.lib.edge_normalization import normalize_edges_by_target
+from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
+from spd.app.backend.schemas import (
+    EdgeData,
+    GraphData,
+    GraphDataWithOptimization,
+    OptimizationResult,
+    OutputProbability,
+    TokenizeResponse,
+)
 from spd.app.backend.utils import log_errors
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
+from spd.configs import ImportanceMinimalityLossConfig
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import runtime_cast
 
 router = APIRouter(prefix="/api/graphs", tags=["graphs"])
 
 DEVICE = get_device()
+GLOBAL_EDGE_LIMIT = 5_000
 
 
-@router.get("")
+@router.post("/tokenize")
 @log_errors
-def list_graphs(manager: DepStateManager, loaded: DepLoadedRun) -> list[GraphPreview]:
-    """Return list of all graphs for the loaded run."""
-    db = manager.db
-    graph_ids = db.get_all_graph_ids(loaded.run.id)
+def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
+    """Tokenize text and return tokens for preview (special tokens filtered)."""
+    token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
 
-    results: list[GraphPreview] = []
-    for gid in graph_ids:
-        graph = db.get_graph(gid)
-        assert graph is not None, f"Graph {gid} in index but not in DB"
-        token_strings = [loaded.token_strings[t] for t in graph.token_ids]
-        results.append(
-            GraphPreview(
-                id=graph.id,
-                token_ids=graph.token_ids,
-                tokens=token_strings,
-                preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
-            )
-        )
-    return results
+    return TokenizeResponse(
+        text=text,
+        token_ids=token_ids,
+        tokens=[loaded.token_strings[t] for t in token_ids],
+    )
 
 
-@router.post("/generate")
+@router.post("")
 @log_errors
-def generate_graphs(
-    n_graphs: int,
-    manager: DepStateManager,
+def compute_graph(
+    token_ids: Annotated[list[int], Body(embed=True)],
+    normalize: Annotated[bool, Query()],
     loaded: DepLoadedRun,
-) -> StreamingResponse:
-    """Generate attribution graphs from training data with CI harvesting.
+):
+    """Compute attribution graph for given token IDs."""
+    ci_threshold = 1e-6
+    output_prob_threshold = 0.01
 
-    Streams progress updates and stores graphs with their active components
-    (for the inverted index used by search).
-    """
-    db = manager.db
+    if not token_ids:
+        return JSONResponse({"error": "No token IDs provided"}, status_code=400)
 
-    # Create a data loader for generation
-    task_config = runtime_cast(LMTaskConfig, loaded.config.task_config)
-    actual_seq_length = 8
+    token_strings = [loaded.token_strings[t] for t in token_ids]
 
-    train_data_config = DatasetConfig(
-        name=task_config.dataset_name,
-        hf_tokenizer_path=loaded.config.tokenizer_name,
-        split=task_config.train_data_split,
-        n_ctx=actual_seq_length,
-        is_tokenized=task_config.is_tokenized,
-        streaming=task_config.streaming,
-        column_name=task_config.column_name,
-        shuffle_each_epoch=task_config.shuffle_each_epoch,
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+    t_start = time.time()
+    result = compute_local_attributions(
+        model=loaded.model,
+        tokens=tokens_tensor,
+        sources_by_target=loaded.sources_by_target,
+        ci_threshold=ci_threshold,
+        output_prob_threshold=output_prob_threshold,
+        sampling=loaded.config.sampling,
+        device=DEVICE,
+        show_progress=False,
     )
-    train_loader, _ = create_data_loader(
-        dataset_config=train_data_config,
-        batch_size=32,
-        buffer_size=task_config.buffer_size,
-        global_seed=loaded.config.seed,
+    t_end = time.time()
+
+    logger.info(f"[API] /api/graphs completed in {t_end - t_start:.2f}s, {len(result.edges)} edges")
+
+    edges = result.edges
+    edges.sort(key=lambda x: abs(x[6]), reverse=True)
+    edges = edges[:GLOBAL_EDGE_LIMIT]
+
+    if normalize:
+        edges = normalize_edges_by_target(edges)
+
+    edges_typed = [
+        EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6]) for e in edges
+    ]
+
+    output_probs: dict[str, OutputProbability] = {}
+    output_probs_tensor = result.output_probs[0].cpu()
+
+    # Only send output probs above threshold to avoid sending entire vocab
+    for s in range(output_probs_tensor.shape[0]):
+        for c_idx in range(output_probs_tensor.shape[1]):
+            prob = float(output_probs_tensor[s, c_idx].item())
+            if prob < output_prob_threshold:
+                continue
+            key = f"{s}:{c_idx}"
+            output_probs[key] = OutputProbability(
+                prob=round(prob, 6),
+                token=loaded.token_strings[c_idx],
+            )
+
+    return GraphData(
+        id=-1,  # Custom prompts have no ID
+        tokens=token_strings,
+        edges=edges_typed,
+        outputProbs=output_probs,
     )
+
+
+@router.post("/optimized/stream")
+@log_errors
+def compute_graph_optimized_stream(
+    token_ids: Annotated[list[int], Body(embed=True)],
+    label_token: Annotated[int, Query()],
+    imp_min_coeff: Annotated[float, Query(gt=0)],
+    ce_loss_coeff: Annotated[float, Query(gt=0)],
+    steps: Annotated[int, Query(gt=0)],
+    pnorm: Annotated[float, Query(gt=0, le=1)],
+    normalize: Annotated[bool, Query()],
+    output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
+    loaded: DepLoadedRun,
+):
+    """Compute optimized attribution graph for given token IDs with streaming progress."""
+    lr = 1e-2
+    ci_threshold = 1e-6
+
+    if not token_ids:
+        return JSONResponse({"error": "No token IDs provided"}, status_code=400)
+
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+    label_str = loaded.token_strings[label_token]
+    token_strings = [loaded.token_strings[t] for t in token_ids]
+
+    optim_config = OptimCIConfig(
+        seed=0,
+        lr=lr,
+        steps=steps,
+        weight_decay=0.0,
+        lr_schedule="cosine",
+        lr_exponential_halflife=None,
+        lr_warmup_pct=0.01,
+        log_freq=max(1, steps // 4),
+        imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm),
+        ce_loss_coeff=ce_loss_coeff,
+        ci_threshold=ci_threshold,
+        sampling=loaded.config.sampling,
+        ce_kl_rounding_threshold=0.5,
+    )
+
+    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+
+    def on_progress(current: int, total: int, stage: str) -> None:
+        progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
+
+    def compute_thread() -> None:
+        try:
+            result = compute_local_attributions_optimized(
+                model=loaded.model,
+                tokens=tokens_tensor,
+                label_token=label_token,
+                sources_by_target=loaded.sources_by_target,
+                optim_config=optim_config,
+                ci_threshold=ci_threshold,
+                output_prob_threshold=output_prob_threshold,
+                device=DEVICE,
+                show_progress=False,
+                on_progress=on_progress,
+            )
+            progress_queue.put({"type": "result", "result": result})
+        except Exception as e:
+            progress_queue.put({"type": "error", "error": str(e)})
 
     def generate() -> Generator[str]:
-        added_count = 0
-        from spd.utils.general_utils import extract_batch_data
+        thread = threading.Thread(target=compute_thread)
+        thread.start()
 
-        for batch in train_loader:
-            if added_count >= n_graphs:
+        while True:
+            try:
+                msg = progress_queue.get(timeout=0.1)
+            except queue.Empty:
+                if not thread.is_alive():
+                    break
+                continue
+
+            if msg["type"] == "progress":
+                yield f"data: {json.dumps(msg)}\n\n"
+            elif msg["type"] == "error":
+                yield f"data: {json.dumps(msg)}\n\n"
+                break
+            elif msg["type"] == "result":
+                result = msg["result"]
+
+                edges = result.edges
+                edges.sort(key=lambda x: abs(x[6]), reverse=True)
+                edges = edges[:GLOBAL_EDGE_LIMIT]
+
+                if normalize:
+                    edges = normalize_edges_by_target(edges)
+
+                edges_typed = [
+                    EdgeData(src=f"{e[0]}:{e[4]}:{e[2]}", tgt=f"{e[1]}:{e[5]}:{e[3]}", val=e[6])
+                    for e in edges
+                ]
+
+                output_probs: dict[str, OutputProbability] = {}
+                output_probs_tensor = result.output_probs[0].cpu()
+
+                for s in range(output_probs_tensor.shape[0]):
+                    for c_idx in range(output_probs_tensor.shape[1]):
+                        prob = float(output_probs_tensor[s, c_idx].item())
+                        if prob < output_prob_threshold:
+                            continue
+                        key = f"{s}:{c_idx}"
+                        output_probs[key] = OutputProbability(
+                            prob=round(prob, 6),
+                            token=loaded.token_strings[c_idx],
+                        )
+
+                response_data = GraphDataWithOptimization(
+                    id=-1,  # Custom prompts have no ID
+                    tokens=token_strings,
+                    edges=edges_typed,
+                    outputProbs=output_probs,
+                    optimization=OptimizationResult(
+                        label_token=label_token,
+                        label_str=label_str,
+                        imp_min_coeff=imp_min_coeff,
+                        ce_loss_coeff=ce_loss_coeff,
+                        steps=steps,
+                        label_prob=result.stats.label_prob,
+                        l0_total=result.stats.l0_total,
+                        l0_per_layer=result.stats.l0_per_layer,
+                    ),
+                )
+                complete_data = {"type": "complete", "data": response_data.model_dump()}
+                yield f"data: {json.dumps(complete_data)}\n\n"
                 break
 
-            tokens = extract_batch_data(batch).to(DEVICE)
-            actual_batch_size = tokens.shape[0]
-            n_seq = tokens.shape[1]
-
-            # Compute CI for the whole batch
-            ci_result = compute_ci_only(
-                model=loaded.model,
-                tokens=tokens,
-                sampling=loaded.config.sampling,
-            )
-
-            # Process each sequence in the batch
-            for i in range(actual_batch_size):
-                if added_count >= n_graphs:
-                    break
-
-                token_ids = tokens[i].tolist()
-
-                # Slice CI for this single sequence
-                ci_single = {k: v[i : i + 1] for k, v in ci_result.ci_lower_leaky.items()}
-                probs_single = ci_result.output_probs[i : i + 1]
-
-                # Extract active components for inverted index
-                active_components = extract_active_from_ci(
-                    ci_lower_leaky=ci_single,
-                    output_probs=probs_single,
-                    ci_threshold=0.0,
-                    output_prob_threshold=0.01,
-                    n_seq=n_seq,
-                )
-
-                # Add to DB with active components
-                db.add_graph(loaded.run.id, token_ids, active_components)
-                added_count += 1
-
-            # Stream progress after each batch
-            progress = min(added_count / n_graphs, 1.0)
-            progress_data = {"type": "progress", "progress": progress, "count": added_count}
-            yield f"data: {json.dumps(progress_data)}\n\n"
-
-        # Final result
-        total = db.get_graph_count(loaded.run.id)
-        complete_data = {
-            "type": "complete",
-            "graphs_added": added_count,
-            "total_graphs": total,
-        }
-        yield f"data: {json.dumps(complete_data)}\n\n"
-        logger.info(f"[API] Generated {added_count} graphs for run {loaded.run.id}")
+        thread.join()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
-
-
-@router.get("/search")
-@log_errors
-def search_graphs(
-    manager: DepStateManager,
-    loaded: DepLoadedRun,
-    components: str = "",
-    mode: Annotated[str, Query(pattern="^(all|any)$")] = "all",
-) -> GraphSearchResponse:
-    """Search for attribution graphs with specified components in the loaded run."""
-    db = manager.db
-
-    component_list = [c.strip() for c in components.split(",") if c.strip()]
-    if not component_list:
-        return JSONResponse({"error": "No components specified"}, status_code=400)  # pyright: ignore[reportReturnType]
-
-    require_all = mode == "all"
-    graph_ids = db.find_graphs_with_components(loaded.run.id, component_list, require_all=require_all)
-
-    results: list[GraphPreview] = []
-    for gid in graph_ids:
-        graph = db.get_graph(gid)
-        assert graph is not None, f"Graph {gid} in index but not in DB"
-        token_strings = [loaded.token_strings[t] for t in graph.token_ids]
-        results.append(
-            GraphPreview(
-                id=graph.id,
-                token_ids=graph.token_ids,
-                tokens=token_strings,
-                preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
-            )
-        )
-
-    return GraphSearchResponse(
-        query=GraphSearchQuery(components=component_list, mode=mode),
-        count=len(results),
-        results=results,
-    )

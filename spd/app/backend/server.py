@@ -20,8 +20,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from spd.app.backend.db import LocalAttrDB
 from spd.app.backend.routers import (
     activation_contexts_router,
-    compute_router,
     graphs_router,
+    prompts_router,
     runs_router,
 )
 from spd.app.backend.state import StateManager
@@ -67,8 +67,8 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Routers
 app.include_router(runs_router)
+app.include_router(prompts_router)
 app.include_router(graphs_router)
-app.include_router(compute_router)
 app.include_router(activation_contexts_router)
 
 

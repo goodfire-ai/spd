@@ -33,7 +33,7 @@ def list_runs(manager: DepStateManager) -> list[RunInfo]:
         RunInfo(
             id=run.id,
             wandb_path=run.wandb_path,
-            graph_count=db.get_graph_count(run.id),
+            prompt_count=db.get_prompt_count(run.id),
             has_activation_contexts=db.has_activation_contexts(run.id),
         )
         for run in runs
@@ -137,8 +137,8 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         wandb_path=run.wandb_path,
         config_yaml=config_yaml,
         has_activation_contexts=manager.db.has_activation_contexts(run.id),
-        has_graphs=manager.db.has_graphs(run.id),
-        graph_count=manager.db.get_graph_count(run.id),
+        has_prompts=manager.db.has_prompts(run.id),
+        prompt_count=manager.db.get_prompt_count(run.id),
     )
 
 

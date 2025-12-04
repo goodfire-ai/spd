@@ -2,7 +2,7 @@
     import * as attrApi from "../lib/localAttributionsApi";
     import * as mainApi from "../lib/api";
     import type {
-        GraphPreview,
+        PromptPreview,
         GraphData,
         ActivationContextsSummary,
         PinnedNode,
@@ -25,8 +25,8 @@
     let loadedRun = $state<mainApi.LoadedRun | null>(null);
     let serverError = $state<string | null>(null);
 
-    // Available graphs (for picker)
-    let graphs = $state<GraphPreview[]>([]);
+    // Available prompts (for picker)
+    let prompts = $state<PromptPreview[]>([]);
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
@@ -37,7 +37,7 @@
     let customPromptText = $state("");
     let tokenizeLoading = $state(false);
     let filterByPinned = $state(false);
-    let filteredGraphs = $state<GraphPreview[]>([]);
+    let filteredPrompts = $state<PromptPreview[]>([]);
     let filterLoading = $state(false);
 
     // Loading state (per card, but we track globally for simplicity)
@@ -114,7 +114,7 @@
         if (!card) return null;
         return card.graphs.find((g) => g.id === card.activeGraphId) ?? null;
     });
-    const displayedGraphs = $derived(filterByPinned ? filteredGraphs : graphs);
+    const displayedPrompts = $derived(filterByPinned ? filteredPrompts : prompts);
 
     // Load server status on mount
     $effect(() => {
@@ -127,13 +127,13 @@
         const currentRunId = loadedRun?.id ?? null;
         if (currentRunId !== null && currentRunId !== previousRunId) {
             previousRunId = currentRunId;
-            loadGraphsList();
+            loadPromptsList();
             loadActivationContextsSummary();
             promptCards = [];
             activeCardId = null;
         } else if (currentRunId === null && previousRunId !== null) {
             previousRunId = null;
-            graphs = [];
+            prompts = [];
             promptCards = [];
             activeCardId = null;
             activationContextsSummary = null;
@@ -150,11 +150,11 @@
         }
     }
 
-    async function loadGraphsList() {
+    async function loadPromptsList() {
         try {
-            graphs = await attrApi.listGraphs();
+            prompts = await attrApi.listPrompts();
         } catch (e) {
-            console.error("[LocalAttr] loadGraphsList FAILED:", e);
+            console.error("[LocalAttr] loadPromptsList FAILED:", e);
         }
     }
 
@@ -188,8 +188,8 @@
         customPromptText = "";
     }
 
-    function selectGraphFromPicker(graph: GraphPreview) {
-        addPromptCard(graph.id, graph.tokens, graph.token_ids, false);
+    function selectPromptFromPicker(prompt: PromptPreview) {
+        addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, false);
     }
 
     async function addCustomPrompt() {
@@ -287,19 +287,19 @@
         }
     }
 
-    async function filterGraphsByPinned() {
+    async function filterPromptsByPinned() {
         if (pinnedNodes.length === 0) {
-            filteredGraphs = [];
+            filteredPrompts = [];
             return;
         }
 
         filterLoading = true;
         try {
             const components = pinnedNodes.map((p) => `${p.layer}:${p.cIdx}`);
-            const result = await attrApi.searchGraphs(components, "all");
-            filteredGraphs = result.results;
+            const result = await attrApi.searchPrompts(components, "all");
+            filteredPrompts = result.results;
         } catch (e) {
-            filteredGraphs = [];
+            filteredPrompts = [];
         } finally {
             filterLoading = false;
         }
@@ -308,18 +308,18 @@
     function handlePinnedNodesChange(nodes: PinnedNode[]) {
         pinnedNodes = nodes;
         if (filterByPinned) {
-            filterGraphsByPinned();
+            filterPromptsByPinned();
         }
     }
 
     function handleFilterToggle() {
         filterByPinned = !filterByPinned;
         if (filterByPinned && pinnedNodes.length > 0) {
-            filterGraphsByPinned();
+            filterPromptsByPinned();
         }
     }
 
-    async function handleGenerateGraphs(nGraphs: number) {
+    async function handleGeneratePrompts(nPrompts: number) {
         if (generatingGraphs) return;
 
         generatingGraphs = true;
@@ -327,16 +327,16 @@
         generateCount = 0;
 
         try {
-            await attrApi.generateGraphs(
-                { nGraphs },
-                (progress, count) => {
+            await attrApi.generatePrompts(
+                { nPrompts },
+                (progress: number, count: number) => {
                     generateProgress = progress;
                     generateCount = count;
                 },
             );
-            await loadGraphsList();
+            await loadPromptsList();
         } catch (e) {
-            console.error("[LocalAttr] generateGraphs FAILED:", e);
+            console.error("[LocalAttr] generatePrompts FAILED:", e);
         } finally {
             generatingGraphs = false;
         }
@@ -438,15 +438,15 @@
                                 </div>
 
                                 <div class="picker-list">
-                                    {#each displayedGraphs as g}
-                                        <button class="picker-item" onclick={() => selectGraphFromPicker(g)}>
-                                            <span class="picker-item-id">#{g.id}</span>
-                                            <span class="picker-item-preview">{g.preview}</span>
+                                    {#each displayedPrompts as p}
+                                        <button class="picker-item" onclick={() => selectPromptFromPicker(p)}>
+                                            <span class="picker-item-id">#{p.id}</span>
+                                            <span class="picker-item-preview">{p.preview}</span>
                                         </button>
                                     {/each}
-                                    {#if displayedGraphs.length === 0}
+                                    {#if displayedPrompts.length === 0}
                                         <div class="picker-empty">
-                                            {filterByPinned ? "No matching graphs" : "No graphs yet"}
+                                            {filterByPinned ? "No matching prompts" : "No prompts yet"}
                                         </div>
                                     {/if}
                                 </div>
@@ -460,7 +460,7 @@
                                             <span>{generateCount}</span>
                                         </div>
                                     {:else}
-                                        <button class="btn-generate" onclick={() => handleGenerateGraphs(100)}>
+                                        <button class="btn-generate" onclick={() => handleGeneratePrompts(100)}>
                                             + Generate 100
                                         </button>
                                     {/if}
@@ -607,7 +607,7 @@
                 {:else}
                     <div class="empty-state full">
                         <p>Click <strong>+ Add Prompt</strong> to get started</p>
-                        <p class="hint">{graphs.length} graphs available</p>
+                        <p class="hint">{prompts.length} prompts available</p>
                     </div>
                 {/if}
             </div>

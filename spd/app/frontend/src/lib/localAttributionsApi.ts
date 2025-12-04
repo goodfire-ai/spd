@@ -3,7 +3,7 @@
  */
 
 import type {
-    GraphPreview,
+    PromptPreview,
     GraphData,
     ActivationContextsSummary,
     ComponentDetail,
@@ -33,8 +33,8 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     return data as T;
 }
 
-export async function listGraphs(): Promise<GraphPreview[]> {
-    return fetchJson<GraphPreview[]>(`${API_URL}/api/graphs`);
+export async function listPrompts(): Promise<PromptPreview[]> {
+    return fetchJson<PromptPreview[]>(`${API_URL}/api/prompts`);
 }
 
 export type GraphProgress = {
@@ -57,8 +57,8 @@ export async function getComponentDetail(layer: string, componentIdx: number): P
 
 // Search
 
-export async function searchGraphs(components: string[], mode: "all" | "any" = "all"): Promise<SearchResult> {
-    const url = new URL(`${API_URL}/api/search`);
+export async function searchPrompts(components: string[], mode: "all" | "any" = "all"): Promise<SearchResult> {
+    const url = new URL(`${API_URL}/api/prompts/search`);
     url.searchParams.set("components", components.join(","));
     url.searchParams.set("mode", mode);
     return fetchJson<SearchResult>(url.toString());
@@ -67,7 +67,7 @@ export async function searchGraphs(components: string[], mode: "all" | "any" = "
 // Tokenize and compute
 
 export async function tokenizeText(text: string): Promise<TokenizeResult> {
-    const url = new URL(`${API_URL}/api/tokenize`);
+    const url = new URL(`${API_URL}/api/graphs/tokenize`);
     url.searchParams.set("text", text);
     return fetchJson<TokenizeResult>(url.toString(), { method: "POST" });
 }
@@ -78,7 +78,7 @@ export type ComputeGraphParams = {
 };
 
 export async function computeGraph(params: ComputeGraphParams): Promise<GraphData> {
-    const url = new URL(`${API_URL}/api/compute`);
+    const url = new URL(`${API_URL}/api/graphs`);
     url.searchParams.set("normalize", String(params.normalize));
     return fetchJson<GraphData>(url.toString(), {
         method: "POST",
@@ -102,7 +102,7 @@ export async function computeGraphOptimizedStreaming(
     params: ComputeGraphOptimizedParams,
     onProgress?: (progress: GraphProgress) => void,
 ): Promise<GraphData> {
-    const url = new URL(`${API_URL}/api/compute/optimized/stream`);
+    const url = new URL(`${API_URL}/api/graphs/optimized/stream`);
     url.searchParams.set("label_token", String(params.labelToken));
     url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
     url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
@@ -165,23 +165,23 @@ export async function computeGraphOptimizedStreaming(
     return result;
 }
 
-// Graph generation with CI harvesting
+// Prompt generation with CI harvesting
 
-export type GenerateGraphsConfig = {
-    nGraphs: number;
+export type GeneratePromptsConfig = {
+    nPrompts: number;
 };
 
-export type GenerateGraphsResult = {
-    graphs_added: number;
-    total_graphs: number;
+export type GeneratePromptsResult = {
+    prompts_added: number;
+    total_prompts: number;
 };
 
-export async function generateGraphs(
-    config: GenerateGraphsConfig,
+export async function generatePrompts(
+    config: GeneratePromptsConfig,
     onProgress?: (progress: number, count: number) => void,
-): Promise<GenerateGraphsResult> {
-    const url = new URL(`${API_URL}/api/graphs/generate`);
-    url.searchParams.set("n_graphs", String(config.nGraphs));
+): Promise<GeneratePromptsResult> {
+    const url = new URL(`${API_URL}/api/prompts/generate`);
+    url.searchParams.set("n_prompts", String(config.nPrompts));
 
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
@@ -196,7 +196,7 @@ export async function generateGraphs(
 
     const decoder = new TextDecoder();
     let buffer = "";
-    let result: GenerateGraphsResult | null = null;
+    let result: GeneratePromptsResult | null = null;
 
     while (true) {
         const { done, value } = await reader.read();
@@ -216,7 +216,7 @@ export async function generateGraphs(
             if (data.type === "progress" && onProgress) {
                 onProgress(data.progress, data.count);
             } else if (data.type === "complete") {
-                result = { graphs_added: data.graphs_added, total_graphs: data.total_graphs };
+                result = { prompts_added: data.prompts_added, total_prompts: data.total_prompts };
                 await reader.cancel();
                 break;
             }

@@ -28,8 +28,8 @@ class Run:
 
 
 @dataclass
-class GraphRecord:
-    """An attribution graph record containing token IDs."""
+class PromptRecord:
+    """A stored prompt record containing token IDs."""
 
     id: int
     run_id: int
@@ -42,10 +42,10 @@ class LocalAttrDB:
     Schema:
     - runs: One row per SPD run (keyed by wandb_path)
     - activation_contexts: Component metadata + generation config, 1:1 with runs
-    - prompts: One row per attribution graph, keyed by run_id
-    - component_activations: Inverted index mapping components to graphs
+    - prompts: One row per stored prompt (token sequence), keyed by run_id
+    - component_activations: Inverted index mapping components to prompts
 
-    Attribution graph edges are computed on-demand at serve time, not stored.
+    Attribution graphs (edges) are computed on-demand at serve time, not stored.
     """
 
     def __init__(self, db_path: Path | None = None, check_same_thread: bool = True):
@@ -229,24 +229,24 @@ class LocalAttrDB:
         return row is not None
 
     # -------------------------------------------------------------------------
-    # Graph operations
+    # Prompt operations
     # -------------------------------------------------------------------------
 
-    def add_graph(
+    def add_prompt(
         self,
         run_id: int,
         token_ids: list[int],
         active_components: dict[str, tuple[float, list[int]]] | None = None,
     ) -> int:
-        """Add an attribution graph to the database.
+        """Add a prompt to the database.
 
         Args:
-            run_id: The run this graph belongs to.
-            token_ids: List of token IDs for this graph.
+            run_id: The run this prompt belongs to.
+            token_ids: List of token IDs for this prompt.
             active_components: Optional dict mapping component_key -> (max_ci, positions).
 
         Returns:
-            The graph ID.
+            The prompt ID.
         """
         conn = self._get_conn()
 
@@ -254,8 +254,8 @@ class LocalAttrDB:
             "INSERT INTO prompts (run_id, token_ids) VALUES (?, ?)",
             (run_id, json.dumps(token_ids)),
         )
-        graph_id = cursor.lastrowid
-        assert graph_id is not None
+        prompt_id = cursor.lastrowid
+        assert prompt_id is not None
 
         if active_components:
             for component_key, (max_ci, positions) in active_components.items():
@@ -263,59 +263,59 @@ class LocalAttrDB:
                     """INSERT INTO component_activations
                        (prompt_id, component_key, max_ci, positions)
                        VALUES (?, ?, ?, ?)""",
-                    (graph_id, component_key, max_ci, json.dumps(positions)),
+                    (prompt_id, component_key, max_ci, json.dumps(positions)),
                 )
 
         conn.commit()
-        return graph_id
+        return prompt_id
 
-    def get_graph(self, graph_id: int) -> GraphRecord | None:
-        """Get an attribution graph by ID."""
+    def get_prompt(self, prompt_id: int) -> PromptRecord | None:
+        """Get a prompt by ID."""
         conn = self._get_conn()
         row = conn.execute(
             "SELECT id, run_id, token_ids FROM prompts WHERE id = ?",
-            (graph_id,),
+            (prompt_id,),
         ).fetchone()
         if row is None:
             return None
 
-        return GraphRecord(
+        return PromptRecord(
             id=row["id"],
             run_id=row["run_id"],
             token_ids=json.loads(row["token_ids"]),
         )
 
-    def get_graph_count(self, run_id: int) -> int:
-        """Get total number of attribution graphs for a run."""
+    def get_prompt_count(self, run_id: int) -> int:
+        """Get total number of prompts for a run."""
         conn = self._get_conn()
         row = conn.execute(
             "SELECT COUNT(*) as cnt FROM prompts WHERE run_id = ?", (run_id,)
         ).fetchone()
         return row["cnt"]
 
-    def get_all_graph_ids(self, run_id: int) -> list[int]:
-        """Get all graph IDs for a run."""
+    def get_all_prompt_ids(self, run_id: int) -> list[int]:
+        """Get all prompt IDs for a run."""
         conn = self._get_conn()
         rows = conn.execute(
             "SELECT id FROM prompts WHERE run_id = ? ORDER BY id", (run_id,)
         ).fetchall()
         return [row["id"] for row in rows]
 
-    def has_graphs(self, run_id: int) -> bool:
-        """Check if any attribution graphs exist for a run."""
-        return self.get_graph_count(run_id) > 0
+    def has_prompts(self, run_id: int) -> bool:
+        """Check if any prompts exist for a run."""
+        return self.get_prompt_count(run_id) > 0
 
     # -------------------------------------------------------------------------
     # Query operations
     # -------------------------------------------------------------------------
 
-    def find_graphs_with_components(
+    def find_prompts_with_components(
         self,
         run_id: int,
         component_keys: list[str],
         require_all: bool = True,
     ) -> list[int]:
-        """Find attribution graphs where specified components are active.
+        """Find prompts where specified components are active.
 
         Args:
             run_id: The run to search within.
@@ -324,7 +324,7 @@ class LocalAttrDB:
                         If False, require ANY component to be active (union).
 
         Returns:
-            List of graph IDs matching the query.
+            List of prompt IDs matching the query.
         """
         assert component_keys, "No component keys provided"
 
@@ -353,7 +353,7 @@ class LocalAttrDB:
         return [row["prompt_id"] for row in rows]
 
     def get_component_stats(self, run_id: int, component_key: str) -> dict[str, Any]:
-        """Get statistics about a component across all graphs in a run."""
+        """Get statistics about a component across all prompts in a run."""
         conn = self._get_conn()
         rows = conn.execute(
             """SELECT ca.prompt_id, ca.max_ci, ca.positions
@@ -364,13 +364,13 @@ class LocalAttrDB:
         ).fetchall()
 
         if not rows:
-            return {"graph_count": 0, "avg_max_ci": 0.0, "graph_ids": []}
+            return {"prompt_count": 0, "avg_max_ci": 0.0, "prompt_ids": []}
 
-        graph_ids = [row["prompt_id"] for row in rows]
+        prompt_ids = [row["prompt_id"] for row in rows]
         avg_max_ci = sum(row["max_ci"] for row in rows) / len(rows)
 
         return {
-            "graph_count": len(graph_ids),
+            "prompt_count": len(prompt_ids),
             "avg_max_ci": avg_max_ci,
-            "graph_ids": graph_ids,
+            "prompt_ids": prompt_ids,
         }

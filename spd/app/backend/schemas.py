@@ -23,8 +23,8 @@ class EdgeData(BaseModel):
     val: float
 
 
-class GraphPreview(BaseModel):
-    """Preview of an attribution graph for listing."""
+class PromptPreview(BaseModel):
+    """Preview of a stored prompt for listing."""
 
     id: int
     token_ids: list[int]
@@ -65,26 +65,26 @@ class GraphDataWithOptimization(BaseModel):
 
 
 class ComponentStats(BaseModel):
-    """Statistics for a component across graphs."""
+    """Statistics for a component across prompts."""
 
-    graph_count: int
+    prompt_count: int
     avg_max_ci: float
-    graph_ids: list[int]
+    prompt_ids: list[int]
 
 
-class GraphSearchQuery(BaseModel):
-    """Query parameters for graph search."""
+class PromptSearchQuery(BaseModel):
+    """Query parameters for prompt search."""
 
     components: list[str]
     mode: str
 
 
-class GraphSearchResponse(BaseModel):
-    """Response from graph search endpoint."""
+class PromptSearchResponse(BaseModel):
+    """Response from prompt search endpoint."""
 
-    query: GraphSearchQuery
+    query: PromptSearchQuery
     count: int
-    results: list[GraphPreview]
+    results: list[PromptPreview]
 
 
 class TokenizeResponse(BaseModel):
@@ -142,10 +142,10 @@ class ActivationContextsGenerationConfig(BaseModel):
     separation_tokens: int = 0
 
 
-class GraphsGenerationConfig(BaseModel):
-    """Configuration for generating attribution graphs."""
+class PromptsGenerationConfig(BaseModel):
+    """Configuration for generating prompts to store."""
 
-    n_graphs: int = 1000
+    n_prompts: int = 1000
     seq_length: int | None = None  # None = use model's max_seq_len
 
 
@@ -183,8 +183,8 @@ class LoadedRun(BaseModel):
     wandb_path: str
     config_yaml: str
     has_activation_contexts: bool
-    has_graphs: bool
-    graph_count: int
+    has_prompts: bool
+    prompt_count: int
 
 
 class RunInfo(BaseModel):
@@ -192,7 +192,7 @@ class RunInfo(BaseModel):
 
     id: int
     wandb_path: str
-    graph_count: int
+    prompt_count: int
     has_activation_contexts: bool
 
 
