@@ -14,7 +14,7 @@ class MemModelConfig(BaseConfig):
     n_heads: PositiveInt = Field(description="Number of attention heads")
     seq_len: PositiveInt = Field(default=3, description="Sequence length (default 3 for mem task)")
     use_layer_norm: bool = Field(
-        default=True, description="Whether to use LayerNorm (disable for easier interpretability)"
+        default=False, description="Whether to use LayerNorm (disable for easier interpretability)"
     )
     device: str = "cpu"
 
