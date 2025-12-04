@@ -11,7 +11,11 @@ import torch
 from fastapi import APIRouter, Body, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from spd.app.backend.compute import compute_local_attributions, compute_local_attributions_optimized
+from spd.app.backend.compute import (
+    OptimizedLocalAttributionResult,
+    compute_local_attributions,
+    compute_local_attributions_optimized,
+)
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.lib.edge_normalization import normalize_edges_by_target
 from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
@@ -27,6 +31,7 @@ from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
+from spd.utils.general_utils import runtime_cast
 
 router = APIRouter(prefix="/api/graphs", tags=["graphs"])
 
@@ -194,7 +199,7 @@ def compute_graph_optimized_stream(
                 yield f"data: {json.dumps(msg)}\n\n"
                 break
             elif msg["type"] == "result":
-                result = msg["result"]
+                result = runtime_cast(OptimizedLocalAttributionResult, msg["result"])
 
                 edges = result.edges
                 edges.sort(key=lambda x: abs(x[6]), reverse=True)

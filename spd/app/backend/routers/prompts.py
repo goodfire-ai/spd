@@ -157,7 +157,9 @@ def search_prompts(
         return JSONResponse({"error": "No components specified"}, status_code=400)  # pyright: ignore[reportReturnType]
 
     require_all = mode == "all"
-    prompt_ids = db.find_prompts_with_components(loaded.run.id, component_list, require_all=require_all)
+    prompt_ids = db.find_prompts_with_components(
+        loaded.run.id, component_list, require_all=require_all
+    )
 
     results: list[PromptPreview] = []
     for pid in prompt_ids:

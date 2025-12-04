@@ -5,8 +5,9 @@ to avoid importing script files with global execution.
 """
 
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import torch
 from jaxtyping import Bool, Float
