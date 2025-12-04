@@ -9,6 +9,7 @@ The model is trained to predict the label given the 3-token input.
 
 from typing import override
 
+import numpy as np
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -26,7 +27,7 @@ class MemDataset(
     """Dataset for memorization task.
 
     Generates a fixed set of F facts at initialization. Each fact consists of:
-    - inputs: 3 random tokens from the vocabulary
+    - inputs: 3 random tokens from the vocabulary (guaranteed unique)
     - labels: 1 random token to be predicted at the final position
 
     The model is trained with cross-entropy loss at the final sequence position.
@@ -48,27 +49,58 @@ class MemDataset(
             seq_len: Sequence length (should be 3 for this task)
             device: Device to store tensors on
             seed: Random seed for reproducibility
+
+        Raises:
+            ValueError: If n_facts exceeds the number of possible unique inputs
         """
-        self.n_facts = n_facts
+        max_unique_inputs = vocab_size**seq_len
+        if n_facts > max_unique_inputs:
+            raise ValueError(
+                f"Cannot generate {n_facts} unique facts with vocab_size={vocab_size} "
+                f"and seq_len={seq_len}. Maximum possible unique inputs: {max_unique_inputs}"
+            )
+
         self.vocab_size = vocab_size
         self.seq_len = seq_len
         self.device = device
 
-        # Generate all facts upfront with fixed seed
-        gen = torch.Generator()
-        gen.manual_seed(seed)
+        # Generate unique inputs using numpy for efficiency
+        rng = np.random.default_rng(seed)
 
-        # Generate random inputs: (n_facts, seq_len) tokens
-        self.fact_inputs = torch.randint(
-            0, vocab_size, (n_facts, seq_len), generator=gen, dtype=torch.long
-        )
+        # Generate more inputs than needed to account for duplicates
+        # Use a buffer of 2x to be safe, but cap at max_unique_inputs
+        buffer_size = min(n_facts * 2, max_unique_inputs)
+        inputs = rng.integers(0, vocab_size, size=(buffer_size, seq_len))
 
-        # Generate random labels: (n_facts,) tokens
-        self.fact_labels = torch.randint(0, vocab_size, (n_facts,), generator=gen, dtype=torch.long)
+        # Remove duplicates by sorting and checking adjacent rows
+        idx = np.lexsort([inputs[:, i] for i in range(seq_len)])
+        inputs = inputs[idx]
+        not_duplicate = np.ones(len(inputs), dtype=bool)
+        not_duplicate[1:] = np.any(inputs[:-1] != inputs[1:], axis=1)
+        inputs = inputs[not_duplicate]
 
-        # Move to device
-        self.fact_inputs = self.fact_inputs.to(device)
-        self.fact_labels = self.fact_labels.to(device)
+        # If we still don't have enough unique inputs, generate more
+        while len(inputs) < n_facts:
+            additional = rng.integers(0, vocab_size, size=(n_facts - len(inputs) + 100, seq_len))
+            inputs = np.concatenate([inputs, additional], axis=0)
+            # Remove duplicates again
+            idx = np.lexsort([inputs[:, i] for i in range(seq_len)])
+            inputs = inputs[idx]
+            not_duplicate = np.ones(len(inputs), dtype=bool)
+            not_duplicate[1:] = np.any(inputs[:-1] != inputs[1:], axis=1)
+            inputs = inputs[not_duplicate]
+
+        # Shuffle and take exactly n_facts
+        rng.shuffle(inputs)
+        inputs = inputs[:n_facts]
+
+        # Generate random labels
+        labels = rng.integers(0, vocab_size, size=n_facts)
+
+        # Convert to torch tensors and move to device
+        self.fact_inputs = torch.from_numpy(inputs).long().to(device)
+        self.fact_labels = torch.from_numpy(labels).long().to(device)
+        self.n_facts = n_facts
 
     def __len__(self) -> int:
         # Return a large number since generate_batch can sample infinitely
