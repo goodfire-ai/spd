@@ -44,6 +44,7 @@ from spd.utils.distributed_utils import (
 from spd.utils.general_utils import (
     dict_safe_update_,
     extract_batch_data,
+    extract_batch_labels,
     get_lr_schedule_fn,
     get_lr_with_warmup,
 )
@@ -256,7 +257,11 @@ def optimize(
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
 
         for _ in range(config.gradient_accumulation_steps):
-            microbatch = extract_batch_data(next(train_iterator)).to(device)
+            batch_item = next(train_iterator)
+            microbatch = extract_batch_data(batch_item).to(device)
+            microbatch_labels = extract_batch_labels(batch_item)
+            if microbatch_labels is not None:
+                microbatch_labels = microbatch_labels.to(device)
 
             # NOTE: we need to call the wrapped_model at least once each step in order to setup
             # the DDP gradient syncing for all parameters in the component model. Gradients will
@@ -284,6 +289,7 @@ def optimize(
                 use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
+                labels=microbatch_labels,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
