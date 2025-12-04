@@ -20,7 +20,7 @@ target_module_patterns:
 identity_module_patterns: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.05
+- coeff: 0.1
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   p_anneal_start_frac: 0.0
@@ -42,9 +42,9 @@ loss_metric_configs:
 - coeff: 100.0
   classname: FaithfulnessLoss
 output_loss_type: mem
-lr: 0.001
+lr: 3e-3
 steps: 20000
-batch_size: 2000
+batch_size: 1000
 gradient_accumulation_steps: 1
 grad_clip_norm: null
 faithfulness_warmup_steps: 100
@@ -81,7 +81,7 @@ eval_metric_configs:
 ci_alive_threshold: 0.01
 n_examples_until_dead: 1000
 pretrained_model_class: spd.experiments.mem.models.MemTransformer
-pretrained_model_path: wandb:goodfire/spd/runs/15a0kums
+pretrained_model_path: wandb:goodfire/spd/runs/g3tyd9uo
 pretrained_model_name: null
 pretrained_model_output_attr: null
 tokenizer_name: null
