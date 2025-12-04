@@ -2,21 +2,20 @@ wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
-C: 100
+C: 800
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-- 500
+- 800
 sampling: continuous
 sigmoid_type: leaky_hard
 target_module_patterns:
-- block.attn.q_proj
-- block.attn.k_proj
-- block.attn.v_proj
-- block.attn.o_proj
+# - block.attn.q_proj
+# - block.attn.k_proj
+# - block.attn.v_proj
+# - block.attn.o_proj
 - block.mlp.up_proj
-- block.mlp.down_proj
-# - unembed
+# - block.mlp.down_proj
 identity_module_patterns: null
 use_delta_component: true
 loss_metric_configs:
@@ -27,11 +26,11 @@ loss_metric_configs:
   p_anneal_final_p: 0.5
   p_anneal_end_frac: 1.0
   eps: 1.0e-12
-- coeff: 0.5
+- coeff: 1.0
   classname: StochasticReconSubsetLoss
   routing:
     type: uniform_k_subset
-- coeff: 0.5
+- coeff: 0.1
   init: random
   step_size: 1.0
   n_steps: 1
@@ -43,8 +42,8 @@ loss_metric_configs:
   classname: FaithfulnessLoss
 output_loss_type: mem
 lr: 0.001
-steps: 20000
-batch_size: 2000
+steps: 100000
+batch_size: 1000
 gradient_accumulation_steps: 1
 grad_clip_norm: null
 faithfulness_warmup_steps: 100
@@ -81,7 +80,7 @@ eval_metric_configs:
 ci_alive_threshold: 0.01
 n_examples_until_dead: 1000
 pretrained_model_class: spd.experiments.mem.models.MemTransformer
-pretrained_model_path: wandb:goodfire/spd/runs/15a0kums
+pretrained_model_path: wandb:goodfire/spd/runs/udve6g7o
 pretrained_model_name: null
 pretrained_model_output_attr: null
 tokenizer_name: null
