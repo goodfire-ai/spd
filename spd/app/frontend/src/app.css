@@ -1,33 +1,33 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Berkeley+Mono:wght@400;500;600&display=swap');
 
 :root {
-    /* Tactical Research Console - Color System */
-    --bg-base: #0d0f12;
-    --bg-surface: #14171c;
-    --bg-elevated: #1c2026;
-    --bg-inset: #0a0b0e;
+    /* Braun/Bauhaus Light - Clean, functional, warm */
+    --bg-base: #f5f3ef;
+    --bg-surface: #faf9f7;
+    --bg-elevated: #ffffff;
+    --bg-inset: #edeae4;
 
-    --border-subtle: #2a2e34;
-    --border-default: #3d4238;
-    --border-strong: #4a5244;
+    --border-subtle: #e5e2dc;
+    --border-default: #d4d0c8;
+    --border-strong: #b8b4aa;
 
-    --text-primary: #e8e6e1;
-    --text-secondary: #9a9c97;
-    --text-muted: #5c5e5a;
+    --text-primary: #1a1918;
+    --text-secondary: #4a4844;
+    --text-muted: #8a867e;
 
-    --accent-amber: #c4a84b;
-    --accent-amber-dim: #8a7634;
+    --accent-warm: #c45a28;
+    --accent-warm-dim: #a04820;
 
-    --status-positive: #4a7c4e;
-    --status-positive-bright: #5a9c5e;
-    --status-negative: #a84444;
-    --status-negative-bright: #c85555;
-    --status-info: #5588aa;
-    --status-info-bright: #6699bb;
+    --status-positive: #2a7d4c;
+    --status-positive-bright: #34965c;
+    --status-negative: #c43c3c;
+    --status-negative-bright: #d94a4a;
+    --status-info: #2868a0;
+    --status-info-bright: #3278b8;
 
-    /* Typography */
-    --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
-    --font-sans: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+    /* Typography - Berkeley Mono with system fallbacks */
+    --font-mono: 'Berkeley Mono', 'SF Mono', 'Consolas', 'Monaco', monospace;
+    --font-sans: 'Berkeley Mono', system-ui, -apple-system, sans-serif;
 
     --text-xs: 0.7rem;
     --text-sm: 0.8rem;
@@ -50,6 +50,8 @@ body {
     font-family: var(--font-sans);
     background: var(--bg-base);
     color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 #app {

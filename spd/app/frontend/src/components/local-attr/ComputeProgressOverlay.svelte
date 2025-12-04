@@ -45,7 +45,7 @@
     .loading-overlay {
         position: absolute;
         inset: 0;
-        background: rgba(13, 15, 18, 0.95);
+        background: rgba(245, 243, 239, 0.95);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -89,7 +89,7 @@
     }
 
     .stage.current .stage-number {
-        background: var(--accent-amber);
+        background: var(--accent-warm);
         color: var(--bg-base);
     }
 
@@ -130,7 +130,7 @@
 
     .progress-fill {
         height: 100%;
-        background: var(--accent-amber);
+        background: var(--accent-warm);
         transition: width 0.15s ease-out;
     }
 

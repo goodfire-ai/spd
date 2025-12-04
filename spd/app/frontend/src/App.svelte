@@ -6,6 +6,7 @@
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import { parseWandbRunPath } from "./lib";
+    import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
 
@@ -61,7 +62,7 @@
         }
     }
 
-    $effect(() => void loadStatus());
+    onMount(loadStatus);
 
     let activeTab = $state<"activation-contexts" | "local-attributions" | null>(null);
     let showConfig = $state(false);
@@ -111,6 +112,7 @@
                 </button>
             </nav>
 
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
                 class="config-wrapper"
                 role="group"
@@ -201,12 +203,12 @@
     .run-input input[type="text"]:focus,
     .run-input input[type="number"]:focus {
         outline: none;
-        border-color: var(--accent-amber-dim);
+        border-color: var(--accent-warm-dim);
     }
 
     .run-input button {
         padding: var(--space-1) var(--space-3);
-        background: var(--accent-amber);
+        background: var(--accent-warm);
         color: var(--bg-base);
         border: none;
         font-size: var(--text-sm);
@@ -254,8 +256,8 @@
 
     .tab-button.active {
         color: var(--bg-base);
-        background: var(--accent-amber);
-        border-color: var(--accent-amber);
+        background: var(--accent-warm);
+        border-color: var(--accent-warm);
     }
 
     .config-wrapper {
@@ -313,10 +315,10 @@
 
     .warning-banner {
         background: var(--bg-elevated);
-        color: var(--accent-amber);
+        color: var(--accent-warm);
         padding: var(--space-2) var(--space-3);
-        border: 1px solid var(--accent-amber-dim);
-        border-left: 3px solid var(--accent-amber);
+        border: 1px solid var(--accent-warm-dim);
+        border-left: 3px solid var(--accent-warm);
         margin: var(--space-3);
         font-size: var(--text-sm);
         font-family: var(--font-mono);

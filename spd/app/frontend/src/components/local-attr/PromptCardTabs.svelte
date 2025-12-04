@@ -54,7 +54,7 @@
 
     .card-tab.active {
         background: var(--bg-elevated);
-        border-color: var(--accent-amber-dim);
+        border-color: var(--accent-warm-dim);
         color: var(--text-primary);
     }
 

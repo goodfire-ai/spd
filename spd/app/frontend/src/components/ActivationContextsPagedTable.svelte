@@ -183,7 +183,7 @@
     .filter-control select:focus,
     .page-size-control select:focus {
         outline: none;
-        border-color: var(--accent-amber-dim);
+        border-color: var(--accent-warm-dim);
     }
 
     .pagination {
@@ -234,7 +234,7 @@
 
     .page-input:focus {
         outline: none;
-        border-color: var(--accent-amber-dim);
+        border-color: var(--accent-warm-dim);
     }
 
     .page-input::-webkit-inner-spin-button,

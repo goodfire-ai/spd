@@ -260,7 +260,7 @@
     .expand-btn,
     .collapse-btn {
         font-size: var(--text-xs);
-        color: var(--accent-amber);
+        color: var(--accent-warm);
         background: none;
         border: none;
         padding: var(--space-1) 0;

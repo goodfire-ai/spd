@@ -518,7 +518,7 @@
         border-bottom: 1px solid var(--border-subtle);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
-        color: var(--accent-amber);
+        color: var(--accent-warm);
     }
 
     .optim-results strong {
@@ -561,7 +561,7 @@
     }
 
     .empty-state strong {
-        color: var(--accent-amber);
+        color: var(--accent-warm);
     }
 
     .empty-state .hint {
@@ -591,9 +591,9 @@
     .warning-banner {
         padding: var(--space-2) var(--space-3);
         background: var(--bg-elevated);
-        border: 1px solid var(--accent-amber-dim);
-        border-left: 3px solid var(--accent-amber);
-        color: var(--accent-amber);
+        border: 1px solid var(--accent-warm-dim);
+        border-left: 3px solid var(--accent-warm);
+        color: var(--accent-warm);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
     }

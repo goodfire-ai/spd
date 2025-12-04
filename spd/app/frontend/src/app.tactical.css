@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap');
+
+:root {
+    /* Tactical Research Console - Color System */
+    --bg-base: #0d0f12;
+    --bg-surface: #14171c;
+    --bg-elevated: #1c2026;
+    --bg-inset: #0a0b0e;
+
+    --border-subtle: #2a2e34;
+    --border-default: #3d4238;
+    --border-strong: #4a5244;
+
+    --text-primary: #e8e6e1;
+    --text-secondary: #9a9c97;
+    --text-muted: #5c5e5a;
+
+    --accent-amber: #c4a84b;
+    --accent-amber-dim: #8a7634;
+
+    --status-positive: #4a7c4e;
+    --status-positive-bright: #5a9c5e;
+    --status-negative: #a84444;
+    --status-negative-bright: #c85555;
+    --status-info: #5588aa;
+    --status-info-bright: #6699bb;
+
+    /* Typography */
+    --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
+    --font-sans: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+
+    --text-xs: 0.7rem;
+    --text-sm: 0.8rem;
+    --text-base: 0.875rem;
+    --text-lg: 1rem;
+
+    /* Spacing */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background: var(--bg-base);
+    color: var(--text-primary);
+}
+
+#app {
+    width: 100%;
+    min-height: 100vh;
+    background: var(--bg-base);
+}

@@ -120,7 +120,7 @@
     .pinned-header strong {
         font-family: var(--font-mono);
         font-size: var(--text-base);
-        color: var(--accent-amber);
+        color: var(--accent-warm);
         font-weight: 600;
     }
 

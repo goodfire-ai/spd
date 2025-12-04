@@ -234,7 +234,7 @@
 
     .compute-options input[type="number"]:focus {
         outline: none;
-        border-color: var(--accent-amber-dim);
+        border-color: var(--accent-warm-dim);
     }
 
     .compute-options label.checkbox {
@@ -257,7 +257,7 @@
 
     .compute-options .label-token-input .text-input:focus {
         outline: none;
-        border-color: var(--accent-amber-dim);
+        border-color: var(--accent-warm-dim);
     }
 
     .compute-options .token-preview {
@@ -272,7 +272,7 @@
 
     .btn-compute {
         padding: var(--space-2) var(--space-3);
-        background: var(--accent-amber);
+        background: var(--accent-warm);
         color: var(--bg-base);
         border: none;
         cursor: pointer;
@@ -315,8 +315,8 @@
     }
 
     .graph-tab.active {
-        background: var(--accent-amber-dim);
-        border-color: var(--accent-amber);
+        background: var(--accent-warm-dim);
+        border-color: var(--accent-warm);
         color: var(--text-primary);
     }
 
@@ -343,7 +343,7 @@
     }
 
     .graph-tab.active .tab-close {
-        border-left-color: var(--accent-amber);
+        border-left-color: var(--accent-warm);
     }
 
     .tab-close:hover {

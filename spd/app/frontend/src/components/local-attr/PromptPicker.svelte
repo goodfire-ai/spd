@@ -126,7 +126,7 @@
 
     .btn-add-prompt {
         padding: var(--space-1) var(--space-3);
-        background: var(--accent-amber);
+        background: var(--accent-warm);
         color: var(--bg-base);
         border: none;
         font-size: var(--text-sm);
@@ -173,7 +173,7 @@
 
     .picker-input:focus {
         outline: none;
-        border-color: var(--accent-amber-dim);
+        border-color: var(--accent-warm-dim);
     }
 
     .picker-input::placeholder {
@@ -182,7 +182,7 @@
 
     .btn-tokenize {
         padding: var(--space-2) var(--space-3);
-        background: var(--accent-amber);
+        background: var(--accent-warm);
         color: var(--bg-base);
         border: none;
         font-size: var(--text-sm);

@@ -12,7 +12,7 @@
     >{#each tokenStrings as tok, i (i)}<span
             class="token-highlight"
             class:active-token={i === activePosition}
-            style="background-color:rgba(74,124,78,{tokenCi[i] * 0.6})"
+            style="background-color:rgba(42,125,76,{tokenCi[i] * 0.35})"
             data-ci="CI: {tokenCi[i].toFixed(3)}">{tok}</span
         >{/each}</span
 >
@@ -55,7 +55,7 @@
     }
 
     .token-highlight.active-token {
-        outline: 1px solid var(--accent-amber);
+        outline: 1px solid var(--accent-warm);
         outline-offset: 1px;
     }
 </style>

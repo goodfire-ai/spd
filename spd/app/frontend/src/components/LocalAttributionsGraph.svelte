@@ -20,7 +20,7 @@
     const LAYER_GAP = 30;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
-    const NODE_COLOR = "#9a9c97";
+    const NODE_COLOR = "#8a867e";
 
     // Row order for layout (qkv share a row)
     const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "output"];
@@ -386,7 +386,7 @@
             const p1 = nodePositions[edge.src];
             const p2 = nodePositions[edge.tgt];
             if (p1 && p2) {
-                const color = edge.val > 0 ? "#5588aa" : "#a84444";
+                const color = edge.val > 0 ? "#2868a0" : "#c43c3c";
                 const w = lerp(1, 4, Math.abs(edge.val) / maxAbsAttr);
                 const op = lerp(0, 0.5, Math.abs(edge.val) / maxAbsAttr);
                 const dy = Math.abs(p2.y - p1.y);
@@ -457,10 +457,10 @@
                 const probEntry = data.outputProbs[`${seqIdx}:${cIdx}`];
                 if (probEntry) {
                     const prob = probEntry.prob;
-                    // Tactical green gradient based on probability
-                    const r = Math.round(74 + prob * 16);
-                    const g = Math.round(124 + prob * 32);
-                    const b = Math.round(78 + prob * 16);
+                    // Clean green gradient based on probability
+                    const r = Math.round(42 + prob * 10);
+                    const g = Math.round(125 + prob * 25);
+                    const b = Math.round(76 + prob * 16);
                     fill = `rgb(${r}, ${g}, ${b})`;
                     opacity = 0.4 + prob * 0.6;
                 }
@@ -615,8 +615,8 @@
                     dominant-baseline="middle"
                     font-size="10"
                     font-weight="500"
-                    font-family="'IBM Plex Mono', monospace"
-                    fill="#9a9c97"
+                    font-family="'Berkeley Mono', 'SF Mono', monospace"
+                    fill="#4a4844"
                 >
                     {label}
                 </text>
@@ -669,9 +669,11 @@
                         x={colCenter}
                         y="20"
                         text-anchor="middle"
-                        font-size="12"
-                        font-family="monospace"
+                        font-size="11"
+                        font-family="'Berkeley Mono', 'SF Mono', monospace"
                         font-weight="500"
+                        fill="#1a1918"
+                        style="white-space: pre"
                     >
                         {token}
                     </text>
@@ -680,8 +682,8 @@
                         y="36"
                         text-anchor="middle"
                         font-size="9"
-                        font-family="'IBM Plex Mono', monospace"
-                        fill="#5c5e5a">[{i}]</text
+                        font-family="'Berkeley Mono', 'SF Mono', monospace"
+                        fill="#8a867e">[{i}]</text
                     >
                 {/each}
             </svg>
@@ -701,7 +703,7 @@
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>
-                <span style="color: {hoveredEdge.val > 0 ? '#6699bb' : '#c85555'}; font-weight: 600;">
+                <span style="color: {hoveredEdge.val > 0 ? '#2868a0' : '#c43c3c'}; font-weight: 600;">
                     {hoveredEdge.val.toFixed(4)}
                 </span>
             </div>
@@ -798,7 +800,7 @@
     }
 
     .node.highlighted {
-        stroke: var(--accent-amber) !important;
+        stroke: var(--accent-warm) !important;
         stroke-width: 2px !important;
         filter: brightness(1.2);
         opacity: 1 !important;
@@ -848,7 +850,7 @@
         margin: 0 0 var(--space-2) 0;
         font-size: var(--text-base);
         font-family: var(--font-mono);
-        color: var(--accent-amber);
+        color: var(--accent-warm);
         font-weight: 600;
         letter-spacing: 0.02em;
         border-bottom: 1px solid var(--border-subtle);
