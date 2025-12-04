@@ -2,17 +2,13 @@ from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 from typing import Any, Literal, NamedTuple, overload, override
 
 import torch
-import wandb
-import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
-from wandb.apis.public import Run
 
 from spd.configs import Config, SamplingType
 from spd.identity_insertion import insert_identity_operations_
@@ -29,44 +25,18 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
-from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class, runtime_cast
+from spd.spd_types import ModelPath
+from spd.utils.general_utils import resolve_class, runtime_cast
 from spd.utils.module_utils import get_target_module_paths
-from spd.utils.run_utils import check_run_exists
-from spd.utils.wandb_utils import (
-    download_wandb_file,
-    fetch_latest_wandb_checkpoint,
-    fetch_wandb_run_dir,
-)
 
 
 @dataclass
 class SPDRunInfo(RunInfo[Config]):
     """Run info from training a ComponentModel (i.e. from an SPD run)."""
 
-    @override
-    @classmethod
-    def from_path(cls, path: ModelPath) -> "SPDRunInfo":
-        """Load the run info from a wandb run or a local path to a checkpoint."""
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            # Check if run exists in shared filesystem first
-            run_dir = check_run_exists(path)
-            if run_dir:
-                # Use local files from shared filesystem
-                comp_model_path = fetch_latest_local_checkpoint(run_dir, prefix="model")
-                config_path = run_dir / "final_config.yaml"
-            else:
-                # Download from wandb
-                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                comp_model_path, config_path = ComponentModel._download_wandb_files(wandb_path)
-        else:
-            comp_model_path = Path(path)
-            config_path = Path(path).parent / "final_config.yaml"
-
-        with open(config_path) as f:
-            config = Config(**yaml.safe_load(f))
-
-        return cls(checkpoint_path=comp_model_path, config=config)
+    config_class = Config
+    config_filename = "final_config.yaml"
+    checkpoint_prefix = "model"
 
 
 class OutputWithCache(NamedTuple):
@@ -461,25 +431,6 @@ class ComponentModel(LoadableModule):
         finally:
             for handle in handles:
                 handle.remove()
-
-    @staticmethod
-    def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
-        """Download the relevant files from a wandb run.
-
-        Returns:
-            Tuple of (model_path, config_path)
-        """
-        api = wandb.Api()
-        run: Run = api.run(wandb_project_run_id)
-
-        checkpoint = fetch_latest_wandb_checkpoint(run, prefix="model")
-
-        run_dir = fetch_wandb_run_dir(run.id)
-
-        final_config_path = download_wandb_file(run, run_dir, "final_config.yaml")
-        checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
-
-        return checkpoint_path, final_config_path
 
     @classmethod
     @override
