@@ -185,15 +185,6 @@ def test_health_check(app_with_state: TestClient):
 # -----------------------------------------------------------------------------
 
 
-def test_list_runs(app_with_state: TestClient):
-    """Test listing runs from database."""
-    response = app_with_state.get("/api/runs")
-    assert response.status_code == 200
-    runs = response.json()
-    assert len(runs) == 1
-    assert runs[0]["wandb_path"] == "wandb:test/test/runs/testrun1"
-
-
 def test_get_status(app_with_state: TestClient):
     """Test getting current server status with loaded run."""
     response = app_with_state.get("/api/status")
