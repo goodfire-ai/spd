@@ -115,14 +115,14 @@ class GPTMLP(nn.Module):
     @override
     def forward(self, x: Float[Tensor, "... D"]) -> Float[Tensor, "... D"]:  # noqa: F821
         x = self.up_proj(x)
-        x = F.gelu(x)
+        x = F.relu(x)
         return self.down_proj(x)
 
 
 class GPTBlock(nn.Module):
     """A single GPT transformer block with optional pre-norm architecture."""
 
-    def __init__(self, d_model: int, d_mlp: int, n_heads: int, use_layer_norm: bool = True):
+    def __init__(self, d_model: int, d_mlp: int, n_heads: int, use_layer_norm: bool = False):
         super().__init__()
         self.use_layer_norm = use_layer_norm
         if use_layer_norm:
