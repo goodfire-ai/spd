@@ -2,33 +2,21 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import override
+from typing import Any, override
 
 import einops
 import torch
 import torch.nn.functional as F
-import wandb
-import yaml
 from jaxtyping import Float
 from torch import Tensor, nn
-from wandb.apis.public import Run
 
 from spd.experiments.resid_mlp.configs import (
     ResidMLPModelConfig,
-    ResidMLPTaskConfig,
     ResidMLPTrainConfig,
 )
 from spd.interfaces import LoadableModule, RunInfo
-from spd.log import logger
-from spd.settings import SPD_CACHE_DIR
-from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
+from spd.spd_types import ModelPath
 from spd.utils.module_utils import init_param_
-from spd.utils.wandb_utils import (
-    download_wandb_file,
-    fetch_latest_wandb_checkpoint,
-    fetch_wandb_run_dir,
-    parse_wandb_run_path,
-)
 
 
 @dataclass
@@ -37,48 +25,16 @@ class ResidMLPTargetRunInfo(RunInfo[ResidMLPTrainConfig]):
 
     label_coeffs: Float[Tensor, " n_features"]
 
-    @override
+    config_class = ResidMLPTrainConfig
+    config_filename = "resid_mlp_train_config.yaml"
+    checkpoint_filename = "resid_mlp.pth"
+    extra_files = ["label_coeffs.json"]
+
     @classmethod
-    def from_path(cls, path: ModelPath) -> "ResidMLPTargetRunInfo":
-        """Load the run info from a wandb run or a local path to a checkpoint.
-
-        If passing a wandb path, it will first check if the run exists in the shared filesystem.
-        If it does, it will use the local files from the shared filesystem.
-        If it does not, it will download the files from wandb.
-        """
-        try:
-            _entity, project, run_id = parse_wandb_run_path(str(path))
-        except ValueError:
-            # Not a wandb path
-            resid_mlp_train_config_path = Path(path).parent / "resid_mlp_train_config.yaml"
-            label_coeffs_path = Path(path).parent / "label_coeffs.json"
-            checkpoint_path = Path(path)
-        else:
-            run_dir = SPD_CACHE_DIR / "runs" / f"{project}-{run_id}"
-            if run_dir.exists():
-                # Use local files from shared filesystem
-                resid_mlp_train_config_path = run_dir / "resid_mlp_train_config.yaml"
-                label_coeffs_path = run_dir / "label_coeffs.json"
-                checkpoint_path = run_dir / "resid_mlp.pth"
-            else:
-                # Download from wandb
-                assert isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX)
-                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                resid_mlp_train_config_path, label_coeffs_path, checkpoint_path = (
-                    ResidMLP._download_wandb_files(wandb_path)
-                )
-        with open(resid_mlp_train_config_path) as f:
-            resid_mlp_train_config_dict = yaml.safe_load(f)
-
-        with open(label_coeffs_path) as f:
-            label_coeffs = torch.tensor(json.load(f))
-
-        resid_mlp_train_config = ResidMLPTrainConfig(**resid_mlp_train_config_dict)
-        return cls(
-            checkpoint_path=checkpoint_path,
-            config=resid_mlp_train_config,
-            label_coeffs=label_coeffs,
-        )
+    @override
+    def _process_extra_files(cls, file_paths: dict[str, Path], init_kwargs: dict[str, Any]) -> None:
+        with open(file_paths["label_coeffs.json"]) as f:
+            init_kwargs["label_coeffs"] = torch.tensor(json.load(f))
 
 
 class MLP(nn.Module):
@@ -148,31 +104,6 @@ class ResidMLP(LoadableModule):
             "... d_embed, d_embed n_features -> ... n_features",
         )
         return out
-
-    @staticmethod
-    def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path, Path]:
-        """Download the relevant files from a wandb run.
-
-        Returns:
-            - resid_mlp_train_config_path: Path to the resid_mlp_train_config.yaml file
-            - label_coeffs_path: Path to the label_coeffs.json file
-            - checkpoint_path: Path to the checkpoint file
-        """
-        api = wandb.Api()
-        run: Run = api.run(wandb_project_run_id)
-
-        checkpoint = fetch_latest_wandb_checkpoint(run)
-
-        run_dir = fetch_wandb_run_dir(run.id)
-
-        task_name = ResidMLPTaskConfig.model_fields["task_name"].default
-        resid_mlp_train_config_path = download_wandb_file(
-            run, run_dir, f"{task_name}_train_config.yaml"
-        )
-        label_coeffs_path = download_wandb_file(run, run_dir, "label_coeffs.json")
-        checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
-        logger.info(f"Downloaded checkpoint from {checkpoint_path}")
-        return resid_mlp_train_config_path, label_coeffs_path, checkpoint_path
 
     @classmethod
     @override
