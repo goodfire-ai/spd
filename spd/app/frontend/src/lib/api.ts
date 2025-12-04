@@ -67,7 +67,6 @@ export type SubcomponentMetadata = {
 };
 
 export type HarvestMetadata = {
-    harvest_id: string;
     layers: Record<string, SubcomponentMetadata[]>;
 };
 
@@ -136,11 +135,9 @@ export async function getSubcomponentActivationContexts(
 
 // Lazy-load individual component data
 export async function getComponentDetail(
-    _harvestId: string,  // Kept for API compatibility but not used in unified server
     layer: string,
     componentIdx: number,
 ): Promise<ComponentDetail> {
-    // Unified server doesn't use harvest_id - component detail is per loaded run
     const url = `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`;
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {

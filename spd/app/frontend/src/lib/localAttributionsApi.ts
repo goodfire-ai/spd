@@ -3,8 +3,8 @@
  */
 
 import type {
-    PromptPreview,
-    PromptData,
+    GraphPreview,
+    GraphData,
     ActivationContextsSummary,
     ComponentDetail,
     SearchResult,
@@ -33,11 +33,11 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     return data as T;
 }
 
-export async function listPrompts(): Promise<PromptPreview[]> {
-    return fetchJson<PromptPreview[]>(`${API_URL}/api/prompts`);
+export async function listGraphs(): Promise<GraphPreview[]> {
+    return fetchJson<GraphPreview[]>(`${API_URL}/api/graphs`);
 }
 
-export type PromptProgress = {
+export type GraphProgress = {
     current: number;
     total: number;
     stage: string;
@@ -57,7 +57,7 @@ export async function getComponentDetail(layer: string, componentIdx: number): P
 
 // Search
 
-export async function searchPrompts(components: string[], mode: "all" | "any" = "all"): Promise<SearchResult> {
+export async function searchGraphs(components: string[], mode: "all" | "any" = "all"): Promise<SearchResult> {
     const url = new URL(`${API_URL}/api/search`);
     url.searchParams.set("components", components.join(","));
     url.searchParams.set("mode", mode);
@@ -77,10 +77,10 @@ export type ComputeGraphParams = {
     normalize: boolean;
 };
 
-export async function computeGraph(params: ComputeGraphParams): Promise<PromptData> {
+export async function computeGraph(params: ComputeGraphParams): Promise<GraphData> {
     const url = new URL(`${API_URL}/api/compute`);
     url.searchParams.set("normalize", String(params.normalize));
-    return fetchJson<PromptData>(url.toString(), {
+    return fetchJson<GraphData>(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token_ids: params.tokenIds }),
@@ -100,8 +100,8 @@ export type ComputeGraphOptimizedParams = {
 
 export async function computeGraphOptimizedStreaming(
     params: ComputeGraphOptimizedParams,
-    onProgress?: (progress: PromptProgress) => void,
-): Promise<PromptData> {
+    onProgress?: (progress: GraphProgress) => void,
+): Promise<GraphData> {
     const url = new URL(`${API_URL}/api/compute/optimized/stream`);
     url.searchParams.set("label_token", String(params.labelToken));
     url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
@@ -128,7 +128,7 @@ export async function computeGraphOptimizedStreaming(
 
     const decoder = new TextDecoder();
     let buffer = "";
-    let result: PromptData | null = null;
+    let result: GraphData | null = null;
 
     while (true) {
         const { done, value } = await reader.read();
@@ -165,23 +165,23 @@ export async function computeGraphOptimizedStreaming(
     return result;
 }
 
-// Prompt generation with CI harvesting
+// Graph generation with CI harvesting
 
-export type GeneratePromptsConfig = {
-    nPrompts: number;
+export type GenerateGraphsConfig = {
+    nGraphs: number;
 };
 
-export type GeneratePromptsResult = {
-    prompts_added: number;
-    total_prompts: number;
+export type GenerateGraphsResult = {
+    graphs_added: number;
+    total_graphs: number;
 };
 
-export async function generatePrompts(
-    config: GeneratePromptsConfig,
+export async function generateGraphs(
+    config: GenerateGraphsConfig,
     onProgress?: (progress: number, count: number) => void,
-): Promise<GeneratePromptsResult> {
-    const url = new URL(`${API_URL}/api/prompts/generate`);
-    url.searchParams.set("n_prompts", String(config.nPrompts));
+): Promise<GenerateGraphsResult> {
+    const url = new URL(`${API_URL}/api/graphs/generate`);
+    url.searchParams.set("n_graphs", String(config.nGraphs));
 
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
@@ -196,7 +196,7 @@ export async function generatePrompts(
 
     const decoder = new TextDecoder();
     let buffer = "";
-    let result: GeneratePromptsResult | null = null;
+    let result: GenerateGraphsResult | null = null;
 
     while (true) {
         const { done, value } = await reader.read();
@@ -216,7 +216,7 @@ export async function generatePrompts(
             if (data.type === "progress" && onProgress) {
                 onProgress(data.progress, data.count);
             } else if (data.type === "complete") {
-                result = { prompts_added: data.prompts_added, total_prompts: data.total_prompts };
+                result = { graphs_added: data.graphs_added, total_graphs: data.total_graphs };
                 await reader.cancel();
                 break;
             }

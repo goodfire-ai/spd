@@ -10,9 +10,10 @@ Usage:
 
 import functools
 import json
+import queue
 import re
+import threading
 import traceback
-import uuid
 from collections.abc import Callable, Generator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -39,22 +40,22 @@ from spd.app.backend.compute import (
     get_sources_by_target,
 )
 from spd.app.backend.db import LocalAttrDB, Run
-from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
+from spd.app.backend.lib.activation_contexts import get_activations_data
 from spd.app.backend.lib.edge_normalization import normalize_edges_by_target
 from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
     EdgeData,
+    GraphData,
+    GraphDataWithOptimization,
+    GraphPreview,
+    GraphSearchQuery,
+    GraphSearchResponse,
     HarvestMetadata,
     LoadedRun,
     ModelActivationContexts,
     OptimizationResult,
     OutputProbability,
-    PromptDataResponse,
-    PromptDataWithOptimization,
-    PromptPreview,
-    PromptSearchQuery,
-    PromptSearchResponse,
     RunInfo,
     SubcomponentActivationContexts,
     SubcomponentMetadata,
@@ -118,7 +119,6 @@ class RunState:
     model: ComponentModel
     tokenizer: PreTrainedTokenizerBase
     sources_by_target: dict[str, list[str]]
-    sampling: SamplingType
     config: Config
     token_strings: dict[int, str]
     activation_contexts_cache: ModelActivationContexts | None = None
@@ -133,9 +133,6 @@ class AppState:
 
 
 _state: AppState | None = None
-
-# Cache for harvest results (streaming activation contexts), keyed by UUID
-harvest_cache: dict[str, ModelActivationContexts] = {}
 
 
 def get_state() -> AppState:
@@ -201,7 +198,7 @@ def list_runs() -> list[RunInfo]:
         RunInfo(
             id=run.id,
             wandb_path=run.wandb_path,
-            prompt_count=state.db.get_prompt_count(run.id),
+            graph_count=state.db.get_graph_count(run.id),
             has_activation_contexts=state.db.has_activation_contexts(run.id),
         )
         for run in runs
@@ -315,8 +312,7 @@ def load_run(wandb_path: str):
     assert isinstance(loaded_tokenizer, PreTrainedTokenizerFast)
 
     # Build sources_by_target mapping
-    sampling = spd_config.sampling
-    sources_by_target = get_sources_by_target(model, DEVICE, sampling)
+    sources_by_target = get_sources_by_target(model, DEVICE, spd_config.sampling)
 
     # Build token lookup for activation contexts
     token_strings = _build_token_lookup(loaded_tokenizer, spd_config.tokenizer_name)
@@ -326,7 +322,6 @@ def load_run(wandb_path: str):
         model=model,
         tokenizer=loaded_tokenizer,
         sources_by_target=sources_by_target,
-        sampling=sampling,
         config=spd_config,
         token_strings=token_strings,
     )
@@ -354,8 +349,8 @@ def get_status() -> LoadedRun | None:
         wandb_path=run.wandb_path,
         config_yaml=config_yaml,
         has_activation_contexts=state.db.has_activation_contexts(run.id),
-        has_prompts=state.db.has_prompts(run.id),
-        prompt_count=state.db.get_prompt_count(run.id),
+        has_graphs=state.db.has_graphs(run.id),
+        graph_count=state.db.get_graph_count(run.id),
     )
 
 
@@ -474,63 +469,80 @@ def generate_activation_contexts(
         separation_tokens=separation_tokens,
     )
 
+    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+
+    def on_progress(progress: float) -> None:
+        progress_queue.put({"type": "progress", "progress": progress})
+
+    def compute_thread() -> None:
+        try:
+            act_contexts = get_activations_data(
+                config=loaded.config,
+                cm=loaded.model,
+                tokenizer=loaded.tokenizer,
+                train_loader=train_loader,
+                token_strings=loaded.token_strings,
+                importance_threshold=importance_threshold,
+                n_batches=n_batches,
+                n_tokens_either_side=n_tokens_either_side,
+                batch_size=batch_size,
+                topk_examples=topk_examples,
+                separation_tokens=separation_tokens,
+                onprogress=on_progress,
+            )
+            state.db.set_activation_contexts(loaded.run.id, act_contexts, config)
+
+            # Clear cache so it reloads from DB
+            loaded.activation_contexts_cache = None
+
+            metadata = HarvestMetadata(
+                layers={
+                    layer_name: [
+                        SubcomponentMetadata(
+                            subcomponent_idx=subcomp.subcomponent_idx,
+                            mean_ci=subcomp.mean_ci,
+                        )
+                        for subcomp in subcomponents
+                    ]
+                    for layer_name, subcomponents in act_contexts.layers.items()
+                },
+            )
+            progress_queue.put({"type": "complete", "result": metadata.model_dump()})
+        except Exception as e:
+            progress_queue.put({"type": "error", "error": str(e)})
+
     def generate() -> Generator[str]:
-        for res in get_activations_data_streaming(
-            config=loaded.config,
-            cm=loaded.model,
-            tokenizer=loaded.tokenizer,
-            train_loader=train_loader,
-            token_strings=loaded.token_strings,
-            importance_threshold=importance_threshold,
-            n_batches=n_batches,
-            n_tokens_either_side=n_tokens_either_side,
-            batch_size=batch_size,
-            topk_examples=topk_examples,
-            separation_tokens=separation_tokens,
-        ):
-            match res:
-                case ("progress", progress):
-                    progress_data = {"type": "progress", "progress": progress}
-                    yield f"data: {json.dumps(progress_data)}\n\n"
-                case ("complete", data):
-                    # Save to DB
-                    state.db.set_activation_contexts(loaded.run.id, data, config)
+        thread = threading.Thread(target=compute_thread)
+        thread.start()
 
-                    # Clear cache so it reloads from DB
-                    loaded.activation_contexts_cache = None
+        while True:
+            try:
+                msg = progress_queue.get(timeout=0.1)
+            except queue.Empty:
+                if not thread.is_alive():
+                    break
+                continue
 
-                    # Also save to harvest cache for backward compatibility
-                    harvest_id = str(uuid.uuid4())
-                    harvest_cache[harvest_id] = data
+            if msg["type"] == "progress":
+                yield f"data: {json.dumps(msg)}\n\n"
+            elif msg["type"] == "error" or msg["type"] == "complete":
+                yield f"data: {json.dumps(msg)}\n\n"
+                break
 
-                    metadata = HarvestMetadata(
-                        harvest_id=harvest_id,
-                        layers={
-                            layer_name: [
-                                SubcomponentMetadata(
-                                    subcomponent_idx=subcomp.subcomponent_idx,
-                                    mean_ci=subcomp.mean_ci,
-                                )
-                                for subcomp in subcomponents
-                            ]
-                            for layer_name, subcomponents in data.layers.items()
-                        },
-                    )
-                    complete_data = {"type": "complete", "result": metadata.model_dump()}
-                    yield f"data: {json.dumps(complete_data)}\n\n"
+        thread.join()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # -----------------------------------------------------------------------------
-# Prompt endpoints
+# Graph listing endpoints
 # -----------------------------------------------------------------------------
 
 
-@app.get("/api/prompts")
+@app.get("/api/graphs")
 @log_errors
-def get_prompts() -> list[PromptPreview]:
-    """Return list of all prompts for the loaded run."""
+def list_graphs() -> list[GraphPreview]:
+    """Return list of all graphs for the loaded run."""
     state = get_state()
     assert state.run_state is not None, "No run loaded"
 
@@ -539,17 +551,17 @@ def get_prompts() -> list[PromptPreview]:
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)  # pyright: ignore[reportReturnType]
 
-    prompt_ids = state.db.get_all_prompt_ids(loaded.run.id)
+    graph_ids = state.db.get_all_graph_ids(loaded.run.id)
 
-    results: list[PromptPreview] = []
-    for pid in prompt_ids:
-        prompt = state.db.get_prompt(pid)
-        assert prompt is not None, f"Prompt {pid} in index but not in DB"
-        token_strings = [state.run_state.token_strings[t] for t in prompt.token_ids]
+    results: list[GraphPreview] = []
+    for gid in graph_ids:
+        graph = state.db.get_graph(gid)
+        assert graph is not None, f"Graph {gid} in index but not in DB"
+        token_strings = [state.run_state.token_strings[t] for t in graph.token_ids]
         results.append(
-            PromptPreview(
-                id=prompt.id,
-                token_ids=prompt.token_ids,
+            GraphPreview(
+                id=graph.id,
+                token_ids=graph.token_ids,
                 tokens=token_strings,
                 preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
             )
@@ -557,18 +569,18 @@ def get_prompts() -> list[PromptPreview]:
     return results
 
 
-@app.post("/api/prompts/generate")
+@app.post("/api/graphs/generate")
 @log_errors
-def generate_prompts(
-    n_prompts: int,
+def generate_graphs(
+    n_graphs: int,
 ) -> StreamingResponse:
-    """Generate prompts from training data with CI harvesting.
+    """Generate attribution graphs from training data with CI harvesting.
 
-    Streams progress updates and stores prompts with their active components
+    Streams progress updates and stores graphs with their active components
     (for the inverted index used by search).
 
     Args:
-        n_prompts: Number of prompts to generate
+        n_graphs: Number of graphs to generate
         seq_length: Sequence length (None = use model's max_seq_len)
         batch_size: Batch size for CI computation (default 32)
         ci_threshold: Threshold for component activation
@@ -607,7 +619,7 @@ def generate_prompts(
         from spd.utils.general_utils import extract_batch_data
 
         for batch in train_loader:
-            if added_count >= n_prompts:
+            if added_count >= n_graphs:
                 break
 
             tokens = extract_batch_data(batch).to(DEVICE)
@@ -618,17 +630,17 @@ def generate_prompts(
             ci_result = compute_ci_only(
                 model=loaded.model,
                 tokens=tokens,
-                sampling=loaded.sampling,
+                sampling=loaded.config.sampling,
             )
 
-            # Process each prompt in the batch
+            # Process each sequence in the batch
             for i in range(actual_batch_size):
-                if added_count >= n_prompts:
+                if added_count >= n_graphs:
                     break
 
                 token_ids = tokens[i].tolist()
 
-                # Slice CI for this single prompt
+                # Slice CI for this single sequence
                 ci_single = {k: v[i : i + 1] for k, v in ci_result.ci_lower_leaky.items()}
                 probs_single = ci_result.output_probs[i : i + 1]
 
@@ -642,23 +654,23 @@ def generate_prompts(
                 )
 
                 # Add to DB with active components
-                state.db.add_prompt(loaded.run.id, token_ids, active_components)
+                state.db.add_graph(loaded.run.id, token_ids, active_components)
                 added_count += 1
 
             # Stream progress after each batch
-            progress = min(added_count / n_prompts, 1.0)
+            progress = min(added_count / n_graphs, 1.0)
             progress_data = {"type": "progress", "progress": progress, "count": added_count}
             yield f"data: {json.dumps(progress_data)}\n\n"
 
         # Final result
-        total = state.db.get_prompt_count(loaded.run.id)
+        total = state.db.get_graph_count(loaded.run.id)
         complete_data = {
             "type": "complete",
-            "prompts_added": added_count,
-            "total_prompts": total,
+            "graphs_added": added_count,
+            "total_graphs": total,
         }
         yield f"data: {json.dumps(complete_data)}\n\n"
-        logger.info(f"[API] Generated {added_count} prompts for run {loaded.run.id}")
+        logger.info(f"[API] Generated {added_count} graphs for run {loaded.run.id}")
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -716,7 +728,7 @@ def compute_graph(
         sources_by_target=loaded.sources_by_target,
         ci_threshold=ci_threshold,
         output_prob_threshold=output_prob_threshold,
-        sampling=loaded.sampling,
+        sampling=loaded.config.sampling,
         device=DEVICE,
         show_progress=False,
     )
@@ -752,7 +764,7 @@ def compute_graph(
                 token=loaded.token_strings[c_idx],
             )
 
-    return PromptDataResponse(
+    return GraphData(
         id=-1,  # Custom prompts have no ID
         tokens=token_strings,
         edges=edges_typed,
@@ -773,8 +785,6 @@ def compute_graph_optimized_stream(
     output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
 ):
     """Compute optimized attribution graph for given token IDs with streaming progress."""
-    import queue
-    import threading
 
     lr = 1e-2
     ci_threshold = 1e-6
@@ -803,7 +813,7 @@ def compute_graph_optimized_stream(
         imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm),
         ce_loss_coeff=ce_loss_coeff,
         ci_threshold=ci_threshold,
-        sampling=loaded.sampling,
+        sampling=loaded.config.sampling,
         ce_kl_rounding_threshold=0.5,
     )
 
@@ -830,7 +840,7 @@ def compute_graph_optimized_stream(
         except Exception as e:
             progress_queue.put({"type": "error", "error": str(e)})
 
-    def generate() -> Generator[str, None, None]:
+    def generate() -> Generator[str]:
         thread = threading.Thread(target=compute_thread)
         thread.start()
 
@@ -876,7 +886,7 @@ def compute_graph_optimized_stream(
                             token=loaded.token_strings[c_idx],
                         )
 
-                response_data = PromptDataWithOptimization(
+                response_data = GraphDataWithOptimization(
                     id=-1,  # Custom prompts have no ID
                     tokens=token_strings,
                     edges=edges_typed,
@@ -908,11 +918,11 @@ def compute_graph_optimized_stream(
 
 @app.get("/api/search")
 @log_errors
-def search_prompts(
+def search_graphs(
     components: str = "",
     mode: Annotated[str, Query(pattern="^(all|any)$")] = "all",
-) -> PromptSearchResponse:
-    """Search for prompts with specified components in the loaded run."""
+) -> GraphSearchResponse:
+    """Search for attribution graphs with specified components in the loaded run."""
     state = get_state()
     try:
         loaded = get_loaded_run()
@@ -924,26 +934,26 @@ def search_prompts(
         return JSONResponse({"error": "No components specified"}, status_code=400)  # pyright: ignore[reportReturnType]
 
     require_all = mode == "all"
-    prompt_ids = state.db.find_prompts_with_components(
+    graph_ids = state.db.find_graphs_with_components(
         loaded.run.id, component_list, require_all=require_all
     )
 
-    results: list[PromptPreview] = []
-    for pid in prompt_ids:
-        prompt = state.db.get_prompt(pid)
-        assert prompt is not None, f"Prompt {pid} in index but not in DB"
-        token_strings = [loaded.token_strings[t] for t in prompt.token_ids]
+    results: list[GraphPreview] = []
+    for gid in graph_ids:
+        graph = state.db.get_graph(gid)
+        assert graph is not None, f"Graph {gid} in index but not in DB"
+        token_strings = [loaded.token_strings[t] for t in graph.token_ids]
         results.append(
-            PromptPreview(
-                id=prompt.id,
-                token_ids=prompt.token_ids,
+            GraphPreview(
+                id=graph.id,
+                token_ids=graph.token_ids,
                 tokens=token_strings,
                 preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
             )
         )
 
-    return PromptSearchResponse(
-        query=PromptSearchQuery(components=component_list, mode=mode),
+    return GraphSearchResponse(
+        query=GraphSearchQuery(components=component_list, mode=mode),
         count=len(results),
         results=results,
     )

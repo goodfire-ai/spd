@@ -1,9 +1,8 @@
 import heapq
 import time
 from collections import defaultdict
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
 import torch
@@ -29,7 +28,7 @@ DEFAULT_PAD_TOKEN_ID = 0
 PROGRESS_THROTTLE_INTERVAL_SECONDS = 0.1
 
 
-def get_activations_data_streaming(
+def get_activations_data(
     config: Config,
     cm: ComponentModel,
     tokenizer: PreTrainedTokenizerBase,
@@ -41,9 +40,8 @@ def get_activations_data_streaming(
     batch_size: int,
     topk_examples: int,
     separation_tokens: int = 0,
-) -> Generator[
-    tuple[Literal["progress"], float] | tuple[Literal["complete"], ModelActivationContexts],
-]:
+    onprogress: Callable[[float], None] | None = None,
+) -> ModelActivationContexts:
     logger.info(
         f"Getting activations data: {n_batches=}, {importance_threshold=}, "
         f"{n_tokens_either_side=}, {batch_size=}, {topk_examples=}, {separation_tokens=}"
@@ -249,12 +247,11 @@ def get_activations_data_streaming(
                     pad_token_id=pad_token_id,
                 )
 
-            # Yield progress update within batch (throttled)
             current_time = time.monotonic()
             if current_time - last_progress_time >= PROGRESS_THROTTLE_INTERVAL_SECONDS:
-                # Progress: batch progress + fractional module progress within batch
                 progress = (i + (module_idx + 1) / n_modules) / n_batches
-                yield ("progress", progress)
+                if onprogress:
+                    onprogress(progress)
                 last_progress_time = current_time
 
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
@@ -298,7 +295,7 @@ def get_activations_data_streaming(
         model_ctxs[module_name] = module_subcomponent_ctxs
 
     logger.info("Completed streaming activation contexts")
-    yield ("complete", ModelActivationContexts(layers=model_ctxs))
+    return ModelActivationContexts(layers=model_ctxs)
 
 
 def _apply_position_separation(

@@ -23,8 +23,8 @@ class EdgeData(BaseModel):
     val: float
 
 
-class PromptPreview(BaseModel):
-    """Preview of a prompt for listing."""
+class GraphPreview(BaseModel):
+    """Preview of an attribution graph for listing."""
 
     id: int
     token_ids: list[int]
@@ -32,8 +32,8 @@ class PromptPreview(BaseModel):
     preview: str
 
 
-class PromptDataResponse(BaseModel):
-    """Full prompt data with attribution graph."""
+class GraphData(BaseModel):
+    """Full attribution graph data."""
 
     id: int
     tokens: list[str]
@@ -54,8 +54,8 @@ class OptimizationResult(BaseModel):
     l0_per_layer: dict[str, float]
 
 
-class PromptDataWithOptimization(BaseModel):
-    """Prompt data with optimization results."""
+class GraphDataWithOptimization(BaseModel):
+    """Attribution graph data with optimization results."""
 
     id: int
     tokens: list[str]
@@ -65,26 +65,26 @@ class PromptDataWithOptimization(BaseModel):
 
 
 class ComponentStats(BaseModel):
-    """Statistics for a component across prompts."""
+    """Statistics for a component across graphs."""
 
-    prompt_count: int
+    graph_count: int
     avg_max_ci: float
-    prompt_ids: list[int]
+    graph_ids: list[int]
 
 
-class PromptSearchQuery(BaseModel):
-    """Query parameters for prompt search."""
+class GraphSearchQuery(BaseModel):
+    """Query parameters for graph search."""
 
     components: list[str]
     mode: str
 
 
-class PromptSearchResponse(BaseModel):
-    """Response from prompt search endpoint."""
+class GraphSearchResponse(BaseModel):
+    """Response from graph search endpoint."""
 
-    query: PromptSearchQuery
+    query: GraphSearchQuery
     count: int
-    results: list[PromptPreview]
+    results: list[GraphPreview]
 
 
 class TokenizeResponse(BaseModel):
@@ -116,14 +116,14 @@ class CompleteMessage(BaseModel):
     """Completion message with result data."""
 
     type: Literal["complete"]
-    data: PromptDataResponse
+    data: GraphData
 
 
 class CompleteMessageWithOptimization(BaseModel):
     """Completion message with optimization result data."""
 
     type: Literal["complete"]
-    data: PromptDataWithOptimization
+    data: GraphDataWithOptimization
 
 
 # =============================================================================
@@ -142,10 +142,10 @@ class ActivationContextsGenerationConfig(BaseModel):
     separation_tokens: int = 0
 
 
-class PromptsGenerationConfig(BaseModel):
-    """Configuration for generating prompts."""
+class GraphsGenerationConfig(BaseModel):
+    """Configuration for generating attribution graphs."""
 
-    n_prompts: int = 1000
+    n_graphs: int = 1000
     seq_length: int | None = None  # None = use model's max_seq_len
 
 
@@ -183,8 +183,8 @@ class LoadedRun(BaseModel):
     wandb_path: str
     config_yaml: str
     has_activation_contexts: bool
-    has_prompts: bool
-    prompt_count: int
+    has_graphs: bool
+    graph_count: int
 
 
 class RunInfo(BaseModel):
@@ -192,7 +192,7 @@ class RunInfo(BaseModel):
 
     id: int
     wandb_path: str
-    prompt_count: int
+    graph_count: int
     has_activation_contexts: bool
 
 
@@ -206,5 +206,4 @@ class SubcomponentMetadata(BaseModel):
 class HarvestMetadata(BaseModel):
     """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
 
-    harvest_id: str
     layers: dict[str, list[SubcomponentMetadata]]

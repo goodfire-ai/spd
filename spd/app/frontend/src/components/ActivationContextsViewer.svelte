@@ -73,7 +73,7 @@
 
         const load = async () => {
             try {
-                const detail = await api.getComponentDetail(harvestMetadata.harvest_id, layer, meta.subcomponent_idx);
+                const detail = await api.getComponentDetail(layer, meta.subcomponent_idx);
 
                 if (cancelled) return;
                 componentCache[cacheKey] = detail;

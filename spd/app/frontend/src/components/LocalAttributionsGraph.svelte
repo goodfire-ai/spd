@@ -1,6 +1,6 @@
 <script lang="ts">
     import type {
-        PromptData,
+        GraphData,
         ActivationContextsSummary,
         PinnedNode,
         HoveredNode,
@@ -24,7 +24,7 @@
     const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
 
     type Props = {
-        data: PromptData;
+        data: GraphData;
         topK: number;
         nodeLayout: "importance" | "shuffled" | "jittered";
         activationContextsSummary: ActivationContextsSummary | null;

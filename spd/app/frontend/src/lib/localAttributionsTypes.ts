@@ -2,7 +2,7 @@
 
 // Server API types
 
-export type PromptPreview = {
+export type GraphPreview = {
     id: number;
     token_ids: number[];
     tokens: string[];
@@ -20,8 +20,8 @@ export type OutputProbEntry = {
     token: string;
 };
 
-export type PromptData = {
-    id: number | null; // null for custom prompts
+export type GraphData = {
+    id: number | null; // null for custom graphs
     tokens: string[];
     edges: Edge[];
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
@@ -63,7 +63,7 @@ export type ComponentDetail = {
 export type SearchResult = {
     query: { components: string[]; mode: string };
     count: number;
-    results: PromptPreview[];
+    results: GraphPreview[];
 };
 
 export type TokenizeResult = {
