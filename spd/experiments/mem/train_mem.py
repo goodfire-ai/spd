@@ -201,17 +201,18 @@ if __name__ == "__main__":
         seed=0,
         mem_model_config=MemModelConfig(
             vocab_size=64,
-            d_model=16,
-            d_mlp=1,
+            d_model=32,
+            d_mlp=64,
             n_heads=1,
             seq_len=3,
+            use_layer_norm=False,
         ),
-        n_facts=500,
+        n_facts=2048,
         batch_size=200,
         steps=50000,
         print_freq=1000,
-        lr=1e-3,
-        lr_schedule="constant",
+        lr=4e-3,
+        lr_schedule="cosine",
     )
 
     set_seed(config.seed)
