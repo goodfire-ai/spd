@@ -9,7 +9,6 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
@@ -156,12 +155,6 @@ class LocalAttrDB:
             return None
         return Run(id=row["id"], wandb_path=row["wandb_path"])
 
-    def get_all_runs(self) -> list[Run]:
-        """Get all runs in the database."""
-        conn = self._get_conn()
-        rows = conn.execute("SELECT id, wandb_path FROM runs ORDER BY created_at DESC").fetchall()
-        return [Run(id=row["id"], wandb_path=row["wandb_path"]) for row in rows]
-
     # -------------------------------------------------------------------------
     # Activation contexts operations
     # -------------------------------------------------------------------------
@@ -177,32 +170,6 @@ class LocalAttrDB:
         decompressed = gzip.decompress(row["data"])
         json_data = json.loads(decompressed.decode("utf-8"))
         return ModelActivationContexts.model_validate(json_data)
-
-    def get_activation_contexts_raw(self, run_id: int) -> dict[str, Any] | None:
-        """Get the stored activation contexts for a run as raw dict."""
-        conn = self._get_conn()
-        row = conn.execute(
-            "SELECT data FROM activation_contexts WHERE run_id = ?", (run_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        decompressed = gzip.decompress(row["data"])
-        json_data = json.loads(decompressed.decode("utf-8"))
-        assert isinstance(json_data, dict)
-        return json_data
-
-    def get_activation_contexts_config(
-        self, run_id: int
-    ) -> ActivationContextsGenerationConfig | None:
-        """Get the generation config used for activation contexts."""
-        conn = self._get_conn()
-        row = conn.execute(
-            "SELECT config FROM activation_contexts WHERE run_id = ?", (run_id,)
-        ).fetchone()
-        if row is None or row["config"] is None:
-            return None
-        config_dict = json.loads(row["config"])
-        return ActivationContextsGenerationConfig.model_validate(config_dict)
 
     def set_activation_contexts(
         self,
@@ -356,26 +323,3 @@ class LocalAttrDB:
             rows = conn.execute(query, (run_id, *component_keys)).fetchall()
 
         return [row["prompt_id"] for row in rows]
-
-    def get_component_stats(self, run_id: int, component_key: str) -> dict[str, Any]:
-        """Get statistics about a component across all prompts in a run."""
-        conn = self._get_conn()
-        rows = conn.execute(
-            """SELECT ca.prompt_id, ca.max_ci, ca.positions
-               FROM component_activations ca
-               JOIN prompts p ON ca.prompt_id = p.id
-               WHERE p.run_id = ? AND ca.component_key = ?""",
-            (run_id, component_key),
-        ).fetchall()
-
-        if not rows:
-            return {"prompt_count": 0, "avg_max_ci": 0.0, "prompt_ids": []}
-
-        prompt_ids = [row["prompt_id"] for row in rows]
-        avg_max_ci = sum(row["max_ci"] for row in rows) / len(rows)
-
-        return {
-            "prompt_count": len(prompt_ids),
-            "avg_max_ci": avg_max_ci,
-            "prompt_ids": prompt_ids,
-        }

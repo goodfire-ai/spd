@@ -138,13 +138,16 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
     )
 
     context_length = manager.run_state.context_length
+
+    prompt_count = manager.db.get_prompt_count(run.id, context_length)
+
     return LoadedRun(
         id=run.id,
         wandb_path=run.wandb_path,
         config_yaml=config_yaml,
         has_activation_contexts=manager.db.has_activation_contexts(run.id),
-        has_prompts=manager.db.has_prompts(run.id, context_length),
-        prompt_count=manager.db.get_prompt_count(run.id, context_length),
+        has_prompts=prompt_count > 0,
+        prompt_count=prompt_count,
     )
 
 

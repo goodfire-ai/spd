@@ -44,11 +44,6 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     logger.info(f"[STARTUP] Device: {DEVICE}")
     logger.info(f"[STARTUP] CUDA available: {torch.cuda.is_available()}")
 
-    runs = db.get_all_runs()
-    logger.info(f"[STARTUP] Found {len(runs)} runs in database")
-    for run in runs:
-        logger.info(f"  - Run {run.id}: {run.wandb_path}")
-
     yield
 
     manager.close()
