@@ -189,7 +189,7 @@
     }
 
     function selectPromptFromPicker(prompt: PromptPreview) {
-        addPromptCard(prompt.id, prompt.tokens, null, false);
+        addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, false);
     }
 
     async function addCustomPrompt() {
@@ -233,8 +233,8 @@
         );
     }
 
-    async function computeGraph() {
-        if (!activeCard || loadingCardId) return;
+    async function computeGraphForCard() {
+        if (!activeCard || !activeCard.tokenIds || loadingCardId) return;
 
         loadingCardId = activeCard.id;
         loadingMode = useOptimized ? "optimized" : "standard";
@@ -244,59 +244,28 @@
         try {
             let data: PromptData;
 
-            if (activeCard.isCustom && activeCard.tokenIds) {
-                if (useOptimized) {
-                    if (!labelTokenId) throw new Error("Label token required for optimization");
-                    data = await attrApi.computeCustomPromptOptimizedStreaming(
-                        {
-                            tokenIds: activeCard.tokenIds,
-                            labelToken: labelTokenId,
-                            normalize: normalizeEdges,
-                            impMinCoeff,
-                            ceLossCoeff,
-                            steps: optimSteps,
-                            pnorm: optimPnorm,
-                            outputProbThreshold: 0.01,
-                        },
-                        (progress) => {
-                            loadingProgress = progress;
-                        },
-                    );
-                } else {
-                    data = await attrApi.computeCustomPrompt({
+            if (useOptimized) {
+                if (!labelTokenId) throw new Error("Label token required for optimization");
+                data = await attrApi.computeGraphOptimizedStreaming(
+                    {
                         tokenIds: activeCard.tokenIds,
+                        labelToken: labelTokenId,
                         normalize: normalizeEdges,
-                    });
-                }
-            } else if (activeCard.promptId !== null) {
-                if (useOptimized) {
-                    if (!labelTokenId) throw new Error("Label token required for optimization");
-                    data = await attrApi.getPromptOptimizedStreaming(
-                        activeCard.promptId,
-                        {
-                            labelToken: labelTokenId,
-                            normalize: normalizeEdges,
-                            impMinCoeff,
-                            ceLossCoeff,
-                            steps: optimSteps,
-                            pnorm: optimPnorm,
-                            outputProbThreshold: 0.01,
-                        },
-                        (progress) => {
-                            loadingProgress = progress;
-                        },
-                    );
-                } else {
-                    data = await attrApi.getPromptStreaming(
-                        activeCard.promptId,
-                        { maxMeanCI, normalize: normalizeEdges },
-                        (progress) => {
-                            loadingProgress = progress;
-                        },
-                    );
-                }
+                        impMinCoeff,
+                        ceLossCoeff,
+                        steps: optimSteps,
+                        pnorm: optimPnorm,
+                        outputProbThreshold: 0.01,
+                    },
+                    (progress) => {
+                        loadingProgress = progress;
+                    },
+                );
             } else {
-                throw new Error("Invalid card state");
+                data = await attrApi.computeGraph({
+                    tokenIds: activeCard.tokenIds,
+                    normalize: normalizeEdges,
+                });
             }
 
             const graphId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -374,10 +343,9 @@
     }
 
     function getCardLabel(card: PromptCard): string {
-        if (card.isCustom) {
-            return card.tokens.slice(0, 3).join("") + (card.tokens.length > 3 ? "..." : "");
-        }
-        return `#${card.promptId}`;
+        const n_chars_to_show = 30;
+        const str = card.tokens.join("")
+        return str.slice(0, n_chars_to_show) + (str.length > n_chars_to_show ? "..." : "");
     }
 </script>
 
@@ -561,7 +529,7 @@
 
                             <button
                                 class="btn-compute"
-                                onclick={computeGraph}
+                                onclick={computeGraphForCard}
                                 disabled={loadingCardId !== null || (useOptimized && !labelTokenId)}
                             >
                                 {#if loadingCardId === activeCard.id}
@@ -598,7 +566,7 @@
                     {#if computeError}
                         <div class="error-banner">
                             {computeError}
-                            <button onclick={() => computeGraph()}>Retry</button>
+                            <button onclick={() => computeGraphForCard()}>Retry</button>
                         </div>
                     {/if}
 

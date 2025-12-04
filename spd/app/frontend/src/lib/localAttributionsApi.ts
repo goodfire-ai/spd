@@ -37,158 +37,11 @@ export async function listPrompts(): Promise<PromptPreview[]> {
     return fetchJson<PromptPreview[]>(`${API_URL}/api/prompts`);
 }
 
-export type GetPromptParams = {
-    maxMeanCI: number;
-    normalize: boolean;
-};
-
-export async function getPrompt(promptId: number, params: GetPromptParams): Promise<PromptData> {
-    const url = new URL(`${API_URL}/api/prompt/${promptId}`);
-    url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
-    url.searchParams.set("normalize", String(params.normalize));
-    return fetchJson<PromptData>(url.toString());
-}
-
 export type PromptProgress = {
     current: number;
     total: number;
     stage: string;
 };
-
-export async function getPromptStreaming(
-    promptId: number,
-    params: GetPromptParams,
-    onProgress?: (progress: PromptProgress) => void,
-): Promise<PromptData> {
-    const url = new URL(`${API_URL}/api/prompt/${promptId}/stream`);
-    url.searchParams.set("max_mean_ci", String(params.maxMeanCI));
-    url.searchParams.set("normalize", String(params.normalize));
-
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-        const error = await response.json();
-        throw new LocalAttributionsApiError(error.error || `HTTP ${response.status}`, response.status);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-        throw new Error("Response body is not readable");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let result: PromptData | null = null;
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete SSE messages
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
-
-            const data = JSON.parse(line.substring(6));
-
-            if (data.type === "progress" && onProgress) {
-                onProgress({ current: data.current, total: data.total, stage: data.stage });
-            } else if (data.type === "error") {
-                throw new LocalAttributionsApiError(data.error, 500);
-            } else if (data.type === "complete") {
-                result = data.data;
-                await reader.cancel();
-                break;
-            }
-        }
-
-        if (result) break;
-    }
-
-    if (!result) {
-        throw new Error("No result received from stream");
-    }
-
-    return result;
-}
-
-export type GetPromptOptimizedParams = {
-    labelToken: number;
-    impMinCoeff: number;
-    ceLossCoeff: number;
-    steps: number;
-    pnorm: number;
-    normalize: boolean;
-    outputProbThreshold: number;
-};
-
-export async function getPromptOptimizedStreaming(
-    promptId: number,
-    params: GetPromptOptimizedParams,
-    onProgress?: (progress: PromptProgress) => void,
-): Promise<PromptData> {
-    const url = new URL(`${API_URL}/api/prompt/${promptId}/optimized/stream`);
-    url.searchParams.set("label_token", String(params.labelToken));
-    url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
-    url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
-    url.searchParams.set("steps", String(params.steps));
-    url.searchParams.set("pnorm", String(params.pnorm));
-    url.searchParams.set("normalize", String(params.normalize));
-    url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
-
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-        const error = await response.json();
-        throw new LocalAttributionsApiError(error.error || `HTTP ${response.status}`, response.status);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-        throw new Error("Response body is not readable");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let result: PromptData | null = null;
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete SSE messages
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
-
-            const data = JSON.parse(line.substring(6));
-
-            if (data.type === "progress" && onProgress) {
-                onProgress({ current: data.current, total: data.total, stage: data.stage });
-            } else if (data.type === "error") {
-                throw new LocalAttributionsApiError(data.error, 500);
-            } else if (data.type === "complete") {
-                result = data.data;
-                await reader.cancel();
-                break;
-            }
-        }
-
-        if (result) break;
-    }
-
-    if (!result) {
-        throw new Error("No result received from stream");
-    }
-
-    return result;
-}
 
 // Activation contexts
 
@@ -211,7 +64,7 @@ export async function searchPrompts(components: string[], mode: "all" | "any" = 
     return fetchJson<SearchResult>(url.toString());
 }
 
-// Custom prompts
+// Tokenize and compute
 
 export async function tokenizeText(text: string): Promise<TokenizeResult> {
     const url = new URL(`${API_URL}/api/tokenize`);
@@ -219,13 +72,13 @@ export async function tokenizeText(text: string): Promise<TokenizeResult> {
     return fetchJson<TokenizeResult>(url.toString(), { method: "POST" });
 }
 
-export type ComputeCustomPromptParams = {
+export type ComputeGraphParams = {
     tokenIds: number[];
     normalize: boolean;
 };
 
-export async function computeCustomPrompt(params: ComputeCustomPromptParams): Promise<PromptData> {
-    const url = new URL(`${API_URL}/api/prompt/custom`);
+export async function computeGraph(params: ComputeGraphParams): Promise<PromptData> {
+    const url = new URL(`${API_URL}/api/compute`);
     url.searchParams.set("normalize", String(params.normalize));
     return fetchJson<PromptData>(url.toString(), {
         method: "POST",
@@ -234,7 +87,7 @@ export async function computeCustomPrompt(params: ComputeCustomPromptParams): Pr
     });
 }
 
-export type ComputeCustomPromptOptimizedParams = {
+export type ComputeGraphOptimizedParams = {
     tokenIds: number[];
     labelToken: number;
     impMinCoeff: number;
@@ -245,11 +98,11 @@ export type ComputeCustomPromptOptimizedParams = {
     outputProbThreshold: number;
 };
 
-export async function computeCustomPromptOptimizedStreaming(
-    params: ComputeCustomPromptOptimizedParams,
+export async function computeGraphOptimizedStreaming(
+    params: ComputeGraphOptimizedParams,
     onProgress?: (progress: PromptProgress) => void,
 ): Promise<PromptData> {
-    const url = new URL(`${API_URL}/api/prompt/custom/optimized/stream`);
+    const url = new URL(`${API_URL}/api/compute/optimized/stream`);
     url.searchParams.set("label_token", String(params.labelToken));
     url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
     url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));

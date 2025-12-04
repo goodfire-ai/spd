@@ -27,6 +27,7 @@ class PromptPreview(BaseModel):
     """Preview of a prompt for listing."""
 
     id: int
+    token_ids: list[int]
     tokens: list[str]
     preview: str
 

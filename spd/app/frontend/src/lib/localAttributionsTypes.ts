@@ -4,6 +4,7 @@
 
 export type PromptPreview = {
     id: number;
+    token_ids: number[];
     tokens: string[];
     preview: string;
 };
