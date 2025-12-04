@@ -122,7 +122,7 @@ class GPTMLP(nn.Module):
 class GPTBlock(nn.Module):
     """A single GPT transformer block with optional pre-norm architecture."""
 
-    def __init__(self, d_model: int, d_mlp: int, n_heads: int, use_layer_norm: bool = True):
+    def __init__(self, d_model: int, d_mlp: int, n_heads: int, use_layer_norm: bool = False):
         super().__init__()
         self.use_layer_norm = use_layer_norm
         if use_layer_norm:
