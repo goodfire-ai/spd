@@ -255,3 +255,136 @@ class MemTransformer(LoadableModule):
         """Fetch a pretrained model from wandb or a local path to a checkpoint."""
         run_info = MemTargetRunInfo.from_path(path)
         return cls.from_run_info(run_info)
+
+
+def expand_model(
+    model: "MemTransformer",
+    d_model_new: int,
+    d_mlp_new: int,
+) -> "MemTransformer":
+    """Expand model dimensions by padding weights with zeros.
+
+    Creates a new MemTransformer with expanded dimensions where:
+    - All d_model dimensions are expanded to d_model_new
+    - All d_mlp dimensions are expanded to d_mlp_new
+    - Original weights are preserved in the top-left corner
+    - Padded dimensions are filled with zeros (except LayerNorm weights which use 1s)
+
+    Note: When use_layer_norm=True, the expanded model's behavior may differ slightly
+    from the original because LayerNorm statistics are computed over all dimensions.
+    For exact behavior preservation, use expand with use_layer_norm=False.
+
+    Args:
+        model: The original MemTransformer model
+        d_model_new: New residual stream dimension (must be >= original d_model)
+        d_mlp_new: New MLP hidden dimension (must be >= original d_mlp)
+
+    Returns:
+        A new MemTransformer with expanded dimensions
+    """
+    old_config = model.config
+    d_model_old = old_config.d_model
+    d_mlp_old = old_config.d_mlp
+
+    assert d_model_new >= d_model_old, (
+        f"d_model_new ({d_model_new}) must be >= d_model ({d_model_old})"
+    )
+    assert d_mlp_new >= d_mlp_old, f"d_mlp_new ({d_mlp_new}) must be >= d_mlp ({d_mlp_old})"
+
+    # n_heads must divide d_model_new evenly
+    assert d_model_new % old_config.n_heads == 0, (
+        f"d_model_new ({d_model_new}) must be divisible by n_heads ({old_config.n_heads})"
+    )
+
+    # Create new config with expanded dimensions
+    new_config = MemModelConfig(
+        vocab_size=old_config.vocab_size,
+        d_model=d_model_new,
+        d_mlp=d_mlp_new,
+        n_heads=old_config.n_heads,
+        seq_len=old_config.seq_len,
+        use_layer_norm=old_config.use_layer_norm,
+        device=old_config.device,
+    )
+
+    # Create new model (with random initialization)
+    new_model = MemTransformer(new_config)
+
+    # Helper functions for padding
+    def pad_2d(
+        old_tensor: Tensor, new_shape: tuple[int, int], pad_value: float = 0.0
+    ) -> Tensor:
+        """Pad a 2D tensor, preserving original values in top-left corner."""
+        new_tensor = torch.full(new_shape, pad_value, dtype=old_tensor.dtype)
+        new_tensor[: old_tensor.shape[0], : old_tensor.shape[1]] = old_tensor
+        return new_tensor
+
+    def pad_1d(old_tensor: Tensor, new_size: int, pad_value: float = 0.0) -> Tensor:
+        """Pad a 1D tensor, preserving original values at the start."""
+        new_tensor = torch.full((new_size,), pad_value, dtype=old_tensor.dtype)
+        new_tensor[: old_tensor.shape[0]] = old_tensor
+        return new_tensor
+
+    with torch.no_grad():
+        # Token embedding: [vocab_size, d_model] -> [vocab_size, d_model_new]
+        new_model.embed.weight.copy_(
+            pad_2d(model.embed.weight, (old_config.vocab_size, d_model_new))
+        )
+
+        # Position embedding: [seq_len, d_model] -> [seq_len, d_model_new]
+        new_model.pos_embed.weight.copy_(
+            pad_2d(model.pos_embed.weight, (old_config.seq_len, d_model_new))
+        )
+
+        # Attention projections (all d_model -> d_model)
+        for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
+            old_proj = getattr(model.block.attn, proj_name)
+            new_proj = getattr(new_model.block.attn, proj_name)
+            # weight: [d_model, d_model] -> [d_model_new, d_model_new]
+            new_proj.weight.copy_(pad_2d(old_proj.weight, (d_model_new, d_model_new)))
+            # bias: [d_model] -> [d_model_new]
+            new_proj.bias.copy_(pad_1d(old_proj.bias, d_model_new))
+
+        # MLP up_proj: [d_mlp, d_model] -> [d_mlp_new, d_model_new]
+        new_model.block.mlp.up_proj.weight.copy_(
+            pad_2d(model.block.mlp.up_proj.weight, (d_mlp_new, d_model_new))
+        )
+        new_model.block.mlp.up_proj.bias.copy_(
+            pad_1d(model.block.mlp.up_proj.bias, d_mlp_new)
+        )
+
+        # MLP down_proj: [d_model, d_mlp] -> [d_model_new, d_mlp_new]
+        new_model.block.mlp.down_proj.weight.copy_(
+            pad_2d(model.block.mlp.down_proj.weight, (d_model_new, d_mlp_new))
+        )
+        new_model.block.mlp.down_proj.bias.copy_(
+            pad_1d(model.block.mlp.down_proj.bias, d_model_new)
+        )
+
+        # LayerNorm layers (if present)
+        if old_config.use_layer_norm:
+            # ln1: [d_model] -> [d_model_new]
+            # Weight padded with 1s (identity for normalization), bias with 0s
+            new_model.block.ln1.weight.copy_(
+                pad_1d(model.block.ln1.weight, d_model_new, pad_value=1.0)
+            )
+            new_model.block.ln1.bias.copy_(pad_1d(model.block.ln1.bias, d_model_new))
+
+            # ln2: [d_model] -> [d_model_new]
+            new_model.block.ln2.weight.copy_(
+                pad_1d(model.block.ln2.weight, d_model_new, pad_value=1.0)
+            )
+            new_model.block.ln2.bias.copy_(pad_1d(model.block.ln2.bias, d_model_new))
+
+            # ln_f: [d_model] -> [d_model_new]
+            new_model.ln_f.weight.copy_(
+                pad_1d(model.ln_f.weight, d_model_new, pad_value=1.0)
+            )
+            new_model.ln_f.bias.copy_(pad_1d(model.ln_f.bias, d_model_new))
+
+        # Unembed: [vocab_size, d_model] -> [vocab_size, d_model_new]
+        new_model.unembed.weight.copy_(
+            pad_2d(model.unembed.weight, (old_config.vocab_size, d_model_new))
+        )
+
+    return new_model

@@ -9,7 +9,7 @@ import wandb
 from spd.configs import Config
 from spd.experiments.mem.configs import MemTaskConfig
 from spd.experiments.mem.mem_dataset import MemDataset
-from spd.experiments.mem.models import MemTargetRunInfo, MemTransformer
+from spd.experiments.mem.models import MemTargetRunInfo, MemTransformer, expand_model
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
@@ -63,11 +63,27 @@ def main(
 
     device = get_device()
     logger.info(f"Using device: {device}")
-    assert isinstance(config.task_config, MemTaskConfig)
+    task_config = config.task_config
+    assert isinstance(task_config, MemTaskConfig)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
     target_run_info = MemTargetRunInfo.from_path(config.pretrained_model_path)
     target_model = MemTransformer.from_run_info(target_run_info)
+
+    # Expand model dimensions if requested
+    if task_config.expand:
+        assert task_config.d_model_new is not None, "d_model_new must be set when expand=True"
+        assert task_config.d_mlp_new is not None, "d_mlp_new must be set when expand=True"
+        logger.info(
+            f"Expanding model: d_model {target_model.config.d_model} -> {task_config.d_model_new}, "
+            f"d_mlp {target_model.config.d_mlp} -> {task_config.d_mlp_new}"
+        )
+        target_model = expand_model(
+            target_model,
+            d_model_new=task_config.d_model_new,
+            d_mlp_new=task_config.d_mlp_new,
+        )
+
     target_model = target_model.to(device)
     target_model.eval()
 
