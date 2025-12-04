@@ -33,14 +33,14 @@ export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     mean_ci: number;
     // Examples - columnar arrays (n_examples, window_size)
-    example_tokens: string[][];      // [n_examples][window_size]
-    example_ci: number[][];          // [n_examples][window_size]
-    example_active_pos: number[];    // [n_examples]
-    example_active_ci: number[];     // [n_examples]
+    example_tokens: string[][]; // [n_examples][window_size]
+    example_ci: number[][]; // [n_examples][window_size]
+    example_active_pos: number[]; // [n_examples]
+    example_active_ci: number[]; // [n_examples]
     // Token precision/recall - columnar arrays sorted by recall descending
-    pr_tokens: string[];             // [n_unique_tokens]
-    pr_recalls: number[];            // [n_unique_tokens]
-    pr_precisions: number[];         // [n_unique_tokens]
+    pr_tokens: string[]; // [n_unique_tokens]
+    pr_recalls: number[]; // [n_unique_tokens]
+    pr_precisions: number[]; // [n_unique_tokens]
 };
 
 export type ModelActivationContexts = {
@@ -135,10 +135,7 @@ export async function getSubcomponentActivationContexts(
 }
 
 // Lazy-load individual component data
-export async function getComponentDetail(
-    layer: string,
-    componentIdx: number,
-): Promise<ComponentDetail> {
+export async function getComponentDetail(layer: string, componentIdx: number): Promise<ComponentDetail> {
     const url = `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`;
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {

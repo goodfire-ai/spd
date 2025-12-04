@@ -113,6 +113,7 @@
 
             <div
                 class="config-wrapper"
+                role="group"
                 onmouseenter={() => (showConfig = true)}
                 onmouseleave={() => (showConfig = false)}
             >

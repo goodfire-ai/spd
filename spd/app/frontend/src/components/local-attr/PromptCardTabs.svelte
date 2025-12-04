@@ -18,7 +18,7 @@
 </script>
 
 <div class="card-tabs">
-    {#each cards as card}
+    {#each cards as card (card.id)}
         <div class="card-tab" class:active={card.id === activeCardId}>
             <button class="card-tab-label" onclick={() => onSelectCard(card.id)}>
                 {getCardLabel(card)}

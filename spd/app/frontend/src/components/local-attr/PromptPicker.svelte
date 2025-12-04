@@ -51,9 +51,7 @@
 </script>
 
 <div class="add-prompt-wrapper">
-    <button class="btn-add-prompt" onclick={() => (showPicker = !showPicker)}>
-        + Add Prompt
-    </button>
+    <button class="btn-add-prompt" onclick={() => (showPicker = !showPicker)}> + Add Prompt </button>
 
     {#if showPicker}
         <div class="prompt-picker">
@@ -65,11 +63,7 @@
                     onkeydown={(e) => e.key === "Enter" && handleAddCustom()}
                     class="picker-input"
                 />
-                <button
-                    onclick={handleAddCustom}
-                    disabled={!customText.trim() || tokenizeLoading}
-                    class="btn-tokenize"
-                >
+                <button onclick={handleAddCustom} disabled={!customText.trim() || tokenizeLoading} class="btn-tokenize">
                     {tokenizeLoading ? "..." : "Add"}
                 </button>
             </div>
@@ -90,8 +84,14 @@
             </div>
 
             <div class="picker-list">
-                {#each displayedPrompts as p}
-                    <button class="picker-item" onclick={() => { onSelectPrompt(p); showPicker = false; }}>
+                {#each displayedPrompts as p (p.id)}
+                    <button
+                        class="picker-item"
+                        onclick={() => {
+                            onSelectPrompt(p);
+                            showPicker = false;
+                        }}
+                    >
                         <span class="picker-item-id">#{p.id}</span>
                         <span class="picker-item-preview">{p.preview}</span>
                     </button>
@@ -112,9 +112,7 @@
                         <span>{generateCount}</span>
                     </div>
                 {:else}
-                    <button class="btn-generate" onclick={() => onGenerate(100)}>
-                        + Generate 100
-                    </button>
+                    <button class="btn-generate" onclick={() => onGenerate(100)}> + Generate 100 </button>
                 {/if}
             </div>
         </div>

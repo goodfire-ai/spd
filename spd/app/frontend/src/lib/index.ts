@@ -9,8 +9,7 @@ const WANDB_PATH_WITH_RUNS_RE = /^([^/\s]+)\/([^/\s]+)\/runs\/([a-z0-9]{8})$/;
 
 // Full W&B run URL like:
 // https://wandb.ai/<entity>/<project>/runs/<runId>[/path][?query]
-const WANDB_URL_RE =
-    /^https:\/\/wandb\.ai\/([^/]+)\/([^/]+)\/runs\/([a-z0-9]{8})(?:\/[^?]*)?(?:\?.*)?$/;
+const WANDB_URL_RE = /^https:\/\/wandb\.ai\/([^/]+)\/([^/]+)\/runs\/([a-z0-9]{8})(?:\/[^?]*)?(?:\?.*)?$/;
 
 /**
  * Parse various W&B run reference formats into normalized entity/project/runId.

@@ -13,10 +13,7 @@
     {#if progress}
         <div class="progress-container">
             <div class="progress-bar">
-                <div
-                    class="progress-fill"
-                    style="width: {(progress.current / progress.total) * 100}%"
-                ></div>
+                <div class="progress-fill" style="width: {(progress.current / progress.total) * 100}%"></div>
             </div>
             <span class="progress-text">
                 Computing {progress.stage}... ({progress.current}/{progress.total})

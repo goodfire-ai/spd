@@ -12,20 +12,10 @@
         onCloseGraph: (graphId: string) => void;
     };
 
-    let {
-        card,
-        options,
-        isLoading,
-        loadingMode,
-        onOptionsChange,
-        onCompute,
-        onSelectGraph,
-        onCloseGraph,
-    }: Props = $props();
+    let { card, options, isLoading, loadingMode, onOptionsChange, onCompute, onSelectGraph, onCloseGraph }: Props =
+        $props();
 
-    const canCompute = $derived(
-        !isLoading && (!options.useOptimized || options.labelTokenId !== null)
-    );
+    const canCompute = $derived(!isLoading && (!options.useOptimized || options.labelTokenId !== null));
 
     const buttonText = $derived.by(() => {
         if (isLoading) {
@@ -40,7 +30,7 @@
 
 <div class="staged-header">
     <div class="staged-tokens">
-        {#each card.tokens as tok}
+        {#each card.tokens as tok, i (i)}
             <span class="staged-token" class:custom={card.isCustom}>{tok}</span>
         {/each}
     </div>
@@ -144,7 +134,7 @@
 
     {#if card.graphs.length > 0}
         <div class="graph-tabs">
-            {#each card.graphs as graph}
+            {#each card.graphs as graph (graph.id)}
                 <div class="graph-tab" class:active={graph.id === card.activeGraphId}>
                     <button class="tab-label" onclick={() => onSelectGraph(graph.id)}>
                         {graph.label}
