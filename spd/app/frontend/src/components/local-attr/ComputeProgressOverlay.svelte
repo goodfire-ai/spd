@@ -91,7 +91,7 @@
     }
 
     .stage.current .stage-number {
-        background: var(--accent-warm);
+        background: var(--accent-primary);
         color: var(--bg-base);
     }
 
@@ -132,7 +132,7 @@
 
     .progress-fill {
         height: 100%;
-        background: var(--accent-warm);
+        background: var(--accent-primary);
         transition: width 0.15s ease-out;
     }
 

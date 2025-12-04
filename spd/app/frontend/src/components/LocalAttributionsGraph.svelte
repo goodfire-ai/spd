@@ -17,7 +17,8 @@
 
     // Constants
     const COMPONENT_SIZE = 8;
-    const COMPONENT_GAP = 2;
+    const COMPONENT_GAP = 4;
+    const HIT_AREA_PADDING = 4; // Extra padding around nodes for easier hover
     const LAYER_GAP = 30;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
@@ -472,7 +473,15 @@
     });
 
     // Event handlers
+    let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
     function handleNodeMouseEnter(event: MouseEvent, layer: string, seqIdx: number, cIdx: number) {
+        // Clear any pending leave timeout
+        if (hoverTimeout) {
+            clearTimeout(hoverTimeout);
+            hoverTimeout = null;
+        }
+
         hoveredNode = { layer, seqIdx, cIdx };
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
 
@@ -485,11 +494,16 @@
     }
 
     function handleNodeMouseLeave() {
-        setTimeout(() => {
+        // Clear any existing timeout first
+        if (hoverTimeout) {
+            clearTimeout(hoverTimeout);
+        }
+        hoverTimeout = setTimeout(() => {
             if (!isHoveringTooltip) {
                 hoveredNode = null;
             }
-        }, 100);
+            hoverTimeout = null;
+        }, 50);
     }
 
     function handleNodeClick(layer: string, cIdx: number) {
@@ -638,20 +652,33 @@
                     {@const style = nodeStyles[key]}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <rect
-                        class="node"
-                        class:highlighted={isHighlighted}
-                        x={pos.x - COMPONENT_SIZE / 2}
-                        y={pos.y - COMPONENT_SIZE / 2}
-                        width={COMPONENT_SIZE}
-                        height={COMPONENT_SIZE}
-                        fill={style.fill}
-                        rx="1"
-                        opacity={style.opacity}
+                    <g
+                        class="node-group"
                         onmouseenter={(e) => handleNodeMouseEnter(e, layer, seqIdx, cIdx)}
                         onmouseleave={handleNodeMouseLeave}
                         onclick={() => handleNodeClick(layer, cIdx)}
-                    />
+                    >
+                        <!-- Invisible hit area for easier hovering -->
+                        <rect
+                            x={pos.x - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
+                            y={pos.y - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
+                            width={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
+                            height={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
+                            fill="transparent"
+                        />
+                        <!-- Visible node -->
+                        <rect
+                            class="node"
+                            class:highlighted={isHighlighted}
+                            x={pos.x - COMPONENT_SIZE / 2}
+                            y={pos.y - COMPONENT_SIZE / 2}
+                            width={COMPONENT_SIZE}
+                            height={COMPONENT_SIZE}
+                            fill={style.fill}
+                            rx="1"
+                            opacity={style.opacity}
+                        />
+                    </g>
                 {/each}
             </g>
         </svg>
@@ -787,15 +814,19 @@
         stroke-width: 3 !important;
     }
 
+    .node-group {
+        cursor: pointer;
+    }
+
     .node {
         transition:
             stroke-width 0.1s,
             filter 0.1s;
-        cursor: pointer;
+        pointer-events: none; /* Let the group handle events */
     }
 
     .node.highlighted {
-        stroke: var(--accent-warm) !important;
+        stroke: var(--accent-primary) !important;
         stroke-width: 2px !important;
         filter: brightness(1.2);
         opacity: 1 !important;
@@ -845,7 +876,7 @@
         margin: 0 0 var(--space-2) 0;
         font-size: var(--text-base);
         font-family: var(--font-mono);
-        color: var(--accent-warm);
+        color: var(--accent-primary);
         font-weight: 600;
         letter-spacing: 0.02em;
         border-bottom: 1px solid var(--border-subtle);

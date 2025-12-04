@@ -212,30 +212,25 @@
     .run-input input[type="text"]:focus,
     .run-input input[type="number"]:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     .run-input button {
         padding: var(--space-1) var(--space-3);
-        background: var(--accent-warm);
+        background: var(--accent-primary);
         color: white;
         border: none;
-        border-radius: var(--radius-sm);
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
         font-weight: 500;
-        cursor: pointer;
         white-space: nowrap;
     }
 
     .run-input button:hover:not(:disabled) {
-        background: var(--text-primary);
+        background: var(--accent-primary-dim);
     }
 
     .run-input button:disabled {
         background: var(--border-default);
         color: var(--text-muted);
-        cursor: not-allowed;
     }
 
     .tab-navigation {
@@ -247,10 +242,6 @@
         padding: var(--space-1) var(--space-3);
         background: var(--bg-elevated);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
         font-weight: 500;
         color: var(--text-secondary);
     }
@@ -262,9 +253,9 @@
     }
 
     .tab-button.active {
-        color: var(--bg-base);
-        background: var(--accent-warm);
-        border-color: var(--accent-warm);
+        color: white;
+        background: var(--accent-primary);
+        border-color: var(--accent-primary);
     }
 
     .config-wrapper {
@@ -324,9 +315,9 @@
 
     .warning-banner {
         background: var(--bg-surface);
-        color: var(--accent-warm);
+        color: var(--accent-primary);
         padding: var(--space-2) var(--space-3);
-        border: 1px solid var(--accent-warm-dim);
+        border: 1px solid var(--accent-primary-dim);
         border-radius: var(--radius-md);
         margin: var(--space-3);
         font-size: var(--text-sm);

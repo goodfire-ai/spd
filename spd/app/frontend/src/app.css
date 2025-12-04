@@ -1,27 +1,27 @@
 :root {
-    /* Soft Research - Apple/Anthropic inspired, clean and airy */
+    /* Punchy Research - crisp whites, bold contrasts */
     --bg-base: #ffffff;
-    --bg-surface: #fafafa;
+    --bg-surface: #ffffff;
     --bg-elevated: #ffffff;
-    --bg-inset: #f5f5f7;
+    --bg-inset: #f8f9fa;
 
-    --border-subtle: #f0f0f0;
-    --border-default: #e5e5e5;
-    --border-strong: #d1d1d1;
+    --border-subtle: #e0e0e0;
+    --border-default: #c0c0c0;
+    --border-strong: #888888;
 
-    --text-primary: #1d1d1f;
-    --text-secondary: #6e6e73;
-    --text-muted: #aeaeb2;
+    --text-primary: #111111;
+    --text-secondary: #555555;
+    --text-muted: #999999;
 
-    --accent-warm: #d4714a;
-    --accent-warm-dim: #b85d3a;
+    --accent-primary: #2563eb;
+    --accent-primary-dim: #1d4ed8;
 
-    --status-positive: #34c759;
-    --status-positive-bright: #4cd964;
-    --status-negative: #ff3b30;
-    --status-negative-bright: #ff6961;
-    --status-info: #007aff;
-    --status-info-bright: #5ac8fa;
+    --status-positive: #16a34a;
+    --status-positive-bright: #22c55e;
+    --status-negative: #dc2626;
+    --status-negative-bright: #ef4444;
+    --status-info: #2563eb;
+    --status-info-bright: #3b82f6;
 
     /* Typography - Clean system fonts with mono for code */
     --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
@@ -61,4 +61,18 @@ body {
     width: 100%;
     min-height: 100vh;
     background: var(--bg-base);
+}
+
+/* Base button reset and styles */
+button {
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background-color 0.1s, border-color 0.1s, color 0.1s;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
 }

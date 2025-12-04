@@ -96,7 +96,7 @@
 
     input[type="number"]:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     select {
@@ -111,7 +111,7 @@
 
     select:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     .legend {

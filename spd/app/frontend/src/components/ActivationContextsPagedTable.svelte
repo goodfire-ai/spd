@@ -185,7 +185,7 @@
     .filter-control select:focus,
     .page-size-control select:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     .pagination {
@@ -197,12 +197,8 @@
     .pagination button {
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
         background: var(--bg-elevated);
         color: var(--text-secondary);
-        cursor: pointer;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
     }
 
     .pagination button:hover:not(:disabled) {
@@ -212,8 +208,7 @@
     }
 
     .pagination button:disabled {
-        opacity: 0.3;
-        cursor: not-allowed;
+        opacity: 0.5;
     }
 
     .pagination span {
@@ -238,7 +233,7 @@
 
     .page-input:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     .page-input::-webkit-inner-spin-button,

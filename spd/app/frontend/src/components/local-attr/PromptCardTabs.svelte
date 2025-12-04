@@ -6,9 +6,10 @@
         activeCardId: string | null;
         onSelectCard: (cardId: string) => void;
         onCloseCard: (cardId: string) => void;
+        onAddClick: () => void;
     };
 
-    let { cards, activeCardId, onSelectCard, onCloseCard }: Props = $props();
+    let { cards, activeCardId, onSelectCard, onCloseCard, onAddClick }: Props = $props();
 
     function getCardLabel(card: PromptCard): string {
         const nCharsToShow = 30;
@@ -26,6 +27,7 @@
             <button class="card-tab-close" onclick={() => onCloseCard(card.id)}>×</button>
         </div>
     {/each}
+    <button class="btn-add-tab" onclick={onAddClick}>+</button>
 </div>
 
 <style>
@@ -54,7 +56,7 @@
 
     .card-tab.active {
         background: var(--bg-elevated);
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
         color: var(--text-primary);
     }
 
@@ -87,5 +89,19 @@
     .card-tab-close:hover {
         opacity: 1;
         color: var(--status-negative-bright);
+    }
+
+    .btn-add-tab {
+        padding: var(--space-1) var(--space-2);
+        background: var(--bg-surface);
+        border: 1px dashed var(--border-default);
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .btn-add-tab:hover {
+        background: var(--bg-inset);
+        border-color: var(--border-strong);
+        color: var(--text-primary);
     }
 </style>

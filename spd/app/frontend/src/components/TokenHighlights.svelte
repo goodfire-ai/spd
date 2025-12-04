@@ -59,7 +59,7 @@
     }
 
     .token-highlight.active-token {
-        outline: 1px solid var(--accent-warm);
+        outline: 1px solid var(--accent-primary);
         outline-offset: 1px;
     }
 </style>

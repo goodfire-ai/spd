@@ -4,27 +4,27 @@
  */
 
 export const colors = {
-    // Text
-    textPrimary: "#1a1918",
-    textSecondary: "#4a4844",
-    textMuted: "#8a867e",
+    // Text - punchy contrast
+    textPrimary: "#111111",
+    textSecondary: "#555555",
+    textMuted: "#999999",
 
-    // Status colors for edges/data
-    positive: "#2868a0",
-    negative: "#c43c3c",
+    // Status colors for edges/data - vivid
+    positive: "#2563eb",
+    negative: "#dc2626",
 
-    // Output node gradient (green) - Apple-style bright green
-    outputBase: { r: 52, g: 199, b: 89 },
+    // Output node gradient (green) - vivid green
+    outputBase: { r: 22, g: 163, b: 74 },
 
-    // Token highlight - Apple-style bright green
-    tokenHighlight: { r: 52, g: 199, b: 89 },
-    tokenHighlightOpacity: 0.35,
+    // Token highlight - vivid green
+    tokenHighlight: { r: 22, g: 163, b: 74 },
+    tokenHighlightOpacity: 0.4,
 
     // Node default
-    nodeDefault: "#8a867e",
+    nodeDefault: "#888888",
 
-    // Accent (for active states)
-    accent: "#c45a28",
+    // Accent (for active states) - blue
+    accent: "#2563eb",
 } as const;
 
 /** Get output node fill color based on probability */

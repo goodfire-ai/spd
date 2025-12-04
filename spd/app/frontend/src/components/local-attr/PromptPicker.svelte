@@ -10,10 +10,12 @@
         generatingGraphs: boolean;
         generateProgress: number;
         generateCount: number;
+        show: boolean;
         onSelectPrompt: (prompt: PromptPreview) => void;
         onAddCustom: (text: string) => Promise<void>;
         onFilterToggle: () => void;
         onGenerate: (count: number) => void;
+        onClose: () => void;
     };
 
     let {
@@ -25,13 +27,14 @@
         generatingGraphs,
         generateProgress,
         generateCount,
+        show,
         onSelectPrompt,
         onAddCustom,
         onFilterToggle,
         onGenerate,
+        onClose,
     }: Props = $props();
 
-    let showPicker = $state(false);
     let customText = $state("");
     let tokenizeLoading = $state(false);
 
@@ -43,113 +46,95 @@
         try {
             await onAddCustom(customText);
             customText = "";
-            showPicker = false;
+            onClose();
         } finally {
             tokenizeLoading = false;
         }
     }
+
+    function handleSelectPrompt(p: PromptPreview) {
+        onSelectPrompt(p);
+        onClose();
+    }
 </script>
 
-<div class="add-prompt-wrapper">
-    <button class="btn-add-prompt" onclick={() => (showPicker = !showPicker)}> + Add Prompt </button>
-
-    {#if showPicker}
-        <div class="prompt-picker">
-            <div class="picker-header">
-                <input
-                    type="text"
-                    bind:value={customText}
-                    placeholder="Enter custom text..."
-                    onkeydown={(e) => e.key === "Enter" && handleAddCustom()}
-                    class="picker-input"
-                />
-                <button onclick={handleAddCustom} disabled={!customText.trim() || tokenizeLoading} class="btn-tokenize">
-                    {tokenizeLoading ? "..." : "Add"}
-                </button>
-            </div>
-
-            <div class="picker-filter">
-                <label class="filter-checkbox">
-                    <input
-                        type="checkbox"
-                        checked={filterByPinned}
-                        onchange={onFilterToggle}
-                        disabled={pinnedNodes.length === 0}
-                    />
-                    Filter by pinned ({pinnedNodes.length})
-                </label>
-                {#if filterLoading}
-                    <span class="filter-loading">...</span>
-                {/if}
-            </div>
-
-            <div class="picker-list">
-                {#each displayedPrompts as p (p.id)}
-                    <button
-                        class="picker-item"
-                        onclick={() => {
-                            onSelectPrompt(p);
-                            showPicker = false;
-                        }}
-                    >
-                        <span class="picker-item-id">#{p.id}</span>
-                        <span class="picker-item-preview">{p.preview}</span>
-                    </button>
-                {/each}
-                {#if displayedPrompts.length === 0}
-                    <div class="picker-empty">
-                        {filterByPinned ? "No matching prompts" : "No prompts yet"}
-                    </div>
-                {/if}
-            </div>
-
-            <div class="picker-footer">
-                {#if generatingGraphs}
-                    <div class="generate-progress">
-                        <div class="mini-progress-bar">
-                            <div class="mini-progress-fill" style="width: {generateProgress * 100}%"></div>
-                        </div>
-                        <span>{generateCount}</span>
-                    </div>
-                {:else}
-                    <button class="btn-generate" onclick={() => onGenerate(100)}> + Generate 100 </button>
-                {/if}
-            </div>
+{#if show}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="prompt-picker-backdrop" onclick={onClose} onkeydown={(e) => e.key === "Escape" && onClose()}></div>
+    <div class="prompt-picker">
+        <div class="picker-header">
+            <input
+                type="text"
+                bind:value={customText}
+                placeholder="Enter custom text..."
+                onkeydown={(e) => e.key === "Enter" && handleAddCustom()}
+                class="picker-input"
+            />
+            <button onclick={handleAddCustom} disabled={!customText.trim() || tokenizeLoading} class="btn-tokenize">
+                {tokenizeLoading ? "..." : "Add"}
+            </button>
         </div>
-    {/if}
-</div>
+
+        <div class="picker-filter">
+            <label class="filter-checkbox">
+                <input
+                    type="checkbox"
+                    checked={filterByPinned}
+                    onchange={onFilterToggle}
+                    disabled={pinnedNodes.length === 0}
+                />
+                Filter by pinned ({pinnedNodes.length})
+            </label>
+            {#if filterLoading}
+                <span class="filter-loading">...</span>
+            {/if}
+        </div>
+
+        <div class="picker-list">
+            {#each displayedPrompts as p (p.id)}
+                <button class="picker-item" onclick={() => handleSelectPrompt(p)}>
+                    <span class="picker-item-id">#{p.id}</span>
+                    <span class="picker-item-preview">{p.preview}</span>
+                </button>
+            {/each}
+            {#if displayedPrompts.length === 0}
+                <div class="picker-empty">
+                    {filterByPinned ? "No matching prompts" : "No prompts yet"}
+                </div>
+            {/if}
+        </div>
+
+        <div class="picker-footer">
+            {#if generatingGraphs}
+                <div class="generate-progress">
+                    <div class="mini-progress-bar">
+                        <div class="mini-progress-fill" style="width: {generateProgress * 100}%"></div>
+                    </div>
+                    <span>{generateCount}</span>
+                </div>
+            {:else}
+                <button class="btn-generate" onclick={() => onGenerate(100)}> + Generate 100 </button>
+            {/if}
+        </div>
+    </div>
+{/if}
 
 <style>
-    .add-prompt-wrapper {
-        position: relative;
-    }
-
-    .btn-add-prompt {
-        padding: var(--space-1) var(--space-3);
-        background: var(--accent-warm);
-        color: var(--bg-base);
-        border: none;
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        font-weight: 600;
-        cursor: pointer;
-        white-space: nowrap;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-
-    .btn-add-prompt:hover {
-        background: var(--text-primary);
+    .prompt-picker-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 999;
     }
 
     .prompt-picker {
         position: absolute;
-        top: 100%;
-        right: 0;
-        margin-top: var(--space-2);
+        top: calc(100% + var(--space-1));
+        left: 0;
         width: 340px;
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         z-index: 1000;
         overflow: hidden;
     }
@@ -173,7 +158,7 @@
 
     .picker-input:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     .picker-input::placeholder {
@@ -182,24 +167,19 @@
 
     .btn-tokenize {
         padding: var(--space-2) var(--space-3);
-        background: var(--accent-warm);
-        color: var(--bg-base);
+        background: var(--accent-primary);
+        color: white;
         border: none;
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        font-weight: 600;
-        cursor: pointer;
-        text-transform: uppercase;
+        font-weight: 500;
     }
 
     .btn-tokenize:hover:not(:disabled) {
-        background: var(--text-primary);
+        background: var(--accent-primary-dim);
     }
 
     .btn-tokenize:disabled {
         background: var(--border-default);
         color: var(--text-muted);
-        cursor: not-allowed;
     }
 
     .picker-filter {
@@ -285,14 +265,9 @@
         width: 100%;
         padding: var(--space-2);
         background: var(--status-positive);
-        color: var(--text-primary);
+        color: white;
         border: none;
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        font-weight: 600;
-        cursor: pointer;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        font-weight: 500;
     }
 
     .btn-generate:hover {

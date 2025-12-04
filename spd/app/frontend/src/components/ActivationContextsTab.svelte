@@ -213,30 +213,25 @@
 
     .config-item input:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     .load-button {
         padding: var(--space-2) var(--space-4);
         border: none;
-        border-radius: var(--radius-sm);
-        background: var(--accent-warm);
+        background: var(--accent-primary);
         color: white;
-        cursor: pointer;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
         font-weight: 500;
         align-self: flex-start;
     }
 
     .load-button:hover:not(:disabled) {
-        background: var(--text-primary);
+        background: var(--accent-primary-dim);
     }
 
     .load-button:disabled {
         background: var(--border-default);
         color: var(--text-muted);
-        cursor: not-allowed;
     }
 
     .progress-container {
@@ -264,7 +259,7 @@
 
     .progress-fill {
         height: 100%;
-        background: var(--accent-warm);
+        background: var(--accent-primary);
         border-radius: 2px;
         transition: width 0.15s ease-out;
     }

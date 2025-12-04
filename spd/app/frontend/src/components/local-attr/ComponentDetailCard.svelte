@@ -257,20 +257,16 @@
 
     .expand-btn,
     .collapse-btn {
-        font-size: var(--text-xs);
-        color: var(--accent-warm);
+        font-size: var(--text-sm);
+        color: var(--accent-primary);
         background: none;
         border: none;
         padding: var(--space-1) 0;
-        cursor: pointer;
-        font-family: var(--font-mono);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     .expand-btn:hover,
     .collapse-btn:hover {
-        color: var(--text-primary);
+        color: var(--accent-primary-dim);
     }
 
     .tables-row {

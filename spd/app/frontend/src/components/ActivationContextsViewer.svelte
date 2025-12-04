@@ -223,7 +223,7 @@
 
     #layer-select:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     .toggle-buttons {
@@ -237,11 +237,9 @@
     .toggle-buttons button {
         padding: var(--space-1) var(--space-2);
         border: none;
+        border-radius: 0;
         background: var(--bg-elevated);
         color: var(--text-secondary);
-        cursor: pointer;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
         border-right: 1px solid var(--border-default);
     }
 
@@ -249,13 +247,13 @@
         border-right: none;
     }
 
-    .toggle-buttons button:hover {
+    .toggle-buttons button:hover:not(.active) {
         background: var(--bg-inset);
         color: var(--text-primary);
     }
 
     .toggle-buttons button.active {
-        background: var(--accent-warm);
+        background: var(--accent-primary);
         color: white;
         font-weight: 500;
     }
@@ -273,12 +271,8 @@
     .pagination-controls button {
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
         background: var(--bg-elevated);
         color: var(--text-secondary);
-        cursor: pointer;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
     }
 
     .pagination-controls button:hover:not(:disabled) {
@@ -288,8 +282,7 @@
     }
 
     .pagination-controls button:disabled {
-        opacity: 0.3;
-        cursor: not-allowed;
+        opacity: 0.5;
     }
 
     .pagination-controls span {
@@ -314,7 +307,7 @@
 
     .page-input:focus {
         outline: none;
-        border-color: var(--accent-warm-dim);
+        border-color: var(--accent-primary-dim);
     }
 
     .page-input::-webkit-inner-spin-button,

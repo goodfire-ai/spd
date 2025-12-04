@@ -63,8 +63,6 @@
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
         color: var(--text-secondary);
         display: flex;
         justify-content: space-between;
@@ -74,15 +72,10 @@
     }
 
     .pinned-container h3 button {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
         padding: var(--space-1) var(--space-2);
-        cursor: pointer;
         background: var(--bg-elevated);
         border: 1px solid var(--border-default);
         color: var(--text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     .pinned-container h3 button:hover {
@@ -120,20 +113,15 @@
     .pinned-header strong {
         font-family: var(--font-mono);
         font-size: var(--text-base);
-        color: var(--accent-warm);
+        color: var(--accent-primary);
         font-weight: 600;
     }
 
     .unpin-btn {
-        cursor: pointer;
         background: var(--status-negative);
-        color: var(--text-primary);
+        color: white;
         border: none;
         padding: var(--space-1) var(--space-2);
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
     }
 
     .unpin-btn:hover {
