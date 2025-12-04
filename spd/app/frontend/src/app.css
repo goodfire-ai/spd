@@ -24,8 +24,8 @@
     --status-info-bright: #3b82f6;
 
     /* Typography - Clean system fonts with mono for code */
-    --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    --font-mono: "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
 
     --text-xs: 0.75rem;
     --text-sm: 0.8125rem;
@@ -70,7 +70,10 @@ button {
     font-size: var(--text-sm);
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: background-color 0.1s, border-color 0.1s, color 0.1s;
+    transition:
+        background-color 0.1s,
+        border-color 0.1s,
+        color 0.1s;
 }
 
 button:disabled {

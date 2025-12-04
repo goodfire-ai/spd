@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap");
 
 :root {
     /* Tactical Research Console - Color System */
@@ -26,8 +26,8 @@
     --status-info-bright: #6699bb;
 
     /* Typography */
-    --font-mono: 'IBM Plex Mono', 'Consolas', monospace;
-    --font-sans: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+    --font-mono: "IBM Plex Mono", "Consolas", monospace;
+    --font-sans: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
 
     --text-xs: 0.7rem;
     --text-sm: 0.8rem;

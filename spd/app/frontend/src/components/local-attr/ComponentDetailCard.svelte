@@ -62,10 +62,7 @@
     {#if isOutput}
         <!-- Output node display -->
         {#if outputProbEntry}
-            <div
-                class="output-header"
-                style="background: {getOutputHeaderColor(outputProbEntry.prob)};"
-            >
+            <div class="output-header" style="background: {getOutputHeaderColor(outputProbEntry.prob)};">
                 <div class="output-token">"{escapeHtml(outputProbEntry.token)}"</div>
                 <div class="output-prob">{(outputProbEntry.prob * 100).toFixed(1)}% probability</div>
             </div>

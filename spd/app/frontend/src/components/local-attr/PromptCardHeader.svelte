@@ -58,7 +58,9 @@
                     step={0.01}
                 />
             </label>
-            <span class="info-icon" data-tooltip="Backend defaults: ci_threshold=1e-6, output_prob_threshold=0.01">?</span>
+            <span class="info-icon" data-tooltip="Backend defaults: ci_threshold=1e-6, output_prob_threshold=0.01"
+                >?</span
+            >
             <label class="checkbox">
                 <input
                     type="checkbox"
