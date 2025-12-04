@@ -96,13 +96,17 @@ def analyze_decomposition(
         print(f"MODULE: {module_name}")
         print(f"{'='*80}")
 
-        n_facts, seq_len, n_components = ci_values.shape
+        _, _, _ = ci_values.shape  # n_facts, seq_len, n_components
 
         # We care about the final sequence position for the mem task
         # ci_values[:, -1, :] has shape [n_facts, C]
         ci_final_pos: Float[Tensor, "n_facts C"] = ci_values[:, -1, :]  # noqa: F821
 
-        for comp_idx in range(n_components):
+        # Compute mean CI per component and sort by it (descending)
+        mean_ci_per_comp = ci_final_pos.mean(dim=0)  # [C]
+        sorted_comp_indices = torch.argsort(mean_ci_per_comp, descending=True)
+
+        for rank, comp_idx in enumerate(sorted_comp_indices.tolist()):
             comp_ci = ci_final_pos[:, comp_idx]  # [n_facts]
 
             # Find facts where this component has CI above threshold
@@ -110,8 +114,10 @@ def analyze_decomposition(
             active_indices = torch.where(active_mask)[0]
             n_active = len(active_indices)
 
+            mean_ci = mean_ci_per_comp[comp_idx].item()
+
             if n_active == 0:
-                print(f"\n  Component {comp_idx}: No facts above threshold")
+                print(f"\n  [Rank {rank+1}] Component {comp_idx} (mean CI={mean_ci:.3f}): No facts above threshold")
                 continue
 
             # Sort by causal importance (descending)
@@ -120,16 +126,16 @@ def analyze_decomposition(
             active_indices = active_indices[sorted_order]
             active_cis = active_cis[sorted_order]
 
-            print(f"\n  Component {comp_idx}: {n_active} facts above threshold")
+            print(f"\n  [Rank {rank+1}] Component {comp_idx} (mean CI={mean_ci:.3f}): {n_active} facts above threshold")
             print(f"  {'─'*60}")
 
             # Show up to max_facts_to_show
             n_to_show = min(n_active, max_facts_to_show)
             for i in range(n_to_show):
-                fact_idx = active_indices[i].item()
+                fact_idx = int(active_indices[i].item())
                 ci_val = active_cis[i].item()
                 input_tokens = all_inputs[fact_idx].tolist()
-                label_token = all_labels[fact_idx].item()
+                label_token = int(all_labels[fact_idx].item())
 
                 print(f"    Fact {fact_idx:4d}: input={input_tokens} → label={label_token}  (CI={ci_val:.3f})")
 
@@ -144,18 +150,21 @@ def analyze_decomposition(
 
     for module_name, ci_values in importances_by_module.items():
         ci_final_pos = ci_values[:, -1, :]  # [n_facts, C]
-        n_components = ci_final_pos.shape[1]
 
         print(f"\n{module_name}:")
 
-        # For each component, count how many facts it activates on
-        for comp_idx in range(n_components):
+        # Compute mean CI per component and sort by it (descending)
+        mean_ci_per_comp = ci_final_pos.mean(dim=0)  # [C]
+        sorted_comp_indices = torch.argsort(mean_ci_per_comp, descending=True)
+
+        # For each component (sorted by mean CI), count how many facts it activates on
+        for rank, comp_idx in enumerate(sorted_comp_indices.tolist()):
             comp_ci = ci_final_pos[:, comp_idx]
             n_active = (comp_ci > ci_threshold).sum().item()
-            mean_ci = comp_ci.mean().item()
+            mean_ci = mean_ci_per_comp[comp_idx].item()
             max_ci = comp_ci.max().item()
             print(
-                f"  Component {comp_idx}: "
+                f"  [Rank {rank+1:2d}] Component {comp_idx:3d}: "
                 f"active on {n_active:4d}/{dataset.n_facts} facts, "
                 f"mean CI={mean_ci:.3f}, max CI={max_ci:.3f}"
             )
