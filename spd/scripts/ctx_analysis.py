@@ -1,7 +1,7 @@
 """Context length analysis script.
 
 Analyzes how the set of components that activate changes depending on context length.
-Measures the per-layer manhattan distance between binarized CI vectors at full context
+Measures the per-layer Jaccard similarity between binarized CI vectors at full context
 vs each shorter context length.
 
 Usage:
@@ -59,15 +59,15 @@ def compute_binary_ci(
 class BatchAnalysisResult:
     """Results from analyzing a single batch."""
 
-    distances: dict[str, Float[Tensor, "n_ctx_minus_1 batch"]]
+    similarities: dict[str, Float[Tensor, "n_ctx_minus_1 batch"]]
     active_counts: dict[str, Float[Tensor, " batch"]]  # Number of active components per sample
 
     def __init__(
         self,
-        distances: dict[str, Float[Tensor, "n_ctx_minus_1 batch"]],
+        similarities: dict[str, Float[Tensor, "n_ctx_minus_1 batch"]],
         active_counts: dict[str, Float[Tensor, " batch"]],
     ):
-        self.distances = distances
+        self.similarities = similarities
         self.active_counts = active_counts
 
 
@@ -77,7 +77,7 @@ def analyze_batch(
     ci_threshold: float,
     max_ctx: int,
 ) -> BatchAnalysisResult:
-    """Compute manhattan distances at all context lengths vs full context for a single batch.
+    """Compute Jaccard similarities at all context lengths vs full context for a single batch.
 
     Args:
         model: The ComponentModel to analyze.
@@ -86,7 +86,7 @@ def analyze_batch(
         max_ctx: Maximum context length.
 
     Returns:
-        BatchAnalysisResult containing distances and active component counts.
+        BatchAnalysisResult containing similarities and active component counts.
     """
     batch_size = batch.shape[0]
     seq_len = batch.shape[1]
@@ -103,9 +103,9 @@ def analyze_batch(
     full_batch = batch[:, -effective_max_ctx:]
     binary_ci_full = compute_binary_ci(model, full_batch, ci_threshold)
 
-    # Initialize distances tensor for each layer
+    # Initialize similarities tensor for each layer
     layer_names = list(binary_ci_full.keys())
-    distances: dict[str, Float[Tensor, "n_ctx_minus_1 batch"]] = {
+    similarities: dict[str, Float[Tensor, "n_ctx_minus_1 batch"]] = {
         layer_name: torch.zeros(effective_max_ctx - 1, batch_size, device=batch.device)
         for layer_name in layer_names
     }
@@ -116,7 +116,7 @@ def analyze_batch(
         for layer_name in layer_names
     }
 
-    # Compute distances for each context length from 1 to (max_ctx - 1)
+    # Compute similarities for each context length from 1 to (max_ctx - 1)
     for ctx_idx, ctx_len in enumerate(range(1, effective_max_ctx)):
         # Truncate to last ctx_len tokens
         truncated_batch = batch[:, -ctx_len:]
@@ -124,14 +124,19 @@ def analyze_batch(
         # Compute binary CI for truncated context
         binary_ci_ctx = compute_binary_ci(model, truncated_batch, ci_threshold)
 
-        # Compute manhattan distance for each layer
+        # Compute Jaccard similarity for each layer: |A ∩ B| / |A ∪ B|
         for layer_name in layer_names:
-            manhattan_dist = torch.abs(binary_ci_ctx[layer_name] - binary_ci_full[layer_name]).sum(
-                dim=-1
-            )  # [batch]
-            distances[layer_name][ctx_idx] = manhattan_dist
+            ci_ctx = binary_ci_ctx[layer_name]
+            ci_full = binary_ci_full[layer_name]
 
-    return BatchAnalysisResult(distances=distances, active_counts=active_counts)
+            intersection = (ci_ctx * ci_full).sum(dim=-1)  # [batch]
+            union = ((ci_ctx + ci_full) > 0).float().sum(dim=-1)  # [batch]
+
+            # Handle case where union is 0 (both vectors all zeros) -> similarity = 1.0
+            jaccard = torch.where(union > 0, intersection / union, torch.ones_like(union))
+            similarities[layer_name][ctx_idx] = jaccard
+
+    return BatchAnalysisResult(similarities=similarities, active_counts=active_counts)
 
 
 def extract_block_number(layer_name: str) -> int | None:
@@ -157,20 +162,20 @@ def extract_block_number(layer_name: str) -> int | None:
 
 
 def plot_results(
-    mean_distances_by_layer: dict[str, Float[Tensor, " n_ctx_minus_1"]],
+    mean_similarities_by_layer: dict[str, Float[Tensor, " n_ctx_minus_1"]],
     mean_active_counts_by_layer: dict[str, float],
     output_path: Path,
     ci_threshold: float,
     max_ctx: int,
     run_str: str,
 ) -> None:
-    """Create and save matplotlib figure showing manhattan distance vs context length.
+    """Create and save matplotlib figure showing Jaccard similarity vs context length.
 
     Layers are grouped by transformer block, with each block in a separate subplot
     arranged in a grid with max 2 columns.
 
     Args:
-        mean_distances_by_layer: Dictionary mapping layer names to mean distances.
+        mean_similarities_by_layer: Dictionary mapping layer names to mean Jaccard similarities.
         mean_active_counts_by_layer: Dictionary mapping layer names to mean active component counts.
         output_path: Path to save the figure.
         ci_threshold: CI threshold used (for title).
@@ -182,7 +187,7 @@ def plot_results(
 
     # Group layers by block number
     layers_by_block: dict[int, list[str]] = defaultdict(list)
-    for layer_name in mean_distances_by_layer:
+    for layer_name in mean_similarities_by_layer:
         block_num = extract_block_number(layer_name)
         if block_num is not None:
             layers_by_block[block_num].append(layer_name)
@@ -196,7 +201,7 @@ def plot_results(
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(7 * n_cols, 5 * n_rows), squeeze=False)
 
-    n_ctx_minus_1 = len(next(iter(mean_distances_by_layer.values())))
+    n_ctx_minus_1 = len(next(iter(mean_similarities_by_layer.values())))
     context_lengths = list(range(1, n_ctx_minus_1 + 1))
 
     for idx, block_num in enumerate(sorted(layers_by_block.keys())):
@@ -205,7 +210,7 @@ def plot_results(
 
         layer_names = layers_by_block[block_num]
         for layer_name in sorted(layer_names):
-            distances = mean_distances_by_layer[layer_name]
+            similarities = mean_similarities_by_layer[layer_name]
             mean_active = mean_active_counts_by_layer[layer_name]
             # Use just the component type (e.g., "mlp", "attn") for cleaner labels
             short_name = layer_name.split(".")[-1]
@@ -213,7 +218,7 @@ def plot_results(
 
             ax.plot(
                 context_lengths,
-                distances.cpu().numpy(),
+                similarities.cpu().numpy(),
                 label=label,
                 marker=".",
                 markersize=2,
@@ -222,8 +227,8 @@ def plot_results(
             )
 
         ax.set_xlabel("Context Length")
-        ax.set_ylabel("Mean Manhattan Distance")
-        ax.set_yscale("log")
+        ax.set_ylabel("Mean Jaccard Similarity")
+        ax.set_ylim(0, 1)
         block_title = f"Block {block_num}" if block_num >= 0 else "Other"
         ax.set_title(block_title)
         ax.legend(loc="best")
@@ -243,7 +248,9 @@ def plot_results(
         row, col = divmod(idx, n_cols)
         axes[row, col].set_visible(False)
 
-    fig.suptitle(f"CI Distance vs Context Length\nModel: {run_str}\nCI Threshold: {ci_threshold}")
+    fig.suptitle(
+        f"CI Jaccard Similarity vs Context Length\nModel: {run_str}\nCI Threshold: {ci_threshold}"
+    )
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)
     plt.close()
@@ -319,9 +326,9 @@ def main(
     )
     data_iter = iter(loader)
 
-    # Accumulate distances and active counts over batches
+    # Accumulate similarities and active counts over batches
     logger.info(f"Analyzing {n_batches} batches with batch size {batch_size}...")
-    all_distances: dict[str, list[Float[Tensor, "n_ctx_minus_1 batch"]]] = {}
+    all_similarities: dict[str, list[Float[Tensor, "n_ctx_minus_1 batch"]]] = {}
     all_active_counts: dict[str, list[Float[Tensor, " batch"]]] = {}
     total_samples = 0
 
@@ -341,11 +348,11 @@ def main(
                 model=model, batch=batch, ci_threshold=ci_threshold, max_ctx=max_ctx
             )
 
-            # Accumulate distances
-            for layer_name, dist_tensor in result.distances.items():
-                if layer_name not in all_distances:
-                    all_distances[layer_name] = []
-                all_distances[layer_name].append(dist_tensor)
+            # Accumulate similarities
+            for layer_name, sim_tensor in result.similarities.items():
+                if layer_name not in all_similarities:
+                    all_similarities[layer_name] = []
+                all_similarities[layer_name].append(sim_tensor)
 
             # Accumulate active counts
             for layer_name, count_tensor in result.active_counts.items():
@@ -353,15 +360,15 @@ def main(
                     all_active_counts[layer_name] = []
                 all_active_counts[layer_name].append(count_tensor)
 
-    # Compute mean distances across all samples
-    logger.info(f"Computing mean distances over {total_samples} samples...")
-    mean_distances_by_layer: dict[str, Float[Tensor, " n_ctx_minus_1"]] = {}
+    # Compute mean similarities across all samples
+    logger.info(f"Computing mean similarities over {total_samples} samples...")
+    mean_similarities_by_layer: dict[str, Float[Tensor, " n_ctx_minus_1"]] = {}
 
-    for layer_name, dist_list in all_distances.items():
+    for layer_name, sim_list in all_similarities.items():
         # Concatenate along batch dimension: [n_ctx_minus_1, total_samples]
-        all_dist = torch.cat(dist_list, dim=1)
+        all_sim = torch.cat(sim_list, dim=1)
         # Mean over samples
-        mean_distances_by_layer[layer_name] = all_dist.mean(dim=1)
+        mean_similarities_by_layer[layer_name] = all_sim.mean(dim=1)
 
     # Compute mean active counts across all samples
     mean_active_counts_by_layer: dict[str, float] = {}
@@ -371,8 +378,8 @@ def main(
 
     # Save raw results
     results = {
-        "mean_distances_by_layer": {
-            k: v.cpu().tolist() for k, v in mean_distances_by_layer.items()
+        "mean_similarities_by_layer": {
+            k: v.cpu().tolist() for k, v in mean_similarities_by_layer.items()
         },
         "mean_active_counts_by_layer": mean_active_counts_by_layer,
         "model_path": model_path,
@@ -385,7 +392,8 @@ def main(
     import json
 
     wandb_id = model_path.split("/")[-1]
-    run_str = f"{model_label}_{wandb_id}_seed{seed}_n-samples{total_samples}"
+    threshold_str = f"{ci_threshold:.2e}".replace(".", "p")
+    run_str = f"{model_label}_{wandb_id}_seed{seed}_n-samples{total_samples}_thresh{threshold_str}"
     results_path = output_dir / f"ctx_analysis_{run_str}.json"
     with open(results_path, "w") as f:
         json.dump(results, f, indent=2)
@@ -393,7 +401,7 @@ def main(
 
     plot_path = output_dir / f"ctx_analysis_{run_str}.png"
     plot_results(
-        mean_distances_by_layer=mean_distances_by_layer,
+        mean_similarities_by_layer=mean_similarities_by_layer,
         mean_active_counts_by_layer=mean_active_counts_by_layer,
         output_path=plot_path,
         ci_threshold=ci_threshold,
@@ -414,9 +422,9 @@ if __name__ == "__main__":
             model_path=model_path,
             model_label=model_label,
             seed=0,
-            ci_threshold=0.01,
+            ci_threshold=0.1,
             max_ctx=511,  # We don't actually get training signal on the 512th token with the way we've done the labelling
             batch_size=64,
             n_batches=10,
-            output_dir=Path(__file__).parent / "out" / "ctx_analysis",
+            output_dir=Path(__file__).parent / "out" / "ctx_analysis_jac",
         )
