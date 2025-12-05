@@ -5,7 +5,6 @@
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
-    import { parseWandbRunPath } from "./lib";
     import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
@@ -51,10 +50,8 @@
         try {
             loadingTrainRun = true;
             loadedRun = null;
-            const wandbRunPath = parseWandbRunPath(input);
-            console.log("loading run", wandbRunPath);
-            trainWandbRunEntry = wandbRunPath;
-            await api.loadRun(wandbRunPath, contextLength);
+            console.log("loading run", input);
+            await api.loadRun(input, contextLength);
             // Set loading false before calling loadStatus, otherwise the guard returns early
             loadingTrainRun = false;
             await loadStatus();

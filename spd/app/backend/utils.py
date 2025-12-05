@@ -1,7 +1,6 @@
 """Shared utilities for the SPD backend."""
 
 import functools
-import re
 import traceback
 from collections.abc import Callable
 from typing import Any
@@ -9,9 +8,6 @@ from typing import Any
 from fastapi import HTTPException
 
 from spd.log import logger
-
-# Expected format from frontend: entity/project/runId (8-char lowercase alphanumeric)
-WANDB_PATH_RE = re.compile(r"^([^/\s]+)/([^/\s]+)/([a-z0-9]{8})$")
 
 
 def log_errors[T: Callable[..., Any]](func: T) -> T:
@@ -29,23 +25,6 @@ def log_errors[T: Callable[..., Any]](func: T) -> T:
             raise
 
     return wrapper  # pyright: ignore[reportReturnType]
-
-
-def validate_wandb_path(path: str) -> tuple[str, str, str]:
-    """Validate that path is in expected entity/project/runId format.
-
-    The frontend handles all format parsing and normalization.
-    Backend just validates the expected normalized format.
-
-    Returns (entity, project, run_id) tuple.
-    """
-    m = WANDB_PATH_RE.match(path.strip())
-    if not m:
-        raise ValueError(
-            f'Invalid W&B path format. Expected "entity/project/runId" '
-            f"(8-char lowercase alphanumeric run id). Got: {path}"
-        )
-    return m.groups()  # pyright: ignore[reportReturnType]
 
 
 # Characters that don't get a space prefix in wordpiece
