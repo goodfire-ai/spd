@@ -1,19 +1,14 @@
 import pytest
 from transformers import PreTrainedModel
 
-from spd.configs import (
-    CI_L0Config,
-    Config,
-    FaithfulnessLossConfig,
-    ImportanceMinimalityLossConfig,
-    StochasticReconLayerwiseLossConfig,
-    StochasticReconLossConfig,
-)
+from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.identity_insertion import insert_identity_operations_
+from spd.registry import get_experiment_config_file_contents
 from spd.run_spd import optimize
 from spd.utils.general_utils import resolve_class, set_seed
+from spd.utils.run_utils import apply_nested_updates
 
 
 @pytest.mark.slow
@@ -22,72 +17,25 @@ def test_gpt_2_decomposition_happy_path() -> None:
     set_seed(0)
     device = "cpu"
 
-    # Create config similar to the gpt-2 config in gpt2_config.yaml
-    config = Config(
-        # WandB
-        wandb_project=None,  # Disable wandb for testing
-        wandb_run_name=None,
-        wandb_run_name_prefix="",
-        # General
-        seed=0,
-        C=10,  # Smaller C for faster testing
-        n_mask_samples=1,
-        ci_fn_type="vector_mlp",
-        ci_fn_hidden_dims=[128],
-        target_module_patterns=["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
-        identity_module_patterns=["transformer.h.1.attn.c_attn"],
-        loss_metric_configs=[
-            ImportanceMinimalityLossConfig(
-                coeff=1e-2,
-                pnorm=0.9,
-                eps=1e-12,
-            ),
-            StochasticReconLayerwiseLossConfig(coeff=1.0),
-            StochasticReconLossConfig(coeff=1.0),
-            FaithfulnessLossConfig(coeff=200),
-        ],
-        output_loss_type="kl",
-        # Training
-        lr=1e-3,
-        batch_size=4,
-        steps=2,
-        lr_schedule="cosine",
-        lr_exponential_halflife=None,
-        lr_warmup_pct=0.01,
-        n_eval_steps=1,
-        # Logging & Saving
-        train_log_freq=50,  # Print at step 0, 50, and 100
-        eval_freq=500,
-        eval_batch_size=1,
-        slow_eval_freq=500,
-        slow_eval_on_first_step=False,
-        save_freq=None,
-        ci_alive_threshold=0.1,
-        n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        eval_metric_configs=[
-            CI_L0Config(groups=None),
-        ],
-        # Pretrained model info
-        pretrained_model_class="transformers.GPT2LMHeadModel",
-        pretrained_model_path=None,
-        pretrained_model_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
-        pretrained_model_output_attr="logits",
-        tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
-        # Task Specific
-        task_config=LMTaskConfig(
-            task_name="lm",
-            max_seq_len=16,
-            buffer_size=1000,
-            dataset_name="SimpleStories/SimpleStories",
-            column_name="story",
-            train_data_split="train[:100]",
-            eval_data_split="test[100:200]",
-        ),
-    )
+    base_config = get_experiment_config_file_contents("ss_gpt2_simple")
+    test_overrides = {
+        "wandb_project": None,
+        "C": 10,
+        "steps": 2,
+        "batch_size": 4,
+        "eval_batch_size": 1,
+        "train_log_freq": 50,
+        "n_examples_until_dead": 200,  # train_log_freq * batch_size
+        "task_config.max_seq_len": 16,
+        "task_config.train_data_split": "train[:100]",
+        "task_config.eval_data_split": "test[100:200]",
+        "target_module_patterns": ["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
+        "identity_module_patterns": ["transformer.h.1.attn.c_attn"],
+    }
+    config_dict = apply_nested_updates(base_config, test_overrides)
+    config = Config.model_validate(config_dict)
 
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
-
-    # Create a GPT-2 model
     hf_model_class = resolve_class(config.pretrained_model_class)
     assert issubclass(hf_model_class, PreTrainedModel), (
         f"Model class {hf_model_class} should be a subclass of PreTrainedModel which "
@@ -135,7 +83,6 @@ def test_gpt_2_decomposition_happy_path() -> None:
         global_seed=config.seed + 1,
     )
 
-    # Run optimize function
     optimize(
         target_model=target_model,
         config=config,
@@ -146,5 +93,4 @@ def test_gpt_2_decomposition_happy_path() -> None:
         out_dir=None,
     )
 
-    # Basic assertion to ensure the test ran
     assert True, "Test completed successfully"

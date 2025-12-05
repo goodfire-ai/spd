@@ -28,7 +28,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
             {"layer_pattern": "layers.*.mlp_in", "n_features": 5}
         ],
         "eval_metric_configs.IdentityCIError.dense_ci": [
-            {"layer_pattern": "layers.*.mlp_out", "k": 5}
+            {"layer_pattern": "layers.*.mlp_out", "k": 3}
         ],
     }
     config_dict = apply_nested_updates(base_config, test_overrides)
