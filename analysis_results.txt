@@ -1,0 +1,4274 @@
+Loading SPD decomposition from: wandb:goodfire/spd/runs/o584mtha
+Using device: cpu
+Causal importance threshold: 0.1
+
+Loaded dataset with 768 facts
+Vocab size: 64
+Sequence length: 3
+Number of components (C): 128
+
+================================================================================
+U AND V MATRICES FOR COMPONENT 59
+================================================================================
+
+Module: unembed
+  V shape: [16, 128] (v_dim x C)
+  U shape: [128, 64] (C x u_dim)
+
+  V[:, 59] (v_dim=16):
+    [ 0.10457284  0.05325107  0.44018587 -0.36811477  0.22878185  0.46213618
+  0.07443815 -0.02085834 -0.21641837  0.25434566  0.05091618 -0.38210046
+  0.04712116 -0.18216695 -0.09001284 -0.2958917 ]
+
+  U[59, :] (u_dim=64):
+    [-8.94840509e-02  3.39282006e-02 -5.96943125e-02 -2.94265579e-02
+  3.36295180e-02 -5.23733497e-02 -9.06506628e-02 -7.31254146e-02
+  2.38726567e-02 -9.59341452e-02  3.51896286e-02  9.21527967e-02
+  1.98470186e-02 -1.01352856e-01 -1.21331606e-02 -8.51064846e-02
+ -2.02624444e-02 -3.98024358e-02  8.98799673e-02 -8.09198990e-02
+ -6.75150659e-03 -6.63952604e-02  5.43038435e-02  6.23009913e-02
+ -5.50535358e-02  6.27073497e-02  3.96701545e-02 -4.59699817e-02
+ -7.36688077e-02 -7.16979876e-02  8.55179280e-02 -8.95800721e-03
+  5.95740899e-02 -6.51412532e-02  3.12451776e-02  6.39466867e-02
+ -6.21050112e-02  9.14938631e-04  1.01594464e-03 -7.78641179e-02
+ -8.74093100e-02  4.84429598e-02  8.68283033e-01 -4.97404709e-02
+  2.36381348e-02 -6.18003272e-02 -8.26041996e-02 -3.06643033e-03
+ -8.30688253e-02 -7.72333443e-02 -7.76329637e-02  1.27813278e-03
+  4.19165473e-03  4.30480018e-02 -9.34670120e-02  4.42990884e-02
+  6.67760745e-02  5.44913039e-02 -7.28048012e-02  5.32255545e-02
+  3.92620936e-02 -8.36680233e-02  2.16272138e-02 -2.64158414e-04]
+
+
+================================================================================
+COMPONENT ACTIVATION ANALYSIS
+================================================================================
+
+
+================================================================================
+MODULE: unembed
+================================================================================
+
+  [Rank 1] Component 126 (mean CI=0.038): 32 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   19: input=[22, 25, 52] → label=42  (CI=1.000)
+    Fact  592: input=[13, 35, 58] → label=42  (CI=1.000)
+    Fact  539: input=[56, 18, 60] → label=42  (CI=1.000)
+    Fact  444: input=[11, 12, 23] → label=3  (CI=1.000)
+    Fact  676: input=[62, 18, 7] → label=42  (CI=1.000)
+    Fact  418: input=[50, 35, 26] → label=3  (CI=1.000)
+    Fact  406: input=[50, 61, 9] → label=42  (CI=1.000)
+    Fact  380: input=[34, 47, 18] → label=3  (CI=1.000)
+    Fact  692: input=[13, 60, 27] → label=42  (CI=1.000)
+    Fact  347: input=[49, 40, 45] → label=42  (CI=1.000)
+    ... and 22 more facts
+
+  [Rank 2] Component 94 (mean CI=0.032): 25 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  376: input=[21, 38, 41] → label=52  (CI=1.000)
+    Fact  766: input=[40, 13, 11] → label=52  (CI=1.000)
+    Fact  744: input=[43, 8, 37] → label=52  (CI=1.000)
+    Fact  743: input=[36, 16, 20] → label=34  (CI=1.000)
+    Fact  666: input=[33, 36, 40] → label=34  (CI=1.000)
+    Fact  630: input=[57, 17, 51] → label=52  (CI=1.000)
+    Fact  627: input=[14, 51, 18] → label=52  (CI=1.000)
+    Fact  624: input=[31, 48, 46] → label=34  (CI=1.000)
+    Fact  610: input=[16, 20, 10] → label=34  (CI=1.000)
+    Fact  536: input=[45, 32, 41] → label=34  (CI=1.000)
+    ... and 15 more facts
+
+  [Rank 3] Component 24 (mean CI=0.031): 25 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  458: input=[57, 29, 11] → label=27  (CI=1.000)
+    Fact  755: input=[30, 19, 20] → label=27  (CI=1.000)
+    Fact  724: input=[14, 9, 41] → label=39  (CI=1.000)
+    Fact  582: input=[31, 5, 47] → label=39  (CI=1.000)
+    Fact  572: input=[49, 52, 25] → label=39  (CI=1.000)
+    Fact  565: input=[16, 41, 33] → label=39  (CI=1.000)
+    Fact  556: input=[2, 48, 46] → label=27  (CI=1.000)
+    Fact  515: input=[30, 51, 6] → label=39  (CI=1.000)
+    Fact  496: input=[23, 3, 32] → label=27  (CI=1.000)
+    Fact   29: input=[45, 25, 4] → label=27  (CI=1.000)
+    ... and 15 more facts
+
+  [Rank 4] Component 115 (mean CI=0.024): 19 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  253: input=[2, 34, 16] → label=1  (CI=1.000)
+    Fact  519: input=[55, 23, 24] → label=61  (CI=1.000)
+    Fact  466: input=[34, 55, 58] → label=1  (CI=1.000)
+    Fact  450: input=[56, 62, 5] → label=61  (CI=1.000)
+    Fact  389: input=[8, 62, 3] → label=1  (CI=1.000)
+    Fact  375: input=[37, 31, 2] → label=1  (CI=1.000)
+    Fact  361: input=[5, 55, 7] → label=61  (CI=1.000)
+    Fact  348: input=[42, 40, 57] → label=56  (CI=1.000)
+    Fact   30: input=[25, 14, 31] → label=61  (CI=1.000)
+    Fact  201: input=[22, 55, 10] → label=56  (CI=1.000)
+    ... and 9 more facts
+
+  [Rank 5] Component 123 (mean CI=0.023): 18 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  370: input=[0, 15, 49] → label=23  (CI=1.000)
+    Fact  705: input=[8, 42, 42] → label=8  (CI=1.000)
+    Fact  684: input=[32, 38, 62] → label=23  (CI=1.000)
+    Fact  523: input=[27, 34, 42] → label=23  (CI=1.000)
+    Fact  492: input=[13, 60, 57] → label=23  (CI=1.000)
+    Fact  491: input=[11, 50, 48] → label=23  (CI=1.000)
+    Fact  387: input=[42, 15, 59] → label=8  (CI=1.000)
+    Fact  383: input=[22, 61, 47] → label=23  (CI=1.000)
+    Fact  372: input=[31, 12, 28] → label=8  (CI=1.000)
+    Fact   58: input=[3, 7, 1] → label=8  (CI=1.000)
+    ... and 8 more facts
+
+  [Rank 6] Component 58 (mean CI=0.023): 18 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  356: input=[55, 55, 60] → label=36  (CI=1.000)
+    Fact  756: input=[54, 48, 25] → label=41  (CI=1.000)
+    Fact  714: input=[42, 61, 23] → label=36  (CI=1.000)
+    Fact  633: input=[54, 15, 12] → label=36  (CI=1.000)
+    Fact  605: input=[40, 1, 42] → label=36  (CI=1.000)
+    Fact  563: input=[18, 53, 43] → label=36  (CI=1.000)
+    Fact  538: input=[44, 63, 23] → label=36  (CI=1.000)
+    Fact  490: input=[16, 47, 24] → label=41  (CI=1.000)
+    Fact  425: input=[41, 22, 14] → label=36  (CI=1.000)
+    Fact    5: input=[25, 52, 40] → label=41  (CI=1.000)
+    ... and 8 more facts
+
+  [Rank 7] Component 77 (mean CI=0.022): 18 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  706: input=[17, 10, 30] → label=6  (CI=1.000)
+    Fact  164: input=[11, 27, 13] → label=6  (CI=1.000)
+    Fact  174: input=[15, 48, 57] → label=6  (CI=1.000)
+    Fact  700: input=[62, 34, 36] → label=45  (CI=1.000)
+    Fact  258: input=[1, 32, 4] → label=6  (CI=1.000)
+    Fact  269: input=[26, 11, 0] → label=6  (CI=1.000)
+    Fact  352: input=[6, 60, 60] → label=45  (CI=1.000)
+    Fact  398: input=[44, 14, 61] → label=45  (CI=1.000)
+    Fact  408: input=[36, 32, 34] → label=6  (CI=1.000)
+    Fact  549: input=[8, 6, 1] → label=6  (CI=1.000)
+    ... and 8 more facts
+
+  [Rank 8] Component 11 (mean CI=0.022): 17 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  442: input=[0, 1, 12] → label=12  (CI=1.000)
+    Fact  745: input=[20, 15, 50] → label=29  (CI=1.000)
+    Fact  662: input=[44, 35, 32] → label=12  (CI=1.000)
+    Fact  652: input=[21, 53, 23] → label=12  (CI=1.000)
+    Fact  526: input=[47, 15, 42] → label=12  (CI=1.000)
+    Fact  522: input=[10, 24, 35] → label=29  (CI=1.000)
+    Fact  482: input=[26, 24, 60] → label=29  (CI=1.000)
+    Fact  464: input=[15, 56, 23] → label=12  (CI=1.000)
+    Fact  460: input=[3, 41, 59] → label=12  (CI=1.000)
+    Fact    1: input=[26, 27, 25] → label=29  (CI=1.000)
+    ... and 7 more facts
+
+  [Rank 9] Component 102 (mean CI=0.021): 16 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   31: input=[60, 27, 38] → label=43  (CI=1.000)
+    Fact   75: input=[32, 56, 42] → label=43  (CI=1.000)
+    Fact  118: input=[3, 30, 52] → label=43  (CI=1.000)
+    Fact  204: input=[28, 48, 45] → label=43  (CI=1.000)
+    Fact  219: input=[7, 18, 41] → label=43  (CI=1.000)
+    Fact  263: input=[58, 39, 30] → label=43  (CI=1.000)
+    Fact  294: input=[41, 32, 29] → label=43  (CI=1.000)
+    Fact  339: input=[56, 33, 35] → label=43  (CI=1.000)
+    Fact  360: input=[50, 45, 14] → label=43  (CI=1.000)
+    Fact  363: input=[0, 52, 22] → label=43  (CI=1.000)
+    ... and 6 more facts
+
+  [Rank 10] Component 36 (mean CI=0.021): 17 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  102: input=[17, 39, 22] → label=49  (CI=1.000)
+    Fact  144: input=[12, 61, 24] → label=49  (CI=1.000)
+    Fact  146: input=[35, 17, 11] → label=49  (CI=1.000)
+    Fact  198: input=[54, 12, 8] → label=49  (CI=1.000)
+    Fact  212: input=[37, 36, 56] → label=30  (CI=1.000)
+    Fact  249: input=[12, 21, 60] → label=49  (CI=1.000)
+    Fact  308: input=[33, 38, 41] → label=62  (CI=1.000)
+    Fact  410: input=[17, 59, 20] → label=49  (CI=1.000)
+    Fact  501: input=[63, 20, 44] → label=49  (CI=1.000)
+    Fact  683: input=[6, 33, 63] → label=49  (CI=1.000)
+    ... and 7 more facts
+
+  [Rank 11] Component 40 (mean CI=0.021): 16 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact    8: input=[4, 9, 22] → label=51  (CI=1.000)
+    Fact   24: input=[62, 34, 60] → label=51  (CI=1.000)
+    Fact   32: input=[54, 15, 42] → label=51  (CI=1.000)
+    Fact   73: input=[46, 27, 51] → label=51  (CI=1.000)
+    Fact  136: input=[33, 24, 46] → label=51  (CI=1.000)
+    Fact  189: input=[52, 53, 53] → label=51  (CI=1.000)
+    Fact  413: input=[4, 40, 1] → label=51  (CI=1.000)
+    Fact  421: input=[47, 23, 39] → label=51  (CI=1.000)
+    Fact  446: input=[41, 47, 39] → label=51  (CI=1.000)
+    Fact  449: input=[16, 58, 6] → label=51  (CI=1.000)
+    ... and 6 more facts
+
+  [Rank 12] Component 92 (mean CI=0.021): 16 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   68: input=[42, 49, 42] → label=29  (CI=1.000)
+    Fact   76: input=[3, 62, 20] → label=40  (CI=1.000)
+    Fact  200: input=[11, 59, 3] → label=28  (CI=1.000)
+    Fact  215: input=[25, 28, 32] → label=40  (CI=1.000)
+    Fact  325: input=[20, 45, 20] → label=29  (CI=1.000)
+    Fact  327: input=[42, 54, 63] → label=28  (CI=1.000)
+    Fact  373: input=[63, 54, 51] → label=40  (CI=1.000)
+    Fact  401: input=[31, 54, 53] → label=28  (CI=1.000)
+    Fact  415: input=[53, 39, 4] → label=40  (CI=1.000)
+    Fact  453: input=[36, 34, 22] → label=29  (CI=1.000)
+    ... and 6 more facts
+
+  [Rank 13] Component 74 (mean CI=0.020): 16 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   77: input=[43, 25, 57] → label=62  (CI=1.000)
+    Fact  112: input=[15, 8, 46] → label=18  (CI=1.000)
+    Fact  124: input=[60, 53, 29] → label=62  (CI=1.000)
+    Fact  222: input=[26, 24, 24] → label=18  (CI=1.000)
+    Fact  261: input=[53, 50, 3] → label=18  (CI=1.000)
+    Fact  290: input=[35, 53, 45] → label=18  (CI=1.000)
+    Fact  292: input=[32, 32, 48] → label=18  (CI=1.000)
+    Fact  342: input=[36, 28, 41] → label=18  (CI=1.000)
+    Fact  390: input=[8, 6, 53] → label=18  (CI=1.000)
+    Fact  429: input=[42, 12, 61] → label=62  (CI=1.000)
+    ... and 6 more facts
+
+  [Rank 14] Component 107 (mean CI=0.020): 17 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  399: input=[54, 31, 59] → label=55  (CI=1.000)
+    Fact  751: input=[26, 15, 53] → label=11  (CI=1.000)
+    Fact  701: input=[7, 60, 10] → label=11  (CI=1.000)
+    Fact  570: input=[62, 58, 38] → label=55  (CI=1.000)
+    Fact  540: input=[25, 45, 19] → label=55  (CI=1.000)
+    Fact  416: input=[15, 27, 59] → label=55  (CI=1.000)
+    Fact    6: input=[28, 41, 23] → label=55  (CI=1.000)
+    Fact  330: input=[22, 40, 27] → label=55  (CI=1.000)
+    Fact  304: input=[23, 13, 6] → label=55  (CI=1.000)
+    Fact  230: input=[63, 18, 38] → label=55  (CI=1.000)
+    ... and 7 more facts
+
+  [Rank 15] Component 113 (mean CI=0.020): 15 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   61: input=[32, 20, 3] → label=53  (CI=1.000)
+    Fact   81: input=[51, 54, 39] → label=53  (CI=1.000)
+    Fact  128: input=[17, 23, 23] → label=53  (CI=1.000)
+    Fact  140: input=[29, 23, 40] → label=53  (CI=1.000)
+    Fact  158: input=[12, 4, 27] → label=53  (CI=1.000)
+    Fact  207: input=[29, 3, 17] → label=53  (CI=1.000)
+    Fact  213: input=[55, 21, 40] → label=53  (CI=1.000)
+    Fact  298: input=[18, 25, 31] → label=53  (CI=1.000)
+    Fact  321: input=[0, 34, 42] → label=53  (CI=1.000)
+    Fact  353: input=[19, 57, 43] → label=53  (CI=1.000)
+    ... and 5 more facts
+
+  [Rank 16] Component 106 (mean CI=0.020): 15 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   17: input=[33, 63, 53] → label=38  (CI=1.000)
+    Fact   33: input=[22, 56, 59] → label=38  (CI=1.000)
+    Fact   84: input=[61, 9, 51] → label=38  (CI=1.000)
+    Fact  110: input=[59, 18, 12] → label=38  (CI=1.000)
+    Fact  240: input=[13, 56, 13] → label=38  (CI=1.000)
+    Fact  283: input=[46, 50, 14] → label=38  (CI=1.000)
+    Fact  497: input=[25, 18, 5] → label=38  (CI=1.000)
+    Fact  507: input=[48, 46, 5] → label=38  (CI=1.000)
+    Fact  529: input=[58, 0, 12] → label=38  (CI=1.000)
+    Fact  532: input=[6, 53, 33] → label=38  (CI=1.000)
+    ... and 5 more facts
+
+  [Rank 17] Component 75 (mean CI=0.019): 15 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   83: input=[21, 56, 16] → label=24  (CI=1.000)
+    Fact  142: input=[35, 1, 41] → label=47  (CI=1.000)
+    Fact  147: input=[46, 11, 25] → label=47  (CI=1.000)
+    Fact  154: input=[24, 47, 60] → label=47  (CI=1.000)
+    Fact  346: input=[62, 32, 23] → label=47  (CI=1.000)
+    Fact  435: input=[60, 29, 11] → label=47  (CI=1.000)
+    Fact  451: input=[57, 59, 5] → label=47  (CI=1.000)
+    Fact  470: input=[6, 45, 57] → label=47  (CI=1.000)
+    Fact  487: input=[12, 11, 55] → label=47  (CI=1.000)
+    Fact  505: input=[40, 29, 0] → label=47  (CI=1.000)
+    ... and 5 more facts
+
+  [Rank 18] Component 118 (mean CI=0.018): 14 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact    4: input=[11, 56, 28] → label=25  (CI=1.000)
+    Fact   48: input=[61, 15, 42] → label=25  (CI=1.000)
+    Fact  179: input=[34, 7, 58] → label=4  (CI=1.000)
+    Fact  210: input=[20, 7, 45] → label=25  (CI=1.000)
+    Fact  218: input=[63, 25, 45] → label=25  (CI=1.000)
+    Fact  232: input=[63, 48, 59] → label=25  (CI=1.000)
+    Fact  268: input=[32, 56, 33] → label=25  (CI=1.000)
+    Fact  324: input=[6, 28, 6] → label=25  (CI=1.000)
+    Fact  369: input=[31, 9, 45] → label=25  (CI=1.000)
+    Fact  516: input=[4, 32, 24] → label=25  (CI=1.000)
+    ... and 4 more facts
+
+  [Rank 19] Component 50 (mean CI=0.017): 13 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   85: input=[33, 26, 47] → label=56  (CI=1.000)
+    Fact   92: input=[11, 17, 17] → label=56  (CI=1.000)
+    Fact  104: input=[60, 38, 49] → label=56  (CI=1.000)
+    Fact  196: input=[39, 36, 51] → label=56  (CI=1.000)
+    Fact  358: input=[16, 23, 53] → label=56  (CI=1.000)
+    Fact  405: input=[43, 37, 12] → label=56  (CI=1.000)
+    Fact  559: input=[56, 12, 32] → label=56  (CI=1.000)
+    Fact  573: input=[46, 34, 9] → label=56  (CI=1.000)
+    Fact  593: input=[63, 4, 38] → label=56  (CI=1.000)
+    Fact  618: input=[40, 6, 32] → label=56  (CI=1.000)
+    ... and 3 more facts
+
+  [Rank 20] Component 72 (mean CI=0.017): 13 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  114: input=[4, 37, 29] → label=37  (CI=1.000)
+    Fact  139: input=[35, 0, 25] → label=37  (CI=1.000)
+    Fact  237: input=[18, 58, 3] → label=37  (CI=1.000)
+    Fact  403: input=[29, 53, 48] → label=21  (CI=1.000)
+    Fact  411: input=[63, 7, 18] → label=37  (CI=1.000)
+    Fact  577: input=[48, 21, 31] → label=37  (CI=1.000)
+    Fact  602: input=[23, 58, 45] → label=21  (CI=1.000)
+    Fact  608: input=[36, 34, 21] → label=37  (CI=1.000)
+    Fact  639: input=[15, 7, 60] → label=21  (CI=1.000)
+    Fact  641: input=[49, 30, 46] → label=21  (CI=1.000)
+    ... and 3 more facts
+
+  [Rank 21] Component 68 (mean CI=0.017): 13 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   35: input=[7, 11, 63] → label=13  (CI=1.000)
+    Fact   66: input=[8, 29, 8] → label=13  (CI=1.000)
+    Fact   67: input=[45, 10, 61] → label=13  (CI=1.000)
+    Fact  155: input=[21, 10, 19] → label=13  (CI=1.000)
+    Fact  187: input=[36, 7, 52] → label=13  (CI=1.000)
+    Fact  275: input=[0, 19, 14] → label=13  (CI=1.000)
+    Fact  333: input=[28, 35, 26] → label=13  (CI=1.000)
+    Fact  336: input=[5, 5, 61] → label=13  (CI=1.000)
+    Fact  597: input=[33, 40, 16] → label=13  (CI=1.000)
+    Fact  656: input=[11, 37, 28] → label=13  (CI=1.000)
+    ... and 3 more facts
+
+  [Rank 22] Component 31 (mean CI=0.016): 13 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   38: input=[49, 17, 45] → label=20  (CI=1.000)
+    Fact   43: input=[34, 0, 26] → label=20  (CI=1.000)
+    Fact  108: input=[59, 7, 2] → label=20  (CI=1.000)
+    Fact  443: input=[46, 46, 36] → label=20  (CI=1.000)
+    Fact  462: input=[2, 57, 34] → label=20  (CI=1.000)
+    Fact  588: input=[9, 38, 48] → label=20  (CI=1.000)
+    Fact  735: input=[25, 27, 52] → label=20  (CI=1.000)
+    Fact  635: input=[25, 30, 44] → label=20  (CI=0.938)
+    Fact  180: input=[33, 38, 11] → label=20  (CI=0.935)
+    Fact  728: input=[7, 29, 9] → label=20  (CI=0.898)
+    ... and 3 more facts
+
+  [Rank 23] Component 29 (mean CI=0.016): 12 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact    7: input=[39, 60, 23] → label=15  (CI=1.000)
+    Fact   18: input=[11, 37, 20] → label=15  (CI=1.000)
+    Fact   20: input=[56, 26, 44] → label=15  (CI=1.000)
+    Fact  209: input=[48, 14, 14] → label=15  (CI=1.000)
+    Fact  287: input=[59, 62, 32] → label=15  (CI=1.000)
+    Fact  344: input=[57, 3, 3] → label=15  (CI=1.000)
+    Fact  368: input=[20, 50, 41] → label=15  (CI=1.000)
+    Fact  384: input=[24, 56, 8] → label=15  (CI=1.000)
+    Fact  578: input=[59, 52, 3] → label=15  (CI=1.000)
+    Fact  672: input=[56, 0, 18] → label=15  (CI=1.000)
+    ... and 2 more facts
+
+  [Rank 24] Component 122 (mean CI=0.016): 12 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  132: input=[27, 60, 22] → label=10  (CI=1.000)
+    Fact  203: input=[51, 62, 24] → label=10  (CI=1.000)
+    Fact  231: input=[7, 0, 6] → label=10  (CI=1.000)
+    Fact  235: input=[8, 58, 23] → label=10  (CI=1.000)
+    Fact  256: input=[21, 22, 36] → label=10  (CI=1.000)
+    Fact  382: input=[18, 2, 50] → label=10  (CI=1.000)
+    Fact  448: input=[17, 32, 55] → label=10  (CI=1.000)
+    Fact  500: input=[20, 57, 9] → label=10  (CI=1.000)
+    Fact  634: input=[50, 36, 22] → label=10  (CI=1.000)
+    Fact  697: input=[63, 37, 20] → label=10  (CI=1.000)
+    ... and 2 more facts
+
+  [Rank 25] Component 41 (mean CI=0.016): 13 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   16: input=[39, 37, 57] → label=63  (CI=1.000)
+    Fact  115: input=[10, 41, 53] → label=63  (CI=1.000)
+    Fact  340: input=[37, 52, 6] → label=63  (CI=1.000)
+    Fact  477: input=[48, 63, 10] → label=63  (CI=1.000)
+    Fact  600: input=[38, 35, 3] → label=63  (CI=1.000)
+    Fact  613: input=[2, 36, 28] → label=63  (CI=1.000)
+    Fact  763: input=[2, 12, 52] → label=63  (CI=1.000)
+    Fact  246: input=[27, 37, 39] → label=63  (CI=0.963)
+    Fact  527: input=[43, 1, 48] → label=63  (CI=0.930)
+    Fact   14: input=[52, 37, 43] → label=63  (CI=0.906)
+    ... and 3 more facts
+
+  [Rank 26] Component 116 (mean CI=0.015): 12 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   46: input=[32, 23, 24] → label=16  (CI=1.000)
+    Fact  117: input=[53, 4, 47] → label=16  (CI=1.000)
+    Fact  194: input=[3, 5, 24] → label=4  (CI=1.000)
+    Fact  205: input=[44, 25, 31] → label=16  (CI=1.000)
+    Fact  378: input=[63, 24, 39] → label=16  (CI=1.000)
+    Fact  417: input=[22, 39, 40] → label=4  (CI=1.000)
+    Fact  699: input=[52, 41, 58] → label=16  (CI=1.000)
+    Fact  715: input=[60, 22, 39] → label=2  (CI=1.000)
+    Fact  765: input=[50, 3, 3] → label=16  (CI=1.000)
+    Fact  620: input=[0, 5, 19] → label=4  (CI=0.999)
+    ... and 2 more facts
+
+  [Rank 27] Component 27 (mean CI=0.015): 12 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   42: input=[48, 54, 44] → label=0  (CI=1.000)
+    Fact   51: input=[43, 58, 13] → label=0  (CI=1.000)
+    Fact  560: input=[38, 45, 54] → label=0  (CI=1.000)
+    Fact  585: input=[27, 25, 35] → label=0  (CI=1.000)
+    Fact  599: input=[15, 7, 36] → label=0  (CI=1.000)
+    Fact  643: input=[11, 10, 26] → label=0  (CI=1.000)
+    Fact  733: input=[53, 37, 16] → label=0  (CI=1.000)
+    Fact  757: input=[54, 16, 56] → label=0  (CI=1.000)
+    Fact  217: input=[34, 59, 52] → label=0  (CI=0.954)
+    Fact   12: input=[37, 52, 50] → label=0  (CI=0.876)
+    ... and 2 more facts
+
+  [Rank 28] Component 6 (mean CI=0.014): 11 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   27: input=[63, 54, 20] → label=14  (CI=1.000)
+    Fact  227: input=[32, 56, 53] → label=14  (CI=1.000)
+    Fact  238: input=[28, 58, 54] → label=14  (CI=1.000)
+    Fact  300: input=[1, 3, 38] → label=14  (CI=1.000)
+    Fact  366: input=[53, 27, 32] → label=14  (CI=1.000)
+    Fact  402: input=[38, 42, 50] → label=15  (CI=1.000)
+    Fact  473: input=[50, 61, 51] → label=14  (CI=1.000)
+    Fact  475: input=[43, 16, 1] → label=14  (CI=1.000)
+    Fact  518: input=[62, 37, 0] → label=15  (CI=1.000)
+    Fact  685: input=[12, 43, 24] → label=14  (CI=1.000)
+    ... and 1 more facts
+
+  [Rank 29] Component 85 (mean CI=0.014): 11 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   56: input=[49, 7, 31] → label=7  (CI=1.000)
+    Fact   57: input=[44, 58, 6] → label=30  (CI=1.000)
+    Fact   63: input=[60, 34, 4] → label=7  (CI=1.000)
+    Fact   80: input=[51, 11, 27] → label=7  (CI=1.000)
+    Fact  122: input=[47, 14, 34] → label=7  (CI=1.000)
+    Fact  165: input=[1, 17, 15] → label=7  (CI=1.000)
+    Fact  212: input=[37, 36, 56] → label=30  (CI=1.000)
+    Fact  617: input=[26, 9, 47] → label=7  (CI=1.000)
+    Fact  694: input=[62, 62, 21] → label=7  (CI=1.000)
+    Fact  702: input=[17, 23, 53] → label=7  (CI=1.000)
+    ... and 1 more facts
+
+  [Rank 30] Component 2 (mean CI=0.014): 11 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   78: input=[34, 3, 12] → label=6  (CI=1.000)
+    Fact  106: input=[1, 19, 27] → label=6  (CI=1.000)
+    Fact  126: input=[13, 3, 31] → label=4  (CI=1.000)
+    Fact  179: input=[34, 7, 58] → label=4  (CI=1.000)
+    Fact  254: input=[45, 7, 58] → label=17  (CI=1.000)
+    Fact  432: input=[2, 4, 43] → label=17  (CI=1.000)
+    Fact  467: input=[0, 2, 38] → label=4  (CI=1.000)
+    Fact  531: input=[38, 3, 19] → label=4  (CI=1.000)
+    Fact  567: input=[0, 19, 62] → label=4  (CI=1.000)
+    Fact  583: input=[47, 4, 6] → label=17  (CI=1.000)
+    ... and 1 more facts
+
+  [Rank 31] Component 103 (mean CI=0.014): 11 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   50: input=[52, 46, 45] → label=44  (CI=1.000)
+    Fact  129: input=[61, 58, 39] → label=44  (CI=1.000)
+    Fact  259: input=[37, 16, 12] → label=44  (CI=1.000)
+    Fact  311: input=[60, 45, 50] → label=44  (CI=1.000)
+    Fact  355: input=[12, 37, 7] → label=44  (CI=1.000)
+    Fact  521: input=[62, 1, 42] → label=44  (CI=1.000)
+    Fact  547: input=[18, 50, 62] → label=44  (CI=1.000)
+    Fact  554: input=[54, 55, 0] → label=44  (CI=1.000)
+    Fact  681: input=[40, 48, 59] → label=44  (CI=1.000)
+    Fact  747: input=[42, 28, 13] → label=44  (CI=1.000)
+    ... and 1 more facts
+
+  [Rank 32] Component 7 (mean CI=0.014): 11 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   26: input=[24, 35, 22] → label=28  (CI=1.000)
+    Fact   34: input=[11, 44, 13] → label=28  (CI=1.000)
+    Fact   82: input=[49, 1, 36] → label=2  (CI=1.000)
+    Fact  243: input=[35, 51, 51] → label=28  (CI=1.000)
+    Fact  307: input=[30, 31, 17] → label=28  (CI=1.000)
+    Fact  481: input=[3, 22, 63] → label=28  (CI=1.000)
+    Fact  508: input=[14, 49, 3] → label=2  (CI=1.000)
+    Fact  604: input=[4, 49, 32] → label=2  (CI=1.000)
+    Fact  619: input=[48, 44, 41] → label=2  (CI=1.000)
+    Fact  433: input=[12, 41, 62] → label=28  (CI=0.952)
+    ... and 1 more facts
+
+  [Rank 33] Component 81 (mean CI=0.013): 10 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   37: input=[41, 20, 13] → label=54  (CI=1.000)
+    Fact  121: input=[59, 59, 11] → label=54  (CI=1.000)
+    Fact  152: input=[8, 19, 42] → label=54  (CI=1.000)
+    Fact  186: input=[19, 18, 59] → label=54  (CI=1.000)
+    Fact  245: input=[55, 35, 42] → label=54  (CI=1.000)
+    Fact  251: input=[46, 58, 62] → label=54  (CI=1.000)
+    Fact  312: input=[15, 10, 11] → label=54  (CI=1.000)
+    Fact  459: input=[44, 63, 28] → label=54  (CI=1.000)
+    Fact  488: input=[49, 38, 50] → label=54  (CI=1.000)
+    Fact  671: input=[59, 61, 43] → label=54  (CI=1.000)
+
+  [Rank 34] Component 1 (mean CI=0.013): 10 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  148: input=[63, 26, 23] → label=5  (CI=1.000)
+    Fact  173: input=[62, 29, 22] → label=5  (CI=1.000)
+    Fact  221: input=[38, 16, 8] → label=5  (CI=1.000)
+    Fact  303: input=[59, 49, 43] → label=5  (CI=1.000)
+    Fact  541: input=[35, 42, 14] → label=5  (CI=1.000)
+    Fact  594: input=[6, 36, 29] → label=5  (CI=1.000)
+    Fact  595: input=[16, 24, 13] → label=5  (CI=1.000)
+    Fact  687: input=[54, 50, 21] → label=5  (CI=1.000)
+    Fact  748: input=[42, 62, 28] → label=5  (CI=1.000)
+    Fact  149: input=[41, 48, 17] → label=5  (CI=0.884)
+
+  [Rank 35] Component 49 (mean CI=0.012): 10 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  208: input=[40, 56, 59] → label=35  (CI=1.000)
+    Fact  257: input=[46, 1, 23] → label=35  (CI=1.000)
+    Fact  299: input=[62, 9, 60] → label=35  (CI=1.000)
+    Fact  343: input=[25, 17, 2] → label=35  (CI=1.000)
+    Fact  509: input=[45, 36, 14] → label=35  (CI=1.000)
+    Fact  762: input=[48, 53, 7] → label=35  (CI=1.000)
+    Fact  314: input=[58, 22, 17] → label=35  (CI=0.898)
+    Fact  420: input=[48, 14, 22] → label=35  (CI=0.873)
+    Fact  544: input=[61, 11, 1] → label=35  (CI=0.858)
+    Fact  632: input=[10, 56, 46] → label=35  (CI=0.747)
+
+  [Rank 36] Component 82 (mean CI=0.012): 9 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   21: input=[50, 9, 29] → label=32  (CI=1.000)
+    Fact   54: input=[21, 32, 19] → label=32  (CI=1.000)
+    Fact  111: input=[12, 50, 33] → label=32  (CI=1.000)
+    Fact  178: input=[8, 48, 29] → label=8  (CI=1.000)
+    Fact  199: input=[51, 33, 4] → label=32  (CI=1.000)
+    Fact  310: input=[54, 8, 57] → label=8  (CI=1.000)
+    Fact  407: input=[9, 2, 23] → label=32  (CI=1.000)
+    Fact  553: input=[11, 12, 11] → label=8  (CI=1.000)
+    Fact  677: input=[40, 55, 43] → label=32  (CI=1.000)
+
+  [Rank 37] Component 20 (mean CI=0.012): 9 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  113: input=[22, 63, 10] → label=9  (CI=1.000)
+    Fact  223: input=[28, 39, 37] → label=9  (CI=1.000)
+    Fact  248: input=[24, 31, 55] → label=9  (CI=1.000)
+    Fact  386: input=[20, 18, 54] → label=9  (CI=1.000)
+    Fact  428: input=[29, 14, 55] → label=9  (CI=1.000)
+    Fact  479: input=[42, 52, 63] → label=9  (CI=1.000)
+    Fact  514: input=[18, 1, 46] → label=9  (CI=1.000)
+    Fact  530: input=[16, 17, 15] → label=9  (CI=1.000)
+    Fact  131: input=[9, 15, 23] → label=9  (CI=0.894)
+
+  [Rank 38] Component 89 (mean CI=0.011): 9 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  184: input=[14, 20, 14] → label=22  (CI=1.000)
+    Fact  224: input=[57, 12, 39] → label=22  (CI=1.000)
+    Fact  357: input=[26, 26, 34] → label=22  (CI=1.000)
+    Fact  427: input=[51, 21, 15] → label=22  (CI=1.000)
+    Fact  454: input=[49, 37, 10] → label=22  (CI=1.000)
+    Fact  628: input=[27, 41, 35] → label=22  (CI=1.000)
+    Fact  679: input=[23, 0, 43] → label=22  (CI=1.000)
+    Fact  524: input=[16, 20, 9] → label=22  (CI=0.925)
+    Fact  286: input=[20, 12, 24] → label=22  (CI=0.835)
+
+  [Rank 39] Component 19 (mean CI=0.011): 9 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   70: input=[20, 31, 39] → label=26  (CI=1.000)
+    Fact  161: input=[50, 63, 21] → label=26  (CI=1.000)
+    Fact  394: input=[60, 34, 52] → label=26  (CI=1.000)
+    Fact  511: input=[26, 23, 27] → label=56  (CI=1.000)
+    Fact  555: input=[46, 56, 28] → label=26  (CI=1.000)
+    Fact  693: input=[58, 31, 36] → label=26  (CI=1.000)
+    Fact  764: input=[51, 46, 20] → label=26  (CI=1.000)
+    Fact  252: input=[45, 2, 63] → label=26  (CI=0.946)
+    Fact  348: input=[42, 40, 57] → label=56  (CI=0.779)
+
+  [Rank 40] Component 22 (mean CI=0.011): 9 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   88: input=[51, 22, 39] → label=31  (CI=1.000)
+    Fact  197: input=[10, 16, 8] → label=31  (CI=1.000)
+    Fact  255: input=[45, 27, 58] → label=19  (CI=1.000)
+    Fact  434: input=[13, 7, 53] → label=31  (CI=1.000)
+    Fact  546: input=[17, 57, 24] → label=19  (CI=1.000)
+    Fact  640: input=[1, 52, 35] → label=19  (CI=1.000)
+    Fact  645: input=[43, 11, 59] → label=31  (CI=1.000)
+    Fact  711: input=[35, 59, 17] → label=31  (CI=1.000)
+    Fact  709: input=[6, 43, 17] → label=31  (CI=0.592)
+
+  [Rank 41] Component 56 (mean CI=0.011): 9 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   49: input=[24, 29, 63] → label=49  (CI=1.000)
+    Fact   72: input=[58, 28, 17] → label=31  (CI=1.000)
+    Fact   86: input=[34, 59, 43] → label=49  (CI=1.000)
+    Fact  220: input=[54, 11, 5] → label=49  (CI=1.000)
+    Fact  397: input=[34, 34, 56] → label=31  (CI=1.000)
+    Fact  696: input=[51, 17, 42] → label=31  (CI=1.000)
+    Fact  709: input=[6, 43, 17] → label=31  (CI=1.000)
+    Fact  260: input=[55, 29, 28] → label=31  (CI=0.939)
+    Fact  501: input=[63, 20, 44] → label=49  (CI=0.404)
+
+  [Rank 42] Component 35 (mean CI=0.010): 8 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   44: input=[52, 33, 22] → label=50  (CI=1.000)
+    Fact  156: input=[6, 3, 27] → label=60  (CI=1.000)
+    Fact  171: input=[62, 44, 49] → label=60  (CI=1.000)
+    Fact  351: input=[60, 46, 20] → label=60  (CI=1.000)
+    Fact  371: input=[44, 20, 42] → label=50  (CI=1.000)
+    Fact  445: input=[57, 50, 45] → label=60  (CI=1.000)
+    Fact  579: input=[3, 58, 38] → label=50  (CI=1.000)
+    Fact  678: input=[14, 8, 7] → label=50  (CI=1.000)
+
+  [Rank 43] Component 15 (mean CI=0.010): 8 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  177: input=[6, 6, 63] → label=19  (CI=1.000)
+    Fact  182: input=[28, 10, 14] → label=19  (CI=1.000)
+    Fact  329: input=[33, 5, 61] → label=33  (CI=1.000)
+    Fact  455: input=[22, 20, 4] → label=19  (CI=1.000)
+    Fact  660: input=[24, 19, 52] → label=19  (CI=1.000)
+    Fact  680: input=[51, 11, 49] → label=33  (CI=1.000)
+    Fact  719: input=[53, 21, 30] → label=19  (CI=1.000)
+    Fact  736: input=[29, 35, 8] → label=33  (CI=1.000)
+
+  [Rank 44] Component 95 (mean CI=0.010): 8 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   22: input=[28, 21, 62] → label=49  (CI=1.000)
+    Fact  105: input=[23, 5, 35] → label=16  (CI=1.000)
+    Fact  211: input=[48, 41, 31] → label=16  (CI=1.000)
+    Fact  265: input=[14, 5, 3] → label=16  (CI=1.000)
+    Fact  302: input=[58, 21, 3] → label=16  (CI=1.000)
+    Fact  456: input=[46, 29, 30] → label=16  (CI=1.000)
+    Fact  601: input=[55, 28, 17] → label=16  (CI=1.000)
+    Fact  535: input=[5, 20, 25] → label=16  (CI=0.925)
+
+  [Rank 45] Component 104 (mean CI=0.010): 8 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  109: input=[7, 21, 27] → label=61  (CI=1.000)
+    Fact  172: input=[12, 55, 29] → label=61  (CI=1.000)
+    Fact  354: input=[47, 44, 20] → label=61  (CI=1.000)
+    Fact  377: input=[43, 52, 55] → label=61  (CI=1.000)
+    Fact  404: input=[29, 13, 21] → label=61  (CI=1.000)
+    Fact  575: input=[26, 28, 30] → label=61  (CI=1.000)
+    Fact  267: input=[3, 24, 21] → label=61  (CI=0.985)
+    Fact  571: input=[13, 34, 63] → label=61  (CI=0.850)
+
+  [Rank 46] Component 73 (mean CI=0.010): 8 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   28: input=[56, 10, 21] → label=46  (CI=1.000)
+    Fact  393: input=[32, 43, 50] → label=58  (CI=1.000)
+    Fact  423: input=[44, 19, 36] → label=46  (CI=1.000)
+    Fact  716: input=[28, 61, 18] → label=58  (CI=1.000)
+    Fact  725: input=[9, 52, 26] → label=58  (CI=1.000)
+    Fact  661: input=[60, 20, 44] → label=46  (CI=0.959)
+    Fact  478: input=[37, 49, 61] → label=46  (CI=0.927)
+    Fact   71: input=[27, 4, 16] → label=58  (CI=0.921)
+
+  [Rank 47] Component 91 (mean CI=0.010): 8 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   69: input=[49, 31, 20] → label=24  (CI=1.000)
+    Fact   83: input=[21, 56, 16] → label=24  (CI=1.000)
+    Fact  272: input=[37, 61, 20] → label=24  (CI=1.000)
+    Fact  273: input=[5, 15, 56] → label=50  (CI=1.000)
+    Fact  392: input=[5, 43, 28] → label=50  (CI=1.000)
+    Fact  586: input=[61, 2, 51] → label=50  (CI=1.000)
+    Fact  569: input=[13, 37, 44] → label=50  (CI=0.907)
+    Fact  371: input=[44, 20, 42] → label=50  (CI=0.558)
+
+  [Rank 48] Component 76 (mean CI=0.009): 8 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  133: input=[50, 33, 17] → label=22  (CI=1.000)
+    Fact  306: input=[36, 36, 11] → label=22  (CI=1.000)
+    Fact  542: input=[55, 45, 42] → label=22  (CI=1.000)
+    Fact  552: input=[60, 2, 41] → label=22  (CI=1.000)
+    Fact  675: input=[12, 51, 44] → label=22  (CI=1.000)
+    Fact  761: input=[63, 6, 9] → label=22  (CI=1.000)
+    Fact  606: input=[22, 16, 29] → label=22  (CI=0.820)
+    Fact  524: input=[16, 20, 9] → label=22  (CI=0.268)
+
+  [Rank 49] Component 125 (mean CI=0.009): 7 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   91: input=[29, 0, 18] → label=2  (CI=1.000)
+    Fact  170: input=[23, 58, 21] → label=2  (CI=1.000)
+    Fact  469: input=[2, 29, 44] → label=2  (CI=1.000)
+    Fact  512: input=[54, 41, 29] → label=2  (CI=1.000)
+    Fact  612: input=[30, 55, 35] → label=2  (CI=1.000)
+    Fact  642: input=[1, 43, 20] → label=2  (CI=1.000)
+    Fact  746: input=[59, 31, 26] → label=2  (CI=1.000)
+
+  [Rank 50] Component 87 (mean CI=0.009): 7 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact    0: input=[58, 36, 35] → label=11  (CI=1.000)
+    Fact   15: input=[11, 63, 28] → label=11  (CI=1.000)
+    Fact  317: input=[62, 56, 6] → label=11  (CI=1.000)
+    Fact  320: input=[0, 4, 36] → label=11  (CI=1.000)
+    Fact  447: input=[30, 47, 30] → label=11  (CI=1.000)
+    Fact  520: input=[34, 15, 0] → label=11  (CI=1.000)
+    Fact  584: input=[8, 25, 17] → label=11  (CI=1.000)
+
+  [Rank 51] Component 65 (mean CI=0.009): 7 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  326: input=[37, 7, 59] → label=40  (CI=1.000)
+    Fact  480: input=[12, 32, 62] → label=45  (CI=1.000)
+    Fact  517: input=[0, 52, 52] → label=45  (CI=1.000)
+    Fact  545: input=[52, 41, 26] → label=45  (CI=1.000)
+    Fact  637: input=[30, 54, 35] → label=45  (CI=1.000)
+    Fact  720: input=[8, 28, 35] → label=45  (CI=1.000)
+    Fact  282: input=[0, 59, 20] → label=45  (CI=0.804)
+
+  [Rank 52] Component 63 (mean CI=0.008): 7 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  341: input=[27, 47, 18] → label=59  (CI=1.000)
+    Fact  350: input=[4, 63, 0] → label=12  (CI=1.000)
+    Fact  379: input=[28, 29, 42] → label=59  (CI=1.000)
+    Fact  431: input=[18, 30, 36] → label=59  (CI=1.000)
+    Fact  636: input=[8, 2, 55] → label=12  (CI=1.000)
+    Fact  701: input=[7, 60, 10] → label=11  (CI=0.745)
+    Fact  188: input=[22, 3, 16] → label=11  (CI=0.738)
+
+  [Rank 53] Component 62 (mean CI=0.008): 6 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  150: input=[42, 21, 23] → label=21  (CI=1.000)
+    Fact  234: input=[1, 11, 23] → label=21  (CI=1.000)
+    Fact  266: input=[46, 19, 60] → label=21  (CI=1.000)
+    Fact  400: input=[60, 56, 32] → label=21  (CI=1.000)
+    Fact  441: input=[63, 52, 2] → label=21  (CI=1.000)
+    Fact  589: input=[19, 63, 36] → label=21  (CI=1.000)
+
+  [Rank 54] Component 79 (mean CI=0.008): 6 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  167: input=[58, 61, 9] → label=59  (CI=1.000)
+    Fact  181: input=[52, 34, 11] → label=52  (CI=1.000)
+    Fact  332: input=[38, 61, 19] → label=59  (CI=1.000)
+    Fact  424: input=[16, 61, 59] → label=52  (CI=1.000)
+    Fact  431: input=[18, 30, 36] → label=59  (CI=1.000)
+    Fact  503: input=[17, 4, 31] → label=52  (CI=1.000)
+
+  [Rank 55] Component 46 (mean CI=0.008): 6 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  137: input=[29, 37, 19] → label=17  (CI=1.000)
+    Fact  438: input=[42, 45, 49] → label=17  (CI=1.000)
+    Fact  461: input=[48, 32, 20] → label=17  (CI=1.000)
+    Fact  493: input=[55, 56, 34] → label=17  (CI=1.000)
+    Fact  528: input=[29, 23, 28] → label=17  (CI=1.000)
+    Fact  738: input=[29, 17, 47] → label=17  (CI=1.000)
+
+  [Rank 56] Component 83 (mean CI=0.008): 6 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact    2: input=[15, 52, 44] → label=48  (CI=1.000)
+    Fact   13: input=[53, 23, 55] → label=44  (CI=1.000)
+    Fact  381: input=[27, 10, 8] → label=48  (CI=1.000)
+    Fact  525: input=[28, 25, 28] → label=48  (CI=1.000)
+    Fact  648: input=[13, 41, 10] → label=44  (CI=1.000)
+    Fact  698: input=[51, 17, 8] → label=44  (CI=1.000)
+
+  [Rank 57] Component 44 (mean CI=0.008): 6 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  127: input=[57, 31, 61] → label=60  (CI=1.000)
+    Fact  138: input=[12, 25, 7] → label=60  (CI=1.000)
+    Fact  153: input=[33, 12, 7] → label=60  (CI=1.000)
+    Fact  365: input=[1, 31, 40] → label=60  (CI=1.000)
+    Fact  551: input=[42, 36, 58] → label=60  (CI=1.000)
+    Fact  741: input=[15, 61, 46] → label=60  (CI=1.000)
+
+  [Rank 58] Component 57 (mean CI=0.007): 6 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   99: input=[39, 22, 63] → label=40  (CI=1.000)
+    Fact  159: input=[5, 38, 21] → label=0  (CI=1.000)
+    Fact  655: input=[52, 56, 41] → label=40  (CI=1.000)
+    Fact  658: input=[1, 59, 16] → label=40  (CI=1.000)
+    Fact  726: input=[34, 16, 19] → label=40  (CI=1.000)
+    Fact  668: input=[14, 6, 40] → label=40  (CI=0.631)
+
+  [Rank 59] Component 105 (mean CI=0.007): 6 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  169: input=[23, 6, 16] → label=50  (CI=1.000)
+    Fact  276: input=[36, 63, 47] → label=50  (CI=1.000)
+    Fact  471: input=[45, 51, 21] → label=50  (CI=1.000)
+    Fact  557: input=[3, 44, 53] → label=50  (CI=1.000)
+    Fact  591: input=[17, 47, 19] → label=50  (CI=1.000)
+    Fact  579: input=[3, 58, 38] → label=50  (CI=0.620)
+
+  [Rank 60] Component 28 (mean CI=0.007): 6 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  192: input=[5, 19, 30] → label=24  (CI=1.000)
+    Fact  206: input=[38, 6, 10] → label=25  (CI=1.000)
+    Fact  247: input=[60, 53, 20] → label=24  (CI=1.000)
+    Fact  689: input=[13, 4, 26] → label=25  (CI=1.000)
+    Fact  232: input=[63, 48, 59] → label=25  (CI=0.872)
+    Fact  369: input=[31, 9, 45] → label=25  (CI=0.519)
+
+  [Rank 61] Component 5 (mean CI=0.007): 5 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  216: input=[18, 17, 49] → label=26  (CI=1.000)
+    Fact  498: input=[0, 15, 2] → label=26  (CI=1.000)
+    Fact  564: input=[11, 38, 40] → label=26  (CI=1.000)
+    Fact  581: input=[63, 53, 42] → label=26  (CI=1.000)
+    Fact  721: input=[39, 15, 10] → label=26  (CI=1.000)
+
+  [Rank 62] Component 37 (mean CI=0.007): 5 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   62: input=[17, 22, 51] → label=46  (CI=1.000)
+    Fact  419: input=[44, 35, 0] → label=46  (CI=1.000)
+    Fact  506: input=[14, 19, 29] → label=46  (CI=1.000)
+    Fact  513: input=[24, 14, 10] → label=46  (CI=1.000)
+    Fact  574: input=[14, 6, 31] → label=46  (CI=1.000)
+
+  [Rank 63] Component 99 (mean CI=0.007): 5 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  116: input=[35, 18, 32] → label=57  (CI=1.000)
+    Fact  239: input=[53, 25, 50] → label=57  (CI=1.000)
+    Fact  244: input=[5, 18, 22] → label=62  (CI=1.000)
+    Fact  279: input=[41, 33, 53] → label=62  (CI=1.000)
+    Fact  713: input=[48, 60, 33] → label=57  (CI=1.000)
+
+  [Rank 64] Component 117 (mean CI=0.006): 5 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  289: input=[26, 23, 44] → label=33  (CI=1.000)
+    Fact  338: input=[35, 43, 36] → label=33  (CI=1.000)
+    Fact  688: input=[52, 4, 54] → label=33  (CI=1.000)
+    Fact  742: input=[49, 55, 57] → label=33  (CI=1.000)
+    Fact  484: input=[9, 16, 25] → label=33  (CI=0.841)
+
+  [Rank 65] Component 67 (mean CI=0.006): 5 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  176: input=[9, 21, 55] → label=48  (CI=1.000)
+    Fact  396: input=[21, 35, 22] → label=48  (CI=1.000)
+    Fact  561: input=[40, 55, 63] → label=48  (CI=1.000)
+    Fact  659: input=[44, 11, 56] → label=48  (CI=1.000)
+    Fact  590: input=[29, 39, 18] → label=48  (CI=0.780)
+
+  [Rank 66] Component 100 (mean CI=0.006): 5 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  241: input=[35, 7, 21] → label=0  (CI=1.000)
+    Fact  367: input=[47, 4, 8] → label=0  (CI=1.000)
+    Fact  385: input=[18, 19, 47] → label=0  (CI=1.000)
+    Fact  650: input=[4, 10, 29] → label=0  (CI=1.000)
+    Fact  331: input=[44, 2, 52] → label=0  (CI=0.728)
+
+  [Rank 67] Component 112 (mean CI=0.005): 4 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  123: input=[2, 33, 62] → label=30  (CI=1.000)
+    Fact  293: input=[14, 58, 34] → label=30  (CI=1.000)
+    Fact  468: input=[18, 37, 25] → label=30  (CI=1.000)
+    Fact  750: input=[7, 1, 49] → label=30  (CI=1.000)
+
+  [Rank 68] Component 9 (mean CI=0.005): 4 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  103: input=[20, 33, 21] → label=57  (CI=1.000)
+    Fact  485: input=[16, 52, 5] → label=21  (CI=1.000)
+    Fact  568: input=[39, 23, 40] → label=21  (CI=1.000)
+    Fact  651: input=[4, 2, 11] → label=57  (CI=1.000)
+
+  [Rank 69] Component 69 (mean CI=0.005): 4 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  412: input=[20, 26, 62] → label=1  (CI=1.000)
+    Fact  614: input=[46, 42, 40] → label=1  (CI=1.000)
+    Fact  730: input=[41, 61, 42] → label=1  (CI=1.000)
+    Fact   52: input=[1, 36, 13] → label=1  (CI=0.876)
+
+  [Rank 70] Component 84 (mean CI=0.005): 4 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact    3: input=[34, 1, 6] → label=37  (CI=1.000)
+    Fact  278: input=[53, 7, 28] → label=37  (CI=1.000)
+    Fact  715: input=[60, 22, 39] → label=2  (CI=1.000)
+    Fact  411: input=[63, 7, 18] → label=37  (CI=0.812)
+
+  [Rank 71] Component 59 (mean CI=0.005): 4 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  277: input=[0, 28, 59] → label=42  (CI=1.000)
+    Fact  335: input=[42, 33, 41] → label=42  (CI=1.000)
+    Fact  754: input=[25, 58, 35] → label=42  (CI=1.000)
+    Fact  406: input=[50, 61, 9] → label=42  (CI=0.707)
+
+  [Rank 72] Component 127 (mean CI=0.005): 4 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   45: input=[25, 14, 55] → label=59  (CI=1.000)
+    Fact   74: input=[0, 8, 45] → label=59  (CI=1.000)
+    Fact  305: input=[59, 15, 49] → label=59  (CI=1.000)
+    Fact  167: input=[58, 61, 9] → label=59  (CI=0.690)
+
+  [Rank 73] Component 3 (mean CI=0.004): 3 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  337: input=[41, 21, 46] → label=47  (CI=1.000)
+    Fact  649: input=[23, 3, 41] → label=47  (CI=1.000)
+    Fact  704: input=[20, 27, 46] → label=47  (CI=1.000)
+
+  [Rank 74] Component 61 (mean CI=0.004): 3 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  228: input=[32, 6, 6] → label=14  (CI=1.000)
+    Fact  502: input=[24, 4, 10] → label=14  (CI=1.000)
+    Fact  740: input=[53, 25, 4] → label=14  (CI=1.000)
+
+  [Rank 75] Component 60 (mean CI=0.004): 3 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   11: input=[1, 54, 53] → label=24  (CI=1.000)
+    Fact  119: input=[10, 20, 25] → label=24  (CI=1.000)
+    Fact  603: input=[19, 24, 12] → label=24  (CI=1.000)
+
+  [Rank 76] Component 119 (mean CI=0.004): 3 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  315: input=[24, 32, 20] → label=58  (CI=1.000)
+    Fact  457: input=[30, 15, 55] → label=58  (CI=1.000)
+    Fact  767: input=[46, 52, 21] → label=58  (CI=1.000)
+
+  [Rank 77] Component 10 (mean CI=0.004): 3 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   96: input=[36, 45, 35] → label=61  (CI=1.000)
+    Fact  653: input=[17, 60, 44] → label=61  (CI=1.000)
+    Fact  592: input=[13, 35, 58] → label=42  (CI=0.744)
+
+  [Rank 78] Component 25 (mean CI=0.003): 3 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  270: input=[60, 33, 6] → label=41  (CI=1.000)
+    Fact  291: input=[33, 32, 45] → label=41  (CI=1.000)
+    Fact   98: input=[2, 0, 33] → label=41  (CI=0.603)
+
+  [Rank 79] Component 0 (mean CI=0.003): 2 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  214: input=[6, 58, 54] → label=45  (CI=1.000)
+    Fact  391: input=[42, 50, 0] → label=5  (CI=1.000)
+
+  [Rank 80] Component 13 (mean CI=0.003): 2 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  190: input=[42, 46, 0] → label=55  (CI=1.000)
+    Fact  437: input=[18, 39, 11] → label=55  (CI=1.000)
+
+  [Rank 81] Component 54 (mean CI=0.003): 2 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   39: input=[33, 24, 19] → label=63  (CI=1.000)
+    Fact  264: input=[33, 14, 50] → label=63  (CI=1.000)
+
+  [Rank 82] Component 93 (mean CI=0.003): 2 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  274: input=[53, 55, 31] → label=57  (CI=1.000)
+    Fact  439: input=[62, 55, 14] → label=57  (CI=1.000)
+
+  [Rank 83] Component 86 (mean CI=0.003): 2 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  494: input=[37, 32, 55] → label=25  (CI=1.000)
+    Fact  580: input=[33, 60, 55] → label=25  (CI=1.000)
+
+  [Rank 84] Component 33 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  739: input=[22, 58, 7] → label=37  (CI=1.000)
+
+  [Rank 85] Component 114 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  486: input=[18, 58, 26] → label=8  (CI=1.000)
+
+  [Rank 86] Component 18 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  229: input=[37, 28, 23] → label=4  (CI=1.000)
+
+  [Rank 87] Component 23 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  623: input=[0, 1, 62] → label=26  (CI=1.000)
+
+  [Rank 88] Component 45 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  395: input=[10, 26, 41] → label=29  (CI=1.000)
+
+  [Rank 89] Component 52 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  576: input=[53, 47, 28] → label=9  (CI=1.000)
+
+  [Rank 90] Component 64 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  504: input=[53, 17, 49] → label=10  (CI=1.000)
+
+  [Rank 91] Component 55 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  193: input=[48, 33, 19] → label=24  (CI=1.000)
+
+  [Rank 92] Component 96 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   92: input=[11, 17, 17] → label=56  (CI=0.693)
+
+  [Rank 93] Component 109 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact  417: input=[22, 39, 40] → label=4  (CI=0.487)
+
+  [Rank 94] Component 42 (mean CI=0.001): 1 facts above threshold
+  ────────────────────────────────────────────────────────────
+    Fact   89: input=[61, 12, 31] → label=62  (CI=0.474)
+
+  [Rank 95] Component 78 (mean CI=0.000): No facts above threshold
+
+  [Rank 96] Component 111 (mean CI=0.000): No facts above threshold
+
+  [Rank 97] Component 53 (mean CI=0.000): No facts above threshold
+
+  [Rank 98] Component 17 (mean CI=0.000): No facts above threshold
+
+  [Rank 99] Component 80 (mean CI=0.000): No facts above threshold
+
+  [Rank 100] Component 16 (mean CI=0.000): No facts above threshold
+
+  [Rank 101] Component 14 (mean CI=0.000): No facts above threshold
+
+  [Rank 102] Component 12 (mean CI=0.000): No facts above threshold
+
+  [Rank 103] Component 108 (mean CI=0.000): No facts above threshold
+
+  [Rank 104] Component 120 (mean CI=0.000): No facts above threshold
+
+  [Rank 105] Component 121 (mean CI=0.000): No facts above threshold
+
+  [Rank 106] Component 8 (mean CI=0.000): No facts above threshold
+
+  [Rank 107] Component 124 (mean CI=0.000): No facts above threshold
+
+  [Rank 108] Component 4 (mean CI=0.000): No facts above threshold
+
+  [Rank 109] Component 66 (mean CI=0.000): No facts above threshold
+
+  [Rank 110] Component 70 (mean CI=0.000): No facts above threshold
+
+  [Rank 111] Component 34 (mean CI=0.000): No facts above threshold
+
+  [Rank 112] Component 47 (mean CI=0.000): No facts above threshold
+
+  [Rank 113] Component 90 (mean CI=0.000): No facts above threshold
+
+  [Rank 114] Component 43 (mean CI=0.000): No facts above threshold
+
+  [Rank 115] Component 48 (mean CI=0.000): No facts above threshold
+
+  [Rank 116] Component 39 (mean CI=0.000): No facts above threshold
+
+  [Rank 117] Component 38 (mean CI=0.000): No facts above threshold
+
+  [Rank 118] Component 97 (mean CI=0.000): No facts above threshold
+
+  [Rank 119] Component 98 (mean CI=0.000): No facts above threshold
+
+  [Rank 120] Component 110 (mean CI=0.000): No facts above threshold
+
+  [Rank 121] Component 71 (mean CI=0.000): No facts above threshold
+
+  [Rank 122] Component 101 (mean CI=0.000): No facts above threshold
+
+  [Rank 123] Component 32 (mean CI=0.000): No facts above threshold
+
+  [Rank 124] Component 30 (mean CI=0.000): No facts above threshold
+
+  [Rank 125] Component 26 (mean CI=0.000): No facts above threshold
+
+  [Rank 126] Component 51 (mean CI=0.000): No facts above threshold
+
+  [Rank 127] Component 21 (mean CI=0.000): No facts above threshold
+
+  [Rank 128] Component 88 (mean CI=0.000): No facts above threshold
+
+================================================================================
+SUMMARY STATISTICS
+================================================================================
+
+unembed:
+  [Rank  1] Component 126: active on   32/768 facts, mean CI=0.038, max CI=1.000
+  [Rank  2] Component  94: active on   25/768 facts, mean CI=0.032, max CI=1.000
+  [Rank  3] Component  24: active on   25/768 facts, mean CI=0.031, max CI=1.000
+  [Rank  4] Component 115: active on   19/768 facts, mean CI=0.024, max CI=1.000
+  [Rank  5] Component 123: active on   18/768 facts, mean CI=0.023, max CI=1.000
+  [Rank  6] Component  58: active on   18/768 facts, mean CI=0.023, max CI=1.000
+  [Rank  7] Component  77: active on   18/768 facts, mean CI=0.022, max CI=1.000
+  [Rank  8] Component  11: active on   17/768 facts, mean CI=0.022, max CI=1.000
+  [Rank  9] Component 102: active on   16/768 facts, mean CI=0.021, max CI=1.000
+  [Rank 10] Component  36: active on   17/768 facts, mean CI=0.021, max CI=1.000
+  [Rank 11] Component  40: active on   16/768 facts, mean CI=0.021, max CI=1.000
+  [Rank 12] Component  92: active on   16/768 facts, mean CI=0.021, max CI=1.000
+  [Rank 13] Component  74: active on   16/768 facts, mean CI=0.020, max CI=1.000
+  [Rank 14] Component 107: active on   17/768 facts, mean CI=0.020, max CI=1.000
+  [Rank 15] Component 113: active on   15/768 facts, mean CI=0.020, max CI=1.000
+  [Rank 16] Component 106: active on   15/768 facts, mean CI=0.020, max CI=1.000
+  [Rank 17] Component  75: active on   15/768 facts, mean CI=0.019, max CI=1.000
+  [Rank 18] Component 118: active on   14/768 facts, mean CI=0.018, max CI=1.000
+  [Rank 19] Component  50: active on   13/768 facts, mean CI=0.017, max CI=1.000
+  [Rank 20] Component  72: active on   13/768 facts, mean CI=0.017, max CI=1.000
+  [Rank 21] Component  68: active on   13/768 facts, mean CI=0.017, max CI=1.000
+  [Rank 22] Component  31: active on   13/768 facts, mean CI=0.016, max CI=1.000
+  [Rank 23] Component  29: active on   12/768 facts, mean CI=0.016, max CI=1.000
+  [Rank 24] Component 122: active on   12/768 facts, mean CI=0.016, max CI=1.000
+  [Rank 25] Component  41: active on   13/768 facts, mean CI=0.016, max CI=1.000
+  [Rank 26] Component 116: active on   12/768 facts, mean CI=0.015, max CI=1.000
+  [Rank 27] Component  27: active on   12/768 facts, mean CI=0.015, max CI=1.000
+  [Rank 28] Component   6: active on   11/768 facts, mean CI=0.014, max CI=1.000
+  [Rank 29] Component  85: active on   11/768 facts, mean CI=0.014, max CI=1.000
+  [Rank 30] Component   2: active on   11/768 facts, mean CI=0.014, max CI=1.000
+  [Rank 31] Component 103: active on   11/768 facts, mean CI=0.014, max CI=1.000
+  [Rank 32] Component   7: active on   11/768 facts, mean CI=0.014, max CI=1.000
+  [Rank 33] Component  81: active on   10/768 facts, mean CI=0.013, max CI=1.000
+  [Rank 34] Component   1: active on   10/768 facts, mean CI=0.013, max CI=1.000
+  [Rank 35] Component  49: active on   10/768 facts, mean CI=0.012, max CI=1.000
+  [Rank 36] Component  82: active on    9/768 facts, mean CI=0.012, max CI=1.000
+  [Rank 37] Component  20: active on    9/768 facts, mean CI=0.012, max CI=1.000
+  [Rank 38] Component  89: active on    9/768 facts, mean CI=0.011, max CI=1.000
+  [Rank 39] Component  19: active on    9/768 facts, mean CI=0.011, max CI=1.000
+  [Rank 40] Component  22: active on    9/768 facts, mean CI=0.011, max CI=1.000
+  [Rank 41] Component  56: active on    9/768 facts, mean CI=0.011, max CI=1.000
+  [Rank 42] Component  35: active on    8/768 facts, mean CI=0.010, max CI=1.000
+  [Rank 43] Component  15: active on    8/768 facts, mean CI=0.010, max CI=1.000
+  [Rank 44] Component  95: active on    8/768 facts, mean CI=0.010, max CI=1.000
+  [Rank 45] Component 104: active on    8/768 facts, mean CI=0.010, max CI=1.000
+  [Rank 46] Component  73: active on    8/768 facts, mean CI=0.010, max CI=1.000
+  [Rank 47] Component  91: active on    8/768 facts, mean CI=0.010, max CI=1.000
+  [Rank 48] Component  76: active on    8/768 facts, mean CI=0.009, max CI=1.000
+  [Rank 49] Component 125: active on    7/768 facts, mean CI=0.009, max CI=1.000
+  [Rank 50] Component  87: active on    7/768 facts, mean CI=0.009, max CI=1.000
+  [Rank 51] Component  65: active on    7/768 facts, mean CI=0.009, max CI=1.000
+  [Rank 52] Component  63: active on    7/768 facts, mean CI=0.008, max CI=1.000
+  [Rank 53] Component  62: active on    6/768 facts, mean CI=0.008, max CI=1.000
+  [Rank 54] Component  79: active on    6/768 facts, mean CI=0.008, max CI=1.000
+  [Rank 55] Component  46: active on    6/768 facts, mean CI=0.008, max CI=1.000
+  [Rank 56] Component  83: active on    6/768 facts, mean CI=0.008, max CI=1.000
+  [Rank 57] Component  44: active on    6/768 facts, mean CI=0.008, max CI=1.000
+  [Rank 58] Component  57: active on    6/768 facts, mean CI=0.007, max CI=1.000
+  [Rank 59] Component 105: active on    6/768 facts, mean CI=0.007, max CI=1.000
+  [Rank 60] Component  28: active on    6/768 facts, mean CI=0.007, max CI=1.000
+  [Rank 61] Component   5: active on    5/768 facts, mean CI=0.007, max CI=1.000
+  [Rank 62] Component  37: active on    5/768 facts, mean CI=0.007, max CI=1.000
+  [Rank 63] Component  99: active on    5/768 facts, mean CI=0.007, max CI=1.000
+  [Rank 64] Component 117: active on    5/768 facts, mean CI=0.006, max CI=1.000
+  [Rank 65] Component  67: active on    5/768 facts, mean CI=0.006, max CI=1.000
+  [Rank 66] Component 100: active on    5/768 facts, mean CI=0.006, max CI=1.000
+  [Rank 67] Component 112: active on    4/768 facts, mean CI=0.005, max CI=1.000
+  [Rank 68] Component   9: active on    4/768 facts, mean CI=0.005, max CI=1.000
+  [Rank 69] Component  69: active on    4/768 facts, mean CI=0.005, max CI=1.000
+  [Rank 70] Component  84: active on    4/768 facts, mean CI=0.005, max CI=1.000
+  [Rank 71] Component  59: active on    4/768 facts, mean CI=0.005, max CI=1.000
+  [Rank 72] Component 127: active on    4/768 facts, mean CI=0.005, max CI=1.000
+  [Rank 73] Component   3: active on    3/768 facts, mean CI=0.004, max CI=1.000
+  [Rank 74] Component  61: active on    3/768 facts, mean CI=0.004, max CI=1.000
+  [Rank 75] Component  60: active on    3/768 facts, mean CI=0.004, max CI=1.000
+  [Rank 76] Component 119: active on    3/768 facts, mean CI=0.004, max CI=1.000
+  [Rank 77] Component  10: active on    3/768 facts, mean CI=0.004, max CI=1.000
+  [Rank 78] Component  25: active on    3/768 facts, mean CI=0.003, max CI=1.000
+  [Rank 79] Component   0: active on    2/768 facts, mean CI=0.003, max CI=1.000
+  [Rank 80] Component  13: active on    2/768 facts, mean CI=0.003, max CI=1.000
+  [Rank 81] Component  54: active on    2/768 facts, mean CI=0.003, max CI=1.000
+  [Rank 82] Component  93: active on    2/768 facts, mean CI=0.003, max CI=1.000
+  [Rank 83] Component  86: active on    2/768 facts, mean CI=0.003, max CI=1.000
+  [Rank 84] Component  33: active on    1/768 facts, mean CI=0.001, max CI=1.000
+  [Rank 85] Component 114: active on    1/768 facts, mean CI=0.001, max CI=1.000
+  [Rank 86] Component  18: active on    1/768 facts, mean CI=0.001, max CI=1.000
+  [Rank 87] Component  23: active on    1/768 facts, mean CI=0.001, max CI=1.000
+  [Rank 88] Component  45: active on    1/768 facts, mean CI=0.001, max CI=1.000
+  [Rank 89] Component  52: active on    1/768 facts, mean CI=0.001, max CI=1.000
+  [Rank 90] Component  64: active on    1/768 facts, mean CI=0.001, max CI=1.000
+  [Rank 91] Component  55: active on    1/768 facts, mean CI=0.001, max CI=1.000
+  [Rank 92] Component  96: active on    1/768 facts, mean CI=0.001, max CI=0.693
+  [Rank 93] Component 109: active on    1/768 facts, mean CI=0.001, max CI=0.487
+  [Rank 94] Component  42: active on    1/768 facts, mean CI=0.001, max CI=0.474
+  [Rank 95] Component  78: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 96] Component 111: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 97] Component  53: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 98] Component  17: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 99] Component  80: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 100] Component  16: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 101] Component  14: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 102] Component  12: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 103] Component 108: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 104] Component 120: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 105] Component 121: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 106] Component   8: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 107] Component 124: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 108] Component   4: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 109] Component  66: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 110] Component  70: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 111] Component  34: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 112] Component  47: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 113] Component  90: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 114] Component  43: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 115] Component  48: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 116] Component  39: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 117] Component  38: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 118] Component  97: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 119] Component  98: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 120] Component 110: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 121] Component  71: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 122] Component 101: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 123] Component  32: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 124] Component  30: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 125] Component  26: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 126] Component  51: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 127] Component  21: active on    0/768 facts, mean CI=0.000, max CI=0.000
+  [Rank 128] Component  88: active on    0/768 facts, mean CI=0.000, max CI=0.000
+
+================================================================================
+PER-FACT COMPONENT ANALYSIS
+================================================================================
+
+================================================================================
+MODULE: unembed
+================================================================================
+
+  Fact    0: input=[58, 36, 35] → label=11
+    1 components above threshold:
+      C87(1.000)
+
+  Fact    1: input=[26, 27, 25] → label=29
+    1 components above threshold:
+      C11(1.000)
+
+  Fact    2: input=[15, 52, 44] → label=48
+    1 components above threshold:
+      C83(1.000)
+
+  Fact    3: input=[34, 1, 6] → label=37
+    1 components above threshold:
+      C84(1.000)
+
+  Fact    4: input=[11, 56, 28] → label=25
+    1 components above threshold:
+      C118(1.000)
+
+  Fact    5: input=[25, 52, 40] → label=41
+    1 components above threshold:
+      C58(1.000)
+
+  Fact    6: input=[28, 41, 23] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact    7: input=[39, 60, 23] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact    8: input=[4, 9, 22] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact    9: input=[34, 17, 46] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact   10: input=[15, 22, 59] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact   11: input=[1, 54, 53] → label=24
+    1 components above threshold:
+      C60(1.000)
+
+  Fact   12: input=[37, 52, 50] → label=0
+    1 components above threshold:
+      C27(0.876)
+
+  Fact   13: input=[53, 23, 55] → label=44
+    1 components above threshold:
+      C83(1.000)
+
+  Fact   14: input=[52, 37, 43] → label=63
+    1 components above threshold:
+      C41(0.906)
+
+  Fact   15: input=[11, 63, 28] → label=11
+    1 components above threshold:
+      C87(1.000)
+
+  Fact   16: input=[39, 37, 57] → label=63
+    1 components above threshold:
+      C41(1.000)
+
+  Fact   17: input=[33, 63, 53] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact   18: input=[11, 37, 20] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact   19: input=[22, 25, 52] → label=42
+    1 components above threshold:
+      C126(1.000)
+
+  Fact   20: input=[56, 26, 44] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact   21: input=[50, 9, 29] → label=32
+    1 components above threshold:
+      C82(1.000)
+
+  Fact   22: input=[28, 21, 62] → label=49
+    2 components above threshold:
+      C95(1.000), C36(0.902)
+
+  Fact   23: input=[12, 59, 23] → label=3
+    1 components above threshold:
+      C126(0.809)
+
+  Fact   24: input=[62, 34, 60] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact   25: input=[62, 32, 9] → label=3
+    1 components above threshold:
+      C126(0.922)
+
+  Fact   26: input=[24, 35, 22] → label=28
+    1 components above threshold:
+      C7(1.000)
+
+  Fact   27: input=[63, 54, 20] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact   28: input=[56, 10, 21] → label=46
+    1 components above threshold:
+      C73(1.000)
+
+  Fact   29: input=[45, 25, 4] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact   30: input=[25, 14, 31] → label=61
+    1 components above threshold:
+      C115(1.000)
+
+  Fact   31: input=[60, 27, 38] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact   32: input=[54, 15, 42] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact   33: input=[22, 56, 59] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact   34: input=[11, 44, 13] → label=28
+    1 components above threshold:
+      C7(1.000)
+
+  Fact   35: input=[7, 11, 63] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact   36: input=[37, 30, 3] → label=55
+    1 components above threshold:
+      C107(0.968)
+
+  Fact   37: input=[41, 20, 13] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact   38: input=[49, 17, 45] → label=20
+    1 components above threshold:
+      C31(1.000)
+
+  Fact   39: input=[33, 24, 19] → label=63
+    2 components above threshold:
+      C54(1.000), C41(0.458)
+
+  Fact   40: input=[14, 62, 51] → label=3
+    1 components above threshold:
+      C126(1.000)
+
+  Fact   41: input=[2, 40, 51] → label=39
+    1 components above threshold:
+      C24(1.000)
+
+  Fact   42: input=[48, 54, 44] → label=0
+    1 components above threshold:
+      C27(1.000)
+
+  Fact   43: input=[34, 0, 26] → label=20
+    1 components above threshold:
+      C31(1.000)
+
+  Fact   44: input=[52, 33, 22] → label=50
+    1 components above threshold:
+      C35(1.000)
+
+  Fact   45: input=[25, 14, 55] → label=59
+    1 components above threshold:
+      C127(1.000)
+
+  Fact   46: input=[32, 23, 24] → label=16
+    1 components above threshold:
+      C116(1.000)
+
+  Fact   47: input=[37, 54, 35] → label=1
+    1 components above threshold:
+      C115(1.000)
+
+  Fact   48: input=[61, 15, 42] → label=25
+    1 components above threshold:
+      C118(1.000)
+
+  Fact   49: input=[24, 29, 63] → label=49
+    1 components above threshold:
+      C56(1.000)
+
+  Fact   50: input=[52, 46, 45] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact   51: input=[43, 58, 13] → label=0
+    1 components above threshold:
+      C27(1.000)
+
+  Fact   52: input=[1, 36, 13] → label=1
+    1 components above threshold:
+      C69(0.876)
+
+  Fact   53: input=[28, 26, 31] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact   54: input=[21, 32, 19] → label=32
+    1 components above threshold:
+      C82(1.000)
+
+  Fact   55: input=[24, 6, 50] → label=45
+    1 components above threshold:
+      C77(0.814)
+
+  Fact   56: input=[49, 7, 31] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact   57: input=[44, 58, 6] → label=30
+    2 components above threshold:
+      C85(1.000), C36(0.655)
+
+  Fact   58: input=[3, 7, 1] → label=8
+    1 components above threshold:
+      C123(1.000)
+
+  Fact   59: input=[1, 10, 40] → label=4
+    1 components above threshold:
+      C116(0.858)
+
+  Fact   60: input=[20, 21, 32] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact   61: input=[32, 20, 3] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact   62: input=[17, 22, 51] → label=46
+    1 components above threshold:
+      C37(1.000)
+
+  Fact   63: input=[60, 34, 4] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact   64: input=[52, 57, 31] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact   65: input=[52, 6, 11] → label=8
+    1 components above threshold:
+      C123(1.000)
+
+  Fact   66: input=[8, 29, 8] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact   67: input=[45, 10, 61] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact   68: input=[42, 49, 42] → label=29
+    1 components above threshold:
+      C92(1.000)
+
+  Fact   69: input=[49, 31, 20] → label=24
+    1 components above threshold:
+      C91(1.000)
+
+  Fact   70: input=[20, 31, 39] → label=26
+    1 components above threshold:
+      C19(1.000)
+
+  Fact   71: input=[27, 4, 16] → label=58
+    1 components above threshold:
+      C73(0.921)
+
+  Fact   72: input=[58, 28, 17] → label=31
+    1 components above threshold:
+      C56(1.000)
+
+  Fact   73: input=[46, 27, 51] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact   74: input=[0, 8, 45] → label=59
+    1 components above threshold:
+      C127(1.000)
+
+  Fact   75: input=[32, 56, 42] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact   76: input=[3, 62, 20] → label=40
+    1 components above threshold:
+      C92(1.000)
+
+  Fact   77: input=[43, 25, 57] → label=62
+    1 components above threshold:
+      C74(1.000)
+
+  Fact   78: input=[34, 3, 12] → label=6
+    1 components above threshold:
+      C2(1.000)
+
+  Fact   79: input=[63, 47, 0] → label=29
+    2 components above threshold:
+      C11(1.000), C92(0.869)
+
+  Fact   80: input=[51, 11, 27] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact   81: input=[51, 54, 39] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact   82: input=[49, 1, 36] → label=2
+    1 components above threshold:
+      C7(1.000)
+
+  Fact   83: input=[21, 56, 16] → label=24
+    2 components above threshold:
+      C75(1.000), C91(1.000)
+
+  Fact   84: input=[61, 9, 51] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact   85: input=[33, 26, 47] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact   86: input=[34, 59, 43] → label=49
+    1 components above threshold:
+      C56(1.000)
+
+  Fact   87: input=[20, 60, 39] → label=1
+    1 components above threshold:
+      C115(1.000)
+
+  Fact   88: input=[51, 22, 39] → label=31
+    1 components above threshold:
+      C22(1.000)
+
+  Fact   89: input=[61, 12, 31] → label=62
+    2 components above threshold:
+      C74(0.967), C42(0.474)
+
+  Fact   90: input=[39, 18, 57] → label=26
+    1 components above threshold:
+      C115(1.000)
+
+  Fact   91: input=[29, 0, 18] → label=2
+    1 components above threshold:
+      C125(1.000)
+
+  Fact   92: input=[11, 17, 17] → label=56
+    2 components above threshold:
+      C50(1.000), C96(0.693)
+
+  Fact   93: input=[36, 40, 55] → label=29
+    1 components above threshold:
+      C11(1.000)
+
+  Fact   94: input=[31, 33, 63] → label=1
+    1 components above threshold:
+      C115(1.000)
+
+  Fact   95: input=[57, 5, 41] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact   96: input=[36, 45, 35] → label=61
+    1 components above threshold:
+      C10(1.000)
+
+  Fact   97: input=[51, 46, 7] → label=4
+    1 components above threshold:
+      C116(0.943)
+
+  Fact   98: input=[2, 0, 33] → label=41
+    2 components above threshold:
+      C58(1.000), C25(0.603)
+
+  Fact   99: input=[39, 22, 63] → label=40
+    1 components above threshold:
+      C57(1.000)
+
+  Fact  100: input=[47, 13, 18] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  101: input=[50, 33, 37] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  102: input=[17, 39, 22] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  103: input=[20, 33, 21] → label=57
+    1 components above threshold:
+      C9(1.000)
+
+  Fact  104: input=[60, 38, 49] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  105: input=[23, 5, 35] → label=16
+    1 components above threshold:
+      C95(1.000)
+
+  Fact  106: input=[1, 19, 27] → label=6
+    1 components above threshold:
+      C2(1.000)
+
+  Fact  107: input=[33, 51, 61] → label=34
+    1 components above threshold:
+      C94(0.724)
+
+  Fact  108: input=[59, 7, 2] → label=20
+    1 components above threshold:
+      C31(1.000)
+
+  Fact  109: input=[7, 21, 27] → label=61
+    1 components above threshold:
+      C104(1.000)
+
+  Fact  110: input=[59, 18, 12] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  111: input=[12, 50, 33] → label=32
+    1 components above threshold:
+      C82(1.000)
+
+  Fact  112: input=[15, 8, 46] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  113: input=[22, 63, 10] → label=9
+    1 components above threshold:
+      C20(1.000)
+
+  Fact  114: input=[4, 37, 29] → label=37
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  115: input=[10, 41, 53] → label=63
+    1 components above threshold:
+      C41(1.000)
+
+  Fact  116: input=[35, 18, 32] → label=57
+    1 components above threshold:
+      C99(1.000)
+
+  Fact  117: input=[53, 4, 47] → label=16
+    1 components above threshold:
+      C116(1.000)
+
+  Fact  118: input=[3, 30, 52] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  119: input=[10, 20, 25] → label=24
+    1 components above threshold:
+      C60(1.000)
+
+  Fact  120: input=[57, 39, 1] → label=3
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  121: input=[59, 59, 11] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  122: input=[47, 14, 34] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact  123: input=[2, 33, 62] → label=30
+    1 components above threshold:
+      C112(1.000)
+
+  Fact  124: input=[60, 53, 29] → label=62
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  125: input=[48, 55, 17] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  126: input=[13, 3, 31] → label=4
+    1 components above threshold:
+      C2(1.000)
+
+  Fact  127: input=[57, 31, 61] → label=60
+    1 components above threshold:
+      C44(1.000)
+
+  Fact  128: input=[17, 23, 23] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  129: input=[61, 58, 39] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  130: input=[28, 22, 43] → label=63
+    1 components above threshold:
+      C41(0.871)
+
+  Fact  131: input=[9, 15, 23] → label=9
+    1 components above threshold:
+      C20(0.894)
+
+  Fact  132: input=[27, 60, 22] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  133: input=[50, 33, 17] → label=22
+    1 components above threshold:
+      C76(1.000)
+
+  Fact  134: input=[50, 4, 61] → label=45
+    1 components above threshold:
+      C77(0.971)
+
+  Fact  135: input=[44, 59, 13] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  136: input=[33, 24, 46] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  137: input=[29, 37, 19] → label=17
+    1 components above threshold:
+      C46(1.000)
+
+  Fact  138: input=[12, 25, 7] → label=60
+    1 components above threshold:
+      C44(1.000)
+
+  Fact  139: input=[35, 0, 25] → label=37
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  140: input=[29, 23, 40] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  141: input=[8, 7, 13] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  142: input=[35, 1, 41] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  143: input=[52, 33, 63] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  144: input=[12, 61, 24] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  145: input=[41, 37, 27] → label=34
+    1 components above threshold:
+      C94(0.820)
+
+  Fact  146: input=[35, 17, 11] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  147: input=[46, 11, 25] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  148: input=[63, 26, 23] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  149: input=[41, 48, 17] → label=5
+    1 components above threshold:
+      C1(0.884)
+
+  Fact  150: input=[42, 21, 23] → label=21
+    1 components above threshold:
+      C62(1.000)
+
+  Fact  151: input=[19, 37, 57] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  152: input=[8, 19, 42] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  153: input=[33, 12, 7] → label=60
+    1 components above threshold:
+      C44(1.000)
+
+  Fact  154: input=[24, 47, 60] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  155: input=[21, 10, 19] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  156: input=[6, 3, 27] → label=60
+    1 components above threshold:
+      C35(1.000)
+
+  Fact  157: input=[14, 38, 1] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  158: input=[12, 4, 27] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  159: input=[5, 38, 21] → label=0
+    1 components above threshold:
+      C57(1.000)
+
+  Fact  160: input=[15, 15, 49] → label=41
+    1 components above threshold:
+      C58(0.868)
+
+  Fact  161: input=[50, 63, 21] → label=26
+    1 components above threshold:
+      C19(1.000)
+
+  Fact  162: input=[59, 0, 8] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  163: input=[24, 8, 20] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  164: input=[11, 27, 13] → label=6
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  165: input=[1, 17, 15] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact  166: input=[52, 1, 62] → label=27
+    1 components above threshold:
+      C24(0.941)
+
+  Fact  167: input=[58, 61, 9] → label=59
+    2 components above threshold:
+      C79(1.000), C127(0.690)
+
+  Fact  168: input=[54, 48, 6] → label=61
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  169: input=[23, 6, 16] → label=50
+    1 components above threshold:
+      C105(1.000)
+
+  Fact  170: input=[23, 58, 21] → label=2
+    1 components above threshold:
+      C125(1.000)
+
+  Fact  171: input=[62, 44, 49] → label=60
+    1 components above threshold:
+      C35(1.000)
+
+  Fact  172: input=[12, 55, 29] → label=61
+    1 components above threshold:
+      C104(1.000)
+
+  Fact  173: input=[62, 29, 22] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  174: input=[15, 48, 57] → label=6
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  175: input=[16, 24, 47] → label=1
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  176: input=[9, 21, 55] → label=48
+    1 components above threshold:
+      C67(1.000)
+
+  Fact  177: input=[6, 6, 63] → label=19
+    1 components above threshold:
+      C15(1.000)
+
+  Fact  178: input=[8, 48, 29] → label=8
+    1 components above threshold:
+      C82(1.000)
+
+  Fact  179: input=[34, 7, 58] → label=4
+    2 components above threshold:
+      C2(1.000), C118(1.000)
+
+  Fact  180: input=[33, 38, 11] → label=20
+    1 components above threshold:
+      C31(0.935)
+
+  Fact  181: input=[52, 34, 11] → label=52
+    1 components above threshold:
+      C79(1.000)
+
+  Fact  182: input=[28, 10, 14] → label=19
+    1 components above threshold:
+      C15(1.000)
+
+  Fact  183: input=[15, 55, 12] → label=39
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  184: input=[14, 20, 14] → label=22
+    1 components above threshold:
+      C89(1.000)
+
+  Fact  185: input=[28, 11, 59] → label=8
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  186: input=[19, 18, 59] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  187: input=[36, 7, 52] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  188: input=[22, 3, 16] → label=11
+    2 components above threshold:
+      C107(0.937), C63(0.738)
+
+  Fact  189: input=[52, 53, 53] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  190: input=[42, 46, 0] → label=55
+    1 components above threshold:
+      C13(1.000)
+
+  Fact  191: input=[16, 15, 42] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  192: input=[5, 19, 30] → label=24
+    1 components above threshold:
+      C28(1.000)
+
+  Fact  193: input=[48, 33, 19] → label=24
+    1 components above threshold:
+      C55(1.000)
+
+  Fact  194: input=[3, 5, 24] → label=4
+    1 components above threshold:
+      C116(1.000)
+
+  Fact  195: input=[4, 1, 49] → label=42
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  196: input=[39, 36, 51] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  197: input=[10, 16, 8] → label=31
+    1 components above threshold:
+      C22(1.000)
+
+  Fact  198: input=[54, 12, 8] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  199: input=[51, 33, 4] → label=32
+    1 components above threshold:
+      C82(1.000)
+
+  Fact  200: input=[11, 59, 3] → label=28
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  201: input=[22, 55, 10] → label=56
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  202: input=[44, 50, 24] → label=41
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  203: input=[51, 62, 24] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  204: input=[28, 48, 45] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  205: input=[44, 25, 31] → label=16
+    1 components above threshold:
+      C116(1.000)
+
+  Fact  206: input=[38, 6, 10] → label=25
+    1 components above threshold:
+      C28(1.000)
+
+  Fact  207: input=[29, 3, 17] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  208: input=[40, 56, 59] → label=35
+    1 components above threshold:
+      C49(1.000)
+
+  Fact  209: input=[48, 14, 14] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  210: input=[20, 7, 45] → label=25
+    1 components above threshold:
+      C118(1.000)
+
+  Fact  211: input=[48, 41, 31] → label=16
+    1 components above threshold:
+      C95(1.000)
+
+  Fact  212: input=[37, 36, 56] → label=30
+    2 components above threshold:
+      C36(1.000), C85(1.000)
+
+  Fact  213: input=[55, 21, 40] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  214: input=[6, 58, 54] → label=45
+    1 components above threshold:
+      C0(1.000)
+
+  Fact  215: input=[25, 28, 32] → label=40
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  216: input=[18, 17, 49] → label=26
+    1 components above threshold:
+      C5(1.000)
+
+  Fact  217: input=[34, 59, 52] → label=0
+    1 components above threshold:
+      C27(0.954)
+
+  Fact  218: input=[63, 25, 45] → label=25
+    1 components above threshold:
+      C118(1.000)
+
+  Fact  219: input=[7, 18, 41] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  220: input=[54, 11, 5] → label=49
+    1 components above threshold:
+      C56(1.000)
+
+  Fact  221: input=[38, 16, 8] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  222: input=[26, 24, 24] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  223: input=[28, 39, 37] → label=9
+    1 components above threshold:
+      C20(1.000)
+
+  Fact  224: input=[57, 12, 39] → label=22
+    1 components above threshold:
+      C89(1.000)
+
+  Fact  225: input=[21, 5, 42] → label=29
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  226: input=[54, 40, 16] → label=27
+    1 components above threshold:
+      C24(0.761)
+
+  Fact  227: input=[32, 56, 53] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  228: input=[32, 6, 6] → label=14
+    1 components above threshold:
+      C61(1.000)
+
+  Fact  229: input=[37, 28, 23] → label=4
+    1 components above threshold:
+      C18(1.000)
+
+  Fact  230: input=[63, 18, 38] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  231: input=[7, 0, 6] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  232: input=[63, 48, 59] → label=25
+    2 components above threshold:
+      C118(1.000), C28(0.872)
+
+  Fact  233: input=[26, 0, 4] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  234: input=[1, 11, 23] → label=21
+    1 components above threshold:
+      C62(1.000)
+
+  Fact  235: input=[8, 58, 23] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  236: input=[12, 6, 5] → label=3
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  237: input=[18, 58, 3] → label=37
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  238: input=[28, 58, 54] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  239: input=[53, 25, 50] → label=57
+    1 components above threshold:
+      C99(1.000)
+
+  Fact  240: input=[13, 56, 13] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  241: input=[35, 7, 21] → label=0
+    1 components above threshold:
+      C100(1.000)
+
+  Fact  242: input=[19, 54, 48] → label=3
+    1 components above threshold:
+      C126(0.892)
+
+  Fact  243: input=[35, 51, 51] → label=28
+    1 components above threshold:
+      C7(1.000)
+
+  Fact  244: input=[5, 18, 22] → label=62
+    2 components above threshold:
+      C99(1.000), C74(0.905)
+
+  Fact  245: input=[55, 35, 42] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  246: input=[27, 37, 39] → label=63
+    1 components above threshold:
+      C41(0.963)
+
+  Fact  247: input=[60, 53, 20] → label=24
+    2 components above threshold:
+      C28(1.000), C77(0.734)
+
+  Fact  248: input=[24, 31, 55] → label=9
+    1 components above threshold:
+      C20(1.000)
+
+  Fact  249: input=[12, 21, 60] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  250: input=[14, 59, 46] → label=3
+    1 components above threshold:
+      C126(0.841)
+
+  Fact  251: input=[46, 58, 62] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  252: input=[45, 2, 63] → label=26
+    1 components above threshold:
+      C19(0.946)
+
+  Fact  253: input=[2, 34, 16] → label=1
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  254: input=[45, 7, 58] → label=17
+    2 components above threshold:
+      C2(1.000), C115(0.750)
+
+  Fact  255: input=[45, 27, 58] → label=19
+    1 components above threshold:
+      C22(1.000)
+
+  Fact  256: input=[21, 22, 36] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  257: input=[46, 1, 23] → label=35
+    1 components above threshold:
+      C49(1.000)
+
+  Fact  258: input=[1, 32, 4] → label=6
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  259: input=[37, 16, 12] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  260: input=[55, 29, 28] → label=31
+    1 components above threshold:
+      C56(0.939)
+
+  Fact  261: input=[53, 50, 3] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  262: input=[9, 10, 3] → label=56
+    1 components above threshold:
+      C50(0.932)
+
+  Fact  263: input=[58, 39, 30] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  264: input=[33, 14, 50] → label=63
+    1 components above threshold:
+      C54(1.000)
+
+  Fact  265: input=[14, 5, 3] → label=16
+    1 components above threshold:
+      C95(1.000)
+
+  Fact  266: input=[46, 19, 60] → label=21
+    1 components above threshold:
+      C62(1.000)
+
+  Fact  267: input=[3, 24, 21] → label=61
+    1 components above threshold:
+      C104(0.985)
+
+  Fact  268: input=[32, 56, 33] → label=25
+    1 components above threshold:
+      C118(1.000)
+
+  Fact  269: input=[26, 11, 0] → label=6
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  270: input=[60, 33, 6] → label=41
+    1 components above threshold:
+      C25(1.000)
+
+  Fact  271: input=[6, 63, 9] → label=41
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  272: input=[37, 61, 20] → label=24
+    1 components above threshold:
+      C91(1.000)
+
+  Fact  273: input=[5, 15, 56] → label=50
+    1 components above threshold:
+      C91(1.000)
+
+  Fact  274: input=[53, 55, 31] → label=57
+    1 components above threshold:
+      C93(1.000)
+
+  Fact  275: input=[0, 19, 14] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  276: input=[36, 63, 47] → label=50
+    1 components above threshold:
+      C105(1.000)
+
+  Fact  277: input=[0, 28, 59] → label=42
+    1 components above threshold:
+      C59(1.000)
+
+  Fact  278: input=[53, 7, 28] → label=37
+    1 components above threshold:
+      C84(1.000)
+
+  Fact  279: input=[41, 33, 53] → label=62
+    2 components above threshold:
+      C99(1.000), C36(0.607)
+
+  Fact  280: input=[13, 62, 59] → label=42
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  281: input=[26, 10, 14] → label=3
+    1 components above threshold:
+      C126(0.879)
+
+  Fact  282: input=[0, 59, 20] → label=45
+    1 components above threshold:
+      C65(0.804)
+
+  Fact  283: input=[46, 50, 14] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  284: input=[35, 47, 1] → label=42
+    1 components above threshold:
+      C126(0.781)
+
+  Fact  285: input=[60, 61, 38] → label=42
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  286: input=[20, 12, 24] → label=22
+    1 components above threshold:
+      C89(0.835)
+
+  Fact  287: input=[59, 62, 32] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  288: input=[15, 44, 18] → label=34
+    1 components above threshold:
+      C94(0.823)
+
+  Fact  289: input=[26, 23, 44] → label=33
+    1 components above threshold:
+      C117(1.000)
+
+  Fact  290: input=[35, 53, 45] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  291: input=[33, 32, 45] → label=41
+    1 components above threshold:
+      C25(1.000)
+
+  Fact  292: input=[32, 32, 48] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  293: input=[14, 58, 34] → label=30
+    1 components above threshold:
+      C112(1.000)
+
+  Fact  294: input=[41, 32, 29] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  295: input=[52, 5, 48] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  296: input=[58, 34, 33] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  297: input=[15, 63, 39] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  298: input=[18, 25, 31] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  299: input=[62, 9, 60] → label=35
+    1 components above threshold:
+      C49(1.000)
+
+  Fact  300: input=[1, 3, 38] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  301: input=[58, 31, 18] → label=44
+    1 components above threshold:
+      C103(0.916)
+
+  Fact  302: input=[58, 21, 3] → label=16
+    1 components above threshold:
+      C95(1.000)
+
+  Fact  303: input=[59, 49, 43] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  304: input=[23, 13, 6] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  305: input=[59, 15, 49] → label=59
+    1 components above threshold:
+      C127(1.000)
+
+  Fact  306: input=[36, 36, 11] → label=22
+    1 components above threshold:
+      C76(1.000)
+
+  Fact  307: input=[30, 31, 17] → label=28
+    1 components above threshold:
+      C7(1.000)
+
+  Fact  308: input=[33, 38, 41] → label=62
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  309: input=[40, 45, 40] → label=3
+    1 components above threshold:
+      C126(0.755)
+
+  Fact  310: input=[54, 8, 57] → label=8
+    1 components above threshold:
+      C82(1.000)
+
+  Fact  311: input=[60, 45, 50] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  312: input=[15, 10, 11] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  313: input=[24, 62, 31] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  314: input=[58, 22, 17] → label=35
+    1 components above threshold:
+      C49(0.898)
+
+  Fact  315: input=[24, 32, 20] → label=58
+    1 components above threshold:
+      C119(1.000)
+
+  Fact  316: input=[38, 56, 61] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  317: input=[62, 56, 6] → label=11
+    1 components above threshold:
+      C87(1.000)
+
+  Fact  318: input=[12, 5, 49] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  319: input=[4, 55, 32] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  320: input=[0, 4, 36] → label=11
+    1 components above threshold:
+      C87(1.000)
+
+  Fact  321: input=[0, 34, 42] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  322: input=[42, 16, 6] → label=49
+    1 components above threshold:
+      C36(0.753)
+
+  Fact  323: input=[40, 60, 50] → label=3
+    1 components above threshold:
+      C126(0.881)
+
+  Fact  324: input=[6, 28, 6] → label=25
+    1 components above threshold:
+      C118(1.000)
+
+  Fact  325: input=[20, 45, 20] → label=29
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  326: input=[37, 7, 59] → label=40
+    1 components above threshold:
+      C65(1.000)
+
+  Fact  327: input=[42, 54, 63] → label=28
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  328: input=[58, 46, 1] → label=41
+    1 components above threshold:
+      C58(0.995)
+
+  Fact  329: input=[33, 5, 61] → label=33
+    1 components above threshold:
+      C15(1.000)
+
+  Fact  330: input=[22, 40, 27] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  331: input=[44, 2, 52] → label=0
+    1 components above threshold:
+      C100(0.728)
+
+  Fact  332: input=[38, 61, 19] → label=59
+    1 components above threshold:
+      C79(1.000)
+
+  Fact  333: input=[28, 35, 26] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  334: input=[15, 57, 3] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  335: input=[42, 33, 41] → label=42
+    1 components above threshold:
+      C59(1.000)
+
+  Fact  336: input=[5, 5, 61] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  337: input=[41, 21, 46] → label=47
+    1 components above threshold:
+      C3(1.000)
+
+  Fact  338: input=[35, 43, 36] → label=33
+    1 components above threshold:
+      C117(1.000)
+
+  Fact  339: input=[56, 33, 35] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  340: input=[37, 52, 6] → label=63
+    1 components above threshold:
+      C41(1.000)
+
+  Fact  341: input=[27, 47, 18] → label=59
+    1 components above threshold:
+      C63(1.000)
+
+  Fact  342: input=[36, 28, 41] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  343: input=[25, 17, 2] → label=35
+    1 components above threshold:
+      C49(1.000)
+
+  Fact  344: input=[57, 3, 3] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  345: input=[31, 2, 10] → label=29
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  346: input=[62, 32, 23] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  347: input=[49, 40, 45] → label=42
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  348: input=[42, 40, 57] → label=56
+    2 components above threshold:
+      C115(1.000), C19(0.779)
+
+  Fact  349: input=[58, 56, 30] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  350: input=[4, 63, 0] → label=12
+    1 components above threshold:
+      C63(1.000)
+
+  Fact  351: input=[60, 46, 20] → label=60
+    1 components above threshold:
+      C35(1.000)
+
+  Fact  352: input=[6, 60, 60] → label=45
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  353: input=[19, 57, 43] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  354: input=[47, 44, 20] → label=61
+    1 components above threshold:
+      C104(1.000)
+
+  Fact  355: input=[12, 37, 7] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  356: input=[55, 55, 60] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  357: input=[26, 26, 34] → label=22
+    1 components above threshold:
+      C89(1.000)
+
+  Fact  358: input=[16, 23, 53] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  359: input=[40, 9, 22] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  360: input=[50, 45, 14] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  361: input=[5, 55, 7] → label=61
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  362: input=[32, 13, 36] → label=42
+    1 components above threshold:
+      C126(0.755)
+
+  Fact  363: input=[0, 52, 22] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  364: input=[55, 42, 30] → label=8
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  365: input=[1, 31, 40] → label=60
+    1 components above threshold:
+      C44(1.000)
+
+  Fact  366: input=[53, 27, 32] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  367: input=[47, 4, 8] → label=0
+    1 components above threshold:
+      C100(1.000)
+
+  Fact  368: input=[20, 50, 41] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  369: input=[31, 9, 45] → label=25
+    2 components above threshold:
+      C118(1.000), C28(0.519)
+
+  Fact  370: input=[0, 15, 49] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  371: input=[44, 20, 42] → label=50
+    2 components above threshold:
+      C35(1.000), C91(0.558)
+
+  Fact  372: input=[31, 12, 28] → label=8
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  373: input=[63, 54, 51] → label=40
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  374: input=[62, 36, 2] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  375: input=[37, 31, 2] → label=1
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  376: input=[21, 38, 41] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  377: input=[43, 52, 55] → label=61
+    1 components above threshold:
+      C104(1.000)
+
+  Fact  378: input=[63, 24, 39] → label=16
+    1 components above threshold:
+      C116(1.000)
+
+  Fact  379: input=[28, 29, 42] → label=59
+    1 components above threshold:
+      C63(1.000)
+
+  Fact  380: input=[34, 47, 18] → label=3
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  381: input=[27, 10, 8] → label=48
+    1 components above threshold:
+      C83(1.000)
+
+  Fact  382: input=[18, 2, 50] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  383: input=[22, 61, 47] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  384: input=[24, 56, 8] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  385: input=[18, 19, 47] → label=0
+    1 components above threshold:
+      C100(1.000)
+
+  Fact  386: input=[20, 18, 54] → label=9
+    1 components above threshold:
+      C20(1.000)
+
+  Fact  387: input=[42, 15, 59] → label=8
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  388: input=[15, 45, 60] → label=21
+    1 components above threshold:
+      C72(0.837)
+
+  Fact  389: input=[8, 62, 3] → label=1
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  390: input=[8, 6, 53] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  391: input=[42, 50, 0] → label=5
+    1 components above threshold:
+      C0(1.000)
+
+  Fact  392: input=[5, 43, 28] → label=50
+    1 components above threshold:
+      C91(1.000)
+
+  Fact  393: input=[32, 43, 50] → label=58
+    1 components above threshold:
+      C73(1.000)
+
+  Fact  394: input=[60, 34, 52] → label=26
+    1 components above threshold:
+      C19(1.000)
+
+  Fact  395: input=[10, 26, 41] → label=29
+    1 components above threshold:
+      C45(1.000)
+
+  Fact  396: input=[21, 35, 22] → label=48
+    1 components above threshold:
+      C67(1.000)
+
+  Fact  397: input=[34, 34, 56] → label=31
+    1 components above threshold:
+      C56(1.000)
+
+  Fact  398: input=[44, 14, 61] → label=45
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  399: input=[54, 31, 59] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  400: input=[60, 56, 32] → label=21
+    1 components above threshold:
+      C62(1.000)
+
+  Fact  401: input=[31, 54, 53] → label=28
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  402: input=[38, 42, 50] → label=15
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  403: input=[29, 53, 48] → label=21
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  404: input=[29, 13, 21] → label=61
+    1 components above threshold:
+      C104(1.000)
+
+  Fact  405: input=[43, 37, 12] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  406: input=[50, 61, 9] → label=42
+    2 components above threshold:
+      C126(1.000), C59(0.707)
+
+  Fact  407: input=[9, 2, 23] → label=32
+    1 components above threshold:
+      C82(1.000)
+
+  Fact  408: input=[36, 32, 34] → label=6
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  409: input=[26, 17, 32] → label=63
+    1 components above threshold:
+      C41(0.859)
+
+  Fact  410: input=[17, 59, 20] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  411: input=[63, 7, 18] → label=37
+    2 components above threshold:
+      C72(1.000), C84(0.812)
+
+  Fact  412: input=[20, 26, 62] → label=1
+    1 components above threshold:
+      C69(1.000)
+
+  Fact  413: input=[4, 40, 1] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  414: input=[61, 26, 54] → label=39
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  415: input=[53, 39, 4] → label=40
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  416: input=[15, 27, 59] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  417: input=[22, 39, 40] → label=4
+    2 components above threshold:
+      C116(1.000), C109(0.487)
+
+  Fact  418: input=[50, 35, 26] → label=3
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  419: input=[44, 35, 0] → label=46
+    1 components above threshold:
+      C37(1.000)
+
+  Fact  420: input=[48, 14, 22] → label=35
+    1 components above threshold:
+      C49(0.873)
+
+  Fact  421: input=[47, 23, 39] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  422: input=[28, 36, 51] → label=3
+    1 components above threshold:
+      C126(0.737)
+
+  Fact  423: input=[44, 19, 36] → label=46
+    1 components above threshold:
+      C73(1.000)
+
+  Fact  424: input=[16, 61, 59] → label=52
+    1 components above threshold:
+      C79(1.000)
+
+  Fact  425: input=[41, 22, 14] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  426: input=[53, 24, 47] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  427: input=[51, 21, 15] → label=22
+    1 components above threshold:
+      C89(1.000)
+
+  Fact  428: input=[29, 14, 55] → label=9
+    1 components above threshold:
+      C20(1.000)
+
+  Fact  429: input=[42, 12, 61] → label=62
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  430: input=[38, 8, 28] → label=20
+    1 components above threshold:
+      C31(0.857)
+
+  Fact  431: input=[18, 30, 36] → label=59
+    2 components above threshold:
+      C63(1.000), C79(1.000)
+
+  Fact  432: input=[2, 4, 43] → label=17
+    1 components above threshold:
+      C2(1.000)
+
+  Fact  433: input=[12, 41, 62] → label=28
+    1 components above threshold:
+      C7(0.952)
+
+  Fact  434: input=[13, 7, 53] → label=31
+    1 components above threshold:
+      C22(1.000)
+
+  Fact  435: input=[60, 29, 11] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  436: input=[49, 41, 20] → label=34
+    1 components above threshold:
+      C94(0.992)
+
+  Fact  437: input=[18, 39, 11] → label=55
+    2 components above threshold:
+      C13(1.000), C107(0.268)
+
+  Fact  438: input=[42, 45, 49] → label=17
+    1 components above threshold:
+      C46(1.000)
+
+  Fact  439: input=[62, 55, 14] → label=57
+    1 components above threshold:
+      C93(1.000)
+
+  Fact  440: input=[24, 59, 6] → label=45
+    1 components above threshold:
+      C77(0.860)
+
+  Fact  441: input=[63, 52, 2] → label=21
+    1 components above threshold:
+      C62(1.000)
+
+  Fact  442: input=[0, 1, 12] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  443: input=[46, 46, 36] → label=20
+    1 components above threshold:
+      C31(1.000)
+
+  Fact  444: input=[11, 12, 23] → label=3
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  445: input=[57, 50, 45] → label=60
+    1 components above threshold:
+      C35(1.000)
+
+  Fact  446: input=[41, 47, 39] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  447: input=[30, 47, 30] → label=11
+    2 components above threshold:
+      C87(1.000), C107(0.602)
+
+  Fact  448: input=[17, 32, 55] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  449: input=[16, 58, 6] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  450: input=[56, 62, 5] → label=61
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  451: input=[57, 59, 5] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  452: input=[59, 62, 17] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  453: input=[36, 34, 22] → label=29
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  454: input=[49, 37, 10] → label=22
+    1 components above threshold:
+      C89(1.000)
+
+  Fact  455: input=[22, 20, 4] → label=19
+    1 components above threshold:
+      C15(1.000)
+
+  Fact  456: input=[46, 29, 30] → label=16
+    1 components above threshold:
+      C95(1.000)
+
+  Fact  457: input=[30, 15, 55] → label=58
+    1 components above threshold:
+      C119(1.000)
+
+  Fact  458: input=[57, 29, 11] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  459: input=[44, 63, 28] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  460: input=[3, 41, 59] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  461: input=[48, 32, 20] → label=17
+    1 components above threshold:
+      C46(1.000)
+
+  Fact  462: input=[2, 57, 34] → label=20
+    1 components above threshold:
+      C31(1.000)
+
+  Fact  463: input=[61, 34, 0] → label=3
+    1 components above threshold:
+      C126(0.869)
+
+  Fact  464: input=[15, 56, 23] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  465: input=[37, 56, 30] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  466: input=[34, 55, 58] → label=1
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  467: input=[0, 2, 38] → label=4
+    1 components above threshold:
+      C2(1.000)
+
+  Fact  468: input=[18, 37, 25] → label=30
+    1 components above threshold:
+      C112(1.000)
+
+  Fact  469: input=[2, 29, 44] → label=2
+    1 components above threshold:
+      C125(1.000)
+
+  Fact  470: input=[6, 45, 57] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  471: input=[45, 51, 21] → label=50
+    1 components above threshold:
+      C105(1.000)
+
+  Fact  472: input=[7, 21, 10] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  473: input=[50, 61, 51] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  474: input=[2, 58, 40] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  475: input=[43, 16, 1] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  476: input=[0, 38, 27] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  477: input=[48, 63, 10] → label=63
+    1 components above threshold:
+      C41(1.000)
+
+  Fact  478: input=[37, 49, 61] → label=46
+    1 components above threshold:
+      C73(0.927)
+
+  Fact  479: input=[42, 52, 63] → label=9
+    1 components above threshold:
+      C20(1.000)
+
+  Fact  480: input=[12, 32, 62] → label=45
+    1 components above threshold:
+      C65(1.000)
+
+  Fact  481: input=[3, 22, 63] → label=28
+    1 components above threshold:
+      C7(1.000)
+
+  Fact  482: input=[26, 24, 60] → label=29
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  483: input=[57, 40, 21] → label=47
+    1 components above threshold:
+      C75(0.924)
+
+  Fact  484: input=[9, 16, 25] → label=33
+    1 components above threshold:
+      C117(0.841)
+
+  Fact  485: input=[16, 52, 5] → label=21
+    1 components above threshold:
+      C9(1.000)
+
+  Fact  486: input=[18, 58, 26] → label=8
+    1 components above threshold:
+      C114(1.000)
+
+  Fact  487: input=[12, 11, 55] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  488: input=[49, 38, 50] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  489: input=[63, 49, 41] → label=6
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  490: input=[16, 47, 24] → label=41
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  491: input=[11, 50, 48] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  492: input=[13, 60, 57] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  493: input=[55, 56, 34] → label=17
+    1 components above threshold:
+      C46(1.000)
+
+  Fact  494: input=[37, 32, 55] → label=25
+    1 components above threshold:
+      C86(1.000)
+
+  Fact  495: input=[56, 33, 1] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  496: input=[23, 3, 32] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  497: input=[25, 18, 5] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  498: input=[0, 15, 2] → label=26
+    1 components above threshold:
+      C5(1.000)
+
+  Fact  499: input=[53, 14, 37] → label=27
+    1 components above threshold:
+      C24(0.867)
+
+  Fact  500: input=[20, 57, 9] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  501: input=[63, 20, 44] → label=49
+    2 components above threshold:
+      C36(1.000), C56(0.404)
+
+  Fact  502: input=[24, 4, 10] → label=14
+    1 components above threshold:
+      C61(1.000)
+
+  Fact  503: input=[17, 4, 31] → label=52
+    2 components above threshold:
+      C79(1.000), C68(0.675)
+
+  Fact  504: input=[53, 17, 49] → label=10
+    1 components above threshold:
+      C64(1.000)
+
+  Fact  505: input=[40, 29, 0] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  506: input=[14, 19, 29] → label=46
+    1 components above threshold:
+      C37(1.000)
+
+  Fact  507: input=[48, 46, 5] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  508: input=[14, 49, 3] → label=2
+    1 components above threshold:
+      C7(1.000)
+
+  Fact  509: input=[45, 36, 14] → label=35
+    1 components above threshold:
+      C49(1.000)
+
+  Fact  510: input=[5, 12, 62] → label=27
+    1 components above threshold:
+      C24(0.759)
+
+  Fact  511: input=[26, 23, 27] → label=56
+    1 components above threshold:
+      C19(1.000)
+
+  Fact  512: input=[54, 41, 29] → label=2
+    1 components above threshold:
+      C125(1.000)
+
+  Fact  513: input=[24, 14, 10] → label=46
+    1 components above threshold:
+      C37(1.000)
+
+  Fact  514: input=[18, 1, 46] → label=9
+    1 components above threshold:
+      C20(1.000)
+
+  Fact  515: input=[30, 51, 6] → label=39
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  516: input=[4, 32, 24] → label=25
+    1 components above threshold:
+      C118(1.000)
+
+  Fact  517: input=[0, 52, 52] → label=45
+    1 components above threshold:
+      C65(1.000)
+
+  Fact  518: input=[62, 37, 0] → label=15
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  519: input=[55, 23, 24] → label=61
+    1 components above threshold:
+      C115(1.000)
+
+  Fact  520: input=[34, 15, 0] → label=11
+    1 components above threshold:
+      C87(1.000)
+
+  Fact  521: input=[62, 1, 42] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  522: input=[10, 24, 35] → label=29
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  523: input=[27, 34, 42] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  524: input=[16, 20, 9] → label=22
+    2 components above threshold:
+      C89(0.925), C76(0.268)
+
+  Fact  525: input=[28, 25, 28] → label=48
+    1 components above threshold:
+      C83(1.000)
+
+  Fact  526: input=[47, 15, 42] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  527: input=[43, 1, 48] → label=63
+    1 components above threshold:
+      C41(0.930)
+
+  Fact  528: input=[29, 23, 28] → label=17
+    1 components above threshold:
+      C46(1.000)
+
+  Fact  529: input=[58, 0, 12] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  530: input=[16, 17, 15] → label=9
+    1 components above threshold:
+      C20(1.000)
+
+  Fact  531: input=[38, 3, 19] → label=4
+    1 components above threshold:
+      C2(1.000)
+
+  Fact  532: input=[6, 53, 33] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  533: input=[46, 53, 44] → label=30
+    1 components above threshold:
+      C118(1.000)
+
+  Fact  534: input=[30, 0, 27] → label=28
+    1 components above threshold:
+      C7(0.881)
+
+  Fact  535: input=[5, 20, 25] → label=16
+    1 components above threshold:
+      C95(0.925)
+
+  Fact  536: input=[45, 32, 41] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  537: input=[12, 16, 17] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  538: input=[44, 63, 23] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  539: input=[56, 18, 60] → label=42
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  540: input=[25, 45, 19] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  541: input=[35, 42, 14] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  542: input=[55, 45, 42] → label=22
+    1 components above threshold:
+      C76(1.000)
+
+  Fact  543: input=[26, 55, 53] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  544: input=[61, 11, 1] → label=35
+    1 components above threshold:
+      C49(0.858)
+
+  Fact  545: input=[52, 41, 26] → label=45
+    1 components above threshold:
+      C65(1.000)
+
+  Fact  546: input=[17, 57, 24] → label=19
+    1 components above threshold:
+      C22(1.000)
+
+  Fact  547: input=[18, 50, 62] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  548: input=[49, 37, 32] → label=18
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  549: input=[8, 6, 1] → label=6
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  550: input=[50, 34, 58] → label=25
+    1 components above threshold:
+      C118(1.000)
+
+  Fact  551: input=[42, 36, 58] → label=60
+    1 components above threshold:
+      C44(1.000)
+
+  Fact  552: input=[60, 2, 41] → label=22
+    1 components above threshold:
+      C76(1.000)
+
+  Fact  553: input=[11, 12, 11] → label=8
+    1 components above threshold:
+      C82(1.000)
+
+  Fact  554: input=[54, 55, 0] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  555: input=[46, 56, 28] → label=26
+    1 components above threshold:
+      C19(1.000)
+
+  Fact  556: input=[2, 48, 46] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  557: input=[3, 44, 53] → label=50
+    1 components above threshold:
+      C105(1.000)
+
+  Fact  558: input=[27, 55, 61] → label=3
+    1 components above threshold:
+      C126(0.854)
+
+  Fact  559: input=[56, 12, 32] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  560: input=[38, 45, 54] → label=0
+    1 components above threshold:
+      C27(1.000)
+
+  Fact  561: input=[40, 55, 63] → label=48
+    1 components above threshold:
+      C67(1.000)
+
+  Fact  562: input=[7, 17, 12] → label=27
+    1 components above threshold:
+      C24(0.930)
+
+  Fact  563: input=[18, 53, 43] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  564: input=[11, 38, 40] → label=26
+    1 components above threshold:
+      C5(1.000)
+
+  Fact  565: input=[16, 41, 33] → label=39
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  566: input=[45, 61, 40] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  567: input=[0, 19, 62] → label=4
+    1 components above threshold:
+      C2(1.000)
+
+  Fact  568: input=[39, 23, 40] → label=21
+    1 components above threshold:
+      C9(1.000)
+
+  Fact  569: input=[13, 37, 44] → label=50
+    1 components above threshold:
+      C91(0.907)
+
+  Fact  570: input=[62, 58, 38] → label=55
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  571: input=[13, 34, 63] → label=61
+    2 components above threshold:
+      C104(0.850), C115(0.549)
+
+  Fact  572: input=[49, 52, 25] → label=39
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  573: input=[46, 34, 9] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  574: input=[14, 6, 31] → label=46
+    1 components above threshold:
+      C37(1.000)
+
+  Fact  575: input=[26, 28, 30] → label=61
+    1 components above threshold:
+      C104(1.000)
+
+  Fact  576: input=[53, 47, 28] → label=9
+    1 components above threshold:
+      C52(1.000)
+
+  Fact  577: input=[48, 21, 31] → label=37
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  578: input=[59, 52, 3] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  579: input=[3, 58, 38] → label=50
+    2 components above threshold:
+      C35(1.000), C105(0.620)
+
+  Fact  580: input=[33, 60, 55] → label=25
+    1 components above threshold:
+      C86(1.000)
+
+  Fact  581: input=[63, 53, 42] → label=26
+    1 components above threshold:
+      C5(1.000)
+
+  Fact  582: input=[31, 5, 47] → label=39
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  583: input=[47, 4, 6] → label=17
+    1 components above threshold:
+      C2(1.000)
+
+  Fact  584: input=[8, 25, 17] → label=11
+    1 components above threshold:
+      C87(1.000)
+
+  Fact  585: input=[27, 25, 35] → label=0
+    1 components above threshold:
+      C27(1.000)
+
+  Fact  586: input=[61, 2, 51] → label=50
+    1 components above threshold:
+      C91(1.000)
+
+  Fact  587: input=[41, 31, 55] → label=45
+    1 components above threshold:
+      C77(0.910)
+
+  Fact  588: input=[9, 38, 48] → label=20
+    1 components above threshold:
+      C31(1.000)
+
+  Fact  589: input=[19, 63, 36] → label=21
+    1 components above threshold:
+      C62(1.000)
+
+  Fact  590: input=[29, 39, 18] → label=48
+    2 components above threshold:
+      C118(1.000), C67(0.780)
+
+  Fact  591: input=[17, 47, 19] → label=50
+    1 components above threshold:
+      C105(1.000)
+
+  Fact  592: input=[13, 35, 58] → label=42
+    2 components above threshold:
+      C126(1.000), C10(0.744)
+
+  Fact  593: input=[63, 4, 38] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  594: input=[6, 36, 29] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  595: input=[16, 24, 13] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  596: input=[45, 63, 58] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  597: input=[33, 40, 16] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  598: input=[16, 39, 48] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  599: input=[15, 7, 36] → label=0
+    1 components above threshold:
+      C27(1.000)
+
+  Fact  600: input=[38, 35, 3] → label=63
+    1 components above threshold:
+      C41(1.000)
+
+  Fact  601: input=[55, 28, 17] → label=16
+    1 components above threshold:
+      C95(1.000)
+
+  Fact  602: input=[23, 58, 45] → label=21
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  603: input=[19, 24, 12] → label=24
+    1 components above threshold:
+      C60(1.000)
+
+  Fact  604: input=[4, 49, 32] → label=2
+    1 components above threshold:
+      C7(1.000)
+
+  Fact  605: input=[40, 1, 42] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  606: input=[22, 16, 29] → label=22
+    1 components above threshold:
+      C76(0.820)
+
+  Fact  607: input=[8, 30, 36] → label=51
+    1 components above threshold:
+      C40(0.916)
+
+  Fact  608: input=[36, 34, 21] → label=37
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  609: input=[5, 29, 52] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  610: input=[16, 20, 10] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  611: input=[11, 45, 2] → label=20
+    1 components above threshold:
+      C31(0.752)
+
+  Fact  612: input=[30, 55, 35] → label=2
+    1 components above threshold:
+      C125(1.000)
+
+  Fact  613: input=[2, 36, 28] → label=63
+    1 components above threshold:
+      C41(1.000)
+
+  Fact  614: input=[46, 42, 40] → label=1
+    1 components above threshold:
+      C69(1.000)
+
+  Fact  615: input=[48, 40, 24] → label=1
+    1 components above threshold:
+      C115(0.977)
+
+  Fact  616: input=[35, 43, 58] → label=28
+    1 components above threshold:
+      C92(0.896)
+
+  Fact  617: input=[26, 9, 47] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact  618: input=[40, 6, 32] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  619: input=[48, 44, 41] → label=2
+    1 components above threshold:
+      C7(1.000)
+
+  Fact  620: input=[0, 5, 19] → label=4
+    1 components above threshold:
+      C116(0.999)
+
+  Fact  621: input=[0, 0, 37] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  622: input=[6, 42, 3] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  623: input=[0, 1, 62] → label=26
+    1 components above threshold:
+      C23(1.000)
+
+  Fact  624: input=[31, 48, 46] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  625: input=[50, 3, 27] → label=28
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  626: input=[38, 8, 19] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  627: input=[14, 51, 18] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  628: input=[27, 41, 35] → label=22
+    1 components above threshold:
+      C89(1.000)
+
+  Fact  629: input=[47, 50, 42] → label=43
+    1 components above threshold:
+      C102(0.853)
+
+  Fact  630: input=[57, 17, 51] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  631: input=[48, 8, 34] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  632: input=[10, 56, 46] → label=35
+    1 components above threshold:
+      C49(0.747)
+
+  Fact  633: input=[54, 15, 12] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  634: input=[50, 36, 22] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  635: input=[25, 30, 44] → label=20
+    1 components above threshold:
+      C31(0.938)
+
+  Fact  636: input=[8, 2, 55] → label=12
+    1 components above threshold:
+      C63(1.000)
+
+  Fact  637: input=[30, 54, 35] → label=45
+    1 components above threshold:
+      C65(1.000)
+
+  Fact  638: input=[36, 5, 62] → label=62
+    1 components above threshold:
+      C74(1.000)
+
+  Fact  639: input=[15, 7, 60] → label=21
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  640: input=[1, 52, 35] → label=19
+    1 components above threshold:
+      C22(1.000)
+
+  Fact  641: input=[49, 30, 46] → label=21
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  642: input=[1, 43, 20] → label=2
+    1 components above threshold:
+      C125(1.000)
+
+  Fact  643: input=[11, 10, 26] → label=0
+    1 components above threshold:
+      C27(1.000)
+
+  Fact  644: input=[41, 4, 5] → label=28
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  645: input=[43, 11, 59] → label=31
+    1 components above threshold:
+      C22(1.000)
+
+  Fact  646: input=[27, 21, 18] → label=37
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  647: input=[46, 39, 11] → label=56
+    1 components above threshold:
+      C50(1.000)
+
+  Fact  648: input=[13, 41, 10] → label=44
+    1 components above threshold:
+      C83(1.000)
+
+  Fact  649: input=[23, 3, 41] → label=47
+    1 components above threshold:
+      C3(1.000)
+
+  Fact  650: input=[4, 10, 29] → label=0
+    1 components above threshold:
+      C100(1.000)
+
+  Fact  651: input=[4, 2, 11] → label=57
+    1 components above threshold:
+      C9(1.000)
+
+  Fact  652: input=[21, 53, 23] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  653: input=[17, 60, 44] → label=61
+    1 components above threshold:
+      C10(1.000)
+
+  Fact  654: input=[49, 2, 24] → label=0
+    1 components above threshold:
+      C27(0.796)
+
+  Fact  655: input=[52, 56, 41] → label=40
+    1 components above threshold:
+      C57(1.000)
+
+  Fact  656: input=[11, 37, 28] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  657: input=[27, 31, 46] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  658: input=[1, 59, 16] → label=40
+    1 components above threshold:
+      C57(1.000)
+
+  Fact  659: input=[44, 11, 56] → label=48
+    1 components above threshold:
+      C67(1.000)
+
+  Fact  660: input=[24, 19, 52] → label=19
+    1 components above threshold:
+      C15(1.000)
+
+  Fact  661: input=[60, 20, 44] → label=46
+    1 components above threshold:
+      C73(0.959)
+
+  Fact  662: input=[44, 35, 32] → label=12
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  663: input=[1, 61, 36] → label=27
+    1 components above threshold:
+      C24(0.914)
+
+  Fact  664: input=[41, 11, 58] → label=48
+    1 components above threshold:
+      C118(1.000)
+
+  Fact  665: input=[19, 60, 46] → label=28
+    1 components above threshold:
+      C92(1.000)
+
+  Fact  666: input=[33, 36, 40] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  667: input=[28, 10, 0] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  668: input=[14, 6, 40] → label=40
+    2 components above threshold:
+      C92(1.000), C57(0.631)
+
+  Fact  669: input=[58, 4, 28] → label=0
+    1 components above threshold:
+      C27(0.824)
+
+  Fact  670: input=[27, 31, 27] → label=51
+    1 components above threshold:
+      C40(0.897)
+
+  Fact  671: input=[59, 61, 43] → label=54
+    1 components above threshold:
+      C81(1.000)
+
+  Fact  672: input=[56, 0, 18] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  673: input=[14, 29, 60] → label=47
+    1 components above threshold:
+      C75(1.000)
+
+  Fact  674: input=[45, 24, 1] → label=3
+    1 components above threshold:
+      C126(0.705)
+
+  Fact  675: input=[12, 51, 44] → label=22
+    1 components above threshold:
+      C76(1.000)
+
+  Fact  676: input=[62, 18, 7] → label=42
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  677: input=[40, 55, 43] → label=32
+    1 components above threshold:
+      C82(1.000)
+
+  Fact  678: input=[14, 8, 7] → label=50
+    1 components above threshold:
+      C35(1.000)
+
+  Fact  679: input=[23, 0, 43] → label=22
+    1 components above threshold:
+      C89(1.000)
+
+  Fact  680: input=[51, 11, 49] → label=33
+    1 components above threshold:
+      C15(1.000)
+
+  Fact  681: input=[40, 48, 59] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  682: input=[38, 61, 6] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  683: input=[6, 33, 63] → label=49
+    1 components above threshold:
+      C36(1.000)
+
+  Fact  684: input=[32, 38, 62] → label=23
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  685: input=[12, 43, 24] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  686: input=[29, 18, 14] → label=45
+    1 components above threshold:
+      C77(0.790)
+
+  Fact  687: input=[54, 50, 21] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  688: input=[52, 4, 54] → label=33
+    1 components above threshold:
+      C117(1.000)
+
+  Fact  689: input=[13, 4, 26] → label=25
+    1 components above threshold:
+      C28(1.000)
+
+  Fact  690: input=[43, 60, 41] → label=20
+    1 components above threshold:
+      C31(0.876)
+
+  Fact  691: input=[60, 39, 7] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  692: input=[13, 60, 27] → label=42
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  693: input=[58, 31, 36] → label=26
+    1 components above threshold:
+      C19(1.000)
+
+  Fact  694: input=[62, 62, 21] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact  695: input=[19, 34, 35] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  696: input=[51, 17, 42] → label=31
+    1 components above threshold:
+      C56(1.000)
+
+  Fact  697: input=[63, 37, 20] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  698: input=[51, 17, 8] → label=44
+    1 components above threshold:
+      C83(1.000)
+
+  Fact  699: input=[52, 41, 58] → label=16
+    1 components above threshold:
+      C116(1.000)
+
+  Fact  700: input=[62, 34, 36] → label=45
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  701: input=[7, 60, 10] → label=11
+    2 components above threshold:
+      C107(1.000), C63(0.745)
+
+  Fact  702: input=[17, 23, 53] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact  703: input=[52, 10, 43] → label=3
+    1 components above threshold:
+      C126(0.968)
+
+  Fact  704: input=[20, 27, 46] → label=47
+    1 components above threshold:
+      C3(1.000)
+
+  Fact  705: input=[8, 42, 42] → label=8
+    1 components above threshold:
+      C123(1.000)
+
+  Fact  706: input=[17, 10, 30] → label=6
+    1 components above threshold:
+      C77(1.000)
+
+  Fact  707: input=[44, 38, 16] → label=38
+    1 components above threshold:
+      C106(1.000)
+
+  Fact  708: input=[35, 3, 12] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  709: input=[6, 43, 17] → label=31
+    2 components above threshold:
+      C56(1.000), C22(0.592)
+
+  Fact  710: input=[12, 10, 5] → label=42
+    1 components above threshold:
+      C126(0.717)
+
+  Fact  711: input=[35, 59, 17] → label=31
+    1 components above threshold:
+      C22(1.000)
+
+  Fact  712: input=[38, 34, 12] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  713: input=[48, 60, 33] → label=57
+    1 components above threshold:
+      C99(1.000)
+
+  Fact  714: input=[42, 61, 23] → label=36
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  715: input=[60, 22, 39] → label=2
+    2 components above threshold:
+      C84(1.000), C116(1.000)
+
+  Fact  716: input=[28, 61, 18] → label=58
+    1 components above threshold:
+      C73(1.000)
+
+  Fact  717: input=[15, 39, 55] → label=17
+    1 components above threshold:
+      C2(1.000)
+
+  Fact  718: input=[33, 11, 39] → label=3
+    1 components above threshold:
+      C126(1.000)
+
+  Fact  719: input=[53, 21, 30] → label=19
+    1 components above threshold:
+      C15(1.000)
+
+  Fact  720: input=[8, 28, 35] → label=45
+    1 components above threshold:
+      C65(1.000)
+
+  Fact  721: input=[39, 15, 10] → label=26
+    1 components above threshold:
+      C5(1.000)
+
+  Fact  722: input=[17, 31, 31] → label=43
+    1 components above threshold:
+      C102(1.000)
+
+  Fact  723: input=[31, 16, 63] → label=7
+    1 components above threshold:
+      C85(1.000)
+
+  Fact  724: input=[14, 9, 41] → label=39
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  725: input=[9, 52, 26] → label=58
+    1 components above threshold:
+      C73(1.000)
+
+  Fact  726: input=[34, 16, 19] → label=40
+    1 components above threshold:
+      C57(1.000)
+
+  Fact  727: input=[7, 45, 40] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  728: input=[7, 29, 9] → label=20
+    1 components above threshold:
+      C31(0.898)
+
+  Fact  729: input=[33, 42, 2] → label=53
+    1 components above threshold:
+      C113(1.000)
+
+  Fact  730: input=[41, 61, 42] → label=1
+    1 components above threshold:
+      C69(1.000)
+
+  Fact  731: input=[0, 36, 0] → label=18
+    1 components above threshold:
+      C74(0.837)
+
+  Fact  732: input=[36, 17, 31] → label=24
+    2 components above threshold:
+      C75(1.000), C77(0.969)
+
+  Fact  733: input=[53, 37, 16] → label=0
+    1 components above threshold:
+      C27(1.000)
+
+  Fact  734: input=[55, 24, 60] → label=55
+    1 components above threshold:
+      C107(0.892)
+
+  Fact  735: input=[25, 27, 52] → label=20
+    1 components above threshold:
+      C31(1.000)
+
+  Fact  736: input=[29, 35, 8] → label=33
+    1 components above threshold:
+      C15(1.000)
+
+  Fact  737: input=[41, 27, 19] → label=10
+    1 components above threshold:
+      C122(1.000)
+
+  Fact  738: input=[29, 17, 47] → label=17
+    1 components above threshold:
+      C46(1.000)
+
+  Fact  739: input=[22, 58, 7] → label=37
+    1 components above threshold:
+      C33(1.000)
+
+  Fact  740: input=[53, 25, 4] → label=14
+    1 components above threshold:
+      C61(1.000)
+
+  Fact  741: input=[15, 61, 46] → label=60
+    1 components above threshold:
+      C44(1.000)
+
+  Fact  742: input=[49, 55, 57] → label=33
+    1 components above threshold:
+      C117(1.000)
+
+  Fact  743: input=[36, 16, 20] → label=34
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  744: input=[43, 8, 37] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  745: input=[20, 15, 50] → label=29
+    1 components above threshold:
+      C11(1.000)
+
+  Fact  746: input=[59, 31, 26] → label=2
+    1 components above threshold:
+      C125(1.000)
+
+  Fact  747: input=[42, 28, 13] → label=44
+    1 components above threshold:
+      C103(1.000)
+
+  Fact  748: input=[42, 62, 28] → label=5
+    1 components above threshold:
+      C1(1.000)
+
+  Fact  749: input=[14, 17, 49] → label=15
+    1 components above threshold:
+      C29(1.000)
+
+  Fact  750: input=[7, 1, 49] → label=30
+    1 components above threshold:
+      C112(1.000)
+
+  Fact  751: input=[26, 15, 53] → label=11
+    1 components above threshold:
+      C107(1.000)
+
+  Fact  752: input=[47, 52, 39] → label=49
+    1 components above threshold:
+      C36(0.925)
+
+  Fact  753: input=[32, 11, 16] → label=37
+    1 components above threshold:
+      C72(1.000)
+
+  Fact  754: input=[25, 58, 35] → label=42
+    1 components above threshold:
+      C59(1.000)
+
+  Fact  755: input=[30, 19, 20] → label=27
+    1 components above threshold:
+      C24(1.000)
+
+  Fact  756: input=[54, 48, 25] → label=41
+    1 components above threshold:
+      C58(1.000)
+
+  Fact  757: input=[54, 16, 56] → label=0
+    1 components above threshold:
+      C27(1.000)
+
+  Fact  758: input=[27, 23, 15] → label=51
+    1 components above threshold:
+      C40(1.000)
+
+  Fact  759: input=[49, 9, 37] → label=14
+    1 components above threshold:
+      C6(1.000)
+
+  Fact  760: input=[19, 3, 23] → label=13
+    1 components above threshold:
+      C68(1.000)
+
+  Fact  761: input=[63, 6, 9] → label=22
+    1 components above threshold:
+      C76(1.000)
+
+  Fact  762: input=[48, 53, 7] → label=35
+    1 components above threshold:
+      C49(1.000)
+
+  Fact  763: input=[2, 12, 52] → label=63
+    1 components above threshold:
+      C41(1.000)
+
+  Fact  764: input=[51, 46, 20] → label=26
+    1 components above threshold:
+      C19(1.000)
+
+  Fact  765: input=[50, 3, 3] → label=16
+    1 components above threshold:
+      C116(1.000)
+
+  Fact  766: input=[40, 13, 11] → label=52
+    1 components above threshold:
+      C94(1.000)
+
+  Fact  767: input=[46, 52, 21] → label=58
+    1 components above threshold:
+      C119(1.000)
