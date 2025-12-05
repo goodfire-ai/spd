@@ -49,7 +49,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
 
     clean_wandb_path = f"{entity}/{project}/{run_id}"
 
-    logger.info(f"[API] Loading run info from W&B: {clean_wandb_path}")
+    logger.info(f"[API] Loading {clean_wandb_path}")
     try:
         run_info = SPDRunInfo.from_path(clean_wandb_path)
     except Exception as e:
