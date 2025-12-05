@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
@@ -9,6 +10,8 @@ from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
 
 from spd.base_config import BaseConfig
+from spd.configs import Config
+from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.utils.distributed_utils import DistributedState
 
@@ -282,3 +285,46 @@ def loop_dataloader[T](dl: DataLoader[T]):
                 dl.dataset.set_epoch(epoch)
             dl_iter = iter(dl)
             yield next(dl_iter)
+
+
+def create_data_loader_from_config(
+    config: Config,
+    batch_size: int,
+    n_ctx: int,
+    seed: int = 0,
+) -> tuple[Iterable[dict[str, Any]], PreTrainedTokenizer]:
+    """Create a data loader from an SPD config.
+
+    Args:
+        config: SPD Config with task configuration.
+        batch_size: Batch size for the data loader.
+        n_ctx: Context length.
+        seed: Random seed for shuffling.
+
+    Returns:
+        Tuple of (data_loader, tokenizer).
+    """
+    task_config = config.task_config
+    assert isinstance(task_config, LMTaskConfig), "Expected LM task config"
+
+    dataset_config = DatasetConfig(
+        name=task_config.dataset_name,
+        hf_tokenizer_path=config.tokenizer_name,
+        split=task_config.train_data_split,
+        n_ctx=n_ctx,
+        is_tokenized=task_config.is_tokenized,
+        streaming=task_config.streaming,
+        column_name=task_config.column_name,
+        shuffle_each_epoch=False,
+        seed=seed,
+    )
+
+    print(f"\nLoading dataset {dataset_config.name}...")
+    data_loader, tokenizer = create_data_loader(
+        dataset_config=dataset_config,
+        batch_size=batch_size,
+        buffer_size=task_config.buffer_size,
+        global_seed=seed,
+    )
+
+    return data_loader, tokenizer

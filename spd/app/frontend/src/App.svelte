@@ -16,6 +16,7 @@
 
     let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
+    let backendUser = $state<string | null>(null);
 
     async function loadStatus() {
         if (loadingTrainRun) return;
@@ -64,7 +65,10 @@
         }
     }
 
-    onMount(loadStatus);
+    onMount(() => {
+        loadStatus();
+        api.getWhoami().then((user) => (backendUser = user));
+    });
 
     let activeTab = $state<"activation-contexts" | "local-attributions" | null>(null);
     let showConfig = $state(false);
@@ -73,6 +77,7 @@
 <RenderScan />
 <div class="app-layout">
     <header class="top-bar">
+        <span class="backend-user">user: {backendUser ?? "..."}</span>
         <form onsubmit={loadRun} class="run-input">
             <label for="wandb-run-id">W&B Run ID:</label>
             <input
@@ -82,6 +87,21 @@
                 bind:value={trainWandbRunEntry}
                 disabled={loadingTrainRun}
             />
+            {#if loadedRun}
+                <div
+                    class="config-wrapper"
+                    role="group"
+                    onmouseenter={() => (showConfig = true)}
+                    onmouseleave={() => (showConfig = false)}
+                >
+                    <button class="config-button">Config</button>
+                    {#if showConfig}
+                        <div class="config-dropdown">
+                            <pre>{loadedRun.config_yaml}</pre>
+                        </div>
+                    {/if}
+                </div>
+            {/if}
             <label for="context-length">Context Length:</label>
             <input
                 type="number"
@@ -91,44 +111,31 @@
                 min="1"
                 max="2048"
             />
-            <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
+            <button class="load-button" type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
                 {loadingTrainRun ? "..." : "Load"}
             </button>
         </form>
 
-        {#if loadedRun}
-            <nav class="tab-navigation">
-                <button
-                    class="tab-button"
-                    class:active={activeTab === "local-attributions"}
-                    onclick={() => (activeTab = "local-attributions")}
-                >
-                    Local Attributions
-                </button>
-                <button
-                    class="tab-button"
-                    class:active={activeTab === "activation-contexts"}
-                    onclick={() => (activeTab = "activation-contexts")}
-                >
-                    Activation Contexts
-                </button>
-            </nav>
-
-            <div
-                class="config-wrapper"
-                role="group"
-                onmouseenter={() => (showConfig = true)}
-                onmouseleave={() => (showConfig = false)}
-            >
-                <button class="config-button">Config</button>
-                {#if showConfig}
-                    <div class="config-dropdown">
-                        <pre>{loadedRun.config_yaml}</pre>
-                    </div>
-                {/if}
-            </div>
-        {/if}
     </header>
+
+    {#if loadedRun}
+        <nav class="tab-bar">
+            <button
+                class="tab-button"
+                class:active={activeTab === "local-attributions"}
+                onclick={() => (activeTab = "local-attributions")}
+            >
+                Local Attributions
+            </button>
+            <button
+                class="tab-button"
+                class:active={activeTab === "activation-contexts"}
+                onclick={() => (activeTab = "activation-contexts")}
+            >
+                Activation Contexts
+            </button>
+        </nav>
+    {/if}
 
     <main class="main-content">
         {#if backendError}
@@ -163,11 +170,12 @@
     .top-bar {
         display: flex;
         align-items: center;
+        justify-content: flex-start;
         gap: var(--space-4);
         padding: var(--space-2) var(--space-3);
         background: var(--bg-surface);
         border-bottom: 1px solid var(--border-default);
-        flex-shrink: 0;
+        /* flex-shrink: 0; */
     }
 
     .run-input {
@@ -216,27 +224,22 @@
         border-color: var(--accent-primary-dim);
     }
 
-    .run-input button {
+    .load-button {
         padding: var(--space-1) var(--space-3);
-        background: var(--accent-primary);
-        color: white;
-        border: none;
+        color: var(--text-primary);
+        border: 1px solid var(--border-default);
         font-weight: 500;
         white-space: nowrap;
     }
 
-    .run-input button:hover:not(:disabled) {
-        background: var(--accent-primary-dim);
+    .load-button:hover:not(:disabled) {
+        background: var(--accent-primary);
+        color: white;
     }
 
-    .run-input button:disabled {
+    .load-button:disabled {
         background: var(--border-default);
         color: var(--text-muted);
-    }
-
-    .tab-navigation {
-        display: flex;
-        gap: var(--space-1);
     }
 
     .tab-button {
@@ -261,7 +264,6 @@
 
     .config-wrapper {
         position: relative;
-        margin-left: auto;
     }
 
     .config-button {
@@ -277,7 +279,7 @@
     }
 
     .config-button:hover {
-        border-color: var(--border-strong);
+        background: var(--bg-inset);
         color: var(--text-primary);
     }
 
@@ -304,6 +306,22 @@
         color: var(--text-primary);
         white-space: pre-wrap;
         word-wrap: break-word;
+    }
+
+    .backend-user {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .tab-bar {
+        display: flex;
+        gap: var(--space-2);
+        padding: var(--space-3);
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-default);
+        flex-shrink: 0;
     }
 
     .main-content {

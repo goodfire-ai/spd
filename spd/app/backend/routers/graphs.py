@@ -1,9 +1,11 @@
 """Graph computation endpoints for tokenization and attribution graphs."""
 
 import json
+import math
 import queue
 import threading
 from collections.abc import Generator
+from itertools import groupby
 from typing import Annotated, Any
 
 import torch
@@ -11,13 +13,13 @@ from fastapi import APIRouter, Body, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from spd.app.backend.compute import (
+    Edge,
     LocalAttributionResult,
     OptimizedLocalAttributionResult,
     compute_local_attributions,
     compute_local_attributions_optimized,
 )
 from spd.app.backend.dependencies import DepLoadedRun
-from spd.app.backend.lib.edge_normalization import normalize_edges_by_target
 from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
 from spd.app.backend.schemas import (
     EdgeData,
@@ -117,7 +119,7 @@ def compute_graph_stream(
                 edges = edges[:GLOBAL_EDGE_LIMIT]
 
                 if normalize:
-                    edges = normalize_edges_by_target(edges)
+                    edges = _normalize_edges_by_target(edges)
 
                 edges_typed = [
                     EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges
@@ -150,6 +152,23 @@ def compute_graph_stream(
         thread.join()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+def _normalize_edges_by_target(edges: list[Edge]) -> list[Edge]:
+    out_edges = []
+    for _, incoming_edges in groupby(edges, key=lambda e: e.target):
+        incoming_edges = list(incoming_edges)  # list() because we iterate over the group twice
+        incoming_strength = math.sqrt(sum(edge.strength**2 for edge in incoming_edges))
+        for edge in incoming_edges:
+            out_edges.append(
+                Edge(
+                    source=edge.source,
+                    target=edge.target,
+                    is_cross_seq=edge.is_cross_seq,
+                    strength=edge.strength / incoming_strength,
+                )
+            )
+    return out_edges
 
 
 @router.post("/optimized/stream")
@@ -240,7 +259,7 @@ def compute_graph_optimized_stream(
                 edges = edges[:GLOBAL_EDGE_LIMIT]
 
                 if normalize:
-                    edges = normalize_edges_by_target(edges)
+                    edges = _normalize_edges_by_target(edges)
 
                 edges_typed = [
                     EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges

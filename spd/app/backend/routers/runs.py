@@ -1,5 +1,6 @@
 """Run management endpoints."""
 
+import getpass
 from urllib.parse import unquote
 
 import torch
@@ -149,6 +150,7 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         has_prompts=prompt_count > 0,
         prompt_count=prompt_count,
         context_length=context_length,
+        backend_user=getpass.getuser(),
     )
 
 
@@ -157,3 +159,10 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
 def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@router.get("/whoami")
+@log_errors
+def whoami() -> dict[str, str]:
+    """Return the current backend user."""
+    return {"user": getpass.getuser()}

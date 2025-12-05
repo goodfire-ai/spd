@@ -185,6 +185,7 @@ class LoadedRun(BaseModel):
     has_prompts: bool
     prompt_count: int
     context_length: int
+    backend_user: str
 
 
 class SubcomponentMetadata(BaseModel):

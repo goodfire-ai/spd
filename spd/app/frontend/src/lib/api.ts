@@ -9,12 +9,19 @@ export type LoadedRun = {
     has_prompts: boolean;
     prompt_count: number;
     context_length: number;
+    backend_user: string;
 };
 
 export async function getStatus(): Promise<LoadedRun | null> {
     const response = await fetch(`${API_URL}/api/status`);
     const data = await response.json();
     return data;
+}
+
+export async function getWhoami(): Promise<string> {
+    const response = await fetch(`${API_URL}/api/whoami`);
+    const data = await response.json();
+    return data.user;
 }
 
 export async function loadRun(wandbRunPath: string, contextLength: number): Promise<void> {
