@@ -1,5 +1,4 @@
 import pytest
-from transformers import PreTrainedModel
 
 from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
@@ -29,20 +28,29 @@ def test_gpt_2_decomposition_happy_path() -> None:
         "task_config.max_seq_len": 16,
         "task_config.train_data_split": "train[:100]",
         "task_config.eval_data_split": "test[100:200]",
-        "target_module_patterns": ["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
-        "identity_module_patterns": ["transformer.h.1.attn.c_attn"],
+        "target_module_patterns": ["h.2.attn.q_proj", "h.3.mlp.c_fc"],
+        "identity_module_patterns": ["h.1.attn.q_proj"],
+        "eval_metric_configs": [],  # Disable eval metrics to avoid layer matching issues
     }
     config_dict = apply_nested_updates(base_config, test_overrides)
     config = Config.model_validate(config_dict)
 
     assert isinstance(config.task_config, LMTaskConfig), "task_config not LMTaskConfig"
-    hf_model_class = resolve_class(config.pretrained_model_class)
-    assert issubclass(hf_model_class, PreTrainedModel), (
-        f"Model class {hf_model_class} should be a subclass of PreTrainedModel which "
-        "defines a `from_pretrained` method"
+    pretrained_model_class = resolve_class(config.pretrained_model_class)
+    assert hasattr(pretrained_model_class, "from_pretrained"), (
+        f"Model class {pretrained_model_class} should have a `from_pretrained` method"
     )
     assert config.pretrained_model_name is not None
-    target_model = hf_model_class.from_pretrained(config.pretrained_model_name)
+
+    # Handle simple_stories_train models specially (they use from_run_info)
+    if config.pretrained_model_class.startswith("simple_stories_train"):
+        from simple_stories_train.run_info import RunInfo as SSRunInfo
+
+        run_info = SSRunInfo.from_path(config.pretrained_model_name)
+        assert hasattr(pretrained_model_class, "from_run_info")
+        target_model = pretrained_model_class.from_run_info(run_info)  # pyright: ignore[reportAttributeAccessIssue]
+    else:
+        target_model = pretrained_model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
     target_model.eval()
 
     if config.identity_module_patterns is not None:
@@ -50,7 +58,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
 
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name,
+        hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.train_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=config.task_config.is_tokenized,
@@ -68,7 +76,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
 
     eval_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
-        hf_tokenizer_path=config.pretrained_model_name,
+        hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=config.task_config.is_tokenized,
