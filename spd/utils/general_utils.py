@@ -114,7 +114,9 @@ def get_lr_schedule_fn(
         return (
             lambda step, steps: 1.0
             if steps == 1
-            else 0.1 + (1 - 0.1) * 0.5 * np.cos(np.pi * step / (steps - 1))
+            else 0.1 + (1 - 0.1) * 0.5*(1+np.cos(np.pi * step / (steps - 1)))
+            # else np.cos(0.5*np.pi * step / (steps - 1))
+
         )
     else:
         # Exponential
@@ -256,7 +258,7 @@ def calc_sum_recon_loss_lm(
         case "kl":
             loss = calc_kl_divergence_lm(pred=pred, target=target, reduce=False).sum()
         case "mem":
-            # Only compute KL at the final sequence position
+            # Only compute KL at the final sequence position, restricted to top target vocab item
             # pred/target shape: [batch, seq_len, vocab] -> take [:, -1, :]
             pred_final = pred[:, -1, :]  # [batch, vocab]
             target_final = target[:, -1, :]  # [batch, vocab]
