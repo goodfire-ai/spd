@@ -129,27 +129,27 @@
     .container {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: var(--space-2);
     }
 
     .examples {
-        padding: 0.5rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
+        padding: var(--space-2);
+        background: var(--bg-inset);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: var(--space-2);
     }
 
     .controls {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
+        gap: var(--space-3);
+        padding: var(--space-2);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
         flex-wrap: wrap;
     }
 
@@ -157,62 +157,83 @@
     .page-size-control {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: var(--space-2);
     }
 
     .filter-control label,
     .page-size-control label {
-        font-size: 0.9rem;
-        color: #495057;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
         white-space: nowrap;
+        font-weight: 500;
     }
 
     .filter-control select,
     .page-size-control select {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        padding: 0.25rem 0.5rem;
-        font-size: 0.9rem;
-        background: white;
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
         cursor: pointer;
-        min-width: 120px;
+        min-width: 100px;
+    }
+
+    .filter-control select:focus,
+    .page-size-control select:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
     }
 
     .pagination {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        background: #f8f9fa;
+        gap: var(--space-2);
     }
 
     .pagination button {
-        padding: 0.25rem 0.75rem;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: white;
-        cursor: pointer;
-        font-size: 0.9rem;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+    }
+
+    .pagination button:hover:not(:disabled) {
+        background: var(--bg-inset);
+        color: var(--text-primary);
+        border-color: var(--border-strong);
     }
 
     .pagination button:disabled {
         opacity: 0.5;
-        cursor: not-allowed;
     }
 
     .pagination span {
-        font-size: 0.9rem;
-        color: #495057;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-muted);
         white-space: nowrap;
     }
 
     .page-input {
-        width: 60px;
-        padding: 0.25rem 0.5rem;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
+        width: 50px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
         text-align: center;
-        font-size: 0.9rem;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
         appearance: textfield;
+    }
+
+    .page-input:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
     }
 
     .page-input::-webkit-inner-spin-button,
@@ -222,11 +243,16 @@
     }
 
     .example-item {
-        font-family: monospace;
-        font-size: 14px;
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
         line-height: 1.8;
-        color: #333;
-        padding: 0.5rem;
+        color: var(--text-primary);
+        padding: var(--space-2);
         overflow: visible;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .example-item:last-child {
+        border-bottom: none;
     }
 </style>

@@ -123,7 +123,7 @@ class AppRunner:
         start = time.time()
         while time.time() < (start + STARTUP_TIMEOUT_SECONDS):
             try:
-                response = requests.get(f"http://localhost:{port}", timeout=1.0)
+                response = requests.get(f"http://localhost:{port}/api/health", timeout=1.0)
                 if response.status_code == 200:
                     # Print success message immediately when ready
                     if pid is not None:

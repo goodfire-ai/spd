@@ -1,37 +1,41 @@
 <script lang="ts">
-    import type { Status } from "./lib/api";
+    import { RenderScan } from "svelte-render-scan";
+    import type { LoadedRun } from "./lib/api";
     import * as api from "./lib/api";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
-    import { parseWandbRunPath } from "./lib";
+    import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
+    import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
 
-    /** can be a wandb run path, or id. we sanitize this on sumbit */
+    /** wandb run path (e.g. "entity/project/run_id"). sanitized on submit */
     let trainWandbRunEntry = $state<string | null>(null);
+    let contextLength = $state<number | null>(null);
 
-    let status = $state<Status>({ train_run: null });
+    let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
 
     async function loadStatus() {
         if (loadingTrainRun) return;
         try {
-            const newStatus = await api.getStatus();
+            const newLoadedRun = await api.getStatus();
             loadingTrainRun = false;
 
             // if we have a run, but the backend says null, then we're out of sync (backend likely restarted)
             // in this case, we keep the local state so the user can still see what they were looking at
-            if (status.train_run && !newStatus.train_run) {
+            if (loadedRun && !newLoadedRun) {
                 backendError = "Backend state lost (restarted). Showing cached view.";
                 return;
             }
 
             // otherwise, we update the status
-            status = newStatus;
+            loadedRun = newLoadedRun;
             backendError = null;
 
-            if (!status.train_run) return;
-            trainWandbRunEntry = status.train_run.wandb_path;
+            if (!loadedRun) return;
+            trainWandbRunEntry = loadedRun.wandb_path;
+            contextLength = loadedRun.context_length;
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
@@ -42,217 +46,290 @@
     async function loadRun(event: Event) {
         event.preventDefault();
         const input = trainWandbRunEntry?.trim();
-        if (!input) return;
+        if (!input || !contextLength) return;
         try {
             loadingTrainRun = true;
-            status = { train_run: null };
-            const wandbRunPath = parseWandbRunPath(input);
-            console.log("loading run", wandbRunPath);
-            trainWandbRunEntry = wandbRunPath;
-            await api.loadRun(wandbRunPath);
+            loadedRun = null;
+            console.log("loading run", input);
+            await api.loadRun(input, contextLength);
+            // Set loading false before calling loadStatus, otherwise the guard returns early
+            loadingTrainRun = false;
             await loadStatus();
         } catch (error) {
             console.error("error loading run", error);
-        } finally {
             loadingTrainRun = false;
         }
     }
 
-    //   when the page loads, and every 5 seconds thereafter, load the status
-    $effect(() => {
-        loadStatus();
-        const interval = setInterval(loadStatus, 5000);
-        // return cleanup function to stop the polling
-        return () => clearInterval(interval);
-    });
+    onMount(loadStatus);
 
-    let activeTab = $state<"activation-contexts" | null>(null);
+    let activeTab = $state<"activation-contexts" | "local-attributions" | null>(null);
+    let showConfig = $state(false);
 </script>
 
+<RenderScan />
 <div class="app-layout">
-    <aside class="sidebar">
-        <div class="section-heading">W&B Run ID</div>
-        <form onsubmit={loadRun} class="input-group">
+    <header class="top-bar">
+        <form onsubmit={loadRun} class="run-input">
+            <label for="wandb-path">W&B Path/Link:</label>
             <input
                 type="text"
-                id="wandb-run-id"
+                id="wandb-path"
                 list="run-options"
+                placeholder="e.g. goodfire/spd/runs/33n6xjjt"
                 bind:value={trainWandbRunEntry}
                 disabled={loadingTrainRun}
-                placeholder="Select or enter run ID"
+            />
+            <label for="context-length">Context Length:</label>
+            <input
+                type="number"
+                id="context-length"
+                bind:value={contextLength}
+                disabled={loadingTrainRun}
+                min="1"
+                max="2048"
             />
             <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
-                {loadingTrainRun ? "Loading..." : "Load Run"}
+                {loadingTrainRun ? "..." : "Load"}
             </button>
         </form>
-        <div class="tab-navigation">
-            {#if status.train_run}
+
+        {#if loadedRun}
+            <nav class="tab-navigation">
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "local-attributions"}
+                    onclick={() => (activeTab = "local-attributions")}
+                >
+                    Local Attributions
+                </button>
                 <button
                     class="tab-button"
                     class:active={activeTab === "activation-contexts"}
-                    onclick={() => {
-                        console.log("clicking activation contexts tab");
-                        activeTab = "activation-contexts";
-                    }}
+                    onclick={() => (activeTab = "activation-contexts")}
                 >
                     Activation Contexts
                 </button>
-            {/if}
-        </div>
-        {#if status.train_run}
-            <div class="config">
-                <div class="section-heading">Config</div>
-                <pre>{status.train_run?.config_yaml}</pre>
+            </nav>
+
+            <div
+                class="config-wrapper"
+                role="group"
+                onmouseenter={() => (showConfig = true)}
+                onmouseleave={() => (showConfig = false)}
+            >
+                <button class="config-button">Config</button>
+                {#if showConfig}
+                    <div class="config-dropdown">
+                        <pre>{loadedRun.config_yaml}</pre>
+                    </div>
+                {/if}
             </div>
         {/if}
-    </aside>
+    </header>
 
-    <div class="main-content">
+    <main class="main-content">
         {#if backendError}
             <div class="warning-banner">
-                ⚠️ {backendError}
+                {backendError}
             </div>
         {/if}
-        {#if status.train_run && activeTab === "activation-contexts"}
+        {#if loadedRun && activeTab === "local-attributions"}
+            <LocalAttributionsTab />
+        {:else if loadedRun && activeTab === "activation-contexts"}
             <ActivationContextsTab />
+        {:else if loadingTrainRun}
+            <div class="empty-state">
+                <p>Loading run...</p>
+            </div>
+        {:else if !loadedRun}
+            <div class="empty-state">
+                <p>Enter a W&B Path above to get started</p>
+            </div>
         {/if}
-    </div>
+    </main>
 </div>
 
 <style>
     .app-layout {
         display: flex;
+        flex-direction: column;
         min-height: 100vh;
+        background: var(--bg-base);
     }
 
-    .sidebar {
-        width: 25vw;
-        min-width: 200px;
-        max-width: 400px;
-        background: #f8f9fa;
-        border-right: 1px solid #dee2e6;
-        padding: 1.5rem;
+    .top-bar {
         display: flex;
-        gap: 0.5rem;
-        flex-direction: column;
-        position: sticky;
-        top: 0;
-        height: 100vh;
-        overflow-y: auto;
+        align-items: center;
+        gap: var(--space-4);
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-default);
+        flex-shrink: 0;
+    }
+
+    .run-input {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .run-input label {
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        white-space: nowrap;
+        font-family: var(--font-sans);
+        font-weight: 500;
+    }
+
+    .run-input input[type="text"] {
+        width: 250px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+    }
+
+    .run-input input[type="text"]::placeholder {
+        color: var(--text-muted);
+    }
+
+    .run-input input[type="number"] {
+        width: 70px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+    }
+
+    .run-input input[type="text"]:focus,
+    .run-input input[type="number"]:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .run-input button {
+        padding: var(--space-1) var(--space-3);
+        background: var(--accent-primary);
+        color: white;
+        border: none;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .run-input button:hover:not(:disabled) {
+        background: var(--accent-primary-dim);
+    }
+
+    .run-input button:disabled {
+        background: var(--border-default);
+        color: var(--text-muted);
+    }
+
+    .tab-navigation {
+        display: flex;
+        gap: var(--space-1);
+    }
+
+    .tab-button {
+        padding: var(--space-1) var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        font-weight: 500;
+        color: var(--text-secondary);
+    }
+
+    .tab-button:hover {
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+        background: var(--bg-inset);
+    }
+
+    .tab-button.active {
+        color: white;
+        background: var(--accent-primary);
+        border-color: var(--accent-primary);
+    }
+
+    .config-wrapper {
+        position: relative;
+        margin-left: auto;
+    }
+
+    .config-button {
+        padding: var(--space-1) var(--space-2);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+
+    .config-button:hover {
+        border-color: var(--border-strong);
+        color: var(--text-primary);
+    }
+
+    .config-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        padding-top: var(--space-2);
+        z-index: 1000;
+    }
+
+    .config-dropdown pre {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        max-width: 420px;
+        max-height: 70vh;
+        overflow: auto;
+        margin: 0;
+        padding: var(--space-3);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-primary);
+        white-space: pre-wrap;
+        word-wrap: break-word;
     }
 
     .main-content {
         flex: 1;
         min-width: 0;
-        padding: 1rem;
+        min-height: 0;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
     }
 
     .warning-banner {
-        background: #fff3cd;
-        color: #856404;
-        padding: 0.75rem 1rem;
-        border: 1px solid #ffeeba;
-        border-radius: 4px;
-        margin-bottom: 0.5rem;
-        font-size: 0.9rem;
+        background: var(--bg-surface);
+        color: var(--accent-primary);
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--accent-primary-dim);
+        border-radius: var(--radius-md);
+        margin: var(--space-3);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        flex-shrink: 0;
     }
 
-    .tab-navigation {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .tab-button {
-        padding: 0.75rem 0.5rem;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: #495057;
-        transition: all 0.15s ease;
-        text-align: left;
+    .empty-state {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-    }
-    .tab-button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .tab-button:hover {
-        color: #007bff;
-        background: #f8f9fa;
-        border-color: #007bff;
-    }
-
-    .tab-button.active {
-        color: white;
-        background: #007bff;
-        border-color: #007bff;
-        box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
-    }
-
-    .section-heading {
-        font-weight: 600;
-        color: #333;
-        font-size: 0.9rem;
-    }
-
-    .input-group {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .input-group input[type="text"] {
+        justify-content: center;
         flex: 1;
-        padding: 0.5rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 1rem;
-    }
-
-    .input-group input[type="text"]:focus {
-        outline: none;
-        border-color: #4a90e2;
-        box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
-    }
-
-    .input-group button {
-        padding: 0.5rem 0.5rem;
-        background-color: #4a90e2;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-size: 1rem;
-        cursor: pointer;
-        white-space: nowrap;
-    }
-
-    .input-group button:hover:not(:disabled) {
-        background-color: #357abd;
-    }
-
-    .input-group button:disabled {
-        background-color: #ccc;
-        cursor: not-allowed;
-    }
-
-    .config {
-        margin-top: 0.5rem;
-    }
-
-    .config pre {
-        margin: 0;
-        font-size: 0.8rem;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
+        color: var(--text-muted);
+        font-family: var(--font-sans);
     }
 </style>

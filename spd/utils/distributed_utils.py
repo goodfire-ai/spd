@@ -129,9 +129,11 @@ def is_main_process() -> bool:
 
 
 def get_device() -> str:
-    """Get device for current process in distributed setting."""
+    """Get device for current process."""
     state = get_distributed_state()
-    if state is None or state.backend == "gloo":
+    if state is None:
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if state.backend == "gloo":
         return "cpu"
     return f"cuda:{state.local_rank}"
 

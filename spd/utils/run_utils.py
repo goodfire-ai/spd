@@ -78,31 +78,6 @@ def _save_text(data: str, path: Path | str, encoding: str = "utf-8") -> None:
         f.write(data)
 
 
-def check_run_exists(wandb_string: str) -> Path | None:
-    """Check if a run exists in the shared filesystem based on WandB string.
-
-    Args:
-        wandb_string: WandB string in format "wandb:project/runs/run_id"
-
-    Returns:
-        Path to the run directory if it exists, None otherwise
-    """
-    if not wandb_string.startswith("wandb:"):
-        return None
-
-    # Parse the wandb string
-    parts = wandb_string.replace("wandb:", "").split("/")
-    if len(parts) != 3 or parts[1] != "runs":
-        return None
-
-    project = parts[0]
-    run_id = parts[2]
-
-    # Check if directory exists with format project-runid
-    run_dir = SPD_CACHE_DIR / "runs" / f"{project}-{run_id}"
-    return run_dir if run_dir.exists() else None
-
-
 def save_file(data: dict[str, Any] | Any, path: Path | str, **kwargs: Any) -> None:
     """Save a file.
 

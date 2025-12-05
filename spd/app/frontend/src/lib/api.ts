@@ -1,24 +1,27 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:8000";
 
-export type TrainRun = {
+export type LoadedRun = {
+    id: number;
     wandb_path: string;
     config_yaml: string;
+    has_activation_contexts: boolean;
+    has_prompts: boolean;
+    prompt_count: number;
+    context_length: number;
 };
 
-export type Status = { train_run: TrainRun | null };
-
-export async function getStatus(): Promise<Status> {
-    const response = await fetch(`${API_URL}/status`);
+export async function getStatus(): Promise<LoadedRun | null> {
+    const response = await fetch(`${API_URL}/api/status`);
     const data = await response.json();
     return data;
 }
 
-export async function loadRun(wandbRunPath: string): Promise<void> {
-    const url = new URL(`${API_URL}/runs/load`);
-    // url-encode the wandb run path because it contains slashes
-    const encodedWandbRunPath = encodeURIComponent(wandbRunPath);
-    url.searchParams.set("wandb_run_path", encodedWandbRunPath);
+export async function loadRun(wandbRunPath: string, contextLength: number): Promise<void> {
+    const url = new URL(`${API_URL}/api/runs/load`);
+    // searchParams.set handles URL encoding automatically
+    url.searchParams.set("wandb_path", wandbRunPath);
+    url.searchParams.set("context_length", String(contextLength));
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
         const error = await response.json();
@@ -31,14 +34,14 @@ export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     mean_ci: number;
     // Examples - columnar arrays (n_examples, window_size)
-    example_tokens: string[][];      // [n_examples][window_size]
-    example_ci: number[][];          // [n_examples][window_size]
-    example_active_pos: number[];    // [n_examples]
-    example_active_ci: number[];     // [n_examples]
+    example_tokens: string[][]; // [n_examples][window_size]
+    example_ci: number[][]; // [n_examples][window_size]
+    example_active_pos: number[]; // [n_examples]
+    example_active_ci: number[]; // [n_examples]
     // Token precision/recall - columnar arrays sorted by recall descending
-    pr_tokens: string[];             // [n_unique_tokens]
-    pr_recalls: number[];            // [n_unique_tokens]
-    pr_precisions: number[];         // [n_unique_tokens]
+    pr_tokens: string[]; // [n_unique_tokens]
+    pr_recalls: number[]; // [n_unique_tokens]
+    pr_precisions: number[]; // [n_unique_tokens]
 };
 
 export type ModelActivationContexts = {
@@ -51,6 +54,7 @@ export type ActivationContextsConfig = {
     n_batches: number;
     batch_size: number;
     n_tokens_either_side: number;
+    separation_tokens: number;
 };
 
 export type ProgressUpdate = {
@@ -65,7 +69,6 @@ export type SubcomponentMetadata = {
 };
 
 export type HarvestMetadata = {
-    harvest_id: string;
     layers: Record<string, SubcomponentMetadata[]>;
 };
 
@@ -77,7 +80,7 @@ export async function getSubcomponentActivationContexts(
     config: ActivationContextsConfig,
     onProgress?: (progress: ProgressUpdate) => void,
 ): Promise<HarvestMetadata> {
-    const url = new URL(`${API_URL}/activation_contexts/subcomponents`);
+    const url = new URL(`${API_URL}/api/activation_contexts/subcomponents`);
     for (const [key, value] of Object.entries(config)) {
         url.searchParams.set(key, String(value));
     }
@@ -133,12 +136,8 @@ export async function getSubcomponentActivationContexts(
 }
 
 // Lazy-load individual component data
-export async function getComponentDetail(
-    harvestId: string,
-    layer: string,
-    componentIdx: number,
-): Promise<ComponentDetail> {
-    const url = `${API_URL}/activation_contexts/${encodeURIComponent(harvestId)}/${encodeURIComponent(layer)}/${componentIdx}`;
+export async function getComponentDetail(layer: string, componentIdx: number): Promise<ComponentDetail> {
+    const url = `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`;
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {
         const error = await response.json();

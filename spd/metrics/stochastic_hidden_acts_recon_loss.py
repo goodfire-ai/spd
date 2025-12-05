@@ -21,7 +21,7 @@ def _stochastic_hidden_acts_recon_loss_update(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     assert pre_weight_acts, "Empty pre_weight_acts"
@@ -66,7 +66,7 @@ def stochastic_hidden_acts_recon_loss(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
 ) -> Float[Tensor, ""]:
     sum_mse, n_examples = _stochastic_hidden_acts_recon_loss_update(
         model,
@@ -107,7 +107,7 @@ class StochasticHiddenActsReconLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
         ci: CIOutputs,
-        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
         sum_mse, n_examples = _stochastic_hidden_acts_recon_loss_update(

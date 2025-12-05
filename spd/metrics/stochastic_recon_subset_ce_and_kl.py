@@ -81,7 +81,7 @@ class StochasticReconSubsetCEAndKL(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
-        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
         losses = self._calc_subset_losses(
