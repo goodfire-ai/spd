@@ -1,4 +1,5 @@
 import type { GraphData } from "../../lib/localAttributionsTypes";
+import type { NormalizeType } from "../../lib/localAttributionsApi";
 
 export type CachedGraph = {
     id: string;
@@ -8,9 +9,9 @@ export type CachedGraph = {
 
 export type PromptCard = {
     id: string;
-    promptId: number | null;
+    promptId: number;
     tokens: string[];
-    tokenIds: number[] | null;
+    tokenIds: number[];
     isCustom: boolean;
     graphs: CachedGraph[];
     activeGraphId: string | null;
@@ -28,7 +29,7 @@ export type OptimizeConfig = {
 
 export type ComputeOptions = {
     maxMeanCI: number;
-    normalizeEdges: boolean;
+    normalizeEdges: NormalizeType;
     useOptimized: boolean;
     optimizeConfig: OptimizeConfig;
 };

@@ -2,12 +2,26 @@
     type Props = {
         topK: number;
         nodeLayout: "importance" | "shuffled" | "jittered";
+        componentGap: number;
+        layerGap: number;
         filteredEdgeCount: number | null;
         onTopKChange: (value: number) => void;
         onLayoutChange: (value: "importance" | "shuffled" | "jittered") => void;
+        onComponentGapChange: (value: number) => void;
+        onLayerGapChange: (value: number) => void;
     };
 
-    let { topK, nodeLayout, filteredEdgeCount, onTopKChange, onLayoutChange }: Props = $props();
+    let {
+        topK,
+        nodeLayout,
+        componentGap,
+        layerGap,
+        filteredEdgeCount,
+        onTopKChange,
+        onLayoutChange,
+        onComponentGapChange,
+        onLayerGapChange,
+    }: Props = $props();
 </script>
 
 <div class="controls-bar">
@@ -33,6 +47,28 @@
             <option value="shuffled">Shuffled</option>
             <option value="jittered">Jittered</option>
         </select>
+    </label>
+    <label>
+        <span>Node Gap</span>
+        <input
+            type="number"
+            value={componentGap}
+            oninput={(e) => onComponentGapChange(parseInt(e.currentTarget.value) || 4)}
+            min={0}
+            max={20}
+            step={1}
+        />
+    </label>
+    <label>
+        <span>Layer Gap</span>
+        <input
+            type="number"
+            value={layerGap}
+            oninput={(e) => onLayerGapChange(parseInt(e.currentTarget.value) || 30)}
+            min={10}
+            max={100}
+            step={5}
+        />
     </label>
 
     {#if filteredEdgeCount !== null}

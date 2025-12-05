@@ -38,6 +38,7 @@ class GraphData(BaseModel):
     tokens: list[str]
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
+    cached: bool = False
 
 
 class OptimizationResult(BaseModel):
@@ -61,6 +62,7 @@ class GraphDataWithOptimization(BaseModel):
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
     optimization: OptimizationResult
+    cached: bool = False
 
 
 class ComponentStats(BaseModel):

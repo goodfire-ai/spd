@@ -4,6 +4,7 @@ import json
 from collections.abc import Generator
 from typing import Annotated
 
+import torch
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -158,4 +159,58 @@ def search_prompts(
         query=PromptSearchQuery(components=component_list, mode=mode),
         count=len(results),
         results=results,
+    )
+
+
+@router.post("/custom")
+@log_errors
+def create_custom_prompt(
+    text: str,
+    manager: DepStateManager,
+    loaded: DepLoadedRun,
+) -> PromptPreview:
+    """Create a custom prompt from text, computing CI and storing it.
+
+    Returns the created prompt with its ID for further operations.
+    """
+    db = manager.db
+
+    # Tokenize
+    token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
+    if not token_ids:
+        return JSONResponse({"error": "Text produced no tokens"}, status_code=400)  # pyright: ignore[reportReturnType]
+
+    n_seq = len(token_ids)
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+
+    # Compute CI
+    ci_result = compute_ci_only(
+        model=loaded.model,
+        tokens=tokens_tensor,
+        sampling=loaded.config.sampling,
+    )
+
+    # Extract active components for inverted index
+    active_components = extract_active_from_ci(
+        ci_lower_leaky=ci_result.ci_lower_leaky,
+        output_probs=ci_result.output_probs,
+        ci_threshold=0.0,
+        output_prob_threshold=0.01,
+        n_seq=n_seq,
+    )
+
+    # Save to DB
+    prompt_id = db.add_custom_prompt(
+        run_id=loaded.run.id,
+        token_ids=token_ids,
+        active_components=active_components,
+        context_length=loaded.context_length,
+    )
+
+    token_strings = [loaded.token_strings[t] for t in token_ids]
+    return PromptPreview(
+        id=prompt_id,
+        token_ids=token_ids,
+        tokens=token_strings,
+        preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
     )

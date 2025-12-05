@@ -61,13 +61,19 @@
             <span class="info-icon" data-tooltip="Backend defaults: ci_threshold=1e-6, output_prob_threshold=0.01"
                 >?</span
             >
-            <label class="checkbox">
-                <input
-                    type="checkbox"
-                    checked={options.normalizeEdges}
-                    onchange={(e) => onOptionsChange({ normalizeEdges: e.currentTarget.checked })}
-                />
-                <span>Normalize</span>
+            <label>
+                <span>Norm</span>
+                <select
+                    value={options.normalizeEdges}
+                    onchange={(e) =>
+                        onOptionsChange({
+                            normalizeEdges: e.currentTarget.value as "none" | "target" | "layer",
+                        })}
+                >
+                    <option value="none">None</option>
+                    <option value="target">Target</option>
+                    <option value="layer">Layer</option>
+                </select>
             </label>
             <label class="checkbox">
                 <input
@@ -142,23 +148,21 @@
             {/if}
         </div>
 
+    </div>
+
+    <div class="graph-tabs">
+        {#each card.graphs as graph (graph.id)}
+            <div class="graph-tab" class:active={graph.id === card.activeGraphId}>
+                <button class="tab-label" onclick={() => onSelectGraph(graph.id)}>
+                    {graph.label}
+                </button>
+                <button class="tab-close" onclick={() => onCloseGraph(graph.id)}>×</button>
+            </div>
+        {/each}
         <button class="btn-compute" onclick={onCompute} disabled={!canCompute}>
             {buttonText}
         </button>
     </div>
-
-    {#if card.graphs.length > 0}
-        <div class="graph-tabs">
-            {#each card.graphs as graph (graph.id)}
-                <div class="graph-tab" class:active={graph.id === card.activeGraphId}>
-                    <button class="tab-label" onclick={() => onSelectGraph(graph.id)}>
-                        {graph.label}
-                    </button>
-                    <button class="tab-close" onclick={() => onCloseGraph(graph.id)}>×</button>
-                </div>
-            {/each}
-        </div>
-    {/if}
 </div>
 
 <style>
@@ -273,6 +277,20 @@
         border-color: var(--accent-primary-dim);
     }
 
+    .compute-options select {
+        padding: var(--space-1);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+    }
+
+    .compute-options select:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
     .compute-options label.checkbox {
         gap: var(--space-1);
     }
@@ -307,21 +325,28 @@
     }
 
     .btn-compute {
-        padding: var(--space-2) var(--space-3);
-        background: var(--accent-primary);
-        color: white;
-        border: none;
+        padding: var(--space-1) var(--space-2);
+        background: var(--bg-elevated);
+        border: 1px dashed var(--accent-primary-dim);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
         font-weight: 500;
         white-space: nowrap;
+        color: var(--accent-primary);
+        cursor: pointer;
     }
 
     .btn-compute:hover:not(:disabled) {
-        background: var(--accent-primary-dim);
+        background: var(--bg-inset);
+        border-style: solid;
+        border-color: var(--accent-primary);
     }
 
     .btn-compute:disabled {
-        background: var(--border-default);
+        background: var(--bg-elevated);
+        border-color: var(--border-default);
         color: var(--text-muted);
+        cursor: not-allowed;
     }
 
     .graph-tabs {

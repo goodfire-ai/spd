@@ -26,6 +26,7 @@ export type GraphData = {
     edges: Edge[];
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
     optimization?: OptimizationResult;
+    cached?: boolean;
 };
 
 export type OptimizationResult = {

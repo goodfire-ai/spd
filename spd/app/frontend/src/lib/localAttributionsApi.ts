@@ -64,7 +64,15 @@ export async function searchPrompts(components: string[], mode: "all" | "any" = 
     return fetchJson<SearchResult>(url.toString());
 }
 
-// Tokenize and compute
+// Custom prompts
+
+export async function createCustomPrompt(text: string): Promise<PromptPreview> {
+    const url = new URL(`${API_URL}/api/prompts/custom`);
+    url.searchParams.set("text", text);
+    return fetchJson<PromptPreview>(url.toString(), { method: "POST" });
+}
+
+// Tokenize (preview only, doesn't persist)
 
 export async function tokenizeText(text: string): Promise<TokenizeResult> {
     const url = new URL(`${API_URL}/api/graphs/tokenize`);
@@ -72,9 +80,11 @@ export async function tokenizeText(text: string): Promise<TokenizeResult> {
     return fetchJson<TokenizeResult>(url.toString(), { method: "POST" });
 }
 
+export type NormalizeType = "none" | "target" | "layer";
+
 export type ComputeGraphParams = {
-    tokenIds: number[];
-    normalize: boolean;
+    promptId: number;
+    normalize: NormalizeType;
 };
 
 export async function computeGraphStreaming(
@@ -82,12 +92,11 @@ export async function computeGraphStreaming(
     onProgress?: (progress: GraphProgress) => void,
 ): Promise<GraphData> {
     const url = new URL(`${API_URL}/api/graphs`);
+    url.searchParams.set("prompt_id", String(params.promptId));
     url.searchParams.set("normalize", String(params.normalize));
 
     const response = await fetch(url.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token_ids: params.tokenIds }),
     });
     if (!response.ok) {
         const error = await response.json();
@@ -139,13 +148,13 @@ export async function computeGraphStreaming(
 }
 
 export type ComputeGraphOptimizedParams = {
-    tokenIds: number[];
+    promptId: number;
     labelToken: number;
     impMinCoeff: number;
     ceLossCoeff: number;
     steps: number;
     pnorm: number;
-    normalize: boolean;
+    normalize: NormalizeType;
     outputProbThreshold: number;
 };
 
@@ -154,6 +163,7 @@ export async function computeGraphOptimizedStreaming(
     onProgress?: (progress: GraphProgress) => void,
 ): Promise<GraphData> {
     const url = new URL(`${API_URL}/api/graphs/optimized/stream`);
+    url.searchParams.set("prompt_id", String(params.promptId));
     url.searchParams.set("label_token", String(params.labelToken));
     url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
     url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
@@ -164,8 +174,6 @@ export async function computeGraphOptimizedStreaming(
 
     const response = await fetch(url.toString(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token_ids: params.tokenIds }),
     });
     if (!response.ok) {
         const error = await response.json();
@@ -281,4 +289,10 @@ export async function generatePrompts(
     }
 
     return result;
+}
+
+// Fetch cached graphs
+
+export async function getCachedGraphs(promptId: number): Promise<GraphData[]> {
+    return fetchJson<GraphData[]>(`${API_URL}/api/graphs/cached/${promptId}`);
 }

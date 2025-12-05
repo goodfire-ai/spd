@@ -1,19 +1,19 @@
 <script lang="ts">
-    import * as attrApi from "../lib/localAttributionsApi";
     import * as mainApi from "../lib/api";
+    import * as attrApi from "../lib/localAttributionsApi";
     import type {
-        PromptPreview,
-        GraphData,
         ActivationContextsSummary,
+        GraphData,
         PinnedNode,
+        PromptPreview,
     } from "../lib/localAttributionsTypes";
-    import type { PromptCard, ComputeOptions, OptimizeConfig, LoadingState } from "./local-attr/types";
-    import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
-    import ViewControls from "./local-attr/ViewControls.svelte";
-    import PromptPicker from "./local-attr/PromptPicker.svelte";
-    import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
-    import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
+    import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
+    import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
+    import PromptPicker from "./local-attr/PromptPicker.svelte";
+    import type { CachedGraph, ComputeOptions, LoadingState, OptimizeConfig, PromptCard } from "./local-attr/types";
+    import ViewControls from "./local-attr/ViewControls.svelte";
+    import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
     // Server state
     let loadedRun = $state<mainApi.LoadedRun | null>(null);
@@ -31,6 +31,7 @@
     let filterByPinned = $state(false);
     let filteredPrompts = $state<PromptPreview[]>([]);
     let filterLoading = $state(false);
+    let isAddingCustomPrompt = $state(false);
 
     // Loading state
     let loadingCardId = $state<string | null>(null);
@@ -49,12 +50,14 @@
     // View controls
     let topK = $state(800);
     let nodeLayout = $state<"importance" | "shuffled" | "jittered">("importance");
+    let componentGap = $state(4);
+    let layerGap = $state(30);
     let filteredEdgeCount = $state<number | null>(null);
 
     // Compute options
     let computeOptions = $state<ComputeOptions>({
         maxMeanCI: 1.0,
-        normalizeEdges: true,
+        normalizeEdges: "layer",
         useOptimized: false,
         optimizeConfig: {
             labelTokenText: "",
@@ -164,16 +167,36 @@
         }
     }
 
-    function addPromptCard(promptId: number | null, tokens: string[], tokenIds: number[] | null, isCustom: boolean) {
+    async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
         const cardId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+        // Fetch cached graphs for this prompt
+        let graphs: CachedGraph[] = [];
+        try {
+            const cachedGraphs = await attrApi.getCachedGraphs(promptId);
+            graphs = cachedGraphs.map((data, idx) => {
+                const isOptimized = !!data.optimization;
+                const label = isOptimized
+                    ? `Optimized (${data.optimization!.steps} steps)`
+                    : "Standard";
+                return {
+                    id: `cached-${idx}-${Date.now()}`,
+                    label,
+                    data,
+                };
+            });
+        } catch (e) {
+            console.warn("Failed to fetch cached graphs:", e);
+        }
+
         const newCard: PromptCard = {
             id: cardId,
             promptId,
             tokens,
             tokenIds,
             isCustom,
-            graphs: [],
-            activeGraphId: null,
+            graphs,
+            activeGraphId: graphs.length > 0 ? graphs[0].id : null,
         };
         promptCards = [...promptCards, newCard];
         activeCardId = cardId;
@@ -184,8 +207,13 @@
     }
 
     async function handleAddCustomPrompt(text: string) {
-        const result = await attrApi.tokenizeText(text);
-        addPromptCard(null, result.tokens, result.token_ids, true);
+        isAddingCustomPrompt = true;
+        try {
+            const prompt = await attrApi.createCustomPrompt(text);
+            await addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, true);
+        } finally {
+            isAddingCustomPrompt = false;
+        }
     }
 
     function handleCloseCard(cardId: string) {
@@ -260,7 +288,7 @@
                 if (!optConfig.labelTokenId) throw new Error("Label token required for optimization");
                 data = await attrApi.computeGraphOptimizedStreaming(
                     {
-                        tokenIds: activeCard.tokenIds,
+                        promptId: activeCard.promptId,
                         labelToken: optConfig.labelTokenId,
                         normalize: computeOptions.normalizeEdges,
                         impMinCoeff: optConfig.impMinCoeff,
@@ -284,7 +312,7 @@
             } else {
                 data = await attrApi.computeGraphStreaming(
                     {
-                        tokenIds: activeCard.tokenIds,
+                        promptId: activeCard.promptId,
                         normalize: computeOptions.normalizeEdges,
                     },
                     (progress) => {
@@ -398,6 +426,7 @@
                         {generatingGraphs}
                         {generateProgress}
                         {generateCount}
+                        {isAddingCustomPrompt}
                         show={showPromptPicker}
                         onSelectPrompt={handleSelectPrompt}
                         onAddCustom={handleAddCustomPrompt}
@@ -450,15 +479,21 @@
                                 <ViewControls
                                     {topK}
                                     {nodeLayout}
+                                    {componentGap}
+                                    {layerGap}
                                     {filteredEdgeCount}
                                     onTopKChange={(v) => (topK = v)}
                                     onLayoutChange={(v) => (nodeLayout = v)}
+                                    onComponentGapChange={(v) => (componentGap = v)}
+                                    onLayerGapChange={(v) => (layerGap = v)}
                                 />
                                 {#key activeGraph.id}
                                     <LocalAttributionsGraph
                                         data={activeGraph.data}
                                         {topK}
                                         {nodeLayout}
+                                        {componentGap}
+                                        {layerGap}
                                         {activationContextsSummary}
                                         {pinnedNodes}
                                         onPinnedNodesChange={handlePinnedNodesChange}

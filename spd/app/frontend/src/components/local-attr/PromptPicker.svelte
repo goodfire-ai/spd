@@ -10,6 +10,7 @@
         generatingGraphs: boolean;
         generateProgress: number;
         generateCount: number;
+        isAddingCustomPrompt: boolean;
         show: boolean;
         onSelectPrompt: (prompt: PromptPreview) => void;
         onAddCustom: (text: string) => Promise<void>;
@@ -27,6 +28,7 @@
         generatingGraphs,
         generateProgress,
         generateCount,
+        isAddingCustomPrompt,
         show,
         onSelectPrompt,
         onAddCustom,
@@ -36,20 +38,14 @@
     }: Props = $props();
 
     let customText = $state("");
-    let tokenizeLoading = $state(false);
 
     const displayedPrompts = $derived(filterByPinned ? filteredPrompts : prompts);
 
     async function handleAddCustom() {
-        if (!customText.trim() || tokenizeLoading) return;
-        tokenizeLoading = true;
-        try {
-            await onAddCustom(customText);
-            customText = "";
-            onClose();
-        } finally {
-            tokenizeLoading = false;
-        }
+        if (!customText.trim() || isAddingCustomPrompt) return;
+        await onAddCustom(customText);
+        customText = "";
+        onClose();
     }
 
     function handleSelectPrompt(p: PromptPreview) {
@@ -70,8 +66,8 @@
                 onkeydown={(e) => e.key === "Enter" && handleAddCustom()}
                 class="picker-input"
             />
-            <button onclick={handleAddCustom} disabled={!customText.trim() || tokenizeLoading} class="btn-tokenize">
-                {tokenizeLoading ? "..." : "Add"}
+            <button onclick={handleAddCustom} disabled={!customText.trim() || isAddingCustomPrompt} class="btn-tokenize">
+                {isAddingCustomPrompt ? "..." : "Add"}
             </button>
         </div>
 

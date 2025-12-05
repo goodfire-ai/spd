@@ -17,9 +17,7 @@
 
     // Constants
     const COMPONENT_SIZE = 8;
-    const COMPONENT_GAP = 4;
-    const HIT_AREA_PADDING = 4; // Extra padding around nodes for easier hover
-    const LAYER_GAP = 30;
+    const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
 
@@ -31,6 +29,8 @@
         data: GraphData;
         topK: number;
         nodeLayout: "importance" | "shuffled" | "jittered";
+        componentGap: number;
+        layerGap: number;
         activationContextsSummary: ActivationContextsSummary | null;
         pinnedNodes: PinnedNode[];
         onPinnedNodesChange: (nodes: PinnedNode[]) => void;
@@ -41,6 +41,8 @@
         data,
         topK,
         nodeLayout,
+        componentGap,
+        layerGap,
         activationContextsSummary,
         pinnedNodes,
         onPinnedNodesChange,
@@ -189,7 +191,7 @@
         let currentY = MARGIN.top;
         for (const row of rows.slice().reverse()) {
             rowYPositions[row] = currentY;
-            currentY += COMPONENT_SIZE + LAYER_GAP;
+            currentY += COMPONENT_SIZE + layerGap;
         }
 
         // Map each layer to its row's Y position
@@ -232,7 +234,7 @@
         const MIN_COL_WIDTH = 30;
         const COL_PADDING = 16;
         const seqWidths = maxComponentsPerSeq.map((n) =>
-            Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + COMPONENT_GAP) + COL_PADDING * 2),
+            Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + componentGap) + COL_PADDING * 2),
         );
         const seqXStarts = [MARGIN.left];
         for (let i = 0; i < seqWidths.length - 1; i++) {
@@ -241,7 +243,7 @@
 
         // Position nodes
         const nodePositions: Record<string, NodePosition> = {};
-        const QKV_GROUP_GAP = COMPONENT_SIZE + COMPONENT_GAP;
+        const QKV_GROUP_GAP = COMPONENT_SIZE + componentGap;
 
         for (const layer of allLayers) {
             const info = parseLayer(layer);
@@ -262,7 +264,7 @@
                         const prevLayer = `h.${info.block}.attn.${QKV_SUBTYPES[i]}`;
                         const prevLayerNodes = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`];
                         const prevCount = prevLayerNodes?.length ?? 0;
-                        baseX += prevCount * (COMPONENT_SIZE + COMPONENT_GAP);
+                        baseX += prevCount * (COMPONENT_SIZE + componentGap);
                         baseX += QKV_GROUP_GAP;
                     }
                 }
@@ -310,7 +312,7 @@
                 return impB - impA;
             });
             for (let i = 0; i < n; i++) {
-                offsets[sorted[i]] = i * (COMPONENT_SIZE + COMPONENT_GAP);
+                offsets[sorted[i]] = i * (COMPONENT_SIZE + componentGap);
             }
             return offsets;
         }
@@ -319,7 +321,7 @@
             const seed = hashString(`${layer}:${seqIdx}`);
             const shuffled = seededShuffle([...components], seed);
             for (let i = 0; i < n; i++) {
-                offsets[shuffled[i]] = i * (COMPONENT_SIZE + COMPONENT_GAP);
+                offsets[shuffled[i]] = i * (COMPONENT_SIZE + componentGap);
             }
             return offsets;
         }
@@ -380,6 +382,8 @@
         return min + (max - min) * t;
     }
 
+    const EDGE_HIT_AREA_WIDTH = 12; // Wider invisible stroke for easier hover
+
     // Build SVG edges string (for {@html} - performance optimization)
     const edgesSvgString = $derived.by(() => {
         let svg = "";
@@ -395,7 +399,10 @@
                 const cp1y = p1.y - curveOffset;
                 const cp2y = p2.y + curveOffset;
                 const d = `M ${p1.x},${p1.y} C ${p1.x},${cp1y} ${p2.x},${cp2y} ${p2.x},${p2.y}`;
-                svg += `<path class="edge" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="${color}" stroke-width="${w}" opacity="${op}" fill="none"/>`;
+                // Invisible hit area path (wider, for easier hovering)
+                svg += `<path class="edge edge-hit-area" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="transparent" stroke-width="${EDGE_HIT_AREA_WIDTH}" fill="none"/>`;
+                // Visible edge path
+                svg += `<path class="edge edge-visible" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="${color}" stroke-width="${w}" opacity="${op}" fill="none" pointer-events="none"/>`;
             }
         }
         return svg;
@@ -516,11 +523,31 @@
         hoveredNode = null;
     }
 
+    function isEdgeConnectedToPinned(src: string, tgt: string): boolean {
+        if (pinnedNodes.length === 0) return false;
+        for (const pinned of pinnedNodes) {
+            // Check if src or tgt matches pinned node (layer:*:cIdx pattern)
+            const [srcLayer, , srcCIdx] = src.split(":");
+            const [tgtLayer, , tgtCIdx] = tgt.split(":");
+            if (
+                (srcLayer === pinned.layer && +srcCIdx === pinned.cIdx) ||
+                (tgtLayer === pinned.layer && +tgtCIdx === pinned.cIdx)
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function handleEdgeMouseEnter(event: MouseEvent) {
         const target = event.target as SVGElement;
         if (target.classList.contains("edge")) {
             const src = target.getAttribute("data-src") || "";
             const tgt = target.getAttribute("data-tgt") || "";
+
+            // Only show edge tooltip if connected to a pinned node
+            if (!isEdgeConnectedToPinned(src, tgt)) return;
+
             const val = parseFloat(target.getAttribute("data-val") || "0");
             hoveredEdge = { src, tgt, val };
             edgeTooltipPos = { x: event.clientX + 10, y: event.clientY + 10 };
@@ -571,7 +598,8 @@
         }
 
         const currentHighlighted = new SvelteSet<Element>();
-        const edges = graphContainer.querySelectorAll(".edge");
+        // Only target visible edges for highlighting (not hit areas)
+        const edges = graphContainer.querySelectorAll(".edge-visible");
 
         // Build set of currently highlighted edges
         edges.forEach((el) => {
@@ -803,11 +831,11 @@
         display: block;
     }
 
-    :global(.edge) {
+    /* :global(.edge) {
         transition:
             opacity 0.1s,
             stroke-width 0.1s;
-    }
+    } */
 
     :global(.edge.highlighted) {
         opacity: 1 !important;
@@ -818,12 +846,12 @@
         cursor: pointer;
     }
 
-    .node {
+    /* .node {
         transition:
             stroke-width 0.1s,
             filter 0.1s;
-        pointer-events: none; /* Let the group handle events */
-    }
+        pointer-events: none; Let the group handle events
+    } */
 
     .node.highlighted {
         stroke: var(--accent-primary) !important;
