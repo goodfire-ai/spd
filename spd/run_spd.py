@@ -1,11 +1,14 @@
 """Run SPD on a model."""
 
 import gc
+import hashlib
+import random
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -18,6 +21,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from spd import checkpoint as ckpt
 from spd.configs import (
     Config,
     LossMetricConfigType,
@@ -49,8 +53,21 @@ from spd.utils.general_utils import (
 )
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import replace_std_values_in_layernorm
-from spd.utils.run_utils import save_file
 from spd.utils.wandb_utils import try_wandb
+
+
+def log_rng_state(label: str) -> None:
+    """Log RNG state hashes for debugging determinism issues."""
+    torch_state = torch.get_rng_state()
+    torch_hash = hashlib.sha256(torch_state.numpy().tobytes()).hexdigest()[:12]
+
+    np_state = np.random.get_state()
+    np_hash = hashlib.sha256(str(np_state[1]).encode()).hexdigest()[:12]  # pyright: ignore[reportArgumentType]
+
+    py_state = random.getstate()
+    py_hash = hashlib.sha256(str(py_state).encode()).hexdigest()[:12]
+
+    logger.info(f"[RNG DEBUG {label}] torch={torch_hash} numpy={np_hash} python={py_hash}")
 
 
 def run_faithfulness_warmup(
@@ -206,7 +223,45 @@ def optimize(
     lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
-    if config.faithfulness_warmup_steps > 0:
+    # --- Resume from Checkpoint --- #
+    resume_checkpoint_path: Path | None = None
+    start_step = 0
+    dataloader_steps_consumed = 0
+    is_resuming = False
+
+    # Determine checkpoint to resume from
+    if config.resume_from_checkpoint is not None:
+        # Explicit checkpoint path provided
+        resume_checkpoint_path = Path(config.resume_from_checkpoint)
+        if not resume_checkpoint_path.exists():
+            raise FileNotFoundError(
+                f"Resume checkpoint not found: {resume_checkpoint_path}\n"
+                f"Check that the path is correct and the file exists."
+            )
+        logger.info(f"Resuming from explicit checkpoint: {resume_checkpoint_path}")
+
+    elif config.auto_resume and out_dir is not None:
+        # Auto-detect latest checkpoint
+        resume_checkpoint_path = ckpt.find_latest_checkpoint(out_dir)
+        if resume_checkpoint_path is not None:
+            logger.info(f"Auto-detected latest checkpoint: {resume_checkpoint_path}")
+        else:
+            logger.info("No checkpoints found for auto-resume, starting from scratch")
+
+    # Load checkpoint if found
+    if resume_checkpoint_path is not None:
+        checkpoint_step, dataloader_steps_consumed = ckpt.load_checkpoint(
+            checkpoint_path=resume_checkpoint_path,
+            component_model=component_model,
+            optimizer=optimizer,
+            config=config,
+        )
+        start_step = checkpoint_step + 1  # Resume from next step
+        is_resuming = True
+        logger.info(f"Resuming training from step {start_step}")
+
+    # Skip faithfulness warmup when resuming (components already trained)
+    if config.faithfulness_warmup_steps > 0 and not is_resuming:
         run_faithfulness_warmup(component_model, component_params, config)
 
     eval_metric_configs = get_unique_metric_configs(
@@ -220,11 +275,80 @@ def optimize(
     eval_metric_configs = [
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
-    batch_dims: tuple[int, ...] | None = None
+
+    # Fast-forward data iterators and handle alive_tracker batch if resuming from checkpoint
+    # IMPORTANT: Do this BEFORE the main training loop to position data correctly
+    if dataloader_steps_consumed > 0:
+        # When resuming from a checkpoint, we need to regenerate the same batches that were
+        # consumed in the original run (for on-the-fly data generation like ResidMLP).
+        # The checkpoint RNG state includes advancement from both data generation AND training.
+        # To get back to the correct position:
+        # 1. Reset RNG to initial seed (to regenerate batches correctly)
+        # 2. Skip consumed batches (regenerates them with correct RNG progression)
+        # 3. Restore checkpoint RNG states (for training to continue correctly)
+
+        # Save the checkpoint RNG states
+        log_rng_state("BEFORE_SAVE_CHECKPOINT_RNG")
+        checkpoint_rng_states = {
+            "torch": torch.get_rng_state().clone(),
+            "numpy": np.random.get_state(),
+            "python": random.getstate(),
+        }
+        if torch.cuda.is_available():
+            checkpoint_rng_states["torch_cuda"] = tuple(
+                state.clone() for state in torch.cuda.get_rng_state_all()
+            )
+        log_rng_state("AFTER_SAVE_CHECKPOINT_RNG")
+
+        # Reset to initial seed to regenerate consumed batches correctly
+        torch.manual_seed(config.seed)
+        np.random.seed(config.seed)
+        random.seed(config.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(config.seed)
+        log_rng_state("AFTER_RESET_TO_INITIAL_SEED")
+
+        logger.info(
+            f"Fast-forwarding data iterators by {dataloader_steps_consumed} steps (regenerating consumed batches)..."
+        )
+        for i in tqdm(
+            range(dataloader_steps_consumed),
+            desc="Skipping dataloader steps",
+            disable=not is_main_process(),
+        ):
+            next(train_iterator)
+            if i == 0:
+                log_rng_state("AFTER_SKIP_BATCH_0")
+            elif i == dataloader_steps_consumed - 1:
+                log_rng_state(f"AFTER_SKIP_BATCH_{i}_FINAL")
+        logger.info("Data iterator fast-forward complete")
+        log_rng_state("AFTER_ALL_SKIPS")
+
+        # Now we're positioned at the correct batch for training
+        # Get a sample batch for alive_tracker (only shape matters)
+        # We'll use a dummy batch to avoid consuming from the iterator
+        sample_batch = torch.zeros(config.batch_size, 100, device=device)
+        logger.info(f"Using dummy batch for alive_tracker on resume, shape: {sample_batch.shape}")
+
+        # Restore checkpoint RNG states for training
+        torch.set_rng_state(checkpoint_rng_states["torch"])  # pyright: ignore[reportArgumentType]
+        np.random.set_state(checkpoint_rng_states["numpy"])  # pyright: ignore[reportArgumentType]
+        random.setstate(checkpoint_rng_states["python"])  # pyright: ignore[reportArgumentType]
+        if torch.cuda.is_available() and "torch_cuda" in checkpoint_rng_states:
+            torch.cuda.set_rng_state_all(checkpoint_rng_states["torch_cuda"])  # pyright: ignore[reportArgumentType]
+        log_rng_state("AFTER_RESTORE_CHECKPOINT_RNG")
+        logger.info("Restored checkpoint RNG states after fast-forward")
+    else:
+        # Normal case: consume first batch for alive_tracker initialization
+        log_rng_state("BEFORE_CONSUME_ALIVE_TRACKER_BATCH")
+        sample_batch = extract_batch_data(next(train_iterator))
+        log_rng_state("AFTER_CONSUME_ALIVE_TRACKER_BATCH")
+        logger.info(
+            f"Normal startup - consumed batch for alive_tracker, shape: {sample_batch.shape}"
+        )
 
     # Track which components are alive based on firing frequency
-    sample_batch = extract_batch_data(next(train_iterator))
-    batch_dims = (
+    batch_dims: tuple[int, ...] = (
         sample_batch.shape[:-1]
         if config.output_loss_type == "mse"  # if mse then input is a vector
         else sample_batch.shape  # else it's a batch of token ids
@@ -238,7 +362,9 @@ def optimize(
         global_n_examples_per_batch=batch_dims.numel(),
     )
 
-    for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
+    log_rng_state(f"BEFORE_TRAINING_LOOP_START_{start_step}")
+    for step in tqdm(range(start_step, config.steps + 1), ncols=0, disable=not is_main_process()):
+        log_rng_state(f"START_TRAINING_STEP_{step}")
         optimizer.zero_grad()
 
         step_lr = get_lr_with_warmup(
@@ -255,8 +381,14 @@ def optimize(
 
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
 
-        for _ in range(config.gradient_accumulation_steps):
+        for grad_acc_idx in range(config.gradient_accumulation_steps):
+            if is_main_process():
+                log_rng_state(f"BEFORE_BATCH_STEP_{step}_GRAD_ACC_{grad_acc_idx}")
             microbatch = extract_batch_data(next(train_iterator)).to(device)
+            if is_main_process():
+                log_rng_state(f"AFTER_BATCH_STEP_{step}_GRAD_ACC_{grad_acc_idx}")
+                batch_hash = hashlib.sha256(microbatch.cpu().numpy().tobytes()).hexdigest()[:12]
+                logger.info(f"[BATCH HASH STEP_{step}_GRAD_ACC_{grad_acc_idx}] {batch_hash}")
 
             # NOTE: we need to call the wrapped_model at least once each step in order to setup
             # the DDP gradient syncing for all parameters in the component model. Gradients will
@@ -385,13 +517,25 @@ def optimize(
             and out_dir is not None
             and is_main_process()
         ):
-            # Save the state dict of the underlying module (not DDP wrapper)
-            save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
-            logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")
+            # Save full checkpoint with model, optimizer, RNG states, and dataloader position
+            # Calculate total dataloader steps consumed:
+            # - 1 batch for alive_tracker initialization (before main loop)
+            # - (step + 1) training steps (steps 0 through current step, inclusive)
+            # - Each step consumes gradient_accumulation_steps batches
+            total_dataloader_steps = 1 + (step + 1) * config.gradient_accumulation_steps
+            checkpoint_path = ckpt.save_checkpoint(
+                step=step,
+                component_model=component_model,
+                optimizer=optimizer,
+                config=config,
+                dataloader_steps_consumed=total_dataloader_steps,
+                out_dir=out_dir,
+            )
+            logger.info(f"Saved checkpoint to {checkpoint_path}")
             if config.wandb_project:
                 try_wandb(
                     wandb.save,
-                    str(out_dir / f"model_{step}.pth"),
+                    str(checkpoint_path),
                     base_path=str(out_dir),
                     policy="now",
                 )
