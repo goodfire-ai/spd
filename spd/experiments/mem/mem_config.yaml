@@ -2,25 +2,25 @@ wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
-C: 100
+C: 128
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-- 500
+- 128
 sampling: continuous
 sigmoid_type: leaky_hard
 target_module_patterns:
-- block.attn.q_proj
-- block.attn.k_proj
-- block.attn.v_proj
-- block.attn.o_proj
-- block.mlp.up_proj
-- block.mlp.down_proj
-# - unembed
+# - block.attn.q_proj
+# - block.attn.k_proj
+# - block.attn.v_proj
+# - block.attn.o_proj
+# - block.mlp.up_proj
+# - block.mlp.down_proj
+- unembed
 identity_module_patterns: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.05
+- coeff: 0.01
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   p_anneal_start_frac: 0.0
@@ -33,18 +33,20 @@ loss_metric_configs:
     type: uniform_k_subset
 - coeff: 0.5
   init: random
-  step_size: 1.0
+  step_size: 0.1
   n_steps: 1
   mask_scope: shared_across_batch
   classname: PGDReconSubsetLoss
   routing:
     type: uniform_k_subset
-- coeff: 100.0
+# - coeff: 0.5
+#   classname: CIMaskedReconLoss
+- coeff: 1
   classname: FaithfulnessLoss
 output_loss_type: mem
-lr: 0.001
+lr: 1e-3
 steps: 20000
-batch_size: 2000
+batch_size: 1000
 gradient_accumulation_steps: 1
 grad_clip_norm: null
 faithfulness_warmup_steps: 100
@@ -73,6 +75,8 @@ eval_metric_configs:
 - coeff: null
   classname: StochasticReconLoss
 - coeff: null
+  classname: UnmaskedReconLoss
+- coeff: null
   init: random
   step_size: 0.1
   n_steps: 20
@@ -81,7 +85,7 @@ eval_metric_configs:
 ci_alive_threshold: 0.01
 n_examples_until_dead: 1000
 pretrained_model_class: spd.experiments.mem.models.MemTransformer
-pretrained_model_path: wandb:goodfire/spd/runs/15a0kums
+pretrained_model_path: wandb:goodfire/spd/runs/cy07rfzi
 pretrained_model_name: null
 pretrained_model_output_attr: null
 tokenizer_name: null
