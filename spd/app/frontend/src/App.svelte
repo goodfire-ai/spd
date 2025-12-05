@@ -5,12 +5,11 @@
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
-    import { parseWandbRunPath } from "./lib";
     import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
 
-    /** can be a wandb run path, or id. we sanitize this on sumbit */
+    /** wandb run path (e.g. "entity/project/run_id"). sanitized on submit */
     let trainWandbRunEntry = $state<string | null>(null);
     let contextLength = $state<number | null>(null);
 
@@ -51,10 +50,8 @@
         try {
             loadingTrainRun = true;
             loadedRun = null;
-            const wandbRunPath = parseWandbRunPath(input);
-            console.log("loading run", wandbRunPath);
-            trainWandbRunEntry = wandbRunPath;
-            await api.loadRun(wandbRunPath, contextLength);
+            console.log("loading run", input);
+            await api.loadRun(input, contextLength);
             // Set loading false before calling loadStatus, otherwise the guard returns early
             loadingTrainRun = false;
             await loadStatus();
@@ -74,11 +71,12 @@
 <div class="app-layout">
     <header class="top-bar">
         <form onsubmit={loadRun} class="run-input">
-            <label for="wandb-run-id">W&B Run ID:</label>
+            <label for="wandb-path">W&B Path/Link:</label>
             <input
                 type="text"
-                id="wandb-run-id"
+                id="wandb-path"
                 list="run-options"
+                placeholder="e.g. goodfire/spd/runs/33n6xjjt"
                 bind:value={trainWandbRunEntry}
                 disabled={loadingTrainRun}
             />
@@ -146,7 +144,7 @@
             </div>
         {:else if !loadedRun}
             <div class="empty-state">
-                <p>Enter a W&B Run ID above to get started</p>
+                <p>Enter a W&B Path above to get started</p>
             </div>
         {/if}
     </main>

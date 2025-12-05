@@ -13,12 +13,13 @@ from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.schemas import LoadedRun
 from spd.app.backend.state import RunState
-from spd.app.backend.utils import build_token_lookup, log_errors, validate_wandb_path
+from spd.app.backend.utils import build_token_lookup, log_errors
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
@@ -30,32 +31,33 @@ DEVICE = get_device()
 def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     """Load a run by its wandb path. Creates the run in DB if not found.
 
-    Expects path in normalized format: entity/project/runId
-    (Frontend handles parsing various formats into this normalized form)
+    Accepts various W&B run reference formats:
+    - "entity/project/runId" (compact form)
+    - "entity/project/runs/runId" (with /runs/)
+    - "wandb:entity/project/runId" (with wandb: prefix)
+    - "wandb:entity/project/runs/runId" (full wandb: form)
+    - "https://wandb.ai/entity/project/runs/runId..." (URL)
 
     This loads the model onto GPU and makes it available for attribution computation.
     """
     db = manager.db
 
-    # Validate the path format (frontend has already normalized it)
     try:
-        entity, project, run_id = validate_wandb_path(unquote(wandb_path))
+        entity, project, run_id = parse_wandb_run_path(unquote(wandb_path))
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"error parsing wandb path": str(e)}, status_code=400)
 
-    # Construct full path as stored in DB: wandb:entity/project/runs/runid
-    full_wandb_path = f"wandb:{entity}/{project}/runs/{run_id}"
+    clean_wandb_path = f"{entity}/{project}/{run_id}"
 
-    # Load the model from W&B to get config info
-    logger.info(f"[API] Loading run info from W&B: {full_wandb_path}")
+    logger.info(f"[API] Loading {clean_wandb_path}")
     try:
-        run_info = SPDRunInfo.from_path(full_wandb_path)
+        run_info = SPDRunInfo.from_path(clean_wandb_path)
     except Exception as e:
         return JSONResponse({"error": f"Failed to load run from W&B: {e}"}, status_code=400)
 
-    run = db.get_run_by_wandb_path(full_wandb_path)
+    run = db.get_run_by_wandb_path(clean_wandb_path)
     if run is None:
-        new_run_id = db.create_run(full_wandb_path)
+        new_run_id = db.create_run(clean_wandb_path)
         run = db.get_run(new_run_id)
         assert run is not None
         logger.info(f"[API] Created new run in DB: {run.id}")
