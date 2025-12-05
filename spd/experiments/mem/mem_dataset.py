@@ -5,6 +5,9 @@ Each fact consists of:
 - Label: 1 random token (the "answer" to memorize)
 
 The model is trained to predict the label given the 3-token input.
+
+Labels are balanced: each label value appears exactly n_facts // vocab_size times.
+This requires n_facts to be divisible by vocab_size.
 """
 
 from typing import override
@@ -30,6 +33,9 @@ class MemDataset(
     - inputs: 3 random tokens from the vocabulary (guaranteed unique)
     - labels: 1 random token to be predicted at the final position
 
+    Labels are balanced: each label value (0 to vocab_size-1) appears exactly
+    n_facts // vocab_size times. This requires n_facts to be divisible by vocab_size.
+
     The model is trained with cross-entropy loss at the final sequence position.
     """
 
@@ -44,7 +50,7 @@ class MemDataset(
         """Initialize the memorization dataset.
 
         Args:
-            n_facts: Number of facts to generate and memorize
+            n_facts: Number of facts to generate and memorize. Must be divisible by vocab_size.
             vocab_size: Size of the vocabulary
             seq_len: Sequence length (should be 3 for this task)
             device: Device to store tensors on
@@ -52,12 +58,18 @@ class MemDataset(
 
         Raises:
             ValueError: If n_facts exceeds the number of possible unique inputs
+            ValueError: If n_facts is not divisible by vocab_size
         """
         max_unique_inputs = vocab_size**seq_len
         if n_facts > max_unique_inputs:
             raise ValueError(
                 f"Cannot generate {n_facts} unique facts with vocab_size={vocab_size} "
                 f"and seq_len={seq_len}. Maximum possible unique inputs: {max_unique_inputs}"
+            )
+        if n_facts % vocab_size != 0:
+            raise ValueError(
+                f"n_facts ({n_facts}) must be divisible by vocab_size ({vocab_size}) "
+                f"to ensure each label has the same number of facts"
             )
 
         self.vocab_size = vocab_size
@@ -94,8 +106,10 @@ class MemDataset(
         rng.shuffle(inputs)
         inputs = inputs[:n_facts]
 
-        # Generate random labels
-        labels = rng.integers(0, vocab_size, size=n_facts)
+        # Generate balanced labels: each label appears exactly n_facts // vocab_size times
+        facts_per_label = n_facts // vocab_size
+        labels = np.repeat(np.arange(vocab_size), facts_per_label)
+        rng.shuffle(labels)
 
         # Convert to torch tensors and move to device
         self.fact_inputs = torch.from_numpy(inputs).long().to(device)
