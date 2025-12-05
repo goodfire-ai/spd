@@ -22,13 +22,16 @@ target_module_patterns: [
   "blocks.*.attn.out_proj",
 ]
 
-faithfulness_coeff: 100
-ci_recon_coeff: 1
-stochastic_recon_coeff: 1
-ci_recon_layerwise_coeff: null
-stochastic_recon_layerwise_coeff: 1
-importance_minimality_coeff: 1e-2
-pnorm: 0.1
+loss_metric_configs:
+  - classname: "ImportanceMinimalityLoss"
+    coeff: 1e-2
+    pnorm: 0.1
+  - classname: "CIMaskedReconLoss"
+    coeff: 1.0
+  - classname: "StochasticReconLoss"
+    coeff: 1.0
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 1.0
 output_loss_type: kl
 ci_fn_type: "vector_mlp"
 ci_fn_hidden_dims: [128]
