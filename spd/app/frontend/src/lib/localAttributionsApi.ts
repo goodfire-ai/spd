@@ -291,8 +291,8 @@ export async function generatePrompts(
     return result;
 }
 
-// Fetch cached graphs
+// Fetch stored graphs for a prompt
 
-export async function getCachedGraphs(promptId: number): Promise<GraphData[]> {
-    return fetchJson<GraphData[]>(`${API_URL}/api/graphs/cached/${promptId}`);
+export async function getGraphs(promptId: number): Promise<GraphData[]> {
+    return fetchJson<GraphData[]>(`${API_URL}/api/graphs/${promptId}`);
 }

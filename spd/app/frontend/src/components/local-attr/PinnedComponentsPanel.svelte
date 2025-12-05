@@ -22,10 +22,10 @@
 
 {#if pinnedNodes.length > 0}
     <div class="pinned-container">
-        <h3>
+        <div class="pinned-container-header">
             <span>Pinned Components ({pinnedNodes.length})</span>
             <button onclick={clearAll}>Clear all</button>
-        </h3>
+        </div>
         <div class="pinned-items">
             {#each pinnedNodes as pinned (`${pinned.layer}:${pinned.cIdx}`)}
                 {@const detail = componentDetailsCache[`${pinned.layer}:${pinned.cIdx}`]}
@@ -58,8 +58,7 @@
         padding: var(--space-3);
     }
 
-    .pinned-container h3 {
-        margin: 0 0 var(--space-3) 0;
+    .pinned-container-header {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         font-weight: 600;
@@ -67,18 +66,16 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid var(--border-subtle);
-        padding-bottom: var(--space-2);
+        margin-bottom: var(--space-2);
     }
 
-    .pinned-container h3 button {
-        padding: var(--space-1) var(--space-2);
+    .pinned-container-header button {
         background: var(--bg-elevated);
         border: 1px solid var(--border-default);
         color: var(--text-secondary);
     }
 
-    .pinned-container h3 button:hover {
+    .pinned-container-header button:hover {
         background: var(--bg-inset);
         color: var(--text-primary);
         border-color: var(--border-strong);
@@ -89,7 +86,6 @@
         flex-direction: row;
         gap: var(--space-3);
         overflow-x: auto;
-        padding-bottom: var(--space-2);
     }
 
     .pinned-item {
@@ -105,7 +101,6 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: var(--space-2);
         padding-bottom: var(--space-2);
         border-bottom: 1px solid var(--border-subtle);
     }

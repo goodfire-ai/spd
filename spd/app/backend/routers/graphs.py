@@ -15,16 +15,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from spd.app.backend.compute import (
     Edge,
     LocalAttributionResult,
-    Node,
     OptimizedLocalAttributionResult,
     compute_local_attributions,
     compute_local_attributions_optimized,
 )
 from spd.app.backend.db.database import (
-    CachedEdge,
-    CachedOutputProb,
     OptimizationParams,
     OptimizationStats,
+    StoredGraph,
 )
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
@@ -49,12 +47,6 @@ DEVICE = get_device()
 GLOBAL_EDGE_LIMIT = 5_000
 
 
-def _parse_node(s: str) -> Node:
-    """Parse node string 'layer:seq_pos:component_idx' back to a Node object."""
-    parts = s.rsplit(":", 2)
-    return Node(layer=parts[0], seq_pos=int(parts[1]), component_idx=int(parts[2]))
-
-
 @router.post("/tokenize")
 @log_errors
 def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
@@ -69,6 +61,24 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
 
 
 NormalizeType = Literal["none", "target", "layer"]
+
+
+def compute_edge_stats(edges: list[EdgeData]) -> tuple[dict[str, float], float]:
+    """Compute node importance and max absolute edge value.
+
+    Returns:
+        (node_importance, max_abs_attr) where node_importance is sum of squared edge values per node.
+    """
+    importance: dict[str, float] = {}
+    max_abs_attr = 0.0
+    for edge in edges:
+        val_sq = edge.val * edge.val
+        importance[edge.src] = importance.get(edge.src, 0.0) + val_sq
+        importance[edge.tgt] = importance.get(edge.tgt, 0.0) + val_sq
+        abs_val = abs(edge.val)
+        if abs_val > max_abs_attr:
+            max_abs_attr = abs_val
+    return importance, max_abs_attr
 
 
 @router.post("")
@@ -90,50 +100,6 @@ def compute_graph_stream(
 
     token_ids = prompt.token_ids
     token_strings = [loaded.token_strings[t] for t in token_ids]
-
-    # Check cache first
-    cached = db.get_cached_graph(prompt_id, optimization_params=None)
-    if cached is not None:
-        # Cache hit - return immediately without streaming
-        edges = [
-            Edge(
-                source=_parse_node(e.src),
-                target=_parse_node(e.tgt),
-                is_cross_seq=e.is_cross_seq,
-                strength=e.val,
-            )
-            for e in cached.edges
-        ]
-
-        # Apply normalization
-        match normalize:
-            case "none":
-                pass
-            case "target":
-                edges = _normalize_edges_by_target(edges)
-            case "layer":
-                edges = _normalize_edges_by_target_layer(edges)
-        if len(edges) > GLOBAL_EDGE_LIMIT:
-            edges.sort(key=lambda e: abs(e.strength), reverse=True)
-            edges = edges[:GLOBAL_EDGE_LIMIT]
-
-        edges_typed = [EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges]
-        output_probs = {k: OutputProbability(prob=v.prob, token=v.token) for k, v in cached.output_probs.items()}
-
-        response_data = GraphData(
-            id=prompt_id,
-            tokens=token_strings,
-            edges=edges_typed,
-            outputProbs=output_probs,
-            cached=True,
-        )
-
-        def generate_cached() -> Generator[str]:
-            yield f"data: {json.dumps({'type': 'complete', 'data': response_data.model_dump()})}\n\n"
-
-        return StreamingResponse(generate_cached(), media_type="text/event-stream")
-
-    # Cache miss - compute with streaming progress
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
     progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
@@ -178,37 +144,39 @@ def compute_graph_stream(
             elif msg["type"] == "result":
                 result = runtime_cast(LocalAttributionResult, msg["result"])
 
-                # Store raw edges in cache before normalization
+                # Build raw edges and output probs for storage
                 raw_edges = result.edges
                 raw_output_probs_tensor = result.output_probs[0].cpu()
-                raw_output_probs: dict[str, CachedOutputProb] = {}
+                raw_output_probs: dict[str, OutputProbability] = {}
                 for s in range(raw_output_probs_tensor.shape[0]):
                     for c_idx in range(raw_output_probs_tensor.shape[1]):
                         prob = float(raw_output_probs_tensor[s, c_idx].item())
                         if prob < output_prob_threshold:
                             continue
                         key = f"{s}:{c_idx}"
-                        raw_output_probs[key] = CachedOutputProb(
+                        raw_output_probs[key] = OutputProbability(
                             prob=round(prob, 6),
                             token=loaded.token_strings[c_idx],
                         )
 
-                # Save to cache (raw, unnormalized edges)
-                db.save_cached_graph(
+                # Save graph (raw, unnormalized edges)
+                db.save_graph(
                     prompt_id=prompt_id,
-                    edges=[
-                        CachedEdge(
-                            src=str(e.source),
-                            tgt=str(e.target),
-                            val=e.strength,
-                            is_cross_seq=e.is_cross_seq,
-                        )
-                        for e in raw_edges
-                    ],
-                    output_probs=raw_output_probs,
+                    graph=StoredGraph(
+                        edges=[
+                            EdgeData(
+                                src=str(e.source),
+                                tgt=str(e.target),
+                                val=e.strength,
+                                is_cross_seq=e.is_cross_seq,
+                            )
+                            for e in raw_edges
+                        ],
+                        output_probs=raw_output_probs,
+                    ),
                 )
 
-                # Now apply normalization for response
+                # Apply normalization for response
                 edges = raw_edges
                 match normalize:
                     case "none":
@@ -224,17 +192,15 @@ def compute_graph_stream(
                 edges_typed = [
                     EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges
                 ]
-
-                output_probs: dict[str, OutputProbability] = {
-                    k: OutputProbability(prob=v.prob, token=v.token) for k, v in raw_output_probs.items()
-                }
+                node_importance, max_abs_attr = compute_edge_stats(edges_typed)
 
                 response_data = GraphData(
                     id=prompt_id,
                     tokens=token_strings,
                     edges=edges_typed,
-                    outputProbs=output_probs,
-                    cached=False,
+                    outputProbs=raw_output_probs,
+                    nodeImportance=node_importance,
+                    maxAbsAttr=max_abs_attr,
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
                 yield f"data: {json.dumps(complete_data)}\n\n"
@@ -267,6 +233,7 @@ def _normalize_edges_by_target(edges: list[Edge]) -> list[Edge]:
             )
     return out_edges
 
+
 def _normalize_edges_by_target_layer(edges: list[Edge]) -> list[Edge]:
     def get_target_layer(edge: Edge) -> str:
         return edge.target.layer
@@ -288,6 +255,7 @@ def _normalize_edges_by_target_layer(edges: list[Edge]) -> list[Edge]:
                 )
             )
     return out_edges
+
 
 @router.post("/optimized/stream")
 @log_errors
@@ -315,8 +283,8 @@ def compute_graph_optimized_stream(
     token_ids = prompt.token_ids
     label_str = loaded.token_strings[label_token]
     token_strings = [loaded.token_strings[t] for t in token_ids]
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
-    # Build optimization params for cache key
     opt_params = OptimizationParams(
         label_token=label_token,
         imp_min_coeff=imp_min_coeff,
@@ -324,62 +292,6 @@ def compute_graph_optimized_stream(
         steps=steps,
         pnorm=pnorm,
     )
-
-    # Check cache first
-    cached = db.get_cached_graph(prompt_id, optimization_params=opt_params)
-    if cached is not None:
-        # Cache hit - return immediately without streaming
-        edges = [
-            Edge(
-                source=_parse_node(e.src),
-                target=_parse_node(e.tgt),
-                is_cross_seq=e.is_cross_seq,
-                strength=e.val,
-            )
-            for e in cached.edges
-        ]
-
-        # Apply normalization
-        match normalize:
-            case "none":
-                pass
-            case "target":
-                edges = _normalize_edges_by_target(edges)
-            case "layer":
-                edges = _normalize_edges_by_target_layer(edges)
-        if len(edges) > GLOBAL_EDGE_LIMIT:
-            edges.sort(key=lambda e: abs(e.strength), reverse=True)
-            edges = edges[:GLOBAL_EDGE_LIMIT]
-
-        edges_typed = [EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges]
-        output_probs = {k: OutputProbability(prob=v.prob, token=v.token) for k, v in cached.output_probs.items()}
-
-        assert cached.optimization_stats is not None
-        response_data = GraphDataWithOptimization(
-            id=prompt_id,
-            tokens=token_strings,
-            edges=edges_typed,
-            outputProbs=output_probs,
-            cached=True,
-            optimization=OptimizationResult(
-                label_token=label_token,
-                label_str=label_str,
-                imp_min_coeff=imp_min_coeff,
-                ce_loss_coeff=ce_loss_coeff,
-                steps=steps,
-                label_prob=cached.optimization_stats.label_prob,
-                l0_total=cached.optimization_stats.l0_total,
-                l0_per_layer=cached.optimization_stats.l0_per_layer,
-            ),
-        )
-
-        def generate_cached() -> Generator[str]:
-            yield f"data: {json.dumps({'type': 'complete', 'data': response_data.model_dump()})}\n\n"
-
-        return StreamingResponse(generate_cached(), media_type="text/event-stream")
-
-    # Cache miss - compute with streaming progress
-    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
     optim_config = OptimCIConfig(
         seed=0,
@@ -440,43 +352,45 @@ def compute_graph_optimized_stream(
             elif msg["type"] == "result":
                 result = runtime_cast(OptimizedLocalAttributionResult, msg["result"])
 
-                # Store raw edges in cache before normalization
+                # Build raw edges and output probs for storage
                 raw_edges = result.edges
                 raw_output_probs_tensor = result.output_probs[0].cpu()
-                raw_output_probs: dict[str, CachedOutputProb] = {}
+                raw_output_probs: dict[str, OutputProbability] = {}
                 for s in range(raw_output_probs_tensor.shape[0]):
                     for c_idx in range(raw_output_probs_tensor.shape[1]):
                         prob = float(raw_output_probs_tensor[s, c_idx].item())
                         if prob < output_prob_threshold:
                             continue
                         key = f"{s}:{c_idx}"
-                        raw_output_probs[key] = CachedOutputProb(
+                        raw_output_probs[key] = OutputProbability(
                             prob=round(prob, 6),
                             token=loaded.token_strings[c_idx],
                         )
 
-                # Save to cache (raw, unnormalized edges)
-                db.save_cached_graph(
+                # Save graph (raw, unnormalized edges)
+                db.save_graph(
                     prompt_id=prompt_id,
-                    edges=[
-                        CachedEdge(
-                            src=str(e.source),
-                            tgt=str(e.target),
-                            val=e.strength,
-                            is_cross_seq=e.is_cross_seq,
-                        )
-                        for e in raw_edges
-                    ],
-                    output_probs=raw_output_probs,
-                    optimization_params=opt_params,
-                    optimization_stats=OptimizationStats(
-                        label_prob=result.stats.label_prob,
-                        l0_total=result.stats.l0_total,
-                        l0_per_layer=result.stats.l0_per_layer,
+                    graph=StoredGraph(
+                        edges=[
+                            EdgeData(
+                                src=str(e.source),
+                                tgt=str(e.target),
+                                val=e.strength,
+                                is_cross_seq=e.is_cross_seq,
+                            )
+                            for e in raw_edges
+                        ],
+                        output_probs=raw_output_probs,
+                        optimization_params=opt_params,
+                        optimization_stats=OptimizationStats(
+                            label_prob=result.stats.label_prob,
+                            l0_total=result.stats.l0_total,
+                            l0_per_layer=result.stats.l0_per_layer,
+                        ),
                     ),
                 )
 
-                # Now apply normalization for response
+                # Apply normalization for response
                 edges = raw_edges
                 match normalize:
                     case "none":
@@ -492,17 +406,15 @@ def compute_graph_optimized_stream(
                 edges_typed = [
                     EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges
                 ]
-
-                output_probs: dict[str, OutputProbability] = {
-                    k: OutputProbability(prob=v.prob, token=v.token) for k, v in raw_output_probs.items()
-                }
+                node_importance, max_abs_attr = compute_edge_stats(edges_typed)
 
                 response_data = GraphDataWithOptimization(
                     id=prompt_id,
                     tokens=token_strings,
                     edges=edges_typed,
-                    outputProbs=output_probs,
-                    cached=False,
+                    outputProbs=raw_output_probs,
+                    nodeImportance=node_importance,
+                    maxAbsAttr=max_abs_attr,
                     optimization=OptimizationResult(
                         label_token=label_token,
                         label_str=label_str,
@@ -523,17 +435,17 @@ def compute_graph_optimized_stream(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@router.get("/cached/{prompt_id}")
+@router.get("/{prompt_id}")
 @log_errors
-def get_cached_graphs(
+def get_graphs(
     prompt_id: int,
     loaded: DepLoadedRun,
     manager: DepStateManager,
 ) -> list[GraphData | GraphDataWithOptimization]:
-    """Get all cached graphs for a prompt.
+    """Get all stored graphs for a prompt.
 
-    Returns list of cached graphs (both standard and optimized) for the given prompt.
-    Returns empty list if no cached graphs exist.
+    Returns list of graphs (both standard and optimized) for the given prompt.
+    Returns empty list if no graphs exist.
     """
     db = manager.db
     prompt = db.get_prompt(prompt_id)
@@ -541,44 +453,49 @@ def get_cached_graphs(
         return []
 
     token_strings = [loaded.token_strings[t] for t in prompt.token_ids]
-
-    cached_graphs = db.get_all_cached_graphs(prompt_id)
+    stored_graphs = db.get_graphs(prompt_id)
 
     results: list[GraphData | GraphDataWithOptimization] = []
-    for cached, opt_params in cached_graphs:
-        edges_typed = [EdgeData(src=e.src, tgt=e.tgt, val=e.val) for e in cached.edges]
-        output_probs = {k: OutputProbability(prob=v.prob, token=v.token) for k, v in cached.output_probs.items()}
+    for graph in stored_graphs:
+        # Apply edge limit to avoid overwhelming the frontend
+        edges = graph.edges
+        if len(edges) > GLOBAL_EDGE_LIMIT:
+            edges = sorted(edges, key=lambda e: abs(e.val), reverse=True)[:GLOBAL_EDGE_LIMIT]
 
-        if opt_params is None:
+        node_importance, max_abs_attr = compute_edge_stats(edges)
+
+        if graph.optimization_params is None:
             # Standard graph
             results.append(
                 GraphData(
                     id=prompt_id,
                     tokens=token_strings,
-                    edges=edges_typed,
-                    outputProbs=output_probs,
-                    cached=True,
+                    edges=edges,
+                    outputProbs=graph.output_probs,
+                    nodeImportance=node_importance,
+                    maxAbsAttr=max_abs_attr,
                 )
             )
         else:
             # Optimized graph
-            assert cached.optimization_stats is not None
+            assert graph.optimization_stats is not None
             results.append(
                 GraphDataWithOptimization(
                     id=prompt_id,
                     tokens=token_strings,
-                    edges=edges_typed,
-                    outputProbs=output_probs,
-                    cached=True,
+                    edges=edges,
+                    outputProbs=graph.output_probs,
+                    nodeImportance=node_importance,
+                    maxAbsAttr=max_abs_attr,
                     optimization=OptimizationResult(
-                        label_token=opt_params.label_token,
-                        label_str=loaded.token_strings[opt_params.label_token],
-                        imp_min_coeff=opt_params.imp_min_coeff,
-                        ce_loss_coeff=opt_params.ce_loss_coeff,
-                        steps=opt_params.steps,
-                        label_prob=cached.optimization_stats.label_prob,
-                        l0_total=cached.optimization_stats.l0_total,
-                        l0_per_layer=cached.optimization_stats.l0_per_layer,
+                        label_token=graph.optimization_params.label_token,
+                        label_str=loaded.token_strings[graph.optimization_params.label_token],
+                        imp_min_coeff=graph.optimization_params.imp_min_coeff,
+                        ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
+                        steps=graph.optimization_params.steps,
+                        label_prob=graph.optimization_stats.label_prob,
+                        l0_total=graph.optimization_stats.l0_total,
+                        l0_per_layer=graph.optimization_stats.l0_per_layer,
                     ),
                 )
             )

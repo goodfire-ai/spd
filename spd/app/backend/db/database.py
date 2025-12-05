@@ -7,27 +7,28 @@ Attribution graphs can be cached to avoid recomputation.
 import gzip
 import json
 import sqlite3
-from dataclasses import dataclass
 from pathlib import Path
+
+from pydantic import BaseModel
 
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
+    EdgeData,
     ModelActivationContexts,
+    OutputProbability,
 )
 
 DEFAULT_DB_PATH = Path.home() / ".spd" / "local_attr.db"
 
 
-@dataclass
-class Run:
+class Run(BaseModel):
     """A run record."""
 
     id: int
     wandb_path: str
 
 
-@dataclass
-class PromptRecord:
+class PromptRecord(BaseModel):
     """A stored prompt record containing token IDs."""
 
     id: int
@@ -36,27 +37,8 @@ class PromptRecord:
     is_custom: bool = False
 
 
-@dataclass
-class CachedEdge:
-    """Edge data stored in cache."""
-
-    src: str
-    tgt: str
-    val: float
-    is_cross_seq: bool
-
-
-@dataclass
-class CachedOutputProb:
-    """Output probability stored in cache."""
-
-    prob: float
-    token: str
-
-
-@dataclass
-class OptimizationParams:
-    """Optimization parameters for cache key."""
+class OptimizationParams(BaseModel):
+    """Optimization parameters that affect graph computation."""
 
     label_token: int
     imp_min_coeff: float
@@ -65,21 +47,20 @@ class OptimizationParams:
     pnorm: float
 
 
-@dataclass
-class OptimizationStats:
-    """Optimization statistics stored in cache."""
+class OptimizationStats(BaseModel):
+    """Statistics from optimized graph computation."""
 
     label_prob: float
     l0_total: float
     l0_per_layer: dict[str, float]
 
 
-@dataclass
-class CachedGraph:
-    """A cached attribution graph."""
+class StoredGraph(BaseModel):
+    """A stored attribution graph."""
 
-    edges: list[CachedEdge]
-    output_probs: dict[str, CachedOutputProb]
+    edges: list[EdgeData]
+    output_probs: dict[str, OutputProbability]
+    optimization_params: OptimizationParams | None = None
     optimization_stats: OptimizationStats | None = None
 
 
@@ -456,101 +437,34 @@ class LocalAttrDB:
     # Cached graph operations
     # -------------------------------------------------------------------------
 
-    def get_cached_graph(
+    def save_graph(
         self,
         prompt_id: int,
-        optimization_params: OptimizationParams | None = None,
-    ) -> CachedGraph | None:
-        """Retrieve a cached graph if it exists.
-
-        Args:
-            prompt_id: The prompt ID.
-            optimization_params: If provided, look for an optimized graph with these params.
-                               If None, look for a standard (non-optimized) graph.
-
-        Returns:
-            CachedGraph if found, None otherwise.
-        """
-        conn = self._get_conn()
-
-        if optimization_params is None:
-            row = conn.execute(
-                """SELECT edges_data, output_probs_data
-                   FROM cached_graphs
-                   WHERE prompt_id = ? AND is_optimized = 0""",
-                (prompt_id,),
-            ).fetchone()
-        else:
-            row = conn.execute(
-                """SELECT edges_data, output_probs_data, label_prob, l0_total, l0_per_layer
-                   FROM cached_graphs
-                   WHERE prompt_id = ? AND is_optimized = 1
-                     AND label_token = ? AND imp_min_coeff = ? AND ce_loss_coeff = ?
-                     AND steps = ? AND pnorm = ?""",
-                (
-                    prompt_id,
-                    optimization_params.label_token,
-                    optimization_params.imp_min_coeff,
-                    optimization_params.ce_loss_coeff,
-                    optimization_params.steps,
-                    optimization_params.pnorm,
-                ),
-            ).fetchone()
-
-        if row is None:
-            return None
-
-        # Decompress and parse edges
-        edges_json = json.loads(gzip.decompress(row["edges_data"]).decode("utf-8"))
-        edges = [CachedEdge(**e) for e in edges_json]
-
-        # Decompress and parse output probs
-        probs_json = json.loads(gzip.decompress(row["output_probs_data"]).decode("utf-8"))
-        output_probs = {k: CachedOutputProb(**v) for k, v in probs_json.items()}
-
-        # Parse optimization stats if present
-        opt_stats = None
-        if optimization_params is not None and row["label_prob"] is not None:
-            opt_stats = OptimizationStats(
-                label_prob=row["label_prob"],
-                l0_total=row["l0_total"],
-                l0_per_layer=json.loads(row["l0_per_layer"]),
-            )
-
-        return CachedGraph(edges=edges, output_probs=output_probs, optimization_stats=opt_stats)
-
-    def save_cached_graph(
-        self,
-        prompt_id: int,
-        edges: list[CachedEdge],
-        output_probs: dict[str, CachedOutputProb],
-        optimization_params: OptimizationParams | None = None,
-        optimization_stats: OptimizationStats | None = None,
+        graph: StoredGraph,
     ) -> None:
-        """Save a computed graph to the cache.
+        """Save a computed graph for a prompt.
 
         Args:
             prompt_id: The prompt ID.
-            edges: List of edges (raw, unnormalized).
-            output_probs: Dict of output probabilities.
-            optimization_params: If provided, save as an optimized graph.
-            optimization_stats: Stats from optimization (required if optimization_params provided).
+            graph: The graph to save.
         """
         conn = self._get_conn()
 
         # Compress edges and output probs
-        edges_json = json.dumps([{"src": e.src, "tgt": e.tgt, "val": e.val, "is_cross_seq": e.is_cross_seq} for e in edges])
+        edges_json = json.dumps([e.model_dump() for e in graph.edges])
         edges_compressed = gzip.compress(edges_json.encode("utf-8"))
 
-        probs_json = json.dumps({k: {"prob": v.prob, "token": v.token} for k, v in output_probs.items()})
+        probs_json = json.dumps({k: v.model_dump() for k, v in graph.output_probs.items()})
         probs_compressed = gzip.compress(probs_json.encode("utf-8"))
 
-        is_optimized = 1 if optimization_params else 0
+        is_optimized = 1 if graph.optimization_params else 0
 
-        if optimization_params:
-            assert optimization_stats is not None, "optimization_stats required for optimized graphs"
+        if graph.optimization_params:
+            assert graph.optimization_stats is not None, (
+                "optimization_stats required for optimized graphs"
+            )
             conn.execute(
-                """INSERT OR REPLACE INTO cached_graphs
+                """INSERT INTO cached_graphs
                    (prompt_id, is_optimized,
                     label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
                     edges_data, output_probs_data,
@@ -559,21 +473,21 @@ class LocalAttrDB:
                 (
                     prompt_id,
                     is_optimized,
-                    optimization_params.label_token,
-                    optimization_params.imp_min_coeff,
-                    optimization_params.ce_loss_coeff,
-                    optimization_params.steps,
-                    optimization_params.pnorm,
+                    graph.optimization_params.label_token,
+                    graph.optimization_params.imp_min_coeff,
+                    graph.optimization_params.ce_loss_coeff,
+                    graph.optimization_params.steps,
+                    graph.optimization_params.pnorm,
                     edges_compressed,
                     probs_compressed,
-                    optimization_stats.label_prob,
-                    optimization_stats.l0_total,
-                    json.dumps(optimization_stats.l0_per_layer),
+                    graph.optimization_stats.label_prob,
+                    graph.optimization_stats.l0_total,
+                    json.dumps(graph.optimization_stats.l0_per_layer),
                 ),
             )
         else:
             conn.execute(
-                """INSERT OR REPLACE INTO cached_graphs
+                """INSERT INTO cached_graphs
                    (prompt_id, is_optimized, edges_data, output_probs_data)
                    VALUES (?, ?, ?, ?)""",
                 (
@@ -586,18 +500,14 @@ class LocalAttrDB:
 
         conn.commit()
 
-    def get_all_cached_graphs(
-        self,
-        prompt_id: int,
-    ) -> list[tuple[CachedGraph, OptimizationParams | None]]:
-        """Retrieve all cached graphs for a prompt (both standard and optimized).
+    def get_graphs(self, prompt_id: int) -> list[StoredGraph]:
+        """Retrieve all stored graphs for a prompt.
 
         Args:
             prompt_id: The prompt ID.
 
         Returns:
-            List of (CachedGraph, OptimizationParams | None) tuples.
-            OptimizationParams is None for standard graphs.
+            List of stored graphs (standard and optimized).
         """
         conn = self._get_conn()
 
@@ -611,13 +521,13 @@ class LocalAttrDB:
             (prompt_id,),
         ).fetchall()
 
-        results: list[tuple[CachedGraph, OptimizationParams | None]] = []
+        results: list[StoredGraph] = []
         for row in rows:
             edges_json = json.loads(gzip.decompress(row["edges_data"]).decode("utf-8"))
-            edges = [CachedEdge(**e) for e in edges_json]
+            edges = [EdgeData(**e) for e in edges_json]
 
             probs_json = json.loads(gzip.decompress(row["output_probs_data"]).decode("utf-8"))
-            output_probs = {k: CachedOutputProb(**v) for k, v in probs_json.items()}
+            output_probs = {k: OutputProbability(**v) for k, v in probs_json.items()}
 
             opt_params: OptimizationParams | None = None
             opt_stats: OptimizationStats | None = None
@@ -636,22 +546,26 @@ class LocalAttrDB:
                     l0_per_layer=json.loads(row["l0_per_layer"]),
                 )
 
-            results.append((
-                CachedGraph(edges=edges, output_probs=output_probs, optimization_stats=opt_stats),
-                opt_params,
-            ))
+            results.append(
+                StoredGraph(
+                    edges=edges,
+                    output_probs=output_probs,
+                    optimization_params=opt_params,
+                    optimization_stats=opt_stats,
+                )
+            )
 
         return results
 
-    def delete_cached_graphs_for_prompt(self, prompt_id: int) -> int:
-        """Delete all cached graphs for a prompt. Returns the number of deleted rows."""
+    def delete_graphs_for_prompt(self, prompt_id: int) -> int:
+        """Delete all graphs for a prompt. Returns the number of deleted rows."""
         conn = self._get_conn()
         cursor = conn.execute("DELETE FROM cached_graphs WHERE prompt_id = ?", (prompt_id,))
         conn.commit()
         return cursor.rowcount
 
-    def delete_cached_graphs_for_run(self, run_id: int) -> int:
-        """Delete all cached graphs for all prompts in a run. Returns the number of deleted rows."""
+    def delete_graphs_for_run(self, run_id: int) -> int:
+        """Delete all graphs for all prompts in a run. Returns the number of deleted rows."""
         conn = self._get_conn()
         cursor = conn.execute(
             """DELETE FROM cached_graphs

@@ -3,15 +3,17 @@
     import * as attrApi from "../lib/localAttributionsApi";
     import type {
         ActivationContextsSummary,
+        ComponentDetail,
         GraphData,
         PinnedNode,
         PromptPreview,
     } from "../lib/localAttributionsTypes";
+    import PinnedComponentsPanel from "./local-attr/PinnedComponentsPanel.svelte";
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
     import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
     import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
     import PromptPicker from "./local-attr/PromptPicker.svelte";
-    import type { CachedGraph, ComputeOptions, LoadingState, OptimizeConfig, PromptCard } from "./local-attr/types";
+    import type { StoredGraph, ComputeOptions, LoadingState, OptimizeConfig, PromptCard } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
@@ -48,7 +50,7 @@
     let activationContextsMissing = $state(false);
 
     // View controls
-    let topK = $state(800);
+    let topK = $state(200);
     let nodeLayout = $state<"importance" | "shuffled" | "jittered">("importance");
     let componentGap = $state(4);
     let layerGap = $state(30);
@@ -72,6 +74,25 @@
 
     // Pinned nodes (for search)
     let pinnedNodes = $state<PinnedNode[]>([]);
+
+    // Component details cache (shared across graphs, persists across graph switches)
+    let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
+    let componentDetailsLoading = $state<Record<string, boolean>>({});
+
+    async function loadComponentDetail(layer: string, cIdx: number) {
+        const cacheKey = `${layer}:${cIdx}`;
+        if (componentDetailsCache[cacheKey] || componentDetailsLoading[cacheKey]) return;
+
+        componentDetailsLoading[cacheKey] = true;
+        try {
+            const detail = await attrApi.getComponentDetail(layer, cIdx);
+            componentDetailsCache[cacheKey] = detail;
+        } catch (e) {
+            console.error(`Failed to load component detail for ${cacheKey}:`, e);
+        } finally {
+            componentDetailsLoading[cacheKey] = false;
+        }
+    }
 
     // Tokenize label text when it changes
     let labelTokenizeTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -170,23 +191,23 @@
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
         const cardId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-        // Fetch cached graphs for this prompt
-        let graphs: CachedGraph[] = [];
+        // Fetch stored graphs for this prompt
+        let graphs: StoredGraph[] = [];
         try {
-            const cachedGraphs = await attrApi.getCachedGraphs(promptId);
-            graphs = cachedGraphs.map((data, idx) => {
+            const storedGraphs = await attrApi.getGraphs(promptId);
+            graphs = storedGraphs.map((data, idx) => {
                 const isOptimized = !!data.optimization;
                 const label = isOptimized
                     ? `Optimized (${data.optimization!.steps} steps)`
                     : "Standard";
                 return {
-                    id: `cached-${idx}-${Date.now()}`,
+                    id: `graph-${idx}-${Date.now()}`,
                     label,
                     data,
                 };
             });
         } catch (e) {
-            console.warn("Failed to fetch cached graphs:", e);
+            console.warn("Failed to fetch graphs:", e);
         }
 
         const newCard: PromptCard = {
@@ -496,10 +517,19 @@
                                         {layerGap}
                                         {activationContextsSummary}
                                         {pinnedNodes}
+                                        {componentDetailsCache}
+                                        {componentDetailsLoading}
                                         onPinnedNodesChange={handlePinnedNodesChange}
+                                        onLoadComponentDetail={loadComponentDetail}
                                         onEdgeCountChange={(count) => (filteredEdgeCount = count)}
                                     />
                                 {/key}
+                                <PinnedComponentsPanel
+                                    {pinnedNodes}
+                                    {componentDetailsCache}
+                                    outputProbs={activeGraph.data.outputProbs}
+                                    onPinnedNodesChange={handlePinnedNodesChange}
+                                />
                             {:else if !loadingCardId}
                                 <div class="empty-state">
                                     <p>Click <strong>Compute</strong> to generate the attribution graph</p>
@@ -577,7 +607,7 @@
         flex: 1;
         position: relative;
         min-height: 400px;
-        border: 1px solid var(--border-default);
+        /* border: 1px solid var(--border-default); */
     }
 
     .graph-area.loading {

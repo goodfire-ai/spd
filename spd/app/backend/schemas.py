@@ -20,6 +20,7 @@ class EdgeData(BaseModel):
     src: str  # "layer:seq:cIdx"
     tgt: str  # "layer:seq:cIdx"
     val: float
+    is_cross_seq: bool = False
 
 
 class PromptPreview(BaseModel):
@@ -38,7 +39,8 @@ class GraphData(BaseModel):
     tokens: list[str]
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
-    cached: bool = False
+    nodeImportance: dict[str, float]  # node key -> sum of squared edge values
+    maxAbsAttr: float  # max absolute edge value
 
 
 class OptimizationResult(BaseModel):
@@ -61,8 +63,9 @@ class GraphDataWithOptimization(BaseModel):
     tokens: list[str]
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
+    nodeImportance: dict[str, float]  # node key -> sum of squared edge values
+    maxAbsAttr: float  # max absolute edge value
     optimization: OptimizationResult
-    cached: bool = False
 
 
 class ComponentStats(BaseModel):

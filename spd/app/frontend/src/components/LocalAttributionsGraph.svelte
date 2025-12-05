@@ -10,10 +10,9 @@
         NodePosition,
         ComponentDetail,
     } from "../lib/localAttributionsTypes";
-    import * as api from "../lib/localAttributionsApi";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
+    import { lerp, hashString, seededShuffle } from "./local-attr/graphUtils";
     import ComponentDetailCard from "./local-attr/ComponentDetailCard.svelte";
-    import PinnedComponentsPanel from "./local-attr/PinnedComponentsPanel.svelte";
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -33,7 +32,10 @@
         layerGap: number;
         activationContextsSummary: ActivationContextsSummary | null;
         pinnedNodes: PinnedNode[];
+        componentDetailsCache: Record<string, ComponentDetail>;
+        componentDetailsLoading: Record<string, boolean>;
         onPinnedNodesChange: (nodes: PinnedNode[]) => void;
+        onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onEdgeCountChange?: (count: number) => void;
     };
 
@@ -45,7 +47,10 @@
         layerGap,
         activationContextsSummary,
         pinnedNodes,
+        componentDetailsCache,
+        componentDetailsLoading,
         onPinnedNodesChange,
+        onLoadComponentDetail,
         onEdgeCountChange,
     }: Props = $props();
 
@@ -55,10 +60,6 @@
     let isHoveringTooltip = $state(false);
     let tooltipPos = $state({ x: 0, y: 0 });
     let edgeTooltipPos = $state({ x: 0, y: 0 });
-
-    // Component details cache (lazy-loaded)
-    let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
-    let componentDetailsLoading = $state<Record<string, boolean>>({});
 
     // Refs
     let graphContainer: HTMLDivElement;
@@ -84,26 +85,14 @@
         return layer;
     }
 
-    // Compute importance maps from edges
-    const { componentImportanceLocal, maxImportanceLocal, maxAbsAttr } = $derived.by(() => {
-        const componentImportanceLocal: Record<string, number> = {};
-        let maxAbsAttr = 1;
-
-        for (const edge of data.edges) {
-            const valSq = edge.val * edge.val;
-            const absVal = Math.abs(edge.val);
-            if (absVal > maxAbsAttr) maxAbsAttr = absVal;
-
-            componentImportanceLocal[edge.src] = (componentImportanceLocal[edge.src] || 0) + valSq;
-            componentImportanceLocal[edge.tgt] = (componentImportanceLocal[edge.tgt] || 0) + valSq;
+    // Use pre-computed values from backend, derive max importance
+    const maxAbsAttr = $derived(data.maxAbsAttr || 1);
+    const maxImportance = $derived.by(() => {
+        let max = 1;
+        for (const imp of Object.values(data.nodeImportance)) {
+            if (imp > max) max = imp;
         }
-
-        let maxImportanceLocal = 1;
-        for (const imp of Object.values(componentImportanceLocal)) {
-            if (imp > maxImportanceLocal) maxImportanceLocal = imp;
-        }
-
-        return { componentImportanceLocal, maxImportanceLocal, maxAbsAttr };
+        return max;
     });
 
     // Filter edges by topK and build active nodes set
@@ -139,8 +128,7 @@
                 }
             }
 
-            const outputProbsPlain = $state.snapshot(data.outputProbs);
-            for (const [probKey, entry] of Object.entries(outputProbsPlain)) {
+            for (const [probKey, entry] of Object.entries(data.outputProbs)) {
                 if (entry.prob >= minProb) {
                     const [seqIdx, cIdx] = probKey.split(":");
                     activeNodes.add(`output:${seqIdx}:${cIdx}`);
@@ -307,8 +295,8 @@
                     const entryB = data.outputProbs[`${seqIdx}:${b}`];
                     return (entryB?.prob ?? 0) - (entryA?.prob ?? 0);
                 }
-                const impA = componentImportanceLocal[`${layer}:${seqIdx}:${a}`] ?? 0;
-                const impB = componentImportanceLocal[`${layer}:${seqIdx}:${b}`] ?? 0;
+                const impA = data.nodeImportance[`${layer}:${seqIdx}:${a}`] ?? 0;
+                const impB = data.nodeImportance[`${layer}:${seqIdx}:${b}`] ?? 0;
                 return impB - impA;
             });
             for (let i = 0; i < n; i++) {
@@ -352,42 +340,35 @@
         return offsets;
     }
 
-    function hashString(str: string): number {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = (hash << 5) - hash + char;
-            hash = hash & hash;
+    const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
+
+    // Check if an edge is connected to any pinned node
+    function isEdgeConnectedToPinnedNode(src: string, tgt: string): boolean {
+        if (pinnedNodes.length === 0) return false;
+        const [srcLayer, , srcCIdx] = src.split(":");
+        const [tgtLayer, , tgtCIdx] = tgt.split(":");
+        for (const pinned of pinnedNodes) {
+            if (
+                (srcLayer === pinned.layer && +srcCIdx === pinned.cIdx) ||
+                (tgtLayer === pinned.layer && +tgtCIdx === pinned.cIdx)
+            ) {
+                return true;
+            }
         }
-        return Math.abs(hash);
+        return false;
     }
-
-    function seededShuffle<T>(arr: T[], seed: number): T[] {
-        const random = () => {
-            seed |= 0;
-            seed = (seed + 0x6d2b79f5) | 0;
-            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-
-        for (let i = arr.length - 1; i > 0; i--) {
-            const j = Math.floor(random() * (i + 1));
-            [arr[i], arr[j]] = [arr[j], arr[i]];
-        }
-        return arr;
-    }
-
-    function lerp(min: number, max: number, t: number): number {
-        return min + (max - min) * t;
-    }
-
-    const EDGE_HIT_AREA_WIDTH = 12; // Wider invisible stroke for easier hover
 
     // Build SVG edges string (for {@html} - performance optimization)
+    // Render order: visible paths first (smaller on top), then hit areas (larger on top)
+    // Only render hit areas for edges connected to pinned nodes
     const edgesSvgString = $derived.by(() => {
-        let svg = "";
-        for (const edge of filteredEdges) {
+        let visibleSvg = "";
+        let hitAreaSvg = "";
+
+        // filteredEdges is already sorted by abs(val) descending
+        // Render visible paths in reverse order (smallest first, so largest renders on top)
+        for (let i = filteredEdges.length - 1; i >= 0; i--) {
+            const edge = filteredEdges[i];
             const p1 = nodePositions[edge.src];
             const p2 = nodePositions[edge.tgt];
             if (p1 && p2) {
@@ -399,55 +380,59 @@
                 const cp1y = p1.y - curveOffset;
                 const cp2y = p2.y + curveOffset;
                 const d = `M ${p1.x},${p1.y} C ${p1.x},${cp1y} ${p2.x},${cp2y} ${p2.x},${p2.y}`;
-                // Invisible hit area path (wider, for easier hovering)
-                svg += `<path class="edge edge-hit-area" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="transparent" stroke-width="${EDGE_HIT_AREA_WIDTH}" fill="none"/>`;
-                // Visible edge path
-                svg += `<path class="edge edge-visible" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="${color}" stroke-width="${w}" opacity="${op}" fill="none" pointer-events="none"/>`;
+                visibleSvg += `<path class="edge edge-visible" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="${color}" stroke-width="${w}" opacity="${op}" fill="none" pointer-events="none"/>`;
             }
         }
-        return svg;
-    });
 
-    // Pinned node keys (stable - only changes when user clicks to pin/unpin)
-    const pinnedKeys = $derived.by(() => {
-        const keys = new SvelteSet<string>();
-        for (const pinned of pinnedNodes) {
-            for (const nodeKey of Object.keys(nodePositions)) {
-                const [layer, , cIdx] = nodeKey.split(":");
-                if (layer === pinned.layer && +cIdx === pinned.cIdx) {
-                    keys.add(nodeKey);
-                }
+        // Only render hit areas for edges connected to pinned nodes
+        // Render in reverse order so largest edges' hit areas are on top
+        for (let i = filteredEdges.length - 1; i >= 0; i--) {
+            const edge = filteredEdges[i];
+            if (!isEdgeConnectedToPinnedNode(edge.src, edge.tgt)) continue;
+
+            const p1 = nodePositions[edge.src];
+            const p2 = nodePositions[edge.tgt];
+            if (p1 && p2) {
+                const dy = Math.abs(p2.y - p1.y);
+                const curveOffset = Math.max(20, dy * 0.4);
+                const cp1y = p1.y - curveOffset;
+                const cp2y = p2.y + curveOffset;
+                const d = `M ${p1.x},${p1.y} C ${p1.x},${cp1y} ${p2.x},${cp2y} ${p2.x},${p2.y}`;
+                hitAreaSvg += `<path class="edge edge-hit-area" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="transparent" stroke-width="${EDGE_HIT_AREA_WIDTH}" fill="none"/>`;
             }
         }
-        return keys;
+
+        return visibleSvg + hitAreaSvg;
     });
 
-    // Hovered node keys (changes frequently but kept separate to minimize re-renders)
-    const hoveredKeys = $derived.by(() => {
-        if (!hoveredNode || isNodePinned(hoveredNode.layer, hoveredNode.cIdx)) {
-            return new SvelteSet<string>();
+    function isNodePinned(layer: string, cIdx: number): boolean {
+        return pinnedNodes.some((p) => p.layer === layer && p.cIdx === cIdx);
+    }
+
+    // Check if a node key should be highlighted (pinned or hovered)
+    function isKeyHighlighted(key: string): boolean {
+        const [layer, , cIdx] = key.split(":");
+        if (pinnedNodes.some((p) => p.layer === layer && +cIdx === p.cIdx)) {
+            return true;
         }
+        if (hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.cIdx)) {
+            if (layer === hoveredNode.layer && +cIdx === hoveredNode.cIdx) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Set of highlighted node keys for edge highlighting
+    const highlightedKeys = $derived.by(() => {
         const keys = new SvelteSet<string>();
         for (const nodeKey of Object.keys(nodePositions)) {
-            const [layer, , cIdx] = nodeKey.split(":");
-            if (layer === hoveredNode.layer && +cIdx === hoveredNode.cIdx) {
+            if (isKeyHighlighted(nodeKey)) {
                 keys.add(nodeKey);
             }
         }
         return keys;
     });
-
-    // Helper to check if a key is highlighted (avoids creating new Set on every hover)
-    function isKeyHighlighted(key: string): boolean {
-        return pinnedKeys.has(key) || hoveredKeys.has(key);
-    }
-
-    // Combined set for edge highlighting effect only
-    const highlightedKeys = $derived(new SvelteSet([...pinnedKeys, ...hoveredKeys]));
-
-    function isNodePinned(layer: string, cIdx: number): boolean {
-        return pinnedNodes.some((p) => p.layer === layer && p.cIdx === cIdx);
-    }
 
     // Pre-compute node styles (fill, opacity) - only recomputes when data/layout changes, not on hover
     const nodeStyles = $derived.by(() => {
@@ -468,8 +453,8 @@
                     opacity = 0.4 + probEntry.prob * 0.6;
                 }
             } else {
-                const importance = componentImportanceLocal[`${layer}:${seqIdx}:${cIdx}`] || 0;
-                const intensity = Math.min(1, importance / maxImportanceLocal);
+                const importance = data.nodeImportance[`${layer}:${seqIdx}:${cIdx}`] || 0;
+                const intensity = Math.min(1, importance / maxImportance);
                 opacity = 0.2 + intensity * 0.8;
             }
 
@@ -493,10 +478,8 @@
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
 
         // Lazy load component details if needed
-        if (layer !== "output" && !activationContextsSummary) {
-            // No summary available
-        } else if (layer !== "output") {
-            loadComponentDetailIfNeeded(layer, cIdx);
+        if (layer !== "output" && activationContextsSummary) {
+            onLoadComponentDetail(layer, cIdx);
         }
     }
 
@@ -523,31 +506,11 @@
         hoveredNode = null;
     }
 
-    function isEdgeConnectedToPinned(src: string, tgt: string): boolean {
-        if (pinnedNodes.length === 0) return false;
-        for (const pinned of pinnedNodes) {
-            // Check if src or tgt matches pinned node (layer:*:cIdx pattern)
-            const [srcLayer, , srcCIdx] = src.split(":");
-            const [tgtLayer, , tgtCIdx] = tgt.split(":");
-            if (
-                (srcLayer === pinned.layer && +srcCIdx === pinned.cIdx) ||
-                (tgtLayer === pinned.layer && +tgtCIdx === pinned.cIdx)
-            ) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     function handleEdgeMouseEnter(event: MouseEvent) {
         const target = event.target as SVGElement;
-        if (target.classList.contains("edge")) {
+        if (target.classList.contains("edge-hit-area")) {
             const src = target.getAttribute("data-src") || "";
             const tgt = target.getAttribute("data-tgt") || "";
-
-            // Only show edge tooltip if connected to a pinned node
-            if (!isEdgeConnectedToPinned(src, tgt)) return;
-
             const val = parseFloat(target.getAttribute("data-val") || "0");
             hoveredEdge = { src, tgt, val };
             edgeTooltipPos = { x: event.clientX + 10, y: event.clientY + 10 };
@@ -556,7 +519,7 @@
 
     function handleEdgeMouseLeave(event: MouseEvent) {
         const target = event.target as SVGElement;
-        if (target.classList.contains("edge")) {
+        if (target.classList.contains("edge-hit-area")) {
             hoveredEdge = null;
         }
     }
@@ -572,23 +535,9 @@
         return { x: Math.max(0, left), y: Math.max(0, top) };
     }
 
-    async function loadComponentDetailIfNeeded(layer: string, cIdx: number) {
-        const cacheKey = `${layer}:${cIdx}`;
-        if (componentDetailsCache[cacheKey] || componentDetailsLoading[cacheKey]) return;
-
-        componentDetailsLoading[cacheKey] = true;
-        try {
-            const detail = await api.getComponentDetail(layer, cIdx);
-            componentDetailsCache[cacheKey] = detail;
-        } catch (e) {
-            console.error(`Failed to load component detail for ${cacheKey}:`, e);
-        } finally {
-            componentDetailsLoading[cacheKey] = false;
-        }
-    }
-
-    // Track previously highlighted edges to minimize DOM updates
+    // Track previously highlighted/dimmed edges to minimize DOM updates
     let prevHighlightedEdges = new SvelteSet<Element>();
+    let prevDimmedEdges = new SvelteSet<Element>();
 
     // Update edge highlighting via $effect (DOM manipulation for performance)
     // Only updates edges that actually changed state
@@ -598,15 +547,27 @@
         }
 
         const currentHighlighted = new SvelteSet<Element>();
+        const currentDimmed = new SvelteSet<Element>();
         // Only target visible edges for highlighting (not hit areas)
         const edges = graphContainer.querySelectorAll(".edge-visible");
 
-        // Build set of currently highlighted edges
+        // Build set of currently highlighted and dimmed edges
         edges.forEach((el) => {
             const src = el.getAttribute("data-src") || "";
             const tgt = el.getAttribute("data-tgt") || "";
-            if (highlightedKeys.has(src) || highlightedKeys.has(tgt)) {
-                currentHighlighted.add(el);
+            const isConnectedToPinned = highlightedKeys.has(src) || highlightedKeys.has(tgt);
+
+            if (isConnectedToPinned) {
+                // Check if this is the hovered edge
+                if (hoveredEdge && hoveredEdge.src === src && hoveredEdge.tgt === tgt) {
+                    currentHighlighted.add(el);
+                } else if (hoveredEdge) {
+                    // Another edge is being hovered, dim this one
+                    currentDimmed.add(el);
+                } else {
+                    // No edge hovered, highlight all pinned-connected edges
+                    currentHighlighted.add(el);
+                }
             }
         });
 
@@ -624,7 +585,22 @@
             }
         }
 
+        // Remove dimmed from edges no longer dimmed
+        for (const el of prevDimmedEdges) {
+            if (!currentDimmed.has(el)) {
+                el.classList.remove("dimmed");
+            }
+        }
+
+        // Add dimmed to newly dimmed edges
+        for (const el of currentDimmed) {
+            if (!prevDimmedEdges.has(el)) {
+                el.classList.add("dimmed");
+            }
+        }
+
         prevHighlightedEdges = currentHighlighted;
+        prevDimmedEdges = currentDimmed;
     });
 
     // Notify parent of edge count changes
@@ -793,8 +769,6 @@
     {/if}
 </div>
 
-<PinnedComponentsPanel {pinnedNodes} {componentDetailsCache} outputProbs={data.outputProbs} {onPinnedNodesChange} />
-
 <style>
     .graph-wrapper {
         display: flex;
@@ -840,6 +814,10 @@
     :global(.edge.highlighted) {
         opacity: 1 !important;
         stroke-width: 3 !important;
+    }
+
+    :global(.edge.dimmed) {
+        opacity: 0.15 !important;
     }
 
     .node-group {

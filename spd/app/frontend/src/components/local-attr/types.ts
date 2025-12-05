@@ -1,7 +1,7 @@
 import type { GraphData } from "../../lib/localAttributionsTypes";
 import type { NormalizeType } from "../../lib/localAttributionsApi";
 
-export type CachedGraph = {
+export type StoredGraph = {
     id: string;
     label: string;
     data: GraphData;
@@ -13,7 +13,7 @@ export type PromptCard = {
     tokens: string[];
     tokenIds: number[];
     isCustom: boolean;
-    graphs: CachedGraph[];
+    graphs: StoredGraph[];
     activeGraphId: string | null;
 };
 

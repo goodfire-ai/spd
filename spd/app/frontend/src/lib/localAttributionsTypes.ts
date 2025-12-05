@@ -21,12 +21,13 @@ export type OutputProbEntry = {
 };
 
 export type GraphData = {
-    id: number | null; // null for custom prompts
+    id: number;
     tokens: string[];
     edges: Edge[];
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
+    nodeImportance: Record<string, number>; // node key -> sum of squared edge values
+    maxAbsAttr: number; // max absolute edge value
     optimization?: OptimizationResult;
-    cached?: boolean;
 };
 
 export type OptimizationResult = {
