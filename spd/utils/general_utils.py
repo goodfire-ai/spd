@@ -114,7 +114,9 @@ def get_lr_schedule_fn(
         return (
             lambda step, steps: 1.0
             if steps == 1
-            else 0.1 + (1 - 0.1) * 0.5 * np.cos(np.pi * step / (steps - 1))
+            else 0.1 + (1 - 0.1) * 0.5*(1+np.cos(np.pi * step / (steps - 1)))
+            # else np.cos(0.5*np.pi * step / (steps - 1))
+
         )
     else:
         # Exponential
@@ -256,11 +258,25 @@ def calc_sum_recon_loss_lm(
         case "kl":
             loss = calc_kl_divergence_lm(pred=pred, target=target, reduce=False).sum()
         case "mem":
-            # Only compute KL at the final sequence position
+            # Only compute KL at the final sequence position, restricted to top target vocab item
             # pred/target shape: [batch, seq_len, vocab] -> take [:, -1, :]
             pred_final = pred[:, -1, :]  # [batch, vocab]
             target_final = target[:, -1, :]  # [batch, vocab]
-            loss = calc_kl_divergence_lm(pred=pred_final, target=target_final, reduce=False).sum()
+
+            # Find vocab index with highest target logit for each batch item
+            top_target_idx = target_final.argmax(dim=-1, keepdim=True)  # [batch, 1]
+
+            # Compute log probs and probs over full vocab (no renormalization)
+            log_q = torch.log_softmax(pred_final, dim=-1)  # [batch, vocab]
+            p = torch.softmax(target_final, dim=-1)  # [batch, vocab]
+
+            # Extract only the top target vocab position
+            log_q_top = log_q.gather(dim=-1, index=top_target_idx).squeeze(-1)  # [batch]
+            p_top = p.gather(dim=-1, index=top_target_idx).squeeze(-1)  # [batch]
+
+            # KL contribution from that single vocab item: p * (log p - log q)
+            kl_top = (p_top * abs(torch.log(p_top) - log_q_top))  # [batch]
+            loss = kl_top.sum()
     return loss
 
 
