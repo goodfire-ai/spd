@@ -45,19 +45,19 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     try:
         entity, project, run_id = parse_wandb_run_path(unquote(wandb_path))
     except ValueError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"error parsing wandb path": str(e)}, status_code=400)
 
-    wandb_path = f"{entity}/{project}/{run_id}"
+    clean_wandb_path = f"{entity}/{project}/{run_id}"
 
-    logger.info(f"[API] Loading run info from W&B: {wandb_path}")
+    logger.info(f"[API] Loading run info from W&B: {clean_wandb_path}")
     try:
-        run_info = SPDRunInfo.from_path(wandb_path)
+        run_info = SPDRunInfo.from_path(clean_wandb_path)
     except Exception as e:
         return JSONResponse({"error": f"Failed to load run from W&B: {e}"}, status_code=400)
 
-    run = db.get_run_by_wandb_path(wandb_path)
+    run = db.get_run_by_wandb_path(clean_wandb_path)
     if run is None:
-        new_run_id = db.create_run(wandb_path)
+        new_run_id = db.create_run(clean_wandb_path)
         run = db.get_run(new_run_id)
         assert run is not None
         logger.info(f"[API] Created new run in DB: {run.id}")
