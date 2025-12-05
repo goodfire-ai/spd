@@ -22,6 +22,7 @@ def analyze_decomposition(
     max_facts_to_show: int = 10,
     output_file: str | None = None,
     device: str | None = None,
+    print_component_idx: int | None = None,
 ) -> None:
     """Analyze which memorized inputs each component activates on.
 
@@ -31,6 +32,7 @@ def analyze_decomposition(
         max_facts_to_show: Maximum number of facts to show per component
         output_file: Path to write output to (if None, prints to stdout)
         device: Device to use (defaults to auto-detection)
+        print_component_idx: If specified, print the U and V matrices for this component index
     """
     if device is None:
         device = get_device()
@@ -74,6 +76,29 @@ def analyze_decomposition(
     out(f"Sequence length: {target_model.config.seq_len}")
     out(f"Number of components (C): {spd_config.C}")
     out()
+
+    # Print U and V matrices for a specific component if requested
+    if print_component_idx is not None:
+        if print_component_idx < 0 or print_component_idx >= spd_config.C:
+            raise ValueError(
+                f"print_component_idx must be in [0, {spd_config.C - 1}], got {print_component_idx}"
+            )
+        out("=" * 80)
+        out(f"U AND V MATRICES FOR COMPONENT {print_component_idx}")
+        out("=" * 80)
+        for module_name, component in comp_model.components.items():
+            out(f"\nModule: {module_name}")
+            out(f"  V shape: {list(component.V.shape)} (v_dim x C)")
+            out(f"  U shape: {list(component.U.shape)} (C x u_dim)")
+            out()
+            v_col = component.V[:, print_component_idx]
+            u_row = component.U[print_component_idx, :]
+            out(f"  V[:, {print_component_idx}] (v_dim={v_col.shape[0]}):")
+            out(f"    {v_col.detach().cpu().numpy()}")
+            out()
+            out(f"  U[{print_component_idx}, :] (u_dim={u_row.shape[0]}):")
+            out(f"    {u_row.detach().cpu().numpy()}")
+        out()
 
     # Get all facts
     all_inputs, all_labels = dataset.get_all_facts()
