@@ -77,7 +77,7 @@ def _importance_minimality_loss_update(
     sum_loss = torch.tensor(0.0, device=device)
     for layer_ci_upper_leaky in ci_upper_leaky.values():
         # Note: layer_ci_upper_leaky already >= 0
-        sum_loss += ((layer_ci_upper_leaky + eps) ** pnorm).sum()
+        sum_loss += ((layer_ci_upper_leaky[:, -1, :] + eps) ** pnorm).sum()
     n_params = next(iter(ci_upper_leaky.values())).shape[:-1].numel()
     return sum_loss, n_params
 
