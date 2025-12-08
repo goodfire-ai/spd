@@ -392,6 +392,9 @@ def compute_graph_optimized_stream(
 
                 # Apply normalization for response
                 edges = raw_edges
+
+                edges = _remove_non_final_output_nodes(edges, len(token_ids))
+
                 match normalize:
                     case "none":
                         pass
@@ -433,6 +436,11 @@ def compute_graph_optimized_stream(
         thread.join()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+def _remove_non_final_output_nodes(edges: list[Edge], num_tokens: int) -> list[Edge]:
+    """Remove edges that are not final output nodes."""
+    return [edge for edge in edges if edge.target.seq_pos == num_tokens - 1]
 
 
 def _normalize_edge_data(edges: list[EdgeData], normalize: NormalizeType) -> list[EdgeData]:
