@@ -355,6 +355,10 @@ class Config(BaseConfig):
         default=None,
         description="Half-life parameter when using an exponential LR schedule",
     )
+    lr_final_frac: Probability = Field(
+        default=0.1,
+        description="Final learning rate as a fraction of the initial LR (for linear and cosine schedules)",
+    )
     lr_warmup_pct: Probability = Field(
         default=0.0,
         description="Fraction of total steps to linearly warm up the learning rate",

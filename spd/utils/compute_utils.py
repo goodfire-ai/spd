@@ -205,10 +205,6 @@ cp {REPO_ROOT}/.env .env
 # Checkout the snapshot branch to ensure consistent code
 git checkout "{snapshot_branch}"
 
-# Ensure that dependencies are using the snapshot branch. SLURM might inherit the
-# parent environment, so we need to deactivate and unset the virtual environment.
-echo "Deactivating virtual environment"
-deactivate 2>/dev/null || true
 unset VIRTUAL_ENV
 
 # echo "Syncing dependencies"
