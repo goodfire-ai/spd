@@ -37,7 +37,6 @@
         onPinnedNodesChange: (nodes: PinnedNode[]) => void;
         onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onEdgeCountChange?: (count: number) => void;
-        onStageNode?: (layer: string, seqPos: number, componentIdx: number) => void;
     };
 
     let {
@@ -53,7 +52,6 @@
         onPinnedNodesChange,
         onLoadComponentDetail,
         onEdgeCountChange,
-        onStageNode,
     }: Props = $props();
 
     // UI state
@@ -344,15 +342,15 @@
 
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
-    // Check if an edge is connected to any pinned node
+    // Check if an edge is connected to any pinned node (exact match including seqIdx)
     function isEdgeConnectedToPinnedNode(src: string, tgt: string): boolean {
         if (pinnedNodes.length === 0) return false;
-        const [srcLayer, , srcCIdx] = src.split(":");
-        const [tgtLayer, , tgtCIdx] = tgt.split(":");
+        const [srcLayer, srcSeqIdx, srcCIdx] = src.split(":");
+        const [tgtLayer, tgtSeqIdx, tgtCIdx] = tgt.split(":");
         for (const pinned of pinnedNodes) {
             if (
-                (srcLayer === pinned.layer && +srcCIdx === pinned.cIdx) ||
-                (tgtLayer === pinned.layer && +tgtCIdx === pinned.cIdx)
+                (srcLayer === pinned.layer && +srcSeqIdx === pinned.seqIdx && +srcCIdx === pinned.cIdx) ||
+                (tgtLayer === pinned.layer && +tgtSeqIdx === pinned.seqIdx && +tgtCIdx === pinned.cIdx)
             ) {
                 return true;
             }
@@ -407,17 +405,21 @@
         return visibleSvg + hitAreaSvg;
     });
 
-    function isNodePinned(layer: string, cIdx: number): boolean {
-        return pinnedNodes.some((p) => p.layer === layer && p.cIdx === cIdx);
+    function isNodePinned(layer: string, seqIdx: number, cIdx: number): boolean {
+        return pinnedNodes.some((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
     }
 
-    // Check if a node key should be highlighted (pinned or hovered)
+    // Check if a node key should be highlighted
+    // - Pinned nodes: exact match (layer + seqIdx + cIdx)
+    // - Hovered: highlight all nodes with same component (layer + cIdx) across all positions
     function isKeyHighlighted(key: string): boolean {
-        const [layer, , cIdx] = key.split(":");
-        if (pinnedNodes.some((p) => p.layer === layer && +cIdx === p.cIdx)) {
+        const [layer, seqIdx, cIdx] = key.split(":");
+        // Exact match for pinned nodes
+        if (pinnedNodes.some((p) => p.layer === layer && p.seqIdx === +seqIdx && p.cIdx === +cIdx)) {
             return true;
         }
-        if (hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.cIdx)) {
+        // For hover: highlight all nodes with same component (across all positions)
+        if (hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)) {
             if (layer === hoveredNode.layer && +cIdx === hoveredNode.cIdx) {
                 return true;
             }
@@ -498,12 +500,12 @@
         }, 50);
     }
 
-    function handleNodeClick(layer: string, cIdx: number) {
-        const idx = pinnedNodes.findIndex((p) => p.layer === layer && p.cIdx === cIdx);
+    function handleNodeClick(layer: string, seqIdx: number, cIdx: number) {
+        const idx = pinnedNodes.findIndex((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
         if (idx >= 0) {
             onPinnedNodesChange(pinnedNodes.filter((_, i) => i !== idx));
         } else {
-            onPinnedNodesChange([...pinnedNodes, { layer, cIdx }]);
+            onPinnedNodesChange([...pinnedNodes, { layer, seqIdx, cIdx }]);
         }
         hoveredNode = null;
     }
@@ -662,7 +664,7 @@
                         class="node-group"
                         onmouseenter={(e) => handleNodeMouseEnter(e, layer, seqIdx, cIdx)}
                         onmouseleave={handleNodeMouseLeave}
-                        onclick={() => handleNodeClick(layer, cIdx)}
+                        onclick={() => handleNodeClick(layer, seqIdx, cIdx)}
                     >
                         <!-- Invisible hit area for easier hovering -->
                         <rect
@@ -739,7 +741,7 @@
     {/if}
 
     <!-- Node tooltip -->
-    {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.cIdx)}
+    {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)}
         {@const summary = activationContextsSummary?.[hoveredNode.layer]?.find(
             (s) => s.subcomponent_idx === hoveredNode?.cIdx,
         )}
@@ -755,21 +757,7 @@
                 handleNodeMouseLeave();
             }}
         >
-            <div class="tooltip-header">
-                <h3>{hoveredNode.layer}:{hoveredNode.cIdx}</h3>
-                {#if onStageNode && hoveredNode.layer !== "output" && hoveredNode.layer !== "wte"}
-                    <button
-                        class="stage-button"
-                        onclick={() => {
-                            if (hoveredNode) {
-                                onStageNode(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx);
-                            }
-                        }}
-                    >
-                        Stage for Intervention
-                    </button>
-                {/if}
-            </div>
+            <h3>{hoveredNode.layer}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
 
             <ComponentDetailCard
                 layer={hoveredNode.layer}
@@ -895,36 +883,13 @@
     }
 
     .node-tooltip h3 {
-        margin: 0;
+        margin: 0 0 var(--space-2) 0;
         font-size: var(--text-base);
         font-family: var(--font-mono);
         color: var(--accent-primary);
         font-weight: 600;
         letter-spacing: 0.02em;
-    }
-
-    .tooltip-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: var(--space-2);
         border-bottom: 1px solid var(--border-subtle);
         padding-bottom: var(--space-2);
-        margin-bottom: var(--space-2);
-    }
-
-    .stage-button {
-        font-size: var(--text-xs);
-        padding: var(--space-1) var(--space-2);
-        background: var(--status-positive);
-        color: white;
-        border: none;
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        white-space: nowrap;
-    }
-
-    .stage-button:hover {
-        background: var(--status-positive-bright, #22c55e);
     }
 </style>

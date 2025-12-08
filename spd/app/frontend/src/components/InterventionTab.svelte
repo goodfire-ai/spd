@@ -1,21 +1,30 @@
 <script lang="ts">
     import * as api from "../lib/api";
-    import type { InterventionNode, InterventionResponse } from "../lib/interventionTypes";
+    import type { InterventionResponse } from "../lib/interventionTypes";
+    import type { PinnedNode } from "../lib/localAttributionsTypes";
 
     type Props = {
-        stagedNodes: InterventionNode[];
+        pinnedNodes: PinnedNode[];
+        initialText?: string;
         onClearNodes: () => void;
-        onAddNode?: (node: InterventionNode) => void;
+        onAddNode?: (node: PinnedNode) => void;
         onRemoveNode?: (index: number) => void;
     };
 
-    let { stagedNodes, onClearNodes, onAddNode, onRemoveNode }: Props = $props();
+    let { pinnedNodes, initialText = "", onClearNodes, onAddNode, onRemoveNode }: Props = $props();
 
     let text = $state("");
     let topK = $state(10);
     let loading = $state(false);
     let error = $state<string | null>(null);
     let result = $state<InterventionResponse | null>(null);
+
+    // Sync text when initialText changes (from navigation)
+    $effect(() => {
+        if (initialText) {
+            text = initialText;
+        }
+    });
 
     // Manual node entry
     let nodeEntry = $state("");
@@ -25,31 +34,37 @@
         nodeEntryError = null;
         const parts = nodeEntry.trim().split(":");
         if (parts.length !== 3) {
-            nodeEntryError = "Format: layer:seq_pos:component_idx (e.g. h.0.attn.q_proj:2:5)";
+            nodeEntryError = "Format: layer:seqIdx:cIdx (e.g. h.0.attn.q_proj:2:5)";
             return;
         }
         const [layer, seqStr, cIdxStr] = parts;
-        const seq_pos = parseInt(seqStr, 10);
-        const component_idx = parseInt(cIdxStr, 10);
-        if (isNaN(seq_pos) || isNaN(component_idx)) {
-            nodeEntryError = "seq_pos and component_idx must be numbers";
+        const seqIdx = parseInt(seqStr, 10);
+        const cIdx = parseInt(cIdxStr, 10);
+        if (isNaN(seqIdx) || isNaN(cIdx)) {
+            nodeEntryError = "seqIdx and cIdx must be numbers";
             return;
         }
         if (onAddNode) {
-            onAddNode({ layer, seq_pos, component_idx });
+            onAddNode({ layer, seqIdx, cIdx });
         }
         nodeEntry = "";
     }
 
     async function runIntervention() {
-        if (!text.trim() || stagedNodes.length === 0) return;
+        if (!text.trim() || pinnedNodes.length === 0) return;
 
         loading = true;
         error = null;
         result = null;
 
         try {
-            result = await api.runIntervention(text, stagedNodes, topK);
+            // Convert PinnedNode to API format
+            const apiNodes = pinnedNodes.map((n) => ({
+                layer: n.layer,
+                seq_pos: n.seqIdx,
+                component_idx: n.cIdx,
+            }));
+            result = await api.runIntervention(text, apiNodes, topK);
         } catch (e) {
             error = e instanceof Error ? e.message : "Unknown error";
         } finally {
@@ -71,14 +86,14 @@
         </p>
 
         <div class="staged-nodes">
-            <h3>Staged Nodes ({stagedNodes.length})</h3>
-            {#if stagedNodes.length === 0}
-                <p class="empty-message">No nodes staged. Add nodes manually below.</p>
+            <h3>Staged Nodes ({pinnedNodes.length})</h3>
+            {#if pinnedNodes.length === 0}
+                <p class="empty-message">No nodes staged. Add nodes manually below or stage them from the Local Attributions tab.</p>
             {:else}
                 <div class="node-list">
-                    {#each stagedNodes as node, i (`${node.layer}:${node.seq_pos}:${node.component_idx}`)}
+                    {#each pinnedNodes as node, i (`${node.layer}:${node.seqIdx}:${node.cIdx}`)}
                         <span class="node-tag">
-                            {node.layer}:{node.seq_pos}:{node.component_idx}
+                            {node.layer}:{node.seqIdx}:{node.cIdx}
                             {#if onRemoveNode}
                                 <button class="remove-node" onclick={() => onRemoveNode(i)}>x</button>
                             {/if}
@@ -92,7 +107,7 @@
                 <input
                     type="text"
                     bind:value={nodeEntry}
-                    placeholder="layer:seq_pos:component_idx"
+                    placeholder="layer:seqIdx:cIdx"
                     onkeydown={(e) => e.key === "Enter" && parseAndAddNode()}
                 />
                 <button onclick={parseAndAddNode} disabled={!nodeEntry.trim()}>Add Node</button>
@@ -122,7 +137,7 @@
         <button
             class="run-button"
             onclick={runIntervention}
-            disabled={loading || !text.trim() || stagedNodes.length === 0}
+            disabled={loading || !text.trim() || pinnedNodes.length === 0}
         >
             {loading ? "Running..." : "Run Intervention"}
         </button>

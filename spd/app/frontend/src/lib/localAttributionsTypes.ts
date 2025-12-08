@@ -90,6 +90,7 @@ export type NodePosition = {
 
 export type PinnedNode = {
     layer: string;
+    seqIdx: number;
     cIdx: number;
 };
 

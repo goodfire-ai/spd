@@ -163,35 +163,18 @@ def compute_graph_stream(
                 db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
-                        edges=[
-                            EdgeData(
-                                src=str(e.source),
-                                tgt=str(e.target),
-                                val=e.strength,
-                                is_cross_seq=e.is_cross_seq,
-                            )
-                            for e in raw_edges
-                        ],
+                        edges=raw_edges,
                         output_probs=raw_output_probs,
                     ),
                 )
 
                 # Apply normalization for response
-                edges = raw_edges
-                match normalize:
-                    case "none":
-                        pass
-                    case "target":
-                        edges = _normalize_edges_by_target(edges)
-                    case "layer":
-                        edges = _normalize_edges_by_target_layer(edges)
+                edges = _normalize_edges(raw_edges, normalize)
                 if len(edges) > GLOBAL_EDGE_LIMIT:
                     edges.sort(key=lambda e: abs(e.strength), reverse=True)
                     edges = edges[:GLOBAL_EDGE_LIMIT]
 
-                edges_typed = [
-                    EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges
-                ]
+                edges_typed = [_edge_to_edge_data(e) for e in edges]
                 node_importance, max_abs_attr = compute_edge_stats(edges_typed)
 
                 response_data = GraphData(
@@ -211,52 +194,42 @@ def compute_graph_stream(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-def _normalize_edges_by_target(edges: list[Edge]) -> list[Edge]:
-    def get_target_node(edge: Edge) -> str:
-        return str(edge.target)
-
-    sorted_edges = sorted(edges, key=get_target_node)
-    groups = groupby(sorted_edges, key=get_target_node)
-
-    out_edges = []
-    for _, incoming_edges in groups:
-        incoming_edges = list(incoming_edges)  # list() because we iterate over the group twice
-        incoming_strength = math.sqrt(sum(edge.strength**2 for edge in incoming_edges))
-        for edge in incoming_edges:
-            out_edges.append(
-                Edge(
-                    source=edge.source,
-                    target=edge.target,
-                    is_cross_seq=edge.is_cross_seq,
-                    strength=edge.strength / incoming_strength,
-                )
-            )
-    return out_edges
+def _edge_to_edge_data(edge: Edge) -> EdgeData:
+    """Convert Edge (internal format) to EdgeData (API format)."""
+    return EdgeData(
+        src=str(edge.source),
+        tgt=str(edge.target),
+        val=edge.strength,
+        is_cross_seq=edge.is_cross_seq,
+    )
 
 
-def _normalize_edges_by_target_layer(edges: list[Edge]) -> list[Edge]:
-    def get_target_layer(edge: Edge) -> str:
+def _normalize_edges(edges: list[Edge], normalize: NormalizeType) -> list[Edge]:
+    """Normalize edges by target node or target layer."""
+    if normalize == "none":
+        return edges
+
+    def get_group_key(edge: Edge) -> str:
+        if normalize == "target":
+            return str(edge.target)
         return edge.target.layer
 
-    sorted_edges = sorted(edges, key=get_target_layer)
-    groups = groupby(sorted_edges, key=get_target_layer)
+    sorted_edges = sorted(edges, key=get_group_key)
+    groups = groupby(sorted_edges, key=get_group_key)
 
     out_edges = []
-    for _, incoming_edges in groups:
-        incoming_edges = list(incoming_edges)  # list() because we iterate over the group twice
-        incoming_strength = math.sqrt(sum(edge.strength**2 for edge in incoming_edges))
-        if incoming_strength == 0:
-            print(
-                f"[WARNING] Incoming strength is 0 for target layer {incoming_edges[0].target.layer}"
-            )
+    for _, group_edges in groups:
+        group_edges = list(group_edges)
+        group_strength = math.sqrt(sum(edge.strength**2 for edge in group_edges))
+        if group_strength == 0:
             continue
-        for edge in incoming_edges:
+        for edge in group_edges:
             out_edges.append(
                 Edge(
                     source=edge.source,
                     target=edge.target,
                     is_cross_seq=edge.is_cross_seq,
-                    strength=edge.strength / incoming_strength,
+                    strength=edge.strength / group_strength,
                 )
             )
     return out_edges
@@ -376,15 +349,7 @@ def compute_graph_optimized_stream(
                 db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
-                        edges=[
-                            EdgeData(
-                                src=str(e.source),
-                                tgt=str(e.target),
-                                val=e.strength,
-                                is_cross_seq=e.is_cross_seq,
-                            )
-                            for e in raw_edges
-                        ],
+                        edges=raw_edges,
                         output_probs=raw_output_probs,
                         optimization_params=opt_params,
                         optimization_stats=OptimizationStats(
@@ -396,24 +361,13 @@ def compute_graph_optimized_stream(
                 )
 
                 # Apply normalization for response
-                edges = raw_edges
-
-                edges = _remove_non_final_output_nodes(edges, len(token_ids))
-
-                match normalize:
-                    case "none":
-                        pass
-                    case "target":
-                        edges = _normalize_edges_by_target(edges)
-                    case "layer":
-                        edges = _normalize_edges_by_target_layer(edges)
+                edges = _remove_non_final_output_nodes(raw_edges, len(token_ids))
+                edges = _normalize_edges(edges, normalize)
                 if len(edges) > GLOBAL_EDGE_LIMIT:
                     edges.sort(key=lambda e: abs(e.strength), reverse=True)
                     edges = edges[:GLOBAL_EDGE_LIMIT]
 
-                edges_typed = [
-                    EdgeData(src=str(e.source), tgt=str(e.target), val=e.strength) for e in edges
-                ]
+                edges_typed = [_edge_to_edge_data(e) for e in edges]
                 node_importance, max_abs_attr = compute_edge_stats(edges_typed)
 
                 response_data = GraphDataWithOptimization(
@@ -448,36 +402,6 @@ def _remove_non_final_output_nodes(edges: list[Edge], num_tokens: int) -> list[E
     return [edge for edge in edges if edge.target.seq_pos == num_tokens - 1]
 
 
-def _normalize_edge_data(edges: list[EdgeData], normalize: NormalizeType) -> list[EdgeData]:
-    """Apply normalization to EdgeData list."""
-    if normalize == "none":
-        return edges
-
-    def get_group_key(edge: EdgeData) -> str:
-        if normalize == "target":
-            return edge.tgt
-        # layer normalization - extract layer from target (format: "layer:seq:component")
-        return edge.tgt.split(":")[0]
-
-    sorted_edges = sorted(edges, key=get_group_key)
-    groups = groupby(sorted_edges, key=get_group_key)
-
-    out_edges = []
-    for _, group_edges in groups:
-        group_edges = list(group_edges)
-        group_strength = math.sqrt(sum(e.val**2 for e in group_edges))
-        for edge in group_edges:
-            out_edges.append(
-                EdgeData(
-                    src=edge.src,
-                    tgt=edge.tgt,
-                    val=edge.val / group_strength,
-                    is_cross_seq=edge.is_cross_seq,
-                )
-            )
-    return out_edges
-
-
 @router.get("/{prompt_id}")
 @log_errors
 def get_graphs(
@@ -501,14 +425,14 @@ def get_graphs(
 
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
-        # Apply normalization
-        edges = _normalize_edge_data(graph.edges, normalize)
-
-        # Apply edge limit to avoid overwhelming the frontend
+        # Normalize and convert to API format
+        edges = _normalize_edges(graph.edges, normalize)
         if len(edges) > GLOBAL_EDGE_LIMIT:
-            edges = sorted(edges, key=lambda e: abs(e.val), reverse=True)[:GLOBAL_EDGE_LIMIT]
+            edges.sort(key=lambda e: abs(e.strength), reverse=True)
+            edges = edges[:GLOBAL_EDGE_LIMIT]
+        edges_data = [_edge_to_edge_data(e) for e in edges]
 
-        node_importance, max_abs_attr = compute_edge_stats(edges)
+        node_importance, max_abs_attr = compute_edge_stats(edges_data)
 
         if graph.optimization_params is None:
             # Standard graph
@@ -516,7 +440,7 @@ def get_graphs(
                 GraphData(
                     id=prompt_id,
                     tokens=token_strings,
-                    edges=edges,
+                    edges=edges_data,
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
@@ -529,7 +453,7 @@ def get_graphs(
                 GraphDataWithOptimization(
                     id=prompt_id,
                     tokens=token_strings,
-                    edges=edges,
+                    edges=edges_data,
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,

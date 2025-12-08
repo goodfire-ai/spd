@@ -7,13 +7,15 @@ Attribution graphs can be cached to avoid recomputation.
 import gzip
 import json
 import sqlite3
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel
 
+from spd.app.backend.compute import Edge, Node
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
-    EdgeData,
     ModelActivationContexts,
     OutputProbability,
 )
@@ -58,7 +60,9 @@ class OptimizationStats(BaseModel):
 class StoredGraph(BaseModel):
     """A stored attribution graph."""
 
-    edges: list[EdgeData]
+    model_config = {"arbitrary_types_allowed": True}
+
+    edges: list[Edge]
     output_probs: dict[str, OutputProbability]
     optimization_params: OptimizationParams | None = None
     optimization_stats: OptimizationStats | None = None
@@ -451,7 +455,7 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         # Compress edges and output probs
-        edges_json = json.dumps([e.model_dump() for e in graph.edges])
+        edges_json = json.dumps([asdict(e) for e in graph.edges])
         edges_compressed = gzip.compress(edges_json.encode("utf-8"))
 
         probs_json = json.dumps({k: v.model_dump() for k, v in graph.output_probs.items()})
@@ -521,10 +525,18 @@ class LocalAttrDB:
             (prompt_id,),
         ).fetchall()
 
+        def _edge_from_dict(d: dict[str, Any]) -> Edge:
+            return Edge(
+                source=Node(**d["source"]),
+                target=Node(**d["target"]),
+                strength=float(d["strength"]),
+                is_cross_seq=bool(d["is_cross_seq"]),
+            )
+
         results: list[StoredGraph] = []
         for row in rows:
             edges_json = json.loads(gzip.decompress(row["edges_data"]).decode("utf-8"))
-            edges = [EdgeData(**e) for e in edges_json]
+            edges = [_edge_from_dict(e) for e in edges_json]
 
             probs_json = json.loads(gzip.decompress(row["output_probs_data"]).decode("utf-8"))
             output_probs = {k: OutputProbability(**v) for k, v in probs_json.items()}

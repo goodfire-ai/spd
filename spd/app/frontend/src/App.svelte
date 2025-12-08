@@ -2,7 +2,7 @@
     // import { RenderScan } from "svelte-render-scan";
     import type { LoadedRun } from "./lib/api";
     import * as api from "./lib/api";
-    import type { InterventionNode } from "./lib/interventionTypes";
+    import type { PinnedNode } from "./lib/localAttributionsTypes";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import InterventionTab from "./components/InterventionTab.svelte";
@@ -72,29 +72,35 @@
     let activeTab = $state<"activation-contexts" | "local-attributions" | "intervention" | null>(null);
     let showConfig = $state(false);
 
-    // Staged nodes for intervention (shared between LocalAttributionsTab and InterventionTab)
-    let stagedNodes = $state<InterventionNode[]>([]);
+    // Pinned/staged nodes (shared between LocalAttributionsTab and InterventionTab)
+    let pinnedNodes = $state<PinnedNode[]>([]);
+    let interventionText = $state("");
 
-    function handleStagedNodesChange(nodes: InterventionNode[]) {
-        stagedNodes = nodes;
+    function handlePinnedNodesChange(nodes: PinnedNode[]) {
+        pinnedNodes = nodes;
     }
 
-    function clearStagedNodes() {
-        stagedNodes = [];
+    function clearPinnedNodes() {
+        pinnedNodes = [];
     }
 
-    function addStagedNode(node: InterventionNode) {
+    function addPinnedNode(node: PinnedNode) {
         // Avoid duplicates
-        const exists = stagedNodes.some(
-            (n) => n.layer === node.layer && n.seq_pos === node.seq_pos && n.component_idx === node.component_idx
+        const exists = pinnedNodes.some(
+            (n) => n.layer === node.layer && n.seqIdx === node.seqIdx && n.cIdx === node.cIdx
         );
         if (!exists) {
-            stagedNodes = [...stagedNodes, node];
+            pinnedNodes = [...pinnedNodes, node];
         }
     }
 
-    function removeStagedNode(index: number) {
-        stagedNodes = stagedNodes.filter((_, i) => i !== index);
+    function removePinnedNode(index: number) {
+        pinnedNodes = pinnedNodes.filter((_, i) => i !== index);
+    }
+
+    function goToIntervention(text: string) {
+        interventionText = text;
+        activeTab = "intervention";
     }
 </script>
 
@@ -157,7 +163,7 @@
                 class:active={activeTab === "intervention"}
                 onclick={() => (activeTab = "intervention")}
             >
-                Intervention {#if stagedNodes.length > 0}<span class="badge">{stagedNodes.length}</span>{/if}
+                Intervention {#if pinnedNodes.length > 0}<span class="badge">{pinnedNodes.length}</span>{/if}
             </button>
             <button
                 class="tab-button"
@@ -179,16 +185,18 @@
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "local-attributions"}>
                 <LocalAttributionsTab
-                    {stagedNodes}
-                    onStagedNodesChange={handleStagedNodesChange}
+                    {pinnedNodes}
+                    onPinnedNodesChange={handlePinnedNodesChange}
+                    onGoToIntervention={goToIntervention}
                 />
             </div>
             <div class="tab-content" class:hidden={activeTab !== "intervention"}>
                 <InterventionTab
-                    {stagedNodes}
-                    onClearNodes={clearStagedNodes}
-                    onAddNode={addStagedNode}
-                    onRemoveNode={removeStagedNode}
+                    {pinnedNodes}
+                    initialText={interventionText}
+                    onClearNodes={clearPinnedNodes}
+                    onAddNode={addPinnedNode}
+                    onRemoveNode={removePinnedNode}
                 />
             </div>
             <div class="tab-content" class:hidden={activeTab !== "activation-contexts"}>

@@ -1,7 +1,6 @@
 <script lang="ts">
     import * as mainApi from "../lib/api";
     import * as attrApi from "../lib/localAttributionsApi";
-    import type { InterventionNode } from "../lib/interventionTypes";
     import type {
         ActivationContextsSummary,
         ComponentDetail,
@@ -18,23 +17,14 @@
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
-    // Props for intervention integration (staged nodes are managed in App.svelte)
+    // Props - pinnedNodes are managed in App.svelte (shared with InterventionTab)
     type Props = {
-        stagedNodes: InterventionNode[];
-        onStagedNodesChange: (nodes: InterventionNode[]) => void;
+        pinnedNodes: PinnedNode[];
+        onPinnedNodesChange: (nodes: PinnedNode[]) => void;
+        onGoToIntervention: (text: string) => void;
     };
 
-    let { stagedNodes, onStagedNodesChange }: Props = $props();
-
-    function handleStageNode(layer: string, seqPos: number, componentIdx: number) {
-        // Avoid duplicates
-        const exists = stagedNodes.some(
-            (n) => n.layer === layer && n.seq_pos === seqPos && n.component_idx === componentIdx
-        );
-        if (!exists) {
-            onStagedNodesChange([...stagedNodes, { layer, seq_pos: seqPos, component_idx: componentIdx }]);
-        }
-    }
+    let { pinnedNodes, onPinnedNodesChange, onGoToIntervention }: Props = $props();
 
     // Server state
     let loadedRun = $state<mainApi.LoadedRun | null>(null);
@@ -91,9 +81,6 @@
             pnorm: 0.3,
         },
     });
-
-    // Pinned nodes (for search)
-    let pinnedNodes = $state<PinnedNode[]>([]);
 
     // Component details cache (shared across graphs, persists across graph switches)
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
@@ -407,8 +394,8 @@
         }
     }
 
-    function handlePinnedNodesChange(nodes: PinnedNode[]) {
-        pinnedNodes = nodes;
+    function handlePinnedNodesChangeWithFilter(nodes: PinnedNode[]) {
+        onPinnedNodesChange(nodes);
         if (filterByPinned) {
             filterPromptsByPinned();
         }
@@ -578,17 +565,18 @@
                                         {pinnedNodes}
                                         {componentDetailsCache}
                                         {componentDetailsLoading}
-                                        onPinnedNodesChange={handlePinnedNodesChange}
+                                        onPinnedNodesChange={handlePinnedNodesChangeWithFilter}
                                         onLoadComponentDetail={loadComponentDetail}
                                         onEdgeCountChange={(count) => (filteredEdgeCount = count)}
-                                        onStageNode={handleStageNode}
                                     />
                                 {/key}
                                 <PinnedComponentsPanel
                                     {pinnedNodes}
                                     {componentDetailsCache}
                                     outputProbs={activeGraph.data.outputProbs}
-                                    onPinnedNodesChange={handlePinnedNodesChange}
+                                    tokens={activeGraph.data.tokens}
+                                    onPinnedNodesChange={handlePinnedNodesChangeWithFilter}
+                                    {onGoToIntervention}
                                 />
                             {:else if !loadingCardId}
                                 <div class="empty-state">
