@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { RenderScan } from "svelte-render-scan";
+    // import { RenderScan } from "svelte-render-scan";
     import type { LoadedRun } from "./lib/api";
     import * as api from "./lib/api";
 
