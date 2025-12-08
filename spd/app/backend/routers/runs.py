@@ -57,9 +57,15 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     else:
         logger.info(f"[API] Found existing run in DB: {run.id}")
 
-    # If already loaded, skip model load
-    if manager.run_state is not None and manager.run_state.run.id == run.id:
-        logger.info(f"[API] Run {run.id} already loaded, skipping")
+    # If already loaded with same context_length, skip model load
+    if (
+        manager.run_state is not None
+        and manager.run_state.run.id == run.id
+        and manager.run_state.context_length == context_length
+    ):
+        logger.info(
+            f"[API] Run {run.id} already loaded with context_length={context_length}, skipping"
+        )
         return {"status": "already_loaded", "run_id": run.id, "wandb_path": run.wandb_path}
 
     # Unload previous run if any
