@@ -9,15 +9,9 @@
 
     let loadingTrainRun = $state(false);
 
-<<<<<<< HEAD
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>('goodfire/spd/jyo9duz5');
     let contextLength = $state<number | null>(8);
-=======
-    /** wandb run path (e.g. "entity/project/run_id"). sanitized on submit */
-    let trainWandbRunEntry = $state<string | null>(null);
-    let contextLength = $state<number | null>(null);
->>>>>>> main
 
     let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
