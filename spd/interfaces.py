@@ -8,8 +8,9 @@ import wandb
 import yaml
 from wandb.apis.public import Run
 
+from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
-from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
+from spd.spd_types import ModelPath
 from spd.utils.general_utils import fetch_latest_local_checkpoint
 from spd.utils.wandb_utils import (
     download_wandb_file,
@@ -71,7 +72,7 @@ class RunInfo[T]:
                 assumes config file is in the same directory as the checkpoint.
         """
         try:
-            _entity, project, run_id = parse_wandb_run_path(str(path))
+            entity, project, run_id = parse_wandb_run_path(str(path))
         except ValueError:
             # Direct path to checkpoint file
             file_paths = cls._resolve_from_checkpoint_path(Path(path))
@@ -79,10 +80,11 @@ class RunInfo[T]:
             # Wandb path - check cache first
             run_dir = SPD_CACHE_DIR / "runs" / f"{project}-{run_id}"
             if run_dir.exists():
+                logger.info(f"Loading run from {run_dir}")
                 file_paths = cls._resolve_from_run_dir(run_dir)
             else:
-                assert isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX)
-                file_paths = cls._download_from_wandb(path.removeprefix(WANDB_PATH_PREFIX))
+                logger.info(f"Downloading run from wandb: {entity}/{project}/{run_id}")
+                file_paths = cls._download_from_wandb(f"{entity}/{project}/{run_id}")
 
         with open(file_paths["config"]) as f:
             config = cls.config_class(**yaml.safe_load(f))
