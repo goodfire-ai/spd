@@ -63,6 +63,63 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
 NormalizeType = Literal["none", "target", "layer"]
 
 
+def _get_ci_lookup(prompt_id: int, manager: DepStateManager) -> dict[str, float]:
+    """Get CI values for all components from database.
+
+    Args:
+        prompt_id: Prompt ID to look up CI values for
+        manager: State manager for database access
+
+    Returns:
+        Dict mapping component_key to max_ci
+    """
+    db = manager.db
+    conn = db._get_conn()
+
+    rows = conn.execute(
+        """SELECT component_key, max_ci
+           FROM component_activations
+           WHERE prompt_id = ?""",
+        (prompt_id,),
+    ).fetchall()
+
+    ci_lookup: dict[str, float] = {}
+    for row in rows:
+        ci_lookup[row["component_key"]] = row["max_ci"]
+
+    return ci_lookup
+
+
+def filter_edges_by_ci_threshold(
+    edges: list[Edge],
+    prompt_id: int,
+    ci_threshold: float,
+    manager: DepStateManager,
+) -> list[Edge]:
+    """Filter edges by removing those where source or target has CI < ci_threshold.
+
+    Args:
+        edges: List of edges to filter
+        prompt_id: Prompt ID to look up CI values for
+        ci_threshold: Threshold for filtering
+        manager: State manager for database access
+
+    Returns:
+        Filtered list of edges
+    """
+    if ci_threshold <= 0:
+        return edges
+
+    ci_lookup = _get_ci_lookup(prompt_id, manager)
+
+    return [
+        edge
+        for edge in edges
+        if ci_lookup.get(edge.source.component_key(), 0.0) >= ci_threshold
+        and ci_lookup.get(edge.target.component_key(), 0.0) >= ci_threshold
+    ]
+
+
 def compute_edge_stats(edges: list[EdgeData]) -> tuple[dict[str, float], float]:
     """Compute node importance and max absolute edge value.
 
@@ -88,9 +145,9 @@ def compute_graph_stream(
     normalize: Annotated[NormalizeType, Query()],
     loaded: DepLoadedRun,
     manager: DepStateManager,
+    ci_threshold: Annotated[float, Query()],
 ):
     """Compute attribution graph for a prompt with streaming progress."""
-    ci_threshold = 1e-6
     output_prob_threshold = 0.01
 
     db = manager.db
@@ -109,11 +166,12 @@ def compute_graph_stream(
 
     def compute_thread() -> None:
         try:
+            # Always compute with ci_threshold=0 to get all edges
             result = compute_local_attributions(
                 model=loaded.model,
                 tokens=tokens_tensor,
                 sources_by_target=loaded.sources_by_target,
-                ci_threshold=ci_threshold,
+                ci_threshold=0.0,
                 output_prob_threshold=output_prob_threshold,
                 sampling=loaded.config.sampling,
                 device=DEVICE,
@@ -159,7 +217,7 @@ def compute_graph_stream(
                             token=loaded.token_strings[c_idx],
                         )
 
-                # Save graph (raw, unnormalized edges)
+                # Store all edges (unfiltered, unnormalized)
                 db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
@@ -167,6 +225,9 @@ def compute_graph_stream(
                         output_probs=raw_output_probs,
                     ),
                 )
+
+                # Filter edges by ci_threshold before returning to client
+                edges = filter_edges_by_ci_threshold(raw_edges, prompt_id, ci_threshold, manager)
 
                 # Apply normalization for response
                 edges = _normalize_edges(raw_edges, normalize)
@@ -248,10 +309,10 @@ def compute_graph_optimized_stream(
     output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
     loaded: DepLoadedRun,
     manager: DepStateManager,
+    ci_threshold: Annotated[float, Query()],
 ):
     """Compute optimized attribution graph for a prompt with streaming progress."""
     lr = 1e-2
-    ci_threshold = 1e-6
 
     db = manager.db
     prompt = db.get_prompt(prompt_id)
@@ -294,13 +355,14 @@ def compute_graph_optimized_stream(
 
     def compute_thread() -> None:
         try:
+            # Always compute with ci_threshold=0 to get all edges
             result = compute_local_attributions_optimized(
                 model=loaded.model,
                 tokens=tokens_tensor,
                 label_token=label_token,
                 sources_by_target=loaded.sources_by_target,
                 optim_config=optim_config,
-                ci_threshold=ci_threshold,
+                ci_threshold=0.0,
                 output_prob_threshold=output_prob_threshold,
                 device=DEVICE,
                 show_progress=False,
@@ -345,7 +407,7 @@ def compute_graph_optimized_stream(
                             token=loaded.token_strings[c_idx],
                         )
 
-                # Save graph (raw, unnormalized edges)
+                # Store all edges (unfiltered, unnormalized)
                 db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
@@ -359,6 +421,9 @@ def compute_graph_optimized_stream(
                         ),
                     ),
                 )
+
+                # Filter edges by ci_threshold before returning to client
+                edges = filter_edges_by_ci_threshold(raw_edges, prompt_id, ci_threshold, manager)
 
                 # Apply normalization for response
                 edges = _remove_non_final_output_nodes(raw_edges, len(token_ids))
@@ -407,6 +472,7 @@ def _remove_non_final_output_nodes(edges: list[Edge], num_tokens: int) -> list[E
 def get_graphs(
     prompt_id: int,
     normalize: Annotated[NormalizeType, Query()],
+    ci_threshold: Annotated[float, Query()],
     loaded: DepLoadedRun,
     manager: DepStateManager,
 ) -> list[GraphData | GraphDataWithOptimization]:
@@ -425,6 +491,10 @@ def get_graphs(
 
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
+        # Filter edges by ci_threshold
+        edges = filter_edges_by_ci_threshold(
+            edges=graph.edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
+        )
         # Normalize and convert to API format
         edges = _normalize_edges(graph.edges, normalize)
         if len(edges) > GLOBAL_EDGE_LIMIT:

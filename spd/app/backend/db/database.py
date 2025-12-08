@@ -473,7 +473,8 @@ class LocalAttrDB:
                     label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
                     edges_data, output_probs_data,
                     label_prob, l0_total, l0_per_layer)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT DO NOTHING""",
                 (
                     prompt_id,
                     is_optimized,
@@ -493,7 +494,8 @@ class LocalAttrDB:
             conn.execute(
                 """INSERT INTO cached_graphs
                    (prompt_id, is_optimized, edges_data, output_probs_data)
-                   VALUES (?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT DO NOTHING""",
                 (
                     prompt_id,
                     is_optimized,

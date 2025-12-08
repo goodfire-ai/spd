@@ -36,6 +36,21 @@
         }
         return options.useOptimized ? "Compute (Optimized)" : "Compute";
     });
+
+    // Local state for CI threshold input
+    let ciThresholdInput = $state(options.ciThreshold.toString());
+
+    // Sync input when options change externally
+    $effect(() => {
+        ciThresholdInput = options.ciThreshold.toString();
+    });
+
+    function applyCiThreshold() {
+        const value = parseFloat(ciThresholdInput);
+        if (!isNaN(value) && value !== options.ciThreshold) {
+            onOptionsChange({ ciThreshold: value });
+        }
+    }
 </script>
 
 <div class="staged-header">
@@ -61,7 +76,24 @@
                     step={0.01}
                 />
             </label>
-            <span class="info-icon" data-tooltip="Backend defaults: ci_threshold=1e-6, output_prob_threshold=0.01"
+            <label>
+                <span>CI Threshold</span>
+                <input
+                    type="number"
+                    bind:value={ciThresholdInput}
+                    onblur={applyCiThreshold}
+                    onkeydown={(e) => {
+                        if (e.key === "Enter") {
+                            applyCiThreshold();
+                            e.currentTarget.blur();
+                        }
+                    }}
+                    min={0}
+                    max={0.1}
+                    step={0.000001}
+                />
+            </label>
+            <span class="info-icon" data-tooltip="Default output_prob_threshold=0.01"
                 >?</span
             >
             <label class="checkbox">
@@ -261,7 +293,7 @@
     }
 
     .compute-options input[type="number"] {
-        width: 55px;
+        width: 110px;
         padding: var(--space-1);
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);

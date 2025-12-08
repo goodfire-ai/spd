@@ -69,6 +69,7 @@
     // Compute options
     let computeOptions = $state<ComputeOptions>({
         maxMeanCI: 1.0,
+        ciThreshold: 1e-6,
         normalizeEdges: "layer", // kept for compute, but view uses normalizeEdges state
         useOptimized: false,
         optimizeConfig: {
@@ -201,7 +202,7 @@
         // Fetch stored graphs for this prompt
         let graphs: StoredGraph[] = [];
         try {
-            const storedGraphs = await attrApi.getGraphs(promptId, normalizeEdges);
+            const storedGraphs = await attrApi.getGraphs(promptId, normalizeEdges, computeOptions.ciThreshold);
             graphs = storedGraphs.map((data, idx) => {
                 const isOptimized = !!data.optimization;
                 const label = isOptimized
@@ -277,7 +278,13 @@
     }
 
     function handleOptionsChange(partial: Partial<ComputeOptions>) {
+        const oldCiThreshold = computeOptions.ciThreshold;
         computeOptions = { ...computeOptions, ...partial };
+
+        // If ciThreshold changed, re-fetch all graphs with new threshold
+        if (partial.ciThreshold !== undefined && partial.ciThreshold !== oldCiThreshold) {
+            handleCiThresholdChange(partial.ciThreshold);
+        }
     }
 
     function handleOptimizeConfigChange(partial: Partial<OptimizeConfig>) {
@@ -324,6 +331,7 @@
                         steps: optConfig.steps,
                         pnorm: optConfig.pnorm,
                         outputProbThreshold: 0.01,
+                        ciThreshold: computeOptions.ciThreshold,
                     },
                     (progress) => {
                         if (!loadingState) return;
@@ -342,6 +350,7 @@
                     {
                         promptId: activeCard.promptId,
                         normalize: computeOptions.normalizeEdges,
+                        ciThreshold: computeOptions.ciThreshold,
                     },
                     (progress) => {
                         if (!loadingState) return;
@@ -401,18 +410,14 @@
         }
     }
 
-    async function handleNormalizeChange(value: attrApi.NormalizeType) {
-        normalizeEdges = value;
-        // Also sync to compute options so new computes use the same normalization
-        computeOptions.normalizeEdges = value;
-
-        // Re-fetch all graphs for all cards with new normalization
+    async function refetchAllGraphs() {
+        // Re-fetch all graphs for all cards with current settings
         const updatedCards = await Promise.all(
             promptCards.map(async (card) => {
                 if (card.graphs.length === 0) return card;
 
                 try {
-                    const storedGraphs = await attrApi.getGraphs(card.promptId, normalizeEdges);
+                    const storedGraphs = await attrApi.getGraphs(card.promptId, normalizeEdges, computeOptions.ciThreshold);
                     const graphs = storedGraphs.map((data, idx) => {
                         const isOptimized = !!data.optimization;
                         const label = isOptimized
@@ -436,6 +441,18 @@
             }),
         );
         promptCards = updatedCards;
+    }
+
+    async function handleNormalizeChange(value: attrApi.NormalizeType) {
+        normalizeEdges = value;
+        // Also sync to compute options so new computes use the same normalization
+        computeOptions.normalizeEdges = value;
+        await refetchAllGraphs();
+    }
+
+    async function handleCiThresholdChange(value: number) {
+        computeOptions.ciThreshold = value;
+        await refetchAllGraphs();
     }
 
     async function handleGeneratePrompts(nPrompts: number) {
