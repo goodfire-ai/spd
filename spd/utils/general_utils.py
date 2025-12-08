@@ -99,19 +99,30 @@ def compute_feature_importances(
 def get_lr_schedule_fn(
     lr_schedule: Literal["linear", "constant", "cosine", "exponential"],
     lr_exponential_halflife: PositiveFloat | None = None,
+    lr_final_frac: float = 0.0,
 ) -> Callable[[int, int], float]:
-    """Get a function that returns the learning rate at a given step.
+    """Get a function that returns the learning rate multiplier at a given step.
 
     Args:
         lr_schedule: The learning rate schedule to use
         lr_exponential_halflife: The halflife of the exponential learning rate schedule
+        lr_final_frac: Final LR as a fraction of the initial LR (for linear and cosine schedules)
     """
     if lr_schedule == "linear":
-        return lambda step, steps: 1 - (step / steps)
+        # Linear decay from 1.0 to lr_final_frac
+        return lambda step, steps: lr_final_frac + (1 - lr_final_frac) * (1 - step / steps)
     elif lr_schedule == "constant":
         return lambda *_: 1.0
     elif lr_schedule == "cosine":
-        return lambda step, steps: 1.0 if steps == 1 else np.cos(0.5 * np.pi * step / (steps - 1))
+        # Half-period cosine annealing from 1.0 to lr_final_frac
+        def cosine_schedule(step: int, steps: int) -> float:
+            if steps == 1:
+                return 1.0
+            progress = step / (steps - 1)
+            cosine_decay = 0.5 * (1 + np.cos(np.pi * progress))
+            return lr_final_frac + (1 - lr_final_frac) * cosine_decay
+
+        return cosine_schedule
     else:
         # Exponential
         assert lr_exponential_halflife is not None  # Should have been caught by model validator

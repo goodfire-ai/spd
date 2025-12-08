@@ -203,7 +203,9 @@ def optimize(
     optimized_params = component_params + ci_fn_params
     optimizer = optim.AdamW(optimized_params, lr=config.lr, weight_decay=0)
 
-    lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
+    lr_schedule_fn = get_lr_schedule_fn(
+        config.lr_schedule, config.lr_exponential_halflife, config.lr_final_frac
+    )
     logger.info(f"Base LR scheduler created: {config.lr_schedule}")
 
     if config.faithfulness_warmup_steps > 0:
