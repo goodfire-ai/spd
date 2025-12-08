@@ -170,10 +170,12 @@ class SubcomponentActivationContexts(BaseModel):
     pr_recalls: list[float]  # [n_unique_tokens]
     pr_precisions: list[float]  # [n_unique_tokens]
 
-    # Predicted token stats - P(predicted_token | component fires)
-    # Sorted by probability descending
+    # Predicted token stats - lift = E[P(token)|fires] / E[P(token)]
+    # Sorted by lift descending
     predicted_tokens: list[str]  # [n_unique_predicted]
-    predicted_probs: list[float]  # [n_unique_predicted] - P(token predicted | component fires)
+    predicted_lifts: list[float]  # [n_unique_predicted] - lift (firing_prob / base_prob)
+    predicted_firing_probs: list[float]  # [n_unique_predicted] - E[P(token) | component fires]
+    predicted_base_probs: list[float]  # [n_unique_predicted] - E[P(token)] base rate
 
 
 class ModelActivationContexts(BaseModel):

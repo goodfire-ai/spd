@@ -141,7 +141,10 @@
             <div class="tables-row">
                 {#if detail.pr_tokens?.length > 0}
                     <div>
-                        <h4>Top Input Tokens</h4>
+                        <h4>
+                            Token Precision
+                            <span class="math-notation">P(firing | token)</span>
+                        </h4>
                         <table class="data-table">
                             <tbody>
                                 {#each detail.pr_tokens.slice(0, 10) as token, i (i)}
@@ -155,15 +158,22 @@
                     </div>
                 {/if}
 
-                {#if detail.predicted_tokens?.length}
+                {#if detail.predicted_tokens.length > 0}
                     <div>
-                        <h4>Top Predicted</h4>
+                        <h4>Prediction uplift</h4>
                         <table class="data-table">
                             <tbody>
                                 {#each detail.predicted_tokens.slice(0, 10) as token, i (i)}
                                     <tr>
                                         <td><code>{token}</code></td>
-                                        <td>{detail.predicted_probs?.[i]?.toFixed(3)}</td>
+                                        <td class="lift-cell">
+                                            <span class="lift-value">{detail.predicted_lifts[i].toFixed(1)}x</span>
+                                            <span class="lift-detail">
+                                                ({(detail.predicted_firing_probs[i] * 100).toFixed(1)}% vs {(
+                                                    detail.predicted_base_probs[i] * 100
+                                                ).toFixed(1)}%)
+                                            </span>
+                                        </td>
                                     </tr>
                                 {/each}
                             </tbody>
@@ -301,6 +311,21 @@
     .data-table td:last-child {
         color: var(--text-secondary);
         text-align: right;
+    }
+
+    .lift-cell {
+        white-space: nowrap;
+    }
+
+    .lift-value {
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+
+    .lift-detail {
+        color: var(--text-muted);
+        font-size: var(--text-xs);
+        margin-left: var(--space-1);
     }
 
     .data-table code {

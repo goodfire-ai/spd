@@ -34,6 +34,7 @@ def get_activations_data(
     tokenizer: PreTrainedTokenizerBase,
     train_loader: DataLoader[Int[Tensor, "B S"]],
     token_strings: dict[int, str],
+    token_base_rates: dict[int, float],
     importance_threshold: float,
     n_batches: int,
     n_tokens_either_side: int,
@@ -64,9 +65,9 @@ def get_activations_data(
     component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
-    # - the number of times each token is predicted when component fires
-    component_predicted_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
-        lambda: defaultdict(lambda: defaultdict(int))
+    # - accumulated probability mass for each predicted token when component fires
+    component_predicted_probs = defaultdict[str, defaultdict[int, dict[int, float]]](
+        lambda: defaultdict(lambda: defaultdict(float))
     )
     # - the sum of causal importances
     C = cm.C
@@ -111,8 +112,8 @@ def get_activations_data(
                 sampling=config.sampling,
             ).lower_leaky
 
-        # Get predicted tokens (argmax of logits at each position)
-        predicted_token_ids: Int[Tensor, "B S"] = logits.argmax(dim=-1)
+        # Get softmax probabilities for predicted token lift calculation
+        pred_probs: Float[Tensor, "B S V"] = torch.softmax(logits, dim=-1)
 
         for module_idx, (module_name, ci_val) in enumerate(ci_vals.items()):
             pbar.update(1)
@@ -192,8 +193,8 @@ def get_activations_data(
             # Get token IDs at active position for token counting
             active_token_ids = window_token_ids_np[:, n_tokens_either_side]
 
-            # Get predicted tokens at each firing position
-            firing_predicted_tokens = predicted_token_ids[batch_idx, seq_idx].cpu().numpy()
+            # Get prediction probabilities at each firing position (full vocab)
+            firing_pred_probs: Float[Tensor, "n_firings V"] = pred_probs[batch_idx, seq_idx]
 
             # Process by component - group firings and use batch add
             unique_components = np.unique(comp_idx_np)
@@ -211,13 +212,16 @@ def get_activations_data(
                 for tok_id, count in zip(unique_tokens, token_counts, strict=True):
                     component_activation_tokens[module_name][c_idx_int][int(tok_id)] += int(count)
 
-                # Update predicted token counts for this component
-                predicted_for_component = firing_predicted_tokens[mask_c]
-                unique_predicted, predicted_counts = np.unique(
-                    predicted_for_component, return_counts=True
-                )
-                for tok_id, count in zip(unique_predicted, predicted_counts, strict=True):
-                    component_predicted_tokens[module_name][c_idx_int][int(tok_id)] += int(count)
+                # Accumulate predicted token probability mass for this component
+                probs_for_component: Float[Tensor, "n_c V"] = firing_pred_probs[
+                    torch.from_numpy(mask_c).to(firing_pred_probs.device)
+                ]
+                prob_sums: Float[Tensor, " V"] = probs_for_component.sum(dim=0)
+                prob_sums_cpu = prob_sums.cpu()
+                for tok_id in range(prob_sums_cpu.shape[0]):
+                    prob = float(prob_sums_cpu[tok_id])
+                    if prob > 1e-6:  # Skip negligible probabilities
+                        component_predicted_probs[module_name][c_idx_int][tok_id] += prob
 
                 # Apply position separation filter for example diversity only
                 if separation_tokens > 0:
@@ -252,7 +256,7 @@ def get_activations_data(
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
     for module_name in component_activation_tokens:
         module_acts = component_activation_tokens[module_name]
-        module_predicted = component_predicted_tokens[module_name]
+        module_predicted_probs = component_predicted_probs[module_name]
         module_examples = examples[module_name]
         module_activation_counts = component_activation_counts[module_name]
         module_mean_cis = (component_sum_cis[module_name] / n_toks_seen).tolist()
@@ -264,10 +268,13 @@ def get_activations_data(
                 token_strings=token_strings,
                 component_activation_count=module_activation_counts[component_idx],
             )
-            predicted_tokens, predicted_probs = _get_component_predicted_tokens(
-                component_predicted_counts=module_predicted[component_idx],
-                token_strings=token_strings,
-                component_activation_count=module_activation_counts[component_idx],
+            predicted_tokens, predicted_lifts, predicted_firing_probs, predicted_base_probs = (
+                _get_component_predicted_tokens(
+                    component_prob_sums=module_predicted_probs[component_idx],
+                    token_strings=token_strings,
+                    token_base_rates=token_base_rates,
+                    component_activation_count=module_activation_counts[component_idx],
+                )
             )
             example_tokens, example_ci, example_active_pos, example_active_ci = module_examples[
                 component_idx
@@ -283,7 +290,9 @@ def get_activations_data(
                 pr_recalls=pr_recalls,
                 pr_precisions=pr_precisions,
                 predicted_tokens=predicted_tokens,
-                predicted_probs=predicted_probs,
+                predicted_lifts=predicted_lifts,
+                predicted_firing_probs=predicted_firing_probs,
+                predicted_base_probs=predicted_base_probs,
             )
             module_subcomponent_ctxs.append(subcomponent_ctx)
         module_subcomponent_ctxs.sort(key=lambda x: x.mean_ci, reverse=True)
@@ -291,6 +300,58 @@ def get_activations_data(
 
     logger.info("Completed streaming activation contexts")
     return ModelActivationContexts(layers=model_ctxs)
+
+
+def compute_token_base_rates(
+    cm: ComponentModel,
+    train_loader: DataLoader[Int[Tensor, "B S"]],
+    n_batches: int,
+    onprogress: Callable[[float], None] | None = None,
+) -> dict[int, float]:
+    """Compute E[P(token)] across the dataset - the base rate probability for each token.
+
+    For each position in the dataset, we compute softmax(logits) and accumulate
+    the probability mass for each token. The result is normalized by total positions.
+
+    Returns:
+        Dict mapping token_id -> mean probability across all positions
+    """
+    logger.info(f"Computing token base rates over {n_batches} batches")
+    device = next(cm.parameters()).device
+
+    # Accumulate probability mass per token
+    token_prob_sums: dict[int, float] = {}
+    n_positions = 0
+
+    train_iter = iter(train_loader)
+    for i in tqdm.tqdm(range(n_batches), desc="Computing base rates"):
+        batch: Int[Tensor, "B S"] = extract_batch_data(next(train_iter)).to(device)
+        B, S = batch.shape
+        n_positions += B * S
+
+        with torch.no_grad():
+            output_with_cache = cm(batch, cache_type="input")
+            logits = output_with_cache.output
+            probs: Float[Tensor, "B S V"] = torch.softmax(logits, dim=-1)
+
+            # Sum probabilities across batch and sequence
+            prob_sums: Float[Tensor, " V"] = probs.sum(dim=(0, 1))
+
+            # Accumulate into dict (move to CPU once)
+            prob_sums_cpu = prob_sums.cpu()
+            for token_id in range(prob_sums_cpu.shape[0]):
+                prob = float(prob_sums_cpu[token_id])
+                if prob > 0:
+                    token_prob_sums[token_id] = token_prob_sums.get(token_id, 0.0) + prob
+
+        if onprogress:
+            onprogress((i + 1) / n_batches)
+
+    # Normalize by total positions to get mean probability
+    base_rates = {tok_id: prob_sum / n_positions for tok_id, prob_sum in token_prob_sums.items()}
+
+    logger.info(f"Computed base rates for {len(base_rates)} tokens over {n_positions} positions")
+    return base_rates
 
 
 def _apply_position_separation(
@@ -468,25 +529,45 @@ def _get_component_token_pr(
 
 
 def _get_component_predicted_tokens(
-    component_predicted_counts: dict[int, int],
+    component_prob_sums: dict[int, float],
     token_strings: dict[int, str],
+    token_base_rates: dict[int, float],
     component_activation_count: int,
-) -> tuple[list[str], list[float]]:
-    """Return columnar data: (tokens, probs) sorted by probability descending.
+) -> tuple[list[str], list[float], list[float], list[float]]:
+    """Return columnar data: (tokens, lifts, firing_probs, base_probs) sorted by lift descending.
 
-    prob = P(predicted_token = X | component fires)
+    firing_prob = E[P(token) | component fires]
+    base_prob = E[P(token)] (from token_base_rates)
+    lift = firing_prob / base_prob
     """
     tokens: list[str] = []
-    probs: list[float] = []
+    lifts: list[float] = []
+    firing_probs: list[float] = []
+    base_probs: list[float] = []
 
-    for token_id, count in component_predicted_counts.items():
-        prob = round(count / component_activation_count, 3)
+    for token_id, prob_sum in component_prob_sums.items():
+        firing_prob = prob_sum / component_activation_count
+        base_prob = token_base_rates.get(token_id, 0.0)
+
+        if base_prob < 1e-9:
+            # Avoid division by zero; skip tokens with essentially no base rate
+            logger.warning(
+                f"Token {token_id} ({token_strings.get(token_id, '?')}) has near-zero base rate, skipping"
+            )
+            continue
+
+        lift = firing_prob / base_prob
+
         tokens.append(token_strings[token_id])
-        probs.append(prob)
+        lifts.append(round(lift, 2))
+        firing_probs.append(round(firing_prob, 4))
+        base_probs.append(round(base_prob, 4))
 
-    # Sort by probability descending
-    sorted_indices = sorted(range(len(probs)), key=lambda i: probs[i], reverse=True)
+    # Sort by lift descending
+    sorted_indices = sorted(range(len(lifts)), key=lambda i: lifts[i], reverse=True)
     tokens = [tokens[i] for i in sorted_indices]
-    probs = [probs[i] for i in sorted_indices]
+    lifts = [lifts[i] for i in sorted_indices]
+    firing_probs = [firing_probs[i] for i in sorted_indices]
+    base_probs = [base_probs[i] for i in sorted_indices]
 
-    return tokens, probs
+    return tokens, lifts, firing_probs, base_probs

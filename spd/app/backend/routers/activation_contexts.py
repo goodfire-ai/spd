@@ -137,6 +137,7 @@ def generate_activation_contexts(
                 tokenizer=loaded.tokenizer,
                 train_loader=train_loader,
                 token_strings=loaded.token_strings,
+                token_base_rates=loaded.token_base_rates,
                 importance_threshold=importance_threshold,
                 n_batches=n_batches,
                 n_tokens_either_side=n_tokens_either_side,

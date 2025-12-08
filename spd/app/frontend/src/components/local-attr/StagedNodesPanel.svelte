@@ -36,6 +36,10 @@
         }
         return "?";
     }
+
+    // Validation: can't run intervention with embedding (wte) or output nodes
+    const hasInvalidNodes = $derived(stagedNodes.some((n) => n.layer === "wte" || n.layer === "output"));
+    const canRunIntervention = $derived(stagedNodes.length > 0 && !hasInvalidNodes && !runningIntervention);
 </script>
 
 {#if stagedNodes.length > 0}
@@ -43,10 +47,13 @@
         <div class="staged-container-header">
             <span>Staged Nodes ({stagedNodes.length})</span>
             <div class="header-actions">
+                {#if hasInvalidNodes}
+                    <span class="validation-warning">Remove wte/output nodes to run</span>
+                {/if}
                 <button
                     class="run-btn"
                     onclick={onRunIntervention}
-                    disabled={runningIntervention || stagedNodes.length === 0}
+                    disabled={!canRunIntervention}
                 >
                     {runningIntervention ? "Running..." : "Run Intervention"}
                 </button>
@@ -103,7 +110,14 @@
 
     .header-actions {
         display: flex;
+        align-items: center;
         gap: var(--space-2);
+    }
+
+    .validation-warning {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--status-negative-bright);
     }
 
     .staged-container-header button {

@@ -63,7 +63,7 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
 NormalizeType = Literal["none", "target", "layer"]
 
 
-def compute_edge_stats(edges: list[EdgeData]) -> tuple[dict[str, float], float]:
+def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
     """Compute node importance and max absolute edge value.
 
     Returns:
@@ -72,10 +72,12 @@ def compute_edge_stats(edges: list[EdgeData]) -> tuple[dict[str, float], float]:
     importance: dict[str, float] = {}
     max_abs_attr = 0.0
     for edge in edges:
-        val_sq = edge.val * edge.val
-        importance[edge.src] = importance.get(edge.src, 0.0) + val_sq
-        importance[edge.tgt] = importance.get(edge.tgt, 0.0) + val_sq
-        abs_val = abs(edge.val)
+        val_sq = edge.strength * edge.strength
+        src_key = str(edge.source)
+        tgt_key = str(edge.target)
+        importance[src_key] = importance.get(src_key, 0.0) + val_sq
+        importance[tgt_key] = importance.get(tgt_key, 0.0) + val_sq
+        abs_val = abs(edge.strength)
         if abs_val > max_abs_attr:
             max_abs_attr = abs_val
     return importance, max_abs_attr
@@ -414,11 +416,12 @@ def process_edges_for_response(
         final_seq_pos = num_tokens - 1
         edges = [edge for edge in edges if edge.target.seq_pos == final_seq_pos]
     edges = _normalize_edges(edges, normalize)
+    node_importance, max_abs_attr = compute_edge_stats(edges)
+    # Clip to edge limit for response
     if len(edges) > edge_limit:
         print(f"[WARNING] Edge limit {edge_limit} exceeded ({len(edges)} edges), truncating")
-    edges = sorted(edges, key=lambda e: abs(e.strength), reverse=True)[:edge_limit]
+        edges = sorted(edges, key=lambda e: abs(e.strength), reverse=True)[:edge_limit]
     edges_data = [_edge_to_edge_data(e) for e in edges]
-    node_importance, max_abs_attr = compute_edge_stats(edges_data)
     return edges_data, node_importance, max_abs_attr
 
 
