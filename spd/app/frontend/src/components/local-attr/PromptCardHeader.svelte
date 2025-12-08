@@ -169,7 +169,7 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
-        background: var(--bg-surface);
+        /* background: var(--bg-surface); */
     }
 
     .staged-tokens {

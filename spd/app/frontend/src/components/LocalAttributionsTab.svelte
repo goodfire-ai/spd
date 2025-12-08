@@ -628,6 +628,7 @@
         min-height: 0;
         padding: var(--space-4);
         border: 1px solid var(--border-default);
+        background: var(--bg-inset);
     }
 
     .optim-results {

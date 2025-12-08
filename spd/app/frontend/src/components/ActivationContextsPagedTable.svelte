@@ -103,7 +103,7 @@
             </select>
         </div>
         <div class="filter-control">
-            <label for="token-filter">Filter by token:</label>
+            <label for="token-filter">Filter by includes token:</label>
             <select id="token-filter" bind:value={tokenFilter}>
                 <option value="">All tokens</option>
                 {#each activatingTokens as token (token)}
@@ -113,15 +113,17 @@
         </div>
     </div>
     <div class="examples">
-        {#each paginatedIndices as idx (idx)}
-            <div class="example-item">
-                <TokenHighlights
-                    tokenStrings={exampleTokens[idx]}
-                    tokenCi={exampleCi[idx]}
-                    activePosition={exampleActivePos[idx]}
-                />
-            </div>
-        {/each}
+        <div class="examples-inner">
+            {#each paginatedIndices as idx (idx)}
+                <div class="example-item">
+                    <TokenHighlights
+                        tokenStrings={exampleTokens[idx]}
+                        tokenCi={exampleCi[idx]}
+                        activePosition={exampleActivePos[idx]}
+                    />
+                </div>
+            {/each}
+        </div>
     </div>
 </div>
 
@@ -137,9 +139,16 @@
         background: var(--bg-inset);
         border: 1px solid var(--border-default);
         border-radius: var(--radius-md);
+        overflow-x: auto;
+    }
+
+    .examples-inner {
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
+        width: max-content;
+        min-width: 100%;
+        padding-top: var(--space-5); /* Room for CI tooltip on first row */
     }
 
     .controls {
@@ -247,8 +256,7 @@
         font-size: var(--text-sm);
         line-height: 1.8;
         color: var(--text-primary);
-        padding: var(--space-2);
-        overflow: visible;
+        white-space: nowrap;
         border-bottom: 1px solid var(--border-subtle);
     }
 
