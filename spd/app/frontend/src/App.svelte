@@ -2,10 +2,8 @@
     // import { RenderScan } from "svelte-render-scan";
     import type { LoadedRun } from "./lib/api";
     import * as api from "./lib/api";
-    import type { PinnedNode } from "./lib/localAttributionsTypes";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
-    import InterventionTab from "./components/InterventionTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import { onMount } from "svelte";
 
@@ -69,39 +67,8 @@
         api.getWhoami().then((user) => (backendUser = user));
     });
 
-    let activeTab = $state<"activation-contexts" | "local-attributions" | "intervention" | null>(null);
+    let activeTab = $state<"prompts" | "activation-contexts" | null>(null);
     let showConfig = $state(false);
-
-    // Pinned/staged nodes (shared between LocalAttributionsTab and InterventionTab)
-    let pinnedNodes = $state<PinnedNode[]>([]);
-    let interventionText = $state("");
-
-    function handlePinnedNodesChange(nodes: PinnedNode[]) {
-        pinnedNodes = nodes;
-    }
-
-    function clearPinnedNodes() {
-        pinnedNodes = [];
-    }
-
-    function addPinnedNode(node: PinnedNode) {
-        // Avoid duplicates
-        const exists = pinnedNodes.some(
-            (n) => n.layer === node.layer && n.seqIdx === node.seqIdx && n.cIdx === node.cIdx
-        );
-        if (!exists) {
-            pinnedNodes = [...pinnedNodes, node];
-        }
-    }
-
-    function removePinnedNode(index: number) {
-        pinnedNodes = pinnedNodes.filter((_, i) => i !== index);
-    }
-
-    function goToIntervention(text: string) {
-        interventionText = text;
-        activeTab = "intervention";
-    }
 </script>
 
 <!-- <RenderScan /> -->
@@ -153,17 +120,10 @@
         <nav class="tab-bar">
             <button
                 class="tab-button"
-                class:active={activeTab === "local-attributions"}
-                onclick={() => (activeTab = "local-attributions")}
+                class:active={activeTab === "prompts"}
+                onclick={() => (activeTab = "prompts")}
             >
-                Local Attributions
-            </button>
-            <button
-                class="tab-button"
-                class:active={activeTab === "intervention"}
-                onclick={() => (activeTab = "intervention")}
-            >
-                Intervention {#if pinnedNodes.length > 0}<span class="badge">{pinnedNodes.length}</span>{/if}
+                Prompts
             </button>
             <button
                 class="tab-button"
@@ -183,21 +143,8 @@
         {/if}
         {#if loadedRun}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
-            <div class="tab-content" class:hidden={activeTab !== "local-attributions"}>
-                <LocalAttributionsTab
-                    {pinnedNodes}
-                    onPinnedNodesChange={handlePinnedNodesChange}
-                    onGoToIntervention={goToIntervention}
-                />
-            </div>
-            <div class="tab-content" class:hidden={activeTab !== "intervention"}>
-                <InterventionTab
-                    {pinnedNodes}
-                    initialText={interventionText}
-                    onClearNodes={clearPinnedNodes}
-                    onAddNode={addPinnedNode}
-                    onRemoveNode={removePinnedNode}
-                />
+            <div class="tab-content" class:hidden={activeTab !== "prompts"}>
+                <LocalAttributionsTab />
             </div>
             <div class="tab-content" class:hidden={activeTab !== "activation-contexts"}>
                 <ActivationContextsTab />
@@ -315,21 +262,6 @@
         color: white;
         background: var(--accent-primary);
         border-color: var(--accent-primary);
-    }
-
-    .badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 18px;
-        height: 18px;
-        padding: 0 5px;
-        margin-left: var(--space-1);
-        font-size: var(--text-xs);
-        font-weight: 600;
-        background: var(--status-positive);
-        color: white;
-        border-radius: 9px;
     }
 
     .config-wrapper {

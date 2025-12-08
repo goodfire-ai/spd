@@ -4,8 +4,8 @@
     type Props = {
         prompts: PromptPreview[];
         filteredPrompts: PromptPreview[];
-        pinnedNodes: PinnedNode[];
-        filterByPinned: boolean;
+        stagedNodes: PinnedNode[];
+        filterByStaged: boolean;
         filterLoading: boolean;
         generatingGraphs: boolean;
         generateProgress: number;
@@ -22,8 +22,8 @@
     let {
         prompts,
         filteredPrompts,
-        pinnedNodes,
-        filterByPinned,
+        stagedNodes,
+        filterByStaged,
         filterLoading,
         generatingGraphs,
         generateProgress,
@@ -39,7 +39,7 @@
 
     let customText = $state("");
 
-    const displayedPrompts = $derived(filterByPinned ? filteredPrompts : prompts);
+    const displayedPrompts = $derived(filterByStaged ? filteredPrompts : prompts);
 
     async function handleAddCustom() {
         if (!customText.trim() || isAddingCustomPrompt) return;
@@ -75,11 +75,11 @@
             <label class="filter-checkbox">
                 <input
                     type="checkbox"
-                    checked={filterByPinned}
+                    checked={filterByStaged}
                     onchange={onFilterToggle}
-                    disabled={pinnedNodes.length === 0}
+                    disabled={stagedNodes.length === 0}
                 />
-                Filter by pinned ({pinnedNodes.length})
+                Filter by staged ({stagedNodes.length})
             </label>
             {#if filterLoading}
                 <span class="filter-loading">...</span>
@@ -95,7 +95,7 @@
             {/each}
             {#if displayedPrompts.length === 0}
                 <div class="picker-empty">
-                    {filterByPinned ? "No matching prompts" : "No prompts yet"}
+                    {filterByStaged ? "No matching prompts" : "No prompts yet"}
                 </div>
             {/if}
         </div>

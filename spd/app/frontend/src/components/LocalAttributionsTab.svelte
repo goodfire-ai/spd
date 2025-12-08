@@ -8,23 +8,18 @@
         PinnedNode,
         PromptPreview,
     } from "../lib/localAttributionsTypes";
-    import PinnedComponentsPanel from "./local-attr/PinnedComponentsPanel.svelte";
+    import type { InterventionResponse } from "../lib/interventionTypes";
+    import StagedNodesPanel from "./local-attr/StagedNodesPanel.svelte";
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
+    import InterventionsView from "./local-attr/InterventionsView.svelte";
     import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
     import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
     import PromptPicker from "./local-attr/PromptPicker.svelte";
-    import type { StoredGraph, ComputeOptions, LoadingState, OptimizeConfig, PromptCard } from "./local-attr/types";
+    import type { StoredGraph, ComputeOptions, LoadingState, OptimizeConfig, PromptCard, Intervention } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
-    // Props - pinnedNodes are managed in App.svelte (shared with InterventionTab)
-    type Props = {
-        pinnedNodes: PinnedNode[];
-        onPinnedNodesChange: (nodes: PinnedNode[]) => void;
-        onGoToIntervention: (text: string) => void;
-    };
-
-    let { pinnedNodes, onPinnedNodesChange, onGoToIntervention }: Props = $props();
+    // No props - all state managed internally now
 
     // Server state
     let loadedRun = $state<mainApi.LoadedRun | null>(null);
@@ -39,7 +34,7 @@
 
     // Prompt picker state
     let showPromptPicker = $state(false);
-    let filterByPinned = $state(false);
+    let filterByStaged = $state(false);
     let filteredPrompts = $state<PromptPreview[]>([]);
     let filterLoading = $state(false);
     let isAddingCustomPrompt = $state(false);
@@ -48,6 +43,9 @@
     let loadingCardId = $state<string | null>(null);
     let loadingState = $state<LoadingState | null>(null);
     let computeError = $state<string | null>(null);
+
+    // Intervention loading state
+    let runningIntervention = $state(false);
 
     // Graph generation state
     let generatingGraphs = $state(false);
@@ -69,7 +67,7 @@
     // Compute options
     let computeOptions = $state<ComputeOptions>({
         maxMeanCI: 1.0,
-        normalizeEdges: "layer", // kept for compute, but view uses normalizeEdges state
+        normalizeEdges: "layer",
         useOptimized: false,
         optimizeConfig: {
             labelTokenText: "",
@@ -82,7 +80,7 @@
         },
     });
 
-    // Component details cache (shared across graphs, persists across graph switches)
+    // Component details cache (shared across graphs)
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
     let componentDetailsLoading = $state<Record<string, boolean>>({});
 
@@ -211,6 +209,7 @@
                     id: `graph-${idx}-${Date.now()}`,
                     label,
                     data,
+                    stagedNodes: [],
                 };
             });
         } catch (e) {
@@ -225,6 +224,8 @@
             isCustom,
             graphs,
             activeGraphId: graphs.length > 0 ? graphs[0].id : null,
+            interventions: [],
+            activeView: "graph",
         };
         promptCards = [...promptCards, newCard];
         activeCardId = cardId;
@@ -284,6 +285,78 @@
         computeOptions.optimizeConfig = { ...computeOptions.optimizeConfig, ...partial };
     }
 
+    // Update staged nodes for the active graph
+    function handleStagedNodesChange(nodes: PinnedNode[]) {
+        if (!activeCard || !activeGraph) return;
+        promptCards = promptCards.map((card) => {
+            if (card.id !== activeCard.id) return card;
+            return {
+                ...card,
+                graphs: card.graphs.map((g) =>
+                    g.id === activeGraph.id ? { ...g, stagedNodes: nodes } : g
+                ),
+            };
+        });
+
+        // Re-filter if needed
+        if (filterByStaged) {
+            filterPromptsByStaged();
+        }
+    }
+
+    // Switch between graph and interventions view
+    function handleViewChange(view: "graph" | "interventions") {
+        if (!activeCard) return;
+        promptCards = promptCards.map((card) =>
+            card.id === activeCard.id ? { ...card, activeView: view } : card,
+        );
+    }
+
+    // Run intervention and add to prompt's list
+    async function handleRunIntervention() {
+        if (!activeCard || !activeGraph || activeGraph.stagedNodes.length === 0) return;
+
+        runningIntervention = true;
+        try {
+            const nodes = activeGraph.stagedNodes.map((n) => ({
+                layer: n.layer,
+                seq_pos: n.seqIdx,
+                component_idx: n.cIdx,
+            }));
+            const text = activeCard.tokens.join("");
+            const result: InterventionResponse = await mainApi.runIntervention(text, nodes);
+
+            const intervention: Intervention = {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                timestamp: Date.now(),
+                nodes: [...activeGraph.stagedNodes],
+                result,
+            };
+
+            // Add intervention and switch to interventions view
+            promptCards = promptCards.map((card) => {
+                if (card.id !== activeCard.id) return card;
+                return {
+                    ...card,
+                    interventions: [...card.interventions, intervention],
+                    activeView: "interventions",
+                };
+            });
+        } catch (e) {
+            console.error("Intervention failed:", e);
+        } finally {
+            runningIntervention = false;
+        }
+    }
+
+    // Clear interventions for the active card
+    function handleClearInterventions() {
+        if (!activeCard) return;
+        promptCards = promptCards.map((card) =>
+            card.id === activeCard.id ? { ...card, interventions: [] } : card,
+        );
+    }
+
     async function computeGraphForCard() {
         if (!activeCard || !activeCard.tokenIds || loadingCardId) return;
 
@@ -293,7 +366,6 @@
         const optConfig = computeOptions.optimizeConfig;
         const isOptimized = computeOptions.useOptimized;
 
-        // Set up stages - optimized has 2 stages, standard has 1
         if (isOptimized) {
             loadingState = {
                 stages: [
@@ -328,11 +400,9 @@
                     (progress) => {
                         if (!loadingState) return;
                         if (progress.stage === "graph") {
-                            // Graph computation stage
                             loadingState.currentStage = 1;
                             loadingState.stages[1].progress = progress.current / progress.total;
                         } else {
-                            // Optimization stage
                             loadingState.stages[0].progress = progress.current / progress.total;
                         }
                     },
@@ -357,7 +427,7 @@
                 if (card.id !== activeCard.id) return card;
                 return {
                     ...card,
-                    graphs: [...card.graphs, { id: graphId, label, data }],
+                    graphs: [...card.graphs, { id: graphId, label, data, stagedNodes: [] }],
                     activeGraphId: graphId,
                 };
             });
@@ -369,15 +439,16 @@
         }
     }
 
-    async function filterPromptsByPinned() {
-        if (pinnedNodes.length === 0) {
+    async function filterPromptsByStaged() {
+        const stagedNodes = activeGraph?.stagedNodes ?? [];
+        if (stagedNodes.length === 0) {
             filteredPrompts = [];
             return;
         }
 
         filterLoading = true;
         try {
-            const components = pinnedNodes.map((p) => `${p.layer}:${p.cIdx}`);
+            const components = stagedNodes.map((p) => `${p.layer}:${p.cIdx}`);
             const result = await attrApi.searchPrompts(components, "all");
             filteredPrompts = result.results;
         } catch {
@@ -388,25 +459,17 @@
     }
 
     function handleFilterToggle() {
-        filterByPinned = !filterByPinned;
-        if (filterByPinned && pinnedNodes.length > 0) {
-            filterPromptsByPinned();
-        }
-    }
-
-    function handlePinnedNodesChangeWithFilter(nodes: PinnedNode[]) {
-        onPinnedNodesChange(nodes);
-        if (filterByPinned) {
-            filterPromptsByPinned();
+        filterByStaged = !filterByStaged;
+        const stagedNodes = activeGraph?.stagedNodes ?? [];
+        if (filterByStaged && stagedNodes.length > 0) {
+            filterPromptsByStaged();
         }
     }
 
     async function handleNormalizeChange(value: attrApi.NormalizeType) {
         normalizeEdges = value;
-        // Also sync to compute options so new computes use the same normalization
         computeOptions.normalizeEdges = value;
 
-        // Re-fetch all graphs for all cards with new normalization
         const updatedCards = await Promise.all(
             promptCards.map(async (card) => {
                 if (card.graphs.length === 0) return card;
@@ -422,6 +485,7 @@
                             id: `graph-${idx}-${Date.now()}`,
                             label,
                             data,
+                            stagedNodes: [] as PinnedNode[],
                         };
                     });
                     return {
@@ -485,8 +549,8 @@
                     <PromptPicker
                         {prompts}
                         {filteredPrompts}
-                        {pinnedNodes}
-                        {filterByPinned}
+                        stagedNodes={activeGraph?.stagedNodes ?? []}
+                        filterByStaged={filterByStaged}
                         {filterLoading}
                         {generatingGraphs}
                         {generateProgress}
@@ -503,87 +567,122 @@
 
                 <div class="card-content">
                     {#if activeCard}
-                        <PromptCardHeader
-                            card={activeCard}
-                            options={computeOptions}
-                            isLoading={loadingCardId === activeCard.id}
-                            onOptionsChange={handleOptionsChange}
-                            onOptimizeConfigChange={handleOptimizeConfigChange}
-                            onCompute={computeGraphForCard}
-                            onSelectGraph={handleSelectGraph}
-                            onCloseGraph={handleCloseGraph}
-                        />
+                        <!-- View toggle tabs -->
+                        <div class="view-tabs">
+                            <button
+                                class="view-tab"
+                                class:active={activeCard.activeView === "graph"}
+                                onclick={() => handleViewChange("graph")}
+                            >
+                                Graph
+                            </button>
+                            <button
+                                class="view-tab"
+                                class:active={activeCard.activeView === "interventions"}
+                                onclick={() => handleViewChange("interventions")}
+                            >
+                                Interventions
+                                {#if activeCard.interventions.length > 0}
+                                    <span class="badge">{activeCard.interventions.length}</span>
+                                {/if}
+                            </button>
+                        </div>
 
-                        {#if activeGraph?.data.optimization}
-                            <div class="optim-results">
-                                <span
-                                    ><strong>Target:</strong> "{activeGraph.data.optimization.label_str}" @ {(
-                                        activeGraph.data.optimization.label_prob * 100
-                                    ).toFixed(1)}%</span
-                                >
-                                <span
-                                    ><strong>L0:</strong>
-                                    {activeGraph.data.optimization.l0_total.toFixed(0)} active</span
-                                >
-                            </div>
-                        {/if}
+                        {#if activeCard.activeView === "graph"}
+                            <PromptCardHeader
+                                card={activeCard}
+                                options={computeOptions}
+                                isLoading={loadingCardId === activeCard.id}
+                                onOptionsChange={handleOptionsChange}
+                                onOptimizeConfigChange={handleOptimizeConfigChange}
+                                onCompute={computeGraphForCard}
+                                onSelectGraph={handleSelectGraph}
+                                onCloseGraph={handleCloseGraph}
+                            />
 
-                        {#if computeError}
-                            <div class="error-banner">
-                                {computeError}
-                                <button onclick={() => computeGraphForCard()}>Retry</button>
-                            </div>
-                        {/if}
-
-                        <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
-                            {#if loadingCardId === activeCard.id && loadingState}
-                                <ComputeProgressOverlay state={loadingState} />
+                            {#if activeGraph?.data.optimization}
+                                <div class="optim-results">
+                                    <span
+                                        ><strong>Target:</strong> "{activeGraph.data.optimization.label_str}" @ {(
+                                            activeGraph.data.optimization.label_prob * 100
+                                        ).toFixed(1)}%</span
+                                    >
+                                    <span
+                                        ><strong>L0:</strong>
+                                        {activeGraph.data.optimization.l0_total.toFixed(0)} active</span
+                                    >
+                                </div>
                             {/if}
 
-                            {#if activeGraph}
-                                <ViewControls
-                                    {topK}
-                                    {nodeLayout}
-                                    {componentGap}
-                                    {layerGap}
-                                    {filteredEdgeCount}
-                                    {normalizeEdges}
-                                    onTopKChange={(v) => (topK = v)}
-                                    onLayoutChange={(v) => (nodeLayout = v)}
-                                    onComponentGapChange={(v) => (componentGap = v)}
-                                    onLayerGapChange={(v) => (layerGap = v)}
-                                    onNormalizeChange={handleNormalizeChange}
-                                />
-                                {#key activeGraph.id}
-                                    <LocalAttributionsGraph
-                                        data={activeGraph.data}
+                            {#if computeError}
+                                <div class="error-banner">
+                                    {computeError}
+                                    <button onclick={() => computeGraphForCard()}>Retry</button>
+                                </div>
+                            {/if}
+
+                            <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
+                                {#if loadingCardId === activeCard.id && loadingState}
+                                    <ComputeProgressOverlay state={loadingState} />
+                                {/if}
+
+                                {#if activeGraph}
+                                    <ViewControls
                                         {topK}
                                         {nodeLayout}
                                         {componentGap}
                                         {layerGap}
-                                        {activationContextsSummary}
-                                        {pinnedNodes}
-                                        {componentDetailsCache}
-                                        {componentDetailsLoading}
-                                        onPinnedNodesChange={handlePinnedNodesChangeWithFilter}
-                                        onLoadComponentDetail={loadComponentDetail}
-                                        onEdgeCountChange={(count) => (filteredEdgeCount = count)}
+                                        {filteredEdgeCount}
+                                        {normalizeEdges}
+                                        onTopKChange={(v) => (topK = v)}
+                                        onLayoutChange={(v) => (nodeLayout = v)}
+                                        onComponentGapChange={(v) => (componentGap = v)}
+                                        onLayerGapChange={(v) => (layerGap = v)}
+                                        onNormalizeChange={handleNormalizeChange}
                                     />
-                                {/key}
-                                <PinnedComponentsPanel
-                                    {pinnedNodes}
-                                    {componentDetailsCache}
-                                    outputProbs={activeGraph.data.outputProbs}
-                                    tokens={activeGraph.data.tokens}
-                                    onPinnedNodesChange={handlePinnedNodesChangeWithFilter}
-                                    {onGoToIntervention}
-                                />
-                            {:else if !loadingCardId}
-                                <div class="empty-state">
-                                    <p>Click <strong>Compute</strong> to generate the attribution graph</p>
-                                </div>
-                            {/if}
-                        </div>
+                                    {#key activeGraph.id}
+                                        <LocalAttributionsGraph
+                                            data={activeGraph.data}
+                                            {topK}
+                                            {nodeLayout}
+                                            {componentGap}
+                                            {layerGap}
+                                            {activationContextsSummary}
+                                            stagedNodes={activeGraph.stagedNodes}
+                                            {componentDetailsCache}
+                                            {componentDetailsLoading}
+                                            onStagedNodesChange={handleStagedNodesChange}
+                                            onLoadComponentDetail={loadComponentDetail}
+                                            onEdgeCountChange={(count) => (filteredEdgeCount = count)}
+                                        />
+                                    {/key}
+                                    <StagedNodesPanel
+                                        stagedNodes={activeGraph.stagedNodes}
+                                        {componentDetailsCache}
+                                        outputProbs={activeGraph.data.outputProbs}
+                                        tokens={activeGraph.data.tokens}
+                                        {runningIntervention}
+                                        onStagedNodesChange={handleStagedNodesChange}
+                                        onRunIntervention={handleRunIntervention}
+                                    />
+                                {:else if !loadingCardId}
+                                    <div class="empty-state">
+                                        <p>Click <strong>Compute</strong> to generate the attribution graph</p>
+                                    </div>
+                                {/if}
+                            </div>
+                        {:else}
+                            <!-- Interventions view -->
+                            <InterventionsView
+                                interventions={activeCard.interventions}
+                                tokens={activeCard.tokens}
+                                {activationContextsSummary}
+                                {componentDetailsCache}
+                                {componentDetailsLoading}
+                                onLoadComponentDetail={loadComponentDetail}
+                                onClear={handleClearInterventions}
+                            />
+                        {/if}
                     {:else}
                         <div class="empty-state">
                             <p>Click <strong>+ Add Prompt</strong> to get started</p>
@@ -639,6 +738,53 @@
         background: var(--bg-inset);
     }
 
+    .view-tabs {
+        display: flex;
+        gap: var(--space-1);
+        margin-bottom: var(--space-2);
+    }
+
+    .view-tab {
+        padding: var(--space-1) var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--text-secondary);
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+    }
+
+    .view-tab:hover {
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+        background: var(--bg-surface);
+    }
+
+    .view-tab.active {
+        color: white;
+        background: var(--accent-primary);
+        border-color: var(--accent-primary);
+    }
+
+    .view-tab .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        font-size: var(--text-xs);
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+    }
+
+    .view-tab.active .badge {
+        background: rgba(255, 255, 255, 0.3);
+    }
+
     .optim-results {
         display: flex;
         gap: var(--space-4);
@@ -656,7 +802,6 @@
         flex: 1;
         position: relative;
         min-height: 400px;
-        /* border: 1px solid var(--border-default); */
     }
 
     .graph-area.loading {

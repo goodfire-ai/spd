@@ -31,10 +31,10 @@
         componentGap: number;
         layerGap: number;
         activationContextsSummary: ActivationContextsSummary | null;
-        pinnedNodes: PinnedNode[];
+        stagedNodes: PinnedNode[];
         componentDetailsCache: Record<string, ComponentDetail>;
         componentDetailsLoading: Record<string, boolean>;
-        onPinnedNodesChange: (nodes: PinnedNode[]) => void;
+        onStagedNodesChange: (nodes: PinnedNode[]) => void;
         onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onEdgeCountChange?: (count: number) => void;
     };
@@ -46,10 +46,10 @@
         componentGap,
         layerGap,
         activationContextsSummary,
-        pinnedNodes,
+        stagedNodes,
         componentDetailsCache,
         componentDetailsLoading,
-        onPinnedNodesChange,
+        onStagedNodesChange,
         onLoadComponentDetail,
         onEdgeCountChange,
     }: Props = $props();
@@ -344,10 +344,10 @@
 
     // Check if an edge is connected to any pinned node (exact match including seqIdx)
     function isEdgeConnectedToPinnedNode(src: string, tgt: string): boolean {
-        if (pinnedNodes.length === 0) return false;
+        if (stagedNodes.length === 0) return false;
         const [srcLayer, srcSeqIdx, srcCIdx] = src.split(":");
         const [tgtLayer, tgtSeqIdx, tgtCIdx] = tgt.split(":");
-        for (const pinned of pinnedNodes) {
+        for (const pinned of stagedNodes) {
             if (
                 (srcLayer === pinned.layer && +srcSeqIdx === pinned.seqIdx && +srcCIdx === pinned.cIdx) ||
                 (tgtLayer === pinned.layer && +tgtSeqIdx === pinned.seqIdx && +tgtCIdx === pinned.cIdx)
@@ -406,7 +406,7 @@
     });
 
     function isNodePinned(layer: string, seqIdx: number, cIdx: number): boolean {
-        return pinnedNodes.some((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
+        return stagedNodes.some((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
     }
 
     // Check if a node key should be highlighted
@@ -415,7 +415,7 @@
     function isKeyHighlighted(key: string): boolean {
         const [layer, seqIdx, cIdx] = key.split(":");
         // Exact match for pinned nodes
-        if (pinnedNodes.some((p) => p.layer === layer && p.seqIdx === +seqIdx && p.cIdx === +cIdx)) {
+        if (stagedNodes.some((p) => p.layer === layer && p.seqIdx === +seqIdx && p.cIdx === +cIdx)) {
             return true;
         }
         // For hover: highlight all nodes with same component (across all positions)
@@ -501,11 +501,11 @@
     }
 
     function handleNodeClick(layer: string, seqIdx: number, cIdx: number) {
-        const idx = pinnedNodes.findIndex((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
+        const idx = stagedNodes.findIndex((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
         if (idx >= 0) {
-            onPinnedNodesChange(pinnedNodes.filter((_, i) => i !== idx));
+            onStagedNodesChange(stagedNodes.filter((_, i) => i !== idx));
         } else {
-            onPinnedNodesChange([...pinnedNodes, { layer, seqIdx, cIdx }]);
+            onStagedNodesChange([...stagedNodes, { layer, seqIdx, cIdx }]);
         }
         hoveredNode = null;
     }
