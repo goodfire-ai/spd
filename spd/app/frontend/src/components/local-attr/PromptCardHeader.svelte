@@ -52,7 +52,10 @@
                 <input
                     type="number"
                     value={options.maxMeanCI}
-                    oninput={(e) => onOptionsChange({ maxMeanCI: parseFloat(e.currentTarget.value) || 1.0 })}
+                    oninput={(e) => {
+                        if (e.currentTarget.value === "") return;
+                        onOptionsChange({ maxMeanCI: parseFloat(e.currentTarget.value) });
+                    }}
                     min={0}
                     max={1}
                     step={0.01}
@@ -90,8 +93,10 @@
                     <input
                         type="number"
                         value={optConfig.impMinCoeff}
-                        oninput={(e) =>
-                            onOptimizeConfigChange({ impMinCoeff: parseFloat(e.currentTarget.value) || 0.1 })}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onOptimizeConfigChange({ impMinCoeff: parseFloat(e.currentTarget.value) });
+                        }}
                         min={0.001}
                         max={10}
                         step={0.01}
@@ -102,8 +107,10 @@
                     <input
                         type="number"
                         value={optConfig.ceLossCoeff}
-                        oninput={(e) =>
-                            onOptimizeConfigChange({ ceLossCoeff: parseFloat(e.currentTarget.value) || 1.0 })}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onOptimizeConfigChange({ ceLossCoeff: parseFloat(e.currentTarget.value) });
+                        }}
                         min={0.001}
                         max={10}
                         step={0.1}
@@ -114,7 +121,10 @@
                     <input
                         type="number"
                         value={optConfig.steps}
-                        oninput={(e) => onOptimizeConfigChange({ steps: parseInt(e.currentTarget.value) || 2000 })}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onOptimizeConfigChange({ steps: parseInt(e.currentTarget.value) });
+                        }}
                         min={10}
                         max={5000}
                         step={100}
@@ -125,7 +135,10 @@
                     <input
                         type="number"
                         value={optConfig.pnorm}
-                        oninput={(e) => onOptimizeConfigChange({ pnorm: parseFloat(e.currentTarget.value) || 0.3 })}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onOptimizeConfigChange({ pnorm: parseFloat(e.currentTarget.value) });
+                        }}
                         min={0.1}
                         max={1}
                         step={0.1}

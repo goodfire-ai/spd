@@ -45,9 +45,8 @@
             type="number"
             value={topK}
             oninput={(e) => {
-                const val = parseInt(e.currentTarget.value);
-                if (Number.isNaN(val)) return;
-                onTopKChange(val);
+                if (e.currentTarget.value === "") return;
+                onTopKChange(parseInt(e.currentTarget.value));
             }}
             min={0}
             max={10_000}
@@ -70,7 +69,10 @@
         <input
             type="number"
             value={componentGap}
-            oninput={(e) => onComponentGapChange(parseInt(e.currentTarget.value) || 4)}
+            oninput={(e) => {
+                if (e.currentTarget.value === "") return;
+                onComponentGapChange(parseInt(e.currentTarget.value));
+            }}
             min={0}
             max={20}
             step={1}
@@ -81,7 +83,10 @@
         <input
             type="number"
             value={layerGap}
-            oninput={(e) => onLayerGapChange(parseInt(e.currentTarget.value) || 30)}
+            oninput={(e) => {
+                if (e.currentTarget.value === "") return;
+                onLayerGapChange(parseInt(e.currentTarget.value));
+            }}
             min={10}
             max={100}
             step={5}
