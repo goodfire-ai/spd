@@ -1,14 +1,18 @@
 <script lang="ts">
+    import type { NormalizeType } from "../../lib/localAttributionsApi";
+
     type Props = {
         topK: number;
         nodeLayout: "importance" | "shuffled" | "jittered";
         componentGap: number;
         layerGap: number;
         filteredEdgeCount: number | null;
+        normalizeEdges: NormalizeType;
         onTopKChange: (value: number) => void;
         onLayoutChange: (value: "importance" | "shuffled" | "jittered") => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
+        onNormalizeChange: (value: NormalizeType) => void;
     };
 
     let {
@@ -17,23 +21,36 @@
         componentGap,
         layerGap,
         filteredEdgeCount,
+        normalizeEdges,
         onTopKChange,
         onLayoutChange,
         onComponentGapChange,
         onLayerGapChange,
+        onNormalizeChange,
     }: Props = $props();
 </script>
 
 <div class="controls-bar">
-    <span class="controls-label">View</span>
+    <label>
+        <span>Norm</span>
+        <select value={normalizeEdges} onchange={(e) => onNormalizeChange(e.currentTarget.value as NormalizeType)}>
+            <option value="none">None</option>
+            <option value="target">Target</option>
+            <option value="layer">Layer</option>
+        </select>
+    </label>
     <label>
         <span>Top K</span>
         <input
             type="number"
             value={topK}
-            oninput={(e) => onTopKChange(parseInt(e.currentTarget.value) || 800)}
-            min={10}
-            max={10000}
+            oninput={(e) => {
+                const val = parseInt(e.currentTarget.value);
+                if (Number.isNaN(val)) return;
+                onTopKChange(val);
+            }}
+            min={0}
+            max={10_000}
             step={100}
         />
     </label>
@@ -94,14 +111,6 @@
         border: 1px solid var(--border-default);
     }
 
-    .controls-label {
-        font-size: var(--text-xs);
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        color: var(--text-muted);
-        font-family: var(--font-sans);
-    }
-
     label {
         display: flex;
         align-items: center;
@@ -119,7 +128,7 @@
     }
 
     input[type="number"] {
-        width: 60px;
+        width: 75px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);

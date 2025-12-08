@@ -78,13 +78,16 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     # Load tokenizer
     spd_config = run_info.config
     assert spd_config.tokenizer_name is not None
+    logger.info(f"[API] Loading tokenizer for run {run.id}: {spd_config.tokenizer_name}")
     loaded_tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
     assert isinstance(loaded_tokenizer, PreTrainedTokenizerFast)
 
     # Build sources_by_target mapping
+    logger.info(f"[API] Building sources_by_target mapping for run {run.id}")
     sources_by_target = get_sources_by_target(model, DEVICE, spd_config.sampling)
 
     # Build token lookup for activation contexts
+    logger.info(f"[API] Building token lookup for run {run.id}")
     token_strings = build_token_lookup(loaded_tokenizer, spd_config.tokenizer_name)
 
     task_config = spd_config.task_config
@@ -99,6 +102,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         column_name=task_config.column_name,
         shuffle_each_epoch=task_config.shuffle_each_epoch,
     )
+    logger.info(f"[API] Creating train loader for run {run.id}")
     train_loader, _ = create_data_loader(
         dataset_config=train_data_config,
         batch_size=32,

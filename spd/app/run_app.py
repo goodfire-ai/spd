@@ -191,6 +191,9 @@ class AppRunner:
                     proc.wait(timeout=0.3)
 
     def monitor_child_liveness(self) -> None:
+        log_lines_to_show = 5
+        prev_lines: list[str] = []
+
         while True:
             if self.backend_process and self.backend_process.poll() is not None:
                 print(
@@ -206,6 +209,29 @@ class AppRunner:
                 )
                 print(f"{AnsiEsc.DIM}Check {LOGFILE} for details{AnsiEsc.RESET}", file=sys.stderr)
                 sys.exit(1)
+
+            # Show last N lines of logs in a box
+            try:
+                with open(LOGFILE) as f:
+                    all_lines = f.readlines()
+                tail = all_lines[-log_lines_to_show:]
+
+                if tail != prev_lines:
+                    # Clear previous log display (box has +2 lines for borders)
+                    if prev_lines:
+                        lines_to_clear = len(prev_lines) + 2
+                        print(f"\033[{lines_to_clear}A\033[J", end="")
+
+                    # Print box with tail
+                    print(f"{AnsiEsc.DIM}┌─ logs {'─' * 32}{AnsiEsc.RESET}")
+                    for line in tail:
+                        print(f"{AnsiEsc.DIM}│ {line.rstrip()}{AnsiEsc.RESET}")
+                    print(f"{AnsiEsc.DIM}└{'─' * 40}{AnsiEsc.RESET}")
+
+                    prev_lines = tail
+            except FileNotFoundError:
+                pass
+
             time.sleep(1.0)
 
     def run(self) -> None:
@@ -251,7 +277,6 @@ class AppRunner:
             print(
                 f"{AnsiEsc.BOLD}Frontend  {AnsiEsc.GREEN}{AnsiEsc.BOLD}{AnsiEsc.UNDERLINE}http://localhost:{frontend_port}/{AnsiEsc.RESET}\n"
             )
-            print(f"{AnsiEsc.DIM}  Press Ctrl+C to stop{AnsiEsc.RESET}")
 
             # Monitor child liveness
             self.monitor_child_liveness()

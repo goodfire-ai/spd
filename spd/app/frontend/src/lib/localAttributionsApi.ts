@@ -293,6 +293,8 @@ export async function generatePrompts(
 
 // Fetch stored graphs for a prompt
 
-export async function getGraphs(promptId: number): Promise<GraphData[]> {
-    return fetchJson<GraphData[]>(`${API_URL}/api/graphs/${promptId}`);
+export async function getGraphs(promptId: number, normalize: NormalizeType): Promise<GraphData[]> {
+    const url = new URL(`${API_URL}/api/graphs/${promptId}`);
+    url.searchParams.set("normalize", normalize);
+    return fetchJson<GraphData[]>(url.toString());
 }

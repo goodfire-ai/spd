@@ -435,10 +435,41 @@ def compute_graph_optimized_stream(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+def _normalize_edge_data(edges: list[EdgeData], normalize: NormalizeType) -> list[EdgeData]:
+    """Apply normalization to EdgeData list."""
+    if normalize == "none":
+        return edges
+
+    def get_group_key(edge: EdgeData) -> str:
+        if normalize == "target":
+            return edge.tgt
+        # layer normalization - extract layer from target (format: "layer:seq:component")
+        return edge.tgt.split(":")[0]
+
+    sorted_edges = sorted(edges, key=get_group_key)
+    groups = groupby(sorted_edges, key=get_group_key)
+
+    out_edges = []
+    for _, group_edges in groups:
+        group_edges = list(group_edges)
+        group_strength = math.sqrt(sum(e.val**2 for e in group_edges))
+        for edge in group_edges:
+            out_edges.append(
+                EdgeData(
+                    src=edge.src,
+                    tgt=edge.tgt,
+                    val=edge.val / group_strength,
+                    is_cross_seq=edge.is_cross_seq,
+                )
+            )
+    return out_edges
+
+
 @router.get("/{prompt_id}")
 @log_errors
 def get_graphs(
     prompt_id: int,
+    normalize: Annotated[NormalizeType, Query()],
     loaded: DepLoadedRun,
     manager: DepStateManager,
 ) -> list[GraphData | GraphDataWithOptimization]:
@@ -457,8 +488,10 @@ def get_graphs(
 
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
+        # Apply normalization
+        edges = _normalize_edge_data(graph.edges, normalize)
+
         # Apply edge limit to avoid overwhelming the frontend
-        edges = graph.edges
         if len(edges) > GLOBAL_EDGE_LIMIT:
             edges = sorted(edges, key=lambda e: abs(e.val), reverse=True)[:GLOBAL_EDGE_LIMIT]
 

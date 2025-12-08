@@ -55,11 +55,12 @@
     let componentGap = $state(4);
     let layerGap = $state(30);
     let filteredEdgeCount = $state<number | null>(null);
+    let normalizeEdges = $state<attrApi.NormalizeType>("layer");
 
     // Compute options
     let computeOptions = $state<ComputeOptions>({
         maxMeanCI: 1.0,
-        normalizeEdges: "layer",
+        normalizeEdges: "layer", // kept for compute, but view uses normalizeEdges state
         useOptimized: false,
         optimizeConfig: {
             labelTokenText: "",
@@ -194,7 +195,7 @@
         // Fetch stored graphs for this prompt
         let graphs: StoredGraph[] = [];
         try {
-            const storedGraphs = await attrApi.getGraphs(promptId);
+            const storedGraphs = await attrApi.getGraphs(promptId, normalizeEdges);
             graphs = storedGraphs.map((data, idx) => {
                 const isOptimized = !!data.optimization;
                 const label = isOptimized
@@ -394,6 +395,43 @@
         }
     }
 
+    async function handleNormalizeChange(value: attrApi.NormalizeType) {
+        normalizeEdges = value;
+        // Also sync to compute options so new computes use the same normalization
+        computeOptions.normalizeEdges = value;
+
+        // Re-fetch all graphs for all cards with new normalization
+        const updatedCards = await Promise.all(
+            promptCards.map(async (card) => {
+                if (card.graphs.length === 0) return card;
+
+                try {
+                    const storedGraphs = await attrApi.getGraphs(card.promptId, normalizeEdges);
+                    const graphs = storedGraphs.map((data, idx) => {
+                        const isOptimized = !!data.optimization;
+                        const label = isOptimized
+                            ? `Optimized (${data.optimization!.steps} steps)`
+                            : "Standard";
+                        return {
+                            id: `graph-${idx}-${Date.now()}`,
+                            label,
+                            data,
+                        };
+                    });
+                    return {
+                        ...card,
+                        graphs,
+                        activeGraphId: graphs.length > 0 ? graphs[0].id : null,
+                    };
+                } catch (e) {
+                    console.warn("Failed to re-fetch graphs for card:", card.id, e);
+                    return card;
+                }
+            }),
+        );
+        promptCards = updatedCards;
+    }
+
     async function handleGeneratePrompts(nPrompts: number) {
         if (generatingGraphs) return;
 
@@ -503,10 +541,12 @@
                                     {componentGap}
                                     {layerGap}
                                     {filteredEdgeCount}
+                                    {normalizeEdges}
                                     onTopKChange={(v) => (topK = v)}
                                     onLayoutChange={(v) => (nodeLayout = v)}
                                     onComponentGapChange={(v) => (componentGap = v)}
                                     onLayerGapChange={(v) => (layerGap = v)}
+                                    onNormalizeChange={handleNormalizeChange}
                                 />
                                 {#key activeGraph.id}
                                     <LocalAttributionsGraph
