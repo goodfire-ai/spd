@@ -67,10 +67,6 @@ class Node:
     def __str__(self) -> str:
         return f"{self.layer}:{self.seq_pos}:{self.component_idx}"
 
-    def component_key(self) -> str:
-        """Return key for CI lookup: 'layer:component_idx'."""
-        return f"{self.layer}:{self.component_idx}"
-
 
 @dataclass
 class Edge:

@@ -115,8 +115,8 @@ def filter_edges_by_ci_threshold(
     return [
         edge
         for edge in edges
-        if ci_lookup.get(edge.source.component_key(), 0.0) >= ci_threshold
-        and ci_lookup.get(edge.target.component_key(), 0.0) >= ci_threshold
+        if ci_lookup.get(f"{edge.source.layer}:{edge.source.component_idx}", 0.0) >= ci_threshold
+        and ci_lookup.get(f"{edge.target.layer}:{edge.target.component_idx}", 0.0) >= ci_threshold
     ]
 
 

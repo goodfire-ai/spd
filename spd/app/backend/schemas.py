@@ -22,18 +22,6 @@ class EdgeData(BaseModel):
     val: float
     is_cross_seq: bool = False
 
-    def source_component_key(self) -> str:
-        """Extract source component key from 'layer:seq:component' format."""
-        parts = self.src.split(":")
-        assert len(parts) == 3, f"Invalid source format: {self.src}"
-        return f"{parts[0]}:{parts[2]}"
-
-    def target_component_key(self) -> str:
-        """Extract target component key from 'layer:seq:component' format."""
-        parts = self.tgt.split(":")
-        assert len(parts) == 3, f"Invalid target format: {self.tgt}"
-        return f"{parts[0]}:{parts[2]}"
-
 
 class PromptPreview(BaseModel):
     """Preview of a stored prompt for listing."""
