@@ -5,8 +5,8 @@ from collections.abc import Generator
 from typing import Annotated
 
 import torch
-from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from spd.app.backend.compute import compute_ci_only, extract_active_from_ci
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
@@ -134,7 +134,7 @@ def search_prompts(
 
     component_list = [c.strip() for c in components.split(",") if c.strip()]
     if not component_list:
-        return JSONResponse({"error": "No components specified"}, status_code=400)  # pyright: ignore[reportReturnType]
+        raise HTTPException(status_code=400, detail="No components specified")
 
     require_all = mode == "all"
     prompt_ids = db.find_prompts_with_components(
@@ -178,7 +178,7 @@ def create_custom_prompt(
     # Tokenize
     token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
     if not token_ids:
-        return JSONResponse({"error": "Text produced no tokens"}, status_code=400)  # pyright: ignore[reportReturnType]
+        raise HTTPException(status_code=400, detail="Text produced no tokens")
 
     n_seq = len(token_ids)
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)

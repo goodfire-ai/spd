@@ -17,11 +17,16 @@ from fastapi import Depends, HTTPException
 
 from spd.app.backend.db import LocalAttrDB
 from spd.app.backend.state import RunState, StateManager
+from spd.log import logger
 
 
 def get_state_manager() -> StateManager:
     """Get the StateManager singleton."""
-    return StateManager.get()
+    try:
+        return StateManager.get()
+    except Exception as e:
+        logger.error(f"[DEPENDENCY] Failed to get StateManager: {e}")
+        raise
 
 
 def get_db() -> LocalAttrDB:

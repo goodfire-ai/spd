@@ -6,8 +6,8 @@ import threading
 from collections.abc import Generator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from torch.utils.data import DataLoader
 
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
@@ -47,9 +47,8 @@ def get_activation_contexts_summary(
     contexts = _ensure_activation_contexts_cached(manager, loaded)
 
     if contexts is None:
-        return JSONResponse(  # pyright: ignore[reportReturnType]
-            {"error": "No activation contexts found. Generate them first.", "missing": True},
-            status_code=404,
+        raise HTTPException(
+            status_code=404, detail="No activation contexts found. Generate them first."
         )
 
     summary: dict[str, list[SubcomponentMetadata]] = {}
@@ -73,19 +72,18 @@ def get_activation_context_detail(
     contexts = _ensure_activation_contexts_cached(manager, loaded)
 
     if contexts is None:
-        return JSONResponse({"error": "No activation contexts found"}, status_code=404)  # pyright: ignore[reportReturnType]
+        raise HTTPException(status_code=404, detail="No activation contexts found")
 
     layer_data = contexts.layers.get(layer)
     if layer_data is None:
-        return JSONResponse({"error": f"Layer '{layer}' not found"}, status_code=404)  # pyright: ignore[reportReturnType]
+        raise HTTPException(status_code=404, detail=f"Layer '{layer}' not found")
 
     for subcomp in layer_data:
         if subcomp.subcomponent_idx == component_idx:
             return subcomp
 
-    return JSONResponse(  # pyright: ignore[reportReturnType]
-        {"error": f"Component {component_idx} not found in layer '{layer}'"},
-        status_code=404,
+    raise HTTPException(
+        status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
     )
 
 

@@ -9,8 +9,8 @@ from itertools import groupby
 from typing import Annotated, Any, Literal
 
 import torch
-from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from spd.app.backend.compute import (
     Edge,
@@ -96,7 +96,7 @@ def compute_graph_stream(
     db = manager.db
     prompt = db.get_prompt(prompt_id)
     if prompt is None:
-        return JSONResponse({"error": "Prompt not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Prompt not found")
 
     token_ids = prompt.token_ids
     token_strings = [loaded.token_strings[t] for t in token_ids]
@@ -278,7 +278,7 @@ def compute_graph_optimized_stream(
     db = manager.db
     prompt = db.get_prompt(prompt_id)
     if prompt is None:
-        return JSONResponse({"error": "Prompt not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Prompt not found")
 
     token_ids = prompt.token_ids
     label_str = loaded.token_strings[label_token]

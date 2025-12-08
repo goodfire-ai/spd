@@ -65,6 +65,15 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests and their responses."""
+    logger.info(f"[REQUEST] {request.method} {request.url.path}?{request.url.query}")
+    response = await call_next(request)
+    logger.info(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}")
+    return response
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError

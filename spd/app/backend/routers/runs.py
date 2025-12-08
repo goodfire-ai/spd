@@ -6,7 +6,6 @@ from urllib.parse import unquote
 import torch
 import yaml
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
@@ -43,18 +42,11 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     """
     db = manager.db
 
-    try:
-        entity, project, run_id = parse_wandb_run_path(unquote(wandb_path))
-    except ValueError as e:
-        return JSONResponse({"error parsing wandb path": str(e)}, status_code=400)
-
+    entity, project, run_id = parse_wandb_run_path(unquote(wandb_path))
     clean_wandb_path = f"{entity}/{project}/{run_id}"
 
     logger.info(f"[API] Loading {clean_wandb_path}")
-    try:
-        run_info = SPDRunInfo.from_path(clean_wandb_path)
-    except Exception as e:
-        return JSONResponse({"error": f"Failed to load run from W&B: {e}"}, status_code=400)
+    run_info = SPDRunInfo.from_path(clean_wandb_path)
 
     run = db.get_run_by_wandb_path(clean_wandb_path)
     if run is None:
