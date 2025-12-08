@@ -245,6 +245,11 @@ def _normalize_edges_by_target_layer(edges: list[Edge]) -> list[Edge]:
     for _, incoming_edges in groups:
         incoming_edges = list(incoming_edges)  # list() because we iterate over the group twice
         incoming_strength = math.sqrt(sum(edge.strength**2 for edge in incoming_edges))
+        if incoming_strength == 0:
+            print(
+                f"[WARNING] Incoming strength is 0 for target layer {incoming_edges[0].target.layer}"
+            )
+            continue
         for edge in incoming_edges:
             out_edges.append(
                 Edge(

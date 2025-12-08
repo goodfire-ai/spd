@@ -204,3 +204,40 @@ class HarvestMetadata(BaseModel):
     """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
 
     layers: dict[str, list[SubcomponentMetadata]]
+
+
+# =============================================================================
+# Intervention Models
+# =============================================================================
+
+
+class InterventionNode(BaseModel):
+    """A specific node to activate during intervention."""
+
+    layer: str
+    seq_pos: int
+    component_idx: int
+
+
+class InterventionRequest(BaseModel):
+    """Request for intervention forward pass."""
+
+    text: str
+    nodes: list[InterventionNode]
+    top_k: int = 10
+
+
+class TokenPrediction(BaseModel):
+    """A single token prediction with probability."""
+
+    token: str
+    token_id: int
+    prob: float
+    logit: float
+
+
+class InterventionResponse(BaseModel):
+    """Response from intervention forward pass."""
+
+    input_tokens: list[str]
+    predictions_per_position: list[list[TokenPrediction]]

@@ -1,6 +1,7 @@
 <script lang="ts">
     import * as mainApi from "../lib/api";
     import * as attrApi from "../lib/localAttributionsApi";
+    import type { InterventionNode } from "../lib/interventionTypes";
     import type {
         ActivationContextsSummary,
         ComponentDetail,
@@ -16,6 +17,24 @@
     import type { StoredGraph, ComputeOptions, LoadingState, OptimizeConfig, PromptCard } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
+
+    // Props for intervention integration (staged nodes are managed in App.svelte)
+    type Props = {
+        stagedNodes: InterventionNode[];
+        onStagedNodesChange: (nodes: InterventionNode[]) => void;
+    };
+
+    let { stagedNodes, onStagedNodesChange }: Props = $props();
+
+    function handleStageNode(layer: string, seqPos: number, componentIdx: number) {
+        // Avoid duplicates
+        const exists = stagedNodes.some(
+            (n) => n.layer === layer && n.seq_pos === seqPos && n.component_idx === componentIdx
+        );
+        if (!exists) {
+            onStagedNodesChange([...stagedNodes, { layer, seq_pos: seqPos, component_idx: componentIdx }]);
+        }
+    }
 
     // Server state
     let loadedRun = $state<mainApi.LoadedRun | null>(null);
@@ -562,6 +581,7 @@
                                         onPinnedNodesChange={handlePinnedNodesChange}
                                         onLoadComponentDetail={loadComponentDetail}
                                         onEdgeCountChange={(count) => (filteredEdgeCount = count)}
+                                        onStageNode={handleStageNode}
                                     />
                                 {/key}
                                 <PinnedComponentsPanel

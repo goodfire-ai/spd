@@ -26,6 +26,7 @@ from spd.app.backend.db import LocalAttrDB
 from spd.app.backend.routers import (
     activation_contexts_router,
     graphs_router,
+    intervention_router,
     prompts_router,
     runs_router,
 )
@@ -138,6 +139,7 @@ app.include_router(runs_router)
 app.include_router(prompts_router)
 app.include_router(graphs_router)
 app.include_router(activation_contexts_router)
+app.include_router(intervention_router)
 
 
 def cli(port: int = 8000) -> None:

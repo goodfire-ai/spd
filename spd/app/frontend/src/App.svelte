@@ -2,8 +2,10 @@
     // import { RenderScan } from "svelte-render-scan";
     import type { LoadedRun } from "./lib/api";
     import * as api from "./lib/api";
+    import type { InterventionNode } from "./lib/interventionTypes";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
+    import InterventionTab from "./components/InterventionTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import { onMount } from "svelte";
 
@@ -67,8 +69,33 @@
         api.getWhoami().then((user) => (backendUser = user));
     });
 
-    let activeTab = $state<"activation-contexts" | "local-attributions" | null>(null);
+    let activeTab = $state<"activation-contexts" | "local-attributions" | "intervention" | null>(null);
     let showConfig = $state(false);
+
+    // Staged nodes for intervention (shared between LocalAttributionsTab and InterventionTab)
+    let stagedNodes = $state<InterventionNode[]>([]);
+
+    function handleStagedNodesChange(nodes: InterventionNode[]) {
+        stagedNodes = nodes;
+    }
+
+    function clearStagedNodes() {
+        stagedNodes = [];
+    }
+
+    function addStagedNode(node: InterventionNode) {
+        // Avoid duplicates
+        const exists = stagedNodes.some(
+            (n) => n.layer === node.layer && n.seq_pos === node.seq_pos && n.component_idx === node.component_idx
+        );
+        if (!exists) {
+            stagedNodes = [...stagedNodes, node];
+        }
+    }
+
+    function removeStagedNode(index: number) {
+        stagedNodes = stagedNodes.filter((_, i) => i !== index);
+    }
 </script>
 
 <!-- <RenderScan /> -->
@@ -127,6 +154,13 @@
             </button>
             <button
                 class="tab-button"
+                class:active={activeTab === "intervention"}
+                onclick={() => (activeTab = "intervention")}
+            >
+                Intervention {#if stagedNodes.length > 0}<span class="badge">{stagedNodes.length}</span>{/if}
+            </button>
+            <button
+                class="tab-button"
                 class:active={activeTab === "activation-contexts"}
                 onclick={() => (activeTab = "activation-contexts")}
             >
@@ -141,15 +175,30 @@
                 {backendError}
             </div>
         {/if}
-        {#if loadedRun && activeTab === "local-attributions"}
-            <LocalAttributionsTab />
-        {:else if loadedRun && activeTab === "activation-contexts"}
-            <ActivationContextsTab />
+        {#if loadedRun}
+            <!-- Use hidden class instead of conditional rendering to preserve state -->
+            <div class="tab-content" class:hidden={activeTab !== "local-attributions"}>
+                <LocalAttributionsTab
+                    {stagedNodes}
+                    onStagedNodesChange={handleStagedNodesChange}
+                />
+            </div>
+            <div class="tab-content" class:hidden={activeTab !== "intervention"}>
+                <InterventionTab
+                    {stagedNodes}
+                    onClearNodes={clearStagedNodes}
+                    onAddNode={addStagedNode}
+                    onRemoveNode={removeStagedNode}
+                />
+            </div>
+            <div class="tab-content" class:hidden={activeTab !== "activation-contexts"}>
+                <ActivationContextsTab />
+            </div>
         {:else if loadingTrainRun}
             <div class="empty-state">
                 <p>Loading run...</p>
             </div>
-        {:else if !loadedRun}
+        {:else}
             <div class="empty-state">
                 <p>Enter a W&B Path above to get started</p>
             </div>
@@ -260,6 +309,21 @@
         border-color: var(--accent-primary);
     }
 
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        margin-left: var(--space-1);
+        font-size: var(--text-xs);
+        font-weight: 600;
+        background: var(--status-positive);
+        color: white;
+        border-radius: 9px;
+    }
+
     .config-wrapper {
         position: relative;
     }
@@ -328,6 +392,17 @@
         min-height: 0;
         display: flex;
         flex-direction: column;
+    }
+
+    .tab-content {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .tab-content.hidden {
+        display: none;
     }
 
     .warning-banner {

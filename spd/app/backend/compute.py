@@ -13,6 +13,7 @@ import torch
 from jaxtyping import Bool, Float
 from torch import Tensor, nn
 from tqdm.auto import tqdm
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig, optimize_ci_values
 from spd.configs import SamplingType
@@ -577,3 +578,84 @@ def get_model_n_blocks(model: nn.Module) -> int:
             return len(model.h)
         case _:
             raise ValueError(f"Unsupported model: {type(model)}")
+
+
+@dataclass
+class InterventionResult:
+    """Result of intervention forward pass."""
+
+    input_tokens: list[str]
+    predictions_per_position: list[
+        list[tuple[str, int, float, float]]
+    ]  # [(token, id, prob, logit)]
+
+
+def compute_intervention_forward(
+    model: ComponentModel,
+    tokens: Float[Tensor, "1 seq"],
+    active_nodes: list[tuple[str, int, int]],  # [(layer, seq_pos, component_idx)]
+    top_k: int,
+    tokenizer: PreTrainedTokenizerBase,
+) -> InterventionResult:
+    """Forward pass with only specified nodes active.
+
+    Args:
+        model: ComponentModel to run intervention on.
+        tokens: Input tokens of shape [1, seq].
+        active_nodes: List of (layer, seq_pos, component_idx) tuples specifying which nodes to activate.
+        top_k: Number of top predictions to return per position.
+        tokenizer: Tokenizer for decoding tokens.
+
+    Returns:
+        InterventionResult with input tokens and top-k predictions per position.
+    """
+
+    seq_len = tokens.shape[1]
+    device = tokens.device
+    C = model.C
+
+    # Build component masks: all zeros, then set 1s for active nodes
+    component_masks: dict[str, Float[Tensor, "1 seq C"]] = {}
+    for layer_name in model.target_module_paths:
+        component_masks[layer_name] = torch.zeros(1, seq_len, C, device=device)
+
+    for layer, seq_pos, c_idx in active_nodes:
+        assert layer in component_masks, f"Layer {layer} not in model"
+        assert 0 <= seq_pos < seq_len, f"seq_pos {seq_pos} out of bounds [0, {seq_len})"
+        assert 0 <= c_idx < C, f"component_idx {c_idx} out of bounds [0, {C})"
+        component_masks[layer][0, seq_pos, c_idx] = 1.0
+
+    mask_infos = make_mask_infos(component_masks, routing_masks="all")
+
+    with torch.no_grad():
+        logits: Float[Tensor, "1 seq vocab"] = model(tokens, mask_infos=mask_infos)
+        probs = torch.softmax(logits, dim=-1)
+
+    # Get top-k predictions per position
+    predictions_per_position: list[list[tuple[str, int, float, float]]] = []
+    for pos in range(seq_len):
+        pos_probs = probs[0, pos]
+        pos_logits = logits[0, pos]
+        top_probs, top_ids = torch.topk(pos_probs, top_k)
+
+        pos_predictions: list[tuple[str, int, float, float]] = []
+        for prob, token_id in zip(top_probs, top_ids, strict=True):
+            tid = int(token_id.item())
+            token_str = tokenizer.decode([tid])
+            pos_predictions.append(
+                (
+                    token_str,
+                    tid,
+                    float(prob.item()),
+                    float(pos_logits[token_id].item()),
+                )
+            )
+        predictions_per_position.append(pos_predictions)
+
+    # Decode input tokens
+    input_tokens = [tokenizer.decode([int(t.item())]) for t in tokens[0]]
+
+    return InterventionResult(
+        input_tokens=input_tokens,
+        predictions_per_position=predictions_per_position,
+    )

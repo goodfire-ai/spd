@@ -37,6 +37,7 @@
         onPinnedNodesChange: (nodes: PinnedNode[]) => void;
         onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onEdgeCountChange?: (count: number) => void;
+        onStageNode?: (layer: string, seqPos: number, componentIdx: number) => void;
     };
 
     let {
@@ -52,6 +53,7 @@
         onPinnedNodesChange,
         onLoadComponentDetail,
         onEdgeCountChange,
+        onStageNode,
     }: Props = $props();
 
     // UI state
@@ -753,7 +755,21 @@
                 handleNodeMouseLeave();
             }}
         >
-            <h3>{hoveredNode.layer}:{hoveredNode.cIdx}</h3>
+            <div class="tooltip-header">
+                <h3>{hoveredNode.layer}:{hoveredNode.cIdx}</h3>
+                {#if onStageNode && hoveredNode.layer !== "output" && hoveredNode.layer !== "wte"}
+                    <button
+                        class="stage-button"
+                        onclick={() => {
+                            if (hoveredNode) {
+                                onStageNode(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx);
+                            }
+                        }}
+                    >
+                        Stage for Intervention
+                    </button>
+                {/if}
+            </div>
 
             <ComponentDetailCard
                 layer={hoveredNode.layer}
@@ -879,13 +895,36 @@
     }
 
     .node-tooltip h3 {
-        margin: 0 0 var(--space-2) 0;
+        margin: 0;
         font-size: var(--text-base);
         font-family: var(--font-mono);
         color: var(--accent-primary);
         font-weight: 600;
         letter-spacing: 0.02em;
+    }
+
+    .tooltip-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--space-2);
         border-bottom: 1px solid var(--border-subtle);
         padding-bottom: var(--space-2);
+        margin-bottom: var(--space-2);
+    }
+
+    .stage-button {
+        font-size: var(--text-xs);
+        padding: var(--space-1) var(--space-2);
+        background: var(--status-positive);
+        color: white;
+        border: none;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .stage-button:hover {
+        background: var(--status-positive-bright, #22c55e);
     }
 </style>

@@ -152,3 +152,23 @@ export async function getComponentDetail(layer: string, componentIdx: number): P
     }
     return (await response.json()) as ComponentDetail;
 }
+
+// Intervention types
+import type { InterventionNode, InterventionResponse } from "./interventionTypes";
+
+export async function runIntervention(
+    text: string,
+    nodes: InterventionNode[],
+    topK: number = 10,
+): Promise<InterventionResponse> {
+    const response = await fetch(`${API_URL}/api/intervention`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, nodes, top_k: topK }),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to run intervention");
+    }
+    return (await response.json()) as InterventionResponse;
+}
