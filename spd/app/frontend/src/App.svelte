@@ -71,7 +71,7 @@
     let showConfig = $state(false);
 </script>
 
-<RenderScan />
+<!-- <RenderScan /> -->
 <div class="app-layout">
     <header class="top-bar">
         <span class="backend-user">user: {backendUser ?? "..."}</span>
