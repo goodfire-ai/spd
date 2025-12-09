@@ -117,11 +117,7 @@
 
     {#if loadedRun}
         <nav class="tab-bar">
-            <button
-                class="tab-button"
-                class:active={activeTab === "prompts"}
-                onclick={() => (activeTab = "prompts")}
-            >
+            <button class="tab-button" class:active={activeTab === "prompts"} onclick={() => (activeTab = "prompts")}>
                 Prompts
             </button>
             <button

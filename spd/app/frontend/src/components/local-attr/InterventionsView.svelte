@@ -181,7 +181,7 @@
         const COL_PADDING = 12;
         const MIN_COL_WIDTH = 60;
         const seqWidths = maxComponentsPerSeq.map((n) =>
-            Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + componentGap) + COL_PADDING * 2)
+            Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + componentGap) + COL_PADDING * 2),
         );
         const seqXStarts = [MARGIN.left + LABEL_WIDTH];
         for (let i = 0; i < seqWidths.length - 1; i++) {
@@ -218,7 +218,8 @@
                     const subtypeIdx = QKV_SUBTYPES.indexOf(info.subtype);
                     for (let i = 0; i < subtypeIdx; i++) {
                         const prevLayer = `h.${info.block}.attn.${QKV_SUBTYPES[i]}`;
-                        baseX += (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) * (COMPONENT_SIZE + componentGap);
+                        baseX +=
+                            (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) * (COMPONENT_SIZE + componentGap);
                         baseX += COMPONENT_SIZE + componentGap;
                     }
                 }
@@ -262,7 +263,7 @@
     }
 
     function toggleNode(nodeKey: string, shiftKey: boolean) {
-        const newSelection = new Set(graph.composerSelection);
+        const newSelection = new SvelteSet(graph.composerSelection);
         if (shiftKey) {
             // Solo mode: select only this node
             newSelection.clear();
@@ -374,14 +375,7 @@
         <div class="composer-controls">
             <div class="topk-control">
                 <label for="topk-slider">Top K:</label>
-                <input
-                    id="topk-slider"
-                    type="range"
-                    min="10"
-                    max="2000"
-                    step="10"
-                    bind:value={topK}
-                />
+                <input id="topk-slider" type="range" min="10" max="2000" step="10" bind:value={topK} />
                 <span class="topk-value">{topK}</span>
             </div>
             <div class="button-group">
@@ -397,9 +391,7 @@
             </div>
         </div>
 
-        <div class="composer-hint">
-            Click to toggle • Shift+click to solo
-        </div>
+        <div class="composer-hint">Click to toggle • Shift+click to solo</div>
 
         <div class="composer-graph">
             <svg width={layout.width} height={layout.height}>
@@ -415,16 +407,16 @@
                         font-size="10"
                         font-family="'Berkeley Mono', 'SF Mono', monospace"
                         fill={colors.textPrimary}
-                        style="white-space: pre"
-                    >"{token}"</text>
+                        style="white-space: pre">"{token}"</text
+                    >
                     <text
                         x={cx}
                         y={MARGIN.top - 18}
                         text-anchor="middle"
                         font-size="9"
                         font-family="'Berkeley Mono', 'SF Mono', monospace"
-                        fill={colors.textMuted}
-                    >[{pos}]</text>
+                        fill={colors.textMuted}>[{pos}]</text
+                    >
                 {/each}
 
                 <!-- Layer labels -->
@@ -437,8 +429,8 @@
                         font-size="10"
                         font-weight="500"
                         font-family="'Berkeley Mono', 'SF Mono', monospace"
-                        fill={colors.textSecondary}
-                    >{getRowLabel(layer)}</text>
+                        fill={colors.textSecondary}>{getRowLabel(layer)}</text
+                    >
                 {/each}
 
                 <!-- Edges -->
@@ -501,8 +493,8 @@
                                         text-anchor="middle"
                                         font-size="8"
                                         font-family="'Berkeley Mono', 'SF Mono', monospace"
-                                        fill={colors.textMuted}
-                                    >"{outputEntry.token}"</text>
+                                        fill={colors.textMuted}>"{outputEntry.token}"</text
+                                    >
                                 {/if}
                             </g>
                         {/if}
@@ -541,8 +533,11 @@
                             <span class="run-nodes">{run.selected_nodes.length} nodes</span>
                             <button
                                 class="delete-btn"
-                                onclick={(e) => { e.stopPropagation(); onDeleteRun(run.id); }}
-                            >✕</button>
+                                onclick={(e) => {
+                                    e.stopPropagation();
+                                    onDeleteRun(run.id);
+                                }}>✕</button
+                            >
                         </div>
 
                         <!-- Mini logits table -->
@@ -585,7 +580,7 @@
     <!-- Node tooltip -->
     {#if hoveredNode}
         {@const summary = activationContextsSummary?.[hoveredNode.layer]?.find(
-            (s) => s.subcomponent_idx === hoveredNode?.cIdx
+            (s) => s.subcomponent_idx === hoveredNode?.cIdx,
         )}
         {@const detail = componentDetailsCache[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
         {@const isLoading = componentDetailsLoading[`${hoveredNode.layer}:${hoveredNode.cIdx}`] ?? false}
@@ -594,7 +589,10 @@
             class="node-tooltip"
             style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"
             onmouseenter={() => (isHoveringTooltip = true)}
-            onmouseleave={() => { isHoveringTooltip = false; handleNodeMouseLeave(); }}
+            onmouseleave={() => {
+                isHoveringTooltip = false;
+                handleNodeMouseLeave();
+            }}
         >
             <h3>{hoveredNode.layer}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
             <ComponentDetailCard
@@ -735,7 +733,9 @@
     }
 
     .node-group .node {
-        transition: opacity 0.1s, fill 0.1s;
+        transition:
+            opacity 0.1s,
+            fill 0.1s;
     }
 
     .node-group:hover .node {

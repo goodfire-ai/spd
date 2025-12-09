@@ -46,8 +46,8 @@
 
     // Re-run probe when layer or component changes (if there's text)
     $effect(() => {
-        layer;
-        componentIdx;
+        void layer;
+        void componentIdx;
         probeResult = null;
         probeError = null;
         if (probeText.trim()) {

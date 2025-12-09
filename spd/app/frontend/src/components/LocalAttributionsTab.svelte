@@ -200,31 +200,31 @@
         let graphs: StoredGraph[] = [];
         try {
             const storedGraphs = await attrApi.getGraphs(promptId, normalizeEdges, computeOptions.ciThreshold);
-            graphs = await Promise.all(storedGraphs.map(async (data, idx) => {
-                const isOptimized = !!data.optimization;
-                const label = isOptimized
-                    ? `Optimized (${data.optimization!.steps} steps)`
-                    : "Standard";
+            graphs = await Promise.all(
+                storedGraphs.map(async (data, idx) => {
+                    const isOptimized = !!data.optimization;
+                    const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
 
-                // Load intervention runs for this graph
-                const runs = await mainApi.getInterventionRuns(data.id);
+                    // Load intervention runs for this graph
+                    const runs = await mainApi.getInterventionRuns(data.id);
 
-                // Initialize composer selection: from DB or default to all nodes
-                const allNodeKeys = Object.keys(data.nodeImportance);
-                const composerSelection = data.composerSelection
-                    ? new Set(data.composerSelection)
-                    : new Set(allNodeKeys);
+                    // Initialize composer selection: from DB or default to all nodes
+                    const allNodeKeys = Object.keys(data.nodeImportance);
+                    const composerSelection = data.composerSelection
+                        ? new Set(data.composerSelection)
+                        : new Set(allNodeKeys);
 
-                return {
-                    id: `graph-${idx}-${Date.now()}`,
-                    dbId: data.id,
-                    label,
-                    data,
-                    composerSelection,
-                    interventionRuns: runs,
-                    activeRunId: null,
-                };
-            }));
+                    return {
+                        id: `graph-${idx}-${Date.now()}`,
+                        dbId: data.id,
+                        label,
+                        data,
+                        composerSelection,
+                        interventionRuns: runs,
+                        activeRunId: null,
+                    };
+                }),
+            );
         } catch (e) {
             console.warn("Failed to fetch graphs:", e);
         }
@@ -306,9 +306,7 @@
     // Switch between graph and interventions view
     function handleViewChange(view: "graph" | "interventions") {
         if (!activeCard) return;
-        promptCards = promptCards.map((card) =>
-            card.id === activeCard.id ? { ...card, activeView: view } : card,
-        );
+        promptCards = promptCards.map((card) => (card.id === activeCard.id ? { ...card, activeView: view } : card));
     }
 
     // Update composer selection for the active graph
@@ -321,7 +319,7 @@
             return {
                 ...card,
                 graphs: card.graphs.map((g) =>
-                    g.id === activeGraph.id ? { ...g, composerSelection: selection, activeRunId: null } : g
+                    g.id === activeGraph.id ? { ...g, composerSelection: selection, activeRunId: null } : g,
                 ),
             };
         });
@@ -357,7 +355,7 @@
                     graphs: card.graphs.map((g) =>
                         g.id === activeGraph.id
                             ? { ...g, interventionRuns: [...g.interventionRuns, run], activeRunId: run.id }
-                            : g
+                            : g,
                     ),
                 };
             });
@@ -383,7 +381,7 @@
                 graphs: card.graphs.map((g) =>
                     g.id === activeGraph.id
                         ? { ...g, composerSelection: new Set(run.selected_nodes), activeRunId: runId }
-                        : g
+                        : g,
                 ),
             };
         });
@@ -491,15 +489,18 @@
                 if (card.id !== activeCard.id) return card;
                 return {
                     ...card,
-                    graphs: [...card.graphs, {
-                        id: graphId,
-                        dbId: data.id,
-                        label,
-                        data,
-                        composerSelection: new Set(allNodeKeys),
-                        interventionRuns: [],
-                        activeRunId: null,
-                    }],
+                    graphs: [
+                        ...card.graphs,
+                        {
+                            id: graphId,
+                            dbId: data.id,
+                            label,
+                            data,
+                            composerSelection: new Set(allNodeKeys),
+                            interventionRuns: [],
+                            activeRunId: null,
+                        },
+                    ],
                     activeGraphId: graphId,
                 };
             });
@@ -519,32 +520,38 @@
                     if (card.graphs.length === 0) return card;
 
                     try {
-                        const storedGraphs = await attrApi.getGraphs(card.promptId, normalizeEdges, computeOptions.ciThreshold);
-                        const graphs = await Promise.all(storedGraphs.map(async (data, idx) => {
-                            const isOptimized = !!data.optimization;
-                            const label = isOptimized
-                                ? `Optimized (${data.optimization!.steps} steps)`
-                                : "Standard";
+                        const storedGraphs = await attrApi.getGraphs(
+                            card.promptId,
+                            normalizeEdges,
+                            computeOptions.ciThreshold,
+                        );
+                        const graphs = await Promise.all(
+                            storedGraphs.map(async (data, idx) => {
+                                const isOptimized = !!data.optimization;
+                                const label = isOptimized
+                                    ? `Optimized (${data.optimization!.steps} steps)`
+                                    : "Standard";
 
-                            // Load intervention runs
-                            const runs = await mainApi.getInterventionRuns(data.id);
+                                // Load intervention runs
+                                const runs = await mainApi.getInterventionRuns(data.id);
 
-                            // Initialize composer selection
-                            const allNodeKeys = Object.keys(data.nodeImportance);
-                            const composerSelection = data.composerSelection
-                                ? new Set(data.composerSelection)
-                                : new Set(allNodeKeys);
+                                // Initialize composer selection
+                                const allNodeKeys = Object.keys(data.nodeImportance);
+                                const composerSelection = data.composerSelection
+                                    ? new Set(data.composerSelection)
+                                    : new Set(allNodeKeys);
 
-                            return {
-                                id: `graph-${idx}-${Date.now()}`,
-                                dbId: data.id,
-                                label,
-                                data,
-                                composerSelection,
-                                interventionRuns: runs,
-                                activeRunId: null,
-                            };
-                        }));
+                                return {
+                                    id: `graph-${idx}-${Date.now()}`,
+                                    dbId: data.id,
+                                    label,
+                                    data,
+                                    composerSelection,
+                                    interventionRuns: runs,
+                                    activeRunId: null,
+                                };
+                            }),
+                        );
                         return {
                             ...card,
                             graphs,
