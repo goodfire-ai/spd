@@ -10,10 +10,7 @@
         seqIdx: number;
         summary: ComponentSummary | null;
         compact: boolean;
-    } & (
-        | { detail: ComponentDetail; isLoading?: never }
-        | { detail: null; isLoading: boolean }
-    );
+    } & ({ detail: ComponentDetail; isLoading?: never } | { detail: null; isLoading: boolean });
 
     let { layer, cIdx, seqIdx, summary, compact, detail, isLoading }: Props = $props();
 
