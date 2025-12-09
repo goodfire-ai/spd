@@ -1,6 +1,9 @@
 <script lang="ts">
     import type { ComponentDetail, HarvestMetadata } from "../lib/api";
+    import type { ComponentProbeResult } from "../lib/localAttributionsTypes";
     import * as api from "../lib/api";
+    import { probeComponent } from "../lib/localAttributionsApi";
+    import { getTokenHighlightBg } from "../lib/colors";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
 
     interface Props {
@@ -18,6 +21,54 @@
 
     let componentCache = $state<Record<string, ComponentDetail>>({});
     let loadingComponent = $state(false);
+
+    // Probe state
+    let probeText = $state("");
+    let probeResult = $state<ComponentProbeResult | null>(null);
+    let probeLoading = $state(false);
+    let probeError = $state<string | null>(null);
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function runProbe(text: string) {
+        if (!text.trim()) {
+            probeResult = null;
+            probeError = null;
+            return;
+        }
+
+        probeLoading = true;
+        probeError = null;
+
+        try {
+            probeResult = await probeComponent(text, selectedLayer, currentMetadata.subcomponent_idx);
+        } catch (e) {
+            probeError = e instanceof Error ? e.message : "Failed to probe component";
+            probeResult = null;
+        } finally {
+            probeLoading = false;
+        }
+    }
+
+    function onProbeInput(e: Event) {
+        const target = e.target as HTMLInputElement;
+        probeText = target.value;
+
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => runProbe(probeText), 300);
+    }
+
+    // Clear probe result when layer or component changes
+    $effect(() => {
+        selectedLayer;
+        currentPage;
+        probeResult = null;
+        probeError = null;
+        // Re-run probe if there's text
+        if (probeText.trim()) {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => runProbe(probeText), 300);
+        }
+    });
 
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
@@ -141,6 +192,34 @@
                 ? currentMetadata.mean_ci.toExponential(2)
                 : currentMetadata.mean_ci.toFixed(3)})
         </h4>
+
+        <!-- Probe section -->
+        <div class="probe-section">
+            <h5>Test Custom Text</h5>
+            <input
+                type="text"
+                class="probe-input"
+                placeholder="Enter text to test..."
+                value={probeText}
+                oninput={onProbeInput}
+            />
+            {#if probeLoading}
+                <p class="probe-status">Loading...</p>
+            {:else if probeError}
+                <p class="probe-error">{probeError}</p>
+            {:else if probeResult && probeResult.tokens.length > 0}
+                <div class="probe-result">
+                    <span class="probe-tokens"
+                        >{#each probeResult.tokens as tok, i (i)}<span
+                                class="probe-token"
+                                style="background-color:{getTokenHighlightBg(probeResult.ci_values[i])}"
+                                title="CI: {probeResult.ci_values[i].toFixed(4)}">{tok}</span
+                            >{/each}</span
+                    >
+                </div>
+            {/if}
+        </div>
+
         {#if densities != null}
             <div class="token-densities">
                 <div class="token-densities-header">
@@ -412,5 +491,76 @@
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-muted);
+    }
+
+    /* Probe section styles */
+    .probe-section {
+        padding: var(--space-3);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+    }
+
+    .probe-section h5 {
+        margin: 0 0 var(--space-2) 0;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
+        font-weight: 600;
+    }
+
+    .probe-input {
+        width: 100%;
+        padding: var(--space-2);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        color: var(--text-primary);
+    }
+
+    .probe-input:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .probe-input::placeholder {
+        color: var(--text-muted);
+    }
+
+    .probe-status {
+        margin: var(--space-2) 0 0 0;
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+    }
+
+    .probe-error {
+        margin: var(--space-2) 0 0 0;
+        font-size: var(--text-sm);
+        color: var(--status-negative);
+        font-family: var(--font-mono);
+    }
+
+    .probe-result {
+        margin-top: var(--space-2);
+        overflow-x: auto;
+    }
+
+    .probe-tokens {
+        display: inline;
+        white-space: pre-wrap;
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+    }
+
+    .probe-token {
+        display: inline;
+        padding: 1px 0;
+        margin-right: 1px;
+        border-right: 1px solid var(--border-subtle);
+        white-space: pre;
+        cursor: help;
     }
 </style>
