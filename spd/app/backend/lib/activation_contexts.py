@@ -34,7 +34,8 @@ def get_activations_data(
     tokenizer: PreTrainedTokenizerBase,
     train_loader: DataLoader[Int[Tensor, "B S"]],
     token_strings: dict[int, str],
-    token_base_rates: dict[int, float],
+    # TODO: Re-enable token uplift after performance optimization
+    # token_base_rates: dict[int, float],
     importance_threshold: float,
     n_batches: int,
     n_tokens_either_side: int,
@@ -65,10 +66,11 @@ def get_activations_data(
     component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
+    # TODO: Re-enable token uplift after performance optimization
     # - accumulated probability mass for each predicted token when component fires
-    component_predicted_probs = defaultdict[str, defaultdict[int, dict[int, float]]](
-        lambda: defaultdict(lambda: defaultdict(float))
-    )
+    # component_predicted_probs = defaultdict[str, defaultdict[int, dict[int, float]]](
+    #     lambda: defaultdict(lambda: defaultdict(float))
+    # )
     # - the sum of causal importances
     C = cm.C
     component_sum_cis = defaultdict[str, Float[Tensor, " C"]](
@@ -105,15 +107,17 @@ def get_activations_data(
 
         with torch.no_grad():
             output_with_cache = cm(batch, cache_type="input")
-            logits = output_with_cache.output
+            # TODO: Re-enable token uplift after performance optimization
+            # logits = output_with_cache.output
             ci_vals = cm.calc_causal_importances(
                 pre_weight_acts=output_with_cache.cache,
                 detach_inputs=True,
                 sampling=config.sampling,
             ).lower_leaky
 
+        # TODO: Re-enable token uplift after performance optimization
         # Get softmax probabilities for predicted token lift calculation
-        pred_probs: Float[Tensor, "B S V"] = torch.softmax(logits, dim=-1)
+        # pred_probs: Float[Tensor, "B S V"] = torch.softmax(logits, dim=-1)
 
         for module_idx, (module_name, ci_val) in enumerate(ci_vals.items()):
             pbar.update(1)
@@ -193,8 +197,9 @@ def get_activations_data(
             # Get token IDs at active position for token counting
             active_token_ids = window_token_ids_np[:, n_tokens_either_side]
 
+            # TODO: Re-enable token uplift after performance optimization
             # Get prediction probabilities at each firing position (full vocab)
-            firing_pred_probs: Float[Tensor, "n_firings V"] = pred_probs[batch_idx, seq_idx]
+            # firing_pred_probs: Float[Tensor, "n_firings V"] = pred_probs[batch_idx, seq_idx]
 
             # Process by component - group firings and use batch add
             unique_components = np.unique(comp_idx_np)
@@ -212,16 +217,17 @@ def get_activations_data(
                 for tok_id, count in zip(unique_tokens, token_counts, strict=True):
                     component_activation_tokens[module_name][c_idx_int][int(tok_id)] += int(count)
 
+                # TODO: Re-enable token uplift after performance optimization
                 # Accumulate predicted token probability mass for this component
-                probs_for_component: Float[Tensor, "n_c V"] = firing_pred_probs[
-                    torch.from_numpy(mask_c).to(firing_pred_probs.device)
-                ]
-                prob_sums: Float[Tensor, " V"] = probs_for_component.sum(dim=0)
-                prob_sums_cpu = prob_sums.cpu()
-                for tok_id in range(prob_sums_cpu.shape[0]):
-                    prob = float(prob_sums_cpu[tok_id])
-                    if prob > 1e-6:  # Skip negligible probabilities
-                        component_predicted_probs[module_name][c_idx_int][tok_id] += prob
+                # probs_for_component: Float[Tensor, "n_c V"] = firing_pred_probs[
+                #     torch.from_numpy(mask_c).to(firing_pred_probs.device)
+                # ]
+                # prob_sums: Float[Tensor, " V"] = probs_for_component.sum(dim=0)
+                # prob_sums_cpu = prob_sums.cpu()
+                # for tok_id in range(prob_sums_cpu.shape[0]):
+                #     prob = float(prob_sums_cpu[tok_id])
+                #     if prob > 1e-6:  # Skip negligible probabilities
+                #         component_predicted_probs[module_name][c_idx_int][tok_id] += prob
 
                 # Apply position separation filter for example diversity only
                 if separation_tokens > 0:
@@ -256,7 +262,8 @@ def get_activations_data(
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
     for module_name in component_activation_tokens:
         module_acts = component_activation_tokens[module_name]
-        module_predicted_probs = component_predicted_probs[module_name]
+        # TODO: Re-enable token uplift after performance optimization
+        # module_predicted_probs = component_predicted_probs[module_name]
         module_examples = examples[module_name]
         module_activation_counts = component_activation_counts[module_name]
         module_mean_cis = (component_sum_cis[module_name] / n_toks_seen).tolist()
@@ -268,14 +275,15 @@ def get_activations_data(
                 token_strings=token_strings,
                 component_activation_count=module_activation_counts[component_idx],
             )
-            predicted_tokens, predicted_lifts, predicted_firing_probs, predicted_base_probs = (
-                _get_component_predicted_tokens(
-                    component_prob_sums=module_predicted_probs[component_idx],
-                    token_strings=token_strings,
-                    token_base_rates=token_base_rates,
-                    component_activation_count=module_activation_counts[component_idx],
-                )
-            )
+            # TODO: Re-enable token uplift after performance optimization
+            # predicted_tokens, predicted_lifts, predicted_firing_probs, predicted_base_probs = (
+            #     _get_component_predicted_tokens(
+            #         component_prob_sums=module_predicted_probs[component_idx],
+            #         token_strings=token_strings,
+            #         token_base_rates=token_base_rates,
+            #         component_activation_count=module_activation_counts[component_idx],
+            #     )
+            # )
             example_tokens, example_ci, example_active_pos, example_active_ci = module_examples[
                 component_idx
             ].as_columnar(token_strings)
@@ -289,10 +297,10 @@ def get_activations_data(
                 pr_tokens=pr_tokens,
                 pr_recalls=pr_recalls,
                 pr_precisions=pr_precisions,
-                predicted_tokens=predicted_tokens,
-                predicted_lifts=predicted_lifts,
-                predicted_firing_probs=predicted_firing_probs,
-                predicted_base_probs=predicted_base_probs,
+                # predicted_tokens=predicted_tokens,
+                # predicted_lifts=predicted_lifts,
+                # predicted_firing_probs=predicted_firing_probs,
+                # predicted_base_probs=predicted_base_probs,
             )
             module_subcomponent_ctxs.append(subcomponent_ctx)
         module_subcomponent_ctxs.sort(key=lambda x: x.mean_ci, reverse=True)
@@ -528,7 +536,8 @@ def _get_component_token_pr(
     return tokens, recalls, precisions
 
 
-def _get_component_predicted_tokens(
+# TODO: Re-enable token uplift after performance optimization
+def _get_component_predicted_tokens(  # pyright: ignore[reportUnusedFunction]
     component_prob_sums: dict[int, float],
     token_strings: dict[int, str],
     token_base_rates: dict[int, float],

@@ -157,7 +157,8 @@ def app_with_state():
             config=config,
             token_strings=token_strings,
             train_loader=train_loader,
-            token_base_rates={},
+            # TODO: Re-enable token uplift after performance optimization
+            # token_base_rates={},
         )
 
         manager = StateManager.get()

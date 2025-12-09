@@ -154,7 +154,12 @@ export async function getComponentDetail(layer: string, componentIdx: number): P
 }
 
 // Intervention types
-import type { InterventionNode, InterventionResponse } from "./interventionTypes";
+import type {
+    InterventionNode,
+    InterventionResponse,
+    InterventionRunSummary,
+    RunInterventionRequest,
+} from "./interventionTypes";
 
 export async function runIntervention(
     text: string,
@@ -171,4 +176,57 @@ export async function runIntervention(
         throw new Error(error.detail || "Failed to run intervention");
     }
     return (await response.json()) as InterventionResponse;
+}
+
+/** Run an intervention and save the result */
+export async function runAndSaveIntervention(
+    request: RunInterventionRequest,
+): Promise<InterventionRunSummary> {
+    const response = await fetch(`${API_URL}/api/intervention/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to run intervention");
+    }
+    return (await response.json()) as InterventionRunSummary;
+}
+
+/** Get all intervention runs for a graph */
+export async function getInterventionRuns(graphId: number): Promise<InterventionRunSummary[]> {
+    const response = await fetch(`${API_URL}/api/intervention/runs/${graphId}`);
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get intervention runs");
+    }
+    return (await response.json()) as InterventionRunSummary[];
+}
+
+/** Delete an intervention run */
+export async function deleteInterventionRun(runId: number): Promise<void> {
+    const response = await fetch(`${API_URL}/api/intervention/runs/${runId}`, {
+        method: "DELETE",
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to delete intervention run");
+    }
+}
+
+/** Update composer selection state for a graph */
+export async function updateComposerSelection(
+    graphId: number,
+    selection: string[] | null,
+): Promise<void> {
+    const response = await fetch(`${API_URL}/api/intervention/composer`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ graph_id: graphId, selection }),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to update composer selection");
+    }
 }

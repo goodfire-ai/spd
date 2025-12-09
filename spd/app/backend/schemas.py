@@ -41,6 +41,7 @@ class GraphData(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
+    composerSelection: list[str] | None = None  # selected node keys, None = all selected
 
 
 class OptimizationResult(BaseModel):
@@ -65,6 +66,7 @@ class GraphDataWithOptimization(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
+    composerSelection: list[str] | None = None  # selected node keys, None = all selected
     optimization: OptimizationResult
 
 
@@ -170,12 +172,13 @@ class SubcomponentActivationContexts(BaseModel):
     pr_recalls: list[float]  # [n_unique_tokens]
     pr_precisions: list[float]  # [n_unique_tokens]
 
+    # TODO: Re-enable token uplift after performance optimization
     # Predicted token stats - lift = E[P(token)|fires] / E[P(token)]
     # Sorted by lift descending
-    predicted_tokens: list[str]  # [n_unique_predicted]
-    predicted_lifts: list[float]  # [n_unique_predicted] - lift (firing_prob / base_prob)
-    predicted_firing_probs: list[float]  # [n_unique_predicted] - E[P(token) | component fires]
-    predicted_base_probs: list[float]  # [n_unique_predicted] - E[P(token)] base rate
+    # predicted_tokens: list[str]  # [n_unique_predicted]
+    # predicted_lifts: list[float]  # [n_unique_predicted] - lift (firing_prob / base_prob)
+    # predicted_firing_probs: list[float]  # [n_unique_predicted] - E[P(token) | component fires]
+    # predicted_base_probs: list[float]  # [n_unique_predicted] - E[P(token)] base rate
 
 
 class ModelActivationContexts(BaseModel):
@@ -243,6 +246,36 @@ class InterventionResponse(BaseModel):
 
     input_tokens: list[str]
     predictions_per_position: list[list[TokenPrediction]]
+
+
+# =============================================================================
+# Intervention Persistence Models
+# =============================================================================
+
+
+class RunInterventionRequest(BaseModel):
+    """Request to run and save an intervention."""
+
+    graph_id: int
+    text: str
+    selected_nodes: list[str]  # node keys (layer:seq:cIdx)
+    top_k: int = 10
+
+
+class InterventionRunSummary(BaseModel):
+    """Summary of a saved intervention run."""
+
+    id: int
+    selected_nodes: list[str]
+    result: InterventionResponse
+    created_at: str
+
+
+class UpdateComposerSelectionRequest(BaseModel):
+    """Request to update composer selection state."""
+
+    graph_id: int
+    selection: list[str] | None  # None = all nodes selected
 
 
 # =============================================================================

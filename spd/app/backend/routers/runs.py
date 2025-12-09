@@ -11,7 +11,9 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
-from spd.app.backend.lib.activation_contexts import compute_token_base_rates
+
+# TODO: Re-enable token uplift after performance optimization
+# from spd.app.backend.lib.activation_contexts import compute_token_base_rates
 from spd.app.backend.schemas import LoadedRun
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import build_token_lookup, log_errors
@@ -117,13 +119,14 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         global_seed=spd_config.seed,
     )
 
+    # TODO: Re-enable token uplift after performance optimization
     # Compute token base rates for predicted token lift calculation
-    logger.info(f"[API] Computing token base rates for run {run.id}")
-    token_base_rates = compute_token_base_rates(
-        cm=model,
-        train_loader=train_loader,
-        n_batches=100,
-    )
+    # logger.info(f"[API] Computing token base rates for run {run.id}")
+    # token_base_rates = compute_token_base_rates(
+    #     cm=model,
+    #     train_loader=train_loader,
+    #     n_batches=100,
+    # )
 
     manager.run_state = RunState(
         run=run,
@@ -134,7 +137,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         token_strings=token_strings,
         train_loader=train_loader,
         context_length=context_length,
-        token_base_rates=token_base_rates,
+        # token_base_rates=token_base_rates,
     )
 
     logger.info(f"[API] Run {run.id} loaded on {DEVICE}")

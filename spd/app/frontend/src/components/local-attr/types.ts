@@ -1,19 +1,16 @@
-import type { GraphData, PinnedNode } from "../../lib/localAttributionsTypes";
-import type { InterventionResponse } from "../../lib/interventionTypes";
+import type { GraphData } from "../../lib/localAttributionsTypes";
+import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/localAttributionsApi";
 
 export type StoredGraph = {
     id: string;
+    dbId: number; // database ID for API calls
     label: string;
     data: GraphData;
-    stagedNodes: PinnedNode[];
-};
-
-export type Intervention = {
-    id: string;
-    timestamp: number;
-    nodes: PinnedNode[]; // snapshot of nodes used
-    result: InterventionResponse;
+    // Composer state for interventions
+    composerSelection: Set<string>; // currently selected node keys
+    interventionRuns: InterventionRunSummary[]; // persisted runs
+    activeRunId: number | null; // which run is selected (for restoring selection)
 };
 
 export type PromptCard = {
@@ -24,7 +21,6 @@ export type PromptCard = {
     isCustom: boolean;
     graphs: StoredGraph[];
     activeGraphId: string | null;
-    interventions: Intervention[];
     activeView: "graph" | "interventions";
 };
 
