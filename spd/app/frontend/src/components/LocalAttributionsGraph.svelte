@@ -257,12 +257,20 @@
         if (nodeLayout === "importance") {
             const sorted = [...components].sort((a, b) => {
                 if (isOutput) {
-                    const entryA = data.outputProbs[`${seqIdx}:${a}`];
-                    const entryB = data.outputProbs[`${seqIdx}:${b}`];
-                    return (entryB?.prob ?? 0) - (entryA?.prob ?? 0);
+                    const keyA = `${seqIdx}:${a}`;
+                    const keyB = `${seqIdx}:${b}`;
+                    const entryA = data.outputProbs[keyA];
+                    const entryB = data.outputProbs[keyB];
+                    if (!entryA) throw new Error(`Missing outputProbs entry for ${keyA}`);
+                    if (!entryB) throw new Error(`Missing outputProbs entry for ${keyB}`);
+                    return entryB.prob - entryA.prob;
                 }
-                const impA = data.nodeImportance[`${layer}:${seqIdx}:${a}`] ?? 0;
-                const impB = data.nodeImportance[`${layer}:${seqIdx}:${b}`] ?? 0;
+                const keyA = `${layer}:${seqIdx}:${a}`;
+                const keyB = `${layer}:${seqIdx}:${b}`;
+                const impA = data.nodeImportance[keyA];
+                const impB = data.nodeImportance[keyB];
+                if (impA === undefined) throw new Error(`Missing nodeImportance for ${keyA}`);
+                if (impB === undefined) throw new Error(`Missing nodeImportance for ${keyB}`);
                 return impB - impA;
             });
             for (let i = 0; i < n; i++) {

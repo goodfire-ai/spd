@@ -65,6 +65,18 @@ export type ComponentDetail = {
     // predicted_base_probs: number[];
 };
 
+export type CorrelatedComponent = {
+    component_key: string;
+    score: number;
+};
+
+export type ComponentCorrelations = {
+    precision: CorrelatedComponent[];
+    recall: CorrelatedComponent[];
+    f1: CorrelatedComponent[];
+    jaccard: CorrelatedComponent[];
+};
+
 export type SearchResult = {
     query: { components: string[]; mode: string };
     count: number;

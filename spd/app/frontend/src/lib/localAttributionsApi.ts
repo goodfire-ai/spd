@@ -7,6 +7,7 @@ import type {
     GraphData,
     ActivationContextsSummary,
     ComponentDetail,
+    ComponentCorrelations,
     SearchResult,
     TokenizeResult,
     ComponentProbeResult,
@@ -321,4 +322,18 @@ export async function probeComponent(text: string, layer: string, componentIdx: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, layer, component_idx: componentIdx }),
     });
+}
+
+// Component correlations
+
+export async function getComponentCorrelations(
+    layer: string,
+    componentIdx: number,
+    topK: number = 10,
+): Promise<ComponentCorrelations | null> {
+    const url = new URL(
+        `${API_URL}/api/activation_contexts/correlations/${encodeURIComponent(layer)}/${componentIdx}`,
+    );
+    url.searchParams.set("top_k", String(topK));
+    return fetchJson<ComponentCorrelations | null>(url.toString());
 }

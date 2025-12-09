@@ -12,10 +12,16 @@ from torch.utils.data import DataLoader
 
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
+from spd.app.backend.lib.component_correlations import (
+    ComponentCorrelations,
+    get_correlations_path,
+)
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
+    ComponentCorrelationsResponse,
     ComponentProbeRequest,
     ComponentProbeResponse,
+    CorrelatedComponent,
     HarvestMetadata,
     ModelActivationContexts,
     SubcomponentActivationContexts,
@@ -236,3 +242,68 @@ def probe_component(
     token_strings = [loaded.token_strings[t] for t in token_ids]
 
     return ComponentProbeResponse(tokens=token_strings, ci_values=ci_values)
+
+
+# In-memory cache for correlations (keyed by run_id)
+_correlations_cache: dict[str, ComponentCorrelations] = {}
+
+
+def _get_correlations(run_id: str) -> ComponentCorrelations | None:
+    """Load correlations from cache or disk."""
+    if run_id in _correlations_cache:
+        return _correlations_cache[run_id]
+
+    path = get_correlations_path(run_id)
+    if not path.exists():
+        return None
+
+    correlations = ComponentCorrelations.load(path)
+    _correlations_cache[run_id] = correlations
+    return correlations
+
+
+@router.get("/correlations/{layer}/{component_idx}")
+@log_errors
+def get_component_correlations(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+    top_k: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> ComponentCorrelationsResponse | None:
+    """Get correlated components for a specific component.
+
+    Returns top-k correlations across different metrics (precision, recall, F1, Jaccard).
+    Returns None if correlations haven't been harvested for this run.
+    """
+    # Extract run_id from wandb_path (entity/project/run_id -> run_id)
+    run_id = loaded.run.wandb_path.split("/")[-1]
+    correlations = _get_correlations(run_id)
+
+    if correlations is None:
+        return None
+
+    component_key = f"{layer}:{component_idx}"
+
+    if component_key not in correlations.component_keys:
+        raise HTTPException(
+            status_code=404, detail=f"Component {component_key} not found in correlations"
+        )
+
+    return ComponentCorrelationsResponse(
+        precision=[
+            CorrelatedComponent(component_key=c.component_key, score=c.score)
+            for c in correlations.get_correlated(component_key, "precision", top_k)
+        ],
+        recall=[
+            CorrelatedComponent(component_key=c.component_key, score=c.score)
+            for c in correlations.get_correlated(component_key, "recall", top_k)
+        ],
+        f1=[
+            CorrelatedComponent(component_key=c.component_key, score=c.score)
+            for c in correlations.get_correlated(component_key, "f1", top_k)
+        ],
+        jaccard=[
+            CorrelatedComponent(component_key=c.component_key, score=c.score)
+            for c in correlations.get_correlated(component_key, "jaccard", top_k)
+        ],
+    )

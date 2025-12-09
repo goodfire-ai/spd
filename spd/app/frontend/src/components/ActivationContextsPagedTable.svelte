@@ -16,8 +16,7 @@
     let pageSize = $state(20);
     let tokenFilter = $state<string | null>(null);
 
-    // Number of examples (guard against null during transitions)
-    let nExamples = $derived(exampleTokens?.length ?? 0);
+    let nExamples = $derived(exampleTokens.length);
 
     // Update currentPage when page input changes
     function handlePageInput(event: Event) {
@@ -27,8 +26,7 @@
         if (!isNaN(valueNum) && valueNum >= 1 && valueNum <= totalPages) {
             currentPage = valueNum - 1;
         } else {
-            alert("something went wrong");
-            currentPage = 0;
+            throw new Error(`Invalid page number: ${value} (must be 1-${totalPages})`);
         }
     }
 

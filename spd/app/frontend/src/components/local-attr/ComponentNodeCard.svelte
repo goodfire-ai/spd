@@ -1,5 +1,6 @@
 <script lang="ts">
-    import type { ComponentDetail, ComponentSummary } from "../../lib/localAttributionsTypes";
+    import type { ComponentDetail, ComponentSummary, ComponentCorrelations } from "../../lib/localAttributionsTypes";
+    import { getComponentCorrelations } from "../../lib/localAttributionsApi";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import TokenHighlights from "../TokenHighlights.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
@@ -20,6 +21,27 @@
     // Expandable state for compact mode
     let expanded = $state(false);
 
+    // Correlations state
+    let correlations = $state<ComponentCorrelations | null>(null);
+    let correlationsLoading = $state(false);
+
+    // Fetch correlations when component changes
+    $effect(() => {
+        correlations = null;
+        correlationsLoading = true;
+
+        getComponentCorrelations(layer, cIdx, 10)
+            .then((data) => {
+                correlations = data;
+            })
+            .catch(() => {
+                // Silently ignore - correlations may not be harvested yet
+            })
+            .finally(() => {
+                correlationsLoading = false;
+            });
+    });
+
     const COMPACT_MAX_EXAMPLES = 5;
 
     // Show full paged table when not compact, or when compact but expanded
@@ -32,6 +54,12 @@
         indices.sort((a, b) => detail.pr_precisions[b] - detail.pr_precisions[a]);
         return indices.map((i) => ({ token: detail.pr_tokens[i], precision: detail.pr_precisions[i] }));
     });
+
+    // Helper to format component key for display
+    function formatComponentKey(key: string): string {
+        // "h.0.attn.q_proj:5" -> "h.0.attn.q_proj:5" (keep as-is for now)
+        return key;
+    }
 </script>
 
 <div class="component-node-card" class:compact>
@@ -105,6 +133,81 @@
                 </div>
             {/if}
         </div>
+
+        <!-- Component correlations -->
+        {#if correlations}
+            <h4>Correlated Components</h4>
+            <div class="correlations-grid">
+                {#if correlations.precision.length > 0}
+                    <div class="correlation-column">
+                        <h5>
+                            Precision
+                            <span class="math-notation">P(j | this)</span>
+                        </h5>
+                        <table class="data-table correlation-table">
+                            <tbody>
+                                {#each correlations.precision.slice(0, 5) as { component_key, score } (component_key)}
+                                    <tr>
+                                        <td><code>{formatComponentKey(component_key)}</code></td>
+                                        <td>{score.toFixed(3)}</td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    </div>
+                {/if}
+                {#if correlations.recall.length > 0}
+                    <div class="correlation-column">
+                        <h5>
+                            Recall
+                            <span class="math-notation">P(this | j)</span>
+                        </h5>
+                        <table class="data-table correlation-table">
+                            <tbody>
+                                {#each correlations.recall.slice(0, 5) as { component_key, score } (component_key)}
+                                    <tr>
+                                        <td><code>{formatComponentKey(component_key)}</code></td>
+                                        <td>{score.toFixed(3)}</td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    </div>
+                {/if}
+                {#if correlations.f1.length > 0}
+                    <div class="correlation-column">
+                        <h5>F1</h5>
+                        <table class="data-table correlation-table">
+                            <tbody>
+                                {#each correlations.f1.slice(0, 5) as { component_key, score } (component_key)}
+                                    <tr>
+                                        <td><code>{formatComponentKey(component_key)}</code></td>
+                                        <td>{score.toFixed(3)}</td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    </div>
+                {/if}
+                {#if correlations.jaccard.length > 0}
+                    <div class="correlation-column">
+                        <h5>Jaccard</h5>
+                        <table class="data-table correlation-table">
+                            <tbody>
+                                {#each correlations.jaccard.slice(0, 5) as { component_key, score } (component_key)}
+                                    <tr>
+                                        <td><code>{formatComponentKey(component_key)}</code></td>
+                                        <td>{score.toFixed(3)}</td>
+                                    </tr>
+                                {/each}
+                            </tbody>
+                        </table>
+                    </div>
+                {/if}
+            </div>
+        {:else if correlationsLoading}
+            <p class="loading-text">Loading correlations...</p>
+        {/if}
     {:else if isLoading}
         <p class="loading-text">Loading details...</p>
     {/if}
@@ -228,5 +331,38 @@
         color: var(--text-muted);
         font-family: var(--font-mono);
         letter-spacing: 0.05em;
+    }
+
+    .correlations-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: var(--space-3);
+        margin-top: var(--space-2);
+    }
+
+    .correlation-column h5 {
+        margin: 0 0 var(--space-1) 0;
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        font-weight: 600;
+        letter-spacing: 0.05em;
+    }
+
+    .correlation-column h5 .math-notation {
+        font-weight: 400;
+        font-style: italic;
+        color: var(--text-muted);
+        margin-left: var(--space-1);
+    }
+
+    .correlation-table {
+        font-size: var(--text-xs);
+    }
+
+    .correlation-table td:first-child {
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 </style>

@@ -287,3 +287,24 @@ class ComponentProbeResponse(BaseModel):
 
     tokens: list[str]
     ci_values: list[float]
+
+
+# =============================================================================
+# Component Correlation Models
+# =============================================================================
+
+
+class CorrelatedComponent(BaseModel):
+    """A component correlated with a query component."""
+
+    component_key: str
+    score: float
+
+
+class ComponentCorrelationsResponse(BaseModel):
+    """Correlation data for a component across different metrics."""
+
+    precision: list[CorrelatedComponent]
+    recall: list[CorrelatedComponent]
+    f1: list[CorrelatedComponent]
+    jaccard: list[CorrelatedComponent]

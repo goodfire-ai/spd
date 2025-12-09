@@ -73,7 +73,6 @@
         try {
             loadingTrainRun = true;
             loadedRun = null;
-            console.log("loading run", input);
             await api.loadRun(input, contextLength);
             // Set loading false before calling loadStatus, otherwise the guard returns early
             loadingTrainRun = false;
