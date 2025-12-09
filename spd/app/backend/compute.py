@@ -46,12 +46,12 @@ def compute_layer_alive_info(
     elif layer_name == "output":
         assert output_probs is not None
         assert output_probs.shape[0] == 1
-        alive_mask = output_probs[0] >= output_prob_threshold
+        alive_mask = output_probs[0] > output_prob_threshold
         alive_c_idxs = torch.where(alive_mask.any(dim=0))[0].tolist()
     else:
         ci = ci_lower_leaky[layer_name]
         assert ci.shape[0] == 1
-        alive_mask = ci[0] >= ci_threshold
+        alive_mask = ci[0] > ci_threshold
         alive_c_idxs = torch.where(alive_mask.any(dim=0))[0].tolist()
 
     return LayerAliveInfo(alive_mask, alive_c_idxs)
