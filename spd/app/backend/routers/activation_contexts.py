@@ -14,6 +14,8 @@ from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
+    ComponentProbeRequest,
+    ComponentProbeResponse,
     HarvestMetadata,
     ModelActivationContexts,
     SubcomponentActivationContexts,
@@ -187,3 +189,39 @@ def generate_activation_contexts(
         thread.join()
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.post("/probe")
+@log_errors
+def probe_component(
+    request: ComponentProbeRequest,
+    loaded: DepLoadedRun,
+) -> ComponentProbeResponse:
+    """Probe a component's CI values on custom text.
+
+    Fast endpoint for testing hypotheses about component activation.
+    Only requires a single forward pass.
+    """
+    import torch
+
+    from spd.app.backend.compute import compute_ci_only
+    from spd.utils.distributed_utils import get_device
+
+    device = get_device()
+
+    token_ids = loaded.tokenizer.encode(request.text, add_special_tokens=False)
+    assert len(token_ids) > 0, "Text produced no tokens"
+
+    tokens_tensor = torch.tensor([token_ids], device=device)
+
+    result = compute_ci_only(
+        model=loaded.model,
+        tokens=tokens_tensor,
+        sampling=loaded.config.sampling,
+    )
+
+    ci_tensor = result.ci_lower_leaky[request.layer]
+    ci_values = ci_tensor[0, :, request.component_idx].tolist()
+    token_strings = [loaded.token_strings[t] for t in token_ids]
+
+    return ComponentProbeResponse(tokens=token_strings, ci_values=ci_values)

@@ -243,3 +243,23 @@ class InterventionResponse(BaseModel):
 
     input_tokens: list[str]
     predictions_per_position: list[list[TokenPrediction]]
+
+
+# =============================================================================
+# Component Probe Models
+# =============================================================================
+
+
+class ComponentProbeRequest(BaseModel):
+    """Request to probe a component's CI on custom text."""
+
+    text: str
+    layer: str
+    component_idx: int
+
+
+class ComponentProbeResponse(BaseModel):
+    """Response with CI values for a component on custom text."""
+
+    tokens: list[str]
+    ci_values: list[float]

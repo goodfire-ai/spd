@@ -117,3 +117,9 @@ export type LayoutResult = {
     width: number;
     height: number;
 };
+
+// Component probe result
+export type ComponentProbeResult = {
+    tokens: string[];
+    ci_values: number[];
+};

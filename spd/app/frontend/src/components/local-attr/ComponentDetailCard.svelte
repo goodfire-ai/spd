@@ -1,6 +1,12 @@
 <script lang="ts">
-    import type { ComponentDetail, OutputProbEntry, ComponentSummary } from "../../lib/localAttributionsTypes";
-    import { getOutputHeaderColor } from "../../lib/colors";
+    import type {
+        ComponentDetail,
+        OutputProbEntry,
+        ComponentSummary,
+        ComponentProbeResult,
+    } from "../../lib/localAttributionsTypes";
+    import { getOutputHeaderColor, getTokenHighlightBg } from "../../lib/colors";
+    import { probeComponent } from "../../lib/localAttributionsApi";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import TokenHighlights from "../TokenHighlights.svelte";
 
@@ -24,6 +30,41 @@
 
     // Expandable state for compact mode
     let expanded = $state(false);
+
+    // Probe state
+    let probeText = $state("");
+    let probeResult = $state<ComponentProbeResult | null>(null);
+    let probeLoading = $state(false);
+    let probeError = $state<string | null>(null);
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function runProbe(text: string) {
+        if (!text.trim()) {
+            probeResult = null;
+            probeError = null;
+            return;
+        }
+
+        probeLoading = true;
+        probeError = null;
+
+        try {
+            probeResult = await probeComponent(text, layer, cIdx);
+        } catch (e) {
+            probeError = e instanceof Error ? e.message : "Failed to probe component";
+            probeResult = null;
+        } finally {
+            probeLoading = false;
+        }
+    }
+
+    function onProbeInput(e: Event) {
+        const target = e.target as HTMLInputElement;
+        probeText = target.value;
+
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => runProbe(probeText), 300);
+    }
 
     // For output nodes: get prob entry for single position or all positions
     let outputProbEntry = $derived.by(() => {
@@ -99,6 +140,33 @@
                 {summary.mean_ci.toFixed(4)}
             {/if}
         </p>
+
+        <!-- Probe section -->
+        <div class="probe-section">
+            <h4>Test Custom Text</h4>
+            <input
+                type="text"
+                class="probe-input"
+                placeholder="Enter text to test..."
+                value={probeText}
+                oninput={onProbeInput}
+            />
+            {#if probeLoading}
+                <p class="probe-status">Loading...</p>
+            {:else if probeError}
+                <p class="probe-error">{probeError}</p>
+            {:else if probeResult && probeResult.tokens.length > 0}
+                <div class="probe-result">
+                    <span class="probe-tokens"
+                        >{#each probeResult.tokens as tok, i (i)}<span
+                                class="probe-token"
+                                style="background-color:{getTokenHighlightBg(probeResult.ci_values[i])}"
+                                title="CI: {probeResult.ci_values[i].toFixed(4)}">{tok}</span
+                            >{/each}</span
+                    >
+                </div>
+            {/if}
+        </div>
 
         {#if detail}
             {#if detail.example_tokens?.length > 0}
@@ -338,5 +406,71 @@
         color: var(--text-muted);
         font-family: var(--font-mono);
         letter-spacing: 0.05em;
+    }
+
+    /* Probe section styles */
+    .probe-section {
+        margin: var(--space-3) 0;
+        padding-bottom: var(--space-3);
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .probe-section h4 {
+        margin-top: 0;
+    }
+
+    .probe-input {
+        width: 100%;
+        padding: var(--space-2);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-primary);
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
+        color: var(--text-primary);
+    }
+
+    .probe-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+
+    .probe-input::placeholder {
+        color: var(--text-muted);
+    }
+
+    .probe-status {
+        margin: var(--space-2) 0 0 0;
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+    }
+
+    .probe-error {
+        margin: var(--space-2) 0 0 0;
+        font-size: var(--text-sm);
+        color: var(--status-negative);
+        font-family: var(--font-mono);
+    }
+
+    .probe-result {
+        margin-top: var(--space-2);
+        overflow-x: auto;
+    }
+
+    .probe-tokens {
+        display: inline;
+        white-space: pre-wrap;
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+    }
+
+    .probe-token {
+        display: inline;
+        padding: 1px 0;
+        margin-right: 1px;
+        border-right: 1px solid var(--border-subtle);
+        white-space: pre;
+        cursor: help;
     }
 </style>

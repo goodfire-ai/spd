@@ -9,6 +9,7 @@ import type {
     ComponentDetail,
     SearchResult,
     TokenizeResult,
+    ComponentProbeResult,
 } from "./localAttributionsTypes";
 import { API_URL } from "./api";
 
@@ -297,4 +298,18 @@ export async function getGraphs(promptId: number, normalize: NormalizeType): Pro
     const url = new URL(`${API_URL}/api/graphs/${promptId}`);
     url.searchParams.set("normalize", normalize);
     return fetchJson<GraphData[]>(url.toString());
+}
+
+// Probe component CI on custom text
+
+export async function probeComponent(
+    text: string,
+    layer: string,
+    componentIdx: number,
+): Promise<ComponentProbeResult> {
+    return fetchJson<ComponentProbeResult>(`${API_URL}/api/activation_contexts/probe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, layer, component_idx: componentIdx }),
+    });
 }
