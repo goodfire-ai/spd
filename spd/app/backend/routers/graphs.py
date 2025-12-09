@@ -226,11 +226,12 @@ def compute_graph_stream(
                     ),
                 )
 
-                # Filter edges by ci_threshold before returning to client
-                edges = filter_edges_by_ci_threshold(raw_edges, prompt_id, ci_threshold, manager)
+                edges = filter_edges_by_ci_threshold(
+                    edges=raw_edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
+                )
 
                 # Apply normalization for response
-                edges = _normalize_edges(raw_edges, normalize)
+                edges = _normalize_edges(edges, normalize)
                 if len(edges) > GLOBAL_EDGE_LIMIT:
                     edges.sort(key=lambda e: abs(e.strength), reverse=True)
                     edges = edges[:GLOBAL_EDGE_LIMIT]
@@ -422,11 +423,12 @@ def compute_graph_optimized_stream(
                     ),
                 )
 
-                # Filter edges by ci_threshold before returning to client
-                edges = filter_edges_by_ci_threshold(raw_edges, prompt_id, ci_threshold, manager)
+                edges = filter_edges_by_ci_threshold(
+                    edges=raw_edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
+                )
 
                 # Apply normalization for response
-                edges = _remove_non_final_output_nodes(raw_edges, len(token_ids))
+                edges = _remove_non_final_output_nodes(edges, len(token_ids))
                 edges = _normalize_edges(edges, normalize)
                 if len(edges) > GLOBAL_EDGE_LIMIT:
                     edges.sort(key=lambda e: abs(e.strength), reverse=True)
@@ -491,12 +493,10 @@ def get_graphs(
 
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
-        # Filter edges by ci_threshold
         edges = filter_edges_by_ci_threshold(
             edges=graph.edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
         )
-        # Normalize and convert to API format
-        edges = _normalize_edges(graph.edges, normalize)
+        edges = _normalize_edges(edges=edges, normalize=normalize)
         if len(edges) > GLOBAL_EDGE_LIMIT:
             edges.sort(key=lambda e: abs(e.strength), reverse=True)
             edges = edges[:GLOBAL_EDGE_LIMIT]
