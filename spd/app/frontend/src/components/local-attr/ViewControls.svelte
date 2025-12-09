@@ -46,8 +46,10 @@
     });
 
     function applyCiThreshold() {
+        if (ciThresholdInput === "") return;
         const value = parseFloat(ciThresholdInput);
-        if (!isNaN(value) && value !== ciThreshold) {
+        if (isNaN(value)) throw new Error();
+        if (value !== ciThreshold) {
             onCiThresholdChange(value);
         }
     }

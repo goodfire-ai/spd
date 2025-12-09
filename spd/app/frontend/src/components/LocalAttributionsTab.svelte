@@ -71,7 +71,6 @@
     let computeOptions = $state<ComputeOptions>({
         maxMeanCI: 1.0,
         ciThreshold: 0,
-        normalizeEdges: "layer", // kept for compute, but view uses normalizeEdges state
         useOptimized: false,
         optimizeConfig: {
             labelTokenText: "",
@@ -434,7 +433,7 @@
                     {
                         promptId: activeCard.promptId,
                         labelToken: optConfig.labelTokenId,
-                        normalize: computeOptions.normalizeEdges,
+                        normalize: normalizeEdges,
                         impMinCoeff: optConfig.impMinCoeff,
                         ceLossCoeff: optConfig.ceLossCoeff,
                         steps: optConfig.steps,
@@ -456,7 +455,7 @@
                 data = await attrApi.computeGraphStreaming(
                     {
                         promptId: activeCard.promptId,
-                        normalize: computeOptions.normalizeEdges,
+                        normalize: normalizeEdges,
                         ciThreshold: computeOptions.ciThreshold,
                     },
                     (progress) => {
@@ -561,7 +560,6 @@
 
     async function handleNormalizeChange(value: attrApi.NormalizeType) {
         normalizeEdges = value;
-        computeOptions.normalizeEdges = value;
         await refetchAllGraphs();
     }
 
