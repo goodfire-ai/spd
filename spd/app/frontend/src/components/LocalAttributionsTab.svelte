@@ -205,9 +205,7 @@
             const storedGraphs = await attrApi.getGraphs(promptId, normalizeEdges, computeOptions.ciThreshold);
             graphs = storedGraphs.map((data, idx) => {
                 const isOptimized = !!data.optimization;
-                const label = isOptimized
-                    ? `Optimized (${data.optimization!.steps} steps)`
-                    : "Standard";
+                const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
                 return {
                     id: `graph-${idx}-${Date.now()}`,
                     label,
@@ -417,12 +415,14 @@
                 if (card.graphs.length === 0) return card;
 
                 try {
-                    const storedGraphs = await attrApi.getGraphs(card.promptId, normalizeEdges, computeOptions.ciThreshold);
+                    const storedGraphs = await attrApi.getGraphs(
+                        card.promptId,
+                        normalizeEdges,
+                        computeOptions.ciThreshold,
+                    );
                     const graphs = storedGraphs.map((data, idx) => {
                         const isOptimized = !!data.optimization;
-                        const label = isOptimized
-                            ? `Optimized (${data.optimization!.steps} steps)`
-                            : "Standard";
+                        const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
                         return {
                             id: `graph-${idx}-${Date.now()}`,
                             label,

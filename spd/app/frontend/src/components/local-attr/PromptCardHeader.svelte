@@ -37,13 +37,8 @@
         return options.useOptimized ? "Compute (Optimized)" : "Compute";
     });
 
-    // Local state for CI threshold input
-    let ciThresholdInput = $state(options.ciThreshold.toString());
-
-    // Sync input when options change externally
-    $effect(() => {
-        ciThresholdInput = options.ciThreshold.toString();
-    });
+    // Local state for CI threshold input - derives from options but can be overridden while typing
+    let ciThresholdInput = $derived(options.ciThreshold.toString());
 
     function applyCiThreshold() {
         const value = parseFloat(ciThresholdInput);
@@ -93,9 +88,7 @@
                     step={0.000001}
                 />
             </label>
-            <span class="info-icon" data-tooltip="Default output_prob_threshold=0.01"
-                >?</span
-            >
+            <span class="info-icon" data-tooltip="Default output_prob_threshold=0.01">?</span>
             <label class="checkbox">
                 <input
                     type="checkbox"
@@ -178,7 +171,6 @@
                 </label>
             {/if}
         </div>
-
     </div>
 
     <div class="graph-tabs">

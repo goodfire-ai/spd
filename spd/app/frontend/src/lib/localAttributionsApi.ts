@@ -297,11 +297,7 @@ export async function generatePrompts(
 
 // Fetch stored graphs for a prompt
 
-export async function getGraphs(
-    promptId: number,
-    normalize: NormalizeType,
-    ciThreshold: number,
-): Promise<GraphData[]> {
+export async function getGraphs(promptId: number, normalize: NormalizeType, ciThreshold: number): Promise<GraphData[]> {
     const url = new URL(`${API_URL}/api/graphs/${promptId}`);
     url.searchParams.set("normalize", normalize);
     url.searchParams.set("ci_threshold", String(ciThreshold));

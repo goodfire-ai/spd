@@ -12,7 +12,7 @@
     let loadingTrainRun = $state(false);
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
-    let trainWandbRunEntry = $state<string | null>('goodfire/spd/jyo9duz5');
+    let trainWandbRunEntry = $state<string | null>("goodfire/spd/jyo9duz5");
     let contextLength = $state<number | null>(8);
 
     let loadedRun = $state<LoadedRun | null>(null);
@@ -87,7 +87,7 @@
     function addPinnedNode(node: PinnedNode) {
         // Avoid duplicates
         const exists = pinnedNodes.some(
-            (n) => n.layer === node.layer && n.seqIdx === node.seqIdx && n.cIdx === node.cIdx
+            (n) => n.layer === node.layer && n.seqIdx === node.seqIdx && n.cIdx === node.cIdx,
         );
         if (!exists) {
             pinnedNodes = [...pinnedNodes, node];
@@ -146,7 +146,6 @@
                 {loadingTrainRun ? "..." : "Load"}
             </button>
         </form>
-
     </header>
 
     {#if loadedRun}

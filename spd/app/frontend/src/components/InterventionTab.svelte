@@ -88,7 +88,9 @@
         <div class="staged-nodes">
             <h3>Staged Nodes ({pinnedNodes.length})</h3>
             {#if pinnedNodes.length === 0}
-                <p class="empty-message">No nodes staged. Add nodes manually below or stage them from the Local Attributions tab.</p>
+                <p class="empty-message">
+                    No nodes staged. Add nodes manually below or stage them from the Local Attributions tab.
+                </p>
             {:else}
                 <div class="node-list">
                     {#each pinnedNodes as node, i (`${node.layer}:${node.seqIdx}:${node.cIdx}`)}
@@ -119,11 +121,7 @@
 
         <div class="input-section">
             <label for="text-input">Input Text:</label>
-            <textarea
-                id="text-input"
-                bind:value={text}
-                placeholder="Enter text to run through the model..."
-                rows={3}
+            <textarea id="text-input" bind:value={text} placeholder="Enter text to run through the model..." rows={3}
             ></textarea>
         </div>
 
