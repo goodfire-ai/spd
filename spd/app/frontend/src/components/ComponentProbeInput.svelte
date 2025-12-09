@@ -46,8 +46,8 @@
 
     // Re-run probe when layer or component changes (if there's text)
     $effect(() => {
-        void layer;
-        void componentIdx;
+        layer; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        componentIdx; // eslint-disable-line @typescript-eslint/no-unused-expressions
         probeResult = null;
         probeError = null;
         if (probeText.trim()) {

@@ -38,9 +38,8 @@
     .token-highlight::after {
         content: attr(data-ci);
         position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
+        top: calc(100% + 4px);
+        left: 0;
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
         color: var(--text-primary);
@@ -50,7 +49,6 @@
         white-space: nowrap;
         opacity: 0;
         pointer-events: none;
-        margin-bottom: 4px;
         z-index: 1000;
     }
 

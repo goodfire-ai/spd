@@ -262,7 +262,6 @@
     }
 
     .examples-scroll-container {
-        overflow-x: auto;
         scrollbar-width: none;
     }
 

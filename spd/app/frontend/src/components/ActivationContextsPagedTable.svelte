@@ -138,8 +138,6 @@
         padding: var(--space-2);
         background: var(--bg-inset);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
-        overflow-x: auto;
     }
 
     .examples-inner {
@@ -148,7 +146,6 @@
         gap: var(--space-2);
         width: max-content;
         min-width: 100%;
-        padding-top: var(--space-5); /* Room for CI tooltip on first row */
     }
 
     .controls {
@@ -158,7 +155,6 @@
         padding: var(--space-2);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
         flex-wrap: wrap;
     }
 

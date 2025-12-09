@@ -896,7 +896,6 @@
         text-align: center;
         padding: var(--space-4);
         font-family: var(--font-sans);
-        background: var(--bg-surface);
     }
 
     .empty-state p {
