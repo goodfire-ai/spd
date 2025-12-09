@@ -2,6 +2,8 @@
     // import { RenderScan } from "svelte-render-scan";
     import type { LoadedRun } from "./lib/api";
     import * as api from "./lib/api";
+    import * as attrApi from "./lib/localAttributionsApi";
+    import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
@@ -16,6 +18,10 @@
     let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
     let backendUser = $state<string | null>(null);
+
+    // Lifted activation contexts state - shared between tabs
+    let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
+    let activationContextsMissing = $state(false);
 
     async function loadStatus() {
         if (loadingTrainRun) return;
@@ -37,10 +43,26 @@
             if (!loadedRun) return;
             trainWandbRunEntry = loadedRun.wandb_path;
             contextLength = loadedRun.context_length;
+
+            // Load activation contexts summary
+            loadActivationContextsSummary();
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
             backendError = "Backend unreachable. Showing cached view.";
+        }
+    }
+
+    async function loadActivationContextsSummary() {
+        try {
+            activationContextsSummary = await attrApi.getActivationContextsSummary();
+            activationContextsMissing = false;
+        } catch (e) {
+            const status = (e as { status?: number }).status;
+            if (status === 404) {
+                activationContextsMissing = true;
+                activationContextsSummary = null;
+            }
         }
     }
 
@@ -139,10 +161,10 @@
         {#if loadedRun}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>
-                <LocalAttributionsTab />
+                <LocalAttributionsTab {activationContextsSummary} {activationContextsMissing} />
             </div>
             <div class="tab-content" class:hidden={activeTab !== "activation-contexts"}>
-                <ActivationContextsTab />
+                <ActivationContextsTab onHarvestComplete={loadActivationContextsSummary} />
             </div>
         {:else if loadingTrainRun}
             <div class="empty-state">

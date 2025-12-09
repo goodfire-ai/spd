@@ -17,7 +17,13 @@
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
-    // No props - all state managed internally now
+    // Props - activation contexts state is lifted to App.svelte
+    type Props = {
+        activationContextsSummary: ActivationContextsSummary | null;
+        activationContextsMissing: boolean;
+    };
+
+    let { activationContextsSummary, activationContextsMissing }: Props = $props();
 
     // Server state
     let loadedRun = $state<mainApi.LoadedRun | null>(null);
@@ -49,9 +55,7 @@
     let generateProgress = $state(0);
     let generateCount = $state(0);
 
-    // Activation contexts
-    let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
-    let activationContextsMissing = $state(false);
+    // Activation contexts - passed as props from App.svelte
 
     // View controls
     let topK = $state(200);
@@ -147,7 +151,6 @@
         if (currentRunId !== null && currentRunId !== previousRunId) {
             previousRunId = currentRunId;
             loadPromptsList();
-            loadActivationContextsSummary();
             promptCards = [];
             activeCardId = null;
         } else if (currentRunId === null && previousRunId !== null) {
@@ -155,8 +158,6 @@
             prompts = [];
             promptCards = [];
             activeCardId = null;
-            activationContextsSummary = null;
-            activationContextsMissing = false;
         }
     });
 
@@ -174,19 +175,6 @@
             prompts = await attrApi.listPrompts();
         } catch (e) {
             console.error("[LocalAttr] loadPromptsList FAILED:", e);
-        }
-    }
-
-    async function loadActivationContextsSummary() {
-        try {
-            activationContextsSummary = await attrApi.getActivationContextsSummary();
-            activationContextsMissing = false;
-        } catch (e) {
-            const status = (e as { status?: number }).status;
-            if (status === 404) {
-                activationContextsMissing = true;
-                activationContextsSummary = null;
-            }
         }
     }
 

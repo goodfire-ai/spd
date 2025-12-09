@@ -293,6 +293,18 @@ class LocalAttrDB:
         ).fetchone()
         return row is not None
 
+    def get_activation_contexts_config(
+        self, run_id: int
+    ) -> ActivationContextsGenerationConfig | None:
+        """Get the config used to generate activation contexts for a run."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT config FROM activation_contexts WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if row is None or row["config"] is None:
+            return None
+        return ActivationContextsGenerationConfig.model_validate(json.loads(row["config"]))
+
     # -------------------------------------------------------------------------
     # Prompt operations
     # -------------------------------------------------------------------------
