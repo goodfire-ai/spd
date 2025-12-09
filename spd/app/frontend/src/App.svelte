@@ -6,6 +6,7 @@
     import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
+    import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import { onMount } from "svelte";
 
@@ -89,7 +90,7 @@
         api.getWhoami().then((user) => (backendUser = user));
     });
 
-    let activeTab = $state<"prompts" | "activation-contexts" | null>(null);
+    let activeTab = $state<"prompts" | "activation-contexts" | "dataset-search" | null>(null);
     let showConfig = $state(false);
 </script>
 
@@ -137,8 +138,15 @@
         </form>
     </header>
 
-    {#if loadedRun}
-        <nav class="tab-bar">
+    <nav class="tab-bar">
+        <button
+            class="tab-button"
+            class:active={activeTab === "dataset-search"}
+            onclick={() => (activeTab = "dataset-search")}
+        >
+            Dataset Search
+        </button>
+        {#if loadedRun}
             <button class="tab-button" class:active={activeTab === "prompts"} onclick={() => (activeTab = "prompts")}>
                 Prompts
             </button>
@@ -149,8 +157,8 @@
             >
                 Activation Contexts
             </button>
-        </nav>
-    {/if}
+        {/if}
+    </nav>
 
     <main class="main-content">
         {#if backendError}
@@ -158,6 +166,10 @@
                 {backendError}
             </div>
         {/if}
+        <!-- Dataset Search tab - always available, doesn't require loaded run -->
+        <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
+            <DatasetSearchTab />
+        </div>
         {#if loadedRun}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>
@@ -167,11 +179,11 @@
                 <ActivationContextsTab onHarvestComplete={loadActivationContextsSummary} />
             </div>
         {:else if loadingTrainRun}
-            <div class="empty-state">
+            <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
                 <p>Loading run...</p>
             </div>
         {:else}
-            <div class="empty-state">
+            <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
                 <p>Enter a W&B Path above to get started</p>
             </div>
         {/if}

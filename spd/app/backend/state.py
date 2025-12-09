@@ -36,11 +36,20 @@ class RunState:
 
 
 @dataclass
+class DatasetSearchState:
+    """State for dataset search results (memory-only, no persistence)."""
+
+    results: list[dict[str, Any]]
+    metadata: dict[str, Any]
+
+
+@dataclass
 class AppState:
     """Server state. DB is always available; run_state is set after /api/runs/load."""
 
     db: LocalAttrDB
     run_state: RunState | None = field(default=None)
+    dataset_search_state: DatasetSearchState | None = field(default=None)
 
 
 class StateManager:

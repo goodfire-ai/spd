@@ -287,3 +287,36 @@ class ComponentProbeResponse(BaseModel):
 
     tokens: list[str]
     ci_values: list[float]
+
+
+# =============================================================================
+# Dataset Search Models
+# =============================================================================
+
+
+class DatasetSearchResult(BaseModel):
+    """A single search result from the SimpleStories dataset."""
+
+    story: str
+    occurrence_count: int
+    topic: str | None = None
+    theme: str | None = None
+
+
+class DatasetSearchMetadata(BaseModel):
+    """Metadata about a completed dataset search."""
+
+    query: str
+    split: str
+    total_results: int
+    search_time_seconds: float
+
+
+class DatasetSearchPage(BaseModel):
+    """Paginated results from a dataset search."""
+
+    results: list[DatasetSearchResult]
+    page: int
+    page_size: int
+    total_results: int
+    total_pages: int

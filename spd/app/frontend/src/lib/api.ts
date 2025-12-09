@@ -213,3 +213,102 @@ export async function deleteInterventionRun(runId: number): Promise<void> {
     }
 }
 
+// =============================================================================
+// Dataset Search
+// =============================================================================
+
+export type DatasetSearchResult = {
+    story: string;
+    occurrence_count: number;
+    topic: string | null;
+    theme: string | null;
+};
+
+export type DatasetSearchMetadata = {
+    query: string;
+    split: string;
+    total_results: number;
+    search_time_seconds: number;
+};
+
+export type DatasetSearchPage = {
+    results: DatasetSearchResult[];
+    page: number;
+    page_size: number;
+    total_results: number;
+    total_pages: number;
+};
+
+export async function searchDataset(
+    query: string,
+    split: string,
+    onProgress?: (progress: number) => void,
+): Promise<DatasetSearchMetadata> {
+    const url = new URL(`${API_URL}/api/dataset/search`);
+    url.searchParams.set("query", query);
+    url.searchParams.set("split", split);
+
+    const response = await fetch(url.toString(), { method: "POST" });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to search dataset");
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+        throw new Error("Response body is not readable");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let metadata: DatasetSearchMetadata | null = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+
+            const data = JSON.parse(line.substring(6));
+
+            if (data.type === "progress" && onProgress) {
+                onProgress(data.progress);
+            } else if (data.type === "complete") {
+                metadata = data.metadata as DatasetSearchMetadata;
+                await reader.cancel();
+                break;
+            } else if (data.type === "error") {
+                throw new Error(data.error);
+            }
+        }
+
+        if (metadata) break;
+    }
+
+    if (!metadata) {
+        throw new Error("No metadata received from search");
+    }
+
+    return metadata;
+}
+
+export async function getDatasetSearchPage(page: number, pageSize: number): Promise<DatasetSearchPage> {
+    const url = new URL(`${API_URL}/api/dataset/results`);
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("page_size", String(pageSize));
+
+    const response = await fetch(url.toString(), { method: "GET" });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get search results");
+    }
+
+    return (await response.json()) as DatasetSearchPage;
+}
+
