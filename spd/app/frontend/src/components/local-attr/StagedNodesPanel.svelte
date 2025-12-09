@@ -1,6 +1,7 @@
 <script lang="ts">
-    import type { PinnedNode, ComponentDetail, ActivationContextsSummary, OutputProbEntry } from "../../lib/localAttributionsTypes";
-    import ComponentDetailCard from "./ComponentDetailCard.svelte";
+    import type { PinnedNode, ComponentDetail, ActivationContextsSummary, ComponentSummary, OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import ComponentNodeCard from "./ComponentNodeCard.svelte";
+    import OutputNodeCard from "./OutputNodeCard.svelte";
 
     type Props = {
         stagedNodes: PinnedNode[];
@@ -31,10 +32,18 @@
     }
 
     function getTokenAtPosition(seqIdx: number): string {
-        if (seqIdx >= 0 && seqIdx < tokens.length) {
-            return tokens[seqIdx];
+        if (seqIdx < 0 || seqIdx >= tokens.length) {
+            throw new Error(`StagedNodesPanel: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`);
         }
-        return "?";
+        return tokens[seqIdx];
+    }
+
+    // Returns null if: not yet loaded, layer not in harvest, or component not above threshold
+    function findComponentSummary(layer: string, cIdx: number): ComponentSummary | null {
+        if (!activationContextsSummary) return null;
+        const layerSummaries = activationContextsSummary[layer];
+        if (!layerSummaries) return null;
+        return layerSummaries.find((s) => s.subcomponent_idx === cIdx) ?? null;
     }
 </script>
 
@@ -47,11 +56,9 @@
 
         <div class="staged-items">
             {#each stagedNodes as node, idx (`${node.layer}:${node.seqIdx}:${node.cIdx}-${idx}`)}
-                {@const cacheKey = `${node.layer}:${node.cIdx}`}
-                {@const detail = componentDetailsCache[cacheKey]}
-                {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
-                {@const summary = activationContextsSummary?.[node.layer]?.find((s) => s.subcomponent_idx === node.cIdx)}
                 {@const token = getTokenAtPosition(node.seqIdx)}
+                {@const isOutput = node.layer === "output"}
+                {@const isWte = node.layer === "wte"}
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">
@@ -61,16 +68,36 @@
                         <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>
                     </div>
 
-                    <ComponentDetailCard
-                        layer={node.layer}
-                        cIdx={node.cIdx}
-                        seqIdx={node.seqIdx}
-                        {detail}
-                        {isLoading}
-                        {outputProbs}
-                        {summary}
-                        compact
-                    />
+                    {#if isWte}
+                        <p class="wte-info">Input embedding at position {node.seqIdx}</p>
+                    {:else if isOutput}
+                        <OutputNodeCard cIdx={node.cIdx} {outputProbs} seqIdx={node.seqIdx} />
+                    {:else}
+                        {@const cacheKey = `${node.layer}:${node.cIdx}`}
+                        {@const detail = componentDetailsCache[cacheKey] ?? null}
+                        {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
+                        {@const summary = findComponentSummary(node.layer, node.cIdx)}
+                        {#if detail}
+                            <ComponentNodeCard
+                                layer={node.layer}
+                                cIdx={node.cIdx}
+                                seqIdx={node.seqIdx}
+                                {summary}
+                                {detail}
+                                compact={true}
+                            />
+                        {:else}
+                            <ComponentNodeCard
+                                layer={node.layer}
+                                cIdx={node.cIdx}
+                                seqIdx={node.seqIdx}
+                                {summary}
+                                detail={null}
+                                {isLoading}
+                                compact={true}
+                            />
+                        {/if}
+                    {/if}
                 </div>
             {/each}
         </div>
@@ -163,5 +190,12 @@
         background: var(--bg-inset);
         color: var(--text-primary);
         border-color: var(--border-strong);
+    }
+
+    .wte-info {
+        margin: var(--space-2) 0 0 0;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
     }
 </style>

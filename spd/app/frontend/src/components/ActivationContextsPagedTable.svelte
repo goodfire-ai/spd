@@ -255,10 +255,5 @@
         line-height: 1.8;
         color: var(--text-primary);
         white-space: nowrap;
-        border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .example-item:last-child {
-        border-bottom: none;
     }
 </style>
