@@ -52,6 +52,7 @@ def search_dataset(
     def search_thread() -> None:
         try:
             start_time = time.time()
+            search_query = query.lower()
 
             # Load dataset
             progress_queue.put({"type": "progress", "progress": 0.1})
@@ -64,31 +65,27 @@ def search_dataset(
 
             progress_queue.put({"type": "progress", "progress": 0.2})
 
-            # Filter with progress updates
-            search_query = query.lower()
-            results: list[dict[str, Any]] = []
-            last_progress_update = 0.2
+            # Filter using optimized HuggingFace filter with multiprocessing
+            filtered = dataset.filter(
+                lambda x: search_query in x["story"].lower(),
+                num_proc=8,
+            )
 
-            for i, item in enumerate(dataset):
-                # HuggingFace Dataset items are dict-like
+            progress_queue.put({"type": "progress", "progress": 0.9})
+
+            # Build results list with occurrence counts
+            results: list[dict[str, Any]] = []
+            for item in filtered:
                 item_dict: dict[str, Any] = dict(item)
                 story: str = item_dict["story"]
-                if search_query in story.lower():
-                    occurrence_count = story.lower().count(search_query)
-                    results.append(
-                        {
-                            "story": story,
-                            "occurrence_count": occurrence_count,
-                            "topic": item_dict.get("topic"),
-                            "theme": item_dict.get("theme"),
-                        }
-                    )
-
-                # Update progress every ~5%
-                progress = 0.2 + (i / total_stories) * 0.7
-                if progress - last_progress_update >= 0.05:
-                    progress_queue.put({"type": "progress", "progress": progress})
-                    last_progress_update = progress
+                results.append(
+                    {
+                        "story": story,
+                        "occurrence_count": story.lower().count(search_query),
+                        "topic": item_dict.get("topic"),
+                        "theme": item_dict.get("theme"),
+                    }
+                )
 
             progress_queue.put({"type": "progress", "progress": 0.95})
 
