@@ -169,6 +169,24 @@ def app_with_state():
         StateManager.reset()
 
 
+@pytest.fixture
+def app_with_prompt(app_with_state: TestClient) -> tuple[TestClient, int]:
+    """Extends app_with_state with a pre-created prompt for graph tests.
+
+    Returns:
+        Tuple of (TestClient, prompt_id)
+    """
+    manager = StateManager.get()
+    assert manager.run_state is not None
+    prompt_id = manager.db.add_custom_prompt(
+        run_id=manager.run_state.run.id,
+        token_ids=[0, 2, 1],
+        active_components={},  # Empty for testing
+        context_length=manager.run_state.context_length,
+    )
+    return app_with_state, prompt_id
+
+
 # -----------------------------------------------------------------------------
 # Health Check
 # -----------------------------------------------------------------------------
@@ -200,12 +218,12 @@ def test_get_status(app_with_state: TestClient):
 # -----------------------------------------------------------------------------
 
 
-def test_compute_graph(app_with_state: TestClient):
-    """Test computing attribution graph for token IDs."""
-    response = app_with_state.post(
+def test_compute_graph(app_with_prompt: tuple[TestClient, int]):
+    """Test computing attribution graph for a prompt."""
+    client, prompt_id = app_with_prompt
+    response = client.post(
         "/api/graphs",
-        json={"token_ids": [0, 2, 1]},
-        params={"normalize": False},
+        params={"prompt_id": prompt_id, "normalize": "none", "ci_threshold": 0.0},
     )
     assert response.status_code == 200
 
@@ -351,18 +369,20 @@ def test_activation_contexts_summary_after_generation(app_with_state: TestClient
 
 
 @pytest.mark.slow
-def test_compute_optimized_stream(app_with_state: TestClient):
+def test_compute_optimized_stream(app_with_prompt: tuple[TestClient, int]):
     """Test streaming optimized attribution computation."""
-    response = app_with_state.post(
+    client, prompt_id = app_with_prompt
+    response = client.post(
         "/api/graphs/optimized/stream",
-        json={"token_ids": [0, 2, 1]},
         params={
-            "label_token": [2],
+            "prompt_id": prompt_id,
+            "label_token": 2,
             "imp_min_coeff": 0.01,
             "ce_loss_coeff": 1.0,
             "steps": 5,  # Very few steps for testing
             "pnorm": 0.5,
-            "normalize": False,
+            "normalize": "none",
+            "ci_threshold": 0.0,
             "output_prob_threshold": 0.01,
         },
     )
