@@ -64,133 +64,132 @@
 </script>
 
 <div class="tab-content">
-    <div class="controls">
-        <div class="config-section">
-            <h4>Configuration</h4>
-            <div class="config-grid">
-                <div class="config-item">
-                    <label for="n-steps">Number of Batches:</label>
-                    <input
-                        id="n-steps"
-                        type="number"
-                        step="1"
-                        min="1"
-                        bind:value={config.n_batches}
-                        onkeydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="batch-size">Batch Size:</label>
-                    <input
-                        id="batch-size"
-                        type="number"
-                        step="1"
-                        min="1"
-                        bind:value={config.batch_size}
-                        onkeydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="n-tokens">Context Tokens Either Side:</label>
-                    <input
-                        id="n-tokens"
-                        type="number"
-                        step="1"
-                        min="0"
-                        bind:value={config.n_tokens_either_side}
-                        onkeydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="separation-tokens">Token Separation:</label>
-                    <input
-                        id="separation-tokens"
-                        type="number"
-                        step="1"
-                        min="0"
-                        bind:value={config.separation_tokens}
-                        onkeydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="importance-threshold">Importance Threshold:</label>
-                    <input
-                        id="importance-threshold"
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        max="1"
-                        bind:value={config.importance_threshold}
-                        onkeydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="topk-examples">Top K Examples:</label>
-                    <input
-                        id="topk-examples"
-                        type="number"
-                        step="1"
-                        min="1"
-                        bind:value={config.topk_examples}
-                        onkeydown={handleKeydown}
-                    />
-                </div>
-            </div>
-            <button class="load-button" onclick={loadContexts} disabled={loading}>
-                {loading ? "Loading..." : "Load Contexts"}
+    <div class="config-box">
+        <div class="config-header">
+            <span class="config-title">Configuration</span>
+            <button class="harvest-button" onclick={loadContexts} disabled={loading}>
+                {loading ? "Harvesting..." : "Harvest"}
             </button>
         </div>
-    </div>
-
-    {#if loading && progress}
-        <div class="progress-container">
-            <div class="progress-text">
-                Processing... {(progress.progress * 100).toFixed(1)}%
+        <div class="config-grid">
+            <div class="config-item">
+                <label for="n-steps">Batches</label>
+                <input
+                    id="n-steps"
+                    type="number"
+                    step="1"
+                    min="1"
+                    bind:value={config.n_batches}
+                    onkeydown={handleKeydown}
+                />
             </div>
-            <div class="progress-bar">
-                <div class="progress-fill" style="width: {progress.progress * 100}%"></div>
+            <div class="config-item">
+                <label for="batch-size">Batch Size</label>
+                <input
+                    id="batch-size"
+                    type="number"
+                    step="1"
+                    min="1"
+                    bind:value={config.batch_size}
+                    onkeydown={handleKeydown}
+                />
+            </div>
+            <div class="config-item">
+                <label for="n-tokens">Context Window</label>
+                <input
+                    id="n-tokens"
+                    type="number"
+                    step="1"
+                    min="0"
+                    bind:value={config.n_tokens_either_side}
+                    onkeydown={handleKeydown}
+                />
+            </div>
+            <div class="config-item">
+                <label for="separation-tokens">Separation</label>
+                <input
+                    id="separation-tokens"
+                    type="number"
+                    step="1"
+                    min="0"
+                    bind:value={config.separation_tokens}
+                    onkeydown={handleKeydown}
+                />
+            </div>
+            <div class="config-item">
+                <label for="importance-threshold">CI Threshold</label>
+                <input
+                    id="importance-threshold"
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    max="1"
+                    bind:value={config.importance_threshold}
+                    onkeydown={handleKeydown}
+                />
+            </div>
+            <div class="config-item">
+                <label for="topk-examples">Top K</label>
+                <input
+                    id="topk-examples"
+                    type="number"
+                    step="1"
+                    min="1"
+                    bind:value={config.topk_examples}
+                    onkeydown={handleKeydown}
+                />
             </div>
         </div>
-    {:else if loading}
-        <div class="loading">Loading...</div>
-    {/if}
+        {#if loading && progress}
+            <div class="progress-section">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {progress.progress * 100}%"></div>
+                </div>
+                <span class="progress-text">{(progress.progress * 100).toFixed(0)}%</span>
+            </div>
+        {/if}
+    </div>
 
-    {#if harvestMetadata}
-        <ActivationContextsViewer {harvestMetadata} />
-    {/if}
+    <div class="results-box">
+        {#if loading && !progress}
+            <div class="empty-state">Loading...</div>
+        {:else if harvestMetadata}
+            <ActivationContextsViewer {harvestMetadata} />
+        {:else}
+            <div class="empty-state">
+                <p>No activation contexts loaded</p>
+                <p class="hint">Click Harvest to generate contexts from training data</p>
+            </div>
+        {/if}
+    </div>
 </div>
 
 <style>
     .tab-content {
         display: flex;
         flex-direction: column;
-        gap: var(--space-2);
-        padding: var(--space-3);
+        flex: 1;
+        min-height: 0;
+        gap: var(--space-4);
+        padding: var(--space-6);
     }
 
-    .controls {
+    .config-box {
         display: flex;
-        gap: var(--space-2);
-        padding: var(--space-3);
-        background: var(--bg-surface);
+        flex-direction: column;
+        gap: var(--space-3);
+        padding: var(--space-4);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
-        flex-direction: column;
+        background: var(--bg-inset);
     }
 
-    .config-section {
+    .config-header {
         display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
+        justify-content: space-between;
+        align-items: center;
     }
 
-    .config-section h4 {
-        margin: 0;
+    .config-title {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
@@ -198,9 +197,9 @@
     }
 
     .config-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-        gap: var(--space-2);
+        display: flex;
+        gap: var(--space-4);
+        flex-wrap: wrap;
     }
 
     .config-item {
@@ -210,16 +209,16 @@
     }
 
     .config-item label {
-        font-size: var(--text-sm);
+        font-size: var(--text-xs);
         font-family: var(--font-sans);
-        color: var(--text-secondary);
+        color: var(--text-muted);
         font-weight: 500;
     }
 
     .config-item input {
+        width: 80px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         background: var(--bg-elevated);
@@ -231,59 +230,80 @@
         border-color: var(--accent-primary-dim);
     }
 
-    .load-button {
-        padding: var(--space-2) var(--space-4);
+    .harvest-button {
+        padding: var(--space-1) var(--space-3);
         border: none;
         background: var(--accent-primary);
         color: white;
         font-weight: 500;
-        align-self: flex-start;
+        font-size: var(--text-sm);
     }
 
-    .load-button:hover:not(:disabled) {
+    .harvest-button:hover:not(:disabled) {
         background: var(--accent-primary-dim);
     }
 
-    .load-button:disabled {
+    .harvest-button:disabled {
         background: var(--border-default);
         color: var(--text-muted);
     }
 
-    .progress-container {
-        padding: var(--space-3);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
-    }
-
-    .progress-text {
-        margin-bottom: var(--space-2);
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
-        font-weight: 500;
+    .progress-section {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
     }
 
     .progress-bar {
-        width: 100%;
+        flex: 1;
         height: 4px;
         background: var(--border-default);
-        border-radius: 2px;
         overflow: hidden;
     }
 
     .progress-fill {
         height: 100%;
         background: var(--accent-primary);
-        border-radius: 2px;
         transition: width 0.15s ease-out;
     }
 
-    .loading {
-        padding: var(--space-3);
-        text-align: center;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
+    .progress-text {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
         color: var(--text-muted);
+        min-width: 3ch;
+    }
+
+    .results-box {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        padding: var(--space-4);
+        border: 1px solid var(--border-default);
+        background: var(--bg-inset);
+        overflow-y: auto;
+    }
+
+    .empty-state {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        text-align: center;
+        font-family: var(--font-sans);
+    }
+
+    .empty-state p {
+        margin: var(--space-1) 0;
+        font-size: var(--text-base);
+    }
+
+    .empty-state .hint {
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+        font-family: var(--font-mono);
     }
 </style>

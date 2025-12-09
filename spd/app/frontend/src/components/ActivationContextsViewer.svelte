@@ -110,51 +110,51 @@
     });
 </script>
 
-<div class="layer-select-section">
-    <label for="layer-select">Layer:</label>
-    <select id="layer-select" bind:value={selectedLayer}>
-        {#each availableLayers as layer (layer)}
-            <option value={layer}>{layer}</option>
-        {/each}
-    </select>
-</div>
+<div class="viewer-content">
+    <div class="controls-row">
+        <div class="layer-select">
+            <label for="layer-select">Layer:</label>
+            <select id="layer-select" bind:value={selectedLayer}>
+                {#each availableLayers as layer (layer)}
+                    <option value={layer}>{layer}</option>
+                {/each}
+            </select>
+        </div>
 
-<div class="pagination-controls">
-    <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input
-        type="number"
-        min="1"
-        max={totalPages}
-        value={currentPage + 1}
-        oninput={handlePageInput}
-        class="page-input"
-    />
-    <span>of {totalPages}</span>
-    <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
-</div>
+        <div class="pagination">
+            <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
+            <input
+                type="number"
+                min="1"
+                max={totalPages}
+                value={currentPage + 1}
+                oninput={handlePageInput}
+                class="page-input"
+            />
+            <span>of {totalPages}</span>
+            <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+        </div>
+    </div>
 
-{#if loadingComponent}
-    <div class="loading">Loading component data...</div>
-{:else if currentComponent && currentMetadata}
-    <div class="subcomponent-section-header">
-        <h4>
-            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
-                ? currentMetadata.mean_ci.toExponential(2)
-                : currentMetadata.mean_ci.toFixed(3)})
-        </h4>
+    {#if loadingComponent}
+        <div class="loading">Loading component data...</div>
+    {:else if currentComponent && currentMetadata}
+        <div class="component-section">
+            <h4>
+                Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
+                    ? currentMetadata.mean_ci.toExponential(2)
+                    : currentMetadata.mean_ci.toFixed(3)})
+            </h4>
 
-        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
-
-        {#if densities != null}
-            <div class="token-densities">
-                <div class="token-densities-header">
-                    <h5>
-                        Tokens
-                        {currentComponent.pr_tokens.length > N_TOKENS_TO_DISPLAY
-                            ? `(top ${N_TOKENS_TO_DISPLAY} of ${currentComponent.pr_tokens.length})`
-                            : ""}
-                    </h5>
-                    <div class="metric-toggle">
+            {#if densities != null}
+                <div class="token-densities">
+                    <div class="token-densities-header">
+                        <h5>
+                            Tokens
+                            {currentComponent.pr_tokens.length > N_TOKENS_TO_DISPLAY
+                                ? `(top ${N_TOKENS_TO_DISPLAY} of ${currentComponent.pr_tokens.length})`
+                                : ""}
+                        </h5>
                         <div class="toggle-buttons">
                             <button class:active={metricMode === "recall"} onclick={() => (metricMode = "recall")}>
                                 Recall
@@ -169,44 +169,54 @@
                             </button>
                         </div>
                     </div>
-                </div>
-                <div class="densities-grid">
-                    {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
-                        {@const value = metricMode === "recall" ? recall : precision}
-                        <div class="density-item">
-                            <span class="token">{token}</span>
-                            <div class="density-bar-container">
-                                <div class="density-bar" style="width: {value * 100}%"></div>
+                    <div class="densities-grid">
+                        {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
+                            {@const value = metricMode === "recall" ? recall : precision}
+                            <div class="density-item">
+                                <span class="token">{token}</span>
+                                <div class="density-bar-container">
+                                    <div class="density-bar" style="width: {value * 100}%"></div>
+                                </div>
+                                <span class="density-value">{(value * 100).toFixed(1)}%</span>
                             </div>
-                            <span class="density-value">{(value * 100).toFixed(1)}%</span>
-                        </div>
-                    {/each}
+                        {/each}
+                    </div>
                 </div>
-            </div>
-        {/if}
+            {/if}
 
-        <ActivationContextsPagedTable
-            exampleTokens={currentComponent.example_tokens}
-            exampleCi={currentComponent.example_ci}
-            exampleActivePos={currentComponent.example_active_pos}
-            activatingTokens={currentComponent.pr_tokens}
-        />
-    </div>
-{/if}
+            <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
+
+            <ActivationContextsPagedTable
+                exampleTokens={currentComponent.example_tokens}
+                exampleCi={currentComponent.example_ci}
+                exampleActivePos={currentComponent.example_active_pos}
+                activatingTokens={currentComponent.pr_tokens}
+            />
+        </div>
+    {/if}
+</div>
 
 <style>
-    .layer-select-section {
+    .viewer-content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+    }
+
+    .controls-row {
         display: flex;
         align-items: center;
-        gap: var(--space-2);
-        padding: var(--space-2);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
+        gap: var(--space-4);
         flex-wrap: wrap;
     }
 
-    .layer-select-section label {
+    .layer-select {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .layer-select label {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
@@ -215,14 +225,13 @@
 
     #layer-select {
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
         padding: var(--space-1) var(--space-2);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         background: var(--bg-elevated);
         color: var(--text-primary);
         cursor: pointer;
-        min-width: 200px;
+        min-width: 180px;
     }
 
     #layer-select:focus {
@@ -230,66 +239,30 @@
         border-color: var(--accent-primary-dim);
     }
 
-    .toggle-buttons {
-        display: flex;
-        gap: 0;
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .toggle-buttons button {
-        padding: var(--space-1) var(--space-2);
-        border: none;
-        border-radius: 0;
-        background: var(--bg-elevated);
-        color: var(--text-secondary);
-        border-right: 1px solid var(--border-default);
-    }
-
-    .toggle-buttons button:last-child {
-        border-right: none;
-    }
-
-    .toggle-buttons button:hover:not(.active) {
-        background: var(--bg-inset);
-        color: var(--text-primary);
-    }
-
-    .toggle-buttons button.active {
-        background: var(--accent-primary);
-        color: white;
-        font-weight: 500;
-    }
-
-    .pagination-controls {
+    .pagination {
         display: flex;
         align-items: center;
         gap: var(--space-2);
-        padding: var(--space-2);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
     }
 
-    .pagination-controls button {
+    .pagination button {
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);
         color: var(--text-secondary);
     }
 
-    .pagination-controls button:hover:not(:disabled) {
-        background: var(--bg-inset);
+    .pagination button:hover:not(:disabled) {
+        background: var(--bg-surface);
         color: var(--text-primary);
         border-color: var(--border-strong);
     }
 
-    .pagination-controls button:disabled {
+    .pagination button:disabled {
         opacity: 0.5;
     }
 
-    .pagination-controls span {
+    .pagination span {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-muted);
@@ -300,7 +273,6 @@
         width: 50px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
         text-align: center;
         font-size: var(--text-sm);
         font-family: var(--font-mono);
@@ -320,13 +292,13 @@
         margin: 0;
     }
 
-    .subcomponent-section-header {
+    .component-section {
         display: flex;
         flex-direction: column;
-        gap: var(--space-2);
+        gap: var(--space-3);
     }
 
-    .subcomponent-section-header h4 {
+    .component-section h4 {
         margin: 0;
         font-size: var(--text-sm);
         font-family: var(--font-sans);
@@ -335,17 +307,15 @@
     }
 
     .token-densities {
-        padding: var(--space-3);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
     }
 
     .token-densities-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: var(--space-2);
         gap: var(--space-2);
         flex-wrap: wrap;
     }
@@ -356,6 +326,36 @@
         font-family: var(--font-sans);
         color: var(--text-secondary);
         font-weight: 600;
+    }
+
+    .toggle-buttons {
+        display: flex;
+        gap: 0;
+        border: 1px solid var(--border-default);
+        overflow: hidden;
+    }
+
+    .toggle-buttons button {
+        padding: var(--space-1) var(--space-2);
+        border: none;
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        border-right: 1px solid var(--border-default);
+    }
+
+    .toggle-buttons button:last-child {
+        border-right: none;
+    }
+
+    .toggle-buttons button:hover:not(.active) {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+    }
+
+    .toggle-buttons button.active {
+        background: var(--accent-primary);
+        color: white;
+        font-weight: 500;
     }
 
     .math-notation {
@@ -392,14 +392,12 @@
     .density-bar-container {
         height: 4px;
         background: var(--border-default);
-        border-radius: 2px;
         overflow: hidden;
     }
 
     .density-bar {
         height: 100%;
         background: var(--status-info);
-        border-radius: 2px;
         transition: width 0.15s ease-out;
     }
 

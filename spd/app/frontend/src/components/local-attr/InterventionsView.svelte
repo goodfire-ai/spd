@@ -66,6 +66,12 @@
     let tooltipPos = $state({ x: 0, y: 0 });
     let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
+    // Drag-to-select state
+    let isDragging = $state(false);
+    let dragStart = $state<{ x: number; y: number } | null>(null);
+    let dragCurrent = $state<{ x: number; y: number } | null>(null);
+    let svgElement: SVGSVGElement | null = null;
+
     // Parse layer name
     function parseLayer(name: string): LayerInfo {
         if (name === "wte") return { name, block: -1, type: "embed", subtype: "wte" };
@@ -303,6 +309,94 @@
         hoveredNode = null;
     }
 
+    // Drag-to-select handlers
+    function getSvgPoint(event: MouseEvent): { x: number; y: number } | null {
+        if (!svgElement) return null;
+        const rect = svgElement.getBoundingClientRect();
+        return {
+            x: event.clientX - rect.left + svgElement.parentElement!.scrollLeft,
+            y: event.clientY - rect.top + svgElement.parentElement!.scrollTop,
+        };
+    }
+
+    function handleSvgMouseDown(event: MouseEvent) {
+        // Only start drag on left mouse button and not on a node
+        if (event.button !== 0) return;
+        const target = event.target as Element;
+        if (target.closest(".node-group")) return;
+
+        const point = getSvgPoint(event);
+        if (!point) return;
+
+        isDragging = true;
+        dragStart = point;
+        dragCurrent = point;
+    }
+
+    function handleSvgMouseMove(event: MouseEvent) {
+        if (!isDragging) return;
+        dragCurrent = getSvgPoint(event);
+    }
+
+    function handleSvgMouseUp() {
+        if (!isDragging || !dragStart || !dragCurrent) {
+            isDragging = false;
+            dragStart = null;
+            dragCurrent = null;
+            return;
+        }
+
+        // Calculate selection rectangle bounds
+        const minX = Math.min(dragStart.x, dragCurrent.x);
+        const maxX = Math.max(dragStart.x, dragCurrent.x);
+        const minY = Math.min(dragStart.y, dragCurrent.y);
+        const maxY = Math.max(dragStart.y, dragCurrent.y);
+
+        // Only select if drag was meaningful (more than a few pixels)
+        const dragDistance = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2);
+        if (dragDistance > 5) {
+            // Find nodes within the selection rectangle
+            const nodesToToggle: string[] = [];
+            for (const nodeKey of interventableNodes) {
+                const pos = layout.nodePositions[nodeKey];
+                if (!pos) continue;
+
+                // Check if node center is within selection rect
+                if (pos.x >= minX && pos.x <= maxX && pos.y >= minY && pos.y <= maxY) {
+                    nodesToToggle.push(nodeKey);
+                }
+            }
+
+            // Toggle selection for nodes in rect
+            if (nodesToToggle.length > 0) {
+                const newSelection = new Set(graph.composerSelection);
+                for (const nodeKey of nodesToToggle) {
+                    if (newSelection.has(nodeKey)) {
+                        newSelection.delete(nodeKey);
+                    } else {
+                        newSelection.add(nodeKey);
+                    }
+                }
+                onSelectionChange(newSelection);
+            }
+        }
+
+        isDragging = false;
+        dragStart = null;
+        dragCurrent = null;
+    }
+
+    // Derived selection rectangle for rendering
+    const selectionRect = $derived.by(() => {
+        if (!isDragging || !dragStart || !dragCurrent) return null;
+        return {
+            x: Math.min(dragStart.x, dragCurrent.x),
+            y: Math.min(dragStart.y, dragCurrent.y),
+            width: Math.abs(dragCurrent.x - dragStart.x),
+            height: Math.abs(dragCurrent.y - dragStart.y),
+        };
+    });
+
     // Edge rendering
     function getEdgePath(src: string, tgt: string): string {
         const srcPos = layout.nodePositions[src];
@@ -369,10 +463,19 @@
             </div>
         </div>
 
-        <div class="composer-hint">Click to toggle selection</div>
+        <div class="composer-hint">Click to toggle, drag to select multiple</div>
 
         <div class="composer-graph">
-            <svg width={layout.width} height={layout.height}>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <svg
+                bind:this={svgElement}
+                width={layout.width}
+                height={layout.height}
+                onmousedown={handleSvgMouseDown}
+                onmousemove={handleSvgMouseMove}
+                onmouseup={handleSvgMouseUp}
+                onmouseleave={handleSvgMouseUp}
+            >
                 <!-- Token headers -->
                 {#each tokens as token, pos (pos)}
                     {@const x = layout.seqXStarts[pos]}
@@ -484,6 +587,21 @@
                         {/if}
                     {/each}
                 </g>
+
+                <!-- Selection rectangle -->
+                {#if selectionRect}
+                    <rect
+                        class="selection-rect"
+                        x={selectionRect.x}
+                        y={selectionRect.y}
+                        width={selectionRect.width}
+                        height={selectionRect.height}
+                        fill="rgba(99, 102, 241, 0.1)"
+                        stroke={colors.accent}
+                        stroke-width="1"
+                        stroke-dasharray="4 2"
+                    />
+                {/if}
             </svg>
         </div>
     </div>
@@ -713,6 +831,10 @@
         overflow: auto;
         background: var(--bg-inset);
         border: 1px solid var(--border-subtle);
+    }
+
+    .composer-graph svg {
+        cursor: crosshair;
     }
 
     .node-group {
