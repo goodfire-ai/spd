@@ -1,4 +1,5 @@
 <script lang="ts">
+    import type { SvelteSet } from "svelte/reactivity";
     import * as mainApi from "../lib/api";
     import * as attrApi from "../lib/localAttributionsApi";
     import {
@@ -288,7 +289,7 @@
     }
 
     // Update composer selection for the active graph
-    async function handleComposerSelectionChange(selection: Set<string>) {
+    async function handleComposerSelectionChange(selection: SvelteSet<string>) {
         if (!activeCard || !activeGraph) return;
 
         // Update local state immediately
