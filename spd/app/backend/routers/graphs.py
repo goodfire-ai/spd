@@ -107,9 +107,6 @@ def filter_edges_by_ci_threshold(
     Returns:
         Filtered list of edges
     """
-    if ci_threshold <= 0:
-        return edges
-
     ci_lookup = _get_ci_lookup(prompt_id, manager)
 
     return [
@@ -508,7 +505,7 @@ def process_edges_for_response(
 def get_graphs(
     prompt_id: int,
     normalize: Annotated[NormalizeType, Query()],
-    ci_threshold: Annotated[float, Query()],
+    ci_threshold: Annotated[float, Query(ge=0)],
     loaded: DepLoadedRun,
     manager: DepStateManager,
 ) -> list[GraphData | GraphDataWithOptimization]:
