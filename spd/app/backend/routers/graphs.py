@@ -120,7 +120,7 @@ def filter_edges_by_ci_threshold(
     ]
 
 
-def compute_edge_stats(edges: list[EdgeData]) -> tuple[dict[str, float], float]:
+def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
     """Compute node importance and max absolute edge value.
 
     Returns:
@@ -129,10 +129,12 @@ def compute_edge_stats(edges: list[EdgeData]) -> tuple[dict[str, float], float]:
     importance: dict[str, float] = {}
     max_abs_attr = 0.0
     for edge in edges:
-        val_sq = edge.val * edge.val
-        importance[edge.src] = importance.get(edge.src, 0.0) + val_sq
-        importance[edge.tgt] = importance.get(edge.tgt, 0.0) + val_sq
-        abs_val = abs(edge.val)
+        val_sq = edge.strength * edge.strength
+        src_key = str(edge.source)
+        tgt_key = str(edge.target)
+        importance[src_key] = importance.get(src_key, 0.0) + val_sq
+        importance[tgt_key] = importance.get(tgt_key, 0.0) + val_sq
+        abs_val = abs(edge.strength)
         if abs_val > max_abs_attr:
             max_abs_attr = abs_val
     return importance, max_abs_attr
@@ -226,23 +228,21 @@ def compute_graph_stream(
                     ),
                 )
 
-                edges = filter_edges_by_ci_threshold(
-                    edges=raw_edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
+                # Process edges for response
+                edges_data, node_importance, max_abs_attr = process_edges_for_response(
+                    edges=raw_edges,
+                    normalize=normalize,
+                    num_tokens=len(token_ids),
+                    prompt_id=prompt_id,
+                    ci_threshold=ci_threshold,
+                    manager=manager,
+                    is_optimized=False,
                 )
-
-                # Apply normalization for response
-                edges = _normalize_edges(edges, normalize)
-                if len(edges) > GLOBAL_EDGE_LIMIT:
-                    edges.sort(key=lambda e: abs(e.strength), reverse=True)
-                    edges = edges[:GLOBAL_EDGE_LIMIT]
-
-                edges_typed = [_edge_to_edge_data(e) for e in edges]
-                node_importance, max_abs_attr = compute_edge_stats(edges_typed)
 
                 response_data = GraphData(
                     id=prompt_id,
                     tokens=token_strings,
-                    edges=edges_typed,
+                    edges=edges_data,
                     outputProbs=raw_output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
@@ -423,24 +423,20 @@ def compute_graph_optimized_stream(
                     ),
                 )
 
-                edges = filter_edges_by_ci_threshold(
-                    edges=raw_edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
+                edges_data, node_importance, max_abs_attr = process_edges_for_response(
+                    edges=raw_edges,
+                    normalize=normalize,
+                    num_tokens=len(token_ids),
+                    prompt_id=prompt_id,
+                    ci_threshold=ci_threshold,
+                    manager=manager,
+                    is_optimized=True,
                 )
-
-                # Apply normalization for response
-                edges = _remove_non_final_output_nodes(edges, len(token_ids))
-                edges = _normalize_edges(edges, normalize)
-                if len(edges) > GLOBAL_EDGE_LIMIT:
-                    edges.sort(key=lambda e: abs(e.strength), reverse=True)
-                    edges = edges[:GLOBAL_EDGE_LIMIT]
-
-                edges_typed = [_edge_to_edge_data(e) for e in edges]
-                node_importance, max_abs_attr = compute_edge_stats(edges_typed)
 
                 response_data = GraphDataWithOptimization(
                     id=prompt_id,
                     tokens=token_strings,
-                    edges=edges_typed,
+                    edges=edges_data,
                     outputProbs=raw_output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
@@ -464,9 +460,47 @@ def compute_graph_optimized_stream(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-def _remove_non_final_output_nodes(edges: list[Edge], num_tokens: int) -> list[Edge]:
-    """Remove edges that are not final output nodes."""
-    return [edge for edge in edges if edge.target.seq_pos == num_tokens - 1]
+def process_edges_for_response(
+    edges: list[Edge],
+    normalize: NormalizeType,
+    num_tokens: int,
+    prompt_id: int,
+    ci_threshold: float,
+    manager: DepStateManager,
+    is_optimized: bool,
+    edge_limit: int = GLOBAL_EDGE_LIMIT,
+) -> tuple[list[EdgeData], dict[str, float], float]:
+    """Single source of truth for edge processing pipeline.
+
+    Applies filtering, normalization, limiting, and computes stats.
+    Guarantees identical processing for compute and retrieval paths.
+
+    Args:
+        edges: Raw edges from computation or database
+        normalize: Normalization type ("none", "target", "layer")
+        num_tokens: Number of tokens in the prompt (for filtering)
+        is_optimized: Whether this is an optimized graph (applies additional filtering)
+        edge_limit: Maximum number of edges to return
+
+    Returns:
+        (edges_data, node_importance, max_abs_attr)
+    """
+    if is_optimized:
+        final_seq_pos = num_tokens - 1
+        edges = [edge for edge in edges if edge.target.seq_pos == final_seq_pos]
+
+    edges = filter_edges_by_ci_threshold(
+        edges=edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
+    )
+
+    edges = _normalize_edges(edges, normalize)
+    node_importance, max_abs_attr = compute_edge_stats(edges)
+    # Clip to edge limit for response
+    if len(edges) > edge_limit:
+        print(f"[WARNING] Edge limit {edge_limit} exceeded ({len(edges)} edges), truncating")
+        edges = sorted(edges, key=lambda e: abs(e.strength), reverse=True)[:edge_limit]
+    edges_data = [_edge_to_edge_data(e) for e in edges]
+    return edges_data, node_importance, max_abs_attr
 
 
 @router.get("/{prompt_id}")
@@ -491,42 +525,46 @@ def get_graphs(
     token_strings = [loaded.token_strings[t] for t in prompt.token_ids]
     stored_graphs = db.get_graphs(prompt_id)
 
+    num_tokens = len(prompt.token_ids)
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
-        edges = filter_edges_by_ci_threshold(
-            edges=graph.edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
+        is_optimized = graph.optimization_params is not None
+        edges_data, node_importance, max_abs_attr = process_edges_for_response(
+            edges=graph.edges,
+            normalize=normalize,
+            num_tokens=num_tokens,
+            prompt_id=prompt_id,
+            ci_threshold=ci_threshold,
+            manager=manager,
+            is_optimized=is_optimized,
         )
-        edges = _normalize_edges(edges=edges, normalize=normalize)
-        if len(edges) > GLOBAL_EDGE_LIMIT:
-            edges.sort(key=lambda e: abs(e.strength), reverse=True)
-            edges = edges[:GLOBAL_EDGE_LIMIT]
-        edges_data = [_edge_to_edge_data(e) for e in edges]
 
-        node_importance, max_abs_attr = compute_edge_stats(edges_data)
-
-        if graph.optimization_params is None:
+        if not is_optimized:
             # Standard graph
             results.append(
                 GraphData(
-                    id=prompt_id,
+                    id=graph.id,
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    composerSelection=graph.composer_selection,
                 )
             )
         else:
             # Optimized graph
+            assert graph.optimization_params is not None
             assert graph.optimization_stats is not None
             results.append(
                 GraphDataWithOptimization(
-                    id=prompt_id,
+                    id=graph.id,
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    composerSelection=graph.composer_selection,
                     optimization=OptimizationResult(
                         label_token=graph.optimization_params.label_token,
                         label_str=loaded.token_strings[graph.optimization_params.label_token],

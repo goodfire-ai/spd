@@ -17,3 +17,19 @@ export type InterventionResponse = {
     input_tokens: string[];
     predictions_per_position: TokenPrediction[][];
 };
+
+/** Persisted intervention run from the server */
+export type InterventionRunSummary = {
+    id: number;
+    selected_nodes: string[]; // node keys (layer:seq:cIdx)
+    result: InterventionResponse;
+    created_at: string;
+};
+
+/** Request to run and save an intervention */
+export type RunInterventionRequest = {
+    graph_id: number;
+    text: string;
+    selected_nodes: string[];
+    top_k?: number;
+};

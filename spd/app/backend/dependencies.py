@@ -47,3 +47,4 @@ def get_loaded_run() -> RunState:
 # Type aliases for dependency injection (avoids B008 linter warnings)
 DepStateManager = Annotated[StateManager, Depends(get_state_manager)]
 DepLoadedRun = Annotated[RunState, Depends(get_loaded_run)]
+DepDB = Annotated[LocalAttrDB, Depends(get_db)]

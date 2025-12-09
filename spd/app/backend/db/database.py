@@ -62,10 +62,22 @@ class StoredGraph(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
+    id: int = -1  # -1 for unsaved graphs, set by DB on save
     edges: list[Edge]
     output_probs: dict[str, OutputProbability]
     optimization_params: OptimizationParams | None = None
     optimization_stats: OptimizationStats | None = None
+    composer_selection: list[str] | None = None  # node keys, None = all nodes selected
+
+
+class InterventionRunRecord(BaseModel):
+    """A stored intervention run."""
+
+    id: int
+    cached_graph_id: int
+    selected_nodes: list[str]  # node keys that were selected
+    result_json: str  # JSON-encoded InterventionResponse
+    created_at: str
 
 
 class LocalAttrDB:
@@ -170,6 +182,9 @@ class LocalAttrDB:
                 l0_total REAL,
                 l0_per_layer TEXT,
 
+                -- Composer state for interventions (JSON array of selected node keys, NULL = all)
+                composer_selection TEXT,
+
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -183,6 +198,17 @@ class LocalAttrDB:
 
             CREATE INDEX IF NOT EXISTS idx_cached_graphs_prompt
                 ON cached_graphs(prompt_id);
+
+            CREATE TABLE IF NOT EXISTS intervention_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cached_graph_id INTEGER NOT NULL REFERENCES cached_graphs(id),
+                selected_nodes TEXT NOT NULL,  -- JSON array of node keys
+                result TEXT NOT NULL,  -- JSON InterventionResponse
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_intervention_runs_graph
+                ON intervention_runs(cached_graph_id);
         """)
         conn.commit()
 
@@ -518,9 +544,9 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         rows = conn.execute(
-            """SELECT is_optimized, edges_data, output_probs_data,
+            """SELECT id, is_optimized, edges_data, output_probs_data,
                       label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
-                      label_prob, l0_total, l0_per_layer
+                      label_prob, l0_total, l0_per_layer, composer_selection
                FROM cached_graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
@@ -560,12 +586,18 @@ class LocalAttrDB:
                     l0_per_layer=json.loads(row["l0_per_layer"]),
                 )
 
+            composer_selection: list[str] | None = None
+            if row["composer_selection"]:
+                composer_selection = json.loads(row["composer_selection"])
+
             results.append(
                 StoredGraph(
+                    id=row["id"],
                     edges=edges,
                     output_probs=output_probs,
                     optimization_params=opt_params,
                     optimization_stats=opt_stats,
+                    composer_selection=composer_selection,
                 )
             )
 
@@ -585,6 +617,100 @@ class LocalAttrDB:
             """DELETE FROM cached_graphs
                WHERE prompt_id IN (SELECT id FROM prompts WHERE run_id = ?)""",
             (run_id,),
+        )
+        conn.commit()
+        return cursor.rowcount
+
+    # -------------------------------------------------------------------------
+    # Composer selection operations
+    # -------------------------------------------------------------------------
+
+    def update_composer_selection(self, graph_id: int, selection: list[str] | None) -> None:
+        """Update the composer selection state for a graph.
+
+        Args:
+            graph_id: The cached graph ID.
+            selection: List of selected node keys, or None for "all selected".
+        """
+        conn = self._get_conn()
+        selection_json = json.dumps(selection) if selection is not None else None
+        conn.execute(
+            "UPDATE cached_graphs SET composer_selection = ? WHERE id = ?",
+            (selection_json, graph_id),
+        )
+        conn.commit()
+
+    # -------------------------------------------------------------------------
+    # Intervention run operations
+    # -------------------------------------------------------------------------
+
+    def save_intervention_run(
+        self,
+        graph_id: int,
+        selected_nodes: list[str],
+        result_json: str,
+    ) -> int:
+        """Save an intervention run.
+
+        Args:
+            graph_id: The cached graph ID this run belongs to.
+            selected_nodes: List of node keys that were selected.
+            result_json: JSON-encoded InterventionResponse.
+
+        Returns:
+            The intervention run ID.
+        """
+        conn = self._get_conn()
+        cursor = conn.execute(
+            """INSERT INTO intervention_runs (cached_graph_id, selected_nodes, result)
+               VALUES (?, ?, ?)""",
+            (graph_id, json.dumps(selected_nodes), result_json),
+        )
+        conn.commit()
+        run_id = cursor.lastrowid
+        assert run_id is not None
+        return run_id
+
+    def get_intervention_runs(self, graph_id: int) -> list[InterventionRunRecord]:
+        """Get all intervention runs for a graph.
+
+        Args:
+            graph_id: The cached graph ID.
+
+        Returns:
+            List of intervention run records, ordered by creation time.
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT id, cached_graph_id, selected_nodes, result, created_at
+               FROM intervention_runs
+               WHERE cached_graph_id = ?
+               ORDER BY created_at""",
+            (graph_id,),
+        ).fetchall()
+
+        return [
+            InterventionRunRecord(
+                id=row["id"],
+                cached_graph_id=row["cached_graph_id"],
+                selected_nodes=json.loads(row["selected_nodes"]),
+                result_json=row["result"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def delete_intervention_run(self, run_id: int) -> None:
+        """Delete an intervention run."""
+        conn = self._get_conn()
+        conn.execute("DELETE FROM intervention_runs WHERE id = ?", (run_id,))
+        conn.commit()
+
+    def delete_intervention_runs_for_graph(self, graph_id: int) -> int:
+        """Delete all intervention runs for a graph. Returns count deleted."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "DELETE FROM intervention_runs WHERE cached_graph_id = ?", (graph_id,)
         )
         conn.commit()
         return cursor.rowcount

@@ -28,6 +28,7 @@ export type GraphData = {
     nodeImportance: Record<string, number>; // node key -> sum of squared edge values
     maxAbsAttr: number; // max absolute edge value
     optimization?: OptimizationResult;
+    composerSelection?: string[] | null; // selected node keys, null = all selected
 };
 
 export type OptimizationResult = {
@@ -58,8 +59,11 @@ export type ComponentDetail = {
     pr_tokens: string[];
     pr_recalls: number[];
     pr_precisions: number[];
-    predicted_tokens?: string[];
-    predicted_probs?: number[];
+    // TODO: Re-enable token uplift after performance optimization
+    // predicted_tokens: string[];
+    // predicted_lifts: number[];
+    // predicted_firing_probs: number[];
+    // predicted_base_probs: number[];
 };
 
 export type SearchResult = {
@@ -114,4 +118,10 @@ export type LayoutResult = {
     seqXStarts: number[];
     width: number;
     height: number;
+};
+
+// Component probe result
+export type ComponentProbeResult = {
+    tokens: string[];
+    ci_values: number[];
 };

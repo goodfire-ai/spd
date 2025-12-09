@@ -2,6 +2,7 @@
     import type { ComponentDetail, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
+    import ComponentProbeInput from "./ComponentProbeInput.svelte";
 
     interface Props {
         harvestMetadata: HarvestMetadata;
@@ -141,6 +142,9 @@
                 ? currentMetadata.mean_ci.toExponential(2)
                 : currentMetadata.mean_ci.toFixed(3)})
         </h4>
+
+        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
+
         {#if densities != null}
             <div class="token-densities">
                 <div class="token-densities-header">

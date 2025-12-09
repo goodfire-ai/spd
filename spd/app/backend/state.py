@@ -30,6 +30,8 @@ class RunState:
     token_strings: dict[int, str]
     train_loader: DataLoader[Any]
     context_length: int
+    # TODO: Re-enable token uplift after performance optimization
+    # token_base_rates: dict[int, float]  # token_id -> E[P(token)] across dataset
     activation_contexts_cache: ModelActivationContexts | None = None
 
 
