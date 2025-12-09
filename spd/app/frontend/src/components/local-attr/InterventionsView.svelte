@@ -248,7 +248,7 @@
 
     function toggleNode(nodeKey: string) {
         if (!isInterventableNode(nodeKey)) return; // Can't toggle non-interventable nodes
-        const newSelection = new Set(graph.composerSelection);
+        const newSelection = new SvelteSet(graph.composerSelection);
         if (newSelection.has(nodeKey)) {
             newSelection.delete(nodeKey);
         } else {
@@ -258,11 +258,11 @@
     }
 
     function selectAll() {
-        onSelectionChange(new Set(interventableNodes));
+        onSelectionChange(new SvelteSet(interventableNodes));
     }
 
     function clearSelection() {
-        onSelectionChange(new Set());
+        onSelectionChange(new SvelteSet());
     }
 
     // Hover handlers

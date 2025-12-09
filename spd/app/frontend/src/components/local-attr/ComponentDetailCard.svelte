@@ -318,21 +318,6 @@
         text-align: right;
     }
 
-    .lift-cell {
-        white-space: nowrap;
-    }
-
-    .lift-value {
-        color: var(--text-primary);
-        font-weight: 500;
-    }
-
-    .lift-detail {
-        color: var(--text-muted);
-        font-size: var(--text-xs);
-        margin-left: var(--space-1);
-    }
-
     .data-table code {
         color: var(--text-primary);
         font-family: var(--font-mono);

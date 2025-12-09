@@ -499,46 +499,52 @@
         refetchingGraphs = true;
         try {
             const updatedCards = await Promise.all(
-            promptCards.map(async (card) => {
-                if (card.graphs.length === 0) return card;
+                promptCards.map(async (card) => {
+                    if (card.graphs.length === 0) return card;
 
-                try {
-                    const storedGraphs = await attrApi.getGraphs(card.promptId, normalizeEdges, computeOptions.ciThreshold);
-                    const graphs = await Promise.all(
-                        storedGraphs.map(async (data, idx) => {
-                            const isOptimized = !!data.optimization;
-                            const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
+                    try {
+                        const storedGraphs = await attrApi.getGraphs(
+                            card.promptId,
+                            normalizeEdges,
+                            computeOptions.ciThreshold,
+                        );
+                        const graphs = await Promise.all(
+                            storedGraphs.map(async (data, idx) => {
+                                const isOptimized = !!data.optimization;
+                                const label = isOptimized
+                                    ? `Optimized (${data.optimization!.steps} steps)`
+                                    : "Standard";
 
-                            // Load intervention runs
-                            const runs = await mainApi.getInterventionRuns(data.id);
+                                // Load intervention runs
+                                const runs = await mainApi.getInterventionRuns(data.id);
 
-                            // Initialize composer selection (only interventable nodes)
-                            const composerSelection = data.composerSelection
-                                ? filterInterventableNodes(data.composerSelection)
-                                : filterInterventableNodes(Object.keys(data.nodeImportance));
+                                // Initialize composer selection (only interventable nodes)
+                                const composerSelection = data.composerSelection
+                                    ? filterInterventableNodes(data.composerSelection)
+                                    : filterInterventableNodes(Object.keys(data.nodeImportance));
 
-                            return {
-                                id: `graph-${idx}-${Date.now()}`,
-                                dbId: data.id,
-                                label,
-                                data,
-                                composerSelection,
-                                interventionRuns: runs,
-                                activeRunId: null,
-                            };
-                        }),
-                    );
-                    return {
-                        ...card,
-                        graphs,
-                        activeGraphId: graphs.length > 0 ? graphs[0].id : null,
-                    };
-                } catch (e) {
-                    console.warn("Failed to re-fetch graphs for card:", card.id, e);
-                    return card;
-                }
-            }),
-        );
+                                return {
+                                    id: `graph-${idx}-${Date.now()}`,
+                                    dbId: data.id,
+                                    label,
+                                    data,
+                                    composerSelection,
+                                    interventionRuns: runs,
+                                    activeRunId: null,
+                                };
+                            }),
+                        );
+                        return {
+                            ...card,
+                            graphs,
+                            activeGraphId: graphs.length > 0 ? graphs[0].id : null,
+                        };
+                    } catch (e) {
+                        console.warn("Failed to re-fetch graphs for card:", card.id, e);
+                        return card;
+                    }
+                }),
+            );
             promptCards = updatedCards;
         } finally {
             refetchingGraphs = false;
