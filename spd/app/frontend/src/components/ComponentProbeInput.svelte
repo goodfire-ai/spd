@@ -85,10 +85,9 @@
 
 <style>
     .probe-section {
-        padding: var(--space-3);
+        padding: var(--space-2);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
     }
 
     h5 {

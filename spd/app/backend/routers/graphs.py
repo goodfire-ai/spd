@@ -475,7 +475,6 @@ def get_graphs(
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
-                    composerSelection=graph.composer_selection,
                 )
             )
         else:
@@ -490,7 +489,6 @@ def get_graphs(
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
-                    composerSelection=graph.composer_selection,
                     optimization=OptimizationResult(
                         label_token=graph.optimization_params.label_token,
                         label_str=loaded.token_strings[graph.optimization_params.label_token],

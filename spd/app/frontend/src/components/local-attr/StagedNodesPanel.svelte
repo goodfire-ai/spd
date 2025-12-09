@@ -1,25 +1,26 @@
 <script lang="ts">
-    import type { PinnedNode, ComponentDetail, OutputProbEntry } from "../../lib/localAttributionsTypes";
-    import ComponentDetailCard from "./ComponentDetailCard.svelte";
+    import type { PinnedNode, ComponentDetail, ActivationContextsSummary, ComponentSummary, OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import ComponentNodeCard from "./ComponentNodeCard.svelte";
+    import OutputNodeCard from "./OutputNodeCard.svelte";
 
     type Props = {
         stagedNodes: PinnedNode[];
         componentDetailsCache: Record<string, ComponentDetail>;
+        componentDetailsLoading: Record<string, boolean>;
+        activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         tokens: string[];
-        runningIntervention: boolean;
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
-        onRunIntervention: () => void;
     };
 
     let {
         stagedNodes,
         componentDetailsCache,
+        componentDetailsLoading,
+        activationContextsSummary,
         outputProbs,
         tokens,
-        runningIntervention,
         onStagedNodesChange,
-        onRunIntervention,
     }: Props = $props();
 
     function clearAll() {
@@ -31,37 +32,33 @@
     }
 
     function getTokenAtPosition(seqIdx: number): string {
-        if (seqIdx >= 0 && seqIdx < tokens.length) {
-            return tokens[seqIdx];
+        if (seqIdx < 0 || seqIdx >= tokens.length) {
+            throw new Error(`StagedNodesPanel: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`);
         }
-        return "?";
+        return tokens[seqIdx];
     }
 
-    // Validation: can't run intervention with embedding (wte) or output nodes
-    const hasInvalidNodes = $derived(stagedNodes.some((n) => n.layer === "wte" || n.layer === "output"));
-    const canRunIntervention = $derived(stagedNodes.length > 0 && !hasInvalidNodes && !runningIntervention);
+    // Returns null if: not yet loaded, layer not in harvest, or component not above threshold
+    function findComponentSummary(layer: string, cIdx: number): ComponentSummary | null {
+        if (!activationContextsSummary) return null;
+        const layerSummaries = activationContextsSummary[layer];
+        if (!layerSummaries) return null;
+        return layerSummaries.find((s) => s.subcomponent_idx === cIdx) ?? null;
+    }
 </script>
 
 {#if stagedNodes.length > 0}
     <div class="staged-container">
         <div class="staged-container-header">
-            <span>Staged Nodes ({stagedNodes.length})</span>
-            <div class="header-actions">
-                {#if hasInvalidNodes}
-                    <span class="validation-warning">Remove wte/output nodes to run</span>
-                {/if}
-                <button class="run-btn" onclick={onRunIntervention} disabled={!canRunIntervention}>
-                    {runningIntervention ? "Running..." : "Run Intervention"}
-                </button>
-                <button onclick={clearAll}>Clear all</button>
-            </div>
+            <span>Pinned Components ({stagedNodes.length})</span>
+            <button onclick={clearAll}>Clear all</button>
         </div>
 
         <div class="staged-items">
             {#each stagedNodes as node, idx (`${node.layer}:${node.seqIdx}:${node.cIdx}-${idx}`)}
-                {@const detail = componentDetailsCache[`${node.layer}:${node.cIdx}`]}
-                {@const isLoading = !detail && node.layer !== "output"}
                 {@const token = getTokenAtPosition(node.seqIdx)}
+                {@const isOutput = node.layer === "output"}
+                {@const isWte = node.layer === "wte"}
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">
@@ -71,14 +68,36 @@
                         <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>
                     </div>
 
-                    <ComponentDetailCard
-                        layer={node.layer}
-                        cIdx={node.cIdx}
-                        {detail}
-                        {isLoading}
-                        {outputProbs}
-                        compact
-                    />
+                    {#if isWte}
+                        <p class="wte-info">Input embedding at position {node.seqIdx}</p>
+                    {:else if isOutput}
+                        <OutputNodeCard cIdx={node.cIdx} {outputProbs} seqIdx={node.seqIdx} />
+                    {:else}
+                        {@const cacheKey = `${node.layer}:${node.cIdx}`}
+                        {@const detail = componentDetailsCache[cacheKey] ?? null}
+                        {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
+                        {@const summary = findComponentSummary(node.layer, node.cIdx)}
+                        {#if detail}
+                            <ComponentNodeCard
+                                layer={node.layer}
+                                cIdx={node.cIdx}
+                                seqIdx={node.seqIdx}
+                                {summary}
+                                {detail}
+                                compact={true}
+                            />
+                        {:else}
+                            <ComponentNodeCard
+                                layer={node.layer}
+                                cIdx={node.cIdx}
+                                seqIdx={node.seqIdx}
+                                {summary}
+                                detail={null}
+                                {isLoading}
+                                compact={true}
+                            />
+                        {/if}
+                    {/if}
                 </div>
             {/each}
         </div>
@@ -87,9 +106,9 @@
 
 <style>
     .staged-container {
-        margin-top: var(--space-4);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
+        border-top: none;
         padding: var(--space-3);
     }
 
@@ -104,43 +123,16 @@
         margin-bottom: var(--space-2);
     }
 
-    .header-actions {
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-    }
-
-    .validation-warning {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--status-negative-bright);
-    }
-
     .staged-container-header button {
         background: var(--bg-elevated);
         border: 1px solid var(--border-default);
         color: var(--text-secondary);
     }
 
-    .staged-container-header button:hover:not(:disabled) {
+    .staged-container-header button:hover {
         background: var(--bg-inset);
         color: var(--text-primary);
         border-color: var(--border-strong);
-    }
-
-    .run-btn {
-        background: var(--accent-primary) !important;
-        color: white !important;
-        border-color: var(--accent-primary) !important;
-    }
-
-    .run-btn:hover:not(:disabled) {
-        background: var(--accent-primary-dim) !important;
-    }
-
-    .run-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
     }
 
     .staged-items {
@@ -165,6 +157,7 @@
         align-items: center;
         padding-bottom: var(--space-2);
         border-bottom: 1px solid var(--border-subtle);
+        margin-bottom: var(--space-2);
     }
 
     .node-info {
@@ -187,13 +180,22 @@
     }
 
     .unstage-btn {
-        background: var(--status-negative);
-        color: white;
-        border: none;
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-default);
         padding: var(--space-1) var(--space-2);
     }
 
     .unstage-btn:hover {
-        background: var(--status-negative-bright);
+        background: var(--bg-inset);
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+    }
+
+    .wte-info {
+        margin: var(--space-2) 0 0 0;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
     }
 </style>

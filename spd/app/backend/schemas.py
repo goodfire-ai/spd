@@ -41,9 +41,6 @@ class GraphData(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
-    composerSelection: list[str] | None = (
-        None  # node keys, None = never set (frontend defaults to all)
-    )
 
 
 class OptimizationResult(BaseModel):
@@ -68,9 +65,6 @@ class GraphDataWithOptimization(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
-    composerSelection: list[str] | None = (
-        None  # node keys, None = never set (frontend defaults to all)
-    )
     optimization: OptimizationResult
 
 
@@ -286,13 +280,6 @@ class InterventionRunSummary(BaseModel):
     selected_nodes: list[str]
     result: InterventionResponse
     created_at: str
-
-
-class UpdateComposerSelectionRequest(BaseModel):
-    """Request to update composer selection state."""
-
-    graph_id: int
-    selection: list[str] | None  # None = all nodes selected
 
 
 # =============================================================================
