@@ -69,7 +69,7 @@
     // Compute options
     let computeOptions = $state<ComputeOptions>({
         maxMeanCI: 1.0,
-        ciThreshold: 1e-6,
+        ciThreshold: 0,
         normalizeEdges: "layer", // kept for compute, but view uses normalizeEdges state
         useOptimized: false,
         optimizeConfig: {

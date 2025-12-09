@@ -84,8 +84,7 @@
                         }
                     }}
                     min={0}
-                    max={0.1}
-                    step={0.000001}
+                    step={0.1}
                 />
             </label>
             <span class="info-icon" data-tooltip="Default output_prob_threshold=0.01">?</span>
