@@ -7,7 +7,7 @@
     type Props = {
         layer: string;
         cIdx: number;
-        seqIdx?: number;
+        seqIdx: number;
         summary: ComponentSummary | null;
         compact: boolean;
     } & (
@@ -36,10 +36,8 @@
 
 <div class="component-node-card" class:compact>
     <p class="stats">
-        {#if seqIdx !== undefined}
-            <strong>Position:</strong>
-            {seqIdx}
-        {/if}
+        <strong>Position:</strong>
+        {seqIdx}
         {#if summary}
             {#if seqIdx !== undefined}|{/if}
             <strong>Mean CI:</strong>
