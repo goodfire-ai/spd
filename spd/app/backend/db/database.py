@@ -67,9 +67,6 @@ class StoredGraph(BaseModel):
     output_probs: dict[str, OutputProbability]
     optimization_params: OptimizationParams | None = None
     optimization_stats: OptimizationStats | None = None
-    composer_selection: list[str] | None = (
-        None  # node keys, None = never set (frontend defaults to all)
-    )
 
 
 class InterventionRunRecord(BaseModel):
@@ -183,9 +180,6 @@ class LocalAttrDB:
                 label_prob REAL,
                 l0_total REAL,
                 l0_per_layer TEXT,
-
-                -- Composer state for interventions (JSON array of selected node keys, NULL = all)
-                composer_selection TEXT,
 
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -558,7 +552,7 @@ class LocalAttrDB:
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data,
                       label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
-                      label_prob, l0_total, l0_per_layer, composer_selection
+                      label_prob, l0_total, l0_per_layer
                FROM cached_graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
@@ -598,10 +592,6 @@ class LocalAttrDB:
                     l0_per_layer=json.loads(row["l0_per_layer"]),
                 )
 
-            composer_selection: list[str] | None = None
-            if row["composer_selection"]:
-                composer_selection = json.loads(row["composer_selection"])
-
             results.append(
                 StoredGraph(
                     id=row["id"],
@@ -609,7 +599,6 @@ class LocalAttrDB:
                     output_probs=output_probs,
                     optimization_params=opt_params,
                     optimization_stats=opt_stats,
-                    composer_selection=composer_selection,
                 )
             )
 
@@ -632,25 +621,6 @@ class LocalAttrDB:
         )
         conn.commit()
         return cursor.rowcount
-
-    # -------------------------------------------------------------------------
-    # Composer selection operations
-    # -------------------------------------------------------------------------
-
-    def update_composer_selection(self, graph_id: int, selection: list[str] | None) -> None:
-        """Update the composer selection state for a graph.
-
-        Args:
-            graph_id: The cached graph ID.
-            selection: List of selected node keys, or None for "all selected".
-        """
-        conn = self._get_conn()
-        selection_json = json.dumps(selection) if selection is not None else None
-        conn.execute(
-            "UPDATE cached_graphs SET composer_selection = ? WHERE id = ?",
-            (selection_json, graph_id),
-        )
-        conn.commit()
 
     # -------------------------------------------------------------------------
     # Intervention run operations

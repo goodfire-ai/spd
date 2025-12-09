@@ -10,7 +10,7 @@
     } from "../../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
     import { lerp } from "./graphUtils";
-    import ComponentDetailCard from "./ComponentDetailCard.svelte";
+    import NodeTooltip from "./NodeTooltip.svelte";
 
     // Layout constants
     const COMPONENT_SIZE = 8;
@@ -688,33 +688,20 @@
 
     <!-- Node tooltip -->
     {#if hoveredNode}
-        {@const summary = activationContextsSummary?.[hoveredNode.layer]?.find(
-            (s) => s.subcomponent_idx === hoveredNode?.cIdx,
-        )}
-        {@const detail = componentDetailsCache[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
-        {@const isLoading = componentDetailsLoading[`${hoveredNode.layer}:${hoveredNode.cIdx}`] ?? false}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-            class="node-tooltip"
-            style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"
-            onmouseenter={() => (isHoveringTooltip = true)}
-            onmouseleave={() => {
+        <NodeTooltip
+            {hoveredNode}
+            {tooltipPos}
+            {activationContextsSummary}
+            {componentDetailsCache}
+            {componentDetailsLoading}
+            outputProbs={graph.data.outputProbs}
+            {tokens}
+            onMouseEnter={() => (isHoveringTooltip = true)}
+            onMouseLeave={() => {
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
-        >
-            <h3>{hoveredNode.layer}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
-            <ComponentDetailCard
-                layer={hoveredNode.layer}
-                cIdx={hoveredNode.cIdx}
-                seqIdx={hoveredNode.seqIdx}
-                {detail}
-                {isLoading}
-                outputProbs={{}}
-                {summary}
-                compact
-            />
-        </div>
+        />
     {/if}
 </div>
 
@@ -1021,29 +1008,5 @@
         display: block;
         font-size: 8px;
         color: var(--text-muted);
-    }
-
-    /* Tooltip */
-    .node-tooltip {
-        position: fixed;
-        padding: var(--space-3);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-strong);
-        z-index: 1000;
-        pointer-events: auto;
-        font-family: var(--font-mono);
-        max-width: 400px;
-        max-height: 400px;
-        overflow-y: auto;
-    }
-
-    .node-tooltip h3 {
-        margin: 0 0 var(--space-2) 0;
-        font-size: var(--text-base);
-        font-family: var(--font-mono);
-        color: var(--accent-primary);
-        font-weight: 600;
-        border-bottom: 1px solid var(--border-subtle);
-        padding-bottom: var(--space-2);
     }
 </style>

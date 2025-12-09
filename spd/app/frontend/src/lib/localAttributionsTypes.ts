@@ -28,7 +28,6 @@ export type GraphData = {
     nodeImportance: Record<string, number>; // node key -> sum of squared edge values
     maxAbsAttr: number; // max absolute edge value
     optimization?: OptimizationResult;
-    composerSelection?: string[] | null; // node keys, null = never set (defaults to all interventable)
 };
 
 export type OptimizationResult = {

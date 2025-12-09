@@ -11,7 +11,6 @@ from spd.app.backend.schemas import (
     InterventionRunSummary,
     RunInterventionRequest,
     TokenPrediction,
-    UpdateComposerSelectionRequest,
 )
 from spd.app.backend.utils import log_errors
 from spd.utils.distributed_utils import get_device
@@ -162,14 +161,4 @@ def get_intervention_runs(graph_id: int, db: DepDB) -> list[InterventionRunSumma
 def delete_intervention_run(run_id: int, db: DepDB) -> dict[str, bool]:
     """Delete an intervention run."""
     db.delete_intervention_run(run_id)
-    return {"success": True}
-
-
-@router.put("/composer")
-@log_errors
-def update_composer_selection(
-    request: UpdateComposerSelectionRequest, db: DepDB
-) -> dict[str, bool]:
-    """Update the composer selection state for a graph."""
-    db.update_composer_selection(request.graph_id, request.selection)
     return {"success": True}

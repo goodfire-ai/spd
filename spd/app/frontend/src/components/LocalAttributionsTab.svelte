@@ -194,17 +194,12 @@
                     // Load intervention runs for this graph
                     const runs = await mainApi.getInterventionRuns(data.id);
 
-                    // Initialize composer selection: from DB or default to all interventable nodes
-                    const composerSelection = data.composerSelection
-                        ? filterInterventableNodes(data.composerSelection)
-                        : filterInterventableNodes(Object.keys(data.nodeImportance));
-
                     return {
                         id: `graph-${idx}-${Date.now()}`,
                         dbId: data.id,
                         label,
                         data,
-                        composerSelection,
+                        composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
                         interventionRuns: runs,
                         activeRunId: null,
                     };
@@ -289,10 +284,9 @@
     }
 
     // Update composer selection for the active graph
-    async function handleComposerSelectionChange(selection: SvelteSet<string>) {
+    function handleComposerSelectionChange(selection: SvelteSet<string>) {
         if (!activeCard || !activeGraph) return;
 
-        // Update local state immediately
         promptCards = promptCards.map((card) => {
             if (card.id !== activeCard.id) return card;
             return {
@@ -302,13 +296,6 @@
                 ),
             };
         });
-
-        // Persist to backend (fire and forget with error handling)
-        try {
-            await mainApi.updateComposerSelection(activeGraph.dbId, Array.from(selection));
-        } catch (e) {
-            console.error("Failed to save composer selection:", e);
-        }
     }
 
     // Run intervention and save to DB
@@ -504,17 +491,12 @@
                             // Load intervention runs
                             const runs = await mainApi.getInterventionRuns(data.id);
 
-                            // Initialize composer selection (only interventable nodes)
-                            const composerSelection = data.composerSelection
-                                ? filterInterventableNodes(data.composerSelection)
-                                : filterInterventableNodes(Object.keys(data.nodeImportance));
-
                             return {
                                 id: `graph-${idx}-${Date.now()}`,
                                 dbId: data.id,
                                 label,
                                 data,
-                                composerSelection,
+                                composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
                                 interventionRuns: runs,
                                 activeRunId: null,
                             };

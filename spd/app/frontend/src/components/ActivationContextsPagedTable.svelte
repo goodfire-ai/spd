@@ -138,6 +138,8 @@
         padding: var(--space-2);
         background: var(--bg-inset);
         border: 1px solid var(--border-default);
+        overflow-x: auto;
+        overflow-y: clip;
     }
 
     .examples-inner {
