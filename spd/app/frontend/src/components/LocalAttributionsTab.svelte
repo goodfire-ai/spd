@@ -7,6 +7,7 @@
         type ActivationContextsSummary,
         type ComponentDetail,
         type GraphData,
+        type PinnedNode,
         type PromptPreview,
     } from "../lib/localAttributionsTypes";
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
@@ -14,6 +15,7 @@
     import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
     import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
     import PromptPicker from "./local-attr/PromptPicker.svelte";
+    import StagedNodesPanel from "./local-attr/StagedNodesPanel.svelte";
     import type { StoredGraph, ComputeOptions, LoadingState, OptimizeConfig, PromptCard } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
@@ -86,6 +88,9 @@
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
     let componentDetailsLoading = $state<Record<string, boolean>>({});
 
+    // Pinned nodes for attributions graph
+    let pinnedNodes = $state<PinnedNode[]>([]);
+
     async function loadComponentDetail(layer: string, cIdx: number) {
         const cacheKey = `${layer}:${cIdx}`;
         if (componentDetailsCache[cacheKey] || componentDetailsLoading[cacheKey]) return;
@@ -98,6 +103,16 @@
             console.error(`Failed to load component detail for ${cacheKey}:`, e);
         } finally {
             componentDetailsLoading[cacheKey] = false;
+        }
+    }
+
+    function handlePinnedNodesChange(nodes: PinnedNode[]) {
+        pinnedNodes = nodes;
+        // Load component details for any newly pinned nodes
+        for (const node of nodes) {
+            if (node.layer !== "wte" && node.layer !== "output") {
+                loadComponentDetail(node.layer, node.cIdx);
+            }
         }
     }
 
@@ -563,7 +578,7 @@
                     <PromptPicker
                         {prompts}
                         {filteredPrompts}
-                        stagedNodes={[]}
+                        stagedNodes={pinnedNodes}
                         filterByStaged={false}
                         {filterLoading}
                         {generatingGraphs}
@@ -663,14 +678,23 @@
                                             {componentGap}
                                             {layerGap}
                                             {activationContextsSummary}
-                                            stagedNodes={[]}
+                                            stagedNodes={pinnedNodes}
                                             {componentDetailsCache}
                                             {componentDetailsLoading}
-                                            onStagedNodesChange={() => {}}
+                                            onStagedNodesChange={handlePinnedNodesChange}
                                             onLoadComponentDetail={loadComponentDetail}
                                             onEdgeCountChange={(count) => (filteredEdgeCount = count)}
                                         />
                                     {/key}
+                                    <StagedNodesPanel
+                                        stagedNodes={pinnedNodes}
+                                        {componentDetailsCache}
+                                        {componentDetailsLoading}
+                                        {activationContextsSummary}
+                                        outputProbs={activeGraph.data.outputProbs}
+                                        tokens={activeCard.tokens}
+                                        onStagedNodesChange={handlePinnedNodesChange}
+                                    />
                                 </div>
                             {:else}
                                 <!-- Interventions view -->

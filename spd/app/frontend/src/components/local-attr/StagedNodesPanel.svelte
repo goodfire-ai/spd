@@ -1,25 +1,25 @@
 <script lang="ts">
-    import type { PinnedNode, ComponentDetail, OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import type { PinnedNode, ComponentDetail, ActivationContextsSummary, OutputProbEntry } from "../../lib/localAttributionsTypes";
     import ComponentDetailCard from "./ComponentDetailCard.svelte";
 
     type Props = {
         stagedNodes: PinnedNode[];
         componentDetailsCache: Record<string, ComponentDetail>;
+        componentDetailsLoading: Record<string, boolean>;
+        activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         tokens: string[];
-        runningIntervention: boolean;
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
-        onRunIntervention: () => void;
     };
 
     let {
         stagedNodes,
         componentDetailsCache,
+        componentDetailsLoading,
+        activationContextsSummary,
         outputProbs,
         tokens,
-        runningIntervention,
         onStagedNodesChange,
-        onRunIntervention,
     }: Props = $props();
 
     function clearAll() {
@@ -36,31 +36,21 @@
         }
         return "?";
     }
-
-    // Validation: can't run intervention with embedding (wte) or output nodes
-    const hasInvalidNodes = $derived(stagedNodes.some((n) => n.layer === "wte" || n.layer === "output"));
-    const canRunIntervention = $derived(stagedNodes.length > 0 && !hasInvalidNodes && !runningIntervention);
 </script>
 
 {#if stagedNodes.length > 0}
     <div class="staged-container">
         <div class="staged-container-header">
-            <span>Staged Nodes ({stagedNodes.length})</span>
-            <div class="header-actions">
-                {#if hasInvalidNodes}
-                    <span class="validation-warning">Remove wte/output nodes to run</span>
-                {/if}
-                <button class="run-btn" onclick={onRunIntervention} disabled={!canRunIntervention}>
-                    {runningIntervention ? "Running..." : "Run Intervention"}
-                </button>
-                <button onclick={clearAll}>Clear all</button>
-            </div>
+            <span>Pinned Components ({stagedNodes.length})</span>
+            <button onclick={clearAll}>Clear all</button>
         </div>
 
         <div class="staged-items">
             {#each stagedNodes as node, idx (`${node.layer}:${node.seqIdx}:${node.cIdx}-${idx}`)}
-                {@const detail = componentDetailsCache[`${node.layer}:${node.cIdx}`]}
-                {@const isLoading = !detail && node.layer !== "output"}
+                {@const cacheKey = `${node.layer}:${node.cIdx}`}
+                {@const detail = componentDetailsCache[cacheKey]}
+                {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
+                {@const summary = activationContextsSummary?.[node.layer]?.find((s) => s.subcomponent_idx === node.cIdx)}
                 {@const token = getTokenAtPosition(node.seqIdx)}
                 <div class="staged-item">
                     <div class="staged-header">
@@ -74,9 +64,11 @@
                     <ComponentDetailCard
                         layer={node.layer}
                         cIdx={node.cIdx}
+                        seqIdx={node.seqIdx}
                         {detail}
                         {isLoading}
                         {outputProbs}
+                        {summary}
                         compact
                     />
                 </div>
@@ -87,9 +79,9 @@
 
 <style>
     .staged-container {
-        margin-top: var(--space-4);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
+        border-top: none;
         padding: var(--space-3);
     }
 
@@ -104,43 +96,16 @@
         margin-bottom: var(--space-2);
     }
 
-    .header-actions {
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-    }
-
-    .validation-warning {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--status-negative-bright);
-    }
-
     .staged-container-header button {
         background: var(--bg-elevated);
         border: 1px solid var(--border-default);
         color: var(--text-secondary);
     }
 
-    .staged-container-header button:hover:not(:disabled) {
+    .staged-container-header button:hover {
         background: var(--bg-inset);
         color: var(--text-primary);
         border-color: var(--border-strong);
-    }
-
-    .run-btn {
-        background: var(--accent-primary) !important;
-        color: white !important;
-        border-color: var(--accent-primary) !important;
-    }
-
-    .run-btn:hover:not(:disabled) {
-        background: var(--accent-primary-dim) !important;
-    }
-
-    .run-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
     }
 
     .staged-items {
@@ -165,6 +130,7 @@
         align-items: center;
         padding-bottom: var(--space-2);
         border-bottom: 1px solid var(--border-subtle);
+        margin-bottom: var(--space-2);
     }
 
     .node-info {
@@ -187,13 +153,15 @@
     }
 
     .unstage-btn {
-        background: var(--status-negative);
-        color: white;
-        border: none;
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-default);
         padding: var(--space-1) var(--space-2);
     }
 
     .unstage-btn:hover {
-        background: var(--status-negative-bright);
+        background: var(--bg-inset);
+        color: var(--text-primary);
+        border-color: var(--border-strong);
     }
 </style>
