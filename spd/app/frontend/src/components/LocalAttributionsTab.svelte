@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { SvelteSet } from "svelte/reactivity";
+    import type { SvelteSet } from "svelte/reactivity";
     import * as mainApi from "../lib/api";
     import * as attrApi from "../lib/localAttributionsApi";
     import {
