@@ -66,7 +66,11 @@
                 onkeydown={(e) => e.key === "Enter" && handleAddCustom()}
                 class="picker-input"
             />
-            <button onclick={handleAddCustom} disabled={!customText.trim() || isAddingCustomPrompt} class="btn-tokenize">
+            <button
+                onclick={handleAddCustom}
+                disabled={!customText.trim() || isAddingCustomPrompt}
+                class="btn-tokenize"
+            >
                 {isAddingCustomPrompt ? "..." : "Add"}
             </button>
         </div>

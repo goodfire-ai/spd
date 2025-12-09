@@ -179,9 +179,7 @@ export async function runIntervention(
 }
 
 /** Run an intervention and save the result */
-export async function runAndSaveIntervention(
-    request: RunInterventionRequest,
-): Promise<InterventionRunSummary> {
+export async function runAndSaveIntervention(request: RunInterventionRequest): Promise<InterventionRunSummary> {
     const response = await fetch(`${API_URL}/api/intervention/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -216,10 +214,7 @@ export async function deleteInterventionRun(runId: number): Promise<void> {
 }
 
 /** Update composer selection state for a graph */
-export async function updateComposerSelection(
-    graphId: number,
-    selection: string[] | null,
-): Promise<void> {
+export async function updateComposerSelection(graphId: number, selection: string[] | null): Promise<void> {
     const response = await fetch(`${API_URL}/api/intervention/composer`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

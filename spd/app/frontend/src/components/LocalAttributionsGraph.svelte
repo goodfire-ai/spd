@@ -95,48 +95,14 @@
         return max;
     });
 
-    // Filter edges by topK and build active nodes set
-    const { filteredEdges, activeNodes } = $derived.by(() => {
+    // All nodes from nodeImportance (for layout and rendering)
+    const allNodes = $derived(new SvelteSet(Object.keys(data.nodeImportance)));
+
+    // Filter edges by topK (for rendering)
+    const filteredEdges = $derived.by(() => {
         const edgesCopy = [...data.edges];
-
         const sortedEdges = edgesCopy.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
-
-        const filteredEdges = sortedEdges.slice(0, topK);
-
-        const activeNodes = new SvelteSet<string>();
-        for (const edge of filteredEdges) {
-            activeNodes.add(edge.src);
-            activeNodes.add(edge.tgt);
-        }
-
-        // For output nodes: include all tokens with prob >= min prob of kept tokens
-        const outputNodesWithEdges = new SvelteSet<string>();
-        for (const nodeKey of activeNodes) {
-            if (nodeKey.startsWith("output:")) {
-                outputNodesWithEdges.add(nodeKey);
-            }
-        }
-
-        if (outputNodesWithEdges.size > 0) {
-            let minProb = Infinity;
-            for (const nodeKey of outputNodesWithEdges) {
-                const [, seqIdx, cIdx] = nodeKey.split(":");
-                const probKey = `${seqIdx}:${cIdx}`;
-                const entry = data.outputProbs[probKey];
-                if (entry && entry.prob < minProb) {
-                    minProb = entry.prob;
-                }
-            }
-
-            for (const [probKey, entry] of Object.entries(data.outputProbs)) {
-                if (entry.prob >= minProb) {
-                    const [seqIdx, cIdx] = probKey.split(":");
-                    activeNodes.add(`output:${seqIdx}:${cIdx}`);
-                }
-            }
-        }
-
-        return { filteredEdges, activeNodes };
+        return sortedEdges.slice(0, topK);
     });
 
     // Build layout
@@ -145,7 +111,7 @@
         const allLayers = new SvelteSet<string>();
         const allRows = new SvelteSet<string>();
 
-        for (const nodeKey of activeNodes) {
+        for (const nodeKey of allNodes) {
             const [layer, seqIdx, cIdx] = nodeKey.split(":");
             allLayers.add(layer);
             allRows.add(getRowKey(layer));

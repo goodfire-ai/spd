@@ -146,7 +146,6 @@
                 </label>
             {/if}
         </div>
-
     </div>
 
     <div class="graph-tabs">

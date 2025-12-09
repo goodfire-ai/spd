@@ -67,7 +67,9 @@ class StoredGraph(BaseModel):
     output_probs: dict[str, OutputProbability]
     optimization_params: OptimizationParams | None = None
     optimization_stats: OptimizationStats | None = None
-    composer_selection: list[str] | None = None  # node keys, None = all nodes selected
+    composer_selection: list[str] | None = (
+        None  # node keys, None = never set (frontend defaults to all)
+    )
 
 
 class InterventionRunRecord(BaseModel):

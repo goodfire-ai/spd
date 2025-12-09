@@ -50,11 +50,7 @@
                 {#if hasInvalidNodes}
                     <span class="validation-warning">Remove wte/output nodes to run</span>
                 {/if}
-                <button
-                    class="run-btn"
-                    onclick={onRunIntervention}
-                    disabled={!canRunIntervention}
-                >
+                <button class="run-btn" onclick={onRunIntervention} disabled={!canRunIntervention}>
                     {runningIntervention ? "Running..." : "Run Intervention"}
                 </button>
                 <button onclick={clearAll}>Clear all</button>

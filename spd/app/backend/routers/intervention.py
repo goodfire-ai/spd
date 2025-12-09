@@ -24,8 +24,13 @@ DEVICE = get_device()
 def _parse_node_key(key: str) -> tuple[str, int, int]:
     """Parse 'layer:seq:cIdx' into (layer, seq_pos, component_idx)."""
     parts = key.split(":")
-    assert len(parts) == 3, f"Invalid node key: {key}"
-    return parts[0], int(parts[1]), int(parts[2])
+    assert len(parts) == 3, f"Invalid node key format: {key!r} (expected 'layer:seq:cIdx')"
+    layer, seq_str, cidx_str = parts
+    # wte and output are pseudo-layers for visualization only - not interventable
+    assert layer not in ("wte", "output"), (
+        f"Cannot intervene on {layer!r} nodes - only internal layers (attn/mlp) are interventable"
+    )
+    return layer, int(seq_str), int(cidx_str)
 
 
 def _run_intervention_forward(

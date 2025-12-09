@@ -28,7 +28,7 @@ export type GraphData = {
     nodeImportance: Record<string, number>; // node key -> sum of squared edge values
     maxAbsAttr: number; // max absolute edge value
     optimization?: OptimizationResult;
-    composerSelection?: string[] | null; // selected node keys, null = all selected
+    composerSelection?: string[] | null; // node keys, null = never set (defaults to all interventable)
 };
 
 export type OptimizationResult = {
@@ -125,3 +125,22 @@ export type ComponentProbeResult = {
     tokens: string[];
     ci_values: number[];
 };
+
+// Node intervention helpers
+// "wte" and "output" are pseudo-layers used for visualization but are not part of the
+// decomposed model. They cannot be intervened on - only the internal layers (attn/mlp)
+// can have their components selectively activated.
+const NON_INTERVENTABLE_LAYERS = new Set(["wte", "output"]);
+
+export function isInterventableNode(nodeKey: string): boolean {
+    const layer = nodeKey.split(":")[0];
+    return !NON_INTERVENTABLE_LAYERS.has(layer);
+}
+
+export function filterInterventableNodes(nodeKeys: Iterable<string>): Set<string> {
+    const result = new Set<string>();
+    for (const key of nodeKeys) {
+        if (isInterventableNode(key)) result.add(key);
+    }
+    return result;
+}

@@ -41,7 +41,9 @@ class GraphData(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
-    composerSelection: list[str] | None = None  # selected node keys, None = all selected
+    composerSelection: list[str] | None = (
+        None  # node keys, None = never set (frontend defaults to all)
+    )
 
 
 class OptimizationResult(BaseModel):
@@ -66,7 +68,9 @@ class GraphDataWithOptimization(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
-    composerSelection: list[str] | None = None  # selected node keys, None = all selected
+    composerSelection: list[str] | None = (
+        None  # node keys, None = never set (frontend defaults to all)
+    )
     optimization: OptimizationResult
 
 
