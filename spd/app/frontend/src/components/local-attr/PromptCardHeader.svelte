@@ -36,16 +36,6 @@
         }
         return options.useOptimized ? "Compute (Optimized)" : "Compute";
     });
-
-    // Local state for CI threshold input - derives from options but can be overridden while typing
-    let ciThresholdInput = $derived(options.ciThreshold.toString());
-
-    function applyCiThreshold() {
-        const value = parseFloat(ciThresholdInput);
-        if (!isNaN(value) && value !== options.ciThreshold) {
-            onOptionsChange({ ciThreshold: value });
-        }
-    }
 </script>
 
 <div class="staged-header">
@@ -69,22 +59,6 @@
                     min={0}
                     max={1}
                     step={0.01}
-                />
-            </label>
-            <label>
-                <span>CI Threshold</span>
-                <input
-                    type="number"
-                    bind:value={ciThresholdInput}
-                    onblur={applyCiThreshold}
-                    onkeydown={(e) => {
-                        if (e.key === "Enter") {
-                            applyCiThreshold();
-                            e.currentTarget.blur();
-                        }
-                    }}
-                    min={0}
-                    step={0.1}
                 />
             </label>
             <span class="info-icon" data-tooltip="Default output_prob_threshold=0.01">?</span>

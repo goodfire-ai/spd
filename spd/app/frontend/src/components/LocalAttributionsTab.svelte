@@ -54,6 +54,9 @@
     let generateProgress = $state(0);
     let generateCount = $state(0);
 
+    // Refetching state (for CI threshold changes)
+    let refetchingGraphs = $state(false);
+
     // Activation contexts
     let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
     let activationContextsMissing = $state(false);
@@ -410,37 +413,42 @@
 
     async function refetchAllGraphs() {
         // Re-fetch all graphs for all cards with current settings
-        const updatedCards = await Promise.all(
-            promptCards.map(async (card) => {
-                if (card.graphs.length === 0) return card;
+        refetchingGraphs = true;
+        try {
+            const updatedCards = await Promise.all(
+                promptCards.map(async (card) => {
+                    if (card.graphs.length === 0) return card;
 
-                try {
-                    const storedGraphs = await attrApi.getGraphs(
-                        card.promptId,
-                        normalizeEdges,
-                        computeOptions.ciThreshold,
-                    );
-                    const graphs = storedGraphs.map((data, idx) => {
-                        const isOptimized = !!data.optimization;
-                        const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
+                    try {
+                        const storedGraphs = await attrApi.getGraphs(
+                            card.promptId,
+                            normalizeEdges,
+                            computeOptions.ciThreshold,
+                        );
+                        const graphs = storedGraphs.map((data, idx) => {
+                            const isOptimized = !!data.optimization;
+                            const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
+                            return {
+                                id: `graph-${idx}-${Date.now()}`,
+                                label,
+                                data,
+                            };
+                        });
                         return {
-                            id: `graph-${idx}-${Date.now()}`,
-                            label,
-                            data,
+                            ...card,
+                            graphs,
+                            activeGraphId: graphs.length > 0 ? graphs[0].id : null,
                         };
-                    });
-                    return {
-                        ...card,
-                        graphs,
-                        activeGraphId: graphs.length > 0 ? graphs[0].id : null,
-                    };
-                } catch (e) {
-                    console.warn("Failed to re-fetch graphs for card:", card.id, e);
-                    return card;
-                }
-            }),
-        );
-        promptCards = updatedCards;
+                    } catch (e) {
+                        console.warn("Failed to re-fetch graphs for card:", card.id, e);
+                        return card;
+                    }
+                }),
+            );
+            promptCards = updatedCards;
+        } finally {
+            refetchingGraphs = false;
+        }
     }
 
     async function handleNormalizeChange(value: attrApi.NormalizeType) {
@@ -552,7 +560,7 @@
                             </div>
                         {/if}
 
-                        <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
+                        <div class="graph-area" class:loading={loadingCardId === activeCard.id || refetchingGraphs}>
                             {#if loadingCardId === activeCard.id && loadingState}
                                 <ComputeProgressOverlay state={loadingState} />
                             {/if}
@@ -565,11 +573,14 @@
                                     {layerGap}
                                     {filteredEdgeCount}
                                     {normalizeEdges}
+                                    ciThreshold={computeOptions.ciThreshold}
+                                    ciThresholdLoading={refetchingGraphs}
                                     onTopKChange={(v) => (topK = v)}
                                     onLayoutChange={(v) => (nodeLayout = v)}
                                     onComponentGapChange={(v) => (componentGap = v)}
                                     onLayerGapChange={(v) => (layerGap = v)}
                                     onNormalizeChange={handleNormalizeChange}
+                                    onCiThresholdChange={handleCiThresholdChange}
                                 />
                                 {#key activeGraph.id}
                                     <LocalAttributionsGraph
