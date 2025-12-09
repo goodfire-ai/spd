@@ -503,48 +503,51 @@ class LocalAttrDB:
 
         is_optimized = 1 if graph.optimization_params else 0
 
-        if graph.optimization_params:
-            assert graph.optimization_stats is not None, (
-                "optimization_stats required for optimized graphs"
-            )
-            conn.execute(
-                """INSERT INTO cached_graphs
-                   (prompt_id, is_optimized,
-                    label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
-                    edges_data, output_probs_data,
-                    label_prob, l0_total, l0_per_layer)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT DO NOTHING""",
-                (
-                    prompt_id,
-                    is_optimized,
-                    graph.optimization_params.label_token,
-                    graph.optimization_params.imp_min_coeff,
-                    graph.optimization_params.ce_loss_coeff,
-                    graph.optimization_params.steps,
-                    graph.optimization_params.pnorm,
-                    edges_compressed,
-                    probs_compressed,
-                    graph.optimization_stats.label_prob,
-                    graph.optimization_stats.l0_total,
-                    json.dumps(graph.optimization_stats.l0_per_layer),
-                ),
-            )
-        else:
-            conn.execute(
-                """INSERT INTO cached_graphs
-                   (prompt_id, is_optimized, edges_data, output_probs_data)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT DO NOTHING""",
-                (
-                    prompt_id,
-                    is_optimized,
-                    edges_compressed,
-                    probs_compressed,
-                ),
-            )
-
-        conn.commit()
+        try:
+            if graph.optimization_params:
+                assert graph.optimization_stats is not None, (
+                    "optimization_stats required for optimized graphs"
+                )
+                conn.execute(
+                    """INSERT INTO cached_graphs
+                       (prompt_id, is_optimized,
+                        label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
+                        edges_data, output_probs_data,
+                        label_prob, l0_total, l0_per_layer)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        prompt_id,
+                        is_optimized,
+                        graph.optimization_params.label_token,
+                        graph.optimization_params.imp_min_coeff,
+                        graph.optimization_params.ce_loss_coeff,
+                        graph.optimization_params.steps,
+                        graph.optimization_params.pnorm,
+                        edges_compressed,
+                        probs_compressed,
+                        graph.optimization_stats.label_prob,
+                        graph.optimization_stats.l0_total,
+                        json.dumps(graph.optimization_stats.l0_per_layer),
+                    ),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO cached_graphs
+                       (prompt_id, is_optimized, edges_data, output_probs_data)
+                       VALUES (?, ?, ?, ?)""",
+                    (
+                        prompt_id,
+                        is_optimized,
+                        edges_compressed,
+                        probs_compressed,
+                    ),
+                )
+            conn.commit()
+        except sqlite3.IntegrityError as e:
+            raise ValueError(
+                f"Graph already cached for prompt_id={prompt_id}. "
+                "Use get_graphs() to retrieve existing graph or delete it first."
+            ) from e
 
     def get_graphs(self, prompt_id: int) -> list[StoredGraph]:
         """Retrieve all stored graphs for a prompt.
