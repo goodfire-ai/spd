@@ -1,3 +1,4 @@
+import type { SvelteSet } from "svelte/reactivity";
 import type { GraphData } from "../../lib/localAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/localAttributionsApi";
@@ -8,7 +9,7 @@ export type StoredGraph = {
     label: string;
     data: GraphData;
     // Composer state for interventions
-    composerSelection: Set<string>; // currently selected node keys
+    composerSelection: SvelteSet<string>; // currently selected node keys
     interventionRuns: InterventionRunSummary[]; // persisted runs
     activeRunId: number | null; // which run is selected (for restoring selection)
 };

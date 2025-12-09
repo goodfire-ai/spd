@@ -1,3 +1,5 @@
+import { SvelteSet } from "svelte/reactivity";
+
 /** Types for the local attributions visualizer */
 
 // Server API types
@@ -137,8 +139,8 @@ export function isInterventableNode(nodeKey: string): boolean {
     return !NON_INTERVENTABLE_LAYERS.has(layer);
 }
 
-export function filterInterventableNodes(nodeKeys: Iterable<string>): Set<string> {
-    const result = new Set<string>();
+export function filterInterventableNodes(nodeKeys: Iterable<string>): SvelteSet<string> {
+    const result = new SvelteSet<string>();
     for (const key of nodeKeys) {
         if (isInterventableNode(key)) result.add(key);
     }
