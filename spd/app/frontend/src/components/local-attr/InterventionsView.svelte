@@ -32,7 +32,7 @@
         componentDetailsLoading: Record<string, boolean>;
         runningIntervention: boolean;
         onLoadComponentDetail: (layer: string, cIdx: number) => void;
-        onSelectionChange: (selection: Set<string>) => void;
+        onSelectionChange: (selection: SvelteSet<string>) => void;
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
         onDeleteRun: (runId: number) => void;
