@@ -7,12 +7,12 @@
     let progress = $state<api.ProgressUpdate | null>(null);
 
     // Configuration parameters
-    let nBatches = $state(1);
-    let batchSize = $state(1);
-    let nTokensEitherSide = $state(10);
+    let nBatches = $state(10);
+    let batchSize = $state(16);
+    let nTokensEitherSide = $state(8);
+    let separationTokens = $state(8);
     let importanceThreshold = $state(0.0);
-    let topkExamples = $state(1000);
-    let separationTokens = $state(0);
+    let topkExamples = $state(200);
 
     async function loadContexts() {
         loading = true;
@@ -90,6 +90,18 @@
                 </div>
 
                 <div class="config-item">
+                    <label for="separation-tokens">Token Separation:</label>
+                    <input
+                        id="separation-tokens"
+                        type="number"
+                        step="1"
+                        min="0"
+                        bind:value={separationTokens}
+                        onkeydown={handleKeydown}
+                    />
+                </div>
+
+                <div class="config-item">
                     <label for="importance-threshold">Importance Threshold:</label>
                     <input
                         id="importance-threshold"
@@ -110,18 +122,6 @@
                         step="1"
                         min="1"
                         bind:value={topkExamples}
-                        onkeydown={handleKeydown}
-                    />
-                </div>
-
-                <div class="config-item">
-                    <label for="separation-tokens">Token Separation:</label>
-                    <input
-                        id="separation-tokens"
-                        type="number"
-                        step="1"
-                        min="0"
-                        bind:value={separationTokens}
                         onkeydown={handleKeydown}
                     />
                 </div>
