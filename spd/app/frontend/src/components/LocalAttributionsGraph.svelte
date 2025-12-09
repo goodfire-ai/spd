@@ -12,7 +12,7 @@
     } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
     import { lerp, hashString, seededShuffle } from "./local-attr/graphUtils";
-    import ComponentDetailCard from "./local-attr/ComponentDetailCard.svelte";
+    import NodeTooltip from "./local-attr/NodeTooltip.svelte";
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -708,34 +708,20 @@
 
     <!-- Node tooltip -->
     {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)}
-        {@const summary = activationContextsSummary?.[hoveredNode.layer]?.find(
-            (s) => s.subcomponent_idx === hoveredNode?.cIdx,
-        )}
-        {@const detail = componentDetailsCache[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
-        {@const isLoading = componentDetailsLoading[`${hoveredNode.layer}:${hoveredNode.cIdx}`] ?? false}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-            class="node-tooltip"
-            style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"
-            onmouseenter={() => (isHoveringTooltip = true)}
-            onmouseleave={() => {
+        <NodeTooltip
+            {hoveredNode}
+            {tooltipPos}
+            {activationContextsSummary}
+            {componentDetailsCache}
+            {componentDetailsLoading}
+            outputProbs={data.outputProbs}
+            tokens={data.tokens}
+            onMouseEnter={() => (isHoveringTooltip = true)}
+            onMouseLeave={() => {
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
-        >
-            <h3>{hoveredNode.layer}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
-
-            <ComponentDetailCard
-                layer={hoveredNode.layer}
-                cIdx={hoveredNode.cIdx}
-                seqIdx={hoveredNode.seqIdx}
-                {detail}
-                {isLoading}
-                outputProbs={data.outputProbs}
-                {summary}
-                compact
-            />
-        </div>
+        />
     {/if}
 </div>
 
@@ -808,8 +794,7 @@
         opacity: 1 !important;
     }
 
-    .edge-tooltip,
-    .node-tooltip {
+    .edge-tooltip {
         position: fixed;
         padding: var(--space-3);
         background: var(--bg-elevated);
@@ -817,9 +802,6 @@
         z-index: 1000;
         pointer-events: auto;
         font-family: var(--font-mono);
-    }
-
-    .edge-tooltip {
         font-size: var(--text-sm);
     }
 
@@ -831,7 +813,6 @@
 
     .edge-tooltip-label {
         color: var(--text-muted);
-
         font-size: var(--text-xs);
         letter-spacing: 0.05em;
         min-width: 4em;
@@ -840,22 +821,5 @@
     .edge-tooltip code {
         color: var(--text-primary);
         font-size: var(--text-sm);
-    }
-
-    .node-tooltip {
-        max-width: 400px;
-        max-height: 500px;
-        overflow-y: auto;
-    }
-
-    .node-tooltip h3 {
-        margin: 0 0 var(--space-2) 0;
-        font-size: var(--text-base);
-        font-family: var(--font-mono);
-        color: var(--accent-primary);
-        font-weight: 600;
-        letter-spacing: 0.02em;
-        border-bottom: 1px solid var(--border-subtle);
-        padding-bottom: var(--space-2);
     }
 </style>

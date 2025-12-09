@@ -138,6 +138,8 @@
         padding: var(--space-2);
         background: var(--bg-inset);
         border: 1px solid var(--border-default);
+        overflow-x: auto;
+        overflow-y: clip;
     }
 
     .examples-inner {
@@ -253,10 +255,5 @@
         line-height: 1.8;
         color: var(--text-primary);
         white-space: nowrap;
-        border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .example-item:last-child {
-        border-bottom: none;
     }
 </style>
