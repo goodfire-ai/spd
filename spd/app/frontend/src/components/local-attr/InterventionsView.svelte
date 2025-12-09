@@ -1,13 +1,14 @@
 <script lang="ts">
     import { SvelteSet } from "svelte/reactivity";
     import type { StoredGraph } from "./types";
-    import type {
-        ActivationContextsSummary,
-        ComponentDetail,
-        LayerInfo,
-        NodePosition,
+    import {
+        isInterventableNode,
+        type ActivationContextsSummary,
+        type ComponentDetail,
+        type LayerInfo,
+        type NodePosition,
     } from "../../lib/localAttributionsTypes";
-    import { colors, getEdgeColor } from "../../lib/colors";
+    import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
     import { lerp } from "./graphUtils";
     import ComponentDetailCard from "./ComponentDetailCard.svelte";
 
@@ -80,40 +81,23 @@
         return layer;
     }
 
-    // Filter edges and get active nodes (same logic as LocalAttributionsGraph)
-    const { filteredEdges, activeNodes } = $derived.by(() => {
+    // All nodes from the graph (for rendering)
+    const allNodes = $derived(new SvelteSet(Object.keys(graph.data.nodeImportance)));
+
+    // Interventable nodes only (for selection)
+    const interventableNodes = $derived.by(() => {
+        const nodes = new SvelteSet<string>();
+        for (const nodeKey of allNodes) {
+            if (isInterventableNode(nodeKey)) nodes.add(nodeKey);
+        }
+        return nodes;
+    });
+
+    // Filter edges for rendering (topK by magnitude)
+    const filteredEdges = $derived.by(() => {
         const edgesCopy = [...graph.data.edges];
         const sortedEdges = edgesCopy.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
-        const filtered = sortedEdges.slice(0, topK);
-
-        const active = new SvelteSet<string>();
-        for (const edge of filtered) {
-            active.add(edge.src);
-            active.add(edge.tgt);
-        }
-
-        // Include output nodes by probability threshold
-        const outputNodesWithEdges = new SvelteSet<string>();
-        for (const nodeKey of active) {
-            if (nodeKey.startsWith("output:")) outputNodesWithEdges.add(nodeKey);
-        }
-
-        if (outputNodesWithEdges.size > 0) {
-            let minProb = Infinity;
-            for (const nodeKey of outputNodesWithEdges) {
-                const [, seqIdx, cIdx] = nodeKey.split(":");
-                const entry = graph.data.outputProbs[`${seqIdx}:${cIdx}`];
-                if (entry && entry.prob < minProb) minProb = entry.prob;
-            }
-            for (const [probKey, entry] of Object.entries(graph.data.outputProbs)) {
-                if (entry.prob >= minProb) {
-                    const [seqIdx, cIdx] = probKey.split(":");
-                    active.add(`output:${seqIdx}:${cIdx}`);
-                }
-            }
-        }
-
-        return { filteredEdges: filtered, activeNodes: active };
+        return sortedEdges.slice(0, topK);
     });
 
     // Compute layout for composer
@@ -122,7 +106,7 @@
         const allLayers = new SvelteSet<string>();
         const allRows = new SvelteSet<string>();
 
-        for (const nodeKey of activeNodes) {
+        for (const nodeKey of allNodes) {
             const [layer, seqIdx, cIdx] = nodeKey.split(":");
             allLayers.add(layer);
             allRows.add(getRowKey(layer));
@@ -255,32 +239,26 @@
     // Derived values
     const maxAbsAttr = $derived(graph.data.maxAbsAttr || 1);
     const selectedCount = $derived(graph.composerSelection.size);
-    const activeNodeCount = $derived(activeNodes.size);
+    const interventableCount = $derived(interventableNodes.size);
 
     // Selection helpers
     function isNodeSelected(nodeKey: string): boolean {
         return graph.composerSelection.has(nodeKey);
     }
 
-    function toggleNode(nodeKey: string, shiftKey: boolean) {
-        const newSelection = new SvelteSet(graph.composerSelection);
-        if (shiftKey) {
-            // Solo mode: select only this node
-            newSelection.clear();
-            newSelection.add(nodeKey);
+    function toggleNode(nodeKey: string) {
+        if (!isInterventableNode(nodeKey)) return; // Can't toggle non-interventable nodes
+        const newSelection = new Set(graph.composerSelection);
+        if (newSelection.has(nodeKey)) {
+            newSelection.delete(nodeKey);
         } else {
-            // Toggle mode
-            if (newSelection.has(nodeKey)) {
-                newSelection.delete(nodeKey);
-            } else {
-                newSelection.add(nodeKey);
-            }
+            newSelection.add(nodeKey);
         }
         onSelectionChange(newSelection);
     }
 
     function selectAll() {
-        onSelectionChange(new Set(activeNodes));
+        onSelectionChange(new Set(interventableNodes));
     }
 
     function clearSelection() {
@@ -320,8 +298,8 @@
         return { x: Math.max(0, left), y: Math.max(0, top) };
     }
 
-    function handleNodeClick(event: MouseEvent, nodeKey: string) {
-        toggleNode(nodeKey, event.shiftKey);
+    function handleNodeClick(nodeKey: string) {
+        toggleNode(nodeKey);
         hoveredNode = null;
     }
 
@@ -369,12 +347,12 @@
     <div class="composer-panel">
         <div class="composer-header">
             <span class="title">Composer</span>
-            <span class="node-count">{selectedCount} / {activeNodeCount} nodes selected</span>
+            <span class="node-count">{selectedCount} / {interventableCount} nodes selected</span>
         </div>
 
         <div class="composer-controls">
             <div class="topk-control">
-                <label for="topk-slider">Top K:</label>
+                <label for="topk-slider">Show Top K Edges:</label>
                 <input id="topk-slider" type="range" min="10" max="2000" step="10" bind:value={topK} />
                 <span class="topk-value">{topK}</span>
             </div>
@@ -391,7 +369,7 @@
             </div>
         </div>
 
-        <div class="composer-hint">Click to toggle • Shift+click to solo</div>
+        <div class="composer-hint">Click to toggle selection</div>
 
         <div class="composer-graph">
             <svg width={layout.width} height={layout.height}>
@@ -451,10 +429,11 @@
 
                 <!-- Nodes -->
                 <g class="nodes-layer">
-                    {#each activeNodes as nodeKey (nodeKey)}
+                    {#each allNodes as nodeKey (nodeKey)}
                         {@const pos = layout.nodePositions[nodeKey]}
                         {@const [layer, seqIdx, cIdx] = nodeKey.split(":")}
-                        {@const selected = isNodeSelected(nodeKey)}
+                        {@const interventable = isInterventableNode(nodeKey)}
+                        {@const selected = interventable && isNodeSelected(nodeKey)}
                         {@const isOutput = layer === "output"}
                         {@const outputEntry = isOutput ? graph.data.outputProbs[`${seqIdx}:${cIdx}`] : null}
                         {#if pos}
@@ -463,9 +442,10 @@
                             <g
                                 class="node-group"
                                 class:selected
+                                class:non-interventable={!interventable}
                                 onmouseenter={(e) => handleNodeMouseEnter(e, layer, +seqIdx, +cIdx)}
                                 onmouseleave={handleNodeMouseLeave}
-                                onclick={(e) => handleNodeClick(e, nodeKey)}
+                                onclick={() => handleNodeClick(nodeKey)}
                             >
                                 <rect
                                     x={pos.x - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
@@ -480,11 +460,15 @@
                                     y={pos.y - COMPONENT_SIZE / 2}
                                     width={COMPONENT_SIZE}
                                     height={COMPONENT_SIZE}
-                                    fill={selected ? colors.accent : colors.nodeDefault}
+                                    fill={!interventable
+                                        ? colors.textMuted
+                                        : selected
+                                          ? colors.accent
+                                          : colors.nodeDefault}
                                     stroke={selected ? colors.accent : "none"}
                                     stroke-width={selected ? 2 : 0}
                                     rx="1"
-                                    opacity={selected ? 1 : 0.4}
+                                    opacity={!interventable ? 0.3 : selected ? 1 : 0.4}
                                 />
                                 {#if isOutput && outputEntry}
                                     <text
@@ -557,7 +541,10 @@
                                         <tr>
                                             {#each run.result.predictions_per_position as preds, idx (idx)}
                                                 {@const pred = preds[rank]}
-                                                <td class:has-pred={!!pred}>
+                                                <td
+                                                    class:has-pred={!!pred}
+                                                    style={pred ? `background: ${getOutputHeaderColor(pred.prob)}` : ""}
+                                                >
                                                     {#if pred}
                                                         <span class="pred-token">"{pred.token}"</span>
                                                         <span class="pred-prob">{formatProb(pred.prob)}</span>
@@ -741,6 +728,14 @@
     .node-group:hover .node {
         opacity: 1 !important;
         filter: brightness(1.2);
+    }
+
+    .node-group.non-interventable {
+        cursor: default;
+    }
+
+    .node-group.non-interventable:hover .node {
+        filter: none;
     }
 
     /* History Panel */

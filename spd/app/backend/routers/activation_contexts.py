@@ -62,6 +62,16 @@ def get_activation_contexts_summary(
     return summary
 
 
+@router.get("/config")
+@log_errors
+def get_activation_contexts_config(
+    manager: DepStateManager,
+    loaded: DepLoadedRun,
+) -> ActivationContextsGenerationConfig | None:
+    """Return the config used to generate the stored activation contexts."""
+    return manager.db.get_activation_contexts_config(loaded.run.id)
+
+
 @router.get("/{layer}/{component_idx}")
 @log_errors
 def get_activation_context_detail(

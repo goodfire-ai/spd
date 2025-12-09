@@ -1,38 +1,53 @@
 <script lang="ts">
     import * as api from "../lib/api";
+    import * as attrApi from "../lib/localAttributionsApi";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
+
+    type Props = {
+        onHarvestComplete: () => void;
+    };
+
+    let { onHarvestComplete }: Props = $props();
 
     let loading = $state(false);
     let harvestMetadata = $state<api.HarvestMetadata | null>(null);
     let progress = $state<api.ProgressUpdate | null>(null);
 
-    // Configuration parameters
-    let nBatches = $state(10);
-    let batchSize = $state(16);
-    let nTokensEitherSide = $state(8);
-    let separationTokens = $state(8);
-    let importanceThreshold = $state(0.0);
-    let topkExamples = $state(200);
+    // Configuration - single object, prefilled from cache if available
+    let config = $state<attrApi.ActivationContextsConfig>({
+        n_batches: 10,
+        batch_size: 16,
+        n_tokens_either_side: 8,
+        separation_tokens: 8,
+        importance_threshold: 0.0,
+        topk_examples: 200,
+    });
+
+    // Load cached activation contexts and config on mount
+    $effect(() => {
+        loadCachedData();
+    });
+
+    async function loadCachedData() {
+        // Load config first - if it exists, contexts exist too
+        const cachedConfig = await attrApi.getActivationContextsConfig();
+        if (cachedConfig === null) return;
+
+        config = cachedConfig;
+        const summary = await attrApi.getActivationContextsSummary();
+        harvestMetadata = { layers: summary };
+    }
 
     async function loadContexts() {
         loading = true;
         harvestMetadata = null;
         progress = null;
         try {
-            const data = await api.getSubcomponentActivationContexts(
-                {
-                    n_batches: nBatches,
-                    batch_size: batchSize,
-                    n_tokens_either_side: nTokensEitherSide,
-                    importance_threshold: importanceThreshold,
-                    topk_examples: topkExamples,
-                    separation_tokens: separationTokens,
-                },
-                (p) => {
-                    progress = p;
-                },
-            );
+            const data = await api.getSubcomponentActivationContexts(config, (p) => {
+                progress = p;
+            });
             harvestMetadata = data;
+            onHarvestComplete();
         } catch (error) {
             console.error("Error loading contexts", error);
         } finally {
@@ -60,7 +75,7 @@
                         type="number"
                         step="1"
                         min="1"
-                        bind:value={nBatches}
+                        bind:value={config.n_batches}
                         onkeydown={handleKeydown}
                     />
                 </div>
@@ -72,7 +87,7 @@
                         type="number"
                         step="1"
                         min="1"
-                        bind:value={batchSize}
+                        bind:value={config.batch_size}
                         onkeydown={handleKeydown}
                     />
                 </div>
@@ -84,7 +99,7 @@
                         type="number"
                         step="1"
                         min="0"
-                        bind:value={nTokensEitherSide}
+                        bind:value={config.n_tokens_either_side}
                         onkeydown={handleKeydown}
                     />
                 </div>
@@ -96,7 +111,7 @@
                         type="number"
                         step="1"
                         min="0"
-                        bind:value={separationTokens}
+                        bind:value={config.separation_tokens}
                         onkeydown={handleKeydown}
                     />
                 </div>
@@ -109,7 +124,7 @@
                         step="0.001"
                         min="0"
                         max="1"
-                        bind:value={importanceThreshold}
+                        bind:value={config.importance_threshold}
                         onkeydown={handleKeydown}
                     />
                 </div>
@@ -121,7 +136,7 @@
                         type="number"
                         step="1"
                         min="1"
-                        bind:value={topkExamples}
+                        bind:value={config.topk_examples}
                         onkeydown={handleKeydown}
                     />
                 </div>
