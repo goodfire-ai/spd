@@ -1,86 +1,123 @@
-# --- WandB ---
 wandb_project: spd
-# wandb_project: null
 wandb_run_name: null
-wandb_run_name_prefix: ""
-
-# --- General ---
+wandb_run_name_prefix: ''
 seed: 0
-C: 768
+C: 2816
 n_mask_samples: 1
-ci_fn_type: "vector_mlp"
-ci_fn_hidden_dims: [12]
-sigmoid_type: "leaky_hard"
-target_module_patterns: ["transformer.h.1.attn.c_attn"]
+ci_fn_type: shared_mlp
+ci_fn_hidden_dims:
+- 1548
+sampling: continuous
+sigmoid_type: leaky_hard
+target_module_patterns:
+- transformer.h.*.mlp.c_fc
+- transformer.h.*.mlp.c_proj
+- transformer.h.*.attn.c_attn
 identity_module_patterns: null
-sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
-  - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0003
-    pnorm: 2.0
-    p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.3
-    p_anneal_end_frac: 1.0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 2.0
+- coeff: 0.0004
+  classname: ImportanceMinimalityLoss
+  pnorm: 2.0
+  p_anneal_start_frac: 0.0
+  p_anneal_final_p: 0.3
+  p_anneal_end_frac: 1.0
+  eps: 1.0e-12
+- coeff: 0.25
+  classname: StochasticReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+- coeff: 0.75
+  init: random
+  step_size: 0.5
+  n_steps: 6
+  mask_scope: shared_across_batch
+  classname: PGDReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+- coeff: 1000000.0
+  classname: FaithfulnessLoss
 output_loss_type: kl
-
-# --- Training ---
-batch_size: 2
-steps: 50_000
-lr: 3e-4
-lr_schedule: cosine
-lr_warmup_pct: 0.01
-lr_exponential_halflife: null
+lr: 0.0005
+steps: 200000
+batch_size: 128
 gradient_accumulation_steps: 1
-
-# --- Faithfulness Warmup ---
+grad_clip_norm: 1.0
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
-
-# --- Logging & Saving ---
-train_log_freq: 100
+lr_schedule: cosine
+lr_exponential_halflife: null
+lr_warmup_pct: 0.0
+out_dir: null
+train_log_freq: 200
 eval_freq: 1000
-slow_eval_freq: 5000
+eval_batch_size: 128
+slow_eval_freq: 10000
+n_eval_steps: 1
 slow_eval_on_first_step: true
-n_eval_steps: 5
-save_freq: null
-ci_alive_threshold: 0.0
-n_examples_until_dead: 3_276_800  # train_log_freq * batch_size * max_seq_len = 100 * 64 * 512
+save_freq: 20000
 eval_metric_configs:
-  - classname: "CIHistograms"
-    n_batches_accum: 5
-  - classname: "ComponentActivationDensity"
-  - classname: "CI_L0"
-    groups: null
-  - classname: "CEandKLLosses"
-    rounding_threshold: 0.0
-  - classname: "CIMeanPerComponent"
-  - classname: "StochasticHiddenActsReconLoss"
-
-# --- Pretrained model info ---
+# - classname: CIHistograms
+#   n_batches_accum: 1
+# - classname: ComponentActivationDensity
+- classname: CI_L0
+  groups:
+    total:
+    - '*'
+    # layer_0:
+    # - transformer.h.0.*
+    # layer_1:
+    # - transformer.h.1.*
+    # layer_2:
+    # - transformer.h.2.*
+    # layer_3:
+    # - transformer.h.3.*
+- classname: CEandKLLosses
+  rounding_threshold: 0.0
+- classname: CIMeanPerComponent
+# - classname: StochasticReconSubsetCEAndKL
+#   include_patterns:
+#     layer_0_only:
+#     - transformer.h.0.*
+#     layer_1_only:
+#     - transformer.h.1.*
+#     layer_2_only:
+#     - transformer.h.2.*
+#     layer_3_only:
+#     - transformer.h.3.*
+#   exclude_patterns:
+#     all_but_layer_0:
+#     - transformer.h.0.*
+#     all_but_layer_1:
+#     - transformer.h.1.*
+#     all_but_layer_2:
+#     - transformer.h.2.*
+#     all_but_layer_3:
+#     - transformer.h.3.*
+- coeff: null
+  classname: StochasticHiddenActsReconLoss
+- coeff: null
+  init: random
+  step_size: 0.1
+  n_steps: 20
+  mask_scope: shared_across_batch
+  classname: PGDReconLoss
+ci_alive_threshold: 0.0
+n_examples_until_dead: 1368400
 pretrained_model_class: transformers.GPT2LMHeadModel
+pretrained_model_path: null
 pretrained_model_name: openai-community/gpt2
 pretrained_model_output_attr: logits
 tokenizer_name: openai-community/gpt2
-
-# --- Task Specific ---
 task_config:
-  task_name: lm 
+  task_name: lm
   max_seq_len: 1024
-  dataset_name: "apollo-research/Skylion007-openwebtext-tokenizer-gpt2"
-  is_tokenized: True
-  column_name: "input_ids"
-  train_data_split: "train"
-  eval_data_split: "train"  # TODO: handle different seeding for train and eval
-
-
-# Config details for the target model taken from https://github.com/danbraunai/simple_stories_train/blob/main/simple_stories_train/train_gpt2.py#L165
-  # class GPTConfig:
-  #     block_size: int = 1024
-  #     vocab_size: int = 50257
-  #     n_layer: int = 12
-  #     n_head: int = 12
-  #     n_embd: int = 768
+  buffer_size: 1000
+  dataset_name: apollo-research/Skylion007-openwebtext-tokenizer-gpt2
+  column_name: input_ids
+  train_data_split: train
+  eval_data_split: train
+  shuffle_each_epoch: true
+  is_tokenized: true
+  streaming: false

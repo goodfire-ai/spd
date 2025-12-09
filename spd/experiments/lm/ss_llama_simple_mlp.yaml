@@ -2,24 +2,19 @@ wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
-C: 704
+C: 4200
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-- 800
+- 2000
 sampling: continuous
 sigmoid_type: leaky_hard
 target_module_patterns:
-- h.*.mlp.c_fc
-- h.*.mlp.down_proj
-- h.*.attn.q_proj
-- h.*.attn.k_proj
-- h.*.attn.v_proj
-- h.*.attn.o_proj
+- lm_head
 identity_module_patterns: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.002
+- coeff: 0.1
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   p_anneal_start_frac: 0.0
@@ -28,20 +23,25 @@ loss_metric_configs:
   eps: 1.0e-12
 - coeff: 0.5
   classname: StochasticReconSubsetLoss
+  routing:
+    type: uniform_k_subset
 - coeff: 0.5
   init: random
   step_size: 0.5
   n_steps: 4
   mask_scope: shared_across_batch
   classname: PGDReconSubsetLoss
+  routing:
+    type: uniform_k_subset
 - coeff: 100000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr: 0.0005
 steps: 400000
-batch_size: 64
+batch_size: 128
 gradient_accumulation_steps: 1
-grad_clip_norm: 0.01
+grad_clip_norm_components: 0.01
+grad_clip_norm_ci_fns: null
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
@@ -64,40 +64,9 @@ eval_metric_configs:
   groups:
     total:
     - '*'
-    layer_0:
-    - h.0.*
-    layer_1:
-    - h.1.*
-    layer_2:
-    - h.2.*
-    layer_3:
-    - h.3.*
 - classname: CEandKLLosses
   rounding_threshold: 0.0
 - classname: CIMeanPerComponent
-- classname: StochasticReconSubsetCEAndKL
-  include_patterns:
-    layer_0_only:
-    - h.0.*
-    layer_1_only:
-    - h.1.*
-    layer_2_only:
-    - h.2.*
-    layer_3_only:
-    - h.3.*
-    mlp_only:
-    - '*.mlp.*'
-    attention_only:
-    - '*.attn.*'
-  exclude_patterns:
-    all_but_layer_0:
-    - h.0.*
-    all_but_layer_1:
-    - h.1.*
-    all_but_layer_2:
-    - h.2.*
-    all_but_layer_3:
-    - h.3.*
 - coeff: null
   classname: StochasticHiddenActsReconLoss
 - coeff: null
@@ -110,7 +79,7 @@ ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 pretrained_model_class: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP
 pretrained_model_path: null
-pretrained_model_name: wandb:goodfire/spd/runs/9de1zu65 # 100k steps
+pretrained_model_name: wandb:goodfire/spd/runs/9de1zu65
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 task_config:
