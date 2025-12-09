@@ -254,7 +254,7 @@
 
     function toggleNode(nodeKey: string) {
         if (!isInterventableNode(nodeKey)) return; // Can't toggle non-interventable nodes
-        const newSelection = new Set(graph.composerSelection);
+        const newSelection = new SvelteSet(graph.composerSelection);
         if (newSelection.has(nodeKey)) {
             newSelection.delete(nodeKey);
         } else {
@@ -264,15 +264,16 @@
     }
 
     function selectAll() {
-        onSelectionChange(new Set(interventableNodes));
+        onSelectionChange(new SvelteSet(interventableNodes));
     }
 
     function clearSelection() {
-        onSelectionChange(new Set());
+        onSelectionChange(new SvelteSet());
     }
 
     // Hover handlers
     function handleNodeMouseEnter(event: MouseEvent, layer: string, seqIdx: number, cIdx: number) {
+        if (isDragging) return;
         if (hoverTimeout) {
             clearTimeout(hoverTimeout);
             hoverTimeout = null;
@@ -312,10 +313,11 @@
     // Drag-to-select handlers
     function getSvgPoint(event: MouseEvent): { x: number; y: number } | null {
         if (!svgElement) return null;
-        const rect = svgElement.getBoundingClientRect();
+        const container = svgElement.parentElement!;
+        const rect = container.getBoundingClientRect();
         return {
-            x: event.clientX - rect.left + svgElement.parentElement!.scrollLeft,
-            y: event.clientY - rect.top + svgElement.parentElement!.scrollTop,
+            x: event.clientX - rect.left + container.scrollLeft,
+            y: event.clientY - rect.top + container.scrollTop,
         };
     }
 
@@ -325,9 +327,12 @@
         const target = event.target as Element;
         if (target.closest(".node-group")) return;
 
+        event.preventDefault(); // Prevent text selection while dragging
+
         const point = getSvgPoint(event);
         if (!point) return;
 
+        hoveredNode = null; // Clear tooltip when starting drag
         isDragging = true;
         dragStart = point;
         dragCurrent = point;
@@ -369,7 +374,7 @@
 
             // Toggle selection for nodes in rect
             if (nodesToToggle.length > 0) {
-                const newSelection = new Set(graph.composerSelection);
+                const newSelection = new SvelteSet(graph.composerSelection);
                 for (const nodeKey of nodesToToggle) {
                     if (newSelection.has(nodeKey)) {
                         newSelection.delete(nodeKey);
@@ -469,8 +474,7 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <svg
                 bind:this={svgElement}
-                width={layout.width}
-                height={layout.height}
+                style="min-width: {layout.width}px; min-height: {layout.height}px; width: 100%; height: 100%;"
                 onmousedown={handleSvgMouseDown}
                 onmousemove={handleSvgMouseMove}
                 onmouseup={handleSvgMouseUp}
