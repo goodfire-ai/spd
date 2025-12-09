@@ -4,18 +4,24 @@
     type Props = {
         results: DatasetSearchResult[];
         page: number;
+        pageSize: number;
         totalPages: number;
         onPageChange: (page: number) => void;
         query: string;
     };
 
-    let { results, page, totalPages, onPageChange, query }: Props = $props();
+    let { results, page, pageSize, totalPages, onPageChange, query }: Props = $props();
 
     function highlightQuery(text: string, searchQuery: string): string {
         if (!searchQuery) return escapeHtml(text);
+        // Escape regex special chars in the query
         const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const regex = new RegExp(`(${escapedQuery})`, "gi");
-        return escapeHtml(text).replace(regex, "<mark>$1</mark>");
+        // Use placeholder markers, then escape HTML, then replace markers with mark tags
+        const MARK_START = "\u0000MARK_START\u0000";
+        const MARK_END = "\u0000MARK_END\u0000";
+        const markedText = text.replace(regex, `${MARK_START}$1${MARK_END}`);
+        return escapeHtml(markedText).replace(new RegExp(MARK_START, "g"), "<mark>").replace(new RegExp(MARK_END, "g"), "</mark>");
     }
 
     function escapeHtml(text: string): string {
@@ -41,7 +47,7 @@
         {#each results as result, idx}
             <div class="result-card">
                 <div class="result-header">
-                    <span class="result-index">#{(page - 1) * results.length + idx + 1}</span>
+                    <span class="result-index">#{(page - 1) * pageSize + idx + 1}</span>
                     <span class="occurrence-badge"
                         >{result.occurrence_count} occurrence{result.occurrence_count > 1 ? "s" : ""}</span
                     >

@@ -3,7 +3,7 @@
     import DatasetSearchResults from "./DatasetSearchResults.svelte";
 
     let query = $state("");
-    let split = $state<"train" | "validation">("train");
+    let split = $state<"train" | "test">("train");
     let loading = $state(false);
     let progress = $state<number | null>(null);
     let metadata = $state<api.DatasetSearchMetadata | null>(null);
@@ -78,7 +78,7 @@
                 <label for="split">Split:</label>
                 <select id="split" bind:value={split} disabled={loading}>
                     <option value="train">Train</option>
-                    <option value="validation">Validation</option>
+                    <option value="test">Test</option>
                 </select>
             </div>
         </div>
@@ -107,6 +107,7 @@
             <DatasetSearchResults
                 results={currentPageResults.results}
                 page={currentPage}
+                {pageSize}
                 totalPages={currentPageResults.total_pages}
                 onPageChange={loadPage}
                 {query}

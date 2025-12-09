@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/dataset", tags=["dataset"])
 @log_errors
 def search_dataset(
     query: Annotated[str, Query(min_length=1)],
-    split: Annotated[str, Query(pattern="^(train|validation)$")] = "train",
+    split: Annotated[str, Query(pattern="^(train|test)$")] = "train",
     manager: DepStateManager = None,  # pyright: ignore[reportArgumentType]
 ) -> StreamingResponse:
     """Search SimpleStories dataset for stories containing query string.
@@ -42,7 +42,7 @@ def search_dataset(
 
     Args:
         query: Text to search for (case-insensitive)
-        split: Dataset split to search ("train" or "validation")
+        split: Dataset split to search ("train" or "test")
 
     Returns:
         SSE stream with progress updates and final metadata
@@ -130,6 +130,15 @@ def search_dataset(
                 msg = progress_queue.get(timeout=0.1)
             except queue.Empty:
                 if not thread.is_alive():
+                    # Thread exited - drain any remaining messages
+                    while not progress_queue.empty():
+                        try:
+                            msg = progress_queue.get_nowait()
+                            yield f"data: {json.dumps(msg)}\n\n"
+                            if msg["type"] in ("error", "complete"):
+                                break
+                        except queue.Empty:
+                            break
                     break
                 continue
 
