@@ -10,6 +10,14 @@
 
     let { tokens, value, onSelect, placeholder = "Search tokens..." }: Props = $props();
 
+    /** Format token for display: strip leading space, add ## prefix if no leading space */
+    function formatTokenDisplay(tokenString: string): string {
+        if (tokenString.startsWith(" ")) {
+            return tokenString.slice(1);
+        }
+        return "##" + tokenString;
+    }
+
     let inputValue = $state(value);
     let isOpen = $state(false);
     let highlightedIndex = $state(0);
@@ -80,8 +88,11 @@
         }
     }
 
-    function handleBackdropClick() {
-        isOpen = false;
+    function handleBlur() {
+        // Small delay to allow click events on dropdown items to fire first
+        setTimeout(() => {
+            isOpen = false;
+        }, 150);
     }
 </script>
 
@@ -90,6 +101,7 @@
         type="text"
         bind:value={inputValue}
         onfocus={handleFocus}
+        onblur={handleBlur}
         onkeydown={handleKeydown}
         oninput={handleInput}
         {placeholder}
@@ -97,8 +109,6 @@
     />
 
     {#if isOpen && filteredTokens.length > 0}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="dropdown-backdrop" onclick={handleBackdropClick} onkeydown={(e) => e.key === "Escape" && handleBackdropClick()}></div>
         <ul class="dropdown-list">
             {#each filteredTokens as token, i (token.id)}
                 <li>
@@ -106,10 +116,10 @@
                         type="button"
                         class="dropdown-item"
                         class:highlighted={i === highlightedIndex}
-                        onclick={() => handleSelect(token)}
+                        onmousedown={() => handleSelect(token)}
                         onmouseenter={() => (highlightedIndex = i)}
                     >
-                        <span class="token-string">{token.string}</span>
+                        <span class="token-string">{formatTokenDisplay(token.string)}</span>
                         <span class="token-id">#{token.id}</span>
                     </button>
                 </li>
@@ -143,12 +153,6 @@
 
     .dropdown-input::placeholder {
         color: var(--text-muted);
-    }
-
-    .dropdown-backdrop {
-        position: fixed;
-        inset: 0;
-        z-index: 999;
     }
 
     .dropdown-list {
