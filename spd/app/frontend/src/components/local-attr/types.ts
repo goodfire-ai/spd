@@ -35,7 +35,6 @@ export type OptimizeConfig = {
 };
 
 export type ComputeOptions = {
-    maxMeanCI: number;
     ciThreshold: number;
     useOptimized: boolean;
     optimizeConfig: OptimizeConfig;

@@ -71,7 +71,6 @@
 
     // Compute options
     let computeOptions = $state<ComputeOptions>({
-        maxMeanCI: 1.0,
         ciThreshold: 0,
         useOptimized: false,
         optimizeConfig: {
