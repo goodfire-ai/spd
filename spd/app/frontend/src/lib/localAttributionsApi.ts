@@ -10,6 +10,7 @@ import type {
     SearchResult,
     TokenizeResult,
     ComponentProbeResult,
+    TokenInfo,
 } from "./localAttributionsTypes";
 import { API_URL } from "./api";
 
@@ -92,6 +93,11 @@ export async function tokenizeText(text: string): Promise<TokenizeResult> {
     const url = new URL(`${API_URL}/api/graphs/tokenize`);
     url.searchParams.set("text", text);
     return fetchJson<TokenizeResult>(url.toString(), { method: "POST" });
+}
+
+export async function getAllTokens(): Promise<TokenInfo[]> {
+    const response = await fetchJson<{ tokens: TokenInfo[] }>(`${API_URL}/api/graphs/tokens`);
+    return response.tokens;
 }
 
 export type NormalizeType = "none" | "target" | "layer";

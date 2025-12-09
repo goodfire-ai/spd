@@ -105,6 +105,19 @@ class TokenizeResponse(BaseModel):
     text: str
 
 
+class TokenInfo(BaseModel):
+    """A single token from the tokenizer vocabulary."""
+
+    id: int
+    string: str
+
+
+class TokensResponse(BaseModel):
+    """Response containing all tokens in the vocabulary."""
+
+    tokens: list[TokenInfo]
+
+
 # SSE streaming message types
 class ProgressMessage(BaseModel):
     """Progress update during streaming computation."""

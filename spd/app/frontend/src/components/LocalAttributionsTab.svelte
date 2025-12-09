@@ -8,6 +8,7 @@
         type ComponentDetail,
         type GraphData,
         type PromptPreview,
+        type TokenInfo,
     } from "../lib/localAttributionsTypes";
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
     import InterventionsView from "./local-attr/InterventionsView.svelte";
@@ -32,6 +33,9 @@
 
     // Available prompts (for picker)
     let prompts = $state<PromptPreview[]>([]);
+
+    // All tokens for dropdown search
+    let allTokens = $state<TokenInfo[] | null>(null);
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
@@ -101,37 +105,6 @@
         }
     }
 
-    // Tokenize label text when it changes
-    let labelTokenizeTimeout: ReturnType<typeof setTimeout> | null = null;
-    $effect(() => {
-        const text = computeOptions.optimizeConfig.labelTokenText.trim();
-        if (!text) {
-            computeOptions.optimizeConfig.labelTokenId = null;
-            computeOptions.optimizeConfig.labelTokenPreview = null;
-            return;
-        }
-
-        if (labelTokenizeTimeout) clearTimeout(labelTokenizeTimeout);
-        labelTokenizeTimeout = setTimeout(async () => {
-            try {
-                const result = await attrApi.tokenizeText(text);
-                if (result.token_ids.length === 1) {
-                    computeOptions.optimizeConfig.labelTokenId = result.token_ids[0];
-                    computeOptions.optimizeConfig.labelTokenPreview = result.tokens[0];
-                } else if (result.token_ids.length > 1) {
-                    computeOptions.optimizeConfig.labelTokenId = result.token_ids[0];
-                    computeOptions.optimizeConfig.labelTokenPreview = `${result.tokens[0]} (${result.token_ids.length} tokens, using first)`;
-                } else {
-                    computeOptions.optimizeConfig.labelTokenId = null;
-                    computeOptions.optimizeConfig.labelTokenPreview = "(no tokens)";
-                }
-            } catch {
-                computeOptions.optimizeConfig.labelTokenId = null;
-                computeOptions.optimizeConfig.labelTokenPreview = "(error)";
-            }
-        }, 300);
-    });
-
     // Derived state
     const activeCard = $derived(promptCards.find((c) => c.id === activeCardId) ?? null);
     const activeGraph = $derived.by(() => {
@@ -152,11 +125,13 @@
         if (currentRunId !== null && currentRunId !== previousRunId) {
             previousRunId = currentRunId;
             loadPromptsList();
+            loadAllTokens();
             promptCards = [];
             activeCardId = null;
         } else if (currentRunId === null && previousRunId !== null) {
             previousRunId = null;
             prompts = [];
+            allTokens = null;
             promptCards = [];
             activeCardId = null;
         }
@@ -176,6 +151,14 @@
             prompts = await attrApi.listPrompts();
         } catch (e) {
             console.error("[LocalAttr] loadPromptsList FAILED:", e);
+        }
+    }
+
+    async function loadAllTokens() {
+        try {
+            allTokens = await attrApi.getAllTokens();
+        } catch (e) {
+            console.error("[LocalAttr] loadAllTokens FAILED:", e);
         }
     }
 
@@ -604,6 +587,7 @@
                             card={activeCard}
                             options={computeOptions}
                             isLoading={loadingCardId === activeCard.id}
+                            tokens={allTokens}
                             onOptionsChange={handleOptionsChange}
                             onOptimizeConfigChange={handleOptimizeConfigChange}
                             onCompute={computeGraphForCard}
