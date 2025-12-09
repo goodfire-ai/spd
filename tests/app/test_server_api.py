@@ -400,26 +400,17 @@ def test_compute_optimized_stream(app_with_prompt: tuple[TestClient, int]):
 # -----------------------------------------------------------------------------
 
 
-def test_filter_edges_by_ci_threshold(app_with_prompt: tuple[TestClient, int]):
-    """Test that CI threshold filtering correctly removes edges with low-CI components."""
+def test_filter_edges_by_ci_threshold():
+    """Test that CI threshold filtering correctly removes edges with low-CI nodes."""
+    # Node CI values keyed by "layer:seq:c_idx"
+    node_ci_vals = {
+        "layer0:0:0": 0.8,  # High CI
+        "layer0:0:1": 0.3,  # Low CI
+        "layer1:0:0": 0.6,  # Medium CI
+        "layer1:0:1": 0.1,  # Very low CI
+    }
 
-    _, prompt_id = app_with_prompt
-    manager = StateManager.get()
-
-    # Insert component activations with known CI values
-    conn = manager.db._get_conn()
-    conn.executemany(
-        "INSERT INTO component_activations (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)",
-        [
-            (prompt_id, "layer0:0", 0.8, "[]"),  # High CI
-            (prompt_id, "layer0:1", 0.3, "[]"),  # Low CI
-            (prompt_id, "layer1:0", 0.6, "[]"),  # Medium CI
-            (prompt_id, "layer1:1", 0.1, "[]"),  # Very low CI
-        ],
-    )
-    conn.commit()
-
-    # Create test edges
+    # Create test edges (all at seq_pos=0)
     edges = [
         Edge(
             Node("layer0", 0, 0), Node("layer1", 0, 0), 1.0, False
@@ -432,65 +423,41 @@ def test_filter_edges_by_ci_threshold(app_with_prompt: tuple[TestClient, int]):
     ]
 
     # Threshold=0 should return all edges
-    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.0, manager)
+    result = filter_edges_by_ci_threshold(edges, 0.0, node_ci_vals)
     assert len(result) == 4
 
     # Threshold=0.5 should only keep edge where both src>=0.5 and tgt>=0.5
-    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager)
+    result = filter_edges_by_ci_threshold(edges, 0.5, node_ci_vals)
     assert len(result) == 1
     assert result[0].source.component_idx == 0 and result[0].target.component_idx == 0
 
     # Threshold=0.2 should keep edges where both CI >= 0.2
-    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.2, manager)
+    result = filter_edges_by_ci_threshold(edges, 0.2, node_ci_vals)
     assert len(result) == 2  # First two edges (src=0.8/tgt=0.6 and src=0.3/tgt=0.6)
 
     # Threshold=0.9 should filter out all edges
-    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.9, manager)
+    result = filter_edges_by_ci_threshold(edges, 0.9, node_ci_vals)
     assert len(result) == 0
 
 
-def test_filter_edges_with_provided_ci_lookup(app_with_prompt: tuple[TestClient, int]):
-    """Test that CI threshold filtering uses provided ci_lookup instead of database.
+def test_filter_edges_different_seq_positions():
+    """Test that CI filtering correctly handles nodes at different sequence positions."""
+    # Node CI values at different sequence positions
+    node_ci_vals = {
+        "layer0:0:0": 0.8,  # seq=0, c_idx=0
+        "layer0:1:0": 0.2,  # seq=1, c_idx=0 (same component, different position)
+        "layer1:0:0": 0.6,  # seq=0, c_idx=0
+        "layer1:1:0": 0.9,  # seq=1, c_idx=0 (same component, different position)
+    }
 
-    This is used for optimized graphs where CI values differ from natural CI stored in DB.
-    """
-    _, prompt_id = app_with_prompt
-    manager = StateManager.get()
-
-    # Insert component activations with certain CI values in DB
-    conn = manager.db._get_conn()
-    conn.executemany(
-        "INSERT INTO component_activations (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)",
-        [
-            (prompt_id, "layer0:0", 0.2, "[]"),  # Low CI in DB
-            (prompt_id, "layer1:0", 0.2, "[]"),  # Low CI in DB
-        ],
-    )
-    conn.commit()
-
-    # Create test edge
+    # Create edges at different sequence positions
     edges = [
-        Edge(Node("layer0", 0, 0), Node("layer1", 0, 0), 1.0, False),
+        Edge(Node("layer0", 0, 0), Node("layer1", 0, 0), 1.0, False),  # src=0.8, tgt=0.6
+        Edge(Node("layer0", 1, 0), Node("layer1", 1, 0), 1.0, False),  # src=0.2, tgt=0.9
     ]
 
-    # With threshold=0.5 and no ci_lookup, edge should be filtered (DB CI = 0.2)
-    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager)
-    assert len(result) == 0
-
-    # With provided ci_lookup having higher values, edge should be kept
-    ci_lookup = {"layer0:0": 0.8, "layer1:0": 0.8}
-    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager, ci_lookup=ci_lookup)
+    # Threshold=0.5: first edge passes (0.8 >= 0.5 and 0.6 >= 0.5)
+    # second edge fails (0.2 < 0.5)
+    result = filter_edges_by_ci_threshold(edges, 0.5, node_ci_vals)
     assert len(result) == 1
-
-    # ci_lookup with low values should filter even if DB has high values
-    conn.execute("UPDATE component_activations SET max_ci = 0.9 WHERE prompt_id = ?", (prompt_id,))
-    conn.commit()
-
-    # Without ci_lookup, uses DB values (now 0.9), edge should be kept
-    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager)
-    assert len(result) == 1
-
-    # With ci_lookup having low values, edge should be filtered
-    ci_lookup = {"layer0:0": 0.1, "layer1:0": 0.1}
-    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager, ci_lookup=ci_lookup)
-    assert len(result) == 0
+    assert result[0].source.seq_pos == 0

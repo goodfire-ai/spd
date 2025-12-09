@@ -84,6 +84,7 @@ class LocalAttributionResult:
 
     edges: list[Edge]
     output_probs: Float[Tensor, "seq vocab"]  # Softmax probabilities for output logits
+    node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
 
 
 @dataclass
@@ -102,7 +103,7 @@ class OptimizedLocalAttributionResult:
     edges: list[Edge]
     output_probs: Float[Tensor, "seq vocab"]
     stats: OptimizationStats
-    ci_lookup: dict[str, float]  # max CI per component (layer:c_idx -> max_ci)
+    node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
 
 
 def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
@@ -366,7 +367,8 @@ def compute_edges_from_ci(
     if pbar is not None:
         pbar.close()
 
-    return LocalAttributionResult(edges=edges, output_probs=output_probs)
+    node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
+    return LocalAttributionResult(edges=edges, output_probs=output_probs, node_ci_vals=node_ci_vals)
 
 
 def compute_local_attributions(
@@ -432,15 +434,10 @@ def compute_local_attributions_optimized(
     )
     ci_outputs = ci_params.create_ci_outputs(model, device)
 
-    # Compute optimization stats and ci_lookup (max CI per component)
+    # Compute optimization stats (L0 per layer)
     l0_per_layer: dict[str, float] = {}
-    ci_lookup: dict[str, float] = {}
     for layer_name, ci_tensor in ci_outputs.lower_leaky.items():
         l0_per_layer[layer_name] = float((ci_tensor > ci_threshold).float().sum().item())
-        # Extract max CI per component for filtering
-        max_ci_per_component = ci_tensor[0].max(dim=0).values  # [n_components]
-        for c_idx in range(max_ci_per_component.shape[0]):
-            ci_lookup[f"{layer_name}:{c_idx}"] = float(max_ci_per_component[c_idx].item())
     l0_total = sum(l0_per_layer.values())
 
     # Get label probability with optimized CI mask
@@ -476,7 +473,7 @@ def compute_local_attributions_optimized(
         edges=result.edges,
         output_probs=result.output_probs,
         stats=stats,
-        ci_lookup=ci_lookup,
+        node_ci_vals=result.node_ci_vals,
     )
 
 
@@ -516,6 +513,28 @@ def compute_ci_only(
         output_probs = torch.softmax(output_with_cache.output, dim=-1)
 
     return CIOnlyResult(ci_lower_leaky=ci.lower_leaky, output_probs=output_probs)
+
+
+def extract_node_ci_vals(
+    ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]],
+) -> dict[str, float]:
+    """Extract per-node CI values from CI tensors.
+
+    Args:
+        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, n_components].
+
+    Returns:
+        Dict mapping "layer:seq:c_idx" to CI value.
+    """
+    node_ci_vals: dict[str, float] = {}
+    for layer_name, ci_tensor in ci_lower_leaky.items():
+        n_seq = ci_tensor.shape[1]
+        n_components = ci_tensor.shape[2]
+        for seq_pos in range(n_seq):
+            for c_idx in range(n_components):
+                key = f"{layer_name}:{seq_pos}:{c_idx}"
+                node_ci_vals[key] = float(ci_tensor[0, seq_pos, c_idx].item())
+    return node_ci_vals
 
 
 def extract_active_from_ci(
