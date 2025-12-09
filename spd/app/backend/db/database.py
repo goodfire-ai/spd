@@ -67,6 +67,7 @@ class StoredGraph(BaseModel):
     output_probs: dict[str, OutputProbability]
     optimization_params: OptimizationParams | None = None
     optimization_stats: OptimizationStats | None = None
+    ci_lookup: dict[str, float] | None = None  # Optimized CI values (layer:c_idx -> max_ci)
     composer_selection: list[str] | None = (
         None  # node keys, None = never set (frontend defaults to all)
     )
@@ -183,6 +184,7 @@ class LocalAttrDB:
                 label_prob REAL,
                 l0_total REAL,
                 l0_per_layer TEXT,
+                ci_lookup_data TEXT,  -- JSON dict of optimized CI values (layer:c_idx -> max_ci)
 
                 -- Composer state for interventions (JSON array of selected node keys, NULL = all)
                 composer_selection TEXT,
@@ -508,13 +510,14 @@ class LocalAttrDB:
                 assert graph.optimization_stats is not None, (
                     "optimization_stats required for optimized graphs"
                 )
+                ci_lookup_json = json.dumps(graph.ci_lookup) if graph.ci_lookup else None
                 conn.execute(
                     """INSERT INTO cached_graphs
                        (prompt_id, is_optimized,
                         label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
                         edges_data, output_probs_data,
-                        label_prob, l0_total, l0_per_layer)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        label_prob, l0_total, l0_per_layer, ci_lookup_data)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         prompt_id,
                         is_optimized,
@@ -528,6 +531,7 @@ class LocalAttrDB:
                         graph.optimization_stats.label_prob,
                         graph.optimization_stats.l0_total,
                         json.dumps(graph.optimization_stats.l0_per_layer),
+                        ci_lookup_json,
                     ),
                 )
             else:
@@ -563,7 +567,7 @@ class LocalAttrDB:
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data,
                       label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
-                      label_prob, l0_total, l0_per_layer, composer_selection
+                      label_prob, l0_total, l0_per_layer, ci_lookup_data, composer_selection
                FROM cached_graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
@@ -589,6 +593,7 @@ class LocalAttrDB:
             opt_params: OptimizationParams | None = None
             opt_stats: OptimizationStats | None = None
 
+            ci_lookup: dict[str, float] | None = None
             if row["is_optimized"]:
                 opt_params = OptimizationParams(
                     label_token=row["label_token"],
@@ -602,6 +607,8 @@ class LocalAttrDB:
                     l0_total=row["l0_total"],
                     l0_per_layer=json.loads(row["l0_per_layer"]),
                 )
+                if row["ci_lookup_data"]:
+                    ci_lookup = json.loads(row["ci_lookup_data"])
 
             composer_selection: list[str] | None = None
             if row["composer_selection"]:
@@ -614,6 +621,7 @@ class LocalAttrDB:
                     output_probs=output_probs,
                     optimization_params=opt_params,
                     optimization_stats=opt_stats,
+                    ci_lookup=ci_lookup,
                     composer_selection=composer_selection,
                 )
             )

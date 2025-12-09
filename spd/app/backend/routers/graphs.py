@@ -95,19 +95,24 @@ def filter_edges_by_ci_threshold(
     prompt_id: int,
     ci_threshold: float,
     manager: DepStateManager,
+    ci_lookup: dict[str, float] | None = None,
 ) -> list[Edge]:
     """Filter edges by removing those where source or target has CI < ci_threshold.
 
     Args:
         edges: List of edges to filter
-        prompt_id: Prompt ID to look up CI values for
+        prompt_id: Prompt ID to look up CI values for (used if ci_lookup not provided)
         ci_threshold: Threshold for filtering
         manager: State manager for database access
+        ci_lookup: Optional pre-computed CI lookup (layer:c_idx -> max_ci).
+                   If provided, uses this instead of querying the database.
+                   Used for optimized graphs which have their own CI values.
 
     Returns:
         Filtered list of edges
     """
-    ci_lookup = _get_ci_lookup(prompt_id, manager)
+    if ci_lookup is None:
+        ci_lookup = _get_ci_lookup(prompt_id, manager)
 
     return [
         edge
@@ -170,7 +175,6 @@ def compute_graph_stream(
                 model=loaded.model,
                 tokens=tokens_tensor,
                 sources_by_target=loaded.sources_by_target,
-                ci_threshold=0.0,
                 output_prob_threshold=output_prob_threshold,
                 sampling=loaded.config.sampling,
                 device=DEVICE,
@@ -225,7 +229,7 @@ def compute_graph_stream(
                     ),
                 )
 
-                # Process edges for response
+                # Process edges for response (uses DB lookup for CI values)
                 edges_data, node_importance, max_abs_attr = process_edges_for_response(
                     edges=raw_edges,
                     normalize=normalize,
@@ -405,7 +409,7 @@ def compute_graph_optimized_stream(
                             token=loaded.token_strings[c_idx],
                         )
 
-                # Store all edges (unfiltered, unnormalized)
+                # Store all edges (unfiltered, unnormalized) with optimized CI lookup
                 db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
@@ -417,6 +421,7 @@ def compute_graph_optimized_stream(
                             l0_total=result.stats.l0_total,
                             l0_per_layer=result.stats.l0_per_layer,
                         ),
+                        ci_lookup=result.ci_lookup,
                     ),
                 )
 
@@ -428,6 +433,7 @@ def compute_graph_optimized_stream(
                     ci_threshold=ci_threshold,
                     manager=manager,
                     is_optimized=True,
+                    ci_lookup=result.ci_lookup,  # Use optimized CI values
                 )
 
                 response_data = GraphDataWithOptimization(
@@ -466,6 +472,7 @@ def process_edges_for_response(
     manager: DepStateManager,
     is_optimized: bool,
     edge_limit: int = GLOBAL_EDGE_LIMIT,
+    ci_lookup: dict[str, float] | None = None,
 ) -> tuple[list[EdgeData], dict[str, float], float]:
     """Single source of truth for edge processing pipeline.
 
@@ -476,8 +483,13 @@ def process_edges_for_response(
         edges: Raw edges from computation or database
         normalize: Normalization type ("none", "target", "layer")
         num_tokens: Number of tokens in the prompt (for filtering)
+        prompt_id: Prompt ID for CI lookup (used if ci_lookup not provided)
+        ci_threshold: Threshold for filtering edges by CI
+        manager: State manager for database access
         is_optimized: Whether this is an optimized graph (applies additional filtering)
         edge_limit: Maximum number of edges to return
+        ci_lookup: Optional pre-computed CI lookup for optimized graphs.
+                   If provided, uses this for CI filtering instead of database lookup.
 
     Returns:
         (edges_data, node_importance, max_abs_attr)
@@ -487,7 +499,11 @@ def process_edges_for_response(
         edges = [edge for edge in edges if edge.target.seq_pos == final_seq_pos]
 
     edges = filter_edges_by_ci_threshold(
-        edges=edges, prompt_id=prompt_id, ci_threshold=ci_threshold, manager=manager
+        edges=edges,
+        prompt_id=prompt_id,
+        ci_threshold=ci_threshold,
+        manager=manager,
+        ci_lookup=ci_lookup,
     )
 
     edges = _normalize_edges(edges, normalize)
@@ -526,6 +542,7 @@ def get_graphs(
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
         is_optimized = graph.optimization_params is not None
+        # For optimized graphs, use stored ci_lookup; for standard graphs, use DB lookup
         edges_data, node_importance, max_abs_attr = process_edges_for_response(
             edges=graph.edges,
             normalize=normalize,
@@ -534,6 +551,7 @@ def get_graphs(
             ci_threshold=ci_threshold,
             manager=manager,
             is_optimized=is_optimized,
+            ci_lookup=graph.ci_lookup,  # None for standard graphs -> DB lookup
         )
 
         if not is_optimized:

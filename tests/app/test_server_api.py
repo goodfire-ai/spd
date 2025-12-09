@@ -447,3 +447,50 @@ def test_filter_edges_by_ci_threshold(app_with_prompt: tuple[TestClient, int]):
     # Threshold=0.9 should filter out all edges
     result = filter_edges_by_ci_threshold(edges, prompt_id, 0.9, manager)
     assert len(result) == 0
+
+
+def test_filter_edges_with_provided_ci_lookup(app_with_prompt: tuple[TestClient, int]):
+    """Test that CI threshold filtering uses provided ci_lookup instead of database.
+
+    This is used for optimized graphs where CI values differ from natural CI stored in DB.
+    """
+    _, prompt_id = app_with_prompt
+    manager = StateManager.get()
+
+    # Insert component activations with certain CI values in DB
+    conn = manager.db._get_conn()
+    conn.executemany(
+        "INSERT INTO component_activations (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)",
+        [
+            (prompt_id, "layer0:0", 0.2, "[]"),  # Low CI in DB
+            (prompt_id, "layer1:0", 0.2, "[]"),  # Low CI in DB
+        ],
+    )
+    conn.commit()
+
+    # Create test edge
+    edges = [
+        Edge(Node("layer0", 0, 0), Node("layer1", 0, 0), 1.0, False),
+    ]
+
+    # With threshold=0.5 and no ci_lookup, edge should be filtered (DB CI = 0.2)
+    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager)
+    assert len(result) == 0
+
+    # With provided ci_lookup having higher values, edge should be kept
+    ci_lookup = {"layer0:0": 0.8, "layer1:0": 0.8}
+    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager, ci_lookup=ci_lookup)
+    assert len(result) == 1
+
+    # ci_lookup with low values should filter even if DB has high values
+    conn.execute("UPDATE component_activations SET max_ci = 0.9 WHERE prompt_id = ?", (prompt_id,))
+    conn.commit()
+
+    # Without ci_lookup, uses DB values (now 0.9), edge should be kept
+    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager)
+    assert len(result) == 1
+
+    # With ci_lookup having low values, edge should be filtered
+    ci_lookup = {"layer0:0": 0.1, "layer1:0": 0.1}
+    result = filter_edges_by_ci_threshold(edges, prompt_id, 0.5, manager, ci_lookup=ci_lookup)
+    assert len(result) == 0

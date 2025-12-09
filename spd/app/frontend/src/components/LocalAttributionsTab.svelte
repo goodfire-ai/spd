@@ -535,10 +535,17 @@
                                 };
                             }),
                         );
+                        // Preserve the active graph by matching dbId
+                        const previousActiveGraph = card.graphs.find((g) => g.id === card.activeGraphId);
+                        const matchingGraph = previousActiveGraph
+                            ? graphs.find((g) => g.dbId === previousActiveGraph.dbId)
+                            : null;
+                        const newActiveGraphId = matchingGraph?.id ?? (graphs.length > 0 ? graphs[0].id : null);
+
                         return {
                             ...card,
                             graphs,
-                            activeGraphId: graphs.length > 0 ? graphs[0].id : null,
+                            activeGraphId: newActiveGraphId,
                         };
                     } catch (e) {
                         console.warn("Failed to re-fetch graphs for card:", card.id, e);

@@ -102,6 +102,7 @@ class OptimizedLocalAttributionResult:
     edges: list[Edge]
     output_probs: Float[Tensor, "seq vocab"]
     stats: OptimizationStats
+    ci_lookup: dict[str, float]  # max CI per component (layer:c_idx -> max_ci)
 
 
 def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
@@ -372,7 +373,6 @@ def compute_local_attributions(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
-    ci_threshold: float,
     output_prob_threshold: float,
     sampling: SamplingType,
     device: str,
@@ -397,7 +397,7 @@ def compute_local_attributions(
         tokens=tokens,
         ci_lower_leaky=ci.lower_leaky,
         sources_by_target=sources_by_target,
-        ci_threshold=ci_threshold,
+        ci_threshold=0.0,
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
@@ -432,11 +432,15 @@ def compute_local_attributions_optimized(
     )
     ci_outputs = ci_params.create_ci_outputs(model, device)
 
-    # Compute optimization stats
+    # Compute optimization stats and ci_lookup (max CI per component)
     l0_per_layer: dict[str, float] = {}
+    ci_lookup: dict[str, float] = {}
     for layer_name, ci_tensor in ci_outputs.lower_leaky.items():
-        # L0 = count of components with CI > threshold, averaged over sequence
         l0_per_layer[layer_name] = float((ci_tensor > ci_threshold).float().sum().item())
+        # Extract max CI per component for filtering
+        max_ci_per_component = ci_tensor[0].max(dim=0).values  # [n_components]
+        for c_idx in range(max_ci_per_component.shape[0]):
+            ci_lookup[f"{layer_name}:{c_idx}"] = float(max_ci_per_component[c_idx].item())
     l0_total = sum(l0_per_layer.values())
 
     # Get label probability with optimized CI mask
@@ -472,6 +476,7 @@ def compute_local_attributions_optimized(
         edges=result.edges,
         output_probs=result.output_probs,
         stats=stats,
+        ci_lookup=ci_lookup,
     )
 
 
