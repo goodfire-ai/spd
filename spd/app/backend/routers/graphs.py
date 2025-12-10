@@ -299,10 +299,10 @@ def _normalize_edges(edges: list[Edge], normalize: NormalizeType) -> list[Edge]:
 def compute_graph_optimized_stream(
     prompt_id: Annotated[int, Query()],
     label_token: Annotated[int, Query()],
-    imp_min_coeff: Annotated[float, Query(gt=0)],
-    ce_loss_coeff: Annotated[float, Query(gt=0)],
+    imp_min_coeff: Annotated[float, Query(gte=0)],
+    ce_loss_coeff: Annotated[float, Query(gte=0)],
     steps: Annotated[int, Query(gt=0)],
-    pnorm: Annotated[float, Query(gt=0, le=1)],
+    pnorm: Annotated[float, Query(gt=0)],
     normalize: Annotated[NormalizeType, Query()],
     output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
     loaded: DepLoadedRun,
