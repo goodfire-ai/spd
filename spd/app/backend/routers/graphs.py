@@ -31,7 +31,9 @@ from spd.app.backend.schemas import (
     GraphDataWithOptimization,
     OptimizationResult,
     OutputProbability,
+    TokenInfo,
     TokenizeResponse,
+    TokensResponse,
 )
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
@@ -56,6 +58,15 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
         text=text,
         token_ids=token_ids,
         tokens=[loaded.token_strings[t] for t in token_ids],
+    )
+
+
+@router.get("/tokens")
+@log_errors
+def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
+    """Get all tokens in the tokenizer vocabulary for client-side search."""
+    return TokensResponse(
+        tokens=[TokenInfo(id=tid, string=tstr) for tid, tstr in loaded.token_strings.items()]
     )
 
 

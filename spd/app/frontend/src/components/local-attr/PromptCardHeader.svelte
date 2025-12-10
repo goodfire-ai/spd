@@ -1,10 +1,13 @@
 <script lang="ts">
+    import type { TokenInfo } from "../../lib/localAttributionsTypes";
     import type { PromptCard, ComputeOptions, OptimizeConfig } from "./types";
+    import TokenDropdown from "./TokenDropdown.svelte";
 
     type Props = {
         card: PromptCard;
         options: ComputeOptions;
         isLoading: boolean;
+        tokens: TokenInfo[];
         onOptionsChange: (update: Partial<ComputeOptions>) => void;
         onOptimizeConfigChange: (update: Partial<OptimizeConfig>) => void;
         onCompute: () => void;
@@ -16,6 +19,7 @@
         card,
         options,
         isLoading,
+        tokens,
         onOptionsChange,
         onOptimizeConfigChange,
         onCompute,
@@ -59,17 +63,20 @@
             {#if options.useOptimized}
                 <label class="label-token-input">
                     <span>Label</span>
-                    <input
-                        type="text"
+                    <TokenDropdown
+                        {tokens}
                         value={optConfig.labelTokenText}
-                        oninput={(e) => onOptimizeConfigChange({ labelTokenText: e.currentTarget.value })}
-                        placeholder="e.g. ' world'"
-                        class="text-input"
+                        onSelect={(tokenId, tokenString) => {
+                            onOptimizeConfigChange({
+                                labelTokenText: tokenString,
+                                labelTokenId: tokenId,
+                                labelTokenPreview: tokenString,
+                            });
+                        }}
+                        placeholder="Search token..."
                     />
-                    {#if optConfig.labelTokenPreview}
-                        <span class="token-preview" class:error={!optConfig.labelTokenId}>
-                            → {optConfig.labelTokenPreview}
-                        </span>
+                    {#if optConfig.labelTokenId !== null}
+                        <span class="token-id-hint">#{optConfig.labelTokenId}</span>
                     {/if}
                 </label>
                 <label>
@@ -266,29 +273,10 @@
         flex-wrap: wrap;
     }
 
-    .compute-options .label-token-input .text-input {
-        width: 80px;
-        padding: var(--space-1);
-        border: 1px solid var(--border-default);
-        background: var(--bg-elevated);
-        color: var(--text-primary);
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-    }
-
-    .compute-options .label-token-input .text-input:focus {
-        outline: none;
-        border-color: var(--accent-primary-dim);
-    }
-
-    .compute-options .token-preview {
+    .token-id-hint {
         font-size: var(--text-xs);
-        color: var(--status-positive-bright);
+        color: var(--text-muted);
         font-family: var(--font-mono);
-    }
-
-    .compute-options .token-preview.error {
-        color: var(--status-negative-bright);
     }
 
     .btn-compute {

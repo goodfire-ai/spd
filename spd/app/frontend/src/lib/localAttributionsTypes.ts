@@ -79,6 +79,11 @@ export type TokenizeResult = {
     text: string;
 };
 
+export type TokenInfo = {
+    id: number;
+    string: string;
+};
+
 // Client-side computed types
 
 export type LayerInfo = {
