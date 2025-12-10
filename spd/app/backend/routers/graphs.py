@@ -96,29 +96,6 @@ def filter_edges_by_ci_threshold(
     ]
 
 
-def compute_l0_from_node_ci_vals(
-    node_ci_vals: dict[str, float],
-    ci_threshold: float,
-) -> tuple[float, dict[str, float]]:
-    """Compute L0 stats dynamically from node CI values.
-
-    Args:
-        node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
-        ci_threshold: Threshold for counting a component as active
-
-    Returns:
-        (l0_total, l0_per_layer) where l0_per_layer maps layer name to count
-    """
-    l0_per_layer: dict[str, float] = {}
-    for key, ci_val in node_ci_vals.items():
-        if ci_val > ci_threshold:
-            # Key format: "layer:seq:c_idx" - extract layer name
-            layer = key.rsplit(":", 2)[0]
-            l0_per_layer[layer] = l0_per_layer.get(layer, 0.0) + 1.0
-    l0_total = sum(l0_per_layer.values())
-    return l0_total, l0_per_layer
-
-
 def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
     """Compute node importance and max absolute edge value.
 
@@ -236,6 +213,8 @@ def compute_graph_stream(
                     is_optimized=False,
                 )
 
+                l0_total = sum(1 for val in result.node_ci_vals.values() if val > ci_threshold)
+
                 response_data = GraphData(
                     id=graph_id,
                     tokens=token_strings,
@@ -243,6 +222,7 @@ def compute_graph_stream(
                     outputProbs=raw_output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
                 yield f"data: {json.dumps(complete_data)}\n\n"
@@ -423,10 +403,7 @@ def compute_graph_optimized_stream(
                     is_optimized=True,
                 )
 
-                l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
-                    node_ci_vals=result.node_ci_vals,
-                    ci_threshold=ci_threshold,
-                )
+                l0_total = sum(1 for val in result.node_ci_vals.values() if val > ci_threshold)
 
                 response_data = GraphDataWithOptimization(
                     id=graph_id,
@@ -435,6 +412,7 @@ def compute_graph_optimized_stream(
                     outputProbs=raw_output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
                     optimization=OptimizationResult(
                         label_token=label_token,
                         label_str=label_str,
@@ -442,8 +420,6 @@ def compute_graph_optimized_stream(
                         ce_loss_coeff=ce_loss_coeff,
                         steps=steps,
                         label_prob=result.label_prob,
-                        l0_total=l0_total,
-                        l0_per_layer=l0_per_layer,
                     ),
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
@@ -536,6 +512,8 @@ def get_graphs(
             is_optimized=is_optimized,
         )
 
+        l0_total = sum(1 for val in graph.node_ci_vals.values() if val > ci_threshold)
+
         if not is_optimized:
             # Standard graph
             results.append(
@@ -546,17 +524,13 @@ def get_graphs(
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
                 )
             )
         else:
             # Optimized graph
             assert graph.optimization_params is not None
             assert graph.label_prob is not None
-
-            l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
-                node_ci_vals=graph.node_ci_vals,
-                ci_threshold=ci_threshold,
-            )
 
             results.append(
                 GraphDataWithOptimization(
@@ -566,6 +540,7 @@ def get_graphs(
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
                     optimization=OptimizationResult(
                         label_token=graph.optimization_params.label_token,
                         label_str=loaded.token_strings[graph.optimization_params.label_token],
@@ -573,8 +548,6 @@ def get_graphs(
                         ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
                         steps=graph.optimization_params.steps,
                         label_prob=graph.label_prob,
-                        l0_total=l0_total,
-                        l0_per_layer=l0_per_layer,
                     ),
                 )
             )
