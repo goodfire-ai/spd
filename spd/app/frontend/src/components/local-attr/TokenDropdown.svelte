@@ -18,13 +18,13 @@
         return "##" + tokenString;
     }
 
-    let inputValue = $state(value);
+    let inputValue = $state(value ? formatTokenDisplay(value) : "");
     let isOpen = $state(false);
     let highlightedIndex = $state(0);
 
     // Sync external value changes
     $effect(() => {
-        inputValue = value;
+        inputValue = value ? formatTokenDisplay(value) : "";
     });
 
     const filteredTokens = $derived.by(() => {
@@ -32,7 +32,9 @@
         const search = inputValue.toLowerCase();
         const matches: TokenInfo[] = [];
         for (const t of tokens) {
-            if (t.string.toLowerCase().includes(search)) {
+            // Search on formatted display string so "##art" matches continuation tokens
+            const displayStr = formatTokenDisplay(t.string).toLowerCase();
+            if (displayStr.includes(search)) {
                 matches.push(t);
                 if (matches.length >= 10) break;
             }
@@ -41,7 +43,7 @@
     });
 
     function handleSelect(token: TokenInfo) {
-        inputValue = token.string;
+        inputValue = formatTokenDisplay(token.string);
         onSelect(token.id, token.string);
         isOpen = false;
     }

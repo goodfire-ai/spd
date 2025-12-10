@@ -28,6 +28,14 @@
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
+    /** Format token for display: strip leading space, add ## prefix if no leading space */
+    function formatTokenDisplay(tokenString: string): string {
+        if (tokenString.startsWith(" ")) {
+            return tokenString.slice(1);
+        }
+        return "##" + tokenString;
+    }
+
     // Props - activation contexts state is lifted to App.svelte
     type Props = {
         activationContextsSummary: ActivationContextsSummary | null;
@@ -44,7 +52,7 @@
     let prompts = $state<PromptPreview[]>([]);
 
     // All tokens for dropdown search
-    let allTokens = $state<TokenInfo[] | null>(null);
+    let allTokens = $state<TokenInfo[]>([]);
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
@@ -132,36 +140,13 @@
         }
     }
 
-    // Tokenize label text when it changes
-    let labelTokenizeTimeout: ReturnType<typeof setTimeout> | null = null;
-    $effect(() => {
-        const text = computeOptions.optimizeConfig.labelTokenText.trim();
-        if (!text) {
-            computeOptions.optimizeConfig.labelTokenId = null;
-            computeOptions.optimizeConfig.labelTokenPreview = null;
-            return;
-        }
-
-        if (labelTokenizeTimeout) clearTimeout(labelTokenizeTimeout);
-        labelTokenizeTimeout = setTimeout(async () => {
-            try {
-                const result = await attrApi.tokenizeText(text);
-                if (result.token_ids.length === 1) {
-                    computeOptions.optimizeConfig.labelTokenId = result.token_ids[0];
-                    computeOptions.optimizeConfig.labelTokenPreview = result.tokens[0];
-                } else if (result.token_ids.length > 1) {
-                    computeOptions.optimizeConfig.labelTokenId = result.token_ids[0];
-                    computeOptions.optimizeConfig.labelTokenPreview = `${result.tokens[0]} (${result.token_ids.length} tokens, using first)`;
-                } else {
-                    computeOptions.optimizeConfig.labelTokenId = null;
-                    computeOptions.optimizeConfig.labelTokenPreview = "(no tokens)";
-                }
-            } catch {
-                computeOptions.optimizeConfig.labelTokenId = null;
-                computeOptions.optimizeConfig.labelTokenPreview = "(error)";
-            }
-        }, 300);
-    });
+    // NOTE: Token selection is handled entirely by TokenDropdown, which provides the exact
+    // token ID. We don't re-tokenize text because the same string (e.g. "art") can map to
+    // different tokens depending on context (continuation "##art" vs word-initial " art").
+    // The dropdown's onSelect callback sets labelTokenId directly.
+    //
+    // FUTURE: formatTokenDisplay() is WordPiece-specific. For BPE tokenizers (GPT-2 style),
+    // the display logic will need to be tokenizer-aware.
 
     // Derived state
     const activeCard = $derived(promptCards.find((c) => c.id === activeCardId) ?? null);
@@ -189,7 +174,7 @@
         } else if (currentRunId === null && previousRunId !== null) {
             previousRunId = null;
             prompts = [];
-            allTokens = null;
+            allTokens = [];
             promptCards = [];
             activeCardId = null;
         }
@@ -705,7 +690,7 @@
                                 {#if activeGraph.data.optimization}
                                     <div class="optim-results">
                                         <span
-                                            ><strong>Target:</strong> "{activeGraph.data.optimization.label_str}" @ {(
+                                            ><strong>Target:</strong> "{formatTokenDisplay(activeGraph.data.optimization.label_str)}" <span class="token-id">(#{activeGraph.data.optimization.label_token})</span> @ {(
                                                 activeGraph.data.optimization.label_prob * 100
                                             ).toFixed(1)}%</span
                                         >
@@ -922,6 +907,11 @@
     .optim-results strong {
         color: var(--text-muted);
         font-weight: 500;
+    }
+
+    .optim-results .token-id {
+        color: var(--text-muted);
+        font-size: var(--text-xs);
     }
 
     .graph-area {

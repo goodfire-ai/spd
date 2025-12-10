@@ -7,7 +7,7 @@
         card: PromptCard;
         options: ComputeOptions;
         isLoading: boolean;
-        tokens: TokenInfo[] | null;
+        tokens: TokenInfo[];
         onOptionsChange: (update: Partial<ComputeOptions>) => void;
         onOptimizeConfigChange: (update: Partial<OptimizeConfig>) => void;
         onCompute: () => void;
@@ -63,21 +63,20 @@
             {#if options.useOptimized}
                 <label class="label-token-input">
                     <span>Label</span>
-                    {#if tokens}
-                        <TokenDropdown
-                            {tokens}
-                            value={optConfig.labelTokenText}
-                            onSelect={(tokenId, tokenString) => {
-                                onOptimizeConfigChange({
-                                    labelTokenText: tokenString,
-                                    labelTokenId: tokenId,
-                                    labelTokenPreview: tokenString,
-                                });
-                            }}
-                            placeholder="Search token..."
-                        />
-                    {:else}
-                        <span class="tokens-loading">Loading tokens...</span>
+                    <TokenDropdown
+                        {tokens}
+                        value={optConfig.labelTokenText}
+                        onSelect={(tokenId, tokenString) => {
+                            onOptimizeConfigChange({
+                                labelTokenText: tokenString,
+                                labelTokenId: tokenId,
+                                labelTokenPreview: tokenString,
+                            });
+                        }}
+                        placeholder="Search token..."
+                    />
+                    {#if optConfig.labelTokenId !== null}
+                        <span class="token-id-hint">#{optConfig.labelTokenId}</span>
                     {/if}
                 </label>
                 <label>
@@ -274,7 +273,7 @@
         flex-wrap: wrap;
     }
 
-    .tokens-loading {
+    .token-id-hint {
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-family: var(--font-mono);
