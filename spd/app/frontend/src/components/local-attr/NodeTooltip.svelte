@@ -1,5 +1,10 @@
 <script lang="ts">
-    import type { ActivationContextsSummary, ComponentDetail, ComponentSummary, OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import type {
+        ActivationContextsSummary,
+        ComponentDetail,
+        ComponentSummary,
+        OutputProbEntry,
+    } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
@@ -47,7 +52,9 @@
     const inputToken = $derived.by(() => {
         if (!isWte) return null;
         if (hoveredNode.seqIdx >= tokens.length) {
-            throw new Error(`NodeTooltip: seqIdx ${hoveredNode.seqIdx} out of bounds for tokens length ${tokens.length}`);
+            throw new Error(
+                `NodeTooltip: seqIdx ${hoveredNode.seqIdx} out of bounds for tokens length ${tokens.length}`,
+            );
         }
         return tokens[hoveredNode.seqIdx];
     });
@@ -65,7 +72,8 @@
         <div class="wte-content">
             <div class="wte-token">"{inputToken}"</div>
             <p class="wte-stats">
-                <strong>Position:</strong> {hoveredNode.seqIdx}
+                <strong>Position:</strong>
+                {hoveredNode.seqIdx}
             </p>
         </div>
     {:else if isOutput}

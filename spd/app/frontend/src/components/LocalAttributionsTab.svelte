@@ -16,7 +16,14 @@
     import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
     import PromptPicker from "./local-attr/PromptPicker.svelte";
     import StagedNodesPanel from "./local-attr/StagedNodesPanel.svelte";
-    import type { StoredGraph, ComputeOptions, LoadingState, OptimizeConfig, PromptCard } from "./local-attr/types";
+    import type {
+        StoredGraph,
+        ComputeOptions,
+        LoadingState,
+        OptimizeConfig,
+        PromptCard,
+        ViewSettings,
+    } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
@@ -58,20 +65,25 @@
     let generateProgress = $state(0);
     let generateCount = $state(0);
 
-    // Activation contexts - passed as props from App.svelte
+    // Refetching state (for CI threshold/normalize changes) - tracks which graph is being refetched
+    let refetchingGraphId = $state<string | null>(null);
 
-    // View controls
-    let topK = $state(200);
-    let nodeLayout = $state<"importance" | "shuffled" | "jittered">("importance");
-    let componentGap = $state(4);
-    let layerGap = $state(30);
+    // Default view settings for new graphs
+    const defaultViewSettings: ViewSettings = {
+        topK: 200,
+        nodeLayout: "importance",
+        componentGap: 4,
+        layerGap: 30,
+        normalizeEdges: "layer",
+        ciThreshold: 0,
+    };
+
+    // Edge count is derived from the graph rendering, not stored per-graph
     let filteredEdgeCount = $state<number | null>(null);
-    let normalizeEdges = $state<attrApi.NormalizeType>("layer");
 
     // Compute options
     let computeOptions = $state<ComputeOptions>({
-        maxMeanCI: 1.0,
-        normalizeEdges: "layer",
+        ciThreshold: 0,
         useOptimized: false,
         optimizeConfig: {
             labelTokenText: "",
@@ -200,7 +212,11 @@
         // Fetch stored graphs for this prompt (includes composer selection and intervention runs)
         let graphs: StoredGraph[] = [];
         try {
-            const storedGraphs = await attrApi.getGraphs(promptId, normalizeEdges);
+            const storedGraphs = await attrApi.getGraphs(
+                promptId,
+                defaultViewSettings.normalizeEdges,
+                defaultViewSettings.ciThreshold,
+            );
             graphs = await Promise.all(
                 storedGraphs.map(async (data, idx) => {
                     const isOptimized = !!data.optimization;
@@ -214,6 +230,7 @@
                         dbId: data.id,
                         label,
                         data,
+                        viewSettings: { ...defaultViewSettings },
                         composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
                         interventionRuns: runs,
                         activeRunId: null,
@@ -428,12 +445,13 @@
                     {
                         promptId: activeCard.promptId,
                         labelToken: optConfig.labelTokenId,
-                        normalize: computeOptions.normalizeEdges,
+                        normalize: defaultViewSettings.normalizeEdges,
                         impMinCoeff: optConfig.impMinCoeff,
                         ceLossCoeff: optConfig.ceLossCoeff,
                         steps: optConfig.steps,
                         pnorm: optConfig.pnorm,
                         outputProbThreshold: 0.01,
+                        ciThreshold: defaultViewSettings.ciThreshold,
                     },
                     (progress) => {
                         if (!loadingState) return;
@@ -449,7 +467,8 @@
                 data = await attrApi.computeGraphStreaming(
                     {
                         promptId: activeCard.promptId,
-                        normalize: computeOptions.normalizeEdges,
+                        normalize: defaultViewSettings.normalizeEdges,
+                        ciThreshold: defaultViewSettings.ciThreshold,
                     },
                     (progress) => {
                         if (!loadingState) return;
@@ -472,6 +491,7 @@
                             dbId: data.id,
                             label,
                             data,
+                            viewSettings: { ...defaultViewSettings },
                             composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
                             interventionRuns: [],
                             activeRunId: null,
@@ -488,47 +508,83 @@
         }
     }
 
-    async function handleNormalizeChange(value: attrApi.NormalizeType) {
-        normalizeEdges = value;
-        computeOptions.normalizeEdges = value;
+    // Refetch graph data when normalize or ciThreshold changes (these affect server-side filtering)
+    async function refetchActiveGraphData() {
+        if (!activeCard || !activeGraph) return;
 
-        const updatedCards = await Promise.all(
-            promptCards.map(async (card) => {
-                if (card.graphs.length === 0) return card;
+        const { normalizeEdges, ciThreshold } = activeGraph.viewSettings;
+        refetchingGraphId = activeGraph.id;
+        try {
+            const storedGraphs = await attrApi.getGraphs(activeCard.promptId, normalizeEdges, ciThreshold);
+            const matchingData = storedGraphs.find((g) => g.id === activeGraph.dbId);
 
-                try {
-                    const storedGraphs = await attrApi.getGraphs(card.promptId, normalizeEdges);
-                    const graphs = await Promise.all(
-                        storedGraphs.map(async (data, idx) => {
-                            const isOptimized = !!data.optimization;
-                            const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
+            if (!matchingData) {
+                throw new Error("Could not find matching graph data after refetch");
+            }
 
-                            // Load intervention runs
-                            const runs = await mainApi.getInterventionRuns(data.id);
+            promptCards = promptCards.map((card) => {
+                if (card.id !== activeCard.id) return card;
+                return {
+                    ...card,
+                    graphs: card.graphs.map((g) => {
+                        if (g.id !== activeGraph.id) return g;
+                        return {
+                            ...g,
+                            data: matchingData,
+                            composerSelection: filterInterventableNodes(Object.keys(matchingData.nodeImportance)),
+                        };
+                    }),
+                };
+            });
+        } catch (e) {
+            console.warn("Failed to refetch graph:", e);
+        } finally {
+            refetchingGraphId = null;
+        }
+    }
 
-                            return {
-                                id: `graph-${idx}-${Date.now()}`,
-                                dbId: data.id,
-                                label,
-                                data,
-                                composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
-                                interventionRuns: runs,
-                                activeRunId: null,
-                            };
-                        }),
-                    );
+    function updateActiveGraphViewSettings(partial: Partial<ViewSettings>) {
+        if (!activeCard || !activeGraph) return;
+
+        promptCards = promptCards.map((card) => {
+            if (card.id !== activeCard.id) return card;
+            return {
+                ...card,
+                graphs: card.graphs.map((g) => {
+                    if (g.id !== activeGraph.id) return g;
                     return {
-                        ...card,
-                        graphs,
-                        activeGraphId: graphs.length > 0 ? graphs[0].id : null,
+                        ...g,
+                        viewSettings: { ...g.viewSettings, ...partial },
                     };
-                } catch (e) {
-                    console.warn("Failed to re-fetch graphs for card:", card.id, e);
-                    return card;
-                }
-            }),
-        );
-        promptCards = updatedCards;
+                }),
+            };
+        });
+    }
+
+    async function handleNormalizeChange(value: attrApi.NormalizeType) {
+        updateActiveGraphViewSettings({ normalizeEdges: value });
+        await refetchActiveGraphData();
+    }
+
+    async function handleCiThresholdChange(value: number) {
+        updateActiveGraphViewSettings({ ciThreshold: value });
+        await refetchActiveGraphData();
+    }
+
+    function handleTopKChange(value: number) {
+        updateActiveGraphViewSettings({ topK: value });
+    }
+
+    function handleLayoutChange(value: "importance" | "shuffled" | "jittered") {
+        updateActiveGraphViewSettings({ nodeLayout: value });
+    }
+
+    function handleComponentGapChange(value: number) {
+        updateActiveGraphViewSettings({ componentGap: value });
+    }
+
+    function handleLayerGapChange(value: number) {
+        updateActiveGraphViewSettings({ layerGap: value });
     }
 
     async function handleGeneratePrompts(nPrompts: number) {
@@ -640,7 +696,8 @@
                                         >
                                         <span
                                             ><strong>L0:</strong>
-                                            {activeGraph.data.optimization.l0_total.toFixed(0)} active</span
+                                            {activeGraph.data.optimization.l0_total.toFixed(0)} active at ci threshold {activeGraph
+                                                .viewSettings.ciThreshold}</span
                                         >
                                     </div>
                                 {/if}
@@ -658,25 +715,28 @@
                                     {/if}
 
                                     <ViewControls
-                                        {topK}
-                                        {nodeLayout}
-                                        {componentGap}
-                                        {layerGap}
+                                        topK={activeGraph.viewSettings.topK}
+                                        nodeLayout={activeGraph.viewSettings.nodeLayout}
+                                        componentGap={activeGraph.viewSettings.componentGap}
+                                        layerGap={activeGraph.viewSettings.layerGap}
                                         {filteredEdgeCount}
-                                        {normalizeEdges}
-                                        onTopKChange={(v) => (topK = v)}
-                                        onLayoutChange={(v) => (nodeLayout = v)}
-                                        onComponentGapChange={(v) => (componentGap = v)}
-                                        onLayerGapChange={(v) => (layerGap = v)}
+                                        normalizeEdges={activeGraph.viewSettings.normalizeEdges}
+                                        ciThreshold={activeGraph.viewSettings.ciThreshold}
+                                        ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                        onTopKChange={handleTopKChange}
+                                        onLayoutChange={handleLayoutChange}
+                                        onComponentGapChange={handleComponentGapChange}
+                                        onLayerGapChange={handleLayerGapChange}
                                         onNormalizeChange={handleNormalizeChange}
+                                        onCiThresholdChange={handleCiThresholdChange}
                                     />
                                     {#key activeGraph.id}
                                         <LocalAttributionsGraph
                                             data={activeGraph.data}
-                                            {topK}
-                                            {nodeLayout}
-                                            {componentGap}
-                                            {layerGap}
+                                            topK={activeGraph.viewSettings.topK}
+                                            nodeLayout={activeGraph.viewSettings.nodeLayout}
+                                            componentGap={activeGraph.viewSettings.componentGap}
+                                            layerGap={activeGraph.viewSettings.layerGap}
                                             {activationContextsSummary}
                                             stagedNodes={pinnedNodes}
                                             {componentDetailsCache}
@@ -701,7 +761,7 @@
                                 <InterventionsView
                                     graph={activeGraph}
                                     tokens={activeCard.tokens}
-                                    initialTopK={topK}
+                                    initialTopK={activeGraph.viewSettings.topK}
                                     {activationContextsSummary}
                                     {componentDetailsCache}
                                     {componentDetailsLoading}
