@@ -96,22 +96,6 @@ def filter_edges_by_ci_threshold(
     ]
 
 
-def compute_l0_from_node_ci_vals(
-    node_ci_vals: dict[str, float],
-    ci_threshold: float,
-) -> float:
-    """Compute total L0 (active component count) from node CI values.
-
-    Args:
-        node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
-        ci_threshold: Threshold for counting a component as active
-
-    Returns:
-        Total count of active components across all layers
-    """
-    return sum(1.0 for ci_val in node_ci_vals.values() if ci_val > ci_threshold)
-
-
 def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
     """Compute node importance and max absolute edge value.
 
@@ -229,10 +213,7 @@ def compute_graph_stream(
                     is_optimized=False,
                 )
 
-                l0_total = compute_l0_from_node_ci_vals(
-                    node_ci_vals=result.node_ci_vals,
-                    ci_threshold=ci_threshold,
-                )
+                l0_total = sum(1 for val in result.node_ci_vals.values() if val > ci_threshold)
 
                 response_data = GraphData(
                     id=graph_id,
@@ -422,10 +403,7 @@ def compute_graph_optimized_stream(
                     is_optimized=True,
                 )
 
-                l0_total = compute_l0_from_node_ci_vals(
-                    node_ci_vals=result.node_ci_vals,
-                    ci_threshold=ci_threshold,
-                )
+                l0_total = sum(1 for val in result.node_ci_vals.values() if val > ci_threshold)
 
                 response_data = GraphDataWithOptimization(
                     id=graph_id,
@@ -534,10 +512,7 @@ def get_graphs(
             is_optimized=is_optimized,
         )
 
-        l0_total = compute_l0_from_node_ci_vals(
-            node_ci_vals=graph.node_ci_vals,
-            ci_threshold=ci_threshold,
-        )
+        l0_total = sum(1 for val in graph.node_ci_vals.values() if val > ci_threshold)
 
         if not is_optimized:
             # Standard graph

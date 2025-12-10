@@ -41,7 +41,7 @@ class GraphData(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
-    l0_total: float  # total active components at current CI threshold
+    l0_total: int  # total active components at current CI threshold
 
 
 class OptimizationResult(BaseModel):
