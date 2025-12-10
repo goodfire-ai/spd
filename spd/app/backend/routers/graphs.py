@@ -236,6 +236,11 @@ def compute_graph_stream(
                     is_optimized=False,
                 )
 
+                l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
+                    node_ci_vals=result.node_ci_vals,
+                    ci_threshold=ci_threshold,
+                )
+
                 response_data = GraphData(
                     id=graph_id,
                     tokens=token_strings,
@@ -243,6 +248,8 @@ def compute_graph_stream(
                     outputProbs=raw_output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
+                    l0_per_layer=l0_per_layer,
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
                 yield f"data: {json.dumps(complete_data)}\n\n"
@@ -435,6 +442,8 @@ def compute_graph_optimized_stream(
                     outputProbs=raw_output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
+                    l0_per_layer=l0_per_layer,
                     optimization=OptimizationResult(
                         label_token=label_token,
                         label_str=label_str,
@@ -442,8 +451,6 @@ def compute_graph_optimized_stream(
                         ce_loss_coeff=ce_loss_coeff,
                         steps=steps,
                         label_prob=result.label_prob,
-                        l0_total=l0_total,
-                        l0_per_layer=l0_per_layer,
                     ),
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
@@ -536,6 +543,11 @@ def get_graphs(
             is_optimized=is_optimized,
         )
 
+        l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
+            node_ci_vals=graph.node_ci_vals,
+            ci_threshold=ci_threshold,
+        )
+
         if not is_optimized:
             # Standard graph
             results.append(
@@ -546,17 +558,14 @@ def get_graphs(
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
+                    l0_per_layer=l0_per_layer,
                 )
             )
         else:
             # Optimized graph
             assert graph.optimization_params is not None
             assert graph.label_prob is not None
-
-            l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
-                node_ci_vals=graph.node_ci_vals,
-                ci_threshold=ci_threshold,
-            )
 
             results.append(
                 GraphDataWithOptimization(
@@ -566,6 +575,8 @@ def get_graphs(
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
+                    l0_per_layer=l0_per_layer,
                     optimization=OptimizationResult(
                         label_token=graph.optimization_params.label_token,
                         label_str=loaded.token_strings[graph.optimization_params.label_token],
@@ -573,8 +584,6 @@ def get_graphs(
                         ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
                         steps=graph.optimization_params.steps,
                         label_prob=graph.label_prob,
-                        l0_total=l0_total,
-                        l0_per_layer=l0_per_layer,
                     ),
                 )
             )

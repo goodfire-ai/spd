@@ -687,8 +687,8 @@
                             </div>
 
                             {#if activeCard.activeView === "graph"}
-                                {#if activeGraph.data.optimization}
-                                    <div class="optim-results">
+                                <div class="graph-stats">
+                                    {#if activeGraph.data.optimization}
                                         <span
                                             ><strong>Target:</strong> "{formatTokenDisplay(
                                                 activeGraph.data.optimization.label_str,
@@ -696,13 +696,13 @@
                                             <span class="token-id">(#{activeGraph.data.optimization.label_token})</span>
                                             @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span
                                         >
-                                        <span
-                                            ><strong>L0:</strong>
-                                            {activeGraph.data.optimization.l0_total.toFixed(0)} active at ci threshold {activeGraph
-                                                .viewSettings.ciThreshold}</span
-                                        >
-                                    </div>
-                                {/if}
+                                    {/if}
+                                    <span
+                                        ><strong>L0:</strong>
+                                        {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
+                                            .viewSettings.ciThreshold}</span
+                                    >
+                                </div>
 
                                 {#if computeError}
                                     <div class="error-banner">
@@ -898,7 +898,7 @@
         background: rgba(255, 255, 255, 0.3);
     }
 
-    .optim-results {
+    .graph-stats {
         display: flex;
         gap: var(--space-4);
         font-size: var(--text-sm);
@@ -906,12 +906,12 @@
         color: var(--accent-primary);
     }
 
-    .optim-results strong {
+    .graph-stats strong {
         color: var(--text-muted);
         font-weight: 500;
     }
 
-    .optim-results .token-id {
+    .graph-stats .token-id {
         color: var(--text-muted);
         font-size: var(--text-xs);
     }

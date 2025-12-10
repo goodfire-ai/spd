@@ -41,6 +41,8 @@ class GraphData(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
+    l0_total: float  # total active components at current CI threshold
+    l0_per_layer: dict[str, float]  # active components per layer
 
 
 class OptimizationResult(BaseModel):
@@ -52,8 +54,6 @@ class OptimizationResult(BaseModel):
     ce_loss_coeff: float
     steps: int
     label_prob: float
-    l0_total: float
-    l0_per_layer: dict[str, float]
 
 
 class GraphDataWithOptimization(BaseModel):
@@ -65,6 +65,8 @@ class GraphDataWithOptimization(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
+    l0_total: float  # total active components at current CI threshold
+    l0_per_layer: dict[str, float]  # active components per layer
     optimization: OptimizationResult
 
 

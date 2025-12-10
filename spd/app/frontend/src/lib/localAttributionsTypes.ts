@@ -29,6 +29,8 @@ export type GraphData = {
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
     nodeImportance: Record<string, number>; // node key -> sum of squared edge values
     maxAbsAttr: number; // max absolute edge value
+    l0_total: number; // total active components at current CI threshold
+    l0_per_layer: Record<string, number>; // active components per layer
     optimization?: OptimizationResult;
 };
 
@@ -39,8 +41,6 @@ export type OptimizationResult = {
     ce_loss_coeff: number;
     steps: number;
     label_prob: number;
-    l0_total: number;
-    l0_per_layer: Record<string, number>;
 };
 
 export type ComponentSummary = {
