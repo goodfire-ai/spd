@@ -165,10 +165,9 @@ class SubcomponentActivationContexts(BaseModel):
     example_active_pos: list[int]  # [n_examples] - index into window
     example_active_ci: list[float]  # [n_examples]
 
-    # Token precision/recall (input tokens) - columnar arrays sorted by recall descending
-    pr_tokens: list[str]  # [n_unique_tokens]
-    pr_recalls: list[float]  # [n_unique_tokens]
-    pr_precisions: list[float]  # [n_unique_tokens]
+    # Token precision/recall - top tokens by each metric
+    top_recall: list[tuple[str, float]]  # [(token, value), ...] sorted desc
+    top_precision: list[tuple[str, float]]  # [(token, value), ...] sorted desc
 
     # TODO: Re-enable token uplift after performance optimization
     # Predicted token stats - lift = E[P(token)|fires] / E[P(token)]

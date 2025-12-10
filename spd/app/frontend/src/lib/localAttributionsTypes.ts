@@ -55,9 +55,8 @@ export type ComponentDetail = {
     example_ci: number[][];
     example_active_pos: number[];
     example_active_ci: number[];
-    pr_tokens: string[];
-    pr_recalls: number[];
-    pr_precisions: number[];
+    top_recall: [string, number][]; // [(token, value), ...] sorted desc
+    top_precision: [string, number][]; // [(token, value), ...] sorted desc
     // TODO: Re-enable token uplift after performance optimization
     // predicted_tokens: string[];
     // predicted_lifts: number[];

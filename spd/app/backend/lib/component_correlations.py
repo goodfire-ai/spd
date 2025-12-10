@@ -126,11 +126,31 @@ class ComponentCorrelations:
         row[:i] = self.count_ij[:i, i]  # Fill in values for j < i from column i
         return row
 
+    def _compute_scores(
+        self, component_key: str, metric: Metric
+    ) -> tuple[Tensor, int] | None:
+        """Compute scores for a component. Returns (scores, component_idx) or None if no firings."""
+        i = self._key_to_idx(component_key)
+        count_i_val = self.count_i[i]
+
+        if count_i_val == 0:
+            return None
+
+        count_ij_row = self._get_cooccurrence_row(i)
+        scores = METRIC_FNS[metric](count_i_val, self.count_i, count_ij_row, self.n_tokens)
+
+        # Mask out self and zeros with -inf
+        scores[i] = float("-inf")
+        scores[self.count_i == 0] = float("-inf")
+        scores[count_ij_row == 0] = float("-inf")
+
+        return scores, i
+
     def get_correlated(
         self,
         component_key: str,
         metric: Metric,
-        top_k: int = 10,
+        top_k: int,
     ) -> list[CorrelatedComponent]:
         """Get top-k correlated components for a given component (vectorized).
 
@@ -142,38 +162,25 @@ class ComponentCorrelations:
         Returns:
             List of CorrelatedComponent sorted by score descending
         """
-        i = self._key_to_idx(component_key)
-        count_i_val = self.count_i[i]
-
-        if count_i_val == 0:
+        result = self._compute_scores(component_key, metric)
+        if result is None:
             return []
 
-        # Get vectorized co-occurrence counts for component i
-        count_ij_row = self._get_cooccurrence_row(i)
-
-        # Compute scores vectorized
-        scores = METRIC_FNS[metric](count_i_val, self.count_i, count_ij_row, self.n_tokens)
-
-        # Mask out self and zeros
-        scores[i] = float("-inf")
-        scores[self.count_i == 0] = float("-inf")
-        scores[count_ij_row == 0] = float("-inf")
-
-        # Get top-k indices
+        scores, _ = result
         top_k_clamped = min(top_k, len(scores))
         top_values, top_indices = torch.topk(scores, top_k_clamped)
 
         # Filter out -inf (our sentinel for "excluded") but fail on unexpected non-finite values
-        result = []
+        output = []
         for idx, val in zip(top_indices.tolist(), top_values.tolist(), strict=True):
             if val == float("-inf"):
                 continue
             assert math.isfinite(val), (
                 f"Unexpected non-finite score {val} for {self.component_keys[idx]}"
             )
-            result.append(CorrelatedComponent(component_key=self.component_keys[idx], score=val))
+            output.append(CorrelatedComponent(component_key=self.component_keys[idx], score=val))
 
-        return result
+        return output
 
     def save(self, path: Path) -> None:
         """Save correlations to a .pt file."""
@@ -191,19 +198,12 @@ class ComponentCorrelations:
 
     @classmethod
     def load(cls, path: Path) -> "ComponentCorrelations":
-        """Load correlations from a .pt file."""
-        data = torch.load(path, weights_only=True)
-        count_i = data["count_i"]
-        count_ij = data["count_ij"]
-
-        # Validate no inf/nan in stored data
-        assert torch.isfinite(count_i).all(), "count_i contains non-finite values"
-        assert torch.isfinite(count_ij).all(), "count_ij contains non-finite values"
-
+        """Load correlations from a .pt file using memory mapping."""
+        data = torch.load(path, weights_only=True, mmap=True)
         return cls(
             component_keys=data["component_keys"],
-            count_i=count_i,
-            count_ij=count_ij,
+            count_i=data["count_i"],
+            count_ij=data["count_ij"],
             n_tokens=data["n_tokens"],
         )
 

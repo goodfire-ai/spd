@@ -40,7 +40,8 @@ def get_activations_data(
     n_batches: int,
     n_tokens_either_side: int,
     topk_examples: int,
-    separation_tokens: int = 0,
+    topk_correlations: int,
+    separation_tokens: int,
     onprogress: Callable[[float], None] | None = None,
 ) -> ModelActivationContexts:
     logger.info(
@@ -274,11 +275,12 @@ def get_activations_data(
         module_mean_cis = (component_sum_cis[module_name] / n_toks_seen).tolist()
         module_subcomponent_ctxs: list[SubcomponentActivationContexts] = []
         for component_idx in module_acts:
-            pr_tokens, pr_recalls, pr_precisions = _get_component_token_pr(
+            top_recall, top_precision = _get_component_token_pr(
                 component_token_acts=module_acts[component_idx],
                 total_token_counts=total_token_counts,
                 token_strings=token_strings,
                 component_activation_count=module_activation_counts[component_idx],
+                top_k=topk_correlations,
             )
             # TODO: Re-enable token uplift after performance optimization
             # predicted_tokens, predicted_lifts, predicted_firing_probs, predicted_base_probs = (
@@ -299,9 +301,8 @@ def get_activations_data(
                 example_ci=example_ci,
                 example_active_pos=example_active_pos,
                 example_active_ci=example_active_ci,
-                pr_tokens=pr_tokens,
-                pr_recalls=pr_recalls,
-                pr_precisions=pr_precisions,
+                top_recall=top_recall,
+                top_precision=top_precision,
                 # predicted_tokens=predicted_tokens,
                 # predicted_lifts=predicted_lifts,
                 # predicted_firing_probs=predicted_firing_probs,
@@ -518,29 +519,26 @@ def _get_component_token_pr(
     total_token_counts: dict[int, int],
     token_strings: dict[int, str],
     component_activation_count: int,
-) -> tuple[list[str], list[float], list[float]]:
-    """Return columnar data: (tokens, recalls, precisions) sorted by recall descending."""
-    # Build parallel arrays
-    tokens: list[str] = []
-    recalls: list[float] = []
-    precisions: list[float] = []
+    top_k: int,
+) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
+    """Return (top_recall, top_precision) as lists of (token, value) tuples."""
+    # Build list of (token_id, recall, precision)
+    token_data: list[tuple[int, float, float]] = []
 
     for token_id in component_token_acts:
-        # recall: P(token | firing)
-        recall = round(component_token_acts[token_id] / component_activation_count, 3)
-        # precision: P(firing | token)
-        precision = round(component_token_acts[token_id] / total_token_counts[token_id], 3)
-        tokens.append(token_strings[token_id])
-        recalls.append(recall)
-        precisions.append(precision)
+        recall = component_token_acts[token_id] / component_activation_count
+        precision = component_token_acts[token_id] / total_token_counts[token_id]
+        token_data.append((token_id, recall, precision))
 
-    # Sort by recall descending
-    sorted_indices = sorted(range(len(recalls)), key=lambda i: recalls[i], reverse=True)
-    tokens = [tokens[i] for i in sorted_indices]
-    recalls = [recalls[i] for i in sorted_indices]
-    precisions = [precisions[i] for i in sorted_indices]
+    # Top by recall
+    by_recall = sorted(token_data, key=lambda x: x[1], reverse=True)[:top_k]
+    top_recall = [(token_strings[t[0]], round(t[1], 3)) for t in by_recall]
 
-    return tokens, recalls, precisions
+    # Top by precision
+    by_precision = sorted(token_data, key=lambda x: x[2], reverse=True)[:top_k]
+    top_precision = [(token_strings[t[0]], round(t[2], 3)) for t in by_precision]
+
+    return top_recall, top_precision
 
 
 # TODO: Re-enable token uplift after performance optimization

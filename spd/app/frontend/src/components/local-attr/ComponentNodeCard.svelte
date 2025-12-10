@@ -52,12 +52,10 @@
     // Show full paged table when not compact, or when compact but expanded
     let showFullTable = $derived(!compact || expanded);
 
-    // Token precisions sorted by precision descending (backend sorts by recall)
+    // Token precisions (already sorted by backend)
     const tokenPrecisionsSorted = $derived.by(() => {
-        if (!detail || detail.pr_tokens.length === 0) return [];
-        const indices = detail.pr_tokens.map((_, i) => i);
-        indices.sort((a, b) => detail.pr_precisions[b] - detail.pr_precisions[a]);
-        return indices.map((i) => ({ token: detail.pr_tokens[i], precision: detail.pr_precisions[i] }));
+        if (!detail || detail.top_precision.length === 0) return [];
+        return detail.top_precision.map(([token, precision]) => ({ token, precision }));
     });
 </script>
 
@@ -88,7 +86,7 @@
                     exampleTokens={detail.example_tokens}
                     exampleCi={detail.example_ci}
                     exampleActivePos={detail.example_active_pos}
-                    activatingTokens={detail.pr_tokens}
+                    activatingTokens={detail.top_recall.map(([t]) => t)}
                 />
             {:else}
                 <!-- Compact collapsed mode: simple inline examples -->

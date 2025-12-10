@@ -225,7 +225,12 @@ class AppRunner:
                     # Print box with tail
                     print(f"{AnsiEsc.DIM}┌─ logs {'─' * 32}{AnsiEsc.RESET}")
                     for line in tail:
-                        print(f"{AnsiEsc.DIM}│ {line.rstrip()}{AnsiEsc.RESET}")
+                        clipped_line = (
+                            line.rstrip()[:100] + "..."
+                            if len(line.rstrip()) > 100
+                            else line.rstrip()
+                        )
+                        print(f"{AnsiEsc.DIM}│ {clipped_line}{AnsiEsc.RESET}")
                     print(f"{AnsiEsc.DIM}└{'─' * 40}{AnsiEsc.RESET}")
 
                     prev_lines = tail

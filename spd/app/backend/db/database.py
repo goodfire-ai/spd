@@ -7,17 +7,22 @@ Attribution graphs can be cached to avoid recomputation.
 import gzip
 import json
 import sqlite3
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
+from spd.log import logger
+
 from spd.app.backend.compute import Edge, Node
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
     ModelActivationContexts,
     OutputProbability,
+    SubcomponentActivationContexts,
+    SubcomponentMetadata,
 )
 from spd.settings import REPO_ROOT
 
@@ -136,13 +141,26 @@ class LocalAttrDB:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS activation_contexts (
+            -- Metadata per run+context_length
+            CREATE TABLE IF NOT EXISTS activation_contexts_meta (
                 run_id INTEGER NOT NULL REFERENCES runs(id),
                 context_length INTEGER NOT NULL,
-                data BLOB NOT NULL,
                 config TEXT,
                 PRIMARY KEY (run_id, context_length)
             );
+
+            -- Normalized: one row per component
+            CREATE TABLE IF NOT EXISTS component_contexts (
+                run_id INTEGER NOT NULL REFERENCES runs(id),
+                context_length INTEGER NOT NULL,
+                component_key TEXT NOT NULL,  -- "layer:component_idx"
+                mean_ci REAL NOT NULL,
+                data BLOB NOT NULL,  -- gzipped JSON of SubcomponentActivationContexts (without key/mean_ci)
+                PRIMARY KEY (run_id, context_length, component_key)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_component_contexts_run
+                ON component_contexts(run_id, context_length);
 
             CREATE TABLE IF NOT EXISTS prompts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -253,58 +271,166 @@ class LocalAttrDB:
         return Run(id=row["id"], wandb_path=row["wandb_path"])
 
     # -------------------------------------------------------------------------
-    # Activation contexts operations
+    # Component contexts operations
     # -------------------------------------------------------------------------
 
-    def get_activation_contexts(
-        self, run_id: int, context_length: int
-    ) -> ModelActivationContexts | None:
-        """Get the stored activation contexts for a run + context_length."""
-        conn = self._get_conn()
-        row = conn.execute(
-            "SELECT data FROM activation_contexts WHERE run_id = ? AND context_length = ?",
-            (run_id, context_length),
-        ).fetchone()
-        if row is None:
-            return None
-        decompressed = gzip.decompress(row["data"])
-        json_data = json.loads(decompressed.decode("utf-8"))
-        return ModelActivationContexts.model_validate(json_data)
-
-    def set_activation_contexts(
+    def set_component_contexts(
         self,
         run_id: int,
         context_length: int,
         contexts: ModelActivationContexts,
         config: ActivationContextsGenerationConfig | None = None,
     ) -> None:
-        """Store activation contexts for a run + context_length."""
+        """Store activation contexts in normalized form (one row per component)."""
+        import concurrent.futures
+
+        t0 = time.perf_counter()
         conn = self._get_conn()
-        json_bytes = json.dumps(contexts.model_dump()).encode("utf-8")
-        compressed = gzip.compress(json_bytes)
+
+        # Store metadata
         config_json = json.dumps(config.model_dump()) if config else None
         conn.execute(
-            "INSERT OR REPLACE INTO activation_contexts (run_id, context_length, data, config) VALUES (?, ?, ?, ?)",
-            (run_id, context_length, compressed, config_json),
+            "INSERT OR REPLACE INTO activation_contexts_meta (run_id, context_length, config) VALUES (?, ?, ?)",
+            (run_id, context_length, config_json),
+        )
+
+        # Delete existing component rows for this run+context_length
+        conn.execute(
+            "DELETE FROM component_contexts WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
+        )
+
+        # Prepare data for parallel compression
+        def compress_component(
+            item: tuple[str, SubcomponentActivationContexts],
+        ) -> tuple[str, float, bytes]:
+            layer_key, subcomp = item
+            component_key = f"{layer_key}:{subcomp.subcomponent_idx}"
+            data_dict = subcomp.model_dump(exclude={"subcomponent_idx", "mean_ci"})
+            json_bytes = json.dumps(data_dict).encode("utf-8")
+            # Use fast compression (level 1)
+            compressed = gzip.compress(json_bytes, compresslevel=1)
+            return component_key, subcomp.mean_ci, compressed
+
+        # Flatten to list of (layer_key, subcomp) tuples
+        items: list[tuple[str, SubcomponentActivationContexts]] = []
+        for layer_name, subcomps in contexts.layers.items():
+            for subcomp in subcomps:
+                items.append((layer_name, subcomp))
+
+        t1 = time.perf_counter()
+
+        # Parallel compression
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = list(executor.map(compress_component, items))
+
+        t2 = time.perf_counter()
+
+        # Build rows for insert
+        rows = [(run_id, context_length, key, mean_ci, data) for key, mean_ci, data in results]
+
+        conn.executemany(
+            """INSERT INTO component_contexts
+               (run_id, context_length, component_key, mean_ci, data)
+               VALUES (?, ?, ?, ?, ?)""",
+            rows,
         )
         conn.commit()
+        t3 = time.perf_counter()
 
-    def has_activation_contexts(self, run_id: int, context_length: int) -> bool:
-        """Check if activation contexts exist for a run + context_length."""
+        logger.info(
+            f"Stored {len(rows)} component contexts: "
+            f"prep={1000*(t1-t0):.0f}ms, compress={1000*(t2-t1):.0f}ms, insert={1000*(t3-t2):.0f}ms"
+        )
+
+    def get_component_contexts_summary(
+        self, run_id: int, context_length: int
+    ) -> dict[str, list[SubcomponentMetadata]] | None:
+        """Get lightweight summary: component_key -> mean_ci (no blob loading)."""
+        conn = self._get_conn()
+
+        # Check if data exists
+        row = conn.execute(
+            "SELECT 1 FROM activation_contexts_meta WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
+        ).fetchone()
+        if row is None:
+            return None
+
+        rows = conn.execute(
+            """SELECT component_key, mean_ci FROM component_contexts
+               WHERE run_id = ? AND context_length = ?
+               ORDER BY mean_ci DESC""",
+            (run_id, context_length),
+        ).fetchall()
+
+        # Group by layer
+        result: dict[str, list[SubcomponentMetadata]] = {}
+        for row in rows:
+            key = row["component_key"]
+            layer, idx_str = key.rsplit(":", 1)
+            if layer not in result:
+                result[layer] = []
+            result[layer].append(
+                SubcomponentMetadata(subcomponent_idx=int(idx_str), mean_ci=row["mean_ci"])
+            )
+        return result
+
+    def get_component_context_detail(
+        self, run_id: int, context_length: int, layer: str, component_idx: int
+    ) -> SubcomponentActivationContexts | None:
+        """Get full data for a single component (fast: only loads one small row)."""
+        t0 = time.perf_counter()
+        conn = self._get_conn()
+        component_key = f"{layer}:{component_idx}"
+
+        row = conn.execute(
+            """SELECT mean_ci, data FROM component_contexts
+               WHERE run_id = ? AND context_length = ? AND component_key = ?""",
+            (run_id, context_length, component_key),
+        ).fetchone()
+        t1 = time.perf_counter()
+
+        if row is None:
+            return None
+
+        decompressed = gzip.decompress(row["data"])
+        t2 = time.perf_counter()
+
+        data_dict = json.loads(decompressed.decode("utf-8"))
+        t3 = time.perf_counter()
+
+        # Add back the fields stored in columns
+        data_dict["subcomponent_idx"] = component_idx
+        data_dict["mean_ci"] = row["mean_ci"]
+
+        result = SubcomponentActivationContexts.model_validate(data_dict)
+        t4 = time.perf_counter()
+
+        blob_kb = len(row["data"]) / 1024
+        logger.info(
+            f"get_component_context_detail: {component_key} "
+            f"query={1000*(t1-t0):.0f}ms, decompress={1000*(t2-t1):.0f}ms ({blob_kb:.1f}KB), "
+            f"json={1000*(t3-t2):.0f}ms, pydantic={1000*(t4-t3):.0f}ms"
+        )
+        return result
+
+    def has_component_contexts(self, run_id: int, context_length: int) -> bool:
+        """Check if normalized component contexts exist."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT 1 FROM activation_contexts WHERE run_id = ? AND context_length = ?",
+            "SELECT 1 FROM activation_contexts_meta WHERE run_id = ? AND context_length = ?",
             (run_id, context_length),
         ).fetchone()
         return row is not None
 
-    def get_activation_contexts_config(
+    def get_component_contexts_config(
         self, run_id: int, context_length: int
     ) -> ActivationContextsGenerationConfig | None:
-        """Get the config used to generate activation contexts for a run + context_length."""
+        """Get the config from normalized storage."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT config FROM activation_contexts WHERE run_id = ? AND context_length = ?",
+            "SELECT config FROM activation_contexts_meta WHERE run_id = ? AND context_length = ?",
             (run_id, context_length),
         ).fetchone()
         if row is None or row["config"] is None:

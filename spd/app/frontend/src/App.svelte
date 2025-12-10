@@ -137,8 +137,6 @@
                         </div>
                     {/if}
                 </div>
-
-                <CorrelationJobStatus bind:this={correlationJobStatus} />
             {/if}
         </form>
     </header>
@@ -155,6 +153,7 @@
             >
                 Activation Contexts
             </button>
+            <CorrelationJobStatus bind:this={correlationJobStatus} />
         </nav>
     {/if}
 

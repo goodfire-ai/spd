@@ -3,6 +3,7 @@
 import json
 import queue
 import threading
+import time
 from collections.abc import Generator
 from typing import Annotated, Any
 
@@ -12,7 +13,6 @@ from torch.utils.data import DataLoader
 
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
-from spd.log import logger
 from spd.app.backend.lib.component_correlations import (
     ComponentCorrelations,
     get_correlations_path,
@@ -24,26 +24,13 @@ from spd.app.backend.schemas import (
     ComponentProbeResponse,
     CorrelatedComponent,
     HarvestMetadata,
-    ModelActivationContexts,
     SubcomponentActivationContexts,
     SubcomponentMetadata,
 )
-from spd.app.backend.state import RunState, StateManager
 from spd.app.backend.utils import log_errors
+from spd.log import logger
 
 router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts"])
-
-
-def _ensure_activation_contexts_cached(
-    manager: StateManager,
-    loaded: RunState,
-) -> ModelActivationContexts | None:
-    """Load activation contexts into cache if not already loaded."""
-    if loaded.activation_contexts_cache is None:
-        contexts = manager.db.get_activation_contexts(loaded.run.id, loaded.context_length)
-        if contexts is not None:
-            loaded.activation_contexts_cache = contexts
-    return loaded.activation_contexts_cache
 
 
 @router.get("/summary")
@@ -53,19 +40,11 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    contexts = _ensure_activation_contexts_cached(manager, loaded)
-
-    if contexts is None:
+    summary = manager.db.get_component_contexts_summary(loaded.run.id, loaded.context_length)
+    if summary is None:
         raise HTTPException(
             status_code=404, detail="No activation contexts found. Generate them first."
         )
-
-    summary: dict[str, list[SubcomponentMetadata]] = {}
-    for layer, subcomps in contexts.layers.items():
-        summary[layer] = [
-            SubcomponentMetadata(subcomponent_idx=s.subcomponent_idx, mean_ci=s.mean_ci)
-            for s in subcomps
-        ]
     return summary
 
 
@@ -76,7 +55,7 @@ def get_activation_contexts_config(
     loaded: DepLoadedRun,
 ) -> ActivationContextsGenerationConfig | None:
     """Return the config used to generate the stored activation contexts."""
-    return manager.db.get_activation_contexts_config(loaded.run.id, loaded.context_length)
+    return manager.db.get_component_contexts_config(loaded.run.id, loaded.context_length)
 
 
 @router.get("/{layer}/{component_idx}")
@@ -88,22 +67,14 @@ def get_activation_context_detail(
     loaded: DepLoadedRun,
 ) -> SubcomponentActivationContexts:
     """Return full activation context data for a single component."""
-    contexts = _ensure_activation_contexts_cached(manager, loaded)
-
-    if contexts is None:
-        raise HTTPException(status_code=404, detail="No activation contexts found")
-
-    layer_data = contexts.layers.get(layer)
-    if layer_data is None:
-        raise HTTPException(status_code=404, detail=f"Layer '{layer}' not found")
-
-    for subcomp in layer_data:
-        if subcomp.subcomponent_idx == component_idx:
-            return subcomp
-
-    raise HTTPException(
-        status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
+    detail = manager.db.get_component_context_detail(
+        loaded.run.id, loaded.context_length, layer, component_idx
     )
+    if detail is None:
+        raise HTTPException(
+            status_code=404, detail=f"Component {layer}:{component_idx} not found"
+        )
+    return detail
 
 
 @router.get("/subcomponents")
@@ -162,15 +133,13 @@ def generate_activation_contexts(
                 n_batches=n_batches,
                 n_tokens_either_side=n_tokens_either_side,
                 topk_examples=topk_examples,
+                topk_correlations=100, # lots so FE can filter
                 separation_tokens=separation_tokens,
                 onprogress=on_progress,
             )
             logger.info("Saving activation contexts to database...")
-            db.set_activation_contexts(loaded.run.id, loaded.context_length, act_contexts, config)
+            db.set_component_contexts(loaded.run.id, loaded.context_length, act_contexts, config)
             logger.info("Saved activation contexts to database")
-
-            # Clear cache so it reloads from DB
-            loaded.activation_contexts_cache = None
 
             metadata = HarvestMetadata(
                 layers={
@@ -252,17 +221,20 @@ _correlations_cache: dict[str, ComponentCorrelations] = {}
 
 
 def _get_correlations(run_id: str) -> ComponentCorrelations | None:
-    """Load correlations from cache or disk."""
+    """Load correlations from cache or disk. Returns (correlations, load_time_ms)."""
+    start = time.perf_counter()
+
     if run_id in _correlations_cache:
         return _correlations_cache[run_id]
 
     path = get_correlations_path(run_id)
     if not path.exists():
-        print(f"Correlations file not found at {path}")
         return None
 
     correlations = ComponentCorrelations.load(path)
     _correlations_cache[run_id] = correlations
+    load_ms = (time.perf_counter() - start) * 1000
+    logger.info(f"Loaded correlations for {run_id} in {load_ms:.1f}ms")
     return correlations
 
 
@@ -279,12 +251,13 @@ def get_component_correlations(
     Returns top-k correlations across different metrics (precision, recall, F1, Jaccard).
     Returns None if correlations haven't been harvested for this run.
     """
+    start = time.perf_counter()
+
     # Extract run_id from wandb_path (entity/project/run_id -> run_id)
     run_id = loaded.run.wandb_path.split("/")[-1]
     correlations = _get_correlations(run_id)
 
     if correlations is None:
-        print(f"No correlations found for run {run_id}")
         return None
 
     component_key = f"{layer}:{component_idx}"
@@ -294,21 +267,22 @@ def get_component_correlations(
             status_code=404, detail=f"Component {component_key} not found in correlations"
         )
 
-    return ComponentCorrelationsResponse(
-        precision=[
-            CorrelatedComponent(component_key=c.component_key, score=c.score)
-            for c in correlations.get_correlated(component_key, "precision", top_k)
-        ],
-        recall=[
-            CorrelatedComponent(component_key=c.component_key, score=c.score)
-            for c in correlations.get_correlated(component_key, "recall", top_k)
-        ],
-        f1=[
-            CorrelatedComponent(component_key=c.component_key, score=c.score)
-            for c in correlations.get_correlated(component_key, "f1", top_k)
-        ],
-        jaccard=[
-            CorrelatedComponent(component_key=c.component_key, score=c.score)
-            for c in correlations.get_correlated(component_key, "jaccard", top_k)
-        ],
+    from spd.app.backend.lib.component_correlations import (
+        CorrelatedComponent as CorrelatedComponentDC,
     )
+
+    def to_schema(c: CorrelatedComponentDC) -> CorrelatedComponent:
+        return CorrelatedComponent(component_key=c.component_key, score=c.score)
+
+    response = ComponentCorrelationsResponse(
+        precision=[to_schema(c) for c in correlations.get_correlated(component_key, "precision", top_k)],
+        recall=[to_schema(c) for c in correlations.get_correlated(component_key, "recall", top_k)],
+        f1=[to_schema(c) for c in correlations.get_correlated(component_key, "f1", top_k)],
+        jaccard=[to_schema(c) for c in correlations.get_correlated(component_key, "jaccard", top_k)],
+    )
+
+    total_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        f"get_component_correlations: {component_key} in {total_ms:.1f}ms"
+    )
+    return response

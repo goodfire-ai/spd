@@ -23,7 +23,7 @@
         const s = status?.status;
         if (s !== "pending" && s !== "running") return;
 
-        const interval = setInterval(reload, 2000);
+        const interval = setInterval(reload, 1000);
         return () => clearInterval(interval);
     });
 

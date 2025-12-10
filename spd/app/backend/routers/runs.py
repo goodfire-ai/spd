@@ -164,7 +164,7 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         id=run.id,
         wandb_path=run.wandb_path,
         config_yaml=config_yaml,
-        has_activation_contexts=manager.db.has_activation_contexts(run.id, context_length),
+        has_activation_contexts=manager.db.has_component_contexts(run.id, context_length),
         has_prompts=prompt_count > 0,
         prompt_count=prompt_count,
         context_length=context_length,
