@@ -39,9 +39,7 @@
     }
 
     function pinComponent(layer: string, cIdx: number, seqIdx: number) {
-        const alreadyPinned = stagedNodes.some(
-            (n) => n.layer === layer && n.cIdx === cIdx && n.seqIdx === seqIdx
-        );
+        const alreadyPinned = stagedNodes.some((n) => n.layer === layer && n.cIdx === cIdx && n.seqIdx === seqIdx);
         if (alreadyPinned) return;
         onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
     }
@@ -79,7 +77,7 @@
                         layer={node.layer}
                         seqIdx={node.seqIdx}
                         cIdx={node.cIdx}
-                        token={token}
+                        {token}
                         onClose={() => unstageNode(node)}
                     />
 

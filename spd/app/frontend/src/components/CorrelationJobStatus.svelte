@@ -1,41 +1,15 @@
 <script lang="ts">
-    import type { CorrelationJobStatus } from "../lib/api";
-    import * as api from "../lib/api";
-    import { onMount } from "svelte";
+    import type { CorrelationJobStatus as CorrelationJobStatusType } from "../lib/api";
 
-    let status = $state<CorrelationJobStatus | null>(null);
-    let submitting = $state(false);
+    interface Props {
+        status: CorrelationJobStatusType | null;
+        onSubmit: () => void;
+        submitting: boolean;
+    }
+
+    let { status, onSubmit, submitting }: Props = $props();
+
     let showParams = $state(false);
-
-    export async function reload() {
-        try {
-            status = await api.getCorrelationJobStatus();
-        } finally {
-            status = null;
-        }
-    }
-
-    onMount(reload);
-
-    // Poll while pending/running
-    $effect(() => {
-        const s = status?.status;
-        if (s !== "pending" && s !== "running") return;
-
-        const interval = setInterval(reload, 1000);
-        return () => clearInterval(interval);
-    });
-
-    async function submit() {
-        if (submitting) return;
-        submitting = true;
-        try {
-            await api.submitCorrelationJob();
-            await reload();
-        } finally {
-            submitting = false;
-        }
-    }
 
     function formatTokenCount(n: number): string {
         if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -47,7 +21,7 @@
 <div class="correlation-section">
     {#if status === null}
         <span class="status-text muted">Correlations: Not computed</span>
-        <button class="harvest-button" onclick={submit} disabled={submitting}>
+        <button class="harvest-button" onclick={onSubmit} disabled={submitting}>
             {submitting ? "..." : "Harvest"}
         </button>
     {:else}
@@ -88,7 +62,7 @@
         </div>
 
         {#if status.status === "failed"}
-            <button class="harvest-button" onclick={submit} disabled={submitting}>
+            <button class="harvest-button" onclick={onSubmit} disabled={submitting}>
                 {submitting ? "..." : "Harvest"}
             </button>
         {/if}

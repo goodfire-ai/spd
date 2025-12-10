@@ -434,5 +434,3 @@ def _get_pad_indices_numpy(arr: NDArray[np.int64], pad_val: int) -> tuple[int, i
         return 0, 0
     non_pad_indices = np.where(non_pad)[0]
     return int(non_pad_indices[0]), int(non_pad_indices[-1]) + 1
-
-

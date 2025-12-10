@@ -24,10 +24,7 @@
         <table class="data-table correlation-table">
             <tbody>
                 {#each items.slice(0, maxItems) as { component_key, score } (component_key)}
-                    <tr
-                        class:clickable={!!onComponentClick}
-                        onclick={() => onComponentClick?.(component_key)}
-                    >
+                    <tr class:clickable={!!onComponentClick} onclick={() => onComponentClick?.(component_key)}>
                         <td><code>{component_key}</code></td>
                         <td style="background-color: {getTokenHighlightBg(score)}">{score.toFixed(3)}</td>
                     </tr>

@@ -343,9 +343,7 @@ export async function getComponentCorrelations(
     componentIdx: number,
     topK: number = 10,
 ): Promise<ComponentCorrelations | null> {
-    const url = new URL(
-        `${API_URL}/api/activation_contexts/correlations/${encodeURIComponent(layer)}/${componentIdx}`,
-    );
+    const url = new URL(`${API_URL}/api/activation_contexts/correlations/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
     return fetchJson<ComponentCorrelations | null>(url.toString());
 }
@@ -356,9 +354,7 @@ export async function getComponentTokenStats(
     componentIdx: number,
     topK: number = 10,
 ): Promise<TokenStats | null> {
-    const url = new URL(
-        `${API_URL}/api/activation_contexts/token_stats/${encodeURIComponent(layer)}/${componentIdx}`,
-    );
+    const url = new URL(`${API_URL}/api/activation_contexts/token_stats/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
     return fetchJson<TokenStats | null>(url.toString());
 }

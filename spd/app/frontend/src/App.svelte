@@ -25,8 +25,9 @@
     let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
     let activationContextsMissing = $state(false);
 
-    // Reference to correlation job component for reloading
-    let correlationJobStatus: CorrelationJobStatus;
+    // Correlation job state
+    let correlationJobStatus = $state<api.CorrelationJobStatus | null>(null);
+    let correlationJobSubmitting = $state(false);
 
     async function loadStatus() {
         if (loadingTrainRun) return;
@@ -51,7 +52,7 @@
 
             // Load activation contexts summary and correlation status
             loadActivationContextsSummary();
-            correlationJobStatus?.reload();
+            loadCorrelationJobStatus();
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
@@ -71,6 +72,30 @@
             } else throw e;
         }
     }
+
+    async function loadCorrelationJobStatus() {
+        correlationJobStatus = await api.getCorrelationJobStatus();
+    }
+
+    async function submitCorrelationJob() {
+        if (correlationJobSubmitting) return;
+        correlationJobSubmitting = true;
+        try {
+            await api.submitCorrelationJob();
+            await loadCorrelationJobStatus();
+        } finally {
+            correlationJobSubmitting = false;
+        }
+    }
+
+    // Poll correlation job status while pending/running
+    $effect(() => {
+        const s = correlationJobStatus?.status;
+        if (s !== "pending" && s !== "running") return;
+
+        const interval = setInterval(loadCorrelationJobStatus, 1000);
+        return () => clearInterval(interval);
+    });
 
     async function loadRun(event: Event) {
         event.preventDefault();
@@ -159,7 +184,11 @@
             >
                 Activation Contexts
             </button>
-            <CorrelationJobStatus bind:this={correlationJobStatus} />
+            <CorrelationJobStatus
+                status={correlationJobStatus}
+                onSubmit={submitCorrelationJob}
+                submitting={correlationJobSubmitting}
+            />
         {/if}
     </nav>
 

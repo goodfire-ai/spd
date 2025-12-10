@@ -21,13 +21,7 @@
         compact?: boolean;
     };
 
-    let {
-        sectionTitle,
-        sectionSubtitle,
-        lists,
-        loading,
-        compact = false,
-    }: Props = $props();
+    let { sectionTitle, sectionSubtitle, lists, loading, compact = false }: Props = $props();
 
     const hasData = $derived(lists.some((list) => list.items.length > 0));
 </script>
@@ -41,7 +35,7 @@
     </p>
     {#if hasData}
         <div class="token-stats">
-            {#each lists as list}
+            {#each lists as list (list.title + (list.mathNotation ?? ""))}
                 {#if list.items.length > 0}
                     <div class="token-list">
                         <h5>

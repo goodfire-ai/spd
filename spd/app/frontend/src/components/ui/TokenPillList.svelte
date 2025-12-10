@@ -28,9 +28,7 @@
 
 <div class="tokens" class:compact>
     {#each items as { token, value } (token)}
-        <span class="token-pill" style="background: {getPmiBg(value)}" title="PMI: {value.toFixed(2)}"
-            >{token}</span
-        >
+        <span class="token-pill" style="background: {getPmiBg(value)}" title="PMI: {value.toFixed(2)}">{token}</span>
     {/each}
 </div>
 
