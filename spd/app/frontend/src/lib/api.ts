@@ -239,11 +239,7 @@ export type DatasetSearchPage = {
     total_pages: number;
 };
 
-export async function searchDataset(
-    query: string,
-    split: string,
-    onProgress?: (progress: number) => void,
-): Promise<DatasetSearchMetadata> {
+export async function searchDataset(query: string, split: string): Promise<DatasetSearchMetadata> {
     const url = new URL(`${API_URL}/api/dataset/search`);
     url.searchParams.set("query", query);
     url.searchParams.set("split", split);
@@ -254,48 +250,7 @@ export async function searchDataset(
         throw new Error(error.detail || "Failed to search dataset");
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-        throw new Error("Response body is not readable");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let metadata: DatasetSearchMetadata | null = null;
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
-
-            const data = JSON.parse(line.substring(6));
-
-            if (data.type === "progress" && onProgress) {
-                onProgress(data.progress);
-            } else if (data.type === "complete") {
-                metadata = data.metadata as DatasetSearchMetadata;
-                await reader.cancel();
-                break;
-            } else if (data.type === "error") {
-                throw new Error(data.error);
-            }
-        }
-
-        if (metadata) break;
-    }
-
-    if (!metadata) {
-        throw new Error("No metadata received from search");
-    }
-
-    return metadata;
+    return (await response.json()) as DatasetSearchMetadata;
 }
 
 export async function getDatasetSearchPage(page: number, pageSize: number): Promise<DatasetSearchPage> {

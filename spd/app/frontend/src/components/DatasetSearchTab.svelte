@@ -5,7 +5,6 @@
     let query = $state("");
     let split = $state<"train" | "test">("train");
     let loading = $state(false);
-    let progress = $state<number | null>(null);
     let metadata = $state<api.DatasetSearchMetadata | null>(null);
     let currentPage = $state(1);
     let pageSize = $state(20);
@@ -16,16 +15,13 @@
         if (!query.trim()) return;
 
         loading = true;
-        progress = null;
         metadata = null;
         currentPageResults = null;
         currentPage = 1;
         error = null;
 
         try {
-            const result = await api.searchDataset(query.trim(), split, (p) => {
-                progress = p;
-            });
+            const result = await api.searchDataset(query.trim(), split);
             metadata = result;
             await loadPage(1);
         } catch (e) {
@@ -33,7 +29,6 @@
             error = e instanceof Error ? e.message : "Search failed";
         } finally {
             loading = false;
-            progress = null;
         }
     }
 
@@ -82,14 +77,6 @@
                 </select>
             </div>
         </div>
-        {#if loading && progress !== null}
-            <div class="progress-section">
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: {progress * 100}%"></div>
-                </div>
-                <span class="progress-text">{(progress * 100).toFixed(0)}%</span>
-            </div>
-        {/if}
         {#if metadata}
             <div class="metadata">
                 <span>Found {metadata.total_results} results in {metadata.search_time_seconds.toFixed(2)}s</span>
@@ -209,32 +196,6 @@
     .search-button:disabled {
         background: var(--border-default);
         color: var(--text-muted);
-    }
-
-    .progress-section {
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-    }
-
-    .progress-bar {
-        flex: 1;
-        height: 4px;
-        background: var(--border-default);
-        overflow: hidden;
-    }
-
-    .progress-fill {
-        height: 100%;
-        background: var(--accent-primary);
-        transition: width 0.15s ease-out;
-    }
-
-    .progress-text {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--text-muted);
-        min-width: 3ch;
     }
 
     .metadata {
