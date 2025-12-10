@@ -8,11 +8,14 @@
         layerGap: number;
         filteredEdgeCount: number | null;
         normalizeEdges: NormalizeType;
+        ciThreshold: number;
+        ciThresholdLoading: boolean;
         onTopKChange: (value: number) => void;
         onLayoutChange: (value: "importance" | "shuffled" | "jittered") => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
+        onCiThresholdChange: (value: number) => void;
     };
 
     let {
@@ -22,12 +25,34 @@
         layerGap,
         filteredEdgeCount,
         normalizeEdges,
+        ciThreshold,
+        ciThresholdLoading,
         onTopKChange,
         onLayoutChange,
         onComponentGapChange,
         onLayerGapChange,
         onNormalizeChange,
+        onCiThresholdChange,
     }: Props = $props();
+
+    // Local state for CI threshold input - allows typing without immediate updates
+    let ciThresholdInput = $state(ciThreshold.toString());
+
+    // Sync when prop changes (e.g., from external source)
+    $effect(() => {
+        if (!ciThresholdLoading) {
+            ciThresholdInput = ciThreshold.toString();
+        }
+    });
+
+    function applyCiThreshold() {
+        if (ciThresholdInput === "") return;
+        const value = parseFloat(ciThresholdInput);
+        if (isNaN(value)) throw new Error();
+        if (value !== ciThreshold) {
+            onCiThresholdChange(value);
+        }
+    }
 </script>
 
 <div class="controls-bar">
@@ -92,6 +117,23 @@
             step={5}
         />
     </label>
+    <label class:loading={ciThresholdLoading}>
+        <span>CI Threshold</span>
+        <input
+            type="number"
+            bind:value={ciThresholdInput}
+            onblur={applyCiThreshold}
+            onkeydown={(e) => {
+                if (e.key === "Enter") {
+                    applyCiThreshold();
+                    e.currentTarget.blur();
+                }
+            }}
+            min={0}
+            step={0.1}
+            disabled={ciThresholdLoading}
+        />
+    </label>
 
     {#if filteredEdgeCount !== null}
         <div class="legend">
@@ -130,6 +172,14 @@
         font-size: var(--text-xs);
         letter-spacing: 0.05em;
         color: var(--text-muted);
+    }
+
+    label.loading {
+        opacity: 0.6;
+    }
+
+    label.loading input {
+        cursor: wait;
     }
 
     input[type="number"] {

@@ -212,4 +212,3 @@ export async function deleteInterventionRun(runId: number): Promise<void> {
         throw new Error(error.detail || "Failed to delete intervention run");
     }
 }
-
