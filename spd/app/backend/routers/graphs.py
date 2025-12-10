@@ -21,7 +21,6 @@ from spd.app.backend.compute import (
 )
 from spd.app.backend.db.database import (
     OptimizationParams,
-    OptimizationStats,
     StoredGraph,
 )
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
@@ -84,6 +83,29 @@ def filter_edges_by_ci_threshold(
         if node_ci_vals.get(str(edge.source), 0.0) >= ci_threshold
         and node_ci_vals.get(str(edge.target), 0.0) >= ci_threshold
     ]
+
+
+def compute_l0_from_node_ci_vals(
+    node_ci_vals: dict[str, float],
+    ci_threshold: float,
+) -> tuple[float, dict[str, float]]:
+    """Compute L0 stats dynamically from node CI values.
+
+    Args:
+        node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
+        ci_threshold: Threshold for counting a component as active
+
+    Returns:
+        (l0_total, l0_per_layer) where l0_per_layer maps layer name to count
+    """
+    l0_per_layer: dict[str, float] = {}
+    for key, ci_val in node_ci_vals.items():
+        if ci_val > ci_threshold:
+            # Key format: "layer:seq:c_idx" - extract layer name
+            layer = key.rsplit(":", 2)[0]
+            l0_per_layer[layer] = l0_per_layer.get(layer, 0.0) + 1.0
+    l0_total = sum(l0_per_layer.values())
+    return l0_total, l0_per_layer
 
 
 def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
@@ -185,7 +207,7 @@ def compute_graph_stream(
                         )
 
                 # Store all edges (unfiltered, unnormalized) with CI values
-                db.save_graph(
+                graph_id = db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
                         edges=raw_edges,
@@ -205,7 +227,7 @@ def compute_graph_stream(
                 )
 
                 response_data = GraphData(
-                    id=prompt_id,
+                    id=graph_id,
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=raw_output_probs,
@@ -309,7 +331,6 @@ def compute_graph_optimized_stream(
         log_freq=max(1, steps // 4),
         imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm),
         ce_loss_coeff=ce_loss_coeff,
-        ci_threshold=ci_threshold,
         sampling=loaded.config.sampling,
         ce_kl_rounding_threshold=0.5,
     )
@@ -321,14 +342,12 @@ def compute_graph_optimized_stream(
 
     def compute_thread() -> None:
         try:
-            # Always compute with ci_threshold=0 to get all edges
             result = compute_local_attributions_optimized(
                 model=loaded.model,
                 tokens=tokens_tensor,
                 label_token=label_token,
                 sources_by_target=loaded.sources_by_target,
                 optim_config=optim_config,
-                ci_threshold=0.0,
                 output_prob_threshold=output_prob_threshold,
                 device=DEVICE,
                 show_progress=False,
@@ -374,18 +393,14 @@ def compute_graph_optimized_stream(
                         )
 
                 # Store all edges (unfiltered, unnormalized) with CI values
-                db.save_graph(
+                graph_id = db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
                         edges=raw_edges,
                         output_probs=raw_output_probs,
                         node_ci_vals=result.node_ci_vals,
                         optimization_params=opt_params,
-                        optimization_stats=OptimizationStats(
-                            label_prob=result.stats.label_prob,
-                            l0_total=result.stats.l0_total,
-                            l0_per_layer=result.stats.l0_per_layer,
-                        ),
+                        label_prob=result.label_prob,
                     ),
                 )
 
@@ -398,8 +413,13 @@ def compute_graph_optimized_stream(
                     is_optimized=True,
                 )
 
+                l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
+                    node_ci_vals=result.node_ci_vals,
+                    ci_threshold=ci_threshold,
+                )
+
                 response_data = GraphDataWithOptimization(
-                    id=prompt_id,
+                    id=graph_id,
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=raw_output_probs,
@@ -411,9 +431,9 @@ def compute_graph_optimized_stream(
                         imp_min_coeff=imp_min_coeff,
                         ce_loss_coeff=ce_loss_coeff,
                         steps=steps,
-                        label_prob=result.stats.label_prob,
-                        l0_total=result.stats.l0_total,
-                        l0_per_layer=result.stats.l0_per_layer,
+                        label_prob=result.label_prob,
+                        l0_total=l0_total,
+                        l0_per_layer=l0_per_layer,
                     ),
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
@@ -461,8 +481,8 @@ def process_edges_for_response(
         node_ci_vals=node_ci_vals,
     )
 
-    edges = _normalize_edges(edges, normalize)
-    node_importance, max_abs_attr = compute_edge_stats(edges)
+    edges = _normalize_edges(edges=edges, normalize=normalize)
+    node_importance, max_abs_attr = compute_edge_stats(edges=edges)
     # Clip to edge limit for response
     if len(edges) > edge_limit:
         print(f"[WARNING] Edge limit {edge_limit} exceeded ({len(edges)} edges), truncating")
@@ -521,7 +541,13 @@ def get_graphs(
         else:
             # Optimized graph
             assert graph.optimization_params is not None
-            assert graph.optimization_stats is not None
+            assert graph.label_prob is not None
+
+            l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
+                node_ci_vals=graph.node_ci_vals,
+                ci_threshold=ci_threshold,
+            )
+
             results.append(
                 GraphDataWithOptimization(
                     id=graph.id,
@@ -536,9 +562,9 @@ def get_graphs(
                         imp_min_coeff=graph.optimization_params.imp_min_coeff,
                         ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
                         steps=graph.optimization_params.steps,
-                        label_prob=graph.optimization_stats.label_prob,
-                        l0_total=graph.optimization_stats.l0_total,
-                        l0_per_layer=graph.optimization_stats.l0_per_layer,
+                        label_prob=graph.label_prob,
+                        l0_total=l0_total,
+                        l0_per_layer=l0_per_layer,
                     ),
                 )
             )

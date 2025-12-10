@@ -49,14 +49,6 @@ class OptimizationParams(BaseModel):
     pnorm: float
 
 
-class OptimizationStats(BaseModel):
-    """Statistics from optimized graph computation."""
-
-    label_prob: float
-    l0_total: float
-    l0_per_layer: dict[str, float]
-
-
 class StoredGraph(BaseModel):
     """A stored attribution graph."""
 
@@ -67,7 +59,9 @@ class StoredGraph(BaseModel):
     output_probs: dict[str, OutputProbability]
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
     optimization_params: OptimizationParams | None = None
-    optimization_stats: OptimizationStats | None = None
+    label_prob: float | None = (
+        None  # P(label_token) with optimized CI mask, only for optimized graphs
+    )
 
 
 class InterventionRunRecord(BaseModel):
@@ -182,8 +176,6 @@ class LocalAttrDB:
 
                 -- Optimization stats (NULL for standard graphs)
                 label_prob REAL,
-                l0_total REAL,
-                l0_per_layer TEXT,
 
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -483,12 +475,15 @@ class LocalAttrDB:
         self,
         prompt_id: int,
         graph: StoredGraph,
-    ) -> None:
+    ) -> int:
         """Save a computed graph for a prompt.
 
         Args:
             prompt_id: The prompt ID.
             graph: The graph to save.
+
+        Returns:
+            The database ID of the saved graph.
         """
         conn = self._get_conn()
 
@@ -509,30 +504,24 @@ class LocalAttrDB:
         steps = None
         pnorm = None
         label_prob = None
-        l0_total = None
-        l0_per_layer_json = None
 
         if graph.optimization_params:
-            assert graph.optimization_stats is not None, (
-                "optimization_stats required for optimized graphs"
-            )
+            assert graph.label_prob is not None, "label_prob required for optimized graphs"
             label_token = graph.optimization_params.label_token
             imp_min_coeff = graph.optimization_params.imp_min_coeff
             ce_loss_coeff = graph.optimization_params.ce_loss_coeff
             steps = graph.optimization_params.steps
             pnorm = graph.optimization_params.pnorm
-            label_prob = graph.optimization_stats.label_prob
-            l0_total = graph.optimization_stats.l0_total
-            l0_per_layer_json = json.dumps(graph.optimization_stats.l0_per_layer)
+            label_prob = graph.label_prob
 
         try:
-            conn.execute(
+            cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, is_optimized,
                     label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
                     edges_data, output_probs_data, node_ci_vals,
-                    label_prob, l0_total, l0_per_layer)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    label_prob)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
@@ -545,11 +534,12 @@ class LocalAttrDB:
                     probs_compressed,
                     node_ci_vals_json,
                     label_prob,
-                    l0_total,
-                    l0_per_layer_json,
                 ),
             )
             conn.commit()
+            graph_id = cursor.lastrowid
+            assert graph_id is not None
+            return graph_id
         except sqlite3.IntegrityError as e:
             raise ValueError(
                 f"Graph already exists for prompt_id={prompt_id}. "
@@ -570,7 +560,7 @@ class LocalAttrDB:
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
                       label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
-                      label_prob, l0_total, l0_per_layer
+                      label_prob
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
@@ -596,7 +586,7 @@ class LocalAttrDB:
             node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
 
             opt_params: OptimizationParams | None = None
-            opt_stats: OptimizationStats | None = None
+            label_prob: float | None = None
 
             if row["is_optimized"]:
                 opt_params = OptimizationParams(
@@ -606,11 +596,7 @@ class LocalAttrDB:
                     steps=row["steps"],
                     pnorm=row["pnorm"],
                 )
-                opt_stats = OptimizationStats(
-                    label_prob=row["label_prob"],
-                    l0_total=row["l0_total"],
-                    l0_per_layer=json.loads(row["l0_per_layer"]),
-                )
+                label_prob = row["label_prob"]
 
             results.append(
                 StoredGraph(
@@ -619,7 +605,7 @@ class LocalAttrDB:
                     output_probs=output_probs,
                     node_ci_vals=node_ci_vals,
                     optimization_params=opt_params,
-                    optimization_stats=opt_stats,
+                    label_prob=label_prob,
                 )
             )
 
