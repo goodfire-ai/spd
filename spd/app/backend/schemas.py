@@ -42,7 +42,6 @@ class GraphData(BaseModel):
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
     l0_total: float  # total active components at current CI threshold
-    l0_per_layer: dict[str, float]  # active components per layer
 
 
 class OptimizationResult(BaseModel):

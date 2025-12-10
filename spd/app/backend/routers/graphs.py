@@ -99,24 +99,17 @@ def filter_edges_by_ci_threshold(
 def compute_l0_from_node_ci_vals(
     node_ci_vals: dict[str, float],
     ci_threshold: float,
-) -> tuple[float, dict[str, float]]:
-    """Compute L0 stats dynamically from node CI values.
+) -> float:
+    """Compute total L0 (active component count) from node CI values.
 
     Args:
         node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
         ci_threshold: Threshold for counting a component as active
 
     Returns:
-        (l0_total, l0_per_layer) where l0_per_layer maps layer name to count
+        Total count of active components across all layers
     """
-    l0_per_layer: dict[str, float] = {}
-    for key, ci_val in node_ci_vals.items():
-        if ci_val > ci_threshold:
-            # Key format: "layer:seq:c_idx" - extract layer name
-            layer = key.rsplit(":", 2)[0]
-            l0_per_layer[layer] = l0_per_layer.get(layer, 0.0) + 1.0
-    l0_total = sum(l0_per_layer.values())
-    return l0_total, l0_per_layer
+    return sum(1.0 for ci_val in node_ci_vals.values() if ci_val > ci_threshold)
 
 
 def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
@@ -236,7 +229,7 @@ def compute_graph_stream(
                     is_optimized=False,
                 )
 
-                l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
+                l0_total = compute_l0_from_node_ci_vals(
                     node_ci_vals=result.node_ci_vals,
                     ci_threshold=ci_threshold,
                 )
@@ -249,7 +242,6 @@ def compute_graph_stream(
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
                     l0_total=l0_total,
-                    l0_per_layer=l0_per_layer,
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
                 yield f"data: {json.dumps(complete_data)}\n\n"
@@ -430,7 +422,7 @@ def compute_graph_optimized_stream(
                     is_optimized=True,
                 )
 
-                l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
+                l0_total = compute_l0_from_node_ci_vals(
                     node_ci_vals=result.node_ci_vals,
                     ci_threshold=ci_threshold,
                 )
@@ -443,7 +435,6 @@ def compute_graph_optimized_stream(
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
                     l0_total=l0_total,
-                    l0_per_layer=l0_per_layer,
                     optimization=OptimizationResult(
                         label_token=label_token,
                         label_str=label_str,
@@ -543,7 +534,7 @@ def get_graphs(
             is_optimized=is_optimized,
         )
 
-        l0_total, l0_per_layer = compute_l0_from_node_ci_vals(
+        l0_total = compute_l0_from_node_ci_vals(
             node_ci_vals=graph.node_ci_vals,
             ci_threshold=ci_threshold,
         )
@@ -559,7 +550,6 @@ def get_graphs(
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
                     l0_total=l0_total,
-                    l0_per_layer=l0_per_layer,
                 )
             )
         else:
@@ -576,7 +566,6 @@ def get_graphs(
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
                     l0_total=l0_total,
-                    l0_per_layer=l0_per_layer,
                     optimization=OptimizationResult(
                         label_token=graph.optimization_params.label_token,
                         label_str=loaded.token_strings[graph.optimization_params.label_token],
