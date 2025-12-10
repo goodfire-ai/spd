@@ -56,17 +56,9 @@ class OptimizationResult(BaseModel):
     label_prob: float
 
 
-class GraphDataWithOptimization(BaseModel):
+class GraphDataWithOptimization(GraphData):
     """Attribution graph data with optimization results."""
 
-    id: int
-    tokens: list[str]
-    edges: list[EdgeData]
-    outputProbs: dict[str, OutputProbability]
-    nodeImportance: dict[str, float]  # node key -> sum of squared edge values
-    maxAbsAttr: float  # max absolute edge value
-    l0_total: float  # total active components at current CI threshold
-    l0_per_layer: dict[str, float]  # active components per layer
     optimization: OptimizationResult
 
 
