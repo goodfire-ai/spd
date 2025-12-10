@@ -47,23 +47,7 @@
 
     <div class="staged-controls">
         <div class="compute-options">
-            <label>
-                <span>Max CI</span>
-                <input
-                    type="number"
-                    value={options.maxMeanCI}
-                    oninput={(e) => {
-                        if (e.currentTarget.value === "") return;
-                        onOptionsChange({ maxMeanCI: parseFloat(e.currentTarget.value) });
-                    }}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                />
-            </label>
-            <span class="info-icon" data-tooltip="Backend defaults: ci_threshold=1e-6, output_prob_threshold=0.01"
-                >?</span
-            >
+            <span class="info-icon" data-tooltip="Default output_prob_threshold=0.01">?</span>
             <label class="checkbox">
                 <input
                     type="checkbox"
@@ -260,7 +244,7 @@
     }
 
     .compute-options input[type="number"] {
-        width: 55px;
+        width: 110px;
         padding: var(--space-1);
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);

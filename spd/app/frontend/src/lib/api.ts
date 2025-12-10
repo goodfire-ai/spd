@@ -266,4 +266,3 @@ export async function getDatasetSearchPage(page: number, pageSize: number): Prom
 
     return (await response.json()) as DatasetSearchPage;
 }
-
