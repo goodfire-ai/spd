@@ -156,7 +156,6 @@ def compute_graph_stream(
 
     def compute_thread() -> None:
         try:
-            # Always compute with ci_threshold=0 to get all edges
             result = compute_local_attributions(
                 model=loaded.model,
                 tokens=tokens_tensor,

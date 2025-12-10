@@ -81,7 +81,8 @@ class LocalAttrDB:
     - runs: One row per SPD run (keyed by wandb_path)
     - activation_contexts: Component metadata + generation config, 1:1 with runs
     - prompts: One row per stored prompt (token sequence), keyed by run_id
-    - original_component_seq_max_activations: Inverted index mapping components to prompts
+    - original_component_seq_max_activations: Inverted index mapping components to prompts by a
+      component's max activation for that prompt
 
     Attribution graphs (edges) are computed on-demand at serve time, not stored.
     """

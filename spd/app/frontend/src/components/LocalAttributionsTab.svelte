@@ -519,8 +519,7 @@
             const matchingData = storedGraphs.find((g) => g.id === activeGraph.dbId);
 
             if (!matchingData) {
-                console.warn("Could not find matching graph data after refetch");
-                return;
+                throw new Error("Could not find matching graph data after refetch");
             }
 
             promptCards = promptCards.map((card) => {
