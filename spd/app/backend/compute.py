@@ -96,7 +96,7 @@ class OptimizedLocalAttributionResult:
 
     edges: list[Edge]
     output_probs: Float[Tensor, "seq vocab"]
-    label_prob: float  # P(label_token) with optimized CI mask
+    label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
 
 
@@ -408,7 +408,6 @@ def compute_local_attributions(
 def compute_local_attributions_optimized(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
-    label_token: int,
     sources_by_target: dict[str, list[str]],
     optim_config: OptimCIConfig,
     output_prob_threshold: float,
@@ -419,7 +418,7 @@ def compute_local_attributions_optimized(
     """Compute local attributions using optimized sparse CI values.
 
     Runs CI optimization to find a minimal sparse mask that preserves
-    the model's prediction of label_token, then computes edges.
+    the model's prediction, then computes edges.
 
     L0 stats are computed dynamically at display time from node_ci_vals,
     not here at computation time.
@@ -427,19 +426,20 @@ def compute_local_attributions_optimized(
     ci_params = optimize_ci_values(
         model=model,
         tokens=tokens,
-        label_token=label_token,
         config=optim_config,
         device=device,
         on_progress=on_progress,
     )
     ci_outputs = ci_params.create_ci_outputs(model, device)
 
-    # Get label probability with optimized CI mask
-    with torch.no_grad():
-        mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
-        logits = model(tokens, mask_infos=mask_infos)
-        probs = torch.softmax(logits[0, -1, :], dim=-1)
-        label_prob = float(probs[label_token].item())
+    # Get label probability with optimized CI mask (if CE loss is used)
+    label_prob: float | None = None
+    if optim_config.ce_loss_config is not None:
+        with torch.no_grad():
+            mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
+            logits = model(tokens, mask_infos=mask_infos)
+            probs = torch.softmax(logits[0, -1, :], dim=-1)
+            label_prob = float(probs[optim_config.ce_loss_config.label_token].item())
 
     # Signal transition to graph computation stage
     if on_progress is not None:

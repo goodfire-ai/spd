@@ -46,14 +46,17 @@ class GraphData(BaseModel):
 class OptimizationResult(BaseModel):
     """Results from optimized CI computation."""
 
-    label_token: int
-    label_str: str
     imp_min_coeff: float
-    ce_loss_coeff: float
     steps: int
-    label_prob: float
     l0_total: float
     l0_per_layer: dict[str, float]
+    # CE loss params (optional)
+    label_token: int | None = None
+    label_str: str | None = None
+    ce_loss_coeff: float | None = None
+    label_prob: float | None = None
+    # KL loss param (optional)
+    kl_loss_coeff: float | None = None
 
 
 class GraphDataWithOptimization(BaseModel):

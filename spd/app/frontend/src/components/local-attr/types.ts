@@ -36,11 +36,17 @@ export type PromptCard = {
 };
 
 export type OptimizeConfig = {
+    // CE loss settings
+    useCELoss: boolean;
     labelTokenText: string;
     labelTokenId: number | null;
     labelTokenPreview: string | null;
-    impMinCoeff: number;
     ceLossCoeff: number;
+    // KL loss settings
+    useKLLoss: boolean;
+    klLossCoeff: number;
+    // Common settings
+    impMinCoeff: number;
     steps: number;
     pnorm: number;
 };

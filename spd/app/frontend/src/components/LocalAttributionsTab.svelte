@@ -98,11 +98,14 @@
         ciThreshold: 0,
         useOptimized: false,
         optimizeConfig: {
+            useCELoss: true,
             labelTokenText: "",
             labelTokenId: null,
             labelTokenPreview: null,
-            impMinCoeff: 0.1,
             ceLossCoeff: 1.0,
+            useKLLoss: false,
+            klLossCoeff: 1.0,
+            impMinCoeff: 0.1,
             steps: 2000,
             pnorm: 0.3,
         },
@@ -439,29 +442,42 @@
             let data: GraphData;
 
             if (isOptimized) {
-                if (!optConfig.labelTokenId) throw new Error("Label token required for optimization");
-                data = await attrApi.computeGraphOptimizedStreaming(
-                    {
-                        promptId: activeCard.promptId,
-                        labelToken: optConfig.labelTokenId,
-                        normalize: defaultViewSettings.normalizeEdges,
-                        impMinCoeff: optConfig.impMinCoeff,
-                        ceLossCoeff: optConfig.ceLossCoeff,
-                        steps: optConfig.steps,
-                        pnorm: optConfig.pnorm,
-                        outputProbThreshold: 0.01,
-                        ciThreshold: defaultViewSettings.ciThreshold,
-                    },
-                    (progress) => {
-                        if (!loadingState) return;
-                        if (progress.stage === "graph") {
-                            loadingState.currentStage = 1;
-                            loadingState.stages[1].progress = progress.current / progress.total;
-                        } else {
-                            loadingState.stages[0].progress = progress.current / progress.total;
-                        }
-                    },
-                );
+                // Validate: at least one loss type must be enabled
+                if (!optConfig.useCELoss && !optConfig.useKLLoss) {
+                    throw new Error("At least one loss type (CE or KL) must be enabled");
+                }
+                // Validate: CE requires label token
+                if (optConfig.useCELoss && !optConfig.labelTokenId) {
+                    throw new Error("Label token required when CE loss is enabled");
+                }
+
+                // Build params with optional CE/KL settings
+                const params: attrApi.ComputeGraphOptimizedParams = {
+                    promptId: activeCard.promptId,
+                    normalize: defaultViewSettings.normalizeEdges,
+                    impMinCoeff: optConfig.impMinCoeff,
+                    steps: optConfig.steps,
+                    pnorm: optConfig.pnorm,
+                    outputProbThreshold: 0.01,
+                    ciThreshold: defaultViewSettings.ciThreshold,
+                };
+                if (optConfig.useCELoss && optConfig.labelTokenId) {
+                    params.labelToken = optConfig.labelTokenId;
+                    params.ceLossCoeff = optConfig.ceLossCoeff;
+                }
+                if (optConfig.useKLLoss) {
+                    params.klLossCoeff = optConfig.klLossCoeff;
+                }
+
+                data = await attrApi.computeGraphOptimizedStreaming(params, (progress) => {
+                    if (!loadingState) return;
+                    if (progress.stage === "graph") {
+                        loadingState.currentStage = 1;
+                        loadingState.stages[1].progress = progress.current / progress.total;
+                    } else {
+                        loadingState.stages[0].progress = progress.current / progress.total;
+                    }
+                });
             } else {
                 data = await attrApi.computeGraphStreaming(
                     {
@@ -689,13 +705,20 @@
                             {#if activeCard.activeView === "graph"}
                                 {#if activeGraph.data.optimization}
                                     <div class="optim-results">
-                                        <span
-                                            ><strong>Target:</strong> "{formatTokenDisplay(
-                                                activeGraph.data.optimization.label_str,
-                                            )}"
-                                            <span class="token-id">(#{activeGraph.data.optimization.label_token})</span>
-                                            @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span
-                                        >
+                                        {#if activeGraph.data.optimization.label_str !== null && activeGraph.data.optimization.label_prob !== null}
+                                            <span
+                                                ><strong>Target:</strong> "{formatTokenDisplay(
+                                                    activeGraph.data.optimization.label_str,
+                                                )}"
+                                                <span class="token-id"
+                                                    >(#{activeGraph.data.optimization.label_token})</span
+                                                >
+                                                @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span
+                                            >
+                                        {/if}
+                                        {#if activeGraph.data.optimization.kl_loss_coeff !== null}
+                                            <span><strong>KL Loss:</strong> coeff={activeGraph.data.optimization.kl_loss_coeff}</span>
+                                        {/if}
                                         <span
                                             ><strong>L0:</strong>
                                             {activeGraph.data.optimization.l0_total.toFixed(0)} active at ci threshold {activeGraph

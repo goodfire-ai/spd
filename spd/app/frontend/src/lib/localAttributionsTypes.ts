@@ -33,14 +33,17 @@ export type GraphData = {
 };
 
 export type OptimizationResult = {
-    label_token: number;
-    label_str: string;
     imp_min_coeff: number;
-    ce_loss_coeff: number;
     steps: number;
-    label_prob: number;
     l0_total: number;
     l0_per_layer: Record<string, number>;
+    // CE loss params (optional)
+    label_token: number | null;
+    label_str: string | null;
+    ce_loss_coeff: number | null;
+    label_prob: number | null;
+    // KL loss param (optional)
+    kl_loss_coeff: number | null;
 };
 
 export type ComponentSummary = {

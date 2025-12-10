@@ -24,7 +24,11 @@ from spd.app.backend.db.database import (
     StoredGraph,
 )
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
-from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
+from spd.app.backend.optim_cis.run_optim_cis import (
+    OptimCELossConfig,
+    OptimCIConfig,
+    OptimKLLossConfig,
+)
 from spd.app.backend.schemas import (
     EdgeData,
     GraphData,
@@ -298,9 +302,7 @@ def _normalize_edges(edges: list[Edge], normalize: NormalizeType) -> list[Edge]:
 @log_errors
 def compute_graph_optimized_stream(
     prompt_id: Annotated[int, Query()],
-    label_token: Annotated[int, Query()],
     imp_min_coeff: Annotated[float, Query(gt=0)],
-    ce_loss_coeff: Annotated[float, Query(gt=0)],
     steps: Annotated[int, Query(gt=0)],
     pnorm: Annotated[float, Query(gt=0, le=1)],
     normalize: Annotated[NormalizeType, Query()],
@@ -308,8 +310,29 @@ def compute_graph_optimized_stream(
     loaded: DepLoadedRun,
     manager: DepStateManager,
     ci_threshold: Annotated[float, Query()],
+    # Optional CE loss params (required together)
+    label_token: Annotated[int | None, Query()] = None,
+    ce_loss_coeff: Annotated[float | None, Query(gt=0)] = None,
+    # Optional KL loss param
+    kl_loss_coeff: Annotated[float | None, Query(gt=0)] = None,
 ):
-    """Compute optimized attribution graph for a prompt with streaming progress."""
+    """Compute optimized attribution graph for a prompt with streaming progress.
+
+    At least one of (ce_loss_coeff, kl_loss_coeff) must be provided.
+    If ce_loss_coeff is provided, label_token is also required.
+    """
+    # Validation
+    if ce_loss_coeff is None and kl_loss_coeff is None:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one of ce_loss_coeff or kl_loss_coeff must be provided",
+        )
+    if ce_loss_coeff is not None and label_token is None:
+        raise HTTPException(
+            status_code=400,
+            detail="label_token is required when ce_loss_coeff is provided",
+        )
+
     lr = 1e-2
 
     db = manager.db
@@ -318,17 +341,26 @@ def compute_graph_optimized_stream(
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     token_ids = prompt.token_ids
-    label_str = loaded.token_strings[label_token]
+    label_str = loaded.token_strings[label_token] if label_token is not None else None
     token_strings = [loaded.token_strings[t] for t in token_ids]
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
     opt_params = OptimizationParams(
-        label_token=label_token,
         imp_min_coeff=imp_min_coeff,
-        ce_loss_coeff=ce_loss_coeff,
         steps=steps,
         pnorm=pnorm,
+        label_token=label_token,
+        ce_loss_coeff=ce_loss_coeff,
+        kl_loss_coeff=kl_loss_coeff,
     )
+
+    ce_loss_config: OptimCELossConfig | None = None
+    if ce_loss_coeff is not None:
+        assert label_token is not None
+        ce_loss_config = OptimCELossConfig(coeff=ce_loss_coeff, label_token=label_token)
+    kl_loss_config: OptimKLLossConfig | None = None
+    if kl_loss_coeff is not None:
+        kl_loss_config = OptimKLLossConfig(coeff=kl_loss_coeff)
 
     optim_config = OptimCIConfig(
         seed=0,
@@ -340,7 +372,8 @@ def compute_graph_optimized_stream(
         lr_warmup_pct=0.01,
         log_freq=max(1, steps // 4),
         imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm),
-        ce_loss_coeff=ce_loss_coeff,
+        ce_loss_config=ce_loss_config,
+        kl_loss_config=kl_loss_config,
         sampling=loaded.config.sampling,
         ce_kl_rounding_threshold=0.5,
     )
@@ -355,7 +388,6 @@ def compute_graph_optimized_stream(
             result = compute_local_attributions_optimized(
                 model=loaded.model,
                 tokens=tokens_tensor,
-                label_token=label_token,
                 sources_by_target=loaded.sources_by_target,
                 optim_config=optim_config,
                 output_prob_threshold=output_prob_threshold,
@@ -436,14 +468,15 @@ def compute_graph_optimized_stream(
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
                     optimization=OptimizationResult(
-                        label_token=label_token,
-                        label_str=label_str,
                         imp_min_coeff=imp_min_coeff,
-                        ce_loss_coeff=ce_loss_coeff,
                         steps=steps,
-                        label_prob=result.label_prob,
                         l0_total=l0_total,
                         l0_per_layer=l0_per_layer,
+                        label_token=label_token,
+                        label_str=label_str,
+                        ce_loss_coeff=ce_loss_coeff,
+                        label_prob=result.label_prob,
+                        kl_loss_coeff=kl_loss_coeff,
                     ),
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
@@ -558,6 +591,11 @@ def get_graphs(
                 ci_threshold=ci_threshold,
             )
 
+            # Get label_str if label_token is set
+            label_str: str | None = None
+            if graph.optimization_params.label_token is not None:
+                label_str = loaded.token_strings[graph.optimization_params.label_token]
+
             results.append(
                 GraphDataWithOptimization(
                     id=graph.id,
@@ -567,14 +605,15 @@ def get_graphs(
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
                     optimization=OptimizationResult(
-                        label_token=graph.optimization_params.label_token,
-                        label_str=loaded.token_strings[graph.optimization_params.label_token],
                         imp_min_coeff=graph.optimization_params.imp_min_coeff,
-                        ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
                         steps=graph.optimization_params.steps,
-                        label_prob=graph.label_prob,
                         l0_total=l0_total,
                         l0_per_layer=l0_per_layer,
+                        label_token=graph.optimization_params.label_token,
+                        label_str=label_str,
+                        ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
+                        label_prob=graph.label_prob,
+                        kl_loss_coeff=graph.optimization_params.kl_loss_coeff,
                     ),
                 )
             )
