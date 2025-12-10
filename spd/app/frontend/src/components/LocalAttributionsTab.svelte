@@ -690,9 +690,11 @@
                                 {#if activeGraph.data.optimization}
                                     <div class="optim-results">
                                         <span
-                                            ><strong>Target:</strong> "{formatTokenDisplay(activeGraph.data.optimization.label_str)}" <span class="token-id">(#{activeGraph.data.optimization.label_token})</span> @ {(
-                                                activeGraph.data.optimization.label_prob * 100
-                                            ).toFixed(1)}%</span
+                                            ><strong>Target:</strong> "{formatTokenDisplay(
+                                                activeGraph.data.optimization.label_str,
+                                            )}"
+                                            <span class="token-id">(#{activeGraph.data.optimization.label_token})</span>
+                                            @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span
                                         >
                                         <span
                                             ><strong>L0:</strong>

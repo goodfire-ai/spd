@@ -18,14 +18,9 @@
         return "##" + tokenString;
     }
 
-    let inputValue = $state(value ? formatTokenDisplay(value) : "");
+    let inputValue = $derived(value ? formatTokenDisplay(value) : "");
     let isOpen = $state(false);
     let highlightedIndex = $state(0);
-
-    // Sync external value changes
-    $effect(() => {
-        inputValue = value ? formatTokenDisplay(value) : "";
-    });
 
     const filteredTokens = $derived.by(() => {
         if (!inputValue.trim()) return [];
