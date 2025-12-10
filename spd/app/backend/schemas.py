@@ -41,6 +41,7 @@ class GraphData(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
+    l0_total: int  # total active components at current CI threshold
 
 
 class OptimizationResult(BaseModel):
@@ -52,19 +53,11 @@ class OptimizationResult(BaseModel):
     ce_loss_coeff: float
     steps: int
     label_prob: float
-    l0_total: float
-    l0_per_layer: dict[str, float]
 
 
-class GraphDataWithOptimization(BaseModel):
+class GraphDataWithOptimization(GraphData):
     """Attribution graph data with optimization results."""
 
-    id: int
-    tokens: list[str]
-    edges: list[EdgeData]
-    outputProbs: dict[str, OutputProbability]
-    nodeImportance: dict[str, float]  # node key -> sum of squared edge values
-    maxAbsAttr: float  # max absolute edge value
     optimization: OptimizationResult
 
 
@@ -97,6 +90,19 @@ class TokenizeResponse(BaseModel):
     token_ids: list[int]
     tokens: list[str]
     text: str
+
+
+class TokenInfo(BaseModel):
+    """A single token from the tokenizer vocabulary."""
+
+    id: int
+    string: str
+
+
+class TokensResponse(BaseModel):
+    """Response containing all tokens in the vocabulary."""
+
+    tokens: list[TokenInfo]
 
 
 # SSE streaming message types
@@ -307,3 +313,36 @@ class ComponentCorrelationsResponse(BaseModel):
     recall: list[CorrelatedComponent]
     f1: list[CorrelatedComponent]
     jaccard: list[CorrelatedComponent]
+
+
+# =============================================================================
+# Dataset Search Models
+# =============================================================================
+
+
+class DatasetSearchResult(BaseModel):
+    """A single search result from the SimpleStories dataset."""
+
+    story: str
+    occurrence_count: int
+    topic: str | None = None
+    theme: str | None = None
+
+
+class DatasetSearchMetadata(BaseModel):
+    """Metadata about a completed dataset search."""
+
+    query: str
+    split: str
+    total_results: int
+    search_time_seconds: float
+
+
+class DatasetSearchPage(BaseModel):
+    """Paginated results from a dataset search."""
+
+    results: list[DatasetSearchResult]
+    page: int
+    page_size: int
+    total_results: int
+    total_pages: int

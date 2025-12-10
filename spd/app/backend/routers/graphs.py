@@ -21,7 +21,6 @@ from spd.app.backend.compute import (
 )
 from spd.app.backend.db.database import (
     OptimizationParams,
-    OptimizationStats,
     StoredGraph,
 )
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
@@ -32,7 +31,9 @@ from spd.app.backend.schemas import (
     GraphDataWithOptimization,
     OptimizationResult,
     OutputProbability,
+    TokenInfo,
     TokenizeResponse,
+    TokensResponse,
 )
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
@@ -60,7 +61,39 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
     )
 
 
+@router.get("/tokens")
+@log_errors
+def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
+    """Get all tokens in the tokenizer vocabulary for client-side search."""
+    return TokensResponse(
+        tokens=[TokenInfo(id=tid, string=tstr) for tid, tstr in loaded.token_strings.items()]
+    )
+
+
 NormalizeType = Literal["none", "target", "layer"]
+
+
+def filter_edges_by_ci_threshold(
+    edges: list[Edge],
+    ci_threshold: float,
+    node_ci_vals: dict[str, float],
+) -> list[Edge]:
+    """Filter edges by removing those where source or target has CI < ci_threshold.
+
+    Args:
+        edges: List of edges to filter
+        ci_threshold: Threshold for filtering
+        node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
+
+    Returns:
+        Filtered list of edges
+    """
+    return [
+        edge
+        for edge in edges
+        if node_ci_vals.get(str(edge.source), 0.0) >= ci_threshold
+        and node_ci_vals.get(str(edge.target), 0.0) >= ci_threshold
+    ]
 
 
 def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
@@ -90,9 +123,9 @@ def compute_graph_stream(
     normalize: Annotated[NormalizeType, Query()],
     loaded: DepLoadedRun,
     manager: DepStateManager,
+    ci_threshold: Annotated[float, Query()],
 ):
     """Compute attribution graph for a prompt with streaming progress."""
-    ci_threshold = 1e-6
     output_prob_threshold = 0.01
 
     db = manager.db
@@ -115,7 +148,6 @@ def compute_graph_stream(
                 model=loaded.model,
                 tokens=tokens_tensor,
                 sources_by_target=loaded.sources_by_target,
-                ci_threshold=ci_threshold,
                 output_prob_threshold=output_prob_threshold,
                 sampling=loaded.config.sampling,
                 device=DEVICE,
@@ -161,27 +193,36 @@ def compute_graph_stream(
                             token=loaded.token_strings[c_idx],
                         )
 
-                # Save graph (raw, unnormalized edges)
-                db.save_graph(
+                # Store all edges (unfiltered, unnormalized) with CI values
+                graph_id = db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
                         edges=raw_edges,
                         output_probs=raw_output_probs,
+                        node_ci_vals=result.node_ci_vals,
                     ),
                 )
 
                 # Process edges for response
                 edges_data, node_importance, max_abs_attr = process_edges_for_response(
-                    raw_edges, normalize, num_tokens=len(token_ids), is_optimized=False
+                    edges=raw_edges,
+                    normalize=normalize,
+                    num_tokens=len(token_ids),
+                    ci_threshold=ci_threshold,
+                    node_ci_vals=result.node_ci_vals,
+                    is_optimized=False,
                 )
 
+                l0_total = sum(1 for val in result.node_ci_vals.values() if val > ci_threshold)
+
                 response_data = GraphData(
-                    id=prompt_id,
+                    id=graph_id,
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=raw_output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
                 yield f"data: {json.dumps(complete_data)}\n\n"
@@ -238,18 +279,18 @@ def _normalize_edges(edges: list[Edge], normalize: NormalizeType) -> list[Edge]:
 def compute_graph_optimized_stream(
     prompt_id: Annotated[int, Query()],
     label_token: Annotated[int, Query()],
-    imp_min_coeff: Annotated[float, Query(gt=0)],
-    ce_loss_coeff: Annotated[float, Query(gt=0)],
+    imp_min_coeff: Annotated[float, Query(gte=0)],
+    ce_loss_coeff: Annotated[float, Query(gte=0)],
     steps: Annotated[int, Query(gt=0)],
-    pnorm: Annotated[float, Query(gt=0, le=1)],
+    pnorm: Annotated[float, Query(gt=0)],
     normalize: Annotated[NormalizeType, Query()],
     output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
     loaded: DepLoadedRun,
     manager: DepStateManager,
+    ci_threshold: Annotated[float, Query()],
 ):
     """Compute optimized attribution graph for a prompt with streaming progress."""
     lr = 1e-2
-    ci_threshold = 1e-6
 
     db = manager.db
     prompt = db.get_prompt(prompt_id)
@@ -280,7 +321,6 @@ def compute_graph_optimized_stream(
         log_freq=max(1, steps // 4),
         imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm),
         ce_loss_coeff=ce_loss_coeff,
-        ci_threshold=ci_threshold,
         sampling=loaded.config.sampling,
         ce_kl_rounding_threshold=0.5,
     )
@@ -298,7 +338,6 @@ def compute_graph_optimized_stream(
                 label_token=label_token,
                 sources_by_target=loaded.sources_by_target,
                 optim_config=optim_config,
-                ci_threshold=ci_threshold,
                 output_prob_threshold=output_prob_threshold,
                 device=DEVICE,
                 show_progress=False,
@@ -343,42 +382,44 @@ def compute_graph_optimized_stream(
                             token=loaded.token_strings[c_idx],
                         )
 
-                # Save graph (raw, unnormalized edges)
-                db.save_graph(
+                # Store all edges (unfiltered, unnormalized) with CI values
+                graph_id = db.save_graph(
                     prompt_id=prompt_id,
                     graph=StoredGraph(
                         edges=raw_edges,
                         output_probs=raw_output_probs,
+                        node_ci_vals=result.node_ci_vals,
                         optimization_params=opt_params,
-                        optimization_stats=OptimizationStats(
-                            label_prob=result.stats.label_prob,
-                            l0_total=result.stats.l0_total,
-                            l0_per_layer=result.stats.l0_per_layer,
-                        ),
+                        label_prob=result.label_prob,
                     ),
                 )
 
-                # Process edges for response
                 edges_data, node_importance, max_abs_attr = process_edges_for_response(
-                    raw_edges, normalize, num_tokens=len(token_ids), is_optimized=True
+                    edges=raw_edges,
+                    normalize=normalize,
+                    num_tokens=len(token_ids),
+                    ci_threshold=ci_threshold,
+                    node_ci_vals=result.node_ci_vals,
+                    is_optimized=True,
                 )
 
+                l0_total = sum(1 for val in result.node_ci_vals.values() if val > ci_threshold)
+
                 response_data = GraphDataWithOptimization(
-                    id=prompt_id,
+                    id=graph_id,
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=raw_output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
                     optimization=OptimizationResult(
                         label_token=label_token,
                         label_str=label_str,
                         imp_min_coeff=imp_min_coeff,
                         ce_loss_coeff=ce_loss_coeff,
                         steps=steps,
-                        label_prob=result.stats.label_prob,
-                        l0_total=result.stats.l0_total,
-                        l0_per_layer=result.stats.l0_per_layer,
+                        label_prob=result.label_prob,
                     ),
                 )
                 complete_data = {"type": "complete", "data": response_data.model_dump()}
@@ -394,6 +435,8 @@ def process_edges_for_response(
     edges: list[Edge],
     normalize: NormalizeType,
     num_tokens: int,
+    ci_threshold: float,
+    node_ci_vals: dict[str, float],
     is_optimized: bool,
     edge_limit: int = GLOBAL_EDGE_LIMIT,
 ) -> tuple[list[EdgeData], dict[str, float], float]:
@@ -406,6 +449,8 @@ def process_edges_for_response(
         edges: Raw edges from computation or database
         normalize: Normalization type ("none", "target", "layer")
         num_tokens: Number of tokens in the prompt (for filtering)
+        ci_threshold: Threshold for filtering edges by CI
+        node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
         is_optimized: Whether this is an optimized graph (applies additional filtering)
         edge_limit: Maximum number of edges to return
 
@@ -415,8 +460,15 @@ def process_edges_for_response(
     if is_optimized:
         final_seq_pos = num_tokens - 1
         edges = [edge for edge in edges if edge.target.seq_pos == final_seq_pos]
-    edges = _normalize_edges(edges, normalize)
-    node_importance, max_abs_attr = compute_edge_stats(edges)
+
+    edges = filter_edges_by_ci_threshold(
+        edges=edges,
+        ci_threshold=ci_threshold,
+        node_ci_vals=node_ci_vals,
+    )
+
+    edges = _normalize_edges(edges=edges, normalize=normalize)
+    node_importance, max_abs_attr = compute_edge_stats(edges=edges)
     # Clip to edge limit for response
     if len(edges) > edge_limit:
         print(f"[WARNING] Edge limit {edge_limit} exceeded ({len(edges)} edges), truncating")
@@ -430,6 +482,7 @@ def process_edges_for_response(
 def get_graphs(
     prompt_id: int,
     normalize: Annotated[NormalizeType, Query()],
+    ci_threshold: Annotated[float, Query(ge=0)],
     loaded: DepLoadedRun,
     manager: DepStateManager,
 ) -> list[GraphData | GraphDataWithOptimization]:
@@ -451,8 +504,15 @@ def get_graphs(
     for graph in stored_graphs:
         is_optimized = graph.optimization_params is not None
         edges_data, node_importance, max_abs_attr = process_edges_for_response(
-            graph.edges, normalize, num_tokens, is_optimized
+            edges=graph.edges,
+            normalize=normalize,
+            num_tokens=num_tokens,
+            ci_threshold=ci_threshold,
+            node_ci_vals=graph.node_ci_vals,
+            is_optimized=is_optimized,
         )
+
+        l0_total = sum(1 for val in graph.node_ci_vals.values() if val > ci_threshold)
 
         if not is_optimized:
             # Standard graph
@@ -464,12 +524,14 @@ def get_graphs(
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
                 )
             )
         else:
             # Optimized graph
             assert graph.optimization_params is not None
-            assert graph.optimization_stats is not None
+            assert graph.label_prob is not None
+
             results.append(
                 GraphDataWithOptimization(
                     id=graph.id,
@@ -478,15 +540,14 @@ def get_graphs(
                     outputProbs=graph.output_probs,
                     nodeImportance=node_importance,
                     maxAbsAttr=max_abs_attr,
+                    l0_total=l0_total,
                     optimization=OptimizationResult(
                         label_token=graph.optimization_params.label_token,
                         label_str=loaded.token_strings[graph.optimization_params.label_token],
                         imp_min_coeff=graph.optimization_params.imp_min_coeff,
                         ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
                         steps=graph.optimization_params.steps,
-                        label_prob=graph.optimization_stats.label_prob,
-                        l0_total=graph.optimization_stats.l0_total,
-                        l0_per_layer=graph.optimization_stats.l0_per_layer,
+                        label_prob=graph.label_prob,
                     ),
                 )
             )

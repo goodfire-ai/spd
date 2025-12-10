@@ -1,10 +1,13 @@
 <script lang="ts">
+    import type { TokenInfo } from "../../lib/localAttributionsTypes";
     import type { PromptCard, ComputeOptions, OptimizeConfig } from "./types";
+    import TokenDropdown from "./TokenDropdown.svelte";
 
     type Props = {
         card: PromptCard;
         options: ComputeOptions;
         isLoading: boolean;
+        tokens: TokenInfo[];
         onOptionsChange: (update: Partial<ComputeOptions>) => void;
         onOptimizeConfigChange: (update: Partial<OptimizeConfig>) => void;
         onCompute: () => void;
@@ -16,6 +19,7 @@
         card,
         options,
         isLoading,
+        tokens,
         onOptionsChange,
         onOptimizeConfigChange,
         onCompute,
@@ -47,23 +51,7 @@
 
     <div class="staged-controls">
         <div class="compute-options">
-            <label>
-                <span>Max CI</span>
-                <input
-                    type="number"
-                    value={options.maxMeanCI}
-                    oninput={(e) => {
-                        if (e.currentTarget.value === "") return;
-                        onOptionsChange({ maxMeanCI: parseFloat(e.currentTarget.value) });
-                    }}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                />
-            </label>
-            <span class="info-icon" data-tooltip="Backend defaults: ci_threshold=1e-6, output_prob_threshold=0.01"
-                >?</span
-            >
+            <span class="info-icon" data-tooltip="Default output_prob_threshold=0.01">?</span>
             <label class="checkbox">
                 <input
                     type="checkbox"
@@ -75,21 +63,24 @@
             {#if options.useOptimized}
                 <label class="label-token-input">
                     <span>Label</span>
-                    <input
-                        type="text"
+                    <TokenDropdown
+                        {tokens}
                         value={optConfig.labelTokenText}
-                        oninput={(e) => onOptimizeConfigChange({ labelTokenText: e.currentTarget.value })}
-                        placeholder="e.g. ' world'"
-                        class="text-input"
+                        onSelect={(tokenId, tokenString) => {
+                            onOptimizeConfigChange({
+                                labelTokenText: tokenString,
+                                labelTokenId: tokenId,
+                                labelTokenPreview: tokenString,
+                            });
+                        }}
+                        placeholder="Search token..."
                     />
-                    {#if optConfig.labelTokenPreview}
-                        <span class="token-preview" class:error={!optConfig.labelTokenId}>
-                            → {optConfig.labelTokenPreview}
-                        </span>
+                    {#if optConfig.labelTokenId !== null}
+                        <span class="token-id-hint">#{optConfig.labelTokenId}</span>
                     {/if}
                 </label>
                 <label>
-                    <span>imp_min</span>
+                    <span>imp_min_coeff</span>
                     <input
                         type="number"
                         value={optConfig.impMinCoeff}
@@ -103,7 +94,7 @@
                     />
                 </label>
                 <label>
-                    <span>ce</span>
+                    <span>CE_coeff</span>
                     <input
                         type="number"
                         value={optConfig.ceLossCoeff}
@@ -260,7 +251,7 @@
     }
 
     .compute-options input[type="number"] {
-        width: 55px;
+        width: 110px;
         padding: var(--space-1);
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);
@@ -282,29 +273,10 @@
         flex-wrap: wrap;
     }
 
-    .compute-options .label-token-input .text-input {
-        width: 80px;
-        padding: var(--space-1);
-        border: 1px solid var(--border-default);
-        background: var(--bg-elevated);
-        color: var(--text-primary);
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-    }
-
-    .compute-options .label-token-input .text-input:focus {
-        outline: none;
-        border-color: var(--accent-primary-dim);
-    }
-
-    .compute-options .token-preview {
+    .token-id-hint {
         font-size: var(--text-xs);
-        color: var(--status-positive-bright);
+        color: var(--text-muted);
         font-family: var(--font-mono);
-    }
-
-    .compute-options .token-preview.error {
-        color: var(--status-negative-bright);
     }
 
     .btn-compute {

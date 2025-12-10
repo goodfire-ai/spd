@@ -32,14 +32,13 @@ class AliveComponentInfo:
 
 def compute_alive_info(
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
-    ci_threshold: float,
 ) -> AliveComponentInfo:
-    """Compute which (position, component) pairs are alive based on initial CI values."""
+    """Compute which (position, component) pairs are alive (CI > 0)."""
     alive_masks: dict[str, Bool[Tensor, "1 seq C"]] = {}
     alive_counts: dict[str, list[int]] = {}
 
     for layer_name, ci in ci_lower_leaky.items():
-        mask = ci > ci_threshold
+        mask = ci > 0.0
         alive_masks[layer_name] = mask
         # Count alive components per position: mask is [1, seq, C], sum over C
         counts_per_pos = mask[0].sum(dim=-1)  # [seq]
@@ -227,8 +226,6 @@ class OptimCIConfig:
     imp_min_config: ImportanceMinimalityLossConfig
     ce_loss_coeff: float
 
-    # CI thresholds and sampling
-    ci_threshold: float
     sampling: SamplingType
 
     ce_kl_rounding_threshold: float
@@ -274,19 +271,11 @@ def optimize_ci_values(
         target_out = output_with_cache.output.detach()
 
     # Compute alive info and create optimizable parameters
-    alive_info = compute_alive_info(initial_ci_outputs.lower_leaky, config.ci_threshold)
+    alive_info = compute_alive_info(initial_ci_outputs.lower_leaky)
     ci_params = create_optimizable_ci_params(
         alive_info=alive_info,
         initial_pre_sigmoid=initial_ci_outputs.pre_sigmoid,
     )
-
-    # Log initial alive counts
-    total_alive = sum(sum(counts) for counts in alive_info.alive_counts.values())
-    print(f"\nAlive components (CI > {config.ci_threshold}):")
-    for layer_name, counts in alive_info.alive_counts.items():
-        layer_total = sum(counts)
-        print(f"  {layer_name}: {layer_total} total across {len(counts)} positions")
-    print(f"  Total: {total_alive}")
 
     weight_deltas = model.calc_weight_deltas()
 
@@ -328,7 +317,7 @@ def optimize_ci_values(
         label_prob = F.softmax(out[0, -1, :], dim=-1)[label_token]
 
         if step % config.log_freq == 0 or step == config.steps - 1:
-            l0_stats = compute_l0_stats(ci_outputs, config.ci_threshold)
+            l0_stats = compute_l0_stats(ci_outputs, ci_alive_threshold=0.0)
 
             # Compute CE/KL metrics for final token only
             with torch.no_grad():

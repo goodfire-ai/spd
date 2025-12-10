@@ -1,14 +1,25 @@
+import type { SvelteSet } from "svelte/reactivity";
 import type { GraphData } from "../../lib/localAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/localAttributionsApi";
+
+export type ViewSettings = {
+    topK: number;
+    nodeLayout: "importance" | "shuffled" | "jittered";
+    componentGap: number;
+    layerGap: number;
+    normalizeEdges: NormalizeType;
+    ciThreshold: number;
+};
 
 export type StoredGraph = {
     id: string;
     dbId: number; // database ID for API calls
     label: string;
     data: GraphData;
+    viewSettings: ViewSettings;
     // Composer state for interventions
-    composerSelection: Set<string>; // currently selected node keys
+    composerSelection: SvelteSet<string>; // currently selected node keys
     interventionRuns: InterventionRunSummary[]; // persisted runs
     activeRunId: number | null; // which run is selected (for restoring selection)
 };
@@ -35,8 +46,7 @@ export type OptimizeConfig = {
 };
 
 export type ComputeOptions = {
-    maxMeanCI: number;
-    normalizeEdges: NormalizeType;
+    ciThreshold: number;
     useOptimized: boolean;
     optimizeConfig: OptimizeConfig;
 };

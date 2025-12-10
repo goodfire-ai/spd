@@ -2,6 +2,7 @@
 
 from spd.app.backend.routers.activation_contexts import router as activation_contexts_router
 from spd.app.backend.routers.correlation_jobs import router as correlation_jobs_router
+from spd.app.backend.routers.dataset_search import router as dataset_search_router
 from spd.app.backend.routers.graphs import router as graphs_router
 from spd.app.backend.routers.intervention import router as intervention_router
 from spd.app.backend.routers.prompts import router as prompts_router
@@ -10,6 +11,7 @@ from spd.app.backend.routers.runs import router as runs_router
 __all__ = [
     "activation_contexts_router",
     "correlation_jobs_router",
+    "dataset_search_router",
     "graphs_router",
     "intervention_router",
     "prompts_router",

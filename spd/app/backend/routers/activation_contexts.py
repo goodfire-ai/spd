@@ -71,9 +71,7 @@ def get_activation_context_detail(
         loaded.run.id, loaded.context_length, layer, component_idx
     )
     if detail is None:
-        raise HTTPException(
-            status_code=404, detail=f"Component {layer}:{component_idx} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Component {layer}:{component_idx} not found")
     return detail
 
 
@@ -133,7 +131,7 @@ def generate_activation_contexts(
                 n_batches=n_batches,
                 n_tokens_either_side=n_tokens_either_side,
                 topk_examples=topk_examples,
-                topk_correlations=100, # lots so FE can filter
+                topk_correlations=100,  # lots so FE can filter
                 separation_tokens=separation_tokens,
                 onprogress=on_progress,
             )
@@ -275,14 +273,16 @@ def get_component_correlations(
         return CorrelatedComponent(component_key=c.component_key, score=c.score)
 
     response = ComponentCorrelationsResponse(
-        precision=[to_schema(c) for c in correlations.get_correlated(component_key, "precision", top_k)],
+        precision=[
+            to_schema(c) for c in correlations.get_correlated(component_key, "precision", top_k)
+        ],
         recall=[to_schema(c) for c in correlations.get_correlated(component_key, "recall", top_k)],
         f1=[to_schema(c) for c in correlations.get_correlated(component_key, "f1", top_k)],
-        jaccard=[to_schema(c) for c in correlations.get_correlated(component_key, "jaccard", top_k)],
+        jaccard=[
+            to_schema(c) for c in correlations.get_correlated(component_key, "jaccard", top_k)
+        ],
     )
 
     total_ms = (time.perf_counter() - start) * 1000
-    logger.info(
-        f"get_component_correlations: {component_key} in {total_ms:.1f}ms"
-    )
+    logger.info(f"get_component_correlations: {component_key} in {total_ms:.1f}ms")
     return response

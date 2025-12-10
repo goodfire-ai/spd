@@ -1,5 +1,11 @@
 <script lang="ts">
-    import type { PinnedNode, ComponentDetail, ActivationContextsSummary, ComponentSummary, OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import type {
+        PinnedNode,
+        ComponentDetail,
+        ActivationContextsSummary,
+        ComponentSummary,
+        OutputProbEntry,
+    } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
     import NodeHeader from "./NodeHeader.svelte";

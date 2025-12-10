@@ -126,9 +126,7 @@ class ComponentCorrelations:
         row[:i] = self.count_ij[:i, i]  # Fill in values for j < i from column i
         return row
 
-    def _compute_scores(
-        self, component_key: str, metric: Metric
-    ) -> tuple[Tensor, int] | None:
+    def _compute_scores(self, component_key: str, metric: Metric) -> tuple[Tensor, int] | None:
         """Compute scores for a component. Returns (scores, component_idx) or None if no firings."""
         i = self._key_to_idx(component_key)
         count_i_val = self.count_i[i]

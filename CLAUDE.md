@@ -55,6 +55,14 @@ This repository implements methods from two key research papers on parameter dec
 - `make type` - Run basedpyright type checking only
 - `make format` - Run ruff linter and formatter
 
+**Frontend (when working on `spd/app/frontend/`):**
+
+- `make check-app` - Run frontend checks (format, type check, lint)
+- Or run individually from `spd/app/frontend/`:
+  - `npm run format` - Format code with Prettier
+  - `npm run check` - Run Svelte type checking
+  - `npm run lint` - Run ESLint
+
 **Testing:**
 
 - `make test` - Run tests (excluding slow tests)

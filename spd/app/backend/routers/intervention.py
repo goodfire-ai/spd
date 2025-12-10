@@ -30,7 +30,7 @@ def _parse_node_key(key: str) -> tuple[str, int, int]:
         f"Cannot intervene on {layer!r} nodes - only internal layers (attn/mlp) are interventable"
     )
     return layer, int(seq_str), int(cidx_str)
-    
+
 
 def _run_intervention_forward(
     text: str,
@@ -41,7 +41,7 @@ def _run_intervention_forward(
     """Run intervention forward pass and return response."""
     token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
-    
+
     active_nodes = [_parse_node_key(key) for key in selected_nodes]
 
     for layer, seq_pos, cidx in active_nodes:

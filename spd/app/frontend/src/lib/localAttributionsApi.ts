@@ -11,6 +11,7 @@ import type {
     SearchResult,
     TokenizeResult,
     ComponentProbeResult,
+    TokenInfo,
 } from "./localAttributionsTypes";
 import { API_URL } from "./api";
 
@@ -95,11 +96,17 @@ export async function tokenizeText(text: string): Promise<TokenizeResult> {
     return fetchJson<TokenizeResult>(url.toString(), { method: "POST" });
 }
 
+export async function getAllTokens(): Promise<TokenInfo[]> {
+    const response = await fetchJson<{ tokens: TokenInfo[] }>(`${API_URL}/api/graphs/tokens`);
+    return response.tokens;
+}
+
 export type NormalizeType = "none" | "target" | "layer";
 
 export type ComputeGraphParams = {
     promptId: number;
     normalize: NormalizeType;
+    ciThreshold: number;
 };
 
 export async function computeGraphStreaming(
@@ -109,6 +116,7 @@ export async function computeGraphStreaming(
     const url = new URL(`${API_URL}/api/graphs`);
     url.searchParams.set("prompt_id", String(params.promptId));
     url.searchParams.set("normalize", String(params.normalize));
+    url.searchParams.set("ci_threshold", String(params.ciThreshold));
 
     const response = await fetch(url.toString(), {
         method: "POST",
@@ -171,6 +179,7 @@ export type ComputeGraphOptimizedParams = {
     pnorm: number;
     normalize: NormalizeType;
     outputProbThreshold: number;
+    ciThreshold: number;
 };
 
 export async function computeGraphOptimizedStreaming(
@@ -186,6 +195,7 @@ export async function computeGraphOptimizedStreaming(
     url.searchParams.set("pnorm", String(params.pnorm));
     url.searchParams.set("normalize", String(params.normalize));
     url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
+    url.searchParams.set("ci_threshold", String(params.ciThreshold));
 
     const response = await fetch(url.toString(), {
         method: "POST",
@@ -308,9 +318,10 @@ export async function generatePrompts(
 
 // Fetch stored graphs for a prompt
 
-export async function getGraphs(promptId: number, normalize: NormalizeType): Promise<GraphData[]> {
+export async function getGraphs(promptId: number, normalize: NormalizeType, ciThreshold: number): Promise<GraphData[]> {
     const url = new URL(`${API_URL}/api/graphs/${promptId}`);
     url.searchParams.set("normalize", normalize);
+    url.searchParams.set("ci_threshold", String(ciThreshold));
     return fetchJson<GraphData[]>(url.toString());
 }
 

@@ -14,8 +14,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from spd.log import logger
-
 from spd.app.backend.compute import Edge, Node
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
@@ -24,6 +22,7 @@ from spd.app.backend.schemas import (
     SubcomponentActivationContexts,
     SubcomponentMetadata,
 )
+from spd.log import logger
 from spd.settings import REPO_ROOT
 
 # Persistent data directories
@@ -58,14 +57,6 @@ class OptimizationParams(BaseModel):
     pnorm: float
 
 
-class OptimizationStats(BaseModel):
-    """Statistics from optimized graph computation."""
-
-    label_prob: float
-    l0_total: float
-    l0_per_layer: dict[str, float]
-
-
 class StoredGraph(BaseModel):
     """A stored attribution graph."""
 
@@ -74,15 +65,18 @@ class StoredGraph(BaseModel):
     id: int = -1  # -1 for unsaved graphs, set by DB on save
     edges: list[Edge]
     output_probs: dict[str, OutputProbability]
+    node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
     optimization_params: OptimizationParams | None = None
-    optimization_stats: OptimizationStats | None = None
+    label_prob: float | None = (
+        None  # P(label_token) with optimized CI mask, only for optimized graphs
+    )
 
 
 class InterventionRunRecord(BaseModel):
     """A stored intervention run."""
 
     id: int
-    cached_graph_id: int
+    graph_id: int
     selected_nodes: list[str]  # node keys that were selected
     result_json: str  # JSON-encoded InterventionResponse
     created_at: str
@@ -95,7 +89,8 @@ class LocalAttrDB:
     - runs: One row per SPD run (keyed by wandb_path)
     - activation_contexts: Component metadata + generation config, 1:1 with runs
     - prompts: One row per stored prompt (token sequence), keyed by run_id
-    - component_activations: Inverted index mapping components to prompts
+    - original_component_seq_max_activations: Inverted index mapping components to prompts by a
+      component's max activation for that prompt
 
     Attribution graphs (edges) are computed on-demand at serve time, not stored.
     """
@@ -170,7 +165,7 @@ class LocalAttrDB:
                 is_custom INTEGER NOT NULL DEFAULT 0
             );
 
-            CREATE TABLE IF NOT EXISTS component_activations (
+            CREATE TABLE IF NOT EXISTS original_component_seq_max_activations (
                 prompt_id INTEGER NOT NULL REFERENCES prompts(id),
                 component_key TEXT NOT NULL,
                 max_ci REAL NOT NULL,
@@ -180,11 +175,11 @@ class LocalAttrDB:
             CREATE INDEX IF NOT EXISTS idx_prompts_run_id
                 ON prompts(run_id);
             CREATE INDEX IF NOT EXISTS idx_component_key
-                ON component_activations(component_key);
+                ON original_component_seq_max_activations(component_key);
             CREATE INDEX IF NOT EXISTS idx_prompt_id
-                ON component_activations(prompt_id);
+                ON original_component_seq_max_activations(prompt_id);
 
-            CREATE TABLE IF NOT EXISTS cached_graphs (
+            CREATE TABLE IF NOT EXISTS graphs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 prompt_id INTEGER NOT NULL REFERENCES prompts(id),
                 is_optimized INTEGER NOT NULL,
@@ -200,35 +195,36 @@ class LocalAttrDB:
                 edges_data BLOB NOT NULL,
                 output_probs_data BLOB NOT NULL,
 
+                -- Node CI values: "layer:seq:c_idx" -> ci_val (required for all graphs)
+                node_ci_vals TEXT NOT NULL,
+
                 -- Optimization stats (NULL for standard graphs)
                 label_prob REAL,
-                l0_total REAL,
-                l0_per_layer TEXT,
 
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_graphs_standard
-                ON cached_graphs(prompt_id)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_standard
+                ON graphs(prompt_id)
                 WHERE is_optimized = 0;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_cached_graphs_optimized
-                ON cached_graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
+                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm)
                 WHERE is_optimized = 1;
 
-            CREATE INDEX IF NOT EXISTS idx_cached_graphs_prompt
-                ON cached_graphs(prompt_id);
+            CREATE INDEX IF NOT EXISTS idx_graphs_prompt
+                ON graphs(prompt_id);
 
             CREATE TABLE IF NOT EXISTS intervention_runs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                cached_graph_id INTEGER NOT NULL REFERENCES cached_graphs(id),
+                graph_id INTEGER NOT NULL REFERENCES graphs(id),
                 selected_nodes TEXT NOT NULL,  -- JSON array of node keys
                 result TEXT NOT NULL,  -- JSON InterventionResponse
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE INDEX IF NOT EXISTS idx_intervention_runs_graph
-                ON intervention_runs(cached_graph_id);
+                ON intervention_runs(graph_id);
         """)
         conn.commit()
 
@@ -340,7 +336,7 @@ class LocalAttrDB:
 
         logger.info(
             f"Stored {len(rows)} component contexts: "
-            f"prep={1000*(t1-t0):.0f}ms, compress={1000*(t2-t1):.0f}ms, insert={1000*(t3-t2):.0f}ms"
+            f"prep={1000 * (t1 - t0):.0f}ms, compress={1000 * (t2 - t1):.0f}ms, insert={1000 * (t3 - t2):.0f}ms"
         )
 
     def get_component_contexts_summary(
@@ -410,8 +406,8 @@ class LocalAttrDB:
         blob_kb = len(row["data"]) / 1024
         logger.info(
             f"get_component_context_detail: {component_key} "
-            f"query={1000*(t1-t0):.0f}ms, decompress={1000*(t2-t1):.0f}ms ({blob_kb:.1f}KB), "
-            f"json={1000*(t3-t2):.0f}ms, pydantic={1000*(t4-t3):.0f}ms"
+            f"query={1000 * (t1 - t0):.0f}ms, decompress={1000 * (t2 - t1):.0f}ms ({blob_kb:.1f}KB), "
+            f"json={1000 * (t3 - t2):.0f}ms, pydantic={1000 * (t4 - t3):.0f}ms"
         )
         return result
 
@@ -475,7 +471,7 @@ class LocalAttrDB:
 
         if component_rows:
             conn.executemany(
-                """INSERT INTO component_activations
+                """INSERT INTO original_component_seq_max_activations
                    (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)""",
                 component_rows,
             )
@@ -515,7 +511,7 @@ class LocalAttrDB:
         ]
         if component_rows:
             conn.executemany(
-                """INSERT INTO component_activations
+                """INSERT INTO original_component_seq_max_activations
                    (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)""",
                 component_rows,
             )
@@ -591,7 +587,7 @@ class LocalAttrDB:
         if require_all:
             query = f"""
                 SELECT ca.prompt_id
-                FROM component_activations ca
+                FROM original_component_seq_max_activations ca
                 JOIN prompts p ON ca.prompt_id = p.id
                 WHERE p.run_id = ? AND ca.component_key IN ({placeholders})
                 GROUP BY ca.prompt_id
@@ -601,7 +597,7 @@ class LocalAttrDB:
         else:
             query = f"""
                 SELECT DISTINCT ca.prompt_id
-                FROM component_activations ca
+                FROM original_component_seq_max_activations ca
                 JOIN prompts p ON ca.prompt_id = p.id
                 WHERE p.run_id = ? AND ca.component_key IN ({placeholders})
             """
@@ -610,19 +606,22 @@ class LocalAttrDB:
         return [row["prompt_id"] for row in rows]
 
     # -------------------------------------------------------------------------
-    # Cached graph operations
+    # Graph operations
     # -------------------------------------------------------------------------
 
     def save_graph(
         self,
         prompt_id: int,
         graph: StoredGraph,
-    ) -> None:
+    ) -> int:
         """Save a computed graph for a prompt.
 
         Args:
             prompt_id: The prompt ID.
             graph: The graph to save.
+
+        Returns:
+            The database ID of the saved graph.
         """
         conn = self._get_conn()
 
@@ -633,48 +632,57 @@ class LocalAttrDB:
         probs_json = json.dumps({k: v.model_dump() for k, v in graph.output_probs.items()})
         probs_compressed = gzip.compress(probs_json.encode("utf-8"))
 
+        node_ci_vals_json = json.dumps(graph.node_ci_vals)
         is_optimized = 1 if graph.optimization_params else 0
 
+        # Extract optimization-specific values (NULL for standard graphs)
+        label_token = None
+        imp_min_coeff = None
+        ce_loss_coeff = None
+        steps = None
+        pnorm = None
+        label_prob = None
+
         if graph.optimization_params:
-            assert graph.optimization_stats is not None, (
-                "optimization_stats required for optimized graphs"
-            )
-            conn.execute(
-                """INSERT INTO cached_graphs
+            assert graph.label_prob is not None, "label_prob required for optimized graphs"
+            label_token = graph.optimization_params.label_token
+            imp_min_coeff = graph.optimization_params.imp_min_coeff
+            ce_loss_coeff = graph.optimization_params.ce_loss_coeff
+            steps = graph.optimization_params.steps
+            pnorm = graph.optimization_params.pnorm
+            label_prob = graph.label_prob
+
+        try:
+            cursor = conn.execute(
+                """INSERT INTO graphs
                    (prompt_id, is_optimized,
                     label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
-                    edges_data, output_probs_data,
-                    label_prob, l0_total, l0_per_layer)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    edges_data, output_probs_data, node_ci_vals,
+                    label_prob)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
-                    graph.optimization_params.label_token,
-                    graph.optimization_params.imp_min_coeff,
-                    graph.optimization_params.ce_loss_coeff,
-                    graph.optimization_params.steps,
-                    graph.optimization_params.pnorm,
+                    label_token,
+                    imp_min_coeff,
+                    ce_loss_coeff,
+                    steps,
+                    pnorm,
                     edges_compressed,
                     probs_compressed,
-                    graph.optimization_stats.label_prob,
-                    graph.optimization_stats.l0_total,
-                    json.dumps(graph.optimization_stats.l0_per_layer),
+                    node_ci_vals_json,
+                    label_prob,
                 ),
             )
-        else:
-            conn.execute(
-                """INSERT INTO cached_graphs
-                   (prompt_id, is_optimized, edges_data, output_probs_data)
-                   VALUES (?, ?, ?, ?)""",
-                (
-                    prompt_id,
-                    is_optimized,
-                    edges_compressed,
-                    probs_compressed,
-                ),
-            )
-
-        conn.commit()
+            conn.commit()
+            graph_id = cursor.lastrowid
+            assert graph_id is not None
+            return graph_id
+        except sqlite3.IntegrityError as e:
+            raise ValueError(
+                f"Graph already exists for prompt_id={prompt_id}. "
+                "Use get_graphs() to retrieve existing graph or delete it first."
+            ) from e
 
     def get_graphs(self, prompt_id: int) -> list[StoredGraph]:
         """Retrieve all stored graphs for a prompt.
@@ -688,10 +696,10 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         rows = conn.execute(
-            """SELECT id, is_optimized, edges_data, output_probs_data,
+            """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
                       label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
-                      label_prob, l0_total, l0_per_layer
-               FROM cached_graphs
+                      label_prob
+               FROM graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
             (prompt_id,),
@@ -713,8 +721,10 @@ class LocalAttrDB:
             probs_json = json.loads(gzip.decompress(row["output_probs_data"]).decode("utf-8"))
             output_probs = {k: OutputProbability(**v) for k, v in probs_json.items()}
 
+            node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
+
             opt_params: OptimizationParams | None = None
-            opt_stats: OptimizationStats | None = None
+            label_prob: float | None = None
 
             if row["is_optimized"]:
                 opt_params = OptimizationParams(
@@ -724,19 +734,16 @@ class LocalAttrDB:
                     steps=row["steps"],
                     pnorm=row["pnorm"],
                 )
-                opt_stats = OptimizationStats(
-                    label_prob=row["label_prob"],
-                    l0_total=row["l0_total"],
-                    l0_per_layer=json.loads(row["l0_per_layer"]),
-                )
+                label_prob = row["label_prob"]
 
             results.append(
                 StoredGraph(
                     id=row["id"],
                     edges=edges,
                     output_probs=output_probs,
+                    node_ci_vals=node_ci_vals,
                     optimization_params=opt_params,
-                    optimization_stats=opt_stats,
+                    label_prob=label_prob,
                 )
             )
 
@@ -745,7 +752,7 @@ class LocalAttrDB:
     def delete_graphs_for_prompt(self, prompt_id: int) -> int:
         """Delete all graphs for a prompt. Returns the number of deleted rows."""
         conn = self._get_conn()
-        cursor = conn.execute("DELETE FROM cached_graphs WHERE prompt_id = ?", (prompt_id,))
+        cursor = conn.execute("DELETE FROM graphs WHERE prompt_id = ?", (prompt_id,))
         conn.commit()
         return cursor.rowcount
 
@@ -753,7 +760,7 @@ class LocalAttrDB:
         """Delete all graphs for all prompts in a run. Returns the number of deleted rows."""
         conn = self._get_conn()
         cursor = conn.execute(
-            """DELETE FROM cached_graphs
+            """DELETE FROM graphs
                WHERE prompt_id IN (SELECT id FROM prompts WHERE run_id = ?)""",
             (run_id,),
         )
@@ -773,7 +780,7 @@ class LocalAttrDB:
         """Save an intervention run.
 
         Args:
-            graph_id: The cached graph ID this run belongs to.
+            graph_id: The graph ID this run belongs to.
             selected_nodes: List of node keys that were selected.
             result_json: JSON-encoded InterventionResponse.
 
@@ -782,7 +789,7 @@ class LocalAttrDB:
         """
         conn = self._get_conn()
         cursor = conn.execute(
-            """INSERT INTO intervention_runs (cached_graph_id, selected_nodes, result)
+            """INSERT INTO intervention_runs (graph_id, selected_nodes, result)
                VALUES (?, ?, ?)""",
             (graph_id, json.dumps(selected_nodes), result_json),
         )
@@ -795,16 +802,16 @@ class LocalAttrDB:
         """Get all intervention runs for a graph.
 
         Args:
-            graph_id: The cached graph ID.
+            graph_id: The graph ID.
 
         Returns:
             List of intervention run records, ordered by creation time.
         """
         conn = self._get_conn()
         rows = conn.execute(
-            """SELECT id, cached_graph_id, selected_nodes, result, created_at
+            """SELECT id, graph_id, selected_nodes, result, created_at
                FROM intervention_runs
-               WHERE cached_graph_id = ?
+               WHERE graph_id = ?
                ORDER BY created_at""",
             (graph_id,),
         ).fetchall()
@@ -812,7 +819,7 @@ class LocalAttrDB:
         return [
             InterventionRunRecord(
                 id=row["id"],
-                cached_graph_id=row["cached_graph_id"],
+                graph_id=row["graph_id"],
                 selected_nodes=json.loads(row["selected_nodes"]),
                 result_json=row["result"],
                 created_at=row["created_at"],
@@ -829,8 +836,6 @@ class LocalAttrDB:
     def delete_intervention_runs_for_graph(self, graph_id: int) -> int:
         """Delete all intervention runs for a graph. Returns count deleted."""
         conn = self._get_conn()
-        cursor = conn.execute(
-            "DELETE FROM intervention_runs WHERE cached_graph_id = ?", (graph_id,)
-        )
+        cursor = conn.execute("DELETE FROM intervention_runs WHERE graph_id = ?", (graph_id,))
         conn.commit()
         return cursor.rowcount

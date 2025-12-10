@@ -72,6 +72,13 @@
     <NodeHeader layer={hoveredNode.layer} seqIdx={hoveredNode.seqIdx} cIdx={hoveredNode.cIdx} {token} />
     {#if isWte}
         <p class="wte-info">Input embedding at position {hoveredNode.seqIdx}</p>
+        <div class="wte-content">
+            <div class="wte-token">"{token}"</div>
+            <p class="wte-stats">
+                <strong>Position:</strong>
+                {hoveredNode.seqIdx}
+            </p>
+        </div>
     {:else if isOutput}
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
     {:else}
