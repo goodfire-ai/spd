@@ -60,8 +60,8 @@
         <span>Edge Norm</span>
         <select value={normalizeEdges} onchange={(e) => onNormalizeChange(e.currentTarget.value as NormalizeType)}>
             <option value="none">None</option>
-            <option value="target">Target</option>
-            <option value="layer">Layer</option>
+            <option value="target">L2 by Target Node</option>
+            <option value="layer">L2 by Target Layer</option>
         </select>
     </label>
     <label>
