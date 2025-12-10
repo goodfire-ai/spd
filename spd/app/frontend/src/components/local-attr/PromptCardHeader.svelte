@@ -80,7 +80,7 @@
                     {/if}
                 </label>
                 <label>
-                    <span>imp_min</span>
+                    <span>imp_min_coeff</span>
                     <input
                         type="number"
                         value={optConfig.impMinCoeff}
@@ -94,7 +94,7 @@
                     />
                 </label>
                 <label>
-                    <span>ce</span>
+                    <span>CE_coeff</span>
                     <input
                         type="number"
                         value={optConfig.ceLossCoeff}
