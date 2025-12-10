@@ -36,14 +36,12 @@ export type PromptCard = {
 };
 
 export type OptimizeConfig = {
-    // CE loss settings
-    useCELoss: boolean;
+    // CE loss settings (active when ceLossCoeff > 0 AND labelTokenId is set)
     labelTokenText: string;
     labelTokenId: number | null;
     labelTokenPreview: string | null;
     ceLossCoeff: number;
-    // KL loss settings
-    useKLLoss: boolean;
+    // KL loss settings (active when klLossCoeff > 0)
     klLossCoeff: number;
     // Common settings
     impMinCoeff: number;

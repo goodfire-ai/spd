@@ -98,13 +98,11 @@
         ciThreshold: 0,
         useOptimized: false,
         optimizeConfig: {
-            useCELoss: true,
             labelTokenText: "",
             labelTokenId: null,
             labelTokenPreview: null,
-            ceLossCoeff: 1.0,
-            useKLLoss: false,
-            klLossCoeff: 1.0,
+            ceLossCoeff: 0,
+            klLossCoeff: 0,
             impMinCoeff: 0.1,
             steps: 2000,
             pnorm: 0.3,
@@ -442,13 +440,16 @@
             let data: GraphData;
 
             if (isOptimized) {
-                // Validate: at least one loss type must be enabled
-                if (!optConfig.useCELoss && !optConfig.useKLLoss) {
-                    throw new Error("At least one loss type (CE or KL) must be enabled");
+                const useCE = optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null;
+                const useKL = optConfig.klLossCoeff > 0;
+
+                // Validate: at least one loss type must be active
+                if (!useCE && !useKL) {
+                    throw new Error("At least one loss type must be active (set coeff > 0)");
                 }
-                // Validate: CE requires label token
-                if (optConfig.useCELoss && !optConfig.labelTokenId) {
-                    throw new Error("Label token required when CE loss is enabled");
+                // Validate: CE coeff > 0 requires label token
+                if (optConfig.ceLossCoeff > 0 && !optConfig.labelTokenId) {
+                    throw new Error("Label token required when ce_coeff > 0");
                 }
 
                 // Build params with optional CE/KL settings
@@ -461,11 +462,11 @@
                     outputProbThreshold: 0.01,
                     ciThreshold: defaultViewSettings.ciThreshold,
                 };
-                if (optConfig.useCELoss && optConfig.labelTokenId) {
-                    params.labelToken = optConfig.labelTokenId;
+                if (useCE) {
+                    params.labelToken = optConfig.labelTokenId!;
                     params.ceLossCoeff = optConfig.ceLossCoeff;
                 }
-                if (optConfig.useKLLoss) {
+                if (useKL) {
                     params.klLossCoeff = optConfig.klLossCoeff;
                 }
 

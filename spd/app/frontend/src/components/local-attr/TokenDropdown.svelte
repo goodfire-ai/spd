@@ -4,11 +4,13 @@
     type Props = {
         tokens: TokenInfo[];
         value: string;
-        onSelect: (tokenId: number, tokenString: string) => void;
+        selectedTokenId: number | null;
+        onSelect: (tokenId: number | null, tokenString: string) => void;
         placeholder?: string;
     };
 
-    let { tokens, value, onSelect, placeholder = "Search tokens..." }: Props = $props();
+    let { tokens, value, selectedTokenId, onSelect, placeholder = "Search tokens..." }: Props =
+        $props();
 
     /** Format token for display: strip leading space, add ## prefix if no leading space */
     function formatTokenDisplay(tokenString: string): string {
@@ -18,7 +20,10 @@
         return "##" + tokenString;
     }
 
-    let inputValue = $derived(value ? formatTokenDisplay(value) : "");
+    // Only format when a token is actually selected; otherwise show raw user input
+    let inputValue = $derived(
+        selectedTokenId !== null && value ? formatTokenDisplay(value) : value
+    );
     let isOpen = $state(false);
     let highlightedIndex = $state(0);
 
@@ -74,9 +79,12 @@
         }
     }
 
-    function handleInput() {
+    function handleInput(e: Event) {
         isOpen = true;
         highlightedIndex = 0;
+        // When user types, clear the selected token ID so they must pick again
+        const target = e.target as HTMLInputElement;
+        onSelect(null, target.value);
     }
 
     function handleFocus() {

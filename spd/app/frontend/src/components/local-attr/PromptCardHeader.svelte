@@ -29,17 +29,26 @@
 
     const optConfig = $derived(options.optimizeConfig);
 
-    // Validation: at least one loss type must be enabled for optimized mode
-    // If CE loss is enabled, label token must be set
+    // Derived: whether each loss type is active
+    const useCE = $derived(optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null);
+    const useKL = $derived(optConfig.klLossCoeff > 0);
+
+    // Validation for optimized mode:
+    // - At least one loss must be active (coeff > 0)
+    // - If ce_coeff > 0, label token must be set
+    // - If label token is set, ce_coeff must be > 0
     const canCompute = $derived.by(() => {
         if (isLoading) return false;
         if (!options.useOptimized) return true;
 
-        // Must have at least one loss type enabled
-        if (!optConfig.useCELoss && !optConfig.useKLLoss) return false;
+        // Must have at least one active loss
+        if (!useCE && !useKL) return false;
 
-        // If CE is enabled, label token is required
-        if (optConfig.useCELoss && optConfig.labelTokenId === null) return false;
+        // ce_coeff > 0 requires label token
+        if (optConfig.ceLossCoeff > 0 && optConfig.labelTokenId === null) return false;
+
+        // label token set requires ce_coeff > 0
+        if (optConfig.labelTokenId !== null && optConfig.ceLossCoeff <= 0) return false;
 
         return true;
     });
@@ -51,12 +60,15 @@
         if (!options.useOptimized) {
             return "Compute";
         }
-        // Optimized mode
-        if (!optConfig.useCELoss && !optConfig.useKLLoss) {
-            return "Select a loss type";
+        // Optimized mode validation messages
+        if (!useCE && !useKL) {
+            return "Set a loss coeff > 0";
         }
-        if (optConfig.useCELoss && optConfig.labelTokenId === null) {
+        if (optConfig.ceLossCoeff > 0 && optConfig.labelTokenId === null) {
             return "Enter label token";
+        }
+        if (optConfig.labelTokenId !== null && optConfig.ceLossCoeff <= 0) {
+            return "Set ce_coeff > 0";
         }
         return "Compute (Optimized)";
     });
@@ -125,75 +137,53 @@
                         step={0.1}
                     />
                 </label>
-                <!-- CE Loss checkbox and settings -->
-                <label class="checkbox">
+                <!-- CE Loss settings -->
+                <label>
+                    <span>ce_coeff</span>
                     <input
-                        type="checkbox"
-                        checked={optConfig.useCELoss}
-                        onchange={(e) => onOptimizeConfigChange({ useCELoss: e.currentTarget.checked })}
+                        type="number"
+                        value={optConfig.ceLossCoeff}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onOptimizeConfigChange({ ceLossCoeff: parseFloat(e.currentTarget.value) });
+                        }}
+                        min={0}
+                        step={0.1}
                     />
-                    <span>CE Loss</span>
                 </label>
-                {#if optConfig.useCELoss}
-                    <label class="label-token-input">
-                        <span>Label</span>
-                        <TokenDropdown
-                            {tokens}
-                            value={optConfig.labelTokenText}
-                            onSelect={(tokenId, tokenString) => {
-                                onOptimizeConfigChange({
-                                    labelTokenText: tokenString,
-                                    labelTokenId: tokenId,
-                                    labelTokenPreview: tokenString,
-                                });
-                            }}
-                            placeholder="Search token..."
-                        />
-                        {#if optConfig.labelTokenId !== null}
-                            <span class="token-id-hint">#{optConfig.labelTokenId}</span>
-                        {/if}
-                    </label>
-                    <label>
-                        <span>ce_coeff</span>
-                        <input
-                            type="number"
-                            value={optConfig.ceLossCoeff}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ ceLossCoeff: parseFloat(e.currentTarget.value) });
-                            }}
-                            min={0.001}
-                            max={10}
-                            step={0.1}
-                        />
-                    </label>
-                {/if}
-
-                <!-- KL Loss checkbox and settings -->
-                <label class="checkbox">
+                <label class="label-token-input">
+                    <span>Label</span>
+                    <TokenDropdown
+                        {tokens}
+                        value={optConfig.labelTokenText}
+                        selectedTokenId={optConfig.labelTokenId}
+                        onSelect={(tokenId, tokenString) => {
+                            onOptimizeConfigChange({
+                                labelTokenText: tokenString,
+                                labelTokenId: tokenId,
+                                labelTokenPreview: tokenId !== null ? tokenString : "",
+                            });
+                        }}
+                        placeholder="Search token..."
+                    />
+                    {#if optConfig.labelTokenId !== null}
+                        <span class="token-id-hint">#{optConfig.labelTokenId}</span>
+                    {/if}
+                </label>
+                <!-- KL Loss settings -->
+                <label>
+                    <span>kl_coeff</span>
                     <input
-                        type="checkbox"
-                        checked={optConfig.useKLLoss}
-                        onchange={(e) => onOptimizeConfigChange({ useKLLoss: e.currentTarget.checked })}
+                        type="number"
+                        value={optConfig.klLossCoeff}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onOptimizeConfigChange({ klLossCoeff: parseFloat(e.currentTarget.value) });
+                        }}
+                        min={0}
+                        step={0.1}
                     />
-                    <span>KL Loss</span>
                 </label>
-                {#if optConfig.useKLLoss}
-                    <label>
-                        <span>kl_coeff</span>
-                        <input
-                            type="number"
-                            value={optConfig.klLossCoeff}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ klLossCoeff: parseFloat(e.currentTarget.value) });
-                            }}
-                            min={0.001}
-                            max={10}
-                            step={0.1}
-                        />
-                    </label>
-                {/if}
 
             {/if}
         </div>
