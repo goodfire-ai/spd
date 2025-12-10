@@ -15,7 +15,9 @@ from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
 from spd.app.backend.lib.component_correlations import (
     ComponentCorrelations,
+    ComponentTokenStats,
     get_correlations_path,
+    get_token_stats_path,
 )
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
@@ -26,6 +28,8 @@ from spd.app.backend.schemas import (
     HarvestMetadata,
     SubcomponentActivationContexts,
     SubcomponentMetadata,
+    TokenPRLiftPMI,
+    TokenStatsResponse,
 )
 from spd.app.backend.utils import log_errors
 from spd.log import logger
@@ -131,7 +135,6 @@ def generate_activation_contexts(
                 n_batches=n_batches,
                 n_tokens_either_side=n_tokens_either_side,
                 topk_examples=topk_examples,
-                topk_correlations=100,  # lots so FE can filter
                 separation_tokens=separation_tokens,
                 onprogress=on_progress,
             )
@@ -216,10 +219,11 @@ def probe_component(
 
 # In-memory cache for correlations (keyed by run_id)
 _correlations_cache: dict[str, ComponentCorrelations] = {}
+_token_stats_cache: dict[str, ComponentTokenStats] = {}
 
 
 def _get_correlations(run_id: str) -> ComponentCorrelations | None:
-    """Load correlations from cache or disk. Returns (correlations, load_time_ms)."""
+    """Load correlations from cache or disk."""
     start = time.perf_counter()
 
     if run_id in _correlations_cache:
@@ -234,6 +238,24 @@ def _get_correlations(run_id: str) -> ComponentCorrelations | None:
     load_ms = (time.perf_counter() - start) * 1000
     logger.info(f"Loaded correlations for {run_id} in {load_ms:.1f}ms")
     return correlations
+
+
+def _get_token_stats(run_id: str) -> ComponentTokenStats | None:
+    """Load token stats from cache or disk."""
+    start = time.perf_counter()
+
+    if run_id in _token_stats_cache:
+        return _token_stats_cache[run_id]
+
+    path = get_token_stats_path(run_id)
+    if not path.exists():
+        return None
+
+    token_stats = ComponentTokenStats.load(path)
+    _token_stats_cache[run_id] = token_stats
+    load_ms = (time.perf_counter() - start) * 1000
+    logger.info(f"Loaded token stats for {run_id} in {load_ms:.1f}ms")
+    return token_stats
 
 
 @router.get("/correlations/{layer}/{component_idx}")
@@ -281,8 +303,60 @@ def get_component_correlations(
         jaccard=[
             to_schema(c) for c in correlations.get_correlated(component_key, "jaccard", top_k)
         ],
+        pmi=[to_schema(c) for c in correlations.get_correlated(component_key, "pmi", top_k)],
     )
 
     total_ms = (time.perf_counter() - start) * 1000
     logger.info(f"get_component_correlations: {component_key} in {total_ms:.1f}ms")
     return response
+
+
+@router.get("/token_stats/{layer}/{component_idx}")
+@log_errors
+def get_component_token_stats(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+    top_k: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> TokenStatsResponse | None:
+    """Get token precision/recall/lift/PMI for a component.
+
+    Returns stats for both input tokens (what activates this component)
+    and output tokens (what this component predicts).
+    Returns None if token stats haven't been harvested for this run.
+    """
+    start = time.perf_counter()
+
+    run_id = loaded.run.wandb_path.split("/")[-1]
+    token_stats = _get_token_stats(run_id)
+
+    if token_stats is None:
+        return None
+
+    component_key = f"{layer}:{component_idx}"
+
+    input_stats = token_stats.get_input_stats(component_key, loaded.tokenizer, top_k=top_k)
+    output_stats = token_stats.get_output_stats(component_key, loaded.tokenizer, top_k=top_k)
+
+    if input_stats is None or output_stats is None:
+        return None
+
+    total_ms = (time.perf_counter() - start) * 1000
+    logger.info(f"get_component_token_stats: {component_key} in {total_ms:.1f}ms")
+
+    return TokenStatsResponse(
+        input=TokenPRLiftPMI(
+            top_recall=input_stats.top_recall,
+            top_precision=input_stats.top_precision,
+            top_lift=input_stats.top_lift,
+            top_pmi=input_stats.top_pmi,
+            bottom_pmi=input_stats.bottom_pmi,
+        ),
+        output=TokenPRLiftPMI(
+            top_recall=output_stats.top_recall,
+            top_precision=output_stats.top_precision,
+            top_lift=output_stats.top_lift,
+            top_pmi=output_stats.top_pmi,
+            bottom_pmi=output_stats.bottom_pmi,
+        ),
+    )

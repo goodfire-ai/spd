@@ -68,7 +68,7 @@
             if (status === 404) {
                 activationContextsMissing = true;
                 activationContextsSummary = null;
-            }
+            } else throw e;
         }
     }
 
@@ -81,10 +81,8 @@
             loadedRun = null;
             await api.loadRun(input, contextLength);
             // Set loading false before calling loadStatus, otherwise the guard returns early
-            loadingTrainRun = false;
             await loadStatus();
-        } catch (error) {
-            console.error("error loading run", error);
+        } finally {
             loadingTrainRun = false;
         }
     }

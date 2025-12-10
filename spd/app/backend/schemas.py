@@ -160,7 +160,11 @@ class PromptsGenerationConfig(BaseModel):
 
 
 class SubcomponentActivationContexts(BaseModel):
-    """Activation context data for a single subcomponent, using columnar layout for efficiency."""
+    """Activation context data for a single subcomponent, using columnar layout for efficiency.
+
+    Note: Token P/R/lift stats are now computed by the batch job and served via the
+    /token_stats endpoint, not stored here.
+    """
 
     subcomponent_idx: int
     mean_ci: float
@@ -170,18 +174,6 @@ class SubcomponentActivationContexts(BaseModel):
     example_ci: list[list[float]]  # [n_examples][window_size]
     example_active_pos: list[int]  # [n_examples] - index into window
     example_active_ci: list[float]  # [n_examples]
-
-    # Token precision/recall - top tokens by each metric
-    top_recall: list[tuple[str, float]]  # [(token, value), ...] sorted desc
-    top_precision: list[tuple[str, float]]  # [(token, value), ...] sorted desc
-
-    # TODO: Re-enable token uplift after performance optimization
-    # Predicted token stats - lift = E[P(token)|fires] / E[P(token)]
-    # Sorted by lift descending
-    # predicted_tokens: list[str]  # [n_unique_predicted]
-    # predicted_lifts: list[float]  # [n_unique_predicted] - lift (firing_prob / base_prob)
-    # predicted_firing_probs: list[float]  # [n_unique_predicted] - E[P(token) | component fires]
-    # predicted_base_probs: list[float]  # [n_unique_predicted] - E[P(token)] base rate
 
 
 class ModelActivationContexts(BaseModel):
@@ -212,6 +204,27 @@ class HarvestMetadata(BaseModel):
     """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
 
     layers: dict[str, list[SubcomponentMetadata]]
+
+
+class TokenPRLiftPMI(BaseModel):
+    """Token precision, recall, lift, and PMI lists."""
+
+    top_recall: list[tuple[str, float]]  # [(token, value), ...] sorted desc
+    top_precision: list[tuple[str, float]]  # [(token, value), ...] sorted desc
+    top_lift: list[tuple[str, float]]  # [(token, lift), ...] sorted desc
+    top_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest positive association
+    bottom_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest negative association
+
+
+class TokenStatsResponse(BaseModel):
+    """Token stats for a component (from batch job).
+
+    Contains both input token stats (what tokens activate this component)
+    and output token stats (what tokens this component predicts).
+    """
+
+    input: TokenPRLiftPMI  # Stats for input tokens
+    output: TokenPRLiftPMI  # Stats for output (predicted) tokens
 
 
 # =============================================================================
@@ -313,6 +326,7 @@ class ComponentCorrelationsResponse(BaseModel):
     recall: list[CorrelatedComponent]
     f1: list[CorrelatedComponent]
     jaccard: list[CorrelatedComponent]
+    pmi: list[CorrelatedComponent]
 
 
 # =============================================================================

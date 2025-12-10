@@ -1,11 +1,14 @@
 <script lang="ts">
     import type { ComponentDetail, HarvestMetadata } from "../lib/api";
-    import type { ComponentCorrelations } from "../lib/localAttributionsTypes";
     import * as api from "../lib/api";
-    import { getComponentCorrelations } from "../lib/localAttributionsApi";
+    import { getComponentCorrelations, getComponentTokenStats } from "../lib/localAttributionsApi";
+    import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
-    import CorrelationTable from "./local-attr/CorrelationTable.svelte";
+    import ComponentCorrelationTable from "./local-attr/ComponentCorrelationTable.svelte";
+    import SectionHeader from "./ui/SectionHeader.svelte";
+    import StatusText from "./ui/StatusText.svelte";
+    import TokenStatsSection from "./ui/TokenStatsSection.svelte";
 
     interface Props {
         harvestMetadata: HarvestMetadata;
@@ -13,10 +16,11 @@
 
     let { harvestMetadata }: Props = $props();
 
-    const N_TOKENS_TO_DISPLAY_PR = 100;
-    const N_TOKENS_TO_DIPLAY_CORRELATIONS = 20;
+    const N_TOKENS_TO_DISPLAY_INPUT = 80;
+    const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
+    const N_CORRELATIONS_TO_DISPLAY = 20;
 
-    let availableLayers = $derived(Object.keys(harvestMetadata.layers));
+    let availableLayers = $derived(Object.keys(harvestMetadata.layers).sort());
     let currentPage = $state(0);
     let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
 
@@ -26,6 +30,10 @@
     // Correlations state
     let correlations = $state<ComponentCorrelations | null>(null);
     let correlationsLoading = $state(false);
+
+    // Token stats state (from batch job)
+    let tokenStats = $state<TokenStats | null>(null);
+    let tokenStatsLoading = $state(false);
 
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
@@ -84,8 +92,6 @@
 
                 if (cancelled) return;
                 componentCache[cacheKey] = detail;
-            } catch (error) {
-                if (!cancelled) console.error("Failed to load component:", error);
             } finally {
                 if (!cancelled) loadingComponent = false;
             }
@@ -116,39 +122,57 @@
 
         correlations = null;
         correlationsLoading = true;
-        getComponentCorrelations(layer, cIdx, N_TOKENS_TO_DIPLAY_CORRELATIONS)
+        getComponentCorrelations(layer, cIdx, N_CORRELATIONS_TO_DISPLAY)
             .then((data) => {
                 correlations = data;
-            })
-            .catch(() => {
-                correlations = null;
             })
             .finally(() => {
                 correlationsLoading = false;
             });
     });
 
-    // Tokens by recall (already sorted by backend)
-    let topRecall = $derived.by(() => {
-        if (!currentComponent) return [];
-        return currentComponent.top_recall.slice(0, N_TOKENS_TO_DISPLAY_PR).map(([token, value]) => ({
-            token,
-            value,
-        }));
+    // Fetch token stats when component changes (from batch job)
+    $effect(() => {
+        const layer = selectedLayer;
+        const cIdx = currentMetadata?.subcomponent_idx;
+        if (cIdx === undefined) return;
+
+        tokenStats = null;
+        tokenStatsLoading = true;
+        getComponentTokenStats(layer, cIdx, Math.max(N_TOKENS_TO_DISPLAY_INPUT, N_TOKENS_TO_DISPLAY_OUTPUT))
+            .then((data) => {
+                tokenStats = data;
+            })
+            .finally(() => {
+                tokenStatsLoading = false;
+            });
     });
 
-    // Tokens by precision (already sorted by backend)
-    let topPrecision = $derived.by(() => {
-        if (!currentComponent) return [];
-        return currentComponent.top_precision.slice(0, N_TOKENS_TO_DISPLAY_PR).map(([token, value]) => ({
-            token,
-            value,
-        }));
+    // === Input token stats (what tokens activate this component) ===
+    let inputTopRecall = $derived.by(() => {
+        if (!tokenStats) return [];
+        return tokenStats.input.top_recall.map(([token, value]) => ({ token, value }));
     });
 
-    // Background color for token pills (green intensity)
-    function getTokenBg(value: number): string {
-        return `rgba(22, 163, 74, ${value})`;
+    let inputTopPmi = $derived.by(() => {
+        if (!tokenStats) return [];
+        return tokenStats.input.top_pmi.map(([token, value]) => ({ token, value }));
+    });
+
+    // === Output token stats (what tokens this component predicts) ===
+    let outputTopPmi = $derived.by(() => {
+        if (!tokenStats) return [];
+        return tokenStats.output.top_pmi.map(([token, value]) => ({ token, value }));
+    });
+
+    let outputBottomPmi = $derived.by(() => {
+        if (!tokenStats) return [];
+        return tokenStats.output.bottom_pmi.map(([token, value]) => ({ token, value }));
+    });
+
+    // Format mean CI for display
+    function formatMeanCi(ci: number): string {
+        return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
     }
 </script>
 
@@ -183,77 +207,91 @@
         <div class="loading">Loading component data...</div>
     {:else if currentComponent && currentMetadata}
         <div class="component-section">
-            <h4>
-                Subcomponent {currentMetadata.subcomponent_idx}
-                <span class="mean-ci">Mean CI: {currentMetadata.mean_ci < 0.001
-                    ? currentMetadata.mean_ci.toExponential(2)
-                    : currentMetadata.mean_ci.toFixed(3)}</span>
-            </h4>
+            <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
+                <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
+            </SectionHeader>
 
-            <!-- Token statistics: Recall and Precision -->
-            {#if topRecall.length > 0}
-                <div class="token-stats">
-                    <div class="token-list">
-                        <h5>Recall <span class="math-notation">P(token | firing)</span></h5>
-                        <div class="tokens">
-                            {#each topRecall as { token, value } (token)}
-                                <span class="token-pill" style="background: {getTokenBg(value)}" title="{(value * 100).toFixed(1)}%">{token}</span>
-                            {/each}
-                        </div>
-                    </div>
-                    <div class="token-list">
-                        <h5>Precision <span class="math-notation">P(firing | token)</span></h5>
-                        <div class="tokens">
-                            {#each topPrecision as { token, value } (token)}
-                                <span class="token-pill" style="background: {getTokenBg(value)}" title="{(value * 100).toFixed(1)}%">{token}</span>
-                            {/each}
-                        </div>
-                    </div>
-                </div>
-            {/if}
+            <div class="token-stats-row">
+                <TokenStatsSection
+                    sectionTitle="Input Tokens"
+                    sectionSubtitle="(what activates this component)"
+                    loading={tokenStatsLoading}
+                    lists={[
+                        {
+                            title: "Top PMI",
+                            mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                            items: inputTopPmi.slice(0, N_TOKENS_TO_DISPLAY_INPUT),
+                        },
+                    ]}
+                />
+
+                <TokenStatsSection
+                    sectionTitle="Output Tokens"
+                    sectionSubtitle="(what this component predicts)"
+                    loading={tokenStatsLoading}
+                    lists={[
+                        {
+                            title: "Top PMI",
+                            mathNotation: "positive association with predictions",
+                            items: outputTopPmi.slice(0, N_TOKENS_TO_DISPLAY_OUTPUT),
+                        },
+                        {
+                            title: "Bottom PMI",
+                            mathNotation: "negative association with predictions",
+                            items: outputBottomPmi.slice(0, N_TOKENS_TO_DISPLAY_OUTPUT),
+                        },
+                    ]}
+                />
+            </div>
 
             <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
 
             <!-- Component correlations -->
             <div class="correlations-section">
-                <h5>Correlated Components</h5>
+                <SectionHeader title="Correlated Components" />
                 {#if correlations}
                     <div class="correlations-grid">
-                        <CorrelationTable
+                        <ComponentCorrelationTable
+                            title="PMI"
+                            mathNotation="log(P(both) / P(A)P(B))"
+                            items={correlations.pmi}
+                            maxItems={N_CORRELATIONS_TO_DISPLAY}
+                        />
+                        <ComponentCorrelationTable
                             title="Precision"
                             mathNotation="P(that | this)"
                             items={correlations.precision}
-                            maxItems={N_TOKENS_TO_DIPLAY_CORRELATIONS}
+                            maxItems={N_CORRELATIONS_TO_DISPLAY}
                         />
-                        <CorrelationTable
+                        <ComponentCorrelationTable
                             title="Recall"
                             mathNotation="P(this | that)"
                             items={correlations.recall}
-                            maxItems={N_TOKENS_TO_DIPLAY_CORRELATIONS}
+                            maxItems={N_CORRELATIONS_TO_DISPLAY}
                         />
-                        <CorrelationTable
+                        <ComponentCorrelationTable
                             title="F1"
                             items={correlations.f1}
-                            maxItems={N_TOKENS_TO_DIPLAY_CORRELATIONS}
+                            maxItems={N_CORRELATIONS_TO_DISPLAY}
                         />
-                        <CorrelationTable
+                        <ComponentCorrelationTable
                             title="Jaccard"
                             items={correlations.jaccard}
-                            maxItems={N_TOKENS_TO_DIPLAY_CORRELATIONS}
+                            maxItems={N_CORRELATIONS_TO_DISPLAY}
                         />
                     </div>
                 {:else if correlationsLoading}
-                    <p class="status-text muted">Loading...</p>
+                    <StatusText>Loading...</StatusText>
                 {:else if correlationJobStatus === null}
-                    <p class="status-text muted">No correlations data. Use "Harvest" in the top bar to compute.</p>
+                    <StatusText>No correlations data. Use "Harvest" in the top bar to compute.</StatusText>
                 {:else if correlationJobStatus.status === "pending"}
-                    <p class="status-text pending">Job {correlationJobStatus.job_id} pending...</p>
+                    <StatusText variant="pending">Job {correlationJobStatus.job_id} pending...</StatusText>
                 {:else if correlationJobStatus.status === "running"}
-                    <p class="status-text running">Job {correlationJobStatus.job_id} running...</p>
+                    <StatusText variant="running">Job {correlationJobStatus.job_id} running...</StatusText>
                 {:else if correlationJobStatus.status === "failed"}
-                    <p class="status-text failed">Correlation job failed. Check top bar to retry.</p>
+                    <StatusText variant="failed">Correlation job failed. Check top bar to retry.</StatusText>
                 {:else}
-                    <p class="status-text muted">No correlations for this component.</p>
+                    <StatusText>No correlations for this component.</StatusText>
                 {/if}
             </div>
 
@@ -261,7 +299,7 @@
                 exampleTokens={currentComponent.example_tokens}
                 exampleCi={currentComponent.example_ci}
                 exampleActivePos={currentComponent.example_active_pos}
-                activatingTokens={currentComponent.top_recall.map(([t]) => t)}
+                activatingTokens={inputTopRecall.map(({ token }) => token)}
             />
         </div>
     {/if}
@@ -369,14 +407,6 @@
         gap: var(--space-3);
     }
 
-    .component-section h4 {
-        margin: 0;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
-        font-weight: 600;
-    }
-
     .mean-ci {
         font-weight: 400;
         color: var(--text-muted);
@@ -384,99 +414,20 @@
         margin-left: var(--space-2);
     }
 
-    .token-stats {
+    .token-stats-row {
         display: flex;
-        flex-direction: column;
+        gap: var(--space-4);
     }
 
-    .token-list {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-1);
-    }
-
-    .token-list h5 {
-        margin: 0;
-        font-size: var(--text-xs);
-        font-family: var(--font-sans);
-        color: var(--text-muted);
-        font-weight: 500;
-    }
-
-    .math-notation {
-        font-family: var(--font-mono);
-        font-style: normal;
-        font-size: var(--text-xs);
-        opacity: 0.7;
-    }
-
-    .tokens {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-1);
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-    }
-
-    .token-pill {
-        padding: 1px 4px;
-        border-radius: 3px;
-        white-space: pre;
-        cursor: default;
-        position: relative;
-    }
-
-    .token-pill::after {
-        content: attr(title);
-        position: absolute;
-        bottom: calc(100% + 4px);
-        left: 50%;
-        transform: translateX(-50%);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-strong);
-        color: var(--text-primary);
-        padding: 2px 6px;
-        font-size: var(--text-xs);
-        white-space: nowrap;
-        opacity: 0;
-        pointer-events: none;
-        z-index: 100;
-        border-radius: 3px;
-    }
-
-    .token-pill:hover::after {
-        opacity: 1;
-    }
-
-    .status-text {
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        margin: 0;
-    }
-
-    .status-text.muted {
-        color: var(--text-muted);
-    }
-
-    .status-text.pending,
-    .status-text.running {
-        color: var(--accent-primary);
-    }
-
-    .status-text.failed {
-        color: var(--status-negative-bright);
+    .token-stats-row > :global(*) {
+        flex: 1;
+        min-width: 0;
     }
 
     .correlations-section {
-        margin-top: var(--space-2);
-    }
-
-    .correlations-section h5 {
-        margin: 0 0 var(--space-2) 0;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
-        font-weight: 600;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
     }
 
     .correlations-grid {

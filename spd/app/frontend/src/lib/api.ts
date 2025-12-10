@@ -37,6 +37,7 @@ export async function loadRun(wandbRunPath: string, contextLength: number): Prom
 }
 
 // Columnar data structure for efficiency
+// Note: Token P/R/lift stats come from /token_stats endpoint (batch job), not here
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     mean_ci: number;
@@ -45,9 +46,6 @@ export type SubcomponentActivationContexts = {
     example_ci: number[][]; // [n_examples][window_size]
     example_active_pos: number[]; // [n_examples]
     example_active_ci: number[]; // [n_examples]
-    // Token precision/recall - top tokens by each metric
-    top_recall: [string, number][]; // [(token, value), ...] sorted desc
-    top_precision: [string, number][]; // [(token, value), ...] sorted desc
 };
 
 export type ModelActivationContexts = {

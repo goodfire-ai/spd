@@ -49,6 +49,7 @@ export type ComponentSummary = {
 
 export type ActivationContextsSummary = Record<string, ComponentSummary[]>;
 
+// Note: Token P/R/lift stats come from /token_stats endpoint (batch job), not here
 export type ComponentDetail = {
     subcomponent_idx: number;
     mean_ci: number;
@@ -56,13 +57,6 @@ export type ComponentDetail = {
     example_ci: number[][];
     example_active_pos: number[];
     example_active_ci: number[];
-    top_recall: [string, number][]; // [(token, value), ...] sorted desc
-    top_precision: [string, number][]; // [(token, value), ...] sorted desc
-    // TODO: Re-enable token uplift after performance optimization
-    // predicted_tokens: string[];
-    // predicted_lifts: number[];
-    // predicted_firing_probs: number[];
-    // predicted_base_probs: number[];
 };
 
 export type CorrelatedComponent = {
@@ -75,6 +69,22 @@ export type ComponentCorrelations = {
     recall: CorrelatedComponent[];
     f1: CorrelatedComponent[];
     jaccard: CorrelatedComponent[];
+    pmi: CorrelatedComponent[];
+};
+
+// Token P/R/lift/PMI for a single category (input or output)
+export type TokenPRLiftPMI = {
+    top_recall: [string, number][]; // [(token, value), ...] sorted desc
+    top_precision: [string, number][]; // [(token, value), ...] sorted desc
+    top_lift: [string, number][]; // [(token, lift), ...] sorted desc
+    top_pmi: [string, number][]; // [(token, pmi), ...] highest positive association
+    bottom_pmi: [string, number][]; // [(token, pmi), ...] highest negative association
+};
+
+// Token stats from batch job - includes both input and output stats
+export type TokenStats = {
+    input: TokenPRLiftPMI; // What tokens activate this component
+    output: TokenPRLiftPMI; // What tokens this component predicts
 };
 
 export type SearchResult = {

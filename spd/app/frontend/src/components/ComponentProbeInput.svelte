@@ -28,9 +28,6 @@
 
         try {
             probeResult = await probeComponent(text, layer, componentIdx);
-        } catch (e) {
-            probeError = e instanceof Error ? e.message : "Failed to probe component";
-            probeResult = null;
         } finally {
             probeLoading = false;
         }

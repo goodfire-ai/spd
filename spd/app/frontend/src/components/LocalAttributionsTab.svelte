@@ -123,8 +123,6 @@
         try {
             const detail = await attrApi.getComponentDetail(layer, cIdx);
             componentDetailsCache[cacheKey] = detail;
-        } catch (e) {
-            console.error(`Failed to load component detail for ${cacheKey}:`, e);
         } finally {
             componentDetailsLoading[cacheKey] = false;
         }
@@ -181,28 +179,16 @@
     });
 
     async function loadServerStatus() {
-        try {
-            loadedRun = await mainApi.getStatus();
-            serverError = null;
-        } catch (e) {
-            serverError = e instanceof Error ? e.message : "Failed to connect to server";
-        }
+        loadedRun = await mainApi.getStatus();
+        serverError = null;
     }
 
     async function loadPromptsList() {
-        try {
-            prompts = await attrApi.listPrompts();
-        } catch (e) {
-            console.error("[LocalAttr] loadPromptsList FAILED:", e);
-        }
+        prompts = await attrApi.listPrompts();
     }
 
     async function loadAllTokens() {
-        try {
-            allTokens = await attrApi.getAllTokens();
-        } catch (e) {
-            console.error("[LocalAttr] loadAllTokens FAILED:", e);
-        }
+        allTokens = await attrApi.getAllTokens();
     }
 
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
@@ -210,35 +196,31 @@
 
         // Fetch stored graphs for this prompt (includes composer selection and intervention runs)
         let graphs: StoredGraph[] = [];
-        try {
-            const storedGraphs = await attrApi.getGraphs(
-                promptId,
-                defaultViewSettings.normalizeEdges,
-                defaultViewSettings.ciThreshold,
-            );
-            graphs = await Promise.all(
-                storedGraphs.map(async (data, idx) => {
-                    const isOptimized = !!data.optimization;
-                    const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
+        const storedGraphs = await attrApi.getGraphs(
+            promptId,
+            defaultViewSettings.normalizeEdges,
+            defaultViewSettings.ciThreshold,
+        );
+        graphs = await Promise.all(
+            storedGraphs.map(async (data, idx) => {
+                const isOptimized = !!data.optimization;
+                const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
 
-                    // Load intervention runs for this graph
-                    const runs = await mainApi.getInterventionRuns(data.id);
+                // Load intervention runs for this graph
+                const runs = await mainApi.getInterventionRuns(data.id);
 
-                    return {
-                        id: `graph-${idx}-${Date.now()}`,
-                        dbId: data.id,
-                        label,
-                        data,
-                        viewSettings: { ...defaultViewSettings },
-                        composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
-                        interventionRuns: runs,
-                        activeRunId: null,
-                    };
-                }),
-            );
-        } catch (e) {
-            console.warn("Failed to fetch graphs:", e);
-        }
+                return {
+                    id: `graph-${idx}-${Date.now()}`,
+                    dbId: data.id,
+                    label,
+                    data,
+                    viewSettings: { ...defaultViewSettings },
+                    composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
+                    interventionRuns: runs,
+                    activeRunId: null,
+                };
+            }),
+        );
 
         const newCard: PromptCard = {
             id: cardId,
@@ -356,8 +338,6 @@
                     ),
                 };
             });
-        } catch (e) {
-            console.error("Intervention failed:", e);
         } finally {
             runningIntervention = false;
         }
@@ -388,27 +368,23 @@
     async function handleDeleteRun(runId: number) {
         if (!activeCard || !activeGraph) return;
 
-        try {
-            await mainApi.deleteInterventionRun(runId);
+        await mainApi.deleteInterventionRun(runId);
 
-            promptCards = promptCards.map((card) => {
-                if (card.id !== activeCard.id) return card;
-                return {
-                    ...card,
-                    graphs: card.graphs.map((g) => {
-                        if (g.id !== activeGraph.id) return g;
-                        const newRuns = g.interventionRuns.filter((r) => r.id !== runId);
-                        return {
-                            ...g,
-                            interventionRuns: newRuns,
-                            activeRunId: g.activeRunId === runId ? null : g.activeRunId,
-                        };
-                    }),
-                };
-            });
-        } catch (e) {
-            console.error("Failed to delete run:", e);
-        }
+        promptCards = promptCards.map((card) => {
+            if (card.id !== activeCard.id) return card;
+            return {
+                ...card,
+                graphs: card.graphs.map((g) => {
+                    if (g.id !== activeGraph.id) return g;
+                    const newRuns = g.interventionRuns.filter((r) => r.id !== runId);
+                    return {
+                        ...g,
+                        interventionRuns: newRuns,
+                        activeRunId: g.activeRunId === runId ? null : g.activeRunId,
+                    };
+                }),
+            };
+        });
     }
 
     async function computeGraphForCard() {
@@ -435,76 +411,71 @@
             };
         }
 
-        try {
-            let data: GraphData;
+        let data: GraphData;
 
-            if (isOptimized) {
-                if (!optConfig.labelTokenId) throw new Error("Label token required for optimization");
-                data = await attrApi.computeGraphOptimizedStreaming(
-                    {
-                        promptId: activeCard.promptId,
-                        labelToken: optConfig.labelTokenId,
-                        normalize: defaultViewSettings.normalizeEdges,
-                        impMinCoeff: optConfig.impMinCoeff,
-                        ceLossCoeff: optConfig.ceLossCoeff,
-                        steps: optConfig.steps,
-                        pnorm: optConfig.pnorm,
-                        outputProbThreshold: 0.01,
-                        ciThreshold: defaultViewSettings.ciThreshold,
-                    },
-                    (progress) => {
-                        if (!loadingState) return;
-                        if (progress.stage === "graph") {
-                            loadingState.currentStage = 1;
-                            loadingState.stages[1].progress = progress.current / progress.total;
-                        } else {
-                            loadingState.stages[0].progress = progress.current / progress.total;
-                        }
-                    },
-                );
-            } else {
-                data = await attrApi.computeGraphStreaming(
-                    {
-                        promptId: activeCard.promptId,
-                        normalize: defaultViewSettings.normalizeEdges,
-                        ciThreshold: defaultViewSettings.ciThreshold,
-                    },
-                    (progress) => {
-                        if (!loadingState) return;
+        if (isOptimized) {
+            if (!optConfig.labelTokenId) throw new Error("Label token required for optimization");
+            data = await attrApi.computeGraphOptimizedStreaming(
+                {
+                    promptId: activeCard.promptId,
+                    labelToken: optConfig.labelTokenId,
+                    normalize: defaultViewSettings.normalizeEdges,
+                    impMinCoeff: optConfig.impMinCoeff,
+                    ceLossCoeff: optConfig.ceLossCoeff,
+                    steps: optConfig.steps,
+                    pnorm: optConfig.pnorm,
+                    outputProbThreshold: 0.01,
+                    ciThreshold: defaultViewSettings.ciThreshold,
+                },
+                (progress) => {
+                    if (!loadingState) return;
+                    if (progress.stage === "graph") {
+                        loadingState.currentStage = 1;
+                        loadingState.stages[1].progress = progress.current / progress.total;
+                    } else {
                         loadingState.stages[0].progress = progress.current / progress.total;
-                    },
-                );
-            }
-
-            const graphId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const label = isOptimized ? `Optimized (${optConfig.steps} steps)` : "Standard";
-
-            promptCards = promptCards.map((card) => {
-                if (card.id !== activeCard.id) return card;
-                return {
-                    ...card,
-                    graphs: [
-                        ...card.graphs,
-                        {
-                            id: graphId,
-                            dbId: data.id,
-                            label,
-                            data,
-                            viewSettings: { ...defaultViewSettings },
-                            composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
-                            interventionRuns: [],
-                            activeRunId: null,
-                        },
-                    ],
-                    activeGraphId: graphId,
-                };
-            });
-        } catch (e) {
-            computeError = e instanceof Error ? e.message : "Failed to compute graph";
-        } finally {
-            loadingCardId = null;
-            loadingState = null;
+                    }
+                },
+            );
+        } else {
+            data = await attrApi.computeGraphStreaming(
+                {
+                    promptId: activeCard.promptId,
+                    normalize: defaultViewSettings.normalizeEdges,
+                    ciThreshold: defaultViewSettings.ciThreshold,
+                },
+                (progress) => {
+                    if (!loadingState) return;
+                    loadingState.stages[0].progress = progress.current / progress.total;
+                },
+            );
         }
+
+        const graphId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const label = isOptimized ? `Optimized (${optConfig.steps} steps)` : "Standard";
+
+        promptCards = promptCards.map((card) => {
+            if (card.id !== activeCard.id) return card;
+            return {
+                ...card,
+                graphs: [
+                    ...card.graphs,
+                    {
+                        id: graphId,
+                        dbId: data.id,
+                        label,
+                        data,
+                        viewSettings: { ...defaultViewSettings },
+                        composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
+                        interventionRuns: [],
+                        activeRunId: null,
+                    },
+                ],
+                activeGraphId: graphId,
+            };
+        });
+        loadingCardId = null;
+        loadingState = null;
     }
 
     // Refetch graph data when normalize or ciThreshold changes (these affect server-side filtering)
@@ -535,8 +506,6 @@
                     }),
                 };
             });
-        } catch (e) {
-            console.warn("Failed to refetch graph:", e);
         } finally {
             refetchingGraphId = null;
         }
@@ -599,8 +568,6 @@
                 generateCount = count;
             });
             await loadPromptsList();
-        } catch (e) {
-            console.error("[LocalAttr] generatePrompts FAILED:", e);
         } finally {
             generatingGraphs = false;
         }
@@ -704,12 +671,12 @@
                                     >
                                 </div>
 
-                                {#if computeError}
+                                <!-- {#if computeError}
                                     <div class="error-banner">
                                         {computeError}
                                         <button onclick={() => computeGraphForCard()}>Retry</button>
                                     </div>
-                                {/if}
+                                {/if} -->
 
                                 <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
                                     {#if loadingCardId === activeCard.id && loadingState}

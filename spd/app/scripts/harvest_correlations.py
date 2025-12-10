@@ -18,6 +18,7 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.lib.component_correlations import (
     get_correlations_path,
+    get_token_stats_path,
     harvest_correlations,
 )
 from spd.data import DatasetConfig, create_data_loader
@@ -130,46 +131,73 @@ def main(
             global_seed=spd_config.seed,
         )
 
-        # Harvest correlations
+        # Get vocab size from tokenizer
+        vocab_size = tokenizer.vocab_size
+        assert vocab_size is not None, "tokenizer.vocab_size is None"
+
+        # Harvest correlations and token stats
         logger.info(
-            f"Harvesting correlations: {n_batches} batches × {batch_size} batch_size "
+            f"Harvesting correlations + token stats: {n_batches} batches × {batch_size} batch_size "
             f"× {context_length} context_length = {n_batches * batch_size * context_length:,} tokens"
         )
 
-        correlations = harvest_correlations(
+        result = harvest_correlations(
             config=spd_config,
             cm=model,
             train_loader=train_loader,
             ci_threshold=ci_threshold,
             n_batches=n_batches,
+            vocab_size=vocab_size,
         )
 
-        # Save
-        output_path = get_correlations_path(run_id)
-        correlations.save(output_path)
+        # Save correlations
+        correlations_path = get_correlations_path(run_id)
+        result.correlations.save(correlations_path)
 
-        logger.info(f"Done! Correlations saved to {output_path}")
-        logger.info(f"  - Components: {len(correlations.component_keys)}")
-        logger.info(f"  - Tokens processed: {correlations.n_tokens:,}")
+        # Save token stats
+        token_stats_path = get_token_stats_path(run_id)
+        result.token_stats.save(token_stats_path)
+
+        logger.info("Done!")
+        logger.info(f"  - Correlations saved to {correlations_path}")
+        logger.info(f"  - Token stats saved to {token_stats_path}")
+        logger.info(f"  - Components: {len(result.correlations.component_keys)}")
+        logger.info(f"  - Tokens processed: {result.correlations.n_tokens:,}")
 
         # Quick sanity check: show top correlations for first active component
         active_components = [
-            k for i, k in enumerate(correlations.component_keys) if correlations.count_i[i] > 0
+            k
+            for i, k in enumerate(result.correlations.component_keys)
+            if result.correlations.count_i[i] > 0
         ]
         if active_components:
             test_key = active_components[0]
-            top_corr = correlations.get_correlated(test_key, metric="f1", top_k=5)
+            top_corr = result.correlations.get_correlated(test_key, metric="f1", top_k=5)
             logger.info(f"  - Sample correlations for {test_key}:")
             for c in top_corr:
                 logger.info(f"      {c.component_key}: F1={c.score:.4f}")
+
+            # Show sample input token stats
+            input_stats = result.token_stats.get_input_stats(test_key, tokenizer, top_k=5)
+            if input_stats:
+                logger.info(f"  - Sample input token PMI for {test_key}:")
+                for tok, pmi_val in input_stats.top_pmi[:5]:
+                    logger.info(f"      {tok!r}: PMI={pmi_val:.2f}")
+
+            # Show sample output token stats
+            output_stats = result.token_stats.get_output_stats(test_key, tokenizer, top_k=5)
+            if output_stats:
+                logger.info(f"  - Sample output token PMI for {test_key}:")
+                for tok, pmi_val in output_stats.top_pmi[:5]:
+                    logger.info(f"      {tok!r}: PMI={pmi_val:.2f}")
 
         # Update status to completed
         if status_path:
             _update_status(
                 status_path,
                 "completed",
-                n_tokens=correlations.n_tokens,
-                n_components=len(correlations.component_keys),
+                n_tokens=result.correlations.n_tokens,
+                n_components=len(result.correlations.component_keys),
             )
 
     except Exception as e:

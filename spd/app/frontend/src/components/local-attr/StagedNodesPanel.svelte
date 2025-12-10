@@ -161,6 +161,7 @@
     .staged-item {
         flex-shrink: 0;
         width: fit-content;
+        max-width: 800px;
         border: 1px solid var(--border-default);
         padding: var(--space-3);
         background: var(--bg-elevated);

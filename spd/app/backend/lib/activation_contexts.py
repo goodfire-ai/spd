@@ -34,13 +34,10 @@ def get_activations_data(
     tokenizer: PreTrainedTokenizerBase,
     train_loader: DataLoader[Int[Tensor, "B S"]],
     token_strings: dict[int, str],
-    # TODO: Re-enable token uplift after performance optimization
-    # token_base_rates: dict[int, float],
     importance_threshold: float,
     n_batches: int,
     n_tokens_either_side: int,
     topk_examples: int,
-    topk_correlations: int,
     separation_tokens: int,
     onprogress: Callable[[float], None] | None = None,
 ) -> ModelActivationContexts:
@@ -61,25 +58,12 @@ def get_activations_data(
     examples = defaultdict[str, defaultdict[int, _TopKExamples]](
         lambda: defaultdict(lambda: _TopKExamples(k=topk_examples))
     )
-    # - the number of activations for each component
-    component_activation_counts = defaultdict[str, defaultdict[int, int]](lambda: defaultdict(int))
-    # - and the number of times each token activates for each component (input token)
-    component_activation_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
-        lambda: defaultdict(lambda: defaultdict(int))
-    )
-    # TODO: Re-enable token uplift after performance optimization
-    # - accumulated probability mass for each predicted token when component fires
-    # component_predicted_probs = defaultdict[str, defaultdict[int, dict[int, float]]](
-    #     lambda: defaultdict(lambda: defaultdict(float))
-    # )
     # - the sum of causal importances
     C = cm.C
     component_sum_cis = defaultdict[str, Float[Tensor, " C"]](
         lambda: torch.zeros(C, device=device, dtype=torch.float)
     )
 
-    # also track total occurrences of each token across all batches
-    total_token_counts = defaultdict[int, int](int)
     n_toks_seen = 0
 
     pad_token_id = int(getattr(tokenizer, "pad_token_id", None) or DEFAULT_PAD_TOKEN_ID)
@@ -98,13 +82,6 @@ def get_activations_data(
         B, S = batch.shape
 
         n_toks_seen += B * S
-
-        # Count all token occurrences in batch for precision calculation
-        token_ids_in_batch: Tensor
-        counts: Tensor
-        token_ids_in_batch, counts = batch.flatten().unique(return_counts=True)
-        for token_id, count in zip(token_ids_in_batch.tolist(), counts.tolist(), strict=True):
-            total_token_counts[token_id] += count
 
         with torch.no_grad():
             output_with_cache = cm(batch, cache_type="input")
@@ -195,40 +172,11 @@ def get_activations_data(
             window_ci_values_np = window_ci_values.cpu().numpy()
             ci_at_active_np = ci_at_active.cpu().numpy()
 
-            # Get token IDs at active position for token counting
-            active_token_ids = window_token_ids_np[:, n_tokens_either_side]
-
-            # TODO: Re-enable token uplift after performance optimization
-            # Get prediction probabilities at each firing position (full vocab)
-            # firing_pred_probs: Float[Tensor, "n_firings V"] = pred_probs[batch_idx, seq_idx]
-
             # Process by component - group firings and use batch add
             unique_components = np.unique(comp_idx_np)
             for c_idx in unique_components:
                 c_idx_int = int(c_idx)
                 mask_c = comp_idx_np == c_idx
-
-                # Update activation counts (all firings)
-                n_firings_for_component = int(mask_c.sum())
-                component_activation_counts[module_name][c_idx_int] += n_firings_for_component
-
-                # Update token counts for this component (input tokens)
-                tokens_for_component = active_token_ids[mask_c]
-                unique_tokens, token_counts = np.unique(tokens_for_component, return_counts=True)
-                for tok_id, count in zip(unique_tokens, token_counts, strict=True):
-                    component_activation_tokens[module_name][c_idx_int][int(tok_id)] += int(count)
-
-                # TODO: Re-enable token uplift after performance optimization
-                # Accumulate predicted token probability mass for this component
-                # probs_for_component: Float[Tensor, "n_c V"] = firing_pred_probs[
-                #     torch.from_numpy(mask_c).to(firing_pred_probs.device)
-                # ]
-                # prob_sums: Float[Tensor, " V"] = probs_for_component.sum(dim=0)
-                # prob_sums_cpu = prob_sums.cpu()
-                # for tok_id in range(prob_sums_cpu.shape[0]):
-                #     prob = float(prob_sums_cpu[tok_id])
-                #     if prob > 1e-6:  # Skip negligible probabilities
-                #         component_predicted_probs[module_name][c_idx_int][tok_id] += prob
 
                 # Apply position separation filter for example diversity only
                 if separation_tokens > 0:
@@ -264,33 +212,13 @@ def get_activations_data(
     logger.info("Building activation contexts from collected data...")
 
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
-    n_modules_to_process = len(component_activation_tokens)
-    for module_i, module_name in enumerate(component_activation_tokens):
+    n_modules_to_process = len(examples)
+    for module_i, module_name in enumerate(examples):
         logger.info(f"  Processing module {module_i + 1}/{n_modules_to_process}: {module_name}")
-        module_acts = component_activation_tokens[module_name]
-        # TODO: Re-enable token uplift after performance optimization
-        # module_predicted_probs = component_predicted_probs[module_name]
         module_examples = examples[module_name]
-        module_activation_counts = component_activation_counts[module_name]
         module_mean_cis = (component_sum_cis[module_name] / n_toks_seen).tolist()
         module_subcomponent_ctxs: list[SubcomponentActivationContexts] = []
-        for component_idx in module_acts:
-            top_recall, top_precision = _get_component_token_pr(
-                component_token_acts=module_acts[component_idx],
-                total_token_counts=total_token_counts,
-                token_strings=token_strings,
-                component_activation_count=module_activation_counts[component_idx],
-                top_k=topk_correlations,
-            )
-            # TODO: Re-enable token uplift after performance optimization
-            # predicted_tokens, predicted_lifts, predicted_firing_probs, predicted_base_probs = (
-            #     _get_component_predicted_tokens(
-            #         component_prob_sums=module_predicted_probs[component_idx],
-            #         token_strings=token_strings,
-            #         token_base_rates=token_base_rates,
-            #         component_activation_count=module_activation_counts[component_idx],
-            #     )
-            # )
+        for component_idx in module_examples:
             example_tokens, example_ci, example_active_pos, example_active_ci = module_examples[
                 component_idx
             ].as_columnar(token_strings)
@@ -301,12 +229,6 @@ def get_activations_data(
                 example_ci=example_ci,
                 example_active_pos=example_active_pos,
                 example_active_ci=example_active_ci,
-                top_recall=top_recall,
-                top_precision=top_precision,
-                # predicted_tokens=predicted_tokens,
-                # predicted_lifts=predicted_lifts,
-                # predicted_firing_probs=predicted_firing_probs,
-                # predicted_base_probs=predicted_base_probs,
             )
             module_subcomponent_ctxs.append(subcomponent_ctx)
         module_subcomponent_ctxs.sort(key=lambda x: x.mean_ci, reverse=True)
@@ -514,74 +436,3 @@ def _get_pad_indices_numpy(arr: NDArray[np.int64], pad_val: int) -> tuple[int, i
     return int(non_pad_indices[0]), int(non_pad_indices[-1]) + 1
 
 
-def _get_component_token_pr(
-    component_token_acts: dict[int, int],
-    total_token_counts: dict[int, int],
-    token_strings: dict[int, str],
-    component_activation_count: int,
-    top_k: int,
-) -> tuple[list[tuple[str, float]], list[tuple[str, float]]]:
-    """Return (top_recall, top_precision) as lists of (token, value) tuples."""
-    # Build list of (token_id, recall, precision)
-    token_data: list[tuple[int, float, float]] = []
-
-    for token_id in component_token_acts:
-        recall = component_token_acts[token_id] / component_activation_count
-        precision = component_token_acts[token_id] / total_token_counts[token_id]
-        token_data.append((token_id, recall, precision))
-
-    # Top by recall
-    by_recall = sorted(token_data, key=lambda x: x[1], reverse=True)[:top_k]
-    top_recall = [(token_strings[t[0]], round(t[1], 3)) for t in by_recall]
-
-    # Top by precision
-    by_precision = sorted(token_data, key=lambda x: x[2], reverse=True)[:top_k]
-    top_precision = [(token_strings[t[0]], round(t[2], 3)) for t in by_precision]
-
-    return top_recall, top_precision
-
-
-# TODO: Re-enable token uplift after performance optimization
-def _get_component_predicted_tokens(  # pyright: ignore[reportUnusedFunction]
-    component_prob_sums: dict[int, float],
-    token_strings: dict[int, str],
-    token_base_rates: dict[int, float],
-    component_activation_count: int,
-) -> tuple[list[str], list[float], list[float], list[float]]:
-    """Return columnar data: (tokens, lifts, firing_probs, base_probs) sorted by lift descending.
-
-    firing_prob = E[P(token) | component fires]
-    base_prob = E[P(token)] (from token_base_rates)
-    lift = firing_prob / base_prob
-    """
-    tokens: list[str] = []
-    lifts: list[float] = []
-    firing_probs: list[float] = []
-    base_probs: list[float] = []
-
-    for token_id, prob_sum in component_prob_sums.items():
-        firing_prob = prob_sum / component_activation_count
-        base_prob = token_base_rates.get(token_id, 0.0)
-
-        if base_prob < 1e-9:
-            # Avoid division by zero; skip tokens with essentially no base rate
-            logger.warning(
-                f"Token {token_id} ({token_strings.get(token_id, '?')}) has near-zero base rate, skipping"
-            )
-            continue
-
-        lift = firing_prob / base_prob
-
-        tokens.append(token_strings[token_id])
-        lifts.append(round(lift, 2))
-        firing_probs.append(round(firing_prob, 4))
-        base_probs.append(round(base_prob, 4))
-
-    # Sort by lift descending
-    sorted_indices = sorted(range(len(lifts)), key=lambda i: lifts[i], reverse=True)
-    tokens = [tokens[i] for i in sorted_indices]
-    lifts = [lifts[i] for i in sorted_indices]
-    firing_probs = [firing_probs[i] for i in sorted_indices]
-    base_probs = [base_probs[i] for i in sorted_indices]
-
-    return tokens, lifts, firing_probs, base_probs

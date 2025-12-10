@@ -20,7 +20,7 @@ from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
 class HarvestParams:
     """Parameters for correlation harvesting."""
 
-    n_batches: int = 3_000
+    n_batches: int = 100
     batch_size: int = 256
     context_length: int = 512
     ci_threshold: float = 1e-6

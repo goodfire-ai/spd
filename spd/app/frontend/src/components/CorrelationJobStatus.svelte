@@ -10,8 +10,7 @@
     export async function reload() {
         try {
             status = await api.getCorrelationJobStatus();
-        } catch (e) {
-            console.error("Failed to load correlation job status:", e);
+        } finally {
             status = null;
         }
     }
@@ -33,8 +32,6 @@
         try {
             await api.submitCorrelationJob();
             await reload();
-        } catch (e) {
-            console.error("Failed to submit correlation job:", e);
         } finally {
             submitting = false;
         }
@@ -69,9 +66,7 @@
                     Correlations: Ready ({formatTokenCount(status.n_tokens)} tokens)
                 </span>
             {:else if status.status === "failed"}
-                <span class="status-text failed" title={status.error}>
-                    Correlations: Failed
-                </span>
+                <span class="status-text failed" title={status.error}> Correlations: Failed </span>
             {/if}
 
             {#if showParams}
@@ -105,7 +100,6 @@
         display: flex;
         align-items: center;
         gap: var(--space-2);
-        margin-left: var(--space-2);
         padding-left: var(--space-2);
         border-left: 1px solid var(--border-default);
     }
