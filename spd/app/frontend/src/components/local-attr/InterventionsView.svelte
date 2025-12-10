@@ -9,7 +9,7 @@
         type NodePosition,
     } from "../../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
-    import { lerp } from "./graphUtils";
+    import { lerp, calcTooltipPos } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
 
     // Layout constants
@@ -292,17 +292,6 @@
             if (!isHoveringTooltip) hoveredNode = null;
             hoverTimeout = null;
         }, 50);
-    }
-
-    function calcTooltipPos(mouseX: number, mouseY: number) {
-        const padding = 15;
-        let left = mouseX + padding;
-        let top = mouseY + padding;
-        if (typeof window !== "undefined") {
-            if (left + 400 > window.innerWidth) left = mouseX - 400 - padding;
-            if (top + 300 > window.innerHeight) top = mouseY - 300 - padding;
-        }
-        return { x: Math.max(0, left), y: Math.max(0, top) };
     }
 
     function handleNodeClick(nodeKey: string) {

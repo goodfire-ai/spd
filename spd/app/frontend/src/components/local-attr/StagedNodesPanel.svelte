@@ -2,6 +2,7 @@
     import type { PinnedNode, ComponentDetail, ActivationContextsSummary, ComponentSummary, OutputProbEntry } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
+    import NodeHeader from "./NodeHeader.svelte";
 
     type Props = {
         stagedNodes: PinnedNode[];
@@ -29,6 +30,14 @@
 
     function unstageNode(node: PinnedNode) {
         onStagedNodesChange(stagedNodes.filter((n) => n !== node));
+    }
+
+    function pinComponent(layer: string, cIdx: number, seqIdx: number) {
+        const alreadyPinned = stagedNodes.some(
+            (n) => n.layer === layer && n.cIdx === cIdx && n.seqIdx === seqIdx
+        );
+        if (alreadyPinned) return;
+        onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
     }
 
     function getTokenAtPosition(seqIdx: number): string {
@@ -60,13 +69,13 @@
                 {@const isOutput = node.layer === "output"}
                 {@const isWte = node.layer === "wte"}
                 <div class="staged-item">
-                    <div class="staged-header">
-                        <div class="node-info">
-                            <strong>{node.layer}:{node.seqIdx}:{node.cIdx}</strong>
-                            <span class="token-preview">"{token}"</span>
-                        </div>
-                        <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>
-                    </div>
+                    <NodeHeader
+                        layer={node.layer}
+                        seqIdx={node.seqIdx}
+                        cIdx={node.cIdx}
+                        token={token}
+                        onClose={() => unstageNode(node)}
+                    />
 
                     {#if isWte}
                         <p class="wte-info">Input embedding at position {node.seqIdx}</p>
@@ -85,6 +94,7 @@
                                 {summary}
                                 {detail}
                                 compact={true}
+                                onPinComponent={pinComponent}
                             />
                         {:else}
                             <ComponentNodeCard
@@ -95,6 +105,7 @@
                                 detail={null}
                                 {isLoading}
                                 compact={true}
+                                onPinComponent={pinComponent}
                             />
                         {/if}
                     {/if}
@@ -108,7 +119,6 @@
     .staged-container {
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
-        border-top: none;
         padding: var(--space-3);
     }
 
@@ -144,52 +154,10 @@
 
     .staged-item {
         flex-shrink: 0;
-        min-width: 300px;
-        max-width: 400px;
+        width: fit-content;
         border: 1px solid var(--border-default);
         padding: var(--space-3);
         background: var(--bg-elevated);
-    }
-
-    .staged-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding-bottom: var(--space-2);
-        border-bottom: 1px solid var(--border-subtle);
-        margin-bottom: var(--space-2);
-    }
-
-    .node-info {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-1);
-    }
-
-    .staged-header strong {
-        font-family: var(--font-mono);
-        font-size: var(--text-base);
-        color: var(--accent-primary);
-        font-weight: 600;
-    }
-
-    .token-preview {
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-        color: var(--text-muted);
-    }
-
-    .unstage-btn {
-        background: var(--bg-elevated);
-        color: var(--text-secondary);
-        border: 1px solid var(--border-default);
-        padding: var(--space-1) var(--space-2);
-    }
-
-    .unstage-btn:hover {
-        background: var(--bg-inset);
-        color: var(--text-primary);
-        border-color: var(--border-strong);
     }
 
     .wte-info {

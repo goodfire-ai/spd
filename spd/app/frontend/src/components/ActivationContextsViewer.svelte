@@ -122,6 +122,7 @@
         </div>
 
         <div class="pagination">
+            <label for="page-input">Subcomponent:</label>
             <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
             <input
                 type="number"
@@ -216,7 +217,7 @@
         gap: var(--space-2);
     }
 
-    .layer-select label {
+    .viewer-content label {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);

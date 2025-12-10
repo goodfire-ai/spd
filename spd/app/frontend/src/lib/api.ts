@@ -213,3 +213,52 @@ export async function deleteInterventionRun(runId: number): Promise<void> {
     }
 }
 
+// Correlation job types and API
+
+export type HarvestParams = {
+    n_batches: number;
+    batch_size: number;
+    context_length: number;
+    ci_threshold: number;
+};
+
+// Discriminated union for job status - all jobs have these base fields
+type JobBase = { job_id: string; submitted_at: string; params: HarvestParams };
+
+export type PendingStatus = JobBase & { status: "pending"; last_log_line: string | null };
+export type RunningStatus = JobBase & { status: "running"; last_log_line: string | null };
+export type CompletedStatus = JobBase & { status: "completed"; n_tokens: number; n_components: number };
+export type FailedStatus = JobBase & { status: "failed"; error: string };
+
+export type CorrelationJobStatus = PendingStatus | RunningStatus | CompletedStatus | FailedStatus;
+
+export type SubmitJobResponse = {
+    job_id: string;
+    status: "pending";
+};
+
+/** Get the correlation job status for the current run. Returns null if no job exists (404). */
+export async function getCorrelationJobStatus(): Promise<CorrelationJobStatus | null> {
+    const response = await fetch(`${API_URL}/api/correlation_jobs/status`);
+    if (response.status === 404) {
+        return null;
+    }
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get correlation job status");
+    }
+    return (await response.json()) as CorrelationJobStatus;
+}
+
+/** Submit a SLURM job to harvest correlations */
+export async function submitCorrelationJob(): Promise<SubmitJobResponse> {
+    const response = await fetch(`${API_URL}/api/correlation_jobs/submit`, {
+        method: "POST",
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to submit correlation job");
+    }
+    return (await response.json()) as SubmitJobResponse;
+}
+

@@ -259,8 +259,13 @@ def get_activations_data(
                     onprogress(progress)
                 last_progress_time = current_time
 
+    pbar.close()
+    logger.info("Building activation contexts from collected data...")
+
     model_ctxs: dict[str, list[SubcomponentActivationContexts]] = {}
-    for module_name in component_activation_tokens:
+    n_modules_to_process = len(component_activation_tokens)
+    for module_i, module_name in enumerate(component_activation_tokens):
+        logger.info(f"  Processing module {module_i + 1}/{n_modules_to_process}: {module_name}")
         module_acts = component_activation_tokens[module_name]
         # TODO: Re-enable token uplift after performance optimization
         # module_predicted_probs = component_predicted_probs[module_name]
@@ -306,8 +311,10 @@ def get_activations_data(
         module_subcomponent_ctxs.sort(key=lambda x: x.mean_ci, reverse=True)
         model_ctxs[module_name] = module_subcomponent_ctxs
 
-    logger.info("Completed streaming activation contexts")
-    return ModelActivationContexts(layers=model_ctxs)
+    logger.info("Building ModelActivationContexts...")
+    result = ModelActivationContexts(layers=model_ctxs)
+    logger.info("Completed activation contexts harvesting")
+    return result
 
 
 def compute_token_base_rates(

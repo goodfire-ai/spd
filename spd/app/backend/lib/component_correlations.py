@@ -6,10 +6,9 @@ F1, Jaccard similarity, and PMI.
 """
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 import torch
 import tqdm
@@ -17,53 +16,75 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from spd.app.backend.db.database import CORRELATIONS_DIR
 from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 
-CORRELATIONS_DIR = Path(__file__).parent.parent.parent.parent.parent / "correlations"
+
+class MetricFn(Protocol):
+    def __call__(
+        self,
+        count_i: Tensor,
+        count_j: Float[Tensor, " n"],
+        count_ij: Float[Tensor, " n"],
+        n_tokens: int,
+    ) -> Float[Tensor, " n"]: ...
+
+
+def _precision(
+    count_i: Tensor,
+    count_j: Float[Tensor, " n"],  # pyright: ignore[reportUnusedParameter]
+    count_ij: Float[Tensor, " n"],
+    n_tokens: int,  # pyright: ignore[reportUnusedParameter]
+) -> Float[Tensor, " n"]:
+    return torch.where(count_i > 0, count_ij / count_i, float("-inf"))
+
+
+def _recall(
+    count_i: Tensor,  # pyright: ignore[reportUnusedParameter]
+    count_j: Float[Tensor, " n"],
+    count_ij: Float[Tensor, " n"],
+    n_tokens: int,  # pyright: ignore[reportUnusedParameter]
+) -> Float[Tensor, " n"]:
+    return torch.where(count_j > 0, count_ij / count_j, float("-inf"))
+
+
+def _f1(
+    count_i: Tensor,
+    count_j: Float[Tensor, " n"],
+    count_ij: Float[Tensor, " n"],
+    n_tokens: int,
+) -> Float[Tensor, " n"]:
+    precision = _precision(count_i, count_j, count_ij, n_tokens)
+    recall = _recall(count_i, count_j, count_ij, n_tokens)
+    denominator = precision + recall
+    return torch.where(denominator > 0, 2 * precision * recall / denominator, float("-inf"))
+
+
+def _jaccard(
+    count_i: Tensor,
+    count_j: Float[Tensor, " n"],
+    count_ij: Float[Tensor, " n"],
+    n_tokens: int,  # pyright: ignore[reportUnusedParameter]
+) -> Float[Tensor, " n"]:
+    union = count_i + count_j - count_ij
+    return torch.where(union > 0, count_ij / union, float("-inf"))
+
+
+def _pmi(
+    count_i: Tensor,
+    count_j: Float[Tensor, " n"],
+    count_ij: Float[Tensor, " n"],
+    n_tokens: int,
+) -> Float[Tensor, " n"]:
+    return torch.where(
+        count_ij > 0.0, math.log(count_ij * n_tokens / (count_i * count_j)), float("-inf")
+    )
+
 
 Metric = Literal["precision", "recall", "f1", "jaccard", "pmi"]
-
-# Type for metric functions: (count_i, count_j, count_ij, n_tokens) -> score
-MetricFn = Callable[[float, float, float, int], float]
-
-
-def _precision(count_i: float, count_j: float, count_ij: float, n_tokens: int) -> float:  # pyright: ignore[reportUnusedParameter]
-    """P(j fires | i fires) = count_ij / count_i"""
-    return count_ij / count_i
-
-
-def _recall(count_i: float, count_j: float, count_ij: float, n_tokens: int) -> float:  # pyright: ignore[reportUnusedParameter]
-    """P(i fires | j fires) = count_ij / count_j"""
-    return count_ij / count_j
-
-
-def _f1(count_i: float, count_j: float, count_ij: float, n_tokens: int) -> float:  # pyright: ignore[reportUnusedParameter]
-    """Harmonic mean of precision and recall."""
-    precision = count_ij / count_i
-    recall = count_ij / count_j
-    if precision + recall == 0:
-        return 0.0
-    return 2 * precision * recall / (precision + recall)
-
-
-def _jaccard(count_i: float, count_j: float, count_ij: float, n_tokens: int) -> float:  # pyright: ignore[reportUnusedParameter]
-    """|i ∩ j| / |i ∪ j|"""
-    union = count_i + count_j - count_ij
-    if union == 0:
-        return 0.0
-    return count_ij / union
-
-
-def _pmi(count_i: float, count_j: float, count_ij: float, n_tokens: int) -> float:
-    """Pointwise mutual information: log(P(i,j) / (P(i) * P(j)))"""
-    if count_ij == 0:
-        return float("-inf")
-    return math.log(count_ij * n_tokens / (count_i * count_j))
-
-
 METRIC_FNS: dict[Metric, MetricFn] = {
     "precision": _precision,
     "recall": _recall,
@@ -131,7 +152,7 @@ class ComponentCorrelations:
         count_ij_row = self._get_cooccurrence_row(i)
 
         # Compute scores vectorized
-        scores = self._compute_metric_vectorized(metric, count_i_val, self.count_i, count_ij_row)
+        scores = METRIC_FNS[metric](count_i_val, self.count_i, count_ij_row, self.n_tokens)
 
         # Mask out self and zeros
         scores[i] = float("-inf")
@@ -142,47 +163,17 @@ class ComponentCorrelations:
         top_k_clamped = min(top_k, len(scores))
         top_values, top_indices = torch.topk(scores, top_k_clamped)
 
-        # Filter out -inf values and build result
+        # Filter out -inf (our sentinel for "excluded") but fail on unexpected non-finite values
         result = []
-        for idx, val in zip(top_indices.tolist(), top_values.tolist()):
+        for idx, val in zip(top_indices.tolist(), top_values.tolist(), strict=True):
             if val == float("-inf"):
-                break
+                continue
+            assert math.isfinite(val), (
+                f"Unexpected non-finite score {val} for {self.component_keys[idx]}"
+            )
             result.append(CorrelatedComponent(component_key=self.component_keys[idx], score=val))
 
         return result
-
-    def _compute_metric_vectorized(
-        self,
-        metric: Metric,
-        count_i: Tensor,
-        count_j: Float[Tensor, " n"],
-        count_ij: Float[Tensor, " n"],
-    ) -> Float[Tensor, " n"]:
-        """Compute correlation metric for all j given fixed i (vectorized)."""
-        # Avoid division by zero
-        eps = 1e-10
-
-        if metric == "precision":
-            # P(j | i) = count_ij / count_i
-            return count_ij / (count_i + eps)
-        elif metric == "recall":
-            # P(i | j) = count_ij / count_j
-            return count_ij / (count_j + eps)
-        elif metric == "f1":
-            precision = count_ij / (count_i + eps)
-            recall = count_ij / (count_j + eps)
-            return 2 * precision * recall / (precision + recall + eps)
-        elif metric == "jaccard":
-            union = count_i + count_j - count_ij
-            return count_ij / (union + eps)
-        elif metric == "pmi":
-            # PMI = log(P(i,j) / (P(i) * P(j))) = log(count_ij * n / (count_i * count_j))
-            # Use log(a/b) = log(a) - log(b) for numerical stability
-            log_joint = torch.log(count_ij * self.n_tokens + eps)
-            log_marginal = torch.log(count_i + eps) + torch.log(count_j + eps)
-            return log_joint - log_marginal
-        else:
-            raise ValueError(f"Unknown metric: {metric}")
 
     def save(self, path: Path) -> None:
         """Save correlations to a .pt file."""
@@ -202,10 +193,17 @@ class ComponentCorrelations:
     def load(cls, path: Path) -> "ComponentCorrelations":
         """Load correlations from a .pt file."""
         data = torch.load(path, weights_only=True)
+        count_i = data["count_i"]
+        count_ij = data["count_ij"]
+
+        # Validate no inf/nan in stored data
+        assert torch.isfinite(count_i).all(), "count_i contains non-finite values"
+        assert torch.isfinite(count_ij).all(), "count_ij contains non-finite values"
+
         return cls(
             component_keys=data["component_keys"],
-            count_i=data["count_i"],
-            count_ij=data["count_ij"],
+            count_i=count_i,
+            count_ij=count_ij,
             n_tokens=data["n_tokens"],
         )
 
@@ -223,11 +221,6 @@ def harvest_correlations(
     n_batches: int,
 ) -> ComponentCorrelations:
     """Stream through dataset, accumulate co-occurrence counts, compute correlations.
-
-    Optimized for GPU execution with:
-    - Half precision for binary activations (reduces memory bandwidth)
-    - Fused operations where possible
-    - Minimal CPU-GPU transfers
 
     Args:
         config: Model config (for sampling settings)
@@ -265,7 +258,9 @@ def harvest_correlations(
 
     train_iter = iter(train_loader)
     for _ in tqdm.tqdm(range(n_batches), desc="Harvesting correlations"):
-        batch: Int[Tensor, "B S"] = extract_batch_data(next(train_iter)).to(device, non_blocking=True)
+        batch: Int[Tensor, "B S"] = extract_batch_data(next(train_iter)).to(
+            device, non_blocking=True
+        )
         B, S = batch.shape
         n_tokens += B * S
 
@@ -283,18 +278,18 @@ def harvest_correlations(
             ci_stacked = torch.stack(ci_list, dim=2)
             ci_flat: Float[Tensor, "B S n_components"] = ci_stacked.view(B, S, n_components)
 
-            # Binarize - use half precision for the matmul (2x memory bandwidth savings)
-            # The threshold comparison produces bool, convert to float16 for matmul
-            binary_acts = (ci_flat > ci_threshold).to(torch.float16)
+            # Binarize to float32
+            binary_acts = (ci_flat > ci_threshold).to(torch.float32)
 
-            # Accumulate firing counts (sum to float32)
-            count_i += binary_acts.sum(dim=(0, 1), dtype=torch.float32)
+            # Accumulate firing counts
+            count_i += binary_acts.sum(dim=(0, 1))
 
             # Accumulate co-occurrence: (B*S, n_components).T @ (B*S, n_components)
-            # This is the hot path - matmul benefits from tensor cores with float16
             flat = binary_acts.view(B * S, n_components)
-            # matmul in float16, accumulate to float32
-            count_ij += (flat.T @ flat).to(torch.float32)
+            count_ij += flat.T @ flat
+
+            assert torch.isfinite(count_i).all(), "count_i has non-finite values"
+            assert torch.isfinite(count_ij).all(), "count_ij has non-finite values"
 
     # Keep only upper triangular (including diagonal)
     count_ij = torch.triu(count_ij)

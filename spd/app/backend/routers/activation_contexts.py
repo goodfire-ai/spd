@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
+from spd.log import logger
 from spd.app.backend.lib.component_correlations import (
     ComponentCorrelations,
     get_correlations_path,
@@ -39,7 +40,7 @@ def _ensure_activation_contexts_cached(
 ) -> ModelActivationContexts | None:
     """Load activation contexts into cache if not already loaded."""
     if loaded.activation_contexts_cache is None:
-        contexts = manager.db.get_activation_contexts(loaded.run.id)
+        contexts = manager.db.get_activation_contexts(loaded.run.id, loaded.context_length)
         if contexts is not None:
             loaded.activation_contexts_cache = contexts
     return loaded.activation_contexts_cache
@@ -75,7 +76,7 @@ def get_activation_contexts_config(
     loaded: DepLoadedRun,
 ) -> ActivationContextsGenerationConfig | None:
     """Return the config used to generate the stored activation contexts."""
-    return manager.db.get_activation_contexts_config(loaded.run.id)
+    return manager.db.get_activation_contexts_config(loaded.run.id, loaded.context_length)
 
 
 @router.get("/{layer}/{component_idx}")
@@ -164,7 +165,9 @@ def generate_activation_contexts(
                 separation_tokens=separation_tokens,
                 onprogress=on_progress,
             )
-            db.set_activation_contexts(loaded.run.id, act_contexts, config)
+            logger.info("Saving activation contexts to database...")
+            db.set_activation_contexts(loaded.run.id, loaded.context_length, act_contexts, config)
+            logger.info("Saved activation contexts to database")
 
             # Clear cache so it reloads from DB
             loaded.activation_contexts_cache = None
@@ -255,6 +258,7 @@ def _get_correlations(run_id: str) -> ComponentCorrelations | None:
 
     path = get_correlations_path(run_id)
     if not path.exists():
+        print(f"Correlations file not found at {path}")
         return None
 
     correlations = ComponentCorrelations.load(path)
@@ -280,6 +284,7 @@ def get_component_correlations(
     correlations = _get_correlations(run_id)
 
     if correlations is None:
+        print(f"No correlations found for run {run_id}")
         return None
 
     component_key = f"{layer}:{component_idx}"

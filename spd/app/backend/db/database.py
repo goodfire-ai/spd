@@ -19,8 +19,12 @@ from spd.app.backend.schemas import (
     ModelActivationContexts,
     OutputProbability,
 )
+from spd.settings import REPO_ROOT
 
-DEFAULT_DB_PATH = Path.home() / ".spd" / "local_attr.db"
+# Persistent data directories
+_APP_DATA_DIR = REPO_ROOT / ".data" / "app"
+DEFAULT_DB_PATH = _APP_DATA_DIR / "local_attr.db"
+CORRELATIONS_DIR = _APP_DATA_DIR / "correlations"
 
 
 class Run(BaseModel):
@@ -133,9 +137,11 @@ class LocalAttrDB:
             );
 
             CREATE TABLE IF NOT EXISTS activation_contexts (
-                run_id INTEGER PRIMARY KEY REFERENCES runs(id),
+                run_id INTEGER NOT NULL REFERENCES runs(id),
+                context_length INTEGER NOT NULL,
                 data BLOB NOT NULL,
-                config TEXT
+                config TEXT,
+                PRIMARY KEY (run_id, context_length)
             );
 
             CREATE TABLE IF NOT EXISTS prompts (
@@ -250,11 +256,14 @@ class LocalAttrDB:
     # Activation contexts operations
     # -------------------------------------------------------------------------
 
-    def get_activation_contexts(self, run_id: int) -> ModelActivationContexts | None:
-        """Get the stored activation contexts for a run as a Pydantic model."""
+    def get_activation_contexts(
+        self, run_id: int, context_length: int
+    ) -> ModelActivationContexts | None:
+        """Get the stored activation contexts for a run + context_length."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT data FROM activation_contexts WHERE run_id = ?", (run_id,)
+            "SELECT data FROM activation_contexts WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
         ).fetchone()
         if row is None:
             return None
@@ -265,35 +274,38 @@ class LocalAttrDB:
     def set_activation_contexts(
         self,
         run_id: int,
+        context_length: int,
         contexts: ModelActivationContexts,
         config: ActivationContextsGenerationConfig | None = None,
     ) -> None:
-        """Store activation contexts for a run."""
+        """Store activation contexts for a run + context_length."""
         conn = self._get_conn()
         json_bytes = json.dumps(contexts.model_dump()).encode("utf-8")
         compressed = gzip.compress(json_bytes)
         config_json = json.dumps(config.model_dump()) if config else None
         conn.execute(
-            "INSERT OR REPLACE INTO activation_contexts (run_id, data, config) VALUES (?, ?, ?)",
-            (run_id, compressed, config_json),
+            "INSERT OR REPLACE INTO activation_contexts (run_id, context_length, data, config) VALUES (?, ?, ?, ?)",
+            (run_id, context_length, compressed, config_json),
         )
         conn.commit()
 
-    def has_activation_contexts(self, run_id: int) -> bool:
-        """Check if activation contexts exist for a run."""
+    def has_activation_contexts(self, run_id: int, context_length: int) -> bool:
+        """Check if activation contexts exist for a run + context_length."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT 1 FROM activation_contexts WHERE run_id = ?", (run_id,)
+            "SELECT 1 FROM activation_contexts WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
         ).fetchone()
         return row is not None
 
     def get_activation_contexts_config(
-        self, run_id: int
+        self, run_id: int, context_length: int
     ) -> ActivationContextsGenerationConfig | None:
-        """Get the config used to generate activation contexts for a run."""
+        """Get the config used to generate activation contexts for a run + context_length."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT config FROM activation_contexts WHERE run_id = ?", (run_id,)
+            "SELECT config FROM activation_contexts WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
         ).fetchone()
         if row is None or row["config"] is None:
             return None

@@ -6,14 +6,15 @@
     import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
+    import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
-    let trainWandbRunEntry = $state<string | null>("goodfire/spd/jyo9duz5");
-    let contextLength = $state<number | null>(8);
+    let trainWandbRunEntry = $state<string | null>("goodfire/spd/vjbol27n");
+    let contextLength = $state<number | null>(512);
 
     let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
@@ -22,6 +23,9 @@
     // Lifted activation contexts state - shared between tabs
     let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
     let activationContextsMissing = $state(false);
+
+    // Reference to correlation job component for reloading
+    let correlationJobStatus: CorrelationJobStatus;
 
     async function loadStatus() {
         if (loadingTrainRun) return;
@@ -44,8 +48,9 @@
             trainWandbRunEntry = loadedRun.wandb_path;
             contextLength = loadedRun.context_length;
 
-            // Load activation contexts summary
+            // Load activation contexts summary and correlation status
             loadActivationContextsSummary();
+            correlationJobStatus?.reload();
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
@@ -106,6 +111,18 @@
                 bind:value={trainWandbRunEntry}
                 disabled={loadingTrainRun}
             />
+            <label for="context-length">Context Length:</label>
+            <input
+                type="number"
+                id="context-length"
+                bind:value={contextLength}
+                disabled={loadingTrainRun}
+                min="1"
+                max="2048"
+            />
+            <button class="load-button" type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
+                {loadingTrainRun ? "..." : "Load"}
+            </button>
             {#if loadedRun}
                 <div
                     class="config-wrapper"
@@ -120,19 +137,9 @@
                         </div>
                     {/if}
                 </div>
+
+                <CorrelationJobStatus bind:this={correlationJobStatus} />
             {/if}
-            <label for="context-length">Context Length:</label>
-            <input
-                type="number"
-                id="context-length"
-                bind:value={contextLength}
-                disabled={loadingTrainRun}
-                min="1"
-                max="2048"
-            />
-            <button class="load-button" type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
-                {loadingTrainRun ? "..." : "Load"}
-            </button>
         </form>
     </header>
 
@@ -193,7 +200,6 @@
         padding: var(--space-2) var(--space-3);
         background: var(--bg-surface);
         border-bottom: 1px solid var(--border-default);
-        /* flex-shrink: 0; */
     }
 
     .run-input {

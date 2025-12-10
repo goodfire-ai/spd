@@ -1,0 +1,325 @@
+/* Elegant serif styling for markdown rendering */
+
+/* Google Fonts - refined serifs */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+:root {
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a4a4a;
+  --text-muted: #6b6b6b;
+  --bg-primary: #fefefe;
+  --bg-code: #f8f6f3;
+  --border-subtle: #e8e4df;
+  --accent: #8b4513;
+  --link: #2c5282;
+  --link-hover: #1a365d;
+}
+
+body {
+  font-family: "Spectral", "Cormorant Garamond", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  font-size: 18px;
+  line-height: 1.8;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 2rem;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Cormorant Garamond", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  font-weight: 500;
+  line-height: 1.3;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+}
+
+h1 {
+  font-size: 2.4rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.8rem;
+  margin-top: 0;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: 1.8rem;
+  margin-top: 3rem;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 1.4rem;
+  color: var(--text-secondary);
+}
+
+h4 {
+  font-size: 1.2rem;
+  font-style: italic;
+  font-weight: 500;
+}
+
+h5, h6 {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* Paragraphs */
+p {
+  margin: 1.25rem 0;
+  text-align: justify;
+  hyphens: auto;
+}
+
+/* Links */
+a {
+  color: var(--link);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+a:hover {
+  color: var(--link-hover);
+  border-bottom-color: var(--link-hover);
+}
+
+/* Lists */
+ul, ol {
+  margin: 1.25rem 0;
+  padding-left: 1.5rem;
+}
+
+li {
+  margin: 0.5rem 0;
+}
+
+li::marker {
+  color: var(--text-muted);
+}
+
+/* Blockquotes */
+blockquote {
+  margin: 2rem 0;
+  padding: 1rem 1.5rem;
+  border-left: 3px solid var(--accent);
+  background-color: var(--bg-code);
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+blockquote p {
+  margin: 0;
+}
+
+blockquote cite {
+  display: block;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  font-style: normal;
+  color: var(--text-muted);
+}
+
+/* Code */
+code {
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Monaco", "Inconsolata", monospace;
+  font-size: 0.85em;
+  background-color: #f6f8fa;
+  color: #24292f;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  border: 1px solid #e1e4e8;
+}
+
+pre {
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  background-color: #f6f8fa;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #24292f;
+}
+
+/* Syntax highlighting - GitHub Light inspired */
+pre code .comment,
+pre code .prolog,
+pre code .doctype,
+pre code .cdata { color: #25476d; font-style: italic; }
+
+pre code .punctuation { color: #24292f; }
+
+pre code .property,
+pre code .tag,
+pre code .constant,
+pre code .symbol,
+pre code .deleted { color: #22863a; }
+
+pre code .boolean,
+pre code .number { color: #005cc5; }
+
+pre code .selector,
+pre code .attr-name,
+pre code .string,
+pre code .char,
+pre code .builtin,
+pre code .inserted { color: #032f62; }
+
+pre code .operator,
+pre code .entity,
+pre code .url,
+pre code .variable { color: #d73a49; }
+
+pre code .atrule,
+pre code .attr-value,
+pre code .function { color: #6f42c1; }
+
+pre code .class-name,
+pre code .type,
+pre code .type-name,
+pre code .maybe-class-name,
+pre code .builtin-type,
+pre code .class,
+pre code .interface,
+pre code .namespace { color: #0969a5; }
+
+pre code .keyword { color: #d73a49; }
+
+pre code .regex,
+pre code .important { color: #e36209; }
+
+/* Tables */
+table {
+  width: 100%;
+  margin: 1.5rem 0;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th, td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+}
+
+tr:hover {
+  background-color: var(--bg-code);
+}
+
+/* Horizontal rule */
+hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--border-subtle) 20%,
+    var(--border-subtle) 80%,
+    transparent
+  );
+  margin: 3rem 0;
+}
+
+/* Images */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 2rem auto;
+  border-radius: 4px;
+}
+
+/* Strong and emphasis */
+strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+em {
+  font-style: italic;
+}
+
+/* Definition lists */
+dl {
+  margin: 1.5rem 0;
+}
+
+dt {
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+dd {
+  margin-left: 1.5rem;
+  color: var(--text-secondary);
+}
+
+/* Task lists */
+input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: var(--accent);
+}
+
+/* Footnotes */
+.footnote-ref {
+  font-size: 0.75em;
+  vertical-align: super;
+}
+
+.footnotes {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* Selection */
+::selection {
+  background-color: #d4c5b0;
+  color: var(--text-primary);
+}
+
+/* Print styles */
+@media print {
+  body {
+    font-size: 12pt;
+    max-width: none;
+    padding: 0;
+  }
+
+  a {
+    color: var(--text-primary);
+    border: none;
+  }
+
+  pre, blockquote {
+    page-break-inside: avoid;
+  }
+
+  h1, h2, h3 {
+    page-break-after: avoid;
+  }
+}

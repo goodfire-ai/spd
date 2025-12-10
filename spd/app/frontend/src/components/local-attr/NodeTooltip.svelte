@@ -1,7 +1,13 @@
 <script lang="ts">
-    import type { ActivationContextsSummary, ComponentDetail, ComponentSummary, OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import type {
+        ActivationContextsSummary,
+        ComponentDetail,
+        ComponentSummary,
+        OutputProbEntry,
+    } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
+    import NodeHeader from "./NodeHeader.svelte";
 
     type HoveredNode = {
         layer: string;
@@ -19,6 +25,7 @@
         tokens: string[];
         onMouseEnter: () => void;
         onMouseLeave: () => void;
+        onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     };
 
     let {
@@ -31,6 +38,7 @@
         tokens,
         onMouseEnter,
         onMouseLeave,
+        onPinComponent,
     }: Props = $props();
 
     // Returns null if: not yet loaded, layer not in harvest, or component not above threshold
@@ -44,10 +52,11 @@
     const isWte = $derived(hoveredNode.layer === "wte");
     const isOutput = $derived(hoveredNode.layer === "output");
 
-    const inputToken = $derived.by(() => {
-        if (!isWte) return null;
+    const token = $derived.by(() => {
         if (hoveredNode.seqIdx >= tokens.length) {
-            throw new Error(`NodeTooltip: seqIdx ${hoveredNode.seqIdx} out of bounds for tokens length ${tokens.length}`);
+            throw new Error(
+                `NodeTooltip: seqIdx ${hoveredNode.seqIdx} out of bounds for tokens length ${tokens.length}`,
+            );
         }
         return tokens[hoveredNode.seqIdx];
     });
@@ -60,20 +69,14 @@
     onmouseenter={onMouseEnter}
     onmouseleave={onMouseLeave}
 >
-    <h3>{hoveredNode.layer}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
+    <NodeHeader layer={hoveredNode.layer} seqIdx={hoveredNode.seqIdx} cIdx={hoveredNode.cIdx} {token} />
     {#if isWte}
-        <div class="wte-content">
-            <div class="wte-token">"{inputToken}"</div>
-            <p class="wte-stats">
-                <strong>Position:</strong> {hoveredNode.seqIdx}
-            </p>
-        </div>
+        <p class="wte-info">Input embedding at position {hoveredNode.seqIdx}</p>
     {:else if isOutput}
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
     {:else}
         {@const cacheKey = `${hoveredNode.layer}:${hoveredNode.cIdx}`}
         {@const detail = componentDetailsCache[cacheKey] ?? null}
-        {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
         {@const summary = findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
         {#if detail}
             <ComponentNodeCard
@@ -83,8 +86,10 @@
                 {summary}
                 {detail}
                 compact={true}
+                {onPinComponent}
             />
         {:else}
+            {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
             <ComponentNodeCard
                 layer={hoveredNode.layer}
                 cIdx={hoveredNode.cIdx}
@@ -93,6 +98,7 @@
                 detail={null}
                 {isLoading}
                 compact={true}
+                {onPinComponent}
             />
         {/if}
     {/if}
@@ -105,44 +111,16 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
         padding: var(--space-3);
-        max-width: 500px;
+        width: fit-content;
         max-height: 80vh;
         overflow-y: auto;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
-    .node-tooltip h3 {
-        margin: 0 0 var(--space-2) 0;
+    .wte-info {
+        margin: var(--space-2) 0 0 0;
         font-size: var(--text-sm);
         font-family: var(--font-mono);
-        color: var(--text-primary);
-    }
-
-    .wte-content {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-    }
-
-    .wte-token {
-        font-family: var(--font-mono);
-        font-size: var(--text-base);
-        font-weight: 600;
-        color: var(--text-primary);
-        padding: var(--space-2);
-        background: var(--bg-inset);
-        border: 1px solid var(--border-default);
-    }
-
-    .wte-stats {
-        margin: 0;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
         color: var(--text-secondary);
-    }
-
-    .wte-stats strong {
-        color: var(--text-muted);
-        font-weight: 500;
     }
 </style>

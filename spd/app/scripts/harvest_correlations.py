@@ -7,6 +7,11 @@ Example:
     python -m spd.app.scripts.harvest_correlations anthropic/spd/abc123 --n_batches 500
 """
 
+import json
+import traceback
+from pathlib import Path
+from typing import Any
+
 import fire
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
@@ -23,12 +28,45 @@ from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
+def _update_status(
+    status_file: Path,
+    status: str,
+    error: str | None = None,
+    n_tokens: int | None = None,
+    n_components: int | None = None,
+) -> None:
+    """Update status in the status file, preserving job_id, submitted_at, params."""
+    assert status_file.exists(), f"status file must exist: {status_file}"
+    existing = json.loads(status_file.read_text())
+
+    # Preserve fields from initial submission
+    assert "job_id" in existing, "status file missing job_id"
+    assert "submitted_at" in existing, "status file missing submitted_at"
+    assert "params" in existing, "status file missing params"
+
+    data: dict[str, Any] = {
+        "status": status,
+        "job_id": existing["job_id"],
+        "submitted_at": existing["submitted_at"],
+        "params": existing["params"],
+    }
+    if error is not None:
+        data["error"] = error
+    if n_tokens is not None:
+        data["n_tokens"] = n_tokens
+    if n_components is not None:
+        data["n_components"] = n_components
+
+    status_file.write_text(json.dumps(data, indent=2))
+
+
 def main(
     wandb_path: str,
     n_batches: int = 500,
     batch_size: int = 32,
     context_length: int = 128,
     ci_threshold: float = 1e-6,
+    status_file: str | None = None,
 ) -> None:
     """Harvest component correlations for a run.
 
@@ -38,84 +76,108 @@ def main(
         batch_size: Batch size
         context_length: Context length
         ci_threshold: CI threshold for binarization
+        status_file: Path to status file (created by job submission, required for job tracking)
     """
-    device = get_device()
-    logger.info(f"Using device: {device}")
+    status_path = Path(status_file) if status_file else None
 
-    # Parse and normalize wandb path
-    entity, project, run_id = parse_wandb_run_path(wandb_path)
-    clean_wandb_path = f"{entity}/{project}/{run_id}"
-    logger.info(f"Loading run: {clean_wandb_path}")
+    # Update status to running
+    if status_path:
+        _update_status(status_path, "running")
 
-    # Load model
-    run_info = SPDRunInfo.from_path(clean_wandb_path)
-    model = ComponentModel.from_run_info(run_info)
-    model = model.to(device)
-    model.eval()
+    try:
+        device = get_device()
+        logger.info(f"Using device: {device}")
 
-    # Load config
-    spd_config = run_info.config
-    assert spd_config.tokenizer_name is not None
+        # Parse and normalize wandb path
+        entity, project, run_id = parse_wandb_run_path(wandb_path)
+        clean_wandb_path = f"{entity}/{project}/{run_id}"
+        logger.info(f"Loading run: {clean_wandb_path}")
 
-    # Load tokenizer (needed for dataset)
-    logger.info(f"Loading tokenizer: {spd_config.tokenizer_name}")
-    tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
-    assert isinstance(tokenizer, PreTrainedTokenizerFast)
+        # Load model
+        run_info = SPDRunInfo.from_path(clean_wandb_path)
+        model = ComponentModel.from_run_info(run_info)
+        model = model.to(device)
+        model.eval()
 
-    # Create data loader
-    task_config = spd_config.task_config
-    assert isinstance(task_config, LMTaskConfig)
+        # Load config
+        spd_config = run_info.config
+        assert spd_config.tokenizer_name is not None
 
-    train_data_config = DatasetConfig(
-        name=task_config.dataset_name,
-        hf_tokenizer_path=spd_config.tokenizer_name,
-        split=task_config.train_data_split,
-        n_ctx=context_length,
-        is_tokenized=task_config.is_tokenized,
-        streaming=task_config.streaming,
-        column_name=task_config.column_name,
-        shuffle_each_epoch=task_config.shuffle_each_epoch,
-    )
+        # Load tokenizer (needed for dataset)
+        logger.info(f"Loading tokenizer: {spd_config.tokenizer_name}")
+        tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
+        assert isinstance(tokenizer, PreTrainedTokenizerFast)
 
-    train_loader, _ = create_data_loader(
-        dataset_config=train_data_config,
-        batch_size=batch_size,
-        buffer_size=task_config.buffer_size,
-        global_seed=spd_config.seed,
-    )
+        # Create data loader
+        task_config = spd_config.task_config
+        assert isinstance(task_config, LMTaskConfig)
 
-    # Harvest correlations
-    logger.info(
-        f"Harvesting correlations: {n_batches} batches × {batch_size} batch_size "
-        f"× {context_length} context_length = {n_batches * batch_size * context_length:,} tokens"
-    )
+        train_data_config = DatasetConfig(
+            name=task_config.dataset_name,
+            hf_tokenizer_path=spd_config.tokenizer_name,
+            split=task_config.train_data_split,
+            n_ctx=context_length,
+            is_tokenized=task_config.is_tokenized,
+            streaming=task_config.streaming,
+            column_name=task_config.column_name,
+            shuffle_each_epoch=task_config.shuffle_each_epoch,
+        )
 
-    correlations = harvest_correlations(
-        config=spd_config,
-        cm=model,
-        train_loader=train_loader,
-        ci_threshold=ci_threshold,
-        n_batches=n_batches,
-    )
+        train_loader, _ = create_data_loader(
+            dataset_config=train_data_config,
+            batch_size=batch_size,
+            buffer_size=task_config.buffer_size,
+            global_seed=spd_config.seed,
+        )
 
-    # Save
-    output_path = get_correlations_path(run_id)
-    correlations.save(output_path)
+        # Harvest correlations
+        logger.info(
+            f"Harvesting correlations: {n_batches} batches × {batch_size} batch_size "
+            f"× {context_length} context_length = {n_batches * batch_size * context_length:,} tokens"
+        )
 
-    logger.info(f"Done! Correlations saved to {output_path}")
-    logger.info(f"  - Components: {len(correlations.component_keys)}")
-    logger.info(f"  - Tokens processed: {correlations.n_tokens:,}")
+        correlations = harvest_correlations(
+            config=spd_config,
+            cm=model,
+            train_loader=train_loader,
+            ci_threshold=ci_threshold,
+            n_batches=n_batches,
+        )
 
-    # Quick sanity check: show top correlations for first active component
-    active_components = [
-        k for i, k in enumerate(correlations.component_keys) if correlations.count_i[i] > 0
-    ]
-    if active_components:
-        test_key = active_components[0]
-        top_corr = correlations.get_correlated(test_key, metric="f1", top_k=5)
-        logger.info(f"  - Sample correlations for {test_key}:")
-        for c in top_corr:
-            logger.info(f"      {c.component_key}: F1={c.score:.4f}")
+        # Save
+        output_path = get_correlations_path(run_id)
+        correlations.save(output_path)
+
+        logger.info(f"Done! Correlations saved to {output_path}")
+        logger.info(f"  - Components: {len(correlations.component_keys)}")
+        logger.info(f"  - Tokens processed: {correlations.n_tokens:,}")
+
+        # Quick sanity check: show top correlations for first active component
+        active_components = [
+            k for i, k in enumerate(correlations.component_keys) if correlations.count_i[i] > 0
+        ]
+        if active_components:
+            test_key = active_components[0]
+            top_corr = correlations.get_correlated(test_key, metric="f1", top_k=5)
+            logger.info(f"  - Sample correlations for {test_key}:")
+            for c in top_corr:
+                logger.info(f"      {c.component_key}: F1={c.score:.4f}")
+
+        # Update status to completed
+        if status_path:
+            _update_status(
+                status_path,
+                "completed",
+                n_tokens=correlations.n_tokens,
+                n_components=len(correlations.component_keys),
+            )
+
+    except Exception as e:
+        logger.error(f"Harvest failed: {e}")
+        logger.error(traceback.format_exc())
+        if status_path:
+            _update_status(status_path, "failed", error=str(e))
+        raise
 
 
 if __name__ == "__main__":

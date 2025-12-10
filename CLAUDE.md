@@ -210,4 +210,38 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
 - Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
 
 ## Coding Guidelines
-see @STYLE.md
+
+**This is research code, not production. Prioritize simplicity and fail-fast over defensive programming.**
+
+Core principles:
+- **Fail fast** - assert assumptions, crash on violations, don't silently recover
+- **No backwards compat** - delete unused code, don't deprecate or add migration shims
+- **Narrow types** - avoid `| None` unless null is semantically meaningful; use discriminated unions over bags of optional fields
+- **No try/except for control flow** - check preconditions explicitly, then trust them
+- **YAGNI** - don't add abstractions, config options, or flexibility for hypothetical futures
+
+```python
+# BAD - defensive, recovers silently, wide types
+def get_config(path: str) -> dict | None:
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except:
+        return None
+
+config = get_config(path)
+if config is not None:
+    value = config.get("key", "default")
+
+# GOOD - fail fast, narrow types, trust preconditions
+def get_config(path: Path) -> Config:
+    assert path.exists(), f"config not found: {path}"
+    with open(path) as f:
+        data = json.load(f)
+    return Config(**data)  # pydantic validates
+
+config = get_config(path)
+value = config.key
+```
+
+More detail in STYLE.md

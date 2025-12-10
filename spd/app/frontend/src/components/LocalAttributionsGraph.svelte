@@ -11,7 +11,7 @@
         ComponentDetail,
     } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
-    import { lerp, hashString, seededShuffle } from "./local-attr/graphUtils";
+    import { lerp, hashString, seededShuffle, calcTooltipPos } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
 
     // Constants
@@ -484,6 +484,12 @@
         hoveredNode = null;
     }
 
+    function pinComponent(layer: string, cIdx: number, seqIdx: number) {
+        const alreadyPinned = stagedNodes.some((p) => p.layer === layer && p.cIdx === cIdx && p.seqIdx === seqIdx);
+        if (alreadyPinned) return;
+        onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
+    }
+
     function handleEdgeMouseEnter(event: MouseEvent) {
         const target = event.target as SVGElement;
         if (target.classList.contains("edge-hit-area")) {
@@ -500,17 +506,6 @@
         if (target.classList.contains("edge-hit-area")) {
             hoveredEdge = null;
         }
-    }
-
-    function calcTooltipPos(mouseX: number, mouseY: number) {
-        const padding = 15;
-        let left = mouseX + padding;
-        let top = mouseY + padding;
-        if (typeof window !== "undefined") {
-            if (left + 500 > window.innerWidth) left = mouseX - 500 - padding;
-            if (top + 400 > window.innerHeight) top = mouseY - 400 - padding;
-        }
-        return { x: Math.max(0, left), y: Math.max(0, top) };
     }
 
     // Track previously highlighted/dimmed edges to minimize DOM updates
@@ -729,6 +724,7 @@
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
+            onPinComponent={pinComponent}
         />
     {/if}
 </div>

@@ -686,16 +686,16 @@
                                             onEdgeCountChange={(count) => (filteredEdgeCount = count)}
                                         />
                                     {/key}
-                                    <StagedNodesPanel
-                                        stagedNodes={pinnedNodes}
-                                        {componentDetailsCache}
-                                        {componentDetailsLoading}
-                                        {activationContextsSummary}
-                                        outputProbs={activeGraph.data.outputProbs}
-                                        tokens={activeCard.tokens}
-                                        onStagedNodesChange={handlePinnedNodesChange}
-                                    />
                                 </div>
+                                <StagedNodesPanel
+                                    stagedNodes={pinnedNodes}
+                                    {componentDetailsCache}
+                                    {componentDetailsLoading}
+                                    {activationContextsSummary}
+                                    outputProbs={activeGraph.data.outputProbs}
+                                    tokens={activeCard.tokens}
+                                    onStagedNodesChange={handlePinnedNodesChange}
+                                />
                             {:else}
                                 <!-- Interventions view -->
                                 <InterventionsView
