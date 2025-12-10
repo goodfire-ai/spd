@@ -44,7 +44,7 @@
 
 <div class="results-container">
     <div class="results-list">
-        {#each results as result, idx}
+        {#each results as result, idx (idx)}
             <div class="result-card">
                 <div class="result-header">
                     <span class="result-index">#{(page - 1) * pageSize + idx + 1}</span>
@@ -58,9 +58,11 @@
                         <span class="tag theme">{result.theme}</span>
                     {/if}
                 </div>
+                <!-- eslint-disable svelte/no-at-html-tags -- highlightQuery escapes HTML before inserting safe mark tags -->
                 <div class="story-text">
                     {@html highlightQuery(result.story, query)}
                 </div>
+                <!-- eslint-enable svelte/no-at-html-tags -->
             </div>
         {/each}
     </div>
