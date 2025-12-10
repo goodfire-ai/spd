@@ -277,14 +277,6 @@ def optimize_ci_values(
         initial_pre_sigmoid=initial_ci_outputs.pre_sigmoid,
     )
 
-    # Log initial alive counts
-    total_alive = sum(sum(counts) for counts in alive_info.alive_counts.values())
-    print("\nAlive components (CI > 0):")
-    for layer_name, counts in alive_info.alive_counts.items():
-        layer_total = sum(counts)
-        print(f"  {layer_name}: {layer_total} total across {len(counts)} positions")
-    print(f"  Total: {total_alive}")
-
     weight_deltas = model.calc_weight_deltas()
 
     params = ci_params.get_parameters()
