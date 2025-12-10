@@ -57,7 +57,7 @@
 
 <div class="controls-bar">
     <label>
-        <span>Norm</span>
+        <span>Edge Norm</span>
         <select value={normalizeEdges} onchange={(e) => onNormalizeChange(e.currentTarget.value as NormalizeType)}>
             <option value="none">None</option>
             <option value="target">Target</option>
@@ -65,7 +65,7 @@
         </select>
     </label>
     <label>
-        <span>Top K</span>
+        <span>Top K Edges</span>
         <input
             type="number"
             value={topK}
@@ -78,8 +78,25 @@
             step={100}
         />
     </label>
+    <label class:loading={ciThresholdLoading}>
+        <span>Node CI Threshold</span>
+        <input
+            type="number"
+            bind:value={ciThresholdInput}
+            onblur={applyCiThreshold}
+            onkeydown={(e) => {
+                if (e.key === "Enter") {
+                    applyCiThreshold();
+                    e.currentTarget.blur();
+                }
+            }}
+            min={0}
+            step={0.1}
+            disabled={ciThresholdLoading}
+        />
+    </label>
     <label>
-        <span>Layout</span>
+        <span>Node Layout</span>
         <select
             value={nodeLayout}
             onchange={(e) => onLayoutChange(e.currentTarget.value as "importance" | "shuffled" | "jittered")}
@@ -115,23 +132,6 @@
             min={10}
             max={100}
             step={5}
-        />
-    </label>
-    <label class:loading={ciThresholdLoading}>
-        <span>CI Threshold</span>
-        <input
-            type="number"
-            bind:value={ciThresholdInput}
-            onblur={applyCiThreshold}
-            onkeydown={(e) => {
-                if (e.key === "Enter") {
-                    applyCiThreshold();
-                    e.currentTarget.blur();
-                }
-            }}
-            min={0}
-            step={0.1}
-            disabled={ciThresholdLoading}
         />
     </label>
 
