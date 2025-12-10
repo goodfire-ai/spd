@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from spd.app.backend.compute import (
     Edge,
     LocalAttributionResult,
+    Node,
     OptimizedLocalAttributionResult,
     compute_local_attributions,
     compute_local_attributions_optimized,
@@ -73,12 +74,28 @@ def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
 NormalizeType = Literal["none", "target", "layer"]
 
 
+# Pseudo-layers that don't have true CI values and should be exempt from CI threshold filtering
+NON_CI_LAYERS = frozenset(["wte", "output"])
+
+
+def _node_passes_ci_threshold(
+    node: Node, ci_threshold: float, node_ci_vals: dict[str, float]
+) -> bool:
+    """Check if a node passes the CI threshold, exempting pseudo-layers without true CI values."""
+    if node.layer in NON_CI_LAYERS:
+        return True
+    return node_ci_vals.get(str(node), 0.0) >= ci_threshold
+
+
 def filter_edges_by_ci_threshold(
     edges: list[Edge],
     ci_threshold: float,
     node_ci_vals: dict[str, float],
 ) -> list[Edge]:
     """Filter edges by removing those where source or target has CI < ci_threshold.
+
+    Pseudo-layers (wte, output) are exempt from this filtering since they don't have
+    true CI values.
 
     Args:
         edges: List of edges to filter
@@ -91,8 +108,8 @@ def filter_edges_by_ci_threshold(
     return [
         edge
         for edge in edges
-        if node_ci_vals.get(str(edge.source), 0.0) >= ci_threshold
-        and node_ci_vals.get(str(edge.target), 0.0) >= ci_threshold
+        if _node_passes_ci_threshold(edge.source, ci_threshold, node_ci_vals)
+        and _node_passes_ci_threshold(edge.target, ci_threshold, node_ci_vals)
     ]
 
 
