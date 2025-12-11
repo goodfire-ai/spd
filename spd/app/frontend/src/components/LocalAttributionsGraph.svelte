@@ -1,14 +1,15 @@
 <script lang="ts">
     import { SvelteSet } from "svelte/reactivity";
-    import type {
-        GraphData,
-        ActivationContextsSummary,
-        PinnedNode,
-        HoveredNode,
-        HoveredEdge,
-        LayerInfo,
-        NodePosition,
-        ComponentDetail,
+    import {
+        formatNodeKeyForDisplay,
+        type GraphData,
+        type ActivationContextsSummary,
+        type PinnedNode,
+        type HoveredNode,
+        type HoveredEdge,
+        type LayerInfo,
+        type NodePosition,
+        type ComponentDetail,
     } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
     import { lerp, hashString, seededShuffle } from "./local-attr/graphUtils";
@@ -595,7 +596,9 @@
                     ? `${info.block}.q/k/v`
                     : layer === "wte" || layer === "output"
                       ? layer
-                      : `${info.block}.${info.subtype}`}
+                      : layer === "lm_head"
+                        ? "W_U"
+                        : `${info.block}.${info.subtype}`}
                 <text
                     x={LABEL_WIDTH - 10}
                     y={yCenter}
@@ -696,11 +699,11 @@
         <div class="edge-tooltip" style="left: {edgeTooltipPos.x}px; top: {edgeTooltipPos.y}px;">
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Src</span>
-                <code>{hoveredEdge.src}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.src)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Tgt</span>
-                <code>{hoveredEdge.tgt}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>

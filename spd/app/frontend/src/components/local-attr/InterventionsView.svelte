@@ -438,7 +438,8 @@
         const info = parseLayer(layer);
         const rowKey = getRowKey(layer);
         if (rowKey.endsWith(".qkv")) return `${info.block}.q/k/v`;
-        if (layer === "wte" || layer === "output" || layer === "lm_head") return layer;
+        if (layer === "wte" || layer === "output") return layer;
+        if (layer === "lm_head") return "W_U";
         return `${info.block}.${info.subtype}`;
     }
 </script>

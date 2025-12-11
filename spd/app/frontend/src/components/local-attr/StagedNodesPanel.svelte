@@ -1,10 +1,11 @@
 <script lang="ts">
-    import type {
-        PinnedNode,
-        ComponentDetail,
-        ActivationContextsSummary,
-        ComponentSummary,
-        OutputProbEntry,
+    import {
+        getLayerDisplayName,
+        type PinnedNode,
+        type ComponentDetail,
+        type ActivationContextsSummary,
+        type ComponentSummary,
+        type OutputProbEntry,
     } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
@@ -68,7 +69,7 @@
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">
-                            <strong>{node.layer}:{node.seqIdx}:{node.cIdx}</strong>
+                            <strong>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</strong>
                             <span class="token-preview">"{token}"</span>
                         </div>
                         <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>
