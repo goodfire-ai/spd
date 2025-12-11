@@ -17,7 +17,7 @@
     const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "output"];
+    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
     const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
 
     // Logits display constants
@@ -75,6 +75,7 @@
     // Parse layer name
     function parseLayer(name: string): LayerInfo {
         if (name === "wte") return { name, block: -1, type: "embed", subtype: "wte" };
+        if (name === "lm_head") return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
         if (name === "output") return { name, block: Infinity, type: "output", subtype: "output" };
         const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
         if (!m) throw new Error(`parseLayer: unrecognized layer name: ${name}`);
@@ -124,6 +125,7 @@
         // Sort rows
         const parseRow = (r: string) => {
             if (r === "wte") return { block: -1, subtype: "wte" };
+            if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
             if (r === "output") return { block: Infinity, subtype: "output" };
             const mQkv = r.match(/h\.(\d+)\.qkv/);
             if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
@@ -426,6 +428,7 @@
         const rowKey = getRowKey(layer);
         if (rowKey.endsWith(".qkv")) return `${info.block}.q/k/v`;
         if (layer === "wte" || layer === "output") return layer;
+        if (layer === "lm_head") return "W_U";
         return `${info.block}.${info.subtype}`;
     }
 </script>

@@ -5,9 +5,9 @@
         ComponentSummary,
         OutputProbEntry,
     } from "../../lib/localAttributionsTypes";
+    import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
-    import NodeHeader from "./NodeHeader.svelte";
 
     type HoveredNode = {
         layer: string;
@@ -69,7 +69,7 @@
     onmouseenter={onMouseEnter}
     onmouseleave={onMouseLeave}
 >
-    <NodeHeader layer={hoveredNode.layer} seqIdx={hoveredNode.seqIdx} cIdx={hoveredNode.cIdx} {token} />
+    <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
     {#if isWte}
         <p class="wte-info">Input embedding at position {hoveredNode.seqIdx}</p>
         <div class="wte-content">

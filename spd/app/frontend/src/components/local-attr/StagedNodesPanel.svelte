@@ -1,14 +1,14 @@
 <script lang="ts">
     import type {
-        PinnedNode,
-        ComponentDetail,
         ActivationContextsSummary,
+        ComponentDetail,
         ComponentSummary,
         OutputProbEntry,
+        PinnedNode,
     } from "../../lib/localAttributionsTypes";
+    import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
-    import NodeHeader from "./NodeHeader.svelte";
 
     type Props = {
         stagedNodes: PinnedNode[];
@@ -73,13 +73,13 @@
                 {@const isOutput = node.layer === "output"}
                 {@const isWte = node.layer === "wte"}
                 <div class="staged-item">
-                    <NodeHeader
-                        layer={node.layer}
-                        seqIdx={node.seqIdx}
-                        cIdx={node.cIdx}
-                        {token}
-                        onClose={() => unstageNode(node)}
-                    />
+                    <div class="staged-header">
+                        <div class="node-info">
+                            <strong>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</strong>
+                            <span class="token-preview">"{token}"</span>
+                        </div>
+                        <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>
+                    </div>
 
                     {#if isWte}
                         <p class="wte-info">Input embedding at position {node.seqIdx}</p>
