@@ -44,7 +44,9 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    summary = manager.db.get_component_contexts_summary(loaded.run.id, loaded.context_length)
+    summary = manager.db.get_component_activation_contexts_summary(
+        loaded.run.id, loaded.context_length
+    )
     if summary is None:
         raise HTTPException(
             status_code=404, detail="No activation contexts found. Generate them first."
@@ -59,7 +61,7 @@ def get_activation_contexts_config(
     loaded: DepLoadedRun,
 ) -> ActivationContextsGenerationConfig | None:
     """Return the config used to generate the stored activation contexts."""
-    return manager.db.get_component_contexts_config(loaded.run.id, loaded.context_length)
+    return manager.db.get_component_activation_contexts_config(loaded.run.id, loaded.context_length)
 
 
 @router.get("/{layer}/{component_idx}")
@@ -71,7 +73,7 @@ def get_activation_context_detail(
     loaded: DepLoadedRun,
 ) -> SubcomponentActivationContexts:
     """Return full activation context data for a single component."""
-    detail = manager.db.get_component_context_detail(
+    detail = manager.db.get_component_activation_context_detail(
         loaded.run.id, loaded.context_length, layer, component_idx
     )
     if detail is None:
@@ -139,7 +141,9 @@ def generate_activation_contexts(
                 onprogress=on_progress,
             )
             logger.info("Saving activation contexts to database...")
-            db.set_component_contexts(loaded.run.id, loaded.context_length, act_contexts, config)
+            db.set_component_activation_contexts(
+                loaded.run.id, loaded.context_length, act_contexts, config
+            )
             logger.info("Saved activation contexts to database")
 
             metadata = HarvestMetadata(

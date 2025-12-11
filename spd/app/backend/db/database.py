@@ -145,7 +145,7 @@ class LocalAttrDB:
             );
 
             -- Normalized: one row per component
-            CREATE TABLE IF NOT EXISTS component_contexts (
+            CREATE TABLE IF NOT EXISTS component_activation_contexts (
                 run_id INTEGER NOT NULL REFERENCES runs(id),
                 context_length INTEGER NOT NULL,
                 component_key TEXT NOT NULL,  -- "layer:component_idx"
@@ -154,8 +154,8 @@ class LocalAttrDB:
                 PRIMARY KEY (run_id, context_length, component_key)
             );
 
-            CREATE INDEX IF NOT EXISTS idx_component_contexts_run
-                ON component_contexts(run_id, context_length);
+            CREATE INDEX IF NOT EXISTS idx_component_activation_contexts_run
+                ON component_activation_contexts(run_id, context_length);
 
             CREATE TABLE IF NOT EXISTS prompts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -270,7 +270,7 @@ class LocalAttrDB:
     # Component contexts operations
     # -------------------------------------------------------------------------
 
-    def set_component_contexts(
+    def set_component_activation_contexts(
         self,
         run_id: int,
         context_length: int,
@@ -292,7 +292,7 @@ class LocalAttrDB:
 
         # Delete existing component rows for this run+context_length
         conn.execute(
-            "DELETE FROM component_contexts WHERE run_id = ? AND context_length = ?",
+            "DELETE FROM component_activation_contexts WHERE run_id = ? AND context_length = ?",
             (run_id, context_length),
         )
 
@@ -326,7 +326,7 @@ class LocalAttrDB:
         rows = [(run_id, context_length, key, mean_ci, data) for key, mean_ci, data in results]
 
         conn.executemany(
-            """INSERT INTO component_contexts
+            """INSERT INTO component_activation_contexts
                (run_id, context_length, component_key, mean_ci, data)
                VALUES (?, ?, ?, ?, ?)""",
             rows,
@@ -339,7 +339,7 @@ class LocalAttrDB:
             f"prep={1000 * (t1 - t0):.0f}ms, compress={1000 * (t2 - t1):.0f}ms, insert={1000 * (t3 - t2):.0f}ms"
         )
 
-    def get_component_contexts_summary(
+    def get_component_activation_contexts_summary(
         self, run_id: int, context_length: int
     ) -> dict[str, list[SubcomponentMetadata]] | None:
         """Get lightweight summary: component_key -> mean_ci (no blob loading)."""
@@ -354,7 +354,7 @@ class LocalAttrDB:
             return None
 
         rows = conn.execute(
-            """SELECT component_key, mean_ci FROM component_contexts
+            """SELECT component_key, mean_ci FROM component_activation_contexts
                WHERE run_id = ? AND context_length = ?
                ORDER BY mean_ci DESC""",
             (run_id, context_length),
@@ -372,7 +372,7 @@ class LocalAttrDB:
             )
         return result
 
-    def get_component_context_detail(
+    def get_component_activation_context_detail(
         self, run_id: int, context_length: int, layer: str, component_idx: int
     ) -> SubcomponentActivationContexts | None:
         """Get full data for a single component (fast: only loads one small row)."""
@@ -381,7 +381,7 @@ class LocalAttrDB:
         component_key = f"{layer}:{component_idx}"
 
         row = conn.execute(
-            """SELECT mean_ci, data FROM component_contexts
+            """SELECT mean_ci, data FROM component_activation_contexts
                WHERE run_id = ? AND context_length = ? AND component_key = ?""",
             (run_id, context_length, component_key),
         ).fetchone()
@@ -405,13 +405,13 @@ class LocalAttrDB:
 
         blob_kb = len(row["data"]) / 1024
         logger.info(
-            f"get_component_context_detail: {component_key} "
+            f"get_component_activation_context_detail: {component_key} "
             f"query={1000 * (t1 - t0):.0f}ms, decompress={1000 * (t2 - t1):.0f}ms ({blob_kb:.1f}KB), "
             f"json={1000 * (t3 - t2):.0f}ms, pydantic={1000 * (t4 - t3):.0f}ms"
         )
         return result
 
-    def has_component_contexts(self, run_id: int, context_length: int) -> bool:
+    def has_component_activation_contexts(self, run_id: int, context_length: int) -> bool:
         """Check if normalized component contexts exist."""
         conn = self._get_conn()
         row = conn.execute(
@@ -420,7 +420,7 @@ class LocalAttrDB:
         ).fetchone()
         return row is not None
 
-    def get_component_contexts_config(
+    def get_component_activation_contexts_config(
         self, run_id: int, context_length: int
     ) -> ActivationContextsGenerationConfig | None:
         """Get the config from normalized storage."""
