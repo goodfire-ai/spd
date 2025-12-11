@@ -61,6 +61,94 @@ def _update_status(
     status_file.write_text(json.dumps(data, indent=2))
 
 
+def harvest_and_save(
+    wandb_path: str,
+    n_batches: int,
+    batch_size: int,
+    context_length: int,
+    ci_threshold: float,
+) -> tuple[int, int]:
+    device = get_device()
+    logger.info(f"Using device: {device}")
+
+    # Parse and normalize wandb path
+    entity, project, run_id = parse_wandb_run_path(wandb_path)
+    clean_wandb_path = f"{entity}/{project}/{run_id}"
+    logger.info(f"Loading run: {clean_wandb_path}")
+
+    # Load model
+    run_info = SPDRunInfo.from_path(clean_wandb_path)
+    model = ComponentModel.from_run_info(run_info)
+    model = model.to(device)
+    model.eval()
+
+    # Load config
+    spd_config = run_info.config
+    assert spd_config.tokenizer_name is not None
+
+    # Load tokenizer (needed for dataset)
+    logger.info(f"Loading tokenizer: {spd_config.tokenizer_name}")
+    tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
+    assert isinstance(tokenizer, PreTrainedTokenizerFast)
+
+    # Create data loader
+    task_config = spd_config.task_config
+    assert isinstance(task_config, LMTaskConfig)
+
+    train_data_config = DatasetConfig(
+        name=task_config.dataset_name,
+        hf_tokenizer_path=spd_config.tokenizer_name,
+        split=task_config.train_data_split,
+        n_ctx=context_length,
+        is_tokenized=task_config.is_tokenized,
+        streaming=task_config.streaming,
+        column_name=task_config.column_name,
+        shuffle_each_epoch=task_config.shuffle_each_epoch,
+    )
+
+    train_loader, _ = create_data_loader(
+        dataset_config=train_data_config,
+        batch_size=batch_size,
+        buffer_size=task_config.buffer_size,
+        global_seed=spd_config.seed,
+    )
+
+    # Get vocab size from tokenizer
+    vocab_size = tokenizer.vocab_size
+    assert vocab_size is not None, "tokenizer.vocab_size is None"
+
+    # Harvest correlations and token stats
+    logger.info(
+        f"Harvesting correlations + token stats: {n_batches} batches × {batch_size} batch_size "
+        f"× {context_length} context_length = {n_batches * batch_size * context_length:,} tokens"
+    )
+
+    result = harvest_correlations(
+        config=spd_config,
+        cm=model,
+        train_loader=train_loader,
+        ci_threshold=ci_threshold,
+        n_batches=n_batches,
+        vocab_size=vocab_size,
+    )
+
+    # Save correlations
+    correlations_path = get_correlations_path(run_id)
+    result.correlations.save(correlations_path)
+
+    # Save token stats
+    token_stats_path = get_token_stats_path(run_id)
+    result.token_stats.save(token_stats_path)
+
+    logger.info("Done!")
+    logger.info(f"  - Correlations saved to {correlations_path}")
+    logger.info(f"  - Token stats saved to {token_stats_path}")
+    logger.info(f"  - Components: {len(result.correlations.component_keys)}")
+    logger.info(f"  - Tokens processed: {result.correlations.count_total:,}")
+
+    return result.correlations.count_total, len(result.correlations.component_keys)
+
+
 def main(
     wandb_path: str,
     n_batches: int,
@@ -81,125 +169,22 @@ def main(
     """
     status_path = Path(status_file)
 
-    # Update status to running
-    if status_path:
-        _update_status(status_path, "running")
+    _update_status(status_path, "running")
 
     try:
-        device = get_device()
-        logger.info(f"Using device: {device}")
-
-        # Parse and normalize wandb path
-        entity, project, run_id = parse_wandb_run_path(wandb_path)
-        clean_wandb_path = f"{entity}/{project}/{run_id}"
-        logger.info(f"Loading run: {clean_wandb_path}")
-
-        # Load model
-        run_info = SPDRunInfo.from_path(clean_wandb_path)
-        model = ComponentModel.from_run_info(run_info)
-        model = model.to(device)
-        model.eval()
-
-        # Load config
-        spd_config = run_info.config
-        assert spd_config.tokenizer_name is not None
-
-        # Load tokenizer (needed for dataset)
-        logger.info(f"Loading tokenizer: {spd_config.tokenizer_name}")
-        tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
-        assert isinstance(tokenizer, PreTrainedTokenizerFast)
-
-        # Create data loader
-        task_config = spd_config.task_config
-        assert isinstance(task_config, LMTaskConfig)
-
-        train_data_config = DatasetConfig(
-            name=task_config.dataset_name,
-            hf_tokenizer_path=spd_config.tokenizer_name,
-            split=task_config.train_data_split,
-            n_ctx=context_length,
-            is_tokenized=task_config.is_tokenized,
-            streaming=task_config.streaming,
-            column_name=task_config.column_name,
-            shuffle_each_epoch=task_config.shuffle_each_epoch,
+        n_tokens, n_components = harvest_and_save(
+            wandb_path,
+            n_batches,
+            batch_size,
+            context_length,
+            ci_threshold,
         )
-
-        train_loader, _ = create_data_loader(
-            dataset_config=train_data_config,
-            batch_size=batch_size,
-            buffer_size=task_config.buffer_size,
-            global_seed=spd_config.seed,
+        _update_status(
+            status_path,
+            "completed",
+            n_tokens=n_tokens,
+            n_components=n_components,
         )
-
-        # Get vocab size from tokenizer
-        vocab_size = tokenizer.vocab_size
-        assert vocab_size is not None, "tokenizer.vocab_size is None"
-
-        # Harvest correlations and token stats
-        logger.info(
-            f"Harvesting correlations + token stats: {n_batches} batches × {batch_size} batch_size "
-            f"× {context_length} context_length = {n_batches * batch_size * context_length:,} tokens"
-        )
-
-        result = harvest_correlations(
-            config=spd_config,
-            cm=model,
-            train_loader=train_loader,
-            ci_threshold=ci_threshold,
-            n_batches=n_batches,
-            vocab_size=vocab_size,
-        )
-
-        # Save correlations
-        correlations_path = get_correlations_path(run_id)
-        result.correlations.save(correlations_path)
-
-        # Save token stats
-        token_stats_path = get_token_stats_path(run_id)
-        result.token_stats.save(token_stats_path)
-
-        logger.info("Done!")
-        logger.info(f"  - Correlations saved to {correlations_path}")
-        logger.info(f"  - Token stats saved to {token_stats_path}")
-        logger.info(f"  - Components: {len(result.correlations.component_keys)}")
-        logger.info(f"  - Tokens processed: {result.correlations.count_total:,}")
-
-        # Quick sanity check: show top correlations for first active component
-        active_components = [
-            k
-            for i, k in enumerate(result.correlations.component_keys)
-            if result.correlations.count_i[i] > 0
-        ]
-        if active_components:
-            test_key = active_components[0]
-            top_corr = result.correlations.get_correlated(test_key, metric="f1", top_k=5)
-            logger.info(f"  - Sample correlations for {test_key}:")
-            for c in top_corr:
-                logger.info(f"      {c.component_key}: F1={c.score:.4f}")
-
-            # Show sample input token stats
-            input_stats = result.token_stats.get_input_tok_stats(test_key, tokenizer, top_k=5)
-            if input_stats:
-                logger.info(f"  - Sample input token PMI for {test_key}:")
-                for tok, pmi_val in input_stats.top_pmi[:5]:
-                    logger.info(f"      {tok!r}: PMI={pmi_val:.2f}")
-
-            # Show sample output token stats
-            output_stats = result.token_stats.get_output_tok_stats(test_key, tokenizer, top_k=5)
-            if output_stats:
-                logger.info(f"  - Sample output token PMI for {test_key}:")
-                for tok, pmi_val in output_stats.top_pmi[:5]:
-                    logger.info(f"      {tok!r}: PMI={pmi_val:.2f}")
-
-        # Update status to completed
-        if status_path:
-            _update_status(
-                status_path,
-                "completed",
-                n_tokens=result.correlations.count_total,
-                n_components=len(result.correlations.component_keys),
-            )
-
     except Exception as e:
         logger.error(f"Harvest failed: {e}")
         logger.error(traceback.format_exc())
