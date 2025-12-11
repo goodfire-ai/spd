@@ -15,7 +15,6 @@ from fastapi.responses import StreamingResponse
 from spd.app.backend.compute import (
     Edge,
     LocalAttributionResult,
-    Node,
     OptimizedLocalAttributionResult,
     compute_local_attributions,
     compute_local_attributions_optimized,
@@ -76,41 +75,6 @@ NormalizeType = Literal["none", "target", "layer"]
 
 # Pseudo-layers that don't have true CI values and should be exempt from CI threshold filtering
 NON_CI_LAYERS = frozenset(["wte", "output"])
-
-
-def _node_passes_ci_threshold(
-    node: Node, ci_threshold: float, node_ci_vals: dict[str, float]
-) -> bool:
-    """Check if a node passes the CI threshold, exempting pseudo-layers without true CI values."""
-    if node.layer in NON_CI_LAYERS:
-        return True
-    return node_ci_vals.get(str(node), 0.0) >= ci_threshold
-
-
-def filter_edges_by_ci_threshold(
-    edges: list[Edge],
-    ci_threshold: float,
-    node_ci_vals: dict[str, float],
-) -> list[Edge]:
-    """Filter edges by removing those where source or target has CI < ci_threshold.
-
-    Pseudo-layers (wte, output) are exempt from this filtering since they don't have
-    true CI values.
-
-    Args:
-        edges: List of edges to filter
-        ci_threshold: Threshold for filtering
-        node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
-
-    Returns:
-        Filtered list of edges
-    """
-    return [
-        edge
-        for edge in edges
-        if _node_passes_ci_threshold(edge.source, ci_threshold, node_ci_vals)
-        and _node_passes_ci_threshold(edge.target, ci_threshold, node_ci_vals)
-    ]
 
 
 def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
@@ -220,17 +184,18 @@ def compute_graph_stream(
                     ),
                 )
 
-                # Process edges for response
+                filtered_node_ci_vals = {
+                    k: v for k, v in result.node_ci_vals.items() if v > ci_threshold
+                }
+                l0_total = len(filtered_node_ci_vals)
+
                 edges_data, node_importance, max_abs_attr = process_edges_for_response(
                     edges=raw_edges,
                     normalize=normalize,
                     num_tokens=len(token_ids),
-                    ci_threshold=ci_threshold,
-                    node_ci_vals=result.node_ci_vals,
+                    node_ci_vals=filtered_node_ci_vals,
                     is_optimized=False,
                 )
-
-                l0_total = sum(1 for val in result.node_ci_vals.values() if val > ci_threshold)
 
                 response_data = GraphData(
                     id=graph_id,
@@ -411,16 +376,18 @@ def compute_graph_optimized_stream(
                     ),
                 )
 
+                filtered_node_ci_vals = {
+                    k: v for k, v in result.node_ci_vals.items() if v > ci_threshold
+                }
+                l0_total = len(filtered_node_ci_vals)
+
                 edges_data, node_importance, max_abs_attr = process_edges_for_response(
                     edges=raw_edges,
                     normalize=normalize,
                     num_tokens=len(token_ids),
-                    ci_threshold=ci_threshold,
-                    node_ci_vals=result.node_ci_vals,
+                    node_ci_vals=filtered_node_ci_vals,
                     is_optimized=True,
                 )
-
-                l0_total = sum(1 for val in result.node_ci_vals.values() if val > ci_threshold)
 
                 response_data = GraphDataWithOptimization(
                     id=graph_id,
@@ -452,7 +419,6 @@ def process_edges_for_response(
     edges: list[Edge],
     normalize: NormalizeType,
     num_tokens: int,
-    ci_threshold: float,
     node_ci_vals: dict[str, float],
     is_optimized: bool,
     edge_limit: int = GLOBAL_EDGE_LIMIT,
@@ -466,7 +432,6 @@ def process_edges_for_response(
         edges: Raw edges from computation or database
         normalize: Normalization type ("none", "target", "layer")
         num_tokens: Number of tokens in the prompt (for filtering)
-        ci_threshold: Threshold for filtering edges by CI
         node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
         is_optimized: Whether this is an optimized graph (applies additional filtering)
         edge_limit: Maximum number of edges to return
@@ -478,11 +443,12 @@ def process_edges_for_response(
         final_seq_pos = num_tokens - 1
         edges = [edge for edge in edges if edge.target.seq_pos == final_seq_pos]
 
-    edges = filter_edges_by_ci_threshold(
-        edges=edges,
-        ci_threshold=ci_threshold,
-        node_ci_vals=node_ci_vals,
-    )
+    edges = []
+    for edge in edges:
+        valid_source = edge.source.layer in NON_CI_LAYERS or str(edge.source) in node_ci_vals
+        valid_target = edge.target.layer in NON_CI_LAYERS or str(edge.target) in node_ci_vals
+        if valid_source and valid_target:
+            edges.append(edge)
 
     edges = _normalize_edges(edges=edges, normalize=normalize)
     node_importance, max_abs_attr = compute_edge_stats(edges=edges)
@@ -520,16 +486,16 @@ def get_graphs(
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
         is_optimized = graph.optimization_params is not None
+        filtered_node_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
+        l0_total = len(filtered_node_ci_vals)
+
         edges_data, node_importance, max_abs_attr = process_edges_for_response(
             edges=graph.edges,
             normalize=normalize,
             num_tokens=num_tokens,
-            ci_threshold=ci_threshold,
-            node_ci_vals=graph.node_ci_vals,
+            node_ci_vals=filtered_node_ci_vals,
             is_optimized=is_optimized,
         )
-
-        l0_total = sum(1 for val in graph.node_ci_vals.values() if val > ci_threshold)
 
         if not is_optimized:
             # Standard graph
