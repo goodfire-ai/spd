@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
-from spd.app.backend.lib.slurm import (
+from spd.app.backend.lib.component_correlations_slurm import (
     CompletedStatus,
     FailedStatus,
     PendingStatus,

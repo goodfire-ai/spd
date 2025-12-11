@@ -211,7 +211,7 @@ class ComponentCorrelations:
 
 def get_correlations_path(wandb_run_id: str) -> Path:
     """Get the path where correlations are stored for a run."""
-    return CORRELATIONS_DIR / wandb_run_id / "correlations.pt"
+    return CORRELATIONS_DIR / wandb_run_id / "component_correlations.pt"
 
 
 def get_token_stats_path(wandb_run_id: str) -> Path:

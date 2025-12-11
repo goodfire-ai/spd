@@ -20,6 +20,9 @@ from spd.app.backend.lib.component_correlations import (
     get_correlations_path,
     get_token_stats_path,
 )
+from spd.app.backend.lib.component_correlations import (
+    CorrelatedComponent as CorrelatedComponentDC,  # the dataclass version
+)
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
     SubcomponentActivationContexts,
@@ -335,10 +338,6 @@ def get_component_correlations(
         raise HTTPException(
             status_code=404, detail=f"Component {component_key} not found in correlations"
         )
-
-    from spd.app.backend.lib.component_correlations import (
-        CorrelatedComponent as CorrelatedComponentDC,
-    )
 
     def to_schema(c: CorrelatedComponentDC) -> CorrelatedComponent:
         return CorrelatedComponent(component_key=c.component_key, score=c.score)
