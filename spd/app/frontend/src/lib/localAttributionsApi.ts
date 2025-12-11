@@ -171,14 +171,17 @@ export async function computeGraphStreaming(
 
 export type ComputeGraphOptimizedParams = {
     promptId: number;
-    labelToken: number;
     impMinCoeff: number;
-    ceLossCoeff: number;
     steps: number;
     pnorm: number;
     normalize: NormalizeType;
     outputProbThreshold: number;
     ciThreshold: number;
+    // CE loss params (optional, must be set together)
+    labelToken?: number;
+    ceLossCoeff?: number;
+    // KL loss param (optional)
+    klLossCoeff?: number;
 };
 
 export async function computeGraphOptimizedStreaming(
@@ -187,14 +190,24 @@ export async function computeGraphOptimizedStreaming(
 ): Promise<GraphData> {
     const url = new URL(`${API_URL}/api/graphs/optimized/stream`);
     url.searchParams.set("prompt_id", String(params.promptId));
-    url.searchParams.set("label_token", String(params.labelToken));
     url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
-    url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
     url.searchParams.set("steps", String(params.steps));
     url.searchParams.set("pnorm", String(params.pnorm));
     url.searchParams.set("normalize", String(params.normalize));
     url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
     url.searchParams.set("ci_threshold", String(params.ciThreshold));
+
+    // Conditionally add CE loss params
+    if (params.labelToken !== undefined) {
+        url.searchParams.set("label_token", String(params.labelToken));
+    }
+    if (params.ceLossCoeff !== undefined) {
+        url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
+    }
+    // Conditionally add KL loss param
+    if (params.klLossCoeff !== undefined) {
+        url.searchParams.set("kl_loss_coeff", String(params.klLossCoeff));
+    }
 
     const response = await fetch(url.toString(), {
         method: "POST",

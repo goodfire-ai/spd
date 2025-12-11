@@ -23,6 +23,21 @@ from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_
 
 
 @dataclass
+class OptimCELossConfig:
+    """Cross-entropy loss config for CI optimization. These losses apply to the final token only."""
+
+    coeff: float = 1.0
+    label_token: int = 0
+
+
+@dataclass
+class OptimKLLossConfig:
+    """KL divergence loss config for CI optimization. These losses apply to the final token only."""
+
+    coeff: float = 1.0
+
+
+@dataclass
 class AliveComponentInfo:
     """Info about which components are alive at each position for each layer."""
 
@@ -119,6 +134,19 @@ def create_optimizable_ci_params(
         ci_pre_sigmoid=ci_pre_sigmoid,
         alive_info=alive_info,
     )
+
+
+def compute_label_prob(
+    model: ComponentModel,
+    tokens: Tensor,
+    ci_lower_leaky: dict[str, Tensor],
+    label_token: int,
+) -> float:
+    """Compute probability of label_token at final position with CI mask."""
+    mask_infos = make_mask_infos(ci_lower_leaky, routing_masks="all")
+    logits = model(tokens, mask_infos=mask_infos)
+    probs = F.softmax(logits[0, -1, :], dim=-1)
+    return float(probs[label_token].item())
 
 
 def compute_l0_stats(
@@ -224,7 +252,8 @@ class OptimCIConfig:
 
     # Loss configs
     imp_min_config: ImportanceMinimalityLossConfig
-    ce_loss_coeff: float
+    ce_loss_config: OptimCELossConfig | None
+    kl_loss_config: OptimKLLossConfig | None
 
     sampling: SamplingType
 
@@ -237,7 +266,6 @@ ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
 def optimize_ci_values(
     model: ComponentModel,
     tokens: Tensor,
-    label_token: int,
     config: OptimCIConfig,
     device: str,
     on_progress: ProgressCallback | None = None,
@@ -247,15 +275,14 @@ def optimize_ci_values(
     Args:
         model: The ComponentModel (weights will be frozen).
         tokens: Tokenized prompt of shape [1, seq_len].
-        label_token: The token to optimize CI values for.
-        config: Optimization configuration.
+        config: Optimization configuration (includes loss configs).
         device: Device to run on.
+
     Returns:
         The OptimizableCIParams object.
     """
     imp_min_coeff = config.imp_min_config.coeff
     assert imp_min_coeff is not None, "Importance minimality loss coefficient must be set"
-    ce_loss_coeff = config.ce_loss_coeff
 
     # Freeze all model parameters
     model.requires_grad_(False)
@@ -272,7 +299,7 @@ def optimize_ci_values(
 
     # Compute alive info and create optimizable parameters
     alive_info = compute_alive_info(initial_ci_outputs.lower_leaky)
-    ci_params = create_optimizable_ci_params(
+    ci_params: OptimizableCIParams = create_optimizable_ci_params(
         alive_info=alive_info,
         initial_pre_sigmoid=initial_ci_outputs.pre_sigmoid,
     )
@@ -309,12 +336,29 @@ def optimize_ci_values(
             p_anneal_final_p=config.imp_min_config.p_anneal_final_p,
             p_anneal_end_frac=config.imp_min_config.p_anneal_end_frac,
         )
-        ce_loss = F.cross_entropy(
-            out[0, -1, :].unsqueeze(0), torch.tensor([label_token], device=device)
-        )
-        total_loss = ce_loss_coeff * ce_loss + imp_min_coeff * imp_min_loss
-        # Get the output probability for the label_token in the final seq position
-        label_prob = F.softmax(out[0, -1, :], dim=-1)[label_token]
+
+        # Compute faithfulness losses (CE and/or KL)
+        faithfulness_loss = torch.tensor(0.0, device=device)
+        ce_loss_val: float | None = None
+        kl_loss_val: float | None = None
+
+        if config.ce_loss_config is not None:
+            ce_loss = F.cross_entropy(
+                out[0, -1, :].unsqueeze(0),
+                torch.tensor([config.ce_loss_config.label_token], device=device),
+            )
+            faithfulness_loss = faithfulness_loss + config.ce_loss_config.coeff * ce_loss
+            ce_loss_val = ce_loss.item()
+
+        if config.kl_loss_config is not None:
+            # KL divergence: encourage masked output to match target distribution
+            target_probs = F.softmax(target_out[0, -1, :], dim=-1)
+            pred_log_probs = F.log_softmax(out[0, -1, :], dim=-1)
+            kl_loss = F.kl_div(pred_log_probs, target_probs, reduction="sum")
+            faithfulness_loss = faithfulness_loss + config.kl_loss_config.coeff * kl_loss
+            kl_loss_val = kl_loss.item()
+
+        total_loss = faithfulness_loss + imp_min_coeff * imp_min_loss
 
         if step % config.log_freq == 0 or step == config.steps - 1:
             l0_stats = compute_l0_stats(ci_outputs, ci_alive_threshold=0.0)
@@ -329,19 +373,28 @@ def optimize_ci_values(
                     rounding_threshold=config.ce_kl_rounding_threshold,
                 )
 
-            # Also calculate the ci-masked label probability
-            with torch.no_grad():
-                mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
-                out = model(tokens, mask_infos=mask_infos)
-                ci_masked_label_prob = F.softmax(out[0, -1, :], dim=-1)[label_token]
-
-            log_terms = {
+            log_terms: dict[str, float] = {
                 "imp_min_loss": imp_min_loss.item(),
-                "ce_loss": ce_loss.item(),
                 "total_loss": total_loss.item(),
-                "stoch_masked_label_prob": label_prob.item(),
-                "ci_masked_label_prob": ci_masked_label_prob.item(),
             }
+            if ce_loss_val is not None:
+                log_terms["ce_loss"] = ce_loss_val
+            if kl_loss_val is not None:
+                log_terms["kl_loss"] = kl_loss_val
+
+            # Log label probability if CE loss is used
+            if config.ce_loss_config is not None:
+                stoch_label_prob = F.softmax(out[0, -1, :], dim=-1)[
+                    config.ce_loss_config.label_token
+                ]
+                log_terms["stoch_masked_label_prob"] = stoch_label_prob.item()
+
+                with torch.no_grad():
+                    ci_masked_label_prob = compute_label_prob(
+                        model, tokens, ci_outputs.lower_leaky, config.ce_loss_config.label_token
+                    )
+                    log_terms["ci_masked_label_prob"] = ci_masked_label_prob
+
             tqdm.write(f"\n--- Step {step} ---")
             for name, value in log_terms.items():
                 tqdm.write(f"  {name}: {value:.6f}")

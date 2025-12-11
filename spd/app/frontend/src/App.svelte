@@ -4,6 +4,7 @@
     import * as api from "./lib/api";
     import * as attrApi from "./lib/localAttributionsApi";
     import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
+    import { CANONICAL_RUNS, formatRunIdForDisplay } from "./lib/registry";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
@@ -92,6 +93,12 @@
 
     let activeTab = $state<"prompts" | "activation-contexts" | "dataset-search" | null>(null);
     let showConfig = $state(false);
+    let showRegistry = $state(false);
+
+    function selectRegistryEntry(wandbRunId: string) {
+        trainWandbRunEntry = wandbRunId;
+        showRegistry = false;
+    }
 </script>
 
 <!-- <RenderScan /> -->
@@ -100,29 +107,41 @@
         <span class="backend-user">user: {backendUser ?? "..."}</span>
         <form onsubmit={loadRun} class="run-input">
             <label for="wandb-path">W&B Path/Link:</label>
-            <input
-                type="text"
-                id="wandb-path"
-                list="run-options"
-                placeholder="e.g. goodfire/spd/runs/33n6xjjt"
-                bind:value={trainWandbRunEntry}
-                disabled={loadingTrainRun}
-            />
-            {#if loadedRun}
+            <div class="input-with-dropdown">
+                <input
+                    type="text"
+                    id="wandb-path"
+                    list="run-options"
+                    placeholder="e.g. goodfire/spd/runs/33n6xjjt"
+                    bind:value={trainWandbRunEntry}
+                    disabled={loadingTrainRun}
+                />
                 <div
-                    class="config-wrapper"
+                    class="registry-wrapper"
                     role="group"
-                    onmouseenter={() => (showConfig = true)}
-                    onmouseleave={() => (showConfig = false)}
+                    onmouseenter={() => (showRegistry = true)}
+                    onmouseleave={() => (showRegistry = false)}
                 >
-                    <button class="config-button">Config</button>
-                    {#if showConfig}
-                        <div class="config-dropdown">
-                            <pre>{loadedRun.config_yaml}</pre>
+                    <button type="button" class="registry-button" title="Select from canonical runs"> ▼ </button>
+                    {#if showRegistry}
+                        <div class="registry-dropdown">
+                            {#each CANONICAL_RUNS as entry (entry.wandbRunId)}
+                                <button
+                                    type="button"
+                                    class="registry-entry"
+                                    onclick={() => selectRegistryEntry(entry.wandbRunId)}
+                                >
+                                    <span class="entry-model">{entry.modelName}</span>
+                                    <span class="entry-id">{formatRunIdForDisplay(entry.wandbRunId)}</span>
+                                    {#if entry.notes}
+                                        <span class="entry-notes">{entry.notes}</span>
+                                    {/if}
+                                </button>
+                            {/each}
                         </div>
                     {/if}
                 </div>
-            {/if}
+            </div>
             <label for="context-length">Context Length:</label>
             <input
                 type="number"
@@ -139,24 +158,45 @@
     </header>
 
     <nav class="tab-bar">
-        <button
-            class="tab-button"
-            class:active={activeTab === "dataset-search"}
-            onclick={() => (activeTab = "dataset-search")}
-        >
-            Dataset Search
-        </button>
-        {#if loadedRun}
-            <button class="tab-button" class:active={activeTab === "prompts"} onclick={() => (activeTab = "prompts")}>
-                Prompts
-            </button>
+        <div class="tab-buttons">
             <button
                 class="tab-button"
-                class:active={activeTab === "activation-contexts"}
-                onclick={() => (activeTab = "activation-contexts")}
+                class:active={activeTab === "dataset-search"}
+                onclick={() => (activeTab = "dataset-search")}
             >
-                Activation Contexts
+                Dataset Search
             </button>
+            {#if loadedRun}
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "prompts"}
+                    onclick={() => (activeTab = "prompts")}
+                >
+                    Prompts
+                </button>
+                <button
+                    class="tab-button"
+                    class:active={activeTab === "activation-contexts"}
+                    onclick={() => (activeTab = "activation-contexts")}
+                >
+                    Activation Contexts
+                </button>
+            {/if}
+        </div>
+        {#if loadedRun}
+            <div
+                class="config-wrapper"
+                role="group"
+                onmouseenter={() => (showConfig = true)}
+                onmouseleave={() => (showConfig = false)}
+            >
+                <button type="button" class="config-button">Config</button>
+                {#if showConfig}
+                    <div class="config-dropdown">
+                        <pre>{loadedRun.config_yaml}</pre>
+                    </div>
+                {/if}
+            </div>
         {/if}
     </nav>
 
@@ -348,11 +388,17 @@
 
     .tab-bar {
         display: flex;
-        gap: var(--space-2);
+        justify-content: space-between;
+        align-items: center;
         padding: var(--space-3);
         background: var(--bg-surface);
         border-bottom: 1px solid var(--border-default);
         flex-shrink: 0;
+    }
+
+    .tab-buttons {
+        display: flex;
+        gap: var(--space-2);
     }
 
     .main-content {
@@ -393,5 +439,102 @@
         flex: 1;
         color: var(--text-muted);
         font-family: var(--font-sans);
+    }
+
+    .input-with-dropdown {
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+    }
+
+    .input-with-dropdown input[type="text"] {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+        border-right: none;
+    }
+
+    .registry-wrapper {
+        position: relative;
+    }
+
+    .registry-button {
+        padding: var(--space-1) var(--space-2);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        border-top-right-radius: var(--radius-sm);
+        border-bottom-right-radius: var(--radius-sm);
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+        cursor: pointer;
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        height: 100%;
+        display: flex;
+        align-items: center;
+    }
+
+    .registry-button:hover {
+        background: var(--bg-inset);
+        color: var(--text-primary);
+    }
+
+    .registry-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        padding-top: var(--space-1);
+        z-index: 1000;
+        min-width: 320px;
+    }
+
+    .registry-dropdown > :first-child {
+        border-top-left-radius: var(--radius-md);
+        border-top-right-radius: var(--radius-md);
+    }
+
+    .registry-dropdown > :last-child {
+        border-bottom-left-radius: var(--radius-md);
+        border-bottom-right-radius: var(--radius-md);
+    }
+
+    .registry-entry {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-1);
+        width: 100%;
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        border-top: none;
+        cursor: pointer;
+        text-align: left;
+        font-family: var(--font-sans);
+        border-radius: 0;
+    }
+
+    .registry-entry:first-child {
+        border-top: 1px solid var(--border-default);
+    }
+
+    .registry-entry:hover {
+        background: var(--bg-inset);
+    }
+
+    .entry-model {
+        font-size: var(--text-sm);
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .entry-id {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--accent-primary);
+    }
+
+    .entry-notes {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
     }
 </style>
