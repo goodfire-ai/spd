@@ -125,6 +125,7 @@
         // Sort rows
         const parseRow = (r: string) => {
             if (r === "wte") return { block: -1, subtype: "wte" };
+            if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
             if (r === "output") return { block: Infinity, subtype: "output" };
             const mQkv = r.match(/h\.(\d+)\.qkv/);
             if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
