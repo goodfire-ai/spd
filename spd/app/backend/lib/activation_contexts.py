@@ -85,17 +85,11 @@ def get_activations_data(
 
         with torch.no_grad():
             output_with_cache = cm(batch, cache_type="input")
-            # TODO: Re-enable token uplift after performance optimization
-            # logits = output_with_cache.output
             ci_vals = cm.calc_causal_importances(
                 pre_weight_acts=output_with_cache.cache,
                 detach_inputs=True,
                 sampling=config.sampling,
             ).lower_leaky
-
-        # TODO: Re-enable token uplift after performance optimization
-        # Get softmax probabilities for predicted token lift calculation
-        # pred_probs: Float[Tensor, "B S V"] = torch.softmax(logits, dim=-1)
 
         for module_idx, (module_name, ci_val) in enumerate(ci_vals.items()):
             pbar.update(1)

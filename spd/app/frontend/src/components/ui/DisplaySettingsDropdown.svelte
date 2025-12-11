@@ -8,7 +8,7 @@
 
     let showDropdown = $state(false);
 
-    const statTypes: CorrelationStatType[] = ["pmi", "precision", "recall", "f1", "jaccard"];
+    const statTypes: CorrelationStatType[] = ["pmi", "precision", "recall", "jaccard"];
 </script>
 
 <div

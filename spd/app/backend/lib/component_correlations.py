@@ -2,7 +2,7 @@
 
 Computes pairwise correlation metrics between components based on their
 co-occurrence patterns across a dataset. Metrics include precision, recall,
-F1, Jaccard similarity, and PMI.
+Jaccard similarity, and PMI.
 
 Also computes per-component token statistics (precision, recall, lift).
 """
@@ -10,8 +10,9 @@ Also computes per-component token statistics (precision, recall, lift).
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 
+import einops
 import torch
 import tqdm
 from jaxtyping import Float, Int
@@ -24,77 +25,6 @@ from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
-
-
-class MetricFn(Protocol):
-    def __call__(
-        self,
-        count_i: Tensor,
-        count_j: Float[Tensor, " n"],
-        count_ij: Float[Tensor, " n"],
-        n_tokens: int,
-    ) -> Float[Tensor, " n"]: ...
-
-
-def _precision(
-    count_i: Tensor,
-    count_j: Float[Tensor, " n"],  # pyright: ignore[reportUnusedParameter]
-    count_ij: Float[Tensor, " n"],
-    n_tokens: int,  # pyright: ignore[reportUnusedParameter]
-) -> Float[Tensor, " n"]:
-    return torch.where(count_i > 0, count_ij / count_i, float("-inf"))
-
-
-def _recall(
-    count_i: Tensor,  # pyright: ignore[reportUnusedParameter]
-    count_j: Float[Tensor, " n"],
-    count_ij: Float[Tensor, " n"],
-    n_tokens: int,  # pyright: ignore[reportUnusedParameter]
-) -> Float[Tensor, " n"]:
-    return torch.where(count_j > 0, count_ij / count_j, float("-inf"))
-
-
-def _f1(
-    count_i: Tensor,
-    count_j: Float[Tensor, " n"],
-    count_ij: Float[Tensor, " n"],
-    n_tokens: int,
-) -> Float[Tensor, " n"]:
-    precision = _precision(count_i, count_j, count_ij, n_tokens)
-    recall = _recall(count_i, count_j, count_ij, n_tokens)
-    denominator = precision + recall
-    return torch.where(denominator > 0, 2 * precision * recall / denominator, float("-inf"))
-
-
-def _jaccard(
-    count_i: Tensor,
-    count_j: Float[Tensor, " n"],
-    count_ij: Float[Tensor, " n"],
-    n_tokens: int,  # pyright: ignore[reportUnusedParameter]
-) -> Float[Tensor, " n"]:
-    union = count_i + count_j - count_ij
-    return torch.where(union > 0, count_ij / union, float("-inf"))
-
-
-def _pmi(
-    count_i: Tensor,
-    count_j: Float[Tensor, " n"],
-    count_ij: Float[Tensor, " n"],
-    n_tokens: int,
-) -> Float[Tensor, " n"]:
-    return torch.where(
-        count_ij > 0.0, (count_ij * n_tokens / (count_i * count_j)).log(), float("-inf")
-    )
-
-
-Metric = Literal["precision", "recall", "f1", "jaccard", "pmi"]
-METRIC_FNS: dict[Metric, MetricFn] = {
-    "precision": _precision,
-    "recall": _recall,
-    "f1": _f1,
-    "jaccard": _jaccard,
-    "pmi": _pmi,
-}
 
 
 @dataclass
@@ -121,15 +51,18 @@ class CorrelatedComponentWithCounts:
     """Total tokens seen"""
 
 
+Metric = Literal["precision", "recall", "jaccard", "pmi"]
+
+
 @dataclass
 class ComponentCorrelations:
     """Stores correlation statistics between components."""
 
     component_keys: list[str]
     """List of component keys: ["h.0.attn.q_proj:0", "h.0.attn.q_proj:1", ...]"""
-    count_i: Float[Tensor, " n_components"]
+    count_i: Int[Tensor, " n_components"]
     """Firing count per component"""
-    count_ij: Float[Tensor, "n_components n_components"]
+    count_ij: Int[Tensor, "n_components n_components"]
     """Co-occurrence matrix: count_ij[i, j] = count of tokens where component i and j both fired"""
     count_total: int
     """Total tokens seen"""
@@ -138,20 +71,45 @@ class ComponentCorrelations:
         return self.component_keys.index(key)
 
     def _compute_scores(self, component_key: str, metric: Metric) -> tuple[Tensor, int] | None:
-        """Compute scores for a component. Returns (scores, component_idx) or None if no firings."""
+        """Compute scores for a component. Returns (scores, component_idx)."""
         i = self._key_to_idx(component_key)
-        count_i_val = self.count_i[i]
 
-        if count_i_val == 0:
+        count_this = int(self.count_i[i].item())
+        if count_this == 0:
             return None
 
-        count_ij_row = self.count_ij[i]
-        scores = METRIC_FNS[metric](count_i_val, self.count_i, count_ij_row, self.count_total)
+        count_others = self.count_i
+
+        cooccurence_counts: Float[Tensor, " n_components"] = self.count_ij[i]
+
+        match metric:
+            case "precision":
+                # this component's precision as a prediction of the other components
+                # (or, the other components' recall as a prediction of this component)
+                scores = (cooccurence_counts / count_this).nan_to_num(float("-inf"))
+            case "recall":
+                # this component's recall as a prediction of the other components
+                # (or, the other components' precision as a prediction of this component)
+                scores = (cooccurence_counts / count_others).nan_to_num(float("-inf"))
+            case "jaccard":
+                # jaccard = intersection / union
+                intersection = cooccurence_counts
+                union = count_this + count_others - cooccurence_counts
+                scores = (intersection / union).nan_to_num(float("-inf"))
+            case "pmi":
+                # pmi = log(lift)
+                # lift = P(this | that) / P(this)
+                #      = P(this, that) / P(this)P(that)
+                p_this_that = cooccurence_counts / count_others
+                p_this = count_this / self.count_total
+                p_that = count_others / self.count_total
+                lift = p_this_that / (p_this * p_that)
+                scores = torch.log(lift).nan_to_num(float("-inf"))
 
         # Mask out self and zeros with -inf
         scores[i] = float("-inf")
         scores[self.count_i == 0] = float("-inf")
-        scores[count_ij_row == 0] = float("-inf")
+        scores[cooccurence_counts == 0] = float("-inf")
 
         return scores, i
 
@@ -196,16 +154,18 @@ class ComponentCorrelations:
         component_key: str,
         metric: Metric,
         top_k: int,
+        largest: bool = True,
     ) -> list[CorrelatedComponentWithCounts]:
-        """Get top-k correlated components with raw counts for visualization.
+        """Get top-k or bottom-k correlated components with raw counts for visualization.
 
         Args:
             component_key: The component to find correlations for (e.g., "h.0.attn.q_proj:5")
             metric: Which correlation metric to use
-            top_k: Number of top correlations to return
+            top_k: Number of correlations to return
+            largest: If True, return highest scores; if False, return lowest scores
 
         Returns:
-            List of CorrelatedComponentWithCounts sorted by score descending
+            List of CorrelatedComponentWithCounts sorted by score (desc if largest, asc if not)
         """
         result = self._compute_scores(component_key, metric)
         if result is None:
@@ -216,7 +176,7 @@ class ComponentCorrelations:
         count_ij_row = self.count_ij[i]
 
         top_k_clamped = min(top_k, len(scores))
-        top_values, top_indices = torch.topk(scores, top_k_clamped)
+        top_values, top_indices = torch.topk(scores, top_k_clamped, largest=largest)
 
         output = []
         for idx, val in zip(top_indices.tolist(), top_values.tolist(), strict=True):
@@ -561,7 +521,11 @@ def harvest_correlations(
 
             # Accumulate co-occurrence: (B*S, n_components).T @ (B*S, n_components)
             flat_acts = binary_acts.view(B * S, n_components)
-            count_ij += flat_acts.T @ flat_acts
+            count_ij += einops.einsum(
+                flat_acts,
+                flat_acts,
+                "BxS n_components, BxS n_components -> n_components n_components",
+            )
 
             # === Input token stats (vectorized) ===
             # One-hot encode input tokens: (B, S) -> (B*S, vocab_size)
@@ -569,8 +533,9 @@ def harvest_correlations(
             input_onehot = torch.zeros(B * S, vocab_size, device=device, dtype=torch.float32)
             input_onehot.scatter_(1, batch_flat.unsqueeze(1), 1.0)
 
-            # Accumulate: (n_components, B*S) @ (B*S, vocab_size) -> (n_components, vocab_size)
-            input_counts += flat_acts.T @ input_onehot
+            input_counts += einops.einsum(
+                flat_acts, input_onehot, "BxS n_components, BxS vocab -> n_components vocab"
+            )
 
             # Accumulate input totals
             input_totals += input_onehot.sum(dim=0)
@@ -579,9 +544,10 @@ def harvest_correlations(
             # probs: (B, S, vocab_size) -> (B*S, vocab_size)
             probs_flat = probs.view(B * S, vocab_size)
 
-            # Accumulate: (n_components, B*S) @ (B*S, vocab_size) -> (n_components, vocab_size)
             # This sums up probabilities weighted by whether component fired
-            output_counts += flat_acts.T @ probs_flat
+            output_counts += einops.einsum(
+                flat_acts, probs_flat, "BxS n_components, BxS vocab -> n_components vocab"
+            )
 
             # Accumulate output totals (marginal probability mass per token)
             output_totals += probs_flat.sum(dim=0)

@@ -56,6 +56,12 @@
         white-space: pre;
         cursor: default;
         position: relative;
+        box-shadow: inset 0 0 0 1px transparent;
+        transition: box-shadow 0.1s;
+    }
+
+    .token-pill:hover {
+        box-shadow: inset 0 0 0 1px var(--border-strong);
     }
 
     .token-pill::after {

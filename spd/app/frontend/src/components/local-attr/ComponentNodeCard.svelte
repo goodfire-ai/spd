@@ -6,10 +6,9 @@
         TokenStats,
     } from "../../lib/localAttributionsTypes";
     import { getComponentCorrelations, getComponentTokenStats } from "../../lib/localAttributionsApi";
-    import { displaySettings } from "../../lib/displaySettings.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
-    import ComponentCorrelationTable from "./ComponentCorrelationTable.svelte";
+    import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
@@ -44,7 +43,7 @@
     $effect(() => {
         correlations = null;
         correlationsLoading = true;
-        getComponentCorrelations(layer, cIdx, 10)
+        getComponentCorrelations(layer, cIdx, 1000)
             .then((data) => {
                 correlations = data;
             })
@@ -57,7 +56,7 @@
     $effect(() => {
         tokenStats = null;
         tokenStatsLoading = true;
-        getComponentTokenStats(layer, cIdx, 100)
+        getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
                 tokenStats = data;
             })
@@ -100,8 +99,6 @@
     function formatMeanCi(ci: number): string {
         return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
     }
-
-    const N_CORRELATIONS_TO_DISPLAY = 10;
 </script>
 
 <div class="component-node-card">
@@ -150,46 +147,7 @@
     <div class="correlations-section">
         <SectionHeader title="Correlated Components" />
         {#if correlations}
-            <div class="correlations-grid">
-                {#if displaySettings.isCorrelationStatVisible("pmi")}
-                    <ComponentCorrelationTable
-                        title="PMI"
-                        mathNotation="log(P(both) / P(A)P(B))"
-                        items={correlations.pmi.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                        onComponentClick={handleCorrelationClick}
-                    />
-                {/if}
-                {#if displaySettings.isCorrelationStatVisible("precision")}
-                    <ComponentCorrelationTable
-                        title="Precision"
-                        mathNotation="P(that | this)"
-                        items={correlations.precision.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                        onComponentClick={handleCorrelationClick}
-                    />
-                {/if}
-                {#if displaySettings.isCorrelationStatVisible("recall")}
-                    <ComponentCorrelationTable
-                        title="Recall"
-                        mathNotation="P(this | that)"
-                        items={correlations.recall.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                        onComponentClick={handleCorrelationClick}
-                    />
-                {/if}
-                {#if displaySettings.isCorrelationStatVisible("f1")}
-                    <ComponentCorrelationTable
-                        title="F1"
-                        items={correlations.f1.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                        onComponentClick={handleCorrelationClick}
-                    />
-                {/if}
-                {#if displaySettings.isCorrelationStatVisible("jaccard")}
-                    <ComponentCorrelationTable
-                        title="Jaccard"
-                        items={correlations.jaccard.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                        onComponentClick={handleCorrelationClick}
-                    />
-                {/if}
-            </div>
+            <ComponentCorrelationMetrics {correlations} pageSize={16} onComponentClick={handleCorrelationClick} />
         {:else if correlationsLoading}
             <StatusText>Loading...</StatusText>
         {:else}
@@ -243,11 +201,5 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
-    }
-
-    .correlations-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-3);
     }
 </style>

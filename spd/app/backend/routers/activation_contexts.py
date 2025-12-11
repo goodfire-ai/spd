@@ -3,26 +3,18 @@
 import json
 import queue
 import threading
-import time
 from collections.abc import Generator
 from typing import Annotated, Any
 
+import torch
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from torch.utils.data import DataLoader
 
+from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
-from spd.app.backend.lib.component_correlations import (
-    ComponentCorrelations,
-    ComponentTokenStats,
-    get_correlations_path,
-    get_token_stats_path,
-)
-from spd.app.backend.lib.component_correlations import (
-    CorrelatedComponent as CorrelatedComponentDC,  # the dataclass version
-)
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
     SubcomponentActivationContexts,
@@ -30,6 +22,7 @@ from spd.app.backend.schemas import (
 )
 from spd.app.backend.utils import log_errors
 from spd.log import logger
+from spd.utils.distributed_utils import get_device
 
 
 class HarvestMetadata(BaseModel):
@@ -65,7 +58,6 @@ class ComponentCorrelationsResponse(BaseModel):
 
     precision: list[CorrelatedComponent]
     recall: list[CorrelatedComponent]
-    f1: list[CorrelatedComponent]
     jaccard: list[CorrelatedComponent]
     pmi: list[CorrelatedComponent]
 
@@ -191,8 +183,6 @@ def generate_activation_contexts(
                 tokenizer=loaded.tokenizer,
                 train_loader=train_loader,
                 token_strings=loaded.token_strings,
-                # TODO: Re-enable token uplift after performance optimization
-                # token_base_rates=loaded.token_base_rates,
                 importance_threshold=importance_threshold,
                 n_batches=n_batches,
                 n_tokens_either_side=n_tokens_either_side,
@@ -256,11 +246,6 @@ def probe_component(
     Fast endpoint for testing hypotheses about component activation.
     Only requires a single forward pass.
     """
-    import torch
-
-    from spd.app.backend.compute import compute_ci_only
-    from spd.utils.distributed_utils import get_device
-
     device = get_device()
 
     token_ids = loaded.tokenizer.encode(request.text, add_special_tokens=False)
@@ -279,134 +264,3 @@ def probe_component(
     token_strings = [loaded.token_strings[t] for t in token_ids]
 
     return ComponentProbeResponse(tokens=token_strings, ci_values=ci_values)
-
-
-def _get_correlations(run_id: str) -> ComponentCorrelations | None:
-    """Load correlations from cache or disk."""
-    start = time.perf_counter()
-
-    path = get_correlations_path(run_id)
-    if not path.exists():
-        return None
-
-    correlations = ComponentCorrelations.load(path)
-    load_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"Loaded correlations for {run_id} in {load_ms:.1f}ms")
-    return correlations
-
-
-def _get_token_stats(run_id: str) -> ComponentTokenStats | None:
-    """Load token stats from cache or disk."""
-    start = time.perf_counter()
-
-    path = get_token_stats_path(run_id)
-    if not path.exists():
-        return None
-
-    token_stats = ComponentTokenStats.load(path)
-    load_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"Loaded token stats for {run_id} in {load_ms:.1f}ms")
-    return token_stats
-
-
-@router.get("/correlations/{layer}/{component_idx}")
-@log_errors
-def get_component_correlations(
-    layer: str,
-    component_idx: int,
-    loaded: DepLoadedRun,
-    top_k: Annotated[int, Query(ge=1, le=50)] = 10,
-) -> ComponentCorrelationsResponse | None:
-    """Get correlated components for a specific component.
-
-    Returns top-k correlations across different metrics (precision, recall, F1, Jaccard).
-    Returns None if correlations haven't been harvested for this run.
-    """
-    start = time.perf_counter()
-
-    # Extract run_id from wandb_path (entity/project/run_id -> run_id)
-    run_id = loaded.run.wandb_path.split("/")[-1]
-    correlations = _get_correlations(run_id)
-
-    if correlations is None:
-        return None
-
-    component_key = f"{layer}:{component_idx}"
-
-    if component_key not in correlations.component_keys:
-        raise HTTPException(
-            status_code=404, detail=f"Component {component_key} not found in correlations"
-        )
-
-    def to_schema(c: CorrelatedComponentDC) -> CorrelatedComponent:
-        return CorrelatedComponent(component_key=c.component_key, score=c.score)
-
-    response = ComponentCorrelationsResponse(
-        precision=[
-            to_schema(c) for c in correlations.get_correlated(component_key, "precision", top_k)
-        ],
-        recall=[to_schema(c) for c in correlations.get_correlated(component_key, "recall", top_k)],
-        f1=[to_schema(c) for c in correlations.get_correlated(component_key, "f1", top_k)],
-        jaccard=[
-            to_schema(c) for c in correlations.get_correlated(component_key, "jaccard", top_k)
-        ],
-        pmi=[to_schema(c) for c in correlations.get_correlated(component_key, "pmi", top_k)],
-    )
-
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"get_component_correlations: {component_key} in {total_ms:.1f}ms")
-    return response
-
-
-@router.get("/token_stats/{layer}/{component_idx}")
-@log_errors
-def get_component_token_stats(
-    layer: str,
-    component_idx: int,
-    loaded: DepLoadedRun,
-    top_k: Annotated[int, Query(ge=1, le=100)] = 10,
-) -> TokenStatsResponse | None:
-    """Get token precision/recall/lift/PMI for a component.
-
-    Returns stats for both input tokens (what activates this component)
-    and output tokens (what this component predicts).
-    Returns None if token stats haven't been harvested for this run.
-    """
-    start = time.perf_counter()
-
-    run_id = loaded.run.wandb_path.split("/")[-1]
-    token_stats = _get_token_stats(run_id)
-
-    if token_stats is None:
-        return None
-
-    component_key = f"{layer}:{component_idx}"
-
-    input_stats = token_stats.get_input_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
-    output_stats = token_stats.get_output_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
-
-    if input_stats is None or output_stats is None:
-        return None
-
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"get_component_token_stats: {component_key} in {total_ms:.1f}ms")
-
-    assert input_stats.bottom_pmi is None, "Input stats should not have bottom PMI"
-    assert output_stats.bottom_pmi is not None, "Output stats should have bottom PMI"
-
-    return TokenStatsResponse(
-        input=TokenPRLiftPMI(
-            top_recall=input_stats.top_recall,
-            top_precision=input_stats.top_precision,
-            top_lift=input_stats.top_lift,
-            top_pmi=input_stats.top_pmi,
-            bottom_pmi=input_stats.bottom_pmi,
-        ),
-        output=TokenPRLiftPMI(
-            top_recall=output_stats.top_recall,
-            top_precision=output_stats.top_precision,
-            top_lift=output_stats.top_lift,
-            top_pmi=output_stats.top_pmi,
-            bottom_pmi=output_stats.bottom_pmi,
-        ),
-    )

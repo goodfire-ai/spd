@@ -1,15 +1,17 @@
 <script lang="ts">
+    import type { Snippet } from "svelte";
     import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
     import ComponentPillList from "../ui/ComponentPillList.svelte";
 
     type Props = {
         title: string;
-        mathNotation?: string;
+        mathNotation?: Snippet;
         items: CorrelatedComponent[];
+        pageSize: number;
         onComponentClick?: (componentKey: string) => void;
     };
 
-    let { title, mathNotation, items, onComponentClick }: Props = $props();
+    let { title, mathNotation, items, pageSize, onComponentClick }: Props = $props();
 </script>
 
 {#if items.length > 0}
@@ -17,10 +19,10 @@
         <h5>
             {title}
             {#if mathNotation}
-                <span class="math-notation">{mathNotation}</span>
+                <span class="math-notation">{@render mathNotation()}</span>
             {/if}
         </h5>
-        <ComponentPillList {items} {onComponentClick} />
+        <ComponentPillList {items} {onComponentClick} {pageSize} />
     </div>
 {/if}
 
@@ -44,5 +46,18 @@
         font-style: italic;
         color: var(--text-muted);
         margin-left: var(--space-1);
+    }
+
+    /* Colors for math notation - match SetOverlapVis: blue=A, red=B, purple=intersection */
+    .math-notation :global(.color-this) {
+        color: rgb(0, 0, 255);
+    }
+
+    .math-notation :global(.color-that) {
+        color: rgb(255, 0, 0);
+    }
+
+    .math-notation :global(.color-both) {
+        color: rgb(176, 0, 176);
     }
 </style>

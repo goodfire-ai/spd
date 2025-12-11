@@ -5,55 +5,62 @@
 import { SvelteSet } from "svelte/reactivity";
 
 // Available correlation stat types
-export type CorrelationStatType = "pmi" | "precision" | "recall" | "f1" | "jaccard";
+export type CorrelationStatType = "pmi" | "bottom_pmi" | "precision" | "recall" | "jaccard";
 
 export const CORRELATION_STAT_LABELS: Record<CorrelationStatType, string> = {
     pmi: "PMI",
+    bottom_pmi: "Bottom PMI",
     precision: "Precision",
     recall: "Recall",
-    f1: "F1",
     jaccard: "Jaccard",
 };
 
 export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> = {
     pmi: "log(P(both) / P(A)P(B))",
+    bottom_pmi: "Lowest PMI (anti-correlated)",
     precision: "P(that | this)",
     recall: "P(this | that)",
-    f1: "Harmonic mean of precision and recall",
     jaccard: "Intersection over union",
 };
 
 const STORAGE_KEY = "spd-display-settings";
-const ALL_STATS: CorrelationStatType[] = ["pmi", "precision", "recall", "f1", "jaccard"];
+const ALL_STATS: CorrelationStatType[] = ["pmi", "bottom_pmi", "precision", "recall", "jaccard"];
+const DEFAULT_ON_STATS: CorrelationStatType[] = ["pmi", "precision", "recall", "jaccard"];
 
 type StoredSettings = {
     visibleCorrelationStats?: string[];
     showSetOverlapVis?: boolean;
 };
 
-function loadFromStorage(): StoredSettings {
+function loadFromStorage(): StoredSettings | undefined {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? (JSON.parse(stored) as StoredSettings) : {};
+    return stored ? (JSON.parse(stored) as StoredSettings) : undefined;
 }
 
 function loadCorrelationStats(): CorrelationStatType[] {
     const stored = loadFromStorage();
-    const valid = stored.visibleCorrelationStats?.filter((s: string) => ALL_STATS.includes(s as CorrelationStatType));
-    if (valid && valid.length > 0) return valid as CorrelationStatType[];
-    return ALL_STATS;
+    if (stored == null) return DEFAULT_ON_STATS;
+    // if any invalid stats are present, delete the key from storage
+    if (stored.visibleCorrelationStats?.some((s: string) => !ALL_STATS.includes(s as CorrelationStatType))) {
+        stored.visibleCorrelationStats = DEFAULT_ON_STATS;
+        saveToStorage(stored);
+        return DEFAULT_ON_STATS;
+    }
+    return stored.visibleCorrelationStats as CorrelationStatType[];
 }
 
 function loadShowSetOverlapVis(): boolean {
-    const stored = loadFromStorage();
-    return stored.showSetOverlapVis ?? true;
+    return loadFromStorage()?.showSetOverlapVis ?? true;
 }
 
 function saveToStorage(settings: StoredSettings) {
     try {
         const current = loadFromStorage();
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...settings }));
-    } catch {
-        // Ignore storage errors
+    } catch (error) {
+        console.error(
+            `Error saving display settings to storage: ${error instanceof Error ? error.message : String(error)}`,
+        );
     }
 }
 

@@ -356,7 +356,7 @@ export async function getComponentCorrelations(
     componentIdx: number,
     topK: number = 10,
 ): Promise<ComponentCorrelations | null> {
-    const url = new URL(`${API_URL}/api/correlations/${encodeURIComponent(layer)}/${componentIdx}`);
+    const url = new URL(`${API_URL}/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
     return fetchJson<ComponentCorrelations | null>(url.toString());
 }

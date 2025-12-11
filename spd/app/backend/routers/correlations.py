@@ -31,7 +31,7 @@ from spd.app.backend.lib.component_correlations_slurm import (
     status_file_exists,
     submit_correlation_job,
 )
-from spd.app.backend.utils import log_errors
+from spd.app.backend.utils import log_errors, timer
 from spd.log import logger
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -52,9 +52,9 @@ class ComponentCorrelationsResponse(BaseModel):
 
     precision: list[CorrelatedComponent]
     recall: list[CorrelatedComponent]
-    f1: list[CorrelatedComponent]
     jaccard: list[CorrelatedComponent]
     pmi: list[CorrelatedComponent]
+    bottom_pmi: list[CorrelatedComponent]
 
 
 class TokenPRLiftPMI(BaseModel):
@@ -231,108 +231,13 @@ def submit_job(loaded: DepLoadedRun, request: SubmitJobRequest) -> SubmitJobResp
 # =============================================================================
 
 
-def _get_correlations(run_id: str) -> ComponentCorrelations | None:
-    """Load correlations from disk."""
-    start = time.perf_counter()
-
-    path = get_correlations_path(run_id)
-    if not path.exists():
-        logger.warning(f"Correlations not found at {path}")
-        return None
-
-    correlations = ComponentCorrelations.load(path)
-    load_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"Loaded correlations for {run_id} in {load_ms:.1f}ms")
-    return correlations
-
-
-def _get_token_stats(run_id: str) -> ComponentTokenStats | None:
-    """Load token stats from disk."""
-    start = time.perf_counter()
-
-    path = get_token_stats_path(run_id)
-    if not path.exists():
-        return None
-
-    token_stats = ComponentTokenStats.load(path)
-    load_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"Loaded token stats for {run_id} in {load_ms:.1f}ms")
-    return token_stats
-
-
-@router.get("/{layer}/{component_idx}")
-@log_errors
-def get_component_correlations(
-    layer: str,
-    component_idx: int,
-    loaded: DepLoadedRun,
-    top_k: Annotated[int, Query(ge=1, le=50)] = 10,
-) -> ComponentCorrelationsResponse | None:
-    """Get correlated components for a specific component.
-
-    Returns top-k correlations across different metrics (precision, recall, F1, Jaccard, PMI).
-    Returns None if correlations haven't been harvested for this run.
-    """
-    start = time.perf_counter()
-
-    run_id = loaded.run.wandb_path.split("/")[-1]
-    correlations = _get_correlations(run_id)
-
-    if correlations is None:
-        return None
-
-    component_key = f"{layer}:{component_idx}"
-
-    if component_key not in correlations.component_keys:
-        raise HTTPException(
-            status_code=404, detail=f"Component {component_key} not found in correlations"
-        )
-
-    def to_schema(c: CorrelatedComponentDC) -> CorrelatedComponent:
-        return CorrelatedComponent(
-            component_key=c.component_key,
-            score=c.score,
-            count_i=c.count_i,
-            count_j=c.count_j,
-            count_ij=c.count_ij,
-            n_tokens=c.count_total,
-        )
-
-    response = ComponentCorrelationsResponse(
-        precision=[
-            to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "precision", top_k)
-        ],
-        recall=[
-            to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "recall", top_k)
-        ],
-        f1=[
-            to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "f1", top_k)
-        ],
-        jaccard=[
-            to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "jaccard", top_k)
-        ],
-        pmi=[
-            to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "pmi", top_k)
-        ],
-    )
-
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"get_component_correlations: {component_key} in {total_ms:.1f}ms")
-    return response
-
-
 @router.get("/token_stats/{layer}/{component_idx}")
 @log_errors
 def get_component_token_stats(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-    top_k: Annotated[int, Query(ge=1, le=100)] = 10,
+    top_k: Annotated[int, Query(ge=1)],
 ) -> TokenStatsResponse | None:
     """Get token precision/recall/lift/PMI for a component.
 
@@ -340,24 +245,27 @@ def get_component_token_stats(
     and output tokens (what this component predicts).
     Returns None if token stats haven't been harvested for this run.
     """
-    start = time.perf_counter()
-
     run_id = loaded.run.wandb_path.split("/")[-1]
-    token_stats = _get_token_stats(run_id)
 
-    if token_stats is None:
+    path = get_token_stats_path(run_id)
+    if not path.exists():
         return None
+
+    with timer(f"Loading token stats for {run_id}"):
+        token_stats = ComponentTokenStats.load(path)
 
     component_key = f"{layer}:{component_idx}"
 
-    input_stats = token_stats.get_input_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
-    output_stats = token_stats.get_output_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
+    with timer(f"Getting input token stats for {component_key}"):
+        input_stats = token_stats.get_input_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
+
+    with timer(f"Getting output token stats for {component_key}"):
+        output_stats = token_stats.get_output_tok_stats(
+            component_key, loaded.tokenizer, top_k=top_k
+        )
 
     if input_stats is None or output_stats is None:
         return None
-
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"get_component_token_stats: {component_key} in {total_ms:.1f}ms")
 
     assert input_stats.bottom_pmi is None, "Input stats should not have bottom PMI"
     assert output_stats.bottom_pmi is not None, "Output stats should have bottom PMI"
@@ -378,3 +286,75 @@ def get_component_token_stats(
             bottom_pmi=output_stats.bottom_pmi,
         ),
     )
+
+
+@router.get("/components/{layer}/{component_idx}")
+@log_errors
+def get_component_correlations(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+    top_k: Annotated[int, Query(ge=1)],
+) -> ComponentCorrelationsResponse | None:
+    """Get correlated components for a specific component.
+
+    Returns top-k correlations across different metrics (precision, recall, Jaccard, PMI).
+    Returns None if correlations haven't been harvested for this run.
+    """
+    start = time.perf_counter()
+
+    run_id = loaded.run.wandb_path.split("/")[-1]
+
+    path = get_correlations_path(run_id)
+    if not path.exists():
+        return None
+
+    with timer(f"Loading correlations for {run_id}"):
+        correlations = ComponentCorrelations.load(path)
+
+    component_key = f"{layer}:{component_idx}"
+
+    if component_key not in correlations.component_keys:
+        raise HTTPException(
+            status_code=404, detail=f"Component {component_key} not found in correlations"
+        )
+
+    # annoying thing we have to do because we have separate model objects and pydantic DTOs
+    def to_schema(c: CorrelatedComponentDC) -> CorrelatedComponent:
+        return CorrelatedComponent(
+            component_key=c.component_key,
+            score=c.score,
+            count_i=c.count_i,
+            count_j=c.count_j,
+            count_ij=c.count_ij,
+            n_tokens=c.count_total,
+        )
+
+    response = ComponentCorrelationsResponse(
+        precision=[
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "precision", top_k)
+        ],
+        recall=[
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "recall", top_k)
+        ],
+        jaccard=[
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "jaccard", top_k)
+        ],
+        pmi=[
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "pmi", top_k)
+        ],
+        bottom_pmi=[
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(
+                component_key, "pmi", top_k, largest=False
+            )
+        ],
+    )
+
+    total_ms = (time.perf_counter() - start) * 1000
+    logger.info(f"get_component_correlations: {component_key} in {total_ms:.1f}ms")
+    return response

@@ -3,10 +3,9 @@
     import * as api from "../lib/api";
     import { getComponentCorrelations, getComponentTokenStats } from "../lib/localAttributionsApi";
     import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
-    import { displaySettings } from "../lib/displaySettings.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
-    import ComponentCorrelationTable from "./local-attr/ComponentCorrelationTable.svelte";
+    import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
     import SectionHeader from "./ui/SectionHeader.svelte";
     import StatusText from "./ui/StatusText.svelte";
     import TokenStatsSection from "./ui/TokenStatsSection.svelte";
@@ -19,7 +18,6 @@
 
     const N_TOKENS_TO_DISPLAY_INPUT = 80;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
-    const N_CORRELATIONS_TO_DISPLAY = 20;
 
     let availableLayers = $derived(Object.keys(harvestMetadata.layers).sort());
     let currentPage = $state(0);
@@ -123,7 +121,7 @@
 
         correlations = null;
         correlationsLoading = true;
-        getComponentCorrelations(layer, cIdx, N_CORRELATIONS_TO_DISPLAY)
+        getComponentCorrelations(layer, cIdx, 1000)
             .then((data) => {
                 correlations = data;
             })
@@ -140,7 +138,7 @@
 
         tokenStats = null;
         tokenStatsLoading = true;
-        getComponentTokenStats(layer, cIdx, Math.max(N_TOKENS_TO_DISPLAY_INPUT, N_TOKENS_TO_DISPLAY_OUTPUT))
+        getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
                 tokenStats = data;
             })
@@ -251,41 +249,7 @@
             <div class="correlations-section">
                 <SectionHeader title="Correlated Components" />
                 {#if correlations}
-                    <div class="correlations-grid">
-                        {#if displaySettings.isCorrelationStatVisible("pmi")}
-                            <ComponentCorrelationTable
-                                title="PMI"
-                                mathNotation="log(P(both) / P(A)P(B))"
-                                items={correlations.pmi.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                            />
-                        {/if}
-                        {#if displaySettings.isCorrelationStatVisible("precision")}
-                            <ComponentCorrelationTable
-                                title="Precision"
-                                mathNotation="P(that | this)"
-                                items={correlations.precision.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                            />
-                        {/if}
-                        {#if displaySettings.isCorrelationStatVisible("recall")}
-                            <ComponentCorrelationTable
-                                title="Recall"
-                                mathNotation="P(this | that)"
-                                items={correlations.recall.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                            />
-                        {/if}
-                        {#if displaySettings.isCorrelationStatVisible("f1")}
-                            <ComponentCorrelationTable
-                                title="F1"
-                                items={correlations.f1.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                            />
-                        {/if}
-                        {#if displaySettings.isCorrelationStatVisible("jaccard")}
-                            <ComponentCorrelationTable
-                                title="Jaccard"
-                                items={correlations.jaccard.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                            />
-                        {/if}
-                    </div>
+                    <ComponentCorrelationMetrics {correlations} pageSize={40} />
                 {:else if correlationsLoading}
                     <StatusText>Loading...</StatusText>
                 {:else if correlationJobStatus === null}
@@ -434,12 +398,6 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
-    }
-
-    .correlations-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-3);
     }
 
     .loading {

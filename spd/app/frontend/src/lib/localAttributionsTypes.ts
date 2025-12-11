@@ -75,9 +75,9 @@ export type CorrelatedComponent = {
 export type ComponentCorrelations = {
     precision: CorrelatedComponent[];
     recall: CorrelatedComponent[];
-    f1: CorrelatedComponent[];
     jaccard: CorrelatedComponent[];
     pmi: CorrelatedComponent[];
+    bottom_pmi: CorrelatedComponent[];
 };
 
 // Token P/R/lift/PMI for a single category (input or output)
