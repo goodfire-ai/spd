@@ -201,7 +201,7 @@ def get_sources_by_target(
             if layers.index(in_layer) < layers.index(out_layer):
                 test_pairs.append((in_layer, out_layer))
 
-    sources_by_target_unordered: dict[str, list[str]] = defaultdict(list)
+    sources_by_target: dict[str, list[str]] = defaultdict(list)
     for in_layer, out_layer in test_pairs:
         out_pre_detach = cache[f"{out_layer}_pre_detach"]
         in_post_detach = cache[f"{in_layer}_post_detach"]
@@ -215,15 +215,8 @@ def get_sources_by_target(
         assert len(grads) == 1
         grad = grads[0]
         if grad is not None:  # pyright: ignore[reportUnnecessaryComparison]
-            sources_by_target_unordered[out_layer].append(in_layer)
-
-    # Rebuild dict in topological order (following the layers list order)
-    sources_by_target = {
-        layer: sources_by_target_unordered[layer]
-        for layer in layers[1:]
-        if layer in sources_by_target_unordered
-    }
-    return sources_by_target
+            sources_by_target[out_layer].append(in_layer)
+    return dict(sources_by_target)
 
 
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
