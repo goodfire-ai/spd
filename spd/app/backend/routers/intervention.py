@@ -59,8 +59,10 @@ def _run_intervention_forward(
 
     predictions_per_position = [
         [
-            TokenPrediction(token=token, token_id=token_id, prob=prob, logit=logit)
-            for token, token_id, prob, logit in pos_predictions
+            TokenPrediction(
+                token=token, token_id=token_id, prob=prob, logit=logit, target_prob=target_prob
+            )
+            for token, token_id, prob, logit, target_prob in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]
@@ -95,8 +97,10 @@ def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> Inte
 
     predictions_per_position = [
         [
-            TokenPrediction(token=token, token_id=token_id, prob=prob, logit=logit)
-            for token, token_id, prob, logit in pos_predictions
+            TokenPrediction(
+                token=token, token_id=token_id, prob=prob, logit=logit, target_prob=target_prob
+            )
+            for token, token_id, prob, logit, target_prob in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]

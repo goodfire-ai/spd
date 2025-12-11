@@ -672,7 +672,8 @@
                                                 >
                                                     {#if pred}
                                                         <span class="pred-token">"{pred.token}"</span>
-                                                        <span class="pred-prob">{formatProb(pred.prob)}</span>
+                                                        <span class="pred-prob spd">SPD: {formatProb(pred.prob)}</span>
+                                                        <span class="pred-prob targ">Targ: {formatProb(pred.target_prob)}</span>
                                                     {:else}
                                                         -
                                                     {/if}
@@ -1011,5 +1012,14 @@
         display: block;
         font-size: 8px;
         color: var(--text-muted);
+    }
+
+    .pred-prob.spd {
+        color: var(--text-secondary);
+    }
+
+    .pred-prob.targ {
+        color: var(--text-muted);
+        opacity: 0.8;
     }
 </style>
