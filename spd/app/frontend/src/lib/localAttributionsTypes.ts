@@ -27,7 +27,7 @@ export type GraphData = {
     tokens: string[];
     edges: Edge[];
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
-    nodeCiVals: Record<string, number>; // node key -> CI value (or output prob for output nodes)
+    nodeCiVals: Record<string, number>; // node key -> CI value (or output prob for output nodes or 1 for wte node)
     maxAbsAttr: number; // max absolute edge value
     l0_total: number; // total active components at current CI threshold
     optimization?: OptimizationResult;

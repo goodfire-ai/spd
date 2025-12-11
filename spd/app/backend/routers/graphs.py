@@ -59,7 +59,9 @@ class GraphData(BaseModel):
     tokens: list[str]
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
-    nodeCiVals: dict[str, float]  # node key -> CI value (causal importance)
+    nodeCiVals: dict[
+        str, float
+    ]  # node key -> CI value (or output prob for output nodes or 1 for wte node)
     maxAbsAttr: float  # max absolute edge value
     l0_total: int  # total active components at current CI threshold
 
