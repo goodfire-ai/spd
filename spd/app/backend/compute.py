@@ -15,7 +15,11 @@ from torch import Tensor, nn
 from tqdm.auto import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig, optimize_ci_values
+from spd.app.backend.optim_cis.run_optim_cis import (
+    OptimCIConfig,
+    compute_label_prob,
+    optimize_ci_values,
+)
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
@@ -436,10 +440,9 @@ def compute_local_attributions_optimized(
     label_prob: float | None = None
     if optim_config.ce_loss_config is not None:
         with torch.no_grad():
-            mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
-            logits = model(tokens, mask_infos=mask_infos)
-            probs = torch.softmax(logits[0, -1, :], dim=-1)
-            label_prob = float(probs[optim_config.ce_loss_config.label_token].item())
+            label_prob = compute_label_prob(
+                model, tokens, ci_outputs.lower_leaky, optim_config.ce_loss_config.label_token
+            )
 
     # Signal transition to graph computation stage
     if on_progress is not None:

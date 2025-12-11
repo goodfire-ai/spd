@@ -93,8 +93,6 @@
     // Edge count is derived from the graph rendering, not stored per-graph
     let filteredEdgeCount = $state<number | null>(null);
 
-    // No global computeOptions - each PromptCard has its own newGraphConfig and useOptimized
-
     // Component details cache (shared across graphs)
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
     let componentDetailsLoading = $state<Record<string, boolean>>({});
