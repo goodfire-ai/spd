@@ -42,11 +42,14 @@ class PromptRecord(BaseModel):
 class OptimizationParams(BaseModel):
     """Optimization parameters that affect graph computation."""
 
-    label_token: int
     imp_min_coeff: float
-    ce_loss_coeff: float
     steps: int
     pnorm: float
+    # CE loss params (optional, must be set together)
+    label_token: int | None = None
+    ce_loss_coeff: float | None = None
+    # KL loss param (optional)
+    kl_loss_coeff: float | None = None
 
 
 class StoredGraph(BaseModel):
@@ -165,6 +168,7 @@ class LocalAttrDB:
                 label_token INTEGER,
                 imp_min_coeff REAL,
                 ce_loss_coeff REAL,
+                kl_loss_coeff REAL,
                 steps INTEGER,
                 pnorm REAL,
 
@@ -186,7 +190,7 @@ class LocalAttrDB:
                 WHERE is_optimized = 0;
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm)
+                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm)
                 WHERE is_optimized = 1;
 
             CREATE INDEX IF NOT EXISTS idx_graphs_prompt
@@ -502,33 +506,35 @@ class LocalAttrDB:
         label_token = None
         imp_min_coeff = None
         ce_loss_coeff = None
+        kl_loss_coeff = None
         steps = None
         pnorm = None
         label_prob = None
 
         if graph.optimization_params:
-            assert graph.label_prob is not None, "label_prob required for optimized graphs"
             label_token = graph.optimization_params.label_token
             imp_min_coeff = graph.optimization_params.imp_min_coeff
             ce_loss_coeff = graph.optimization_params.ce_loss_coeff
+            kl_loss_coeff = graph.optimization_params.kl_loss_coeff
             steps = graph.optimization_params.steps
             pnorm = graph.optimization_params.pnorm
-            label_prob = graph.label_prob
+            label_prob = graph.label_prob  # May be None for KL-only optimization
 
         try:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, is_optimized,
-                    label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
+                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
                     edges_data, output_probs_data, node_ci_vals,
                     label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
                     label_token,
                     imp_min_coeff,
                     ce_loss_coeff,
+                    kl_loss_coeff,
                     steps,
                     pnorm,
                     edges_compressed,
@@ -560,7 +566,7 @@ class LocalAttrDB:
 
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
-                      label_token, imp_min_coeff, ce_loss_coeff, steps, pnorm,
+                      label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
                       label_prob
                FROM graphs
                WHERE prompt_id = ?
@@ -591,11 +597,12 @@ class LocalAttrDB:
 
             if row["is_optimized"]:
                 opt_params = OptimizationParams(
-                    label_token=row["label_token"],
                     imp_min_coeff=row["imp_min_coeff"],
-                    ce_loss_coeff=row["ce_loss_coeff"],
                     steps=row["steps"],
                     pnorm=row["pnorm"],
+                    label_token=row["label_token"],
+                    ce_loss_coeff=row["ce_loss_coeff"],
+                    kl_loss_coeff=row["kl_loss_coeff"],
                 )
                 label_prob = row["label_prob"]
 

@@ -17,13 +17,13 @@
     import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
     import PromptPicker from "./local-attr/PromptPicker.svelte";
     import StagedNodesPanel from "./local-attr/StagedNodesPanel.svelte";
-    import type {
-        StoredGraph,
-        ComputeOptions,
-        LoadingState,
-        OptimizeConfig,
-        PromptCard,
-        ViewSettings,
+    import {
+        defaultOptimizeConfig,
+        type StoredGraph,
+        type LoadingState,
+        type OptimizeConfig,
+        type PromptCard,
+        type ViewSettings,
     } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
@@ -92,21 +92,6 @@
 
     // Edge count is derived from the graph rendering, not stored per-graph
     let filteredEdgeCount = $state<number | null>(null);
-
-    // Compute options
-    let computeOptions = $state<ComputeOptions>({
-        ciThreshold: 0,
-        useOptimized: false,
-        optimizeConfig: {
-            labelTokenText: "",
-            labelTokenId: null,
-            labelTokenPreview: null,
-            impMinCoeff: 0.1,
-            ceLossCoeff: 1.0,
-            steps: 2000,
-            pnorm: 0.3,
-        },
-    });
 
     // Component details cache (shared across graphs)
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
@@ -249,6 +234,8 @@
             graphs,
             activeGraphId: graphs.length > 0 ? graphs[0].id : null,
             activeView: "graph",
+            newGraphConfig: defaultOptimizeConfig(),
+            useOptimized: false,
         };
         promptCards = [...promptCards, newCard];
         activeCardId = cardId;
@@ -300,12 +287,21 @@
         });
     }
 
-    function handleOptionsChange(partial: Partial<ComputeOptions>) {
-        computeOptions = { ...computeOptions, ...partial };
+    function handleUseOptimizedChange(useOptimized: boolean) {
+        if (!activeCard) return;
+        promptCards = promptCards.map((card) => (card.id === activeCard.id ? { ...card, useOptimized } : card));
     }
 
     function handleOptimizeConfigChange(partial: Partial<OptimizeConfig>) {
-        computeOptions.optimizeConfig = { ...computeOptions.optimizeConfig, ...partial };
+        if (!activeCard) return;
+        promptCards = promptCards.map((card) =>
+            card.id === activeCard.id ? { ...card, newGraphConfig: { ...card.newGraphConfig, ...partial } } : card,
+        );
+    }
+
+    function handleEnterNewGraphMode() {
+        if (!activeCard) return;
+        promptCards = promptCards.map((card) => (card.id === activeCard.id ? { ...card, activeGraphId: null } : card));
     }
 
     // Switch between graph and interventions view
@@ -417,8 +413,8 @@
         loadingCardId = activeCard.id;
         computeError = null;
 
-        const optConfig = computeOptions.optimizeConfig;
-        const isOptimized = computeOptions.useOptimized;
+        const optConfig = activeCard.newGraphConfig;
+        const isOptimized = activeCard.useOptimized;
 
         if (isOptimized) {
             loadingState = {
@@ -439,29 +435,45 @@
             let data: GraphData;
 
             if (isOptimized) {
-                if (!optConfig.labelTokenId) throw new Error("Label token required for optimization");
-                data = await attrApi.computeGraphOptimizedStreaming(
-                    {
-                        promptId: activeCard.promptId,
-                        labelToken: optConfig.labelTokenId,
-                        normalize: defaultViewSettings.normalizeEdges,
-                        impMinCoeff: optConfig.impMinCoeff,
-                        ceLossCoeff: optConfig.ceLossCoeff,
-                        steps: optConfig.steps,
-                        pnorm: optConfig.pnorm,
-                        outputProbThreshold: 0.01,
-                        ciThreshold: defaultViewSettings.ciThreshold,
-                    },
-                    (progress) => {
-                        if (!loadingState) return;
-                        if (progress.stage === "graph") {
-                            loadingState.currentStage = 1;
-                            loadingState.stages[1].progress = progress.current / progress.total;
-                        } else {
-                            loadingState.stages[0].progress = progress.current / progress.total;
-                        }
-                    },
-                );
+                const useCE = optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null;
+                const useKL = optConfig.klLossCoeff > 0;
+
+                // Validate: at least one loss type must be active
+                if (!useCE && !useKL) {
+                    throw new Error("At least one loss type must be active (set coeff > 0)");
+                }
+                // Validate: CE coeff > 0 requires label token
+                if (optConfig.ceLossCoeff > 0 && !optConfig.labelTokenId) {
+                    throw new Error("Label token required when ce_coeff > 0");
+                }
+
+                // Build params with optional CE/KL settings
+                const params: attrApi.ComputeGraphOptimizedParams = {
+                    promptId: activeCard.promptId,
+                    normalize: defaultViewSettings.normalizeEdges,
+                    impMinCoeff: optConfig.impMinCoeff,
+                    steps: optConfig.steps,
+                    pnorm: optConfig.pnorm,
+                    outputProbThreshold: 0.01,
+                    ciThreshold: defaultViewSettings.ciThreshold,
+                };
+                if (useCE) {
+                    params.labelToken = optConfig.labelTokenId!;
+                    params.ceLossCoeff = optConfig.ceLossCoeff;
+                }
+                if (useKL) {
+                    params.klLossCoeff = optConfig.klLossCoeff;
+                }
+
+                data = await attrApi.computeGraphOptimizedStreaming(params, (progress) => {
+                    if (!loadingState) return;
+                    if (progress.stage === "graph") {
+                        loadingState.currentStage = 1;
+                        loadingState.stages[1].progress = progress.current / progress.total;
+                    } else {
+                        loadingState.stages[0].progress = progress.current / progress.total;
+                    }
+                });
             } else {
                 data = await attrApi.computeGraphStreaming(
                     {
@@ -654,14 +666,14 @@
                         <!-- Prompt header with compute options and graph tabs -->
                         <PromptCardHeader
                             card={activeCard}
-                            options={computeOptions}
                             isLoading={loadingCardId === activeCard.id}
                             tokens={allTokens}
-                            onOptionsChange={handleOptionsChange}
+                            onUseOptimizedChange={handleUseOptimizedChange}
                             onOptimizeConfigChange={handleOptimizeConfigChange}
                             onCompute={computeGraphForCard}
                             onSelectGraph={handleSelectGraph}
                             onCloseGraph={handleCloseGraph}
+                            onNewGraph={handleEnterNewGraphMode}
                         />
 
                         {#if activeGraph}
@@ -689,13 +701,23 @@
                             {#if activeCard.activeView === "graph"}
                                 <div class="graph-stats">
                                     {#if activeGraph.data.optimization}
-                                        <span
-                                            ><strong>Target:</strong> "{formatTokenDisplay(
-                                                activeGraph.data.optimization.label_str,
-                                            )}"
-                                            <span class="token-id">(#{activeGraph.data.optimization.label_token})</span>
-                                            @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span
-                                        >
+                                        {#if activeGraph.data.optimization.label_str !== null && activeGraph.data.optimization.label_prob !== null}
+                                            <span
+                                                ><strong>Target:</strong> "{formatTokenDisplay(
+                                                    activeGraph.data.optimization.label_str,
+                                                )}"
+                                                <span class="token-id"
+                                                    >(#{activeGraph.data.optimization.label_token})</span
+                                                >
+                                                @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span
+                                            >
+                                        {/if}
+                                        {#if activeGraph.data.optimization.kl_loss_coeff !== null}
+                                            <span
+                                                ><strong>KL Loss:</strong> coeff={activeGraph.data.optimization
+                                                    .kl_loss_coeff}</span
+                                            >
+                                        {/if}
                                     {/if}
                                     <span
                                         ><strong>L0:</strong>
