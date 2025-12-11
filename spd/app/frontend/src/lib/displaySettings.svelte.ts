@@ -1,5 +1,5 @@
 /**
- * Global view settings store for controlling which statistics are visible
+ * Global display settings store
  */
 
 import { SvelteSet } from "svelte/reactivity";
@@ -23,7 +23,7 @@ export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> 
     jaccard: "Intersection over union",
 };
 
-const STORAGE_KEY = "spd-view-settings";
+const STORAGE_KEY = "spd-display-settings";
 const ALL_STATS: CorrelationStatType[] = ["pmi", "precision", "recall", "f1", "jaccard"];
 
 type StoredSettings = {
@@ -57,8 +57,7 @@ function saveToStorage(settings: StoredSettings) {
     }
 }
 
-// View settings state
-class ViewSettings {
+class DisplaySettingsState {
     // Which correlation stats to show (loaded from storage or all enabled by default)
     visibleCorrelationStats = new SvelteSet<CorrelationStatType>(loadCorrelationStats());
 
@@ -88,4 +87,4 @@ class ViewSettings {
 }
 
 // Singleton instance
-export const viewSettings = new ViewSettings();
+export const displaySettings = new DisplaySettingsState();

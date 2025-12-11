@@ -212,13 +212,12 @@
             {/if}
         </div>
         <div class="tab-bar-right">
-            <CorrelationJobStatus
-                status={correlationJobStatus}
-                onSubmit={submitCorrelationJob}
-                submitting={correlationJobSubmitting}
-            />
-            <ViewSettingsDropdown />
             {#if loadedRun}
+                <CorrelationJobStatus
+                    status={correlationJobStatus}
+                    onSubmit={submitCorrelationJob}
+                    submitting={correlationJobSubmitting}
+                />
                 <div
                     class="config-wrapper"
                     role="group"
@@ -233,6 +232,7 @@
                     {/if}
                 </div>
             {/if}
+            <ViewSettingsDropdown />
         </div>
     </nav>
 

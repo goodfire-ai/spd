@@ -1,10 +1,10 @@
 <script lang="ts">
     import {
         type CorrelationStatType,
-        viewSettings,
+        displaySettings,
         CORRELATION_STAT_LABELS,
         CORRELATION_STAT_DESCRIPTIONS,
-    } from "../../lib/viewSettings.svelte";
+    } from "../../lib/displaySettings.svelte";
 
     let showDropdown = $state(false);
 
@@ -17,7 +17,7 @@
     onmouseenter={() => (showDropdown = true)}
     onmouseleave={() => (showDropdown = false)}
 >
-    <button type="button" class="settings-button">View Settings</button>
+    <button type="button" class="settings-button">Display Settings</button>
     {#if showDropdown}
         <div class="settings-dropdown">
             <div class="settings-section">
@@ -28,8 +28,8 @@
                         <label class="checkbox-item">
                             <input
                                 type="checkbox"
-                                checked={viewSettings.isCorrelationStatVisible(stat)}
-                                onchange={() => viewSettings.toggleCorrelationStat(stat)}
+                                checked={displaySettings.isCorrelationStatVisible(stat)}
+                                onchange={() => displaySettings.toggleCorrelationStat(stat)}
                             />
                             <span class="stat-label">{CORRELATION_STAT_LABELS[stat]}</span>
                             <span class="stat-desc">{CORRELATION_STAT_DESCRIPTIONS[stat]}</span>
@@ -43,8 +43,8 @@
                     <label class="checkbox-item single-row">
                         <input
                             type="checkbox"
-                            checked={viewSettings.showSetOverlapVis}
-                            onchange={() => viewSettings.toggleSetOverlapVis()}
+                            checked={displaySettings.showSetOverlapVis}
+                            onchange={() => displaySettings.toggleSetOverlapVis()}
                         />
                         <span class="stat-label">Set overlap bars</span>
                     </label>
