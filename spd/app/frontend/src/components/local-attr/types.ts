@@ -31,8 +31,11 @@ export type PromptCard = {
     tokenIds: number[];
     isCustom: boolean;
     graphs: StoredGraph[];
-    activeGraphId: string | null;
+    activeGraphId: string | null; // null means "new graph" mode when graphs exist, or initial state
     activeView: "graph" | "interventions";
+    // Config for creating new graphs (per-card, not shared globally)
+    newGraphConfig: OptimizeConfig;
+    useOptimized: boolean; // whether to compute optimized graph
 };
 
 export type OptimizeConfig = {
@@ -64,3 +67,16 @@ export type LoadingState = {
     stages: LoadingStage[];
     currentStage: number; // 0-indexed
 };
+
+export function defaultOptimizeConfig(): OptimizeConfig {
+    return {
+        labelTokenText: "",
+        labelTokenId: null,
+        labelTokenPreview: null,
+        ceLossCoeff: 0,
+        klLossCoeff: 0,
+        impMinCoeff: 0.1,
+        steps: 2000,
+        pnorm: 0.3,
+    };
+}

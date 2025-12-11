@@ -9,8 +9,7 @@
         placeholder?: string;
     };
 
-    let { tokens, value, selectedTokenId, onSelect, placeholder = "Search tokens..." }: Props =
-        $props();
+    let { tokens, value, selectedTokenId, onSelect, placeholder = "Search tokens..." }: Props = $props();
 
     /** Format token for display: strip leading space, add ## prefix if no leading space */
     function formatTokenDisplay(tokenString: string): string {
@@ -21,9 +20,7 @@
     }
 
     // Only format when a token is actually selected; otherwise show raw user input
-    let inputValue = $derived(
-        selectedTokenId !== null && value ? formatTokenDisplay(value) : value
-    );
+    let inputValue = $derived(selectedTokenId !== null && value ? formatTokenDisplay(value) : value);
     let isOpen = $state(false);
     let highlightedIndex = $state(0);
 

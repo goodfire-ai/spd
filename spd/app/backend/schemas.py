@@ -49,6 +49,7 @@ class OptimizationResult(BaseModel):
 
     imp_min_coeff: float
     steps: int
+    pnorm: float
     # CE loss params (optional - required together)
     label_token: int | None = None
     label_str: str | None = None

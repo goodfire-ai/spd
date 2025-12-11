@@ -17,13 +17,13 @@
     import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
     import PromptPicker from "./local-attr/PromptPicker.svelte";
     import StagedNodesPanel from "./local-attr/StagedNodesPanel.svelte";
-    import type {
-        StoredGraph,
-        ComputeOptions,
-        LoadingState,
-        OptimizeConfig,
-        PromptCard,
-        ViewSettings,
+    import {
+        defaultOptimizeConfig,
+        type StoredGraph,
+        type LoadingState,
+        type OptimizeConfig,
+        type PromptCard,
+        type ViewSettings,
     } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
@@ -93,21 +93,7 @@
     // Edge count is derived from the graph rendering, not stored per-graph
     let filteredEdgeCount = $state<number | null>(null);
 
-    // Compute options
-    let computeOptions = $state<ComputeOptions>({
-        ciThreshold: 0,
-        useOptimized: false,
-        optimizeConfig: {
-            labelTokenText: "",
-            labelTokenId: null,
-            labelTokenPreview: null,
-            ceLossCoeff: 0,
-            klLossCoeff: 0,
-            impMinCoeff: 0.1,
-            steps: 2000,
-            pnorm: 0.3,
-        },
-    });
+    // No global computeOptions - each PromptCard has its own newGraphConfig and useOptimized
 
     // Component details cache (shared across graphs)
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
@@ -250,6 +236,8 @@
             graphs,
             activeGraphId: graphs.length > 0 ? graphs[0].id : null,
             activeView: "graph",
+            newGraphConfig: defaultOptimizeConfig(),
+            useOptimized: false,
         };
         promptCards = [...promptCards, newCard];
         activeCardId = cardId;
@@ -301,12 +289,21 @@
         });
     }
 
-    function handleOptionsChange(partial: Partial<ComputeOptions>) {
-        computeOptions = { ...computeOptions, ...partial };
+    function handleUseOptimizedChange(useOptimized: boolean) {
+        if (!activeCard) return;
+        promptCards = promptCards.map((card) => (card.id === activeCard.id ? { ...card, useOptimized } : card));
     }
 
     function handleOptimizeConfigChange(partial: Partial<OptimizeConfig>) {
-        computeOptions.optimizeConfig = { ...computeOptions.optimizeConfig, ...partial };
+        if (!activeCard) return;
+        promptCards = promptCards.map((card) =>
+            card.id === activeCard.id ? { ...card, newGraphConfig: { ...card.newGraphConfig, ...partial } } : card,
+        );
+    }
+
+    function handleEnterNewGraphMode() {
+        if (!activeCard) return;
+        promptCards = promptCards.map((card) => (card.id === activeCard.id ? { ...card, activeGraphId: null } : card));
     }
 
     // Switch between graph and interventions view
@@ -418,8 +415,8 @@
         loadingCardId = activeCard.id;
         computeError = null;
 
-        const optConfig = computeOptions.optimizeConfig;
-        const isOptimized = computeOptions.useOptimized;
+        const optConfig = activeCard.newGraphConfig;
+        const isOptimized = activeCard.useOptimized;
 
         if (isOptimized) {
             loadingState = {
@@ -671,14 +668,14 @@
                         <!-- Prompt header with compute options and graph tabs -->
                         <PromptCardHeader
                             card={activeCard}
-                            options={computeOptions}
                             isLoading={loadingCardId === activeCard.id}
                             tokens={allTokens}
-                            onOptionsChange={handleOptionsChange}
+                            onUseOptimizedChange={handleUseOptimizedChange}
                             onOptimizeConfigChange={handleOptimizeConfigChange}
                             onCompute={computeGraphForCard}
                             onSelectGraph={handleSelectGraph}
                             onCloseGraph={handleCloseGraph}
+                            onNewGraph={handleEnterNewGraphMode}
                         />
 
                         {#if activeGraph}

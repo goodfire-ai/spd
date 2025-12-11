@@ -448,6 +448,7 @@ def compute_graph_optimized_stream(
                     optimization=OptimizationResult(
                         imp_min_coeff=imp_min_coeff,
                         steps=steps,
+                        pnorm=pnorm,
                         label_token=label_token,
                         label_str=label_str,
                         ce_loss_coeff=ce_loss_coeff,
@@ -582,6 +583,7 @@ def get_graphs(
                     optimization=OptimizationResult(
                         imp_min_coeff=graph.optimization_params.imp_min_coeff,
                         steps=graph.optimization_params.steps,
+                        pnorm=graph.optimization_params.pnorm,
                         label_token=graph.optimization_params.label_token,
                         label_str=label_str,
                         ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
