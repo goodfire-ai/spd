@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal
 import torch
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from spd.app.backend.compute import (
     Edge,
@@ -25,20 +26,74 @@ from spd.app.backend.db.database import (
 )
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis.run_optim_cis import OptimCIConfig
-from spd.app.backend.schemas import (
-    EdgeData,
-    GraphData,
-    GraphDataWithOptimization,
-    OptimizationResult,
-    OutputProbability,
-    TokenInfo,
-    TokenizeResponse,
-    TokensResponse,
-)
+from spd.app.backend.schemas import OutputProbability
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import runtime_cast
+
+# =============================================================================
+# Router-specific Schemas
+# =============================================================================
+
+
+class EdgeData(BaseModel):
+    """Edge in the attribution graph."""
+
+    src: str  # "layer:seq:cIdx"
+    tgt: str  # "layer:seq:cIdx"
+    val: float
+    is_cross_seq: bool = False
+
+
+class TokenizeResponse(BaseModel):
+    """Response from tokenize endpoint."""
+
+    token_ids: list[int]
+    tokens: list[str]
+    text: str
+
+
+class TokenInfo(BaseModel):
+    """A single token from the tokenizer vocabulary."""
+
+    id: int
+    string: str
+
+
+class TokensResponse(BaseModel):
+    """Response containing all tokens in the vocabulary."""
+
+    tokens: list[TokenInfo]
+
+
+class OptimizationResult(BaseModel):
+    """Results from optimized CI computation."""
+
+    label_token: int
+    label_str: str
+    imp_min_coeff: float
+    ce_loss_coeff: float
+    steps: int
+    label_prob: float
+
+
+class GraphData(BaseModel):
+    """Full attribution graph data."""
+
+    id: int
+    tokens: list[str]
+    edges: list[EdgeData]
+    outputProbs: dict[str, OutputProbability]
+    nodeImportance: dict[str, float]  # node key -> sum of squared edge values
+    maxAbsAttr: float  # max absolute edge value
+    l0_total: int  # total active components at current CI threshold
+
+
+class GraphDataWithOptimization(GraphData):
+    """Attribution graph data with optimization results."""
+
+    optimization: OptimizationResult
 
 router = APIRouter(prefix="/api/graphs", tags=["graphs"])
 

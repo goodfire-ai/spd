@@ -2,18 +2,67 @@
 
 import torch
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from spd.app.backend.compute import compute_intervention_forward
 from spd.app.backend.dependencies import DepDB, DepLoadedRun
-from spd.app.backend.schemas import (
-    InterventionRequest,
-    InterventionResponse,
-    InterventionRunSummary,
-    RunInterventionRequest,
-    TokenPrediction,
-)
 from spd.app.backend.utils import log_errors
 from spd.utils.distributed_utils import get_device
+
+
+# =============================================================================
+# Schemas
+# =============================================================================
+
+
+class InterventionNode(BaseModel):
+    """A specific node to activate during intervention."""
+
+    layer: str
+    seq_pos: int
+    component_idx: int
+
+
+class InterventionRequest(BaseModel):
+    """Request for intervention forward pass."""
+
+    text: str
+    nodes: list[InterventionNode]
+    top_k: int = 10
+
+
+class TokenPrediction(BaseModel):
+    """A single token prediction with probability."""
+
+    token: str
+    token_id: int
+    prob: float
+    logit: float
+
+
+class InterventionResponse(BaseModel):
+    """Response from intervention forward pass."""
+
+    input_tokens: list[str]
+    predictions_per_position: list[list[TokenPrediction]]
+
+
+class RunInterventionRequest(BaseModel):
+    """Request to run and save an intervention."""
+
+    graph_id: int
+    text: str
+    selected_nodes: list[str]  # node keys (layer:seq:cIdx)
+    top_k: int = 10
+
+
+class InterventionRunSummary(BaseModel):
+    """Summary of a saved intervention run."""
+
+    id: int
+    selected_nodes: list[str]
+    result: InterventionResponse
+    created_at: str
 
 router = APIRouter(prefix="/api/intervention", tags=["intervention"])
 
@@ -43,9 +92,6 @@ def _run_intervention_forward(
     tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
 
     active_nodes = [_parse_node_key(key) for key in selected_nodes]
-
-    for layer, seq_pos, cidx in active_nodes:
-        print(f"Intervening on {layer}:{seq_pos}:{cidx}")
 
     seq_len = tokens.shape[1]
     for _, seq_pos, _ in active_nodes:

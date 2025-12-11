@@ -9,16 +9,44 @@ from typing import Annotated, Any
 
 from datasets import Dataset, load_dataset
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepStateManager
-from spd.app.backend.schemas import (
-    DatasetSearchMetadata,
-    DatasetSearchPage,
-    DatasetSearchResult,
-)
 from spd.app.backend.state import DatasetSearchState
 from spd.app.backend.utils import log_errors
 from spd.log import logger
+
+# =============================================================================
+# Schemas
+# =============================================================================
+
+
+class DatasetSearchResult(BaseModel):
+    """A single search result from the SimpleStories dataset."""
+
+    story: str
+    occurrence_count: int
+    topic: str | None = None
+    theme: str | None = None
+
+
+class DatasetSearchMetadata(BaseModel):
+    """Metadata about a completed dataset search."""
+
+    query: str
+    split: str
+    total_results: int
+    search_time_seconds: float
+
+
+class DatasetSearchPage(BaseModel):
+    """Paginated results from a dataset search."""
+
+    results: list[DatasetSearchResult]
+    page: int
+    page_size: int
+    total_results: int
+    total_pages: int
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
 

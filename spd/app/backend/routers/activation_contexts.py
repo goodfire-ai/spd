@@ -9,6 +9,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from torch.utils.data import DataLoader
 
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
@@ -21,18 +22,75 @@ from spd.app.backend.lib.component_correlations import (
 )
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
-    ComponentCorrelationsResponse,
-    ComponentProbeRequest,
-    ComponentProbeResponse,
-    CorrelatedComponent,
-    HarvestMetadata,
     SubcomponentActivationContexts,
     SubcomponentMetadata,
-    TokenPRLiftPMI,
-    TokenStatsResponse,
 )
 from spd.app.backend.utils import log_errors
 from spd.log import logger
+
+
+# =============================================================================
+# Router-specific Schemas
+# =============================================================================
+
+
+class HarvestMetadata(BaseModel):
+    """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
+
+    layers: dict[str, list[SubcomponentMetadata]]
+
+
+class ComponentProbeRequest(BaseModel):
+    """Request to probe a component's CI on custom text."""
+
+    text: str
+    layer: str
+    component_idx: int
+
+
+class ComponentProbeResponse(BaseModel):
+    """Response with CI values for a component on custom text."""
+
+    tokens: list[str]
+    ci_values: list[float]
+
+
+class CorrelatedComponent(BaseModel):
+    """A component correlated with a query component."""
+
+    component_key: str
+    score: float
+
+
+class ComponentCorrelationsResponse(BaseModel):
+    """Correlation data for a component across different metrics."""
+
+    precision: list[CorrelatedComponent]
+    recall: list[CorrelatedComponent]
+    f1: list[CorrelatedComponent]
+    jaccard: list[CorrelatedComponent]
+    pmi: list[CorrelatedComponent]
+
+
+class TokenPRLiftPMI(BaseModel):
+    """Token precision, recall, lift, and PMI lists."""
+
+    top_recall: list[tuple[str, float]]  # [(token, value), ...] sorted desc
+    top_precision: list[tuple[str, float]]  # [(token, value), ...] sorted desc
+    top_lift: list[tuple[str, float]]  # [(token, lift), ...] sorted desc
+    top_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest positive association
+    bottom_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest negative association
+
+
+class TokenStatsResponse(BaseModel):
+    """Token stats for a component (from batch job).
+
+    Contains both input token stats (what tokens activate this component)
+    and output token stats (what tokens this component predicts).
+    """
+
+    input: TokenPRLiftPMI  # Stats for input tokens
+    output: TokenPRLiftPMI  # Stats for output (predicted) tokens
 
 router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts"])
 

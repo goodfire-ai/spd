@@ -6,6 +6,7 @@ from urllib.parse import unquote
 import torch
 import yaml
 from fastapi import APIRouter
+from pydantic import BaseModel
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
@@ -14,7 +15,6 @@ from spd.app.backend.dependencies import DepStateManager
 
 # TODO: Re-enable token uplift after performance optimization
 # from spd.app.backend.lib.activation_contexts import compute_token_base_rates
-from spd.app.backend.schemas import LoadedRun
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import build_token_lookup, log_errors
 from spd.data import DatasetConfig, create_data_loader
@@ -23,6 +23,25 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
+
+
+# =============================================================================
+# Schemas
+# =============================================================================
+
+
+class LoadedRun(BaseModel):
+    """Info about the currently loaded run."""
+
+    id: int
+    wandb_path: str
+    config_yaml: str
+    has_activation_contexts: bool
+    has_prompts: bool
+    prompt_count: int
+    context_length: int
+    backend_user: str
+
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
