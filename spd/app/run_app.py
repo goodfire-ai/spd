@@ -223,7 +223,7 @@ class AppRunner:
                         print(f"\033[{lines_to_clear}A\033[J", end="")
 
                     # Print box with tail
-                    print(f"{AnsiEsc.DIM}┌─ logs {'─' * 32}{AnsiEsc.RESET}")
+                    print(f"{AnsiEsc.DIM}┌─ logs ({LOGFILE}) {'─' * (30 - len(LOGFILE.name))}{AnsiEsc.RESET}")
                     for line in tail:
                         clipped_line = (
                             line.rstrip()[:100] + "..."

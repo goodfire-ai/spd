@@ -78,12 +78,151 @@ class TokenStatsResponse(BaseModel):
 router = APIRouter(prefix="/api/correlations", tags=["correlations"])
 
 
+# =============================================================================
+# Job Management Schemas & Endpoints (must be before wildcard routes)
+# =============================================================================
+
+
+class HarvestParamsResponse(BaseModel):
+    n_batches: int
+    batch_size: int
+    context_length: int
+    ci_threshold: float
+
+
+class PendingStatusResponse(BaseModel):
+    status: Literal["pending"]
+    job_id: str
+    submitted_at: str
+    params: HarvestParamsResponse
+    last_log_line: str | None
+
+
+class RunningStatusResponse(BaseModel):
+    status: Literal["running"]
+    job_id: str
+    submitted_at: str
+    params: HarvestParamsResponse
+    last_log_line: str | None
+
+
+class CompletedStatusResponse(BaseModel):
+    status: Literal["completed"]
+    job_id: str
+    submitted_at: str
+    params: HarvestParamsResponse
+    n_tokens: int
+    n_components: int
+
+
+class FailedStatusResponse(BaseModel):
+    status: Literal["failed"]
+    job_id: str
+    submitted_at: str
+    params: HarvestParamsResponse
+    error: str
+
+
+CorrelationJobStatusResponse = Annotated[
+    PendingStatusResponse | RunningStatusResponse | CompletedStatusResponse | FailedStatusResponse,
+    "Discriminated union on 'status' field",
+]
+
+
+class SubmitJobResponse(BaseModel):
+    job_id: str
+    status: Literal["pending"]
+
+
+@router.get("/jobs/status")
+@log_errors
+def get_job_status(loaded: DepLoadedRun) -> CorrelationJobStatusResponse:
+    """Get the correlation job status for the currently loaded run.
+
+    Returns 404 if no job has been submitted yet.
+    """
+    _, _, run_id = parse_wandb_run_path(loaded.run.wandb_path)
+
+    if not status_file_exists(run_id):
+        raise HTTPException(status_code=404, detail="No correlation job for this run")
+
+    state = read_job_state(run_id)
+    params = HarvestParamsResponse(
+        n_batches=state.params.n_batches,
+        batch_size=state.params.batch_size,
+        context_length=state.params.context_length,
+        ci_threshold=state.params.ci_threshold,
+    )
+
+    match state.job_status:
+        case CompletedStatus(n_tokens=n_tokens, n_components=n_components):
+            return CompletedStatusResponse(
+                status="completed",
+                job_id=state.job_id,
+                submitted_at=state.submitted_at,
+                params=params,
+                n_tokens=n_tokens,
+                n_components=n_components,
+            )
+        case FailedStatus(error=error):
+            return FailedStatusResponse(
+                status="failed",
+                job_id=state.job_id,
+                submitted_at=state.submitted_at,
+                params=params,
+                error=error,
+            )
+        case PendingStatus():
+            return PendingStatusResponse(
+                status="pending",
+                job_id=state.job_id,
+                submitted_at=state.submitted_at,
+                params=params,
+                last_log_line=get_last_log_line(run_id, state.job_id),
+            )
+        case RunningStatus():
+            return RunningStatusResponse(
+                status="running",
+                job_id=state.job_id,
+                submitted_at=state.submitted_at,
+                params=params,
+                last_log_line=get_last_log_line(run_id, state.job_id),
+            )
+
+
+@router.post("/jobs/submit")
+@log_errors
+def submit_job(loaded: DepLoadedRun) -> SubmitJobResponse:
+    """Submit a SLURM job to harvest correlations for the currently loaded run."""
+    wandb_path = loaded.run.wandb_path
+    _, _, run_id = parse_wandb_run_path(wandb_path)
+
+    if status_file_exists(run_id):
+        state = read_job_state(run_id)
+        if state.job_status.status in ("pending", "running"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Job already {state.job_status.status} (job_id: {state.job_id})",
+            )
+        if state.job_status.status == "completed":
+            raise HTTPException(status_code=400, detail="Correlations already computed")
+
+    job_id = submit_correlation_job(wandb_path, run_id)
+    return SubmitJobResponse(job_id=job_id, status="pending")
+
+
+# =============================================================================
+# Component Correlation Data Endpoints
+# =============================================================================
+
+
 def _get_correlations(run_id: str) -> ComponentCorrelations | None:
     """Load correlations from disk."""
     start = time.perf_counter()
 
     path = get_correlations_path(run_id)
     if not path.exists():
+        logger.warning(f"Correlations not found at {path}")
         return None
 
     correlations = ComponentCorrelations.load(path)
@@ -332,136 +471,3 @@ def get_component_interpretation(
         lines.append("")
 
     return "\n".join(lines)
-
-
-# =============================================================================
-# Job Management Endpoints
-# =============================================================================
-
-
-class HarvestParamsResponse(BaseModel):
-    n_batches: int
-    batch_size: int
-    context_length: int
-    ci_threshold: float
-
-
-class PendingStatusResponse(BaseModel):
-    status: Literal["pending"]
-    job_id: str
-    submitted_at: str
-    params: HarvestParamsResponse
-    last_log_line: str | None
-
-
-class RunningStatusResponse(BaseModel):
-    status: Literal["running"]
-    job_id: str
-    submitted_at: str
-    params: HarvestParamsResponse
-    last_log_line: str | None
-
-
-class CompletedStatusResponse(BaseModel):
-    status: Literal["completed"]
-    job_id: str
-    submitted_at: str
-    params: HarvestParamsResponse
-    n_tokens: int
-    n_components: int
-
-
-class FailedStatusResponse(BaseModel):
-    status: Literal["failed"]
-    job_id: str
-    submitted_at: str
-    params: HarvestParamsResponse
-    error: str
-
-
-CorrelationJobStatusResponse = Annotated[
-    PendingStatusResponse | RunningStatusResponse | CompletedStatusResponse | FailedStatusResponse,
-    "Discriminated union on 'status' field",
-]
-
-
-class SubmitJobResponse(BaseModel):
-    job_id: str
-    status: Literal["pending"]
-
-
-@router.get("/jobs/status")
-@log_errors
-def get_job_status(loaded: DepLoadedRun) -> CorrelationJobStatusResponse:
-    """Get the correlation job status for the currently loaded run.
-
-    Returns 404 if no job has been submitted yet.
-    """
-    _, _, run_id = parse_wandb_run_path(loaded.run.wandb_path)
-
-    if not status_file_exists(run_id):
-        raise HTTPException(status_code=404, detail="No correlation job for this run")
-
-    state = read_job_state(run_id)
-    params = HarvestParamsResponse(
-        n_batches=state.params.n_batches,
-        batch_size=state.params.batch_size,
-        context_length=state.params.context_length,
-        ci_threshold=state.params.ci_threshold,
-    )
-
-    match state.job_status:
-        case CompletedStatus(n_tokens=n_tokens, n_components=n_components):
-            return CompletedStatusResponse(
-                status="completed",
-                job_id=state.job_id,
-                submitted_at=state.submitted_at,
-                params=params,
-                n_tokens=n_tokens,
-                n_components=n_components,
-            )
-        case FailedStatus(error=error):
-            return FailedStatusResponse(
-                status="failed",
-                job_id=state.job_id,
-                submitted_at=state.submitted_at,
-                params=params,
-                error=error,
-            )
-        case PendingStatus():
-            return PendingStatusResponse(
-                status="pending",
-                job_id=state.job_id,
-                submitted_at=state.submitted_at,
-                params=params,
-                last_log_line=get_last_log_line(run_id, state.job_id),
-            )
-        case RunningStatus():
-            return RunningStatusResponse(
-                status="running",
-                job_id=state.job_id,
-                submitted_at=state.submitted_at,
-                params=params,
-                last_log_line=get_last_log_line(run_id, state.job_id),
-            )
-
-
-@router.post("/jobs/submit")
-@log_errors
-def submit_job(loaded: DepLoadedRun) -> SubmitJobResponse:
-    """Submit a SLURM job to harvest correlations for the currently loaded run."""
-    wandb_path = loaded.run.wandb_path
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-
-    if status_file_exists(run_id):
-        state = read_job_state(run_id)
-        if state.job_status.status in ("pending", "running"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Job already {state.job_status.status} (job_id: {state.job_id})",
-            )
-        if state.job_status.status == "completed":
-            raise HTTPException(status_code=400, detail="Correlations already computed")
-
-    job_id = submit_correlation_job(wandb_path, run_id)
-    return SubmitJobResponse(job_id=job_id, status="pending")

@@ -236,7 +236,7 @@ export type SubmitJobResponse = {
 
 /** Get the correlation job status for the current run. Returns null if no job exists (404). */
 export async function getCorrelationJobStatus(): Promise<CorrelationJobStatus | null> {
-    const response = await fetch(`${API_URL}/api/correlation_jobs/status`);
+    const response = await fetch(`${API_URL}/api/correlations/jobs/status`);
     if (response.status === 404) {
         return null;
     }
@@ -249,7 +249,7 @@ export async function getCorrelationJobStatus(): Promise<CorrelationJobStatus | 
 
 /** Submit a SLURM job to harvest correlations */
 export async function submitCorrelationJob(): Promise<SubmitJobResponse> {
-    const response = await fetch(`${API_URL}/api/correlation_jobs/submit`, {
+    const response = await fetch(`${API_URL}/api/correlations/jobs/submit`, {
         method: "POST",
     });
     if (!response.ok) {
