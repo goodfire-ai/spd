@@ -10,6 +10,7 @@
     import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
+    import ViewSettingsDropdown from "./components/ui/ViewSettingsDropdown.svelte";
     import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
@@ -78,11 +79,11 @@
         correlationJobStatus = await api.getCorrelationJobStatus();
     }
 
-    async function submitCorrelationJob() {
+    async function submitCorrelationJob(params: api.HarvestParams) {
         if (correlationJobSubmitting) return;
         correlationJobSubmitting = true;
         try {
-            await api.submitCorrelationJob();
+            await api.submitCorrelationJob(params);
             await loadCorrelationJobStatus();
         } finally {
             correlationJobSubmitting = false;
@@ -193,11 +194,6 @@
             >
                 Dataset Search
             </button>
-            <CorrelationJobStatus
-                status={correlationJobStatus}
-                onSubmit={submitCorrelationJob}
-                submitting={correlationJobSubmitting}
-            />
             {#if loadedRun}
                 <button
                     class="tab-button"
@@ -215,21 +211,29 @@
                 </button>
             {/if}
         </div>
-        {#if loadedRun}
-            <div
-                class="config-wrapper"
-                role="group"
-                onmouseenter={() => (showConfig = true)}
-                onmouseleave={() => (showConfig = false)}
-            >
-                <button type="button" class="config-button">Config</button>
-                {#if showConfig}
-                    <div class="config-dropdown">
-                        <pre>{loadedRun.config_yaml}</pre>
-                    </div>
-                {/if}
-            </div>
-        {/if}
+        <div class="tab-bar-right">
+            {#if loadedRun}
+                <CorrelationJobStatus
+                    status={correlationJobStatus}
+                    onSubmit={submitCorrelationJob}
+                    submitting={correlationJobSubmitting}
+                />
+                <div
+                    class="config-wrapper"
+                    role="group"
+                    onmouseenter={() => (showConfig = true)}
+                    onmouseleave={() => (showConfig = false)}
+                >
+                    <button type="button" class="config-button">Config</button>
+                    {#if showConfig}
+                        <div class="config-dropdown">
+                            <pre>{loadedRun.config_yaml}</pre>
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+            <ViewSettingsDropdown />
+        </div>
     </nav>
 
     <main class="main-content">
@@ -430,6 +434,12 @@
     .tab-buttons {
         display: flex;
         gap: var(--space-2);
+    }
+
+    .tab-bar-right {
+        display: flex;
+        gap: var(--space-2);
+        align-items: center;
     }
 
     .main-content {

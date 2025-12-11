@@ -223,8 +223,9 @@ class AppRunner:
                         print(f"\033[{lines_to_clear}A\033[J", end="")
 
                     # Print box with tail
+                    local_logfile = LOGFILE.relative_to(os.getcwd())
                     print(
-                        f"{AnsiEsc.DIM}┌─ logs ({LOGFILE}) {'─' * (30 - len(LOGFILE.name))}{AnsiEsc.RESET}"
+                        f"{AnsiEsc.DIM}┌─ logs ({local_logfile}) {'─' * (60 - len(str(local_logfile)))}{AnsiEsc.RESET}"
                     )
                     for line in tail:
                         clipped_line = (

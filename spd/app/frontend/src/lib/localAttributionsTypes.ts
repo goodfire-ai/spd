@@ -66,6 +66,10 @@ export type ComponentDetail = {
 export type CorrelatedComponent = {
     component_key: string;
     score: number;
+    count_i: number; // Subject (query component) firing count
+    count_j: number; // Object (this component) firing count
+    count_ij: number; // Co-occurrence count
+    n_tokens: number; // Total tokens
 };
 
 export type ComponentCorrelations = {
@@ -155,6 +159,23 @@ export type ComponentProbeResult = {
     tokens: string[];
     ci_values: number[];
 };
+
+// Display name mapping for special layers
+const LAYER_DISPLAY_NAMES: Record<string, string> = {
+    lm_head: "W_U",
+};
+
+/** Get display name for a layer (e.g., "lm_head" -> "W_U") */
+export function getLayerDisplayName(layer: string): string {
+    return LAYER_DISPLAY_NAMES[layer] ?? layer;
+}
+
+/** Format a node key for display, replacing layer names with display names */
+export function formatNodeKeyForDisplay(nodeKey: string): string {
+    const [layer, ...rest] = nodeKey.split(":");
+    const displayName = getLayerDisplayName(layer);
+    return [displayName, ...rest].join(":");
+}
 
 // Node intervention helpers
 // "wte" and "output" are pseudo-layers used for visualization but are not part of the

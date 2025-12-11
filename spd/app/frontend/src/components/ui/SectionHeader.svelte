@@ -6,15 +6,14 @@
         mathNotation?: string;
         /** Use h4 (larger) or h5 (smaller) */
         level?: "h4" | "h5";
-        compact?: boolean;
         children?: Snippet;
     };
 
-    let { title, mathNotation, level = "h5", compact = false, children }: Props = $props();
+    let { title, mathNotation, level = "h5", children }: Props = $props();
 </script>
 
 {#if level === "h4"}
-    <h4 class:compact>
+    <h4>
         {title}
         {#if mathNotation}
             <span class="math-notation">{mathNotation}</span>
@@ -24,7 +23,7 @@
         {/if}
     </h4>
 {:else}
-    <h5 class:compact>
+    <h5>
         {title}
         {#if mathNotation}
             <span class="math-notation">{mathNotation}</span>
@@ -50,14 +49,6 @@
 
     h5 {
         font-size: var(--text-sm);
-    }
-
-    h4.compact {
-        font-size: var(--text-xs);
-    }
-
-    h5.compact {
-        font-size: var(--text-xs);
     }
 
     .math-notation {

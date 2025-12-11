@@ -1,19 +1,41 @@
 <script lang="ts">
-    import type { CorrelationJobStatus as CorrelationJobStatusType } from "../lib/api";
+    import type { CorrelationJobStatus as CorrelationJobStatusType, HarvestParams } from "../lib/api";
 
     interface Props {
         status: CorrelationJobStatusType | null;
-        onSubmit: () => void;
+        onSubmit: (params: HarvestParams) => void;
         submitting: boolean;
     }
 
     let { status, onSubmit, submitting }: Props = $props();
 
     let showParams = $state(false);
+    let showConfig = $state(false);
+
+    // Editable params with defaults
+    let nBatches = $state(100);
+    let batchSize = $state(256);
+    let contextLength = $state(512);
+    let ciThreshold = $state(1e-6);
 
     function formatTokenCount(n: number): string {
         if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
         if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+        return String(n);
+    }
+
+    function handleSubmit() {
+        onSubmit({
+            n_batches: nBatches,
+            batch_size: batchSize,
+            context_length: contextLength,
+            ci_threshold: ciThreshold,
+        });
+        showConfig = false;
+    }
+
+    function formatNumber(n: number): string {
+        if (n < 0.001) return n.toExponential(0);
         return String(n);
     }
 </script>
@@ -21,9 +43,60 @@
 <div class="correlation-section">
     {#if status === null}
         <span class="status-text muted">Correlations: Not computed</span>
-        <button class="harvest-button" onclick={onSubmit} disabled={submitting}>
-            {submitting ? "..." : "Harvest"}
-        </button>
+        <div
+            class="harvest-controls"
+            role="group"
+            onmouseenter={() => (showConfig = true)}
+            onmouseleave={() => (showConfig = false)}
+        >
+            <button
+                class="config-toggle"
+                title="Configure harvest parameters"
+            >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path
+                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+                    ></path>
+                </svg>
+            </button>
+            <button class="harvest-button" onclick={handleSubmit} disabled={submitting}>
+                {submitting ? "..." : "Harvest"}
+            </button>
+
+            {#if showConfig}
+                <div class="config-dropdown">
+                    <div class="config-content">
+                        <div class="config-row">
+                            <label for="n-batches">n_batches</label>
+                            <input id="n-batches" type="number" bind:value={nBatches} min="1" max="10000" />
+                        </div>
+                        <div class="config-row">
+                            <label for="batch-size">batch_size</label>
+                            <input id="batch-size" type="number" bind:value={batchSize} min="1" max="1024" />
+                        </div>
+                        <div class="config-row">
+                            <label for="context-length">context_length</label>
+                            <input id="context-length" type="number" bind:value={contextLength} min="1" max="4096" />
+                        </div>
+                        <div class="config-row">
+                            <label for="ci-threshold">ci_threshold</label>
+                            <input
+                                id="ci-threshold"
+                                type="number"
+                                bind:value={ciThreshold}
+                                min="0"
+                                max="1"
+                                step="0.000001"
+                            />
+                        </div>
+                        <div class="config-summary">
+                            Total tokens: ~{formatTokenCount(nBatches * batchSize * contextLength)}
+                        </div>
+                    </div>
+                </div>
+            {/if}
+        </div>
     {:else}
         <div
             class="correlation-status"
@@ -49,7 +122,10 @@
                         <div class="param-row"><span>n_batches:</span> {status.params.n_batches}</div>
                         <div class="param-row"><span>batch_size:</span> {status.params.batch_size}</div>
                         <div class="param-row"><span>context_length:</span> {status.params.context_length}</div>
-                        <div class="param-row"><span>ci_threshold:</span> {status.params.ci_threshold}</div>
+                        <div class="param-row">
+                            <span>ci_threshold:</span>
+                            {formatNumber(status.params.ci_threshold)}
+                        </div>
                         {#if status.status === "completed"}
                             <div class="param-row"><span>components:</span> {status.n_components}</div>
                         {/if}
@@ -61,10 +137,67 @@
             {/if}
         </div>
 
-        {#if status.status === "failed"}
-            <button class="harvest-button" onclick={onSubmit} disabled={submitting}>
-                {submitting ? "..." : "Harvest"}
-            </button>
+        {#if status.status === "failed" || status.status === "completed"}
+            <div
+                class="harvest-controls"
+                role="group"
+                onmouseenter={() => (showConfig = true)}
+                onmouseleave={() => (showConfig = false)}
+            >
+                <button
+                    class="config-toggle"
+                    title="Configure harvest parameters"
+                >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+                        ></path>
+                    </svg>
+                </button>
+                <button class="harvest-button" onclick={handleSubmit} disabled={submitting}>
+                    {submitting ? "..." : status.status === "completed" ? "Re-harvest" : "Harvest"}
+                </button>
+
+                {#if showConfig}
+                    <div class="config-dropdown">
+                        <div class="config-content">
+                            <div class="config-row">
+                                <label for="n-batches-retry">n_batches</label>
+                                <input id="n-batches-retry" type="number" bind:value={nBatches} min="1" max="10000" />
+                            </div>
+                            <div class="config-row">
+                                <label for="batch-size-retry">batch_size</label>
+                                <input id="batch-size-retry" type="number" bind:value={batchSize} min="1" max="1024" />
+                            </div>
+                            <div class="config-row">
+                                <label for="context-length-retry">context_length</label>
+                                <input
+                                    id="context-length-retry"
+                                    type="number"
+                                    bind:value={contextLength}
+                                    min="1"
+                                    max="4096"
+                                />
+                            </div>
+                            <div class="config-row">
+                                <label for="ci-threshold-retry">ci_threshold</label>
+                                <input
+                                    id="ci-threshold-retry"
+                                    type="number"
+                                    bind:value={ciThreshold}
+                                    min="0"
+                                    max="1"
+                                    step="0.000001"
+                                />
+                            </div>
+                            <div class="config-summary">
+                                Total tokens: ~{formatTokenCount(nBatches * batchSize * contextLength)}
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+            </div>
         {/if}
     {/if}
 </div>
@@ -75,7 +208,7 @@
         align-items: center;
         gap: var(--space-2);
         padding-left: var(--space-2);
-        border-left: 1px solid var(--border-default);
+        position: relative;
     }
 
     .correlation-status {
@@ -137,26 +270,103 @@
         color: var(--text-muted);
     }
 
-    .harvest-button {
-        padding: var(--space-1) var(--space-2);
-        background: var(--accent-primary);
-        color: white;
-        border: 1px solid var(--accent-primary);
+    .harvest-controls {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+        position: relative;
+    }
+
+    .config-toggle {
+        padding: var(--space-1);
+        color: var(--text-muted);
+        background: transparent;
+        border: 1px solid var(--border-default);
         border-radius: var(--radius-sm);
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        font-weight: 500;
         cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .config-toggle:hover {
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+    }
+
+    .harvest-button {
+        padding: var(--space-1) var(--space-3);
+        color: var(--text-primary);
+        border: 1px solid var(--border-default);
+        font-weight: 500;
         white-space: nowrap;
     }
 
     .harvest-button:hover:not(:disabled) {
-        background: var(--accent-primary-bright);
-        border-color: var(--accent-primary-bright);
+        background: var(--accent-primary);
+        color: white;
     }
 
     .harvest-button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
+        background: var(--border-default);
+        color: var(--text-muted);
+    }
+
+    .config-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        padding-top: var(--space-2);
+        z-index: 1000;
+    }
+
+    .config-content {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        padding: var(--space-3);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-primary);
+        min-width: 220px;
+    }
+
+    .config-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--space-3);
+        padding: var(--space-1) 0;
+    }
+
+    .config-row label {
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .config-row input {
+        width: 90px;
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        text-align: right;
+    }
+
+    .config-row input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+
+    .config-summary {
+        margin-top: var(--space-2);
+        padding-top: var(--space-2);
+        border-top: 1px solid var(--border-default);
+        color: var(--text-muted);
+        font-size: var(--text-xs);
     }
 </style>

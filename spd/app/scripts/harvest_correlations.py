@@ -63,11 +63,11 @@ def _update_status(
 
 def main(
     wandb_path: str,
-    n_batches: int = 500,
-    batch_size: int = 32,
-    context_length: int = 128,
-    ci_threshold: float = 1e-6,
-    status_file: str | None = None,
+    n_batches: int,
+    batch_size: int,
+    context_length: int,
+    ci_threshold: float,
+    status_file: str,
 ) -> None:
     """Harvest component correlations for a run.
 
@@ -79,7 +79,7 @@ def main(
         ci_threshold: CI threshold for binarization
         status_file: Path to status file (created by job submission, required for job tracking)
     """
-    status_path = Path(status_file) if status_file else None
+    status_path = Path(status_file)
 
     # Update status to running
     if status_path:
@@ -162,7 +162,7 @@ def main(
         logger.info(f"  - Correlations saved to {correlations_path}")
         logger.info(f"  - Token stats saved to {token_stats_path}")
         logger.info(f"  - Components: {len(result.correlations.component_keys)}")
-        logger.info(f"  - Tokens processed: {result.correlations.n_tokens:,}")
+        logger.info(f"  - Tokens processed: {result.correlations.count_total:,}")
 
         # Quick sanity check: show top correlations for first active component
         active_components = [
@@ -196,7 +196,7 @@ def main(
             _update_status(
                 status_path,
                 "completed",
-                n_tokens=result.correlations.n_tokens,
+                n_tokens=result.correlations.count_total,
                 n_components=len(result.correlations.component_keys),
             )
 

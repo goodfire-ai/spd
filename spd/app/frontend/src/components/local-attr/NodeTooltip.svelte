@@ -5,9 +5,9 @@
         ComponentSummary,
         OutputProbEntry,
     } from "../../lib/localAttributionsTypes";
+    import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
-    import NodeHeader from "./NodeHeader.svelte";
 
     type HoveredNode = {
         layer: string;
@@ -79,7 +79,7 @@
     onmouseenter={onMouseEnter}
     onmouseleave={onMouseLeave}
 >
-    <NodeHeader layer={hoveredNode.layer} seqIdx={hoveredNode.seqIdx} cIdx={hoveredNode.cIdx} {token} />
+    <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
     {#if isComponent && ciVal !== null}
         <div class="ci-value">CI: {ciVal.toFixed(3)}</div>
     {/if}
@@ -105,7 +105,6 @@
                 seqIdx={hoveredNode.seqIdx}
                 {summary}
                 {detail}
-                compact={true}
                 {onPinComponent}
             />
         {:else}
@@ -117,7 +116,6 @@
                 {summary}
                 detail={null}
                 {isLoading}
-                compact={true}
                 {onPinComponent}
             />
         {/if}

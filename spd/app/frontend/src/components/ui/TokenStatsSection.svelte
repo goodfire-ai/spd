@@ -18,15 +18,14 @@
         sectionSubtitle?: string;
         lists: TokenList[];
         loading: boolean;
-        compact?: boolean;
     };
 
-    let { sectionTitle, sectionSubtitle, lists, loading, compact = false }: Props = $props();
+    let { sectionTitle, sectionSubtitle, lists, loading }: Props = $props();
 
     const hasData = $derived(lists.some((list) => list.items.length > 0));
 </script>
 
-<div class="token-stats-section" class:compact>
+<div class="token-stats-section">
     <p class="token-stats-title">
         {sectionTitle}
         {#if sectionSubtitle}
@@ -44,15 +43,15 @@
                                 <span class="math-notation">{list.mathNotation}</span>
                             {/if}
                         </h5>
-                        <TokenPillList items={list.items} {compact} />
+                        <TokenPillList items={list.items} />
                     </div>
                 {/if}
             {/each}
         </div>
     {:else if loading}
-        <StatusText variant="muted" {compact}>Loading...</StatusText>
+        <StatusText variant="muted">Loading...</StatusText>
     {:else}
-        <StatusText variant="muted" {compact}>No data available.</StatusText>
+        <StatusText variant="muted">No data available.</StatusText>
     {/if}
 </div>
 
@@ -70,11 +69,6 @@
         color: var(--text-secondary);
         font-weight: 500;
     }
-
-    .compact .token-stats-title {
-        font-size: var(--text-xs);
-    }
-
     .token-stats {
         display: flex;
         flex-direction: column;
