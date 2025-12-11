@@ -6,6 +6,7 @@
         TokenStats,
     } from "../../lib/localAttributionsTypes";
     import { getComponentCorrelations, getComponentTokenStats } from "../../lib/localAttributionsApi";
+    import { viewSettings } from "../../lib/viewSettings.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import TokenHighlights from "../TokenHighlights.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
@@ -161,34 +162,49 @@
         <SectionHeader title="Correlated Components" {compact} />
         {#if correlations}
             <div class="correlations-grid" class:compact>
-                <ComponentCorrelationTable
-                    title="PMI"
-                    mathNotation="log(P(both) / P(A)P(B))"
-                    items={correlations.pmi.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                    onComponentClick={handleCorrelationClick}
-                />
-                <ComponentCorrelationTable
-                    title="Precision"
-                    mathNotation="P(that | this)"
-                    items={correlations.precision.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                    onComponentClick={handleCorrelationClick}
-                />
-                <ComponentCorrelationTable
-                    title="Recall"
-                    mathNotation="P(this | that)"
-                    items={correlations.recall.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                    onComponentClick={handleCorrelationClick}
-                />
-                <ComponentCorrelationTable
-                    title="F1"
-                    items={correlations.f1.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                    onComponentClick={handleCorrelationClick}
-                />
-                <ComponentCorrelationTable
-                    title="Jaccard"
-                    items={correlations.jaccard.slice(0, N_CORRELATIONS_TO_DISPLAY)}
-                    onComponentClick={handleCorrelationClick}
-                />
+                {#if viewSettings.isCorrelationStatVisible("pmi")}
+                    <ComponentCorrelationTable
+                        title="PMI"
+                        mathNotation="log(P(both) / P(A)P(B))"
+                        items={correlations.pmi.slice(0, N_CORRELATIONS_TO_DISPLAY)}
+                        {compact}
+                        onComponentClick={handleCorrelationClick}
+                    />
+                {/if}
+                {#if viewSettings.isCorrelationStatVisible("precision")}
+                    <ComponentCorrelationTable
+                        title="Precision"
+                        mathNotation="P(that | this)"
+                        items={correlations.precision.slice(0, N_CORRELATIONS_TO_DISPLAY)}
+                        {compact}
+                        onComponentClick={handleCorrelationClick}
+                    />
+                {/if}
+                {#if viewSettings.isCorrelationStatVisible("recall")}
+                    <ComponentCorrelationTable
+                        title="Recall"
+                        mathNotation="P(this | that)"
+                        items={correlations.recall.slice(0, N_CORRELATIONS_TO_DISPLAY)}
+                        {compact}
+                        onComponentClick={handleCorrelationClick}
+                    />
+                {/if}
+                {#if viewSettings.isCorrelationStatVisible("f1")}
+                    <ComponentCorrelationTable
+                        title="F1"
+                        items={correlations.f1.slice(0, N_CORRELATIONS_TO_DISPLAY)}
+                        {compact}
+                        onComponentClick={handleCorrelationClick}
+                    />
+                {/if}
+                {#if viewSettings.isCorrelationStatVisible("jaccard")}
+                    <ComponentCorrelationTable
+                        title="Jaccard"
+                        items={correlations.jaccard.slice(0, N_CORRELATIONS_TO_DISPLAY)}
+                        {compact}
+                        onComponentClick={handleCorrelationClick}
+                    />
+                {/if}
             </div>
         {:else if correlationsLoading}
             <StatusText {compact}>Loading...</StatusText>

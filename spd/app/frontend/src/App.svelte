@@ -10,6 +10,7 @@
     import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
+    import ViewSettingsDropdown from "./components/ui/ViewSettingsDropdown.svelte";
     import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
@@ -215,21 +216,24 @@
                 />
             {/if}
         </div>
-        {#if loadedRun}
-            <div
-                class="config-wrapper"
-                role="group"
-                onmouseenter={() => (showConfig = true)}
-                onmouseleave={() => (showConfig = false)}
-            >
-                <button type="button" class="config-button">Config</button>
-                {#if showConfig}
-                    <div class="config-dropdown">
-                        <pre>{loadedRun.config_yaml}</pre>
-                    </div>
-                {/if}
-            </div>
-        {/if}
+        <div class="tab-bar-right">
+            <ViewSettingsDropdown />
+            {#if loadedRun}
+                <div
+                    class="config-wrapper"
+                    role="group"
+                    onmouseenter={() => (showConfig = true)}
+                    onmouseleave={() => (showConfig = false)}
+                >
+                    <button type="button" class="config-button">Config</button>
+                    {#if showConfig}
+                        <div class="config-dropdown">
+                            <pre>{loadedRun.config_yaml}</pre>
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+        </div>
     </nav>
 
     <main class="main-content">
@@ -430,6 +434,12 @@
     .tab-buttons {
         display: flex;
         gap: var(--space-2);
+    }
+
+    .tab-bar-right {
+        display: flex;
+        gap: var(--space-2);
+        align-items: center;
     }
 
     .main-content {
