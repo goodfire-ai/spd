@@ -42,15 +42,15 @@ class RunningStatus:
 
 @dataclass
 class CompletedStatus:
+    n_tokens: int
+    n_components: int
     status: Literal["completed"] = "completed"
-    n_tokens: int = 0
-    n_components: int = 0
 
 
 @dataclass
 class FailedStatus:
+    error: str
     status: Literal["failed"] = "failed"
-    error: str = ""
 
 
 JobStatus = PendingStatus | RunningStatus | CompletedStatus | FailedStatus

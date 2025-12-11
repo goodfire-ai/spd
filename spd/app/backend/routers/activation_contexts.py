@@ -217,24 +217,15 @@ def probe_component(
     return ComponentProbeResponse(tokens=token_strings, ci_values=ci_values)
 
 
-# In-memory cache for correlations (keyed by run_id)
-_correlations_cache: dict[str, ComponentCorrelations] = {}
-_token_stats_cache: dict[str, ComponentTokenStats] = {}
-
-
 def _get_correlations(run_id: str) -> ComponentCorrelations | None:
     """Load correlations from cache or disk."""
     start = time.perf_counter()
-
-    if run_id in _correlations_cache:
-        return _correlations_cache[run_id]
 
     path = get_correlations_path(run_id)
     if not path.exists():
         return None
 
     correlations = ComponentCorrelations.load(path)
-    _correlations_cache[run_id] = correlations
     load_ms = (time.perf_counter() - start) * 1000
     logger.info(f"Loaded correlations for {run_id} in {load_ms:.1f}ms")
     return correlations
@@ -244,15 +235,11 @@ def _get_token_stats(run_id: str) -> ComponentTokenStats | None:
     """Load token stats from cache or disk."""
     start = time.perf_counter()
 
-    if run_id in _token_stats_cache:
-        return _token_stats_cache[run_id]
-
     path = get_token_stats_path(run_id)
     if not path.exists():
         return None
 
     token_stats = ComponentTokenStats.load(path)
-    _token_stats_cache[run_id] = token_stats
     load_ms = (time.perf_counter() - start) * 1000
     logger.info(f"Loaded token stats for {run_id} in {load_ms:.1f}ms")
     return token_stats
