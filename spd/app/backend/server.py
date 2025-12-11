@@ -25,7 +25,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from spd.app.backend.db import LocalAttrDB
 from spd.app.backend.routers import (
     activation_contexts_router,
-    correlation_jobs_router,
     correlations_router,
     dataset_search_router,
     graphs_router,
@@ -144,7 +143,6 @@ app.include_router(graphs_router)
 app.include_router(activation_contexts_router)
 app.include_router(correlations_router)
 app.include_router(intervention_router)
-app.include_router(correlation_jobs_router)
 app.include_router(dataset_search_router)
 
 
