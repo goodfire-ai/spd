@@ -564,7 +564,6 @@ def get_graphs(
         else:
             # Optimized graph
             assert graph.optimization_params is not None
-            assert graph.label_prob is not None
 
             # Get label_str if label_token is set
             label_str: str | None = None
