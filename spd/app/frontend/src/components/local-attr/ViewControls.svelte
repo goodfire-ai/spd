@@ -3,7 +3,6 @@
 
     type Props = {
         topK: number;
-        nodeLayout: "importance" | "shuffled" | "jittered";
         componentGap: number;
         layerGap: number;
         filteredEdgeCount: number | null;
@@ -11,7 +10,6 @@
         ciThreshold: number;
         ciThresholdLoading: boolean;
         onTopKChange: (value: number) => void;
-        onLayoutChange: (value: "importance" | "shuffled" | "jittered") => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
@@ -20,7 +18,6 @@
 
     let {
         topK,
-        nodeLayout,
         componentGap,
         layerGap,
         filteredEdgeCount,
@@ -28,7 +25,6 @@
         ciThreshold,
         ciThresholdLoading,
         onTopKChange,
-        onLayoutChange,
         onComponentGapChange,
         onLayerGapChange,
         onNormalizeChange,
@@ -94,17 +90,6 @@
             step={0.1}
             disabled={ciThresholdLoading}
         />
-    </label>
-    <label>
-        <span>Node Layout</span>
-        <select
-            value={nodeLayout}
-            onchange={(e) => onLayoutChange(e.currentTarget.value as "importance" | "shuffled" | "jittered")}
-        >
-            <option value="importance">Importance</option>
-            <option value="shuffled">Shuffled</option>
-            <option value="jittered">Jittered</option>
-        </select>
     </label>
     <label>
         <span>Node Gap</span>

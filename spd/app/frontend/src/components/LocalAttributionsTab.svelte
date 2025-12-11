@@ -83,7 +83,6 @@
     // Default view settings for new graphs
     const defaultViewSettings: ViewSettings = {
         topK: 200,
-        nodeLayout: "importance",
         componentGap: 4,
         layerGap: 30,
         normalizeEdges: "layer",
@@ -200,7 +199,7 @@
                     label,
                     data,
                     viewSettings: { ...defaultViewSettings },
-                    composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
+                    composerSelection: filterInterventableNodes(Object.keys(data.nodeCiVals)),
                     interventionRuns: runs,
                     activeRunId: null,
                 };
@@ -476,7 +475,7 @@
                         label,
                         data,
                         viewSettings: { ...defaultViewSettings },
-                        composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
+                        composerSelection: filterInterventableNodes(Object.keys(data.nodeCiVals)),
                         interventionRuns: [],
                         activeRunId: null,
                     },
@@ -511,7 +510,7 @@
                         return {
                             ...g,
                             data: matchingData,
-                            composerSelection: filterInterventableNodes(Object.keys(matchingData.nodeImportance)),
+                            composerSelection: filterInterventableNodes(Object.keys(matchingData.nodeCiVals)),
                         };
                     }),
                 };
@@ -551,10 +550,6 @@
 
     function handleTopKChange(value: number) {
         updateActiveGraphViewSettings({ topK: value });
-    }
-
-    function handleLayoutChange(value: "importance" | "shuffled" | "jittered") {
-        updateActiveGraphViewSettings({ nodeLayout: value });
     }
 
     function handleComponentGapChange(value: number) {
@@ -705,7 +700,6 @@
 
                                     <ViewControls
                                         topK={activeGraph.viewSettings.topK}
-                                        nodeLayout={activeGraph.viewSettings.nodeLayout}
                                         componentGap={activeGraph.viewSettings.componentGap}
                                         layerGap={activeGraph.viewSettings.layerGap}
                                         {filteredEdgeCount}
@@ -713,7 +707,6 @@
                                         ciThreshold={activeGraph.viewSettings.ciThreshold}
                                         ciThresholdLoading={refetchingGraphId === activeGraph.id}
                                         onTopKChange={handleTopKChange}
-                                        onLayoutChange={handleLayoutChange}
                                         onComponentGapChange={handleComponentGapChange}
                                         onLayerGapChange={handleLayerGapChange}
                                         onNormalizeChange={handleNormalizeChange}
@@ -723,7 +716,6 @@
                                         <LocalAttributionsGraph
                                             data={activeGraph.data}
                                             topK={activeGraph.viewSettings.topK}
-                                            nodeLayout={activeGraph.viewSettings.nodeLayout}
                                             componentGap={activeGraph.viewSettings.componentGap}
                                             layerGap={activeGraph.viewSettings.layerGap}
                                             {activationContextsSummary}

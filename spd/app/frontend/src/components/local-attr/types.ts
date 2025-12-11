@@ -5,7 +5,6 @@ import type { NormalizeType } from "../../lib/localAttributionsApi";
 
 export type ViewSettings = {
     topK: number;
-    nodeLayout: "importance" | "shuffled" | "jittered";
     componentGap: number;
     layerGap: number;
     normalizeEdges: NormalizeType;
