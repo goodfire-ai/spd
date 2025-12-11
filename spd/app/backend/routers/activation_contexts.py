@@ -78,7 +78,7 @@ class TokenPRLiftPMI(BaseModel):
     top_precision: list[tuple[str, float]]  # [(token, value), ...] sorted desc
     top_lift: list[tuple[str, float]]  # [(token, lift), ...] sorted desc
     top_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest positive association
-    bottom_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest negative association
+    bottom_pmi: list[tuple[str, float]] | None  # [(token, pmi), ...] highest negative association
 
 
 class TokenStatsResponse(BaseModel):
@@ -384,14 +384,17 @@ def get_component_token_stats(
 
     component_key = f"{layer}:{component_idx}"
 
-    input_stats = token_stats.get_input_stats(component_key, loaded.tokenizer, top_k=top_k)
-    output_stats = token_stats.get_output_stats(component_key, loaded.tokenizer, top_k=top_k)
+    input_stats = token_stats.get_input_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
+    output_stats = token_stats.get_output_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
 
     if input_stats is None or output_stats is None:
         return None
 
     total_ms = (time.perf_counter() - start) * 1000
     logger.info(f"get_component_token_stats: {component_key} in {total_ms:.1f}ms")
+
+    assert input_stats.bottom_pmi is None, "Input stats should not have bottom PMI"
+    assert output_stats.bottom_pmi is not None, "Output stats should have bottom PMI"
 
     return TokenStatsResponse(
         input=TokenPRLiftPMI(

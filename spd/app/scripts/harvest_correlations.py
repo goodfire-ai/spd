@@ -178,14 +178,14 @@ def main(
                 logger.info(f"      {c.component_key}: F1={c.score:.4f}")
 
             # Show sample input token stats
-            input_stats = result.token_stats.get_input_stats(test_key, tokenizer, top_k=5)
+            input_stats = result.token_stats.get_input_tok_stats(test_key, tokenizer, top_k=5)
             if input_stats:
                 logger.info(f"  - Sample input token PMI for {test_key}:")
                 for tok, pmi_val in input_stats.top_pmi[:5]:
                     logger.info(f"      {tok!r}: PMI={pmi_val:.2f}")
 
             # Show sample output token stats
-            output_stats = result.token_stats.get_output_stats(test_key, tokenizer, top_k=5)
+            output_stats = result.token_stats.get_output_tok_stats(test_key, tokenizer, top_k=5)
             if output_stats:
                 logger.info(f"  - Sample output token PMI for {test_key}:")
                 for tok, pmi_val in output_stats.top_pmi[:5]:

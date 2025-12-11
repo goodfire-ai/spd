@@ -227,7 +227,7 @@ class TokenPRLift:
     top_precision: list[tuple[str, float]]  # [(token, value), ...]
     top_lift: list[tuple[str, float]]  # [(token, lift), ...]
     top_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest positive association
-    bottom_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest negative association
+    bottom_pmi: list[tuple[str, float]] | None  # [(token, pmi), ...] highest negative association
 
 
 @dataclass
@@ -260,10 +260,11 @@ class ComponentTokenStats:
     def _key_to_idx(self, key: str) -> int:
         return self.component_keys.index(key)
 
-    def _compute_stats(
-        self,
+    @staticmethod
+    def _compute_token_stats(
         counts: Float[Tensor, " vocab"],
         totals: Float[Tensor, " vocab"],
+        n_tokens: int,
         firing_count: float,
         tokenizer: PreTrainedTokenizerBase,
         top_k: int,
@@ -280,7 +281,7 @@ class ComponentTokenStats:
         # Compute metrics vectorized
         recall = counts / firing_count  # P(token | firing)
         precision = torch.where(totals > 0, counts / totals, torch.zeros_like(counts))
-        base_rate = firing_count / self.n_tokens
+        base_rate = firing_count / n_tokens
         lift = precision / base_rate if base_rate > 0 else torch.zeros_like(precision)
 
         # PMI = log(P(firing, token) / (P(firing) * P(token)))
@@ -288,11 +289,8 @@ class ComponentTokenStats:
         # P(firing) = firing_count / n_tokens
         # P(token) = totals / n_tokens
         # PMI = log(counts * n_tokens / (firing_count * totals))
-        pmi = torch.where(
-            valid_mask,
-            torch.log(counts * self.n_tokens / (firing_count * totals)),
-            torch.full_like(counts, float("-inf")),
-        )
+        pmi = torch.log(counts * n_tokens / (firing_count * totals))
+        pmi = torch.where(valid_mask, pmi, torch.full_like(counts, float("-inf")))
 
         def get_top_k(values: Tensor, k: int, largest: bool = True) -> list[tuple[str, float]]:
             # Mask invalid values
@@ -306,8 +304,9 @@ class ComponentTokenStats:
             )
             result = []
             for idx, val in zip(top_idx.tolist(), top_vals.tolist(), strict=True):
-                if not math.isfinite(val):
+                if val == float("-inf"):
                     continue
+                assert math.isfinite(val), f"Unexpected non-finite score {val} for token {idx}"
                 token_str = tokenizer.decode([idx])
                 result.append((token_str, round(val, 3 if abs(val) < 10 else 2)))
             return result
@@ -320,7 +319,7 @@ class ComponentTokenStats:
             bottom_pmi=get_top_k(pmi, top_k, largest=False),
         )
 
-    def get_input_stats(
+    def get_input_tok_stats(
         self,
         component_key: str,
         tokenizer: PreTrainedTokenizerBase,
@@ -336,25 +335,26 @@ class ComponentTokenStats:
         counts=0 which gives PMI=-inf, which isn't useful.
         """
         idx = self._key_to_idx(component_key)
-        stats = self._compute_stats(
+        tok_stats = self._compute_token_stats(
             self.input_counts[idx],
             self.input_totals,
+            self.n_tokens,
             self.firing_counts[idx].item(),
             tokenizer,
             top_k,
         )
-        if stats is None:
+        if tok_stats is None:
             return None
         # Clear bottom_pmi - not meaningful for input tokens (see docstring)
         return TokenPRLift(
-            top_recall=stats.top_recall,
-            top_precision=stats.top_precision,
-            top_lift=stats.top_lift,
-            top_pmi=stats.top_pmi,
-            bottom_pmi=[],  # Not meaningful for inputs
+            top_recall=tok_stats.top_recall,
+            top_precision=tok_stats.top_precision,
+            top_lift=tok_stats.top_lift,
+            top_pmi=tok_stats.top_pmi,
+            bottom_pmi=None,  # Not meaningful for inputs
         )
 
-    def get_output_stats(
+    def get_output_tok_stats(
         self,
         component_key: str,
         tokenizer: PreTrainedTokenizerBase,
@@ -369,9 +369,10 @@ class ComponentTokenStats:
         is lower than their baseline average.
         """
         idx = self._key_to_idx(component_key)
-        return self._compute_stats(
+        return self._compute_token_stats(
             self.output_counts[idx],
             self.output_totals,
+            self.n_tokens,
             self.firing_counts[idx].item(),
             tokenizer,
             top_k,
