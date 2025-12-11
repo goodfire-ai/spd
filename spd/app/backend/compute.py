@@ -188,7 +188,7 @@ def get_sources_by_target(
     for i in range(n_blocks):
         layers.extend([f"h.{i}.{layer_name}" for layer_name in component_layer_names])
 
-    # Add lm_head if it exists in target_module_paths (decoder matrix decomposition)
+    # Add lm_head if it exists in target_module_paths (unembedding matrix)
     if "lm_head" in model.target_module_paths:
         layers.append("lm_head")
 
