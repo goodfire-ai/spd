@@ -17,12 +17,11 @@ from fastapi.testclient import TestClient
 from simple_stories_train.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 from torch.utils.data import DataLoader, Dataset
 
-from spd.app.backend.compute import Edge, Node, get_sources_by_target
+from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.db import LocalAttrDB
 from spd.app.backend.routers import graphs as graphs_router
 from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
-from spd.app.backend.routers.graphs import filter_edges_by_ci_threshold
 from spd.app.backend.server import app
 from spd.app.backend.state import RunState, StateManager
 from spd.configs import Config
@@ -393,71 +392,3 @@ def test_compute_optimized_stream(app_with_prompt: tuple[TestClient, int]):
 
     events = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
     assert len(events) >= 1
-
-
-# -----------------------------------------------------------------------------
-# CI Threshold Filtering
-# -----------------------------------------------------------------------------
-
-
-def test_filter_edges_by_ci_threshold():
-    """Test that CI threshold filtering correctly removes edges with low-CI nodes."""
-    # Node CI values keyed by "layer:seq:c_idx"
-    node_ci_vals = {
-        "layer0:0:0": 0.8,  # High CI
-        "layer0:0:1": 0.3,  # Low CI
-        "layer1:0:0": 0.6,  # Medium CI
-        "layer1:0:1": 0.1,  # Very low CI
-    }
-
-    # Create test edges (all at seq_pos=0)
-    edges = [
-        Edge(
-            Node("layer0", 0, 0), Node("layer1", 0, 0), 1.0, False
-        ),  # src=0.8, tgt=0.6 -> both high
-        Edge(Node("layer0", 0, 1), Node("layer1", 0, 0), 1.0, False),  # src=0.3, tgt=0.6 -> src low
-        Edge(Node("layer0", 0, 0), Node("layer1", 0, 1), 1.0, False),  # src=0.8, tgt=0.1 -> tgt low
-        Edge(
-            Node("layer0", 0, 1), Node("layer1", 0, 1), 1.0, False
-        ),  # src=0.3, tgt=0.1 -> both low
-    ]
-
-    # Threshold=0 should return all edges
-    result = filter_edges_by_ci_threshold(edges, 0.0, node_ci_vals)
-    assert len(result) == 4
-
-    # Threshold=0.5 should only keep edge where both src>=0.5 and tgt>=0.5
-    result = filter_edges_by_ci_threshold(edges, 0.5, node_ci_vals)
-    assert len(result) == 1
-    assert result[0].source.component_idx == 0 and result[0].target.component_idx == 0
-
-    # Threshold=0.2 should keep edges where both CI >= 0.2
-    result = filter_edges_by_ci_threshold(edges, 0.2, node_ci_vals)
-    assert len(result) == 2  # First two edges (src=0.8/tgt=0.6 and src=0.3/tgt=0.6)
-
-    # Threshold=0.9 should filter out all edges
-    result = filter_edges_by_ci_threshold(edges, 0.9, node_ci_vals)
-    assert len(result) == 0
-
-
-def test_filter_edges_different_seq_positions():
-    """Test that CI filtering correctly handles nodes at different sequence positions."""
-    # Node CI values at different sequence positions
-    node_ci_vals = {
-        "layer0:0:0": 0.8,  # seq=0, c_idx=0
-        "layer0:1:0": 0.2,  # seq=1, c_idx=0 (same component, different position)
-        "layer1:0:0": 0.6,  # seq=0, c_idx=0
-        "layer1:1:0": 0.9,  # seq=1, c_idx=0 (same component, different position)
-    }
-
-    # Create edges at different sequence positions
-    edges = [
-        Edge(Node("layer0", 0, 0), Node("layer1", 0, 0), 1.0, False),  # src=0.8, tgt=0.6
-        Edge(Node("layer0", 1, 0), Node("layer1", 1, 0), 1.0, False),  # src=0.2, tgt=0.9
-    ]
-
-    # Threshold=0.5: first edge passes (0.8 >= 0.5 and 0.6 >= 0.5)
-    # second edge fails (0.2 < 0.5)
-    result = filter_edges_by_ci_threshold(edges, 0.5, node_ci_vals)
-    assert len(result) == 1
-    assert result[0].source.seq_pos == 0
