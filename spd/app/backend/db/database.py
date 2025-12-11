@@ -191,12 +191,10 @@ class LocalAttrDB:
                 steps INTEGER,
                 pnorm REAL,
 
-                -- Cached data (gzipped JSON)
-                edges_data BLOB NOT NULL,
+                -- The actual graph data: (all stored as gzipped JSON)
+                edges_data BLOB NOT NULL, -- Main nodes' CI values: "layer:seq:c_idx" -> ci_val
+                node_ci_vals TEXT NOT NULL, -- Output nodes' probabilities
                 output_probs_data BLOB NOT NULL,
-
-                -- Node CI values: "layer:seq:c_idx" -> ci_val (required for all graphs)
-                node_ci_vals TEXT NOT NULL,
 
                 -- Optimization stats (NULL for standard graphs)
                 label_prob REAL,

@@ -32,10 +32,6 @@ from spd.configs import ImportanceMinimalityLossConfig
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import runtime_cast
 
-# =============================================================================
-# Router-specific Schemas
-# =============================================================================
-
 
 class EdgeData(BaseModel):
     """Edge in the attribution graph."""

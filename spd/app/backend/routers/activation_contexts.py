@@ -31,10 +31,6 @@ from spd.app.backend.schemas import (
 from spd.app.backend.utils import log_errors
 from spd.log import logger
 
-# =============================================================================
-# Router-specific Schemas
-# =============================================================================
-
 
 class HarvestMetadata(BaseModel):
     """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
