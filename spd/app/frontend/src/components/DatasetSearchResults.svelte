@@ -21,7 +21,9 @@
         const MARK_START = "\u0000MARK_START\u0000";
         const MARK_END = "\u0000MARK_END\u0000";
         const markedText = text.replace(regex, `${MARK_START}$1${MARK_END}`);
-        return escapeHtml(markedText).replace(new RegExp(MARK_START, "g"), "<mark>").replace(new RegExp(MARK_END, "g"), "</mark>");
+        return escapeHtml(markedText)
+            .replace(new RegExp(MARK_START, "g"), "<mark>")
+            .replace(new RegExp(MARK_END, "g"), "</mark>");
     }
 
     function escapeHtml(text: string): string {

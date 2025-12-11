@@ -704,8 +704,8 @@
                             </div>
 
                             {#if activeCard.activeView === "graph"}
-                                {#if activeGraph.data.optimization}
-                                    <div class="optim-results">
+                                <div class="graph-stats">
+                                    {#if activeGraph.data.optimization}
                                         {#if activeGraph.data.optimization.label_str !== null && activeGraph.data.optimization.label_prob !== null}
                                             <span
                                                 ><strong>Target:</strong> "{formatTokenDisplay(
@@ -718,15 +718,18 @@
                                             >
                                         {/if}
                                         {#if activeGraph.data.optimization.kl_loss_coeff !== null}
-                                            <span><strong>KL Loss:</strong> coeff={activeGraph.data.optimization.kl_loss_coeff}</span>
+                                            <span
+                                                ><strong>KL Loss:</strong> coeff={activeGraph.data.optimization
+                                                    .kl_loss_coeff}</span
+                                            >
                                         {/if}
-                                        <span
-                                            ><strong>L0:</strong>
-                                            {activeGraph.data.optimization.l0_total.toFixed(0)} active at ci threshold {activeGraph
-                                                .viewSettings.ciThreshold}</span
-                                        >
-                                    </div>
-                                {/if}
+                                    {/if}
+                                    <span
+                                        ><strong>L0:</strong>
+                                        {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
+                                            .viewSettings.ciThreshold}</span
+                                    >
+                                </div>
 
                                 {#if computeError}
                                     <div class="error-banner">
@@ -922,7 +925,7 @@
         background: rgba(255, 255, 255, 0.3);
     }
 
-    .optim-results {
+    .graph-stats {
         display: flex;
         gap: var(--space-4);
         font-size: var(--text-sm);
@@ -930,12 +933,12 @@
         color: var(--accent-primary);
     }
 
-    .optim-results strong {
+    .graph-stats strong {
         color: var(--text-muted);
         font-weight: 500;
     }
 
-    .optim-results .token-id {
+    .graph-stats .token-id {
         color: var(--text-muted);
         font-size: var(--text-xs);
     }

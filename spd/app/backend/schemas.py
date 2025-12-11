@@ -41,6 +41,7 @@ class GraphData(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeImportance: dict[str, float]  # node key -> sum of squared edge values
     maxAbsAttr: float  # max absolute edge value
+    l0_total: int  # total active components at current CI threshold
 
 
 class OptimizationResult(BaseModel):
@@ -48,9 +49,7 @@ class OptimizationResult(BaseModel):
 
     imp_min_coeff: float
     steps: int
-    l0_total: float
-    l0_per_layer: dict[str, float]
-    # CE loss params (optional)
+    # CE loss params (optional - required together)
     label_token: int | None = None
     label_str: str | None = None
     ce_loss_coeff: float | None = None
@@ -59,15 +58,9 @@ class OptimizationResult(BaseModel):
     kl_loss_coeff: float | None = None
 
 
-class GraphDataWithOptimization(BaseModel):
+class GraphDataWithOptimization(GraphData):
     """Attribution graph data with optimization results."""
 
-    id: int
-    tokens: list[str]
-    edges: list[EdgeData]
-    outputProbs: dict[str, OutputProbability]
-    nodeImportance: dict[str, float]  # node key -> sum of squared edge values
-    maxAbsAttr: float  # max absolute edge value
     optimization: OptimizationResult
 
 

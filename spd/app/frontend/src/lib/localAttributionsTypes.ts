@@ -29,15 +29,14 @@ export type GraphData = {
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
     nodeImportance: Record<string, number>; // node key -> sum of squared edge values
     maxAbsAttr: number; // max absolute edge value
+    l0_total: number; // total active components at current CI threshold
     optimization?: OptimizationResult;
 };
 
 export type OptimizationResult = {
     imp_min_coeff: number;
     steps: number;
-    l0_total: number;
-    l0_per_layer: Record<string, number>;
-    // CE loss params (optional)
+    // CE loss params (optional - required together)
     label_token: number | null;
     label_str: string | null;
     ce_loss_coeff: number | null;

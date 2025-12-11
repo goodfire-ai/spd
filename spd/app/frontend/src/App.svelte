@@ -14,7 +14,7 @@
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>("goodfire/spd/jyo9duz5");
-    let contextLength = $state<number | null>(8);
+    let contextLength = $state<number | null>(512);
 
     let loadedRun = $state<LoadedRun | null>(null);
     let backendError = $state<string | null>(null);
