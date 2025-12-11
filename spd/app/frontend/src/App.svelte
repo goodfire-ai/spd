@@ -105,11 +105,11 @@
             loadingTrainRun = true;
             loadedRun = null;
             await api.loadRun(input, contextLength);
-            // Set loading false before calling loadStatus, otherwise the guard returns early
-            await loadStatus();
         } finally {
+            // Set loading false before calling loadStatus, otherwise the guard returns early
             loadingTrainRun = false;
         }
+        await loadStatus();
     }
 
     onMount(() => {
