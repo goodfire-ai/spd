@@ -26,26 +26,34 @@ export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> 
 const STORAGE_KEY = "spd-view-settings";
 const ALL_STATS: CorrelationStatType[] = ["pmi", "precision", "recall", "f1", "jaccard"];
 
-function loadFromStorage(): CorrelationStatType[] {
-    try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            const parsed = JSON.parse(stored);
-            // Validate that all items are valid stat types
-            const valid = parsed.visibleCorrelationStats?.filter((s: string) =>
-                ALL_STATS.includes(s as CorrelationStatType)
-            );
-            if (valid?.length > 0) return valid;
-        }
-    } catch {
-        // Ignore parse errors
-    }
+type StoredSettings = {
+    visibleCorrelationStats?: string[];
+    showSetOverlapVis?: boolean;
+};
+
+function loadFromStorage(): StoredSettings {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? (JSON.parse(stored) as StoredSettings) : {};
+}
+
+function loadCorrelationStats(): CorrelationStatType[] {
+    const stored = loadFromStorage();
+    const valid = stored.visibleCorrelationStats?.filter((s: string) =>
+        ALL_STATS.includes(s as CorrelationStatType),
+    );
+    if (valid && valid.length > 0) return valid as CorrelationStatType[];
     return ALL_STATS;
 }
 
-function saveToStorage(stats: SvelteSet<CorrelationStatType>) {
+function loadShowSetOverlapVis(): boolean {
+    const stored = loadFromStorage();
+    return stored.showSetOverlapVis ?? true;
+}
+
+function saveToStorage(settings: StoredSettings) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ visibleCorrelationStats: [...stats] }));
+        const current = loadFromStorage();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...settings }));
     } catch {
         // Ignore storage errors
     }
@@ -54,7 +62,10 @@ function saveToStorage(stats: SvelteSet<CorrelationStatType>) {
 // View settings state
 class ViewSettings {
     // Which correlation stats to show (loaded from storage or all enabled by default)
-    visibleCorrelationStats = new SvelteSet<CorrelationStatType>(loadFromStorage());
+    visibleCorrelationStats = new SvelteSet<CorrelationStatType>(loadCorrelationStats());
+
+    // Whether to show set overlap visualizations
+    showSetOverlapVis = $state(loadShowSetOverlapVis());
 
     toggleCorrelationStat(stat: CorrelationStatType) {
         if (this.visibleCorrelationStats.has(stat)) {
@@ -65,11 +76,16 @@ class ViewSettings {
         } else {
             this.visibleCorrelationStats.add(stat);
         }
-        saveToStorage(this.visibleCorrelationStats);
+        saveToStorage({ visibleCorrelationStats: [...this.visibleCorrelationStats] });
     }
 
     isCorrelationStatVisible(stat: CorrelationStatType): boolean {
         return this.visibleCorrelationStats.has(stat);
+    }
+
+    toggleSetOverlapVis() {
+        this.showSetOverlapVis = !this.showSetOverlapVis;
+        saveToStorage({ showSetOverlapVis: this.showSetOverlapVis });
     }
 }
 

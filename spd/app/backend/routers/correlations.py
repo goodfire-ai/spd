@@ -20,7 +20,7 @@ from spd.app.backend.lib.component_correlations import (
     get_token_stats_path,
 )
 from spd.app.backend.lib.component_correlations import (
-    CorrelatedComponent as CorrelatedComponentDC,
+    CorrelatedComponentWithCounts as CorrelatedComponentDC,
 )
 from spd.app.backend.lib.component_correlations_slurm import (
     CompletedStatus,
@@ -42,6 +42,10 @@ class CorrelatedComponent(BaseModel):
 
     component_key: str
     score: float
+    count_i: int  # Subject (query component) firing count
+    count_j: int  # Object (this component) firing count
+    count_ij: int  # Co-occurrence count
+    n_tokens: int  # Total tokens
 
 
 class ComponentCorrelationsResponse(BaseModel):
@@ -274,18 +278,36 @@ def get_component_correlations(
         )
 
     def to_schema(c: CorrelatedComponentDC) -> CorrelatedComponent:
-        return CorrelatedComponent(component_key=c.component_key, score=c.score)
+        return CorrelatedComponent(
+            component_key=c.component_key,
+            score=c.score,
+            count_i=c.count_i,
+            count_j=c.count_j,
+            count_ij=c.count_ij,
+            n_tokens=c.count_total,
+        )
 
     response = ComponentCorrelationsResponse(
         precision=[
-            to_schema(c) for c in correlations.get_correlated(component_key, "precision", top_k)
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "precision", top_k)
         ],
-        recall=[to_schema(c) for c in correlations.get_correlated(component_key, "recall", top_k)],
-        f1=[to_schema(c) for c in correlations.get_correlated(component_key, "f1", top_k)],
+        recall=[
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "recall", top_k)
+        ],
+        f1=[
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "f1", top_k)
+        ],
         jaccard=[
-            to_schema(c) for c in correlations.get_correlated(component_key, "jaccard", top_k)
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "jaccard", top_k)
         ],
-        pmi=[to_schema(c) for c in correlations.get_correlated(component_key, "pmi", top_k)],
+        pmi=[
+            to_schema(c)
+            for c in correlations.get_correlated_with_counts(component_key, "pmi", top_k)
+        ],
     )
 
     total_ms = (time.perf_counter() - start) * 1000

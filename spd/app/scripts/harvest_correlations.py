@@ -162,7 +162,7 @@ def main(
         logger.info(f"  - Correlations saved to {correlations_path}")
         logger.info(f"  - Token stats saved to {token_stats_path}")
         logger.info(f"  - Components: {len(result.correlations.component_keys)}")
-        logger.info(f"  - Tokens processed: {result.correlations.n_tokens:,}")
+        logger.info(f"  - Tokens processed: {result.correlations.count_total:,}")
 
         # Quick sanity check: show top correlations for first active component
         active_components = [
@@ -196,7 +196,7 @@ def main(
             _update_status(
                 status_path,
                 "completed",
-                n_tokens=result.correlations.n_tokens,
+                n_tokens=result.correlations.count_total,
                 n_components=len(result.correlations.component_keys),
             )
 

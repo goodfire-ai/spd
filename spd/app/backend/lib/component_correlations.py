@@ -106,28 +106,36 @@ class CorrelatedComponent:
 
 
 @dataclass
+class CorrelatedComponentWithCounts:
+    """A component correlated with a query component, including raw counts for visualization."""
+
+    component_key: str
+    score: float
+    count_i: int
+    """Firing count of the this component"""
+    count_j: int
+    """Firing count of the other component"""
+    count_ij: int
+    """Co-occurrence count"""
+    count_total: int
+    """Total tokens seen"""
+
+
+@dataclass
 class ComponentCorrelations:
-    """Stores correlation statistics between components.
+    """Stores correlation statistics between components."""
 
-    All counts are stored as upper-triangular to avoid redundancy.
-    The diagonal of count_ij represents self-co-occurrence (same as count_i).
-    """
-
-    component_keys: list[str]  # Flattened list: ["h.0.attn.q_proj:0", "h.0.attn.q_proj:1", ...]
-    count_i: Float[Tensor, " n_components"]  # Firing count per component
-    count_ij: Float[Tensor, "n_components n_components"]  # Co-occurrence (upper triangular)
-    n_tokens: int  # Total tokens seen
+    component_keys: list[str]
+    """List of component keys: ["h.0.attn.q_proj:0", "h.0.attn.q_proj:1", ...]"""
+    count_i: Float[Tensor, " n_components"]
+    """Firing count per component"""
+    count_ij: Float[Tensor, "n_components n_components"]
+    """Co-occurrence matrix: count_ij[i, j] = count of tokens where component i and j both fired"""
+    count_total: int
+    """Total tokens seen"""
 
     def _key_to_idx(self, key: str) -> int:
         return self.component_keys.index(key)
-
-    def _get_cooccurrence_row(self, i: int) -> Float[Tensor, " n_components"]:
-        """Get full co-occurrence row for component i, reconstructing from upper triangular."""
-        # Upper triangular: row i has values at columns >= i
-        # We need to also get values from column i in rows < i
-        row = self.count_ij[i, :].clone()  # Get row (has values for j >= i)
-        row[:i] = self.count_ij[:i, i]  # Fill in values for j < i from column i
-        return row
 
     def _compute_scores(self, component_key: str, metric: Metric) -> tuple[Tensor, int] | None:
         """Compute scores for a component. Returns (scores, component_idx) or None if no firings."""
@@ -137,8 +145,8 @@ class ComponentCorrelations:
         if count_i_val == 0:
             return None
 
-        count_ij_row = self._get_cooccurrence_row(i)
-        scores = METRIC_FNS[metric](count_i_val, self.count_i, count_ij_row, self.n_tokens)
+        count_ij_row = self.count_ij[i]
+        scores = METRIC_FNS[metric](count_i_val, self.count_i, count_ij_row, self.count_total)
 
         # Mask out self and zeros with -inf
         scores[i] = float("-inf")
@@ -183,6 +191,53 @@ class ComponentCorrelations:
 
         return output
 
+    def get_correlated_with_counts(
+        self,
+        component_key: str,
+        metric: Metric,
+        top_k: int,
+    ) -> list[CorrelatedComponentWithCounts]:
+        """Get top-k correlated components with raw counts for visualization.
+
+        Args:
+            component_key: The component to find correlations for (e.g., "h.0.attn.q_proj:5")
+            metric: Which correlation metric to use
+            top_k: Number of top correlations to return
+
+        Returns:
+            List of CorrelatedComponentWithCounts sorted by score descending
+        """
+        result = self._compute_scores(component_key, metric)
+        if result is None:
+            return []
+
+        scores, i = result
+        count_i_val = int(self.count_i[i].item())
+        count_ij_row = self.count_ij[i]
+
+        top_k_clamped = min(top_k, len(scores))
+        top_values, top_indices = torch.topk(scores, top_k_clamped)
+
+        output = []
+        for idx, val in zip(top_indices.tolist(), top_values.tolist(), strict=True):
+            if val == float("-inf"):
+                continue
+            assert math.isfinite(val), (
+                f"Unexpected non-finite score {val} for {self.component_keys[idx]}"
+            )
+            output.append(
+                CorrelatedComponentWithCounts(
+                    component_key=self.component_keys[idx],
+                    score=val,
+                    count_i=count_i_val,
+                    count_j=int(self.count_i[idx].item()),
+                    count_ij=int(count_ij_row[idx].item()),
+                    count_total=self.count_total,
+                )
+            )
+
+        return output
+
     def save(self, path: Path) -> None:
         """Save correlations to a .pt file."""
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,7 +246,7 @@ class ComponentCorrelations:
                 "component_keys": self.component_keys,
                 "count_i": self.count_i.cpu(),
                 "count_ij": self.count_ij.cpu(),
-                "n_tokens": self.n_tokens,
+                "count_total": self.count_total,
             },
             path,
         )
@@ -205,7 +260,7 @@ class ComponentCorrelations:
             component_keys=data["component_keys"],
             count_i=data["count_i"],
             count_ij=data["count_ij"],
-            n_tokens=data["n_tokens"],
+            count_total=data["count_total"],
         )
 
 
@@ -536,14 +591,11 @@ def harvest_correlations(
             assert torch.isfinite(input_counts).all(), "input_counts has non-finite values"
             assert torch.isfinite(output_counts).all(), "output_counts has non-finite values"
 
-    # Keep only upper triangular (including diagonal)
-    count_ij = torch.triu(count_ij)
-
     correlations = ComponentCorrelations(
         component_keys=component_keys,
         count_i=count_i,
         count_ij=count_ij,
-        n_tokens=n_tokens,
+        count_total=n_tokens,
     )
 
     token_stats = ComponentTokenStats(

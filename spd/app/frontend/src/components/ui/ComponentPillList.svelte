@@ -1,6 +1,8 @@
 <script lang="ts">
     import { getTokenHighlightBg } from "../../lib/colors";
     import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
+    import { viewSettings } from "../../lib/viewSettings.svelte";
+    import SetOverlapVis from "./SetOverlapVis.svelte";
 
     type Props = {
         items: CorrelatedComponent[];
@@ -12,7 +14,7 @@
 </script>
 
 <div class="components" class:compact>
-    {#each items as { component_key, score } (component_key)}
+    {#each items as { component_key, score, count_i, count_j, count_ij, n_tokens } (component_key)}
         <button
             class="component-pill"
             class:clickable={!!onComponentClick}
@@ -20,8 +22,18 @@
             title="{component_key}: {score.toFixed(3)}"
             onclick={() => onComponentClick?.(component_key)}
         >
-            <span class="component-key">{component_key}</span>
-            <span class="component-score">{score.toFixed(2)}</span>
+            <div class="pill-content">
+                <span class="component-key">{component_key}</span>
+                <span class="component-score">{score.toFixed(2)}</span>
+            </div>
+            {#if viewSettings.showSetOverlapVis}
+                <SetOverlapVis
+                    countA={count_i}
+                    countB={count_j}
+                    countIntersection={count_ij}
+                    totalCount={n_tokens}
+                />
+            {/if}
         </button>
     {/each}
 </div>
@@ -30,7 +42,7 @@
     .components {
         display: flex;
         flex-wrap: wrap;
-        gap: var(--space-1);
+        gap: var(--space-2);
         font-family: var(--font-mono);
         font-size: var(--text-xs);
         background: var(--bg-elevated);
@@ -40,15 +52,15 @@
 
     .components.compact {
         font-size: 10px;
-        gap: 2px;
+        gap: var(--space-1);
         padding: var(--space-1);
     }
 
     .component-pill {
         display: inline-flex;
-        align-items: center;
-        gap: var(--space-1);
-        padding: 2px 6px;
+        flex-direction: column;
+        gap: 2px;
+        padding: 4px 6px;
         border-radius: 3px;
         white-space: nowrap;
         cursor: default;
@@ -56,6 +68,18 @@
         border: none;
         font-family: inherit;
         font-size: inherit;
+        min-width: 80px;
+    }
+
+    .components.compact .component-pill {
+        padding: 2px 4px;
+        min-width: 60px;
+    }
+
+    .pill-content {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
     }
 
     .component-pill.clickable {

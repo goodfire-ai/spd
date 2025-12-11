@@ -66,6 +66,10 @@ export type ComponentDetail = {
 export type CorrelatedComponent = {
     component_key: string;
     score: number;
+    count_i: number; // Subject (query component) firing count
+    count_j: number; // Object (this component) firing count
+    count_ij: number; // Co-occurrence count
+    n_tokens: number; // Total tokens
 };
 
 export type ComponentCorrelations = {

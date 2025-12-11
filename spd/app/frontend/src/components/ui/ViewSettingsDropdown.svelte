@@ -1,9 +1,8 @@
 <script lang="ts">
-    import {
+    import CorrelationStatType, {
         viewSettings,
         CORRELATION_STAT_LABELS,
         CORRELATION_STAT_DESCRIPTIONS,
-        type CorrelationStatType,
     } from "../../lib/viewSettings.svelte";
 
     let showDropdown = $state(false);
@@ -35,6 +34,19 @@
                             <span class="stat-desc">{CORRELATION_STAT_DESCRIPTIONS[stat]}</span>
                         </label>
                     {/each}
+                </div>
+            </div>
+            <div class="settings-section">
+                <h4>Visualizations</h4>
+                <div class="checkbox-list">
+                    <label class="checkbox-item single-row">
+                        <input
+                            type="checkbox"
+                            checked={viewSettings.showSetOverlapVis}
+                            onchange={() => viewSettings.toggleSetOverlapVis()}
+                        />
+                        <span class="stat-label">Set overlap bars</span>
+                    </label>
                 </div>
             </div>
         </div>
@@ -70,6 +82,9 @@
         padding-top: var(--space-2);
         z-index: 1000;
         min-width: 280px;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
     }
 
     .settings-section {
@@ -118,6 +133,14 @@
         margin: 0;
         cursor: pointer;
         accent-color: var(--accent-primary);
+    }
+
+    .checkbox-item.single-row {
+        grid-template-rows: auto;
+    }
+
+    .checkbox-item.single-row input {
+        grid-row: span 1;
     }
 
     .stat-label {
