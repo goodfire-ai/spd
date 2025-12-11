@@ -187,6 +187,11 @@ def get_sources_by_target(
     n_blocks = get_model_n_blocks(model.target_model)
     for i in range(n_blocks):
         layers.extend([f"h.{i}.{layer_name}" for layer_name in component_layer_names])
+
+    # Add lm_head if it exists in target_module_paths (decoder matrix decomposition)
+    if "lm_head" in model.target_module_paths:
+        layers.append("lm_head")
+
     layers.append("output")
 
     # Test all pairs: wte can feed into anything, anything can feed into output

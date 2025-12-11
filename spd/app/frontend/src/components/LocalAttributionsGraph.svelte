@@ -20,8 +20,8 @@
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
 
-    // Row order for layout (qkv share a row)
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "output"];
+    // Row order for layout (qkv share a row, lm_head before output)
+    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
     const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
 
     type Props = {
@@ -68,6 +68,10 @@
     function parseLayer(name: string): LayerInfo {
         if (name === "wte") {
             return { name, block: -1, type: "embed", subtype: "wte" };
+        }
+        if (name === "lm_head") {
+            // lm_head is the decoder matrix, positioned after all blocks but before output
+            return { name, block: Infinity - 1, type: "decoder", subtype: "lm_head" };
         }
         if (name === "output") {
             return { name, block: Infinity, type: "output", subtype: "output" };
