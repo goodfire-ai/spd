@@ -190,7 +190,7 @@ def compute_graph_stream(
                 l0_total = len(filtered_node_ci_vals)
 
                 edges_data, node_importance, max_abs_attr = process_edges_for_response(
-                    edges=raw_edges,
+                    raw_edges=raw_edges,
                     normalize=normalize,
                     num_tokens=len(token_ids),
                     node_ci_vals=filtered_node_ci_vals,
@@ -382,7 +382,7 @@ def compute_graph_optimized_stream(
                 l0_total = len(filtered_node_ci_vals)
 
                 edges_data, node_importance, max_abs_attr = process_edges_for_response(
-                    edges=raw_edges,
+                    raw_edges=raw_edges,
                     normalize=normalize,
                     num_tokens=len(token_ids),
                     node_ci_vals=filtered_node_ci_vals,
@@ -416,7 +416,7 @@ def compute_graph_optimized_stream(
 
 
 def process_edges_for_response(
-    edges: list[Edge],
+    raw_edges: list[Edge],
     normalize: NormalizeType,
     num_tokens: int,
     node_ci_vals: dict[str, float],
@@ -441,10 +441,10 @@ def process_edges_for_response(
     """
     if is_optimized:
         final_seq_pos = num_tokens - 1
-        edges = [edge for edge in edges if edge.target.seq_pos == final_seq_pos]
+        raw_edges = [edge for edge in raw_edges if edge.target.seq_pos == final_seq_pos]
 
     edges = []
-    for edge in edges:
+    for edge in raw_edges:
         valid_source = edge.source.layer in NON_CI_LAYERS or str(edge.source) in node_ci_vals
         valid_target = edge.target.layer in NON_CI_LAYERS or str(edge.target) in node_ci_vals
         if valid_source and valid_target:
@@ -490,7 +490,7 @@ def get_graphs(
         l0_total = len(filtered_node_ci_vals)
 
         edges_data, node_importance, max_abs_attr = process_edges_for_response(
-            edges=graph.edges,
+            raw_edges=graph.edges,
             normalize=normalize,
             num_tokens=num_tokens,
             node_ci_vals=filtered_node_ci_vals,
