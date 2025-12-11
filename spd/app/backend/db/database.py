@@ -592,7 +592,7 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         edges_json = json.dumps([asdict(e) for e in graph.edges])
-        probs_json = json.dumps(graph.output_probs)
+        probs_json = json.dumps({k: v.model_dump() for k, v in graph.output_probs.items()})
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
         is_optimized = 1 if graph.optimization_params else 0
 

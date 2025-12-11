@@ -233,7 +233,7 @@ class AppRunner:
                             else line.rstrip()
                         )
                         print(f"{AnsiEsc.DIM}│ {clipped_line}{AnsiEsc.RESET}")
-                    print(f"{AnsiEsc.DIM}└{'─' * 40}{AnsiEsc.RESET}")
+                    print(f"{AnsiEsc.DIM}└{'─' * 80}{AnsiEsc.RESET}")
 
                     prev_lines = tail
             except FileNotFoundError:

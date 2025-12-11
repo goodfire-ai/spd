@@ -19,10 +19,10 @@ class OutputProbability(BaseModel):
     token: str
 
 
-
 # =============================================================================
 # Configuration Models
 # =============================================================================
+
 
 class ActivationContextsGenerationConfig(BaseModel):
     """Configuration for generating activation contexts."""
