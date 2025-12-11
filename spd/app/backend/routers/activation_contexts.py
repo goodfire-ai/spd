@@ -105,6 +105,7 @@ def get_activation_contexts_summary(
         loaded.run.id, loaded.context_length
     )
     if summary is None:
+        logger.error(f"No activation contexts found for {loaded.run.wandb_path} at context length {loaded.context_length}")
         raise HTTPException(
             status_code=404, detail="No activation contexts found. Generate them first."
         )
