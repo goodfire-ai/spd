@@ -88,7 +88,7 @@ export type TokenInfo = {
 export type LayerInfo = {
     name: string;
     block: number;
-    type: "attn" | "mlp" | "embed" | "output" | "decoder";
+    type: "attn" | "mlp" | "embed" | "output";
     subtype: string;
 };
 

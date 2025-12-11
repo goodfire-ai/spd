@@ -75,7 +75,7 @@
     // Parse layer name
     function parseLayer(name: string): LayerInfo {
         if (name === "wte") return { name, block: -1, type: "embed", subtype: "wte" };
-        if (name === "lm_head") return { name, block: Infinity - 1, type: "decoder", subtype: "lm_head" };
+        if (name === "lm_head") return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
         if (name === "output") return { name, block: Infinity, type: "output", subtype: "output" };
         const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
         if (!m) throw new Error(`parseLayer: unrecognized layer name: ${name}`);

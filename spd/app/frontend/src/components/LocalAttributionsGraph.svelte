@@ -71,8 +71,7 @@
             return { name, block: -1, type: "embed", subtype: "wte" };
         }
         if (name === "lm_head") {
-            // lm_head is the decoder matrix, positioned after all blocks but before output
-            return { name, block: Infinity - 1, type: "decoder", subtype: "lm_head" };
+            return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
         }
         if (name === "output") {
             return { name, block: Infinity, type: "output", subtype: "output" };
