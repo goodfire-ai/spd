@@ -4,7 +4,6 @@ Stores runs, activation contexts, attribution graphs, and component activations.
 Attribution graphs can be cached to avoid recomputation.
 """
 
-import gzip
 import json
 import sqlite3
 import time
@@ -150,7 +149,7 @@ class LocalAttrDB:
                 context_length INTEGER NOT NULL,
                 component_key TEXT NOT NULL,  -- "layer:component_idx"
                 mean_ci REAL NOT NULL,
-                data BLOB NOT NULL,  -- gzipped JSON of SubcomponentActivationContexts (without key/mean_ci)
+                data TEXT NOT NULL,  -- JSON of SubcomponentActivationContexts (without key/mean_ci)
                 PRIMARY KEY (run_id, context_length, component_key)
             );
 
@@ -191,10 +190,10 @@ class LocalAttrDB:
                 steps INTEGER,
                 pnorm REAL,
 
-                -- The actual graph data: (all stored as gzipped JSON)
-                edges_data BLOB NOT NULL, -- Main nodes' CI values: "layer:seq:c_idx" -> ci_val
-                node_ci_vals TEXT NOT NULL, -- Output nodes' probabilities
-                output_probs_data BLOB NOT NULL,
+                -- The actual graph data (JSON)
+                edges_data TEXT NOT NULL,
+                node_ci_vals TEXT NOT NULL,
+                output_probs_data TEXT NOT NULL,
 
                 -- Optimization stats (NULL for standard graphs)
                 label_prob REAL,
@@ -276,8 +275,6 @@ class LocalAttrDB:
         config: ActivationContextsGenerationConfig | None = None,
     ) -> None:
         """Store activation contexts in normalized form (one row per component)."""
-        import concurrent.futures
-
         t0 = time.perf_counter()
         conn = self._get_conn()
 
@@ -294,34 +291,16 @@ class LocalAttrDB:
             (run_id, context_length),
         )
 
-        # Prepare data for parallel compression
-        def compress_component(
-            item: tuple[str, SubcomponentActivationContexts],
-        ) -> tuple[str, float, bytes]:
-            layer_key, subcomp = item
-            component_key = f"{layer_key}:{subcomp.subcomponent_idx}"
-            data_dict = subcomp.model_dump(exclude={"subcomponent_idx", "mean_ci"})
-            json_bytes = json.dumps(data_dict).encode("utf-8")
-            # Use fast compression (level 1)
-            compressed = gzip.compress(json_bytes, compresslevel=1)
-            return component_key, subcomp.mean_ci, compressed
-
-        # Flatten to list of (layer_key, subcomp) tuples
-        items: list[tuple[str, SubcomponentActivationContexts]] = []
+        # Build rows for insert
+        rows: list[tuple[int, int, str, float, str]] = []
         for layer_name, subcomps in contexts.layers.items():
             for subcomp in subcomps:
-                items.append((layer_name, subcomp))
+                component_key = f"{layer_name}:{subcomp.subcomponent_idx}"
+                data_dict = subcomp.model_dump(exclude={"subcomponent_idx", "mean_ci"})
+                data_json = json.dumps(data_dict)
+                rows.append((run_id, context_length, component_key, subcomp.mean_ci, data_json))
 
         t1 = time.perf_counter()
-
-        # Parallel compression
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            results = list(executor.map(compress_component, items))
-
-        t2 = time.perf_counter()
-
-        # Build rows for insert
-        rows = [(run_id, context_length, key, mean_ci, data) for key, mean_ci, data in results]
 
         conn.executemany(
             """INSERT INTO component_activation_contexts
@@ -330,11 +309,11 @@ class LocalAttrDB:
             rows,
         )
         conn.commit()
-        t3 = time.perf_counter()
+        t2 = time.perf_counter()
 
         logger.info(
             f"Stored {len(rows)} component contexts: "
-            f"prep={1000 * (t1 - t0):.0f}ms, compress={1000 * (t2 - t1):.0f}ms, insert={1000 * (t3 - t2):.0f}ms"
+            f"prep={1000 * (t1 - t0):.0f}ms, insert={1000 * (t2 - t1):.0f}ms"
         )
 
     def get_component_activation_contexts_summary(
@@ -374,7 +353,6 @@ class LocalAttrDB:
         self, run_id: int, context_length: int, layer: str, component_idx: int
     ) -> SubcomponentActivationContexts | None:
         """Get full data for a single component (fast: only loads one small row)."""
-        t0 = time.perf_counter()
         conn = self._get_conn()
         component_key = f"{layer}:{component_idx}"
 
@@ -383,31 +361,15 @@ class LocalAttrDB:
                WHERE run_id = ? AND context_length = ? AND component_key = ?""",
             (run_id, context_length, component_key),
         ).fetchone()
-        t1 = time.perf_counter()
 
         if row is None:
             return None
 
-        decompressed = gzip.decompress(row["data"])
-        t2 = time.perf_counter()
-
-        data_dict = json.loads(decompressed.decode("utf-8"))
-        t3 = time.perf_counter()
-
-        # Add back the fields stored in columns
+        data_dict = json.loads(row["data"])
         data_dict["subcomponent_idx"] = component_idx
         data_dict["mean_ci"] = row["mean_ci"]
 
-        result = SubcomponentActivationContexts.model_validate(data_dict)
-        t4 = time.perf_counter()
-
-        blob_kb = len(row["data"]) / 1024
-        logger.info(
-            f"get_component_activation_context_detail: {component_key} "
-            f"query={1000 * (t1 - t0):.0f}ms, decompress={1000 * (t2 - t1):.0f}ms ({blob_kb:.1f}KB), "
-            f"json={1000 * (t3 - t2):.0f}ms, pydantic={1000 * (t4 - t3):.0f}ms"
-        )
-        return result
+        return SubcomponentActivationContexts.model_validate(data_dict)
 
     def has_component_activation_contexts(self, run_id: int, context_length: int) -> bool:
         """Check if normalized component contexts exist."""
@@ -623,13 +585,8 @@ class LocalAttrDB:
         """
         conn = self._get_conn()
 
-        # Compress edges and output probs
         edges_json = json.dumps([asdict(e) for e in graph.edges])
-        edges_compressed = gzip.compress(edges_json.encode("utf-8"))
-
         probs_json = json.dumps({k: v.model_dump() for k, v in graph.output_probs.items()})
-        probs_compressed = gzip.compress(probs_json.encode("utf-8"))
-
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
         is_optimized = 1 if graph.optimization_params else 0
 
@@ -666,8 +623,8 @@ class LocalAttrDB:
                     ce_loss_coeff,
                     steps,
                     pnorm,
-                    edges_compressed,
-                    probs_compressed,
+                    edges_json,
+                    probs_json,
                     node_ci_vals_json,
                     label_prob,
                 ),
@@ -713,11 +670,10 @@ class LocalAttrDB:
 
         results: list[StoredGraph] = []
         for row in rows:
-            edges_json = json.loads(gzip.decompress(row["edges_data"]).decode("utf-8"))
-            edges = [_edge_from_dict(e) for e in edges_json]
-
-            probs_json = json.loads(gzip.decompress(row["output_probs_data"]).decode("utf-8"))
-            output_probs = {k: OutputProbability(**v) for k, v in probs_json.items()}
+            edges = [_edge_from_dict(e) for e in json.loads(row["edges_data"])]
+            output_probs = {
+                k: OutputProbability(**v) for k, v in json.loads(row["output_probs_data"]).items()
+            }
 
             node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
 
