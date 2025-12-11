@@ -193,11 +193,6 @@
             >
                 Dataset Search
             </button>
-            <CorrelationJobStatus
-                status={correlationJobStatus}
-                onSubmit={submitCorrelationJob}
-                submitting={correlationJobSubmitting}
-            />
             {#if loadedRun}
                 <button
                     class="tab-button"
@@ -213,6 +208,11 @@
                 >
                     Activation Contexts
                 </button>
+                <CorrelationJobStatus
+                    status={correlationJobStatus}
+                    onSubmit={submitCorrelationJob}
+                    submitting={correlationJobSubmitting}
+                />
             {/if}
         </div>
         {#if loadedRun}
