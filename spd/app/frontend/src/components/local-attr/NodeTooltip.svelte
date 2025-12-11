@@ -92,7 +92,6 @@
                 seqIdx={hoveredNode.seqIdx}
                 {summary}
                 {detail}
-                compact={true}
                 {onPinComponent}
             />
         {:else}
@@ -104,7 +103,6 @@
                 {summary}
                 detail={null}
                 {isLoading}
-                compact={true}
                 {onPinComponent}
             />
         {/if}

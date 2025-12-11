@@ -163,6 +163,10 @@ def write_job_state(run_id: str, state: CorrelationJobState) -> None:
 def submit_correlation_job(
     wandb_path: str,
     run_id: str,
+    n_batches: int,
+    batch_size: int,
+    context_length: int,
+    ci_threshold: float,
     partition: str = DEFAULT_PARTITION_NAME,
 ) -> str:
     """Submit a SLURM job to harvest correlations.
@@ -170,6 +174,10 @@ def submit_correlation_job(
     Args:
         wandb_path: Full W&B path (entity/project/run_id)
         run_id: Just the run ID portion (for file naming)
+        n_batches: Number of batches to process
+        batch_size: Batch size for processing
+        context_length: Context length for sequences
+        ci_threshold: CI threshold for component activation
         partition: SLURM partition to use
 
     Returns:
@@ -181,7 +189,12 @@ def submit_correlation_job(
     scripts_dir = Path.home() / "sbatch_scripts"
     scripts_dir.mkdir(exist_ok=True)
 
-    params = DEFAULT_HARVEST_PARAMS
+    params = HarvestParams(
+        n_batches=n_batches,
+        batch_size=batch_size,
+        context_length=context_length,
+        ci_threshold=ci_threshold,
+    )
 
     script_content = f"""\
 #!/bin/bash

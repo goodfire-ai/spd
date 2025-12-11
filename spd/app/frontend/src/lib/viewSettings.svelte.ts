@@ -38,9 +38,7 @@ function loadFromStorage(): StoredSettings {
 
 function loadCorrelationStats(): CorrelationStatType[] {
     const stored = loadFromStorage();
-    const valid = stored.visibleCorrelationStats?.filter((s: string) =>
-        ALL_STATS.includes(s as CorrelationStatType),
-    );
+    const valid = stored.visibleCorrelationStats?.filter((s: string) => ALL_STATS.includes(s as CorrelationStatType));
     if (valid && valid.length > 0) return valid as CorrelationStatType[];
     return ALL_STATS;
 }

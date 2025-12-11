@@ -6,12 +6,10 @@
         title: string;
         mathNotation?: string;
         items: CorrelatedComponent[];
-        maxItems?: number;
-        compact?: boolean;
         onComponentClick?: (componentKey: string) => void;
     };
 
-    let { title, mathNotation, items, maxItems = 10, compact = false, onComponentClick }: Props = $props();
+    let { title, mathNotation, items, onComponentClick }: Props = $props();
 </script>
 
 {#if items.length > 0}
@@ -22,7 +20,7 @@
                 <span class="math-notation">{mathNotation}</span>
             {/if}
         </h5>
-        <ComponentPillList items={items.slice(0, maxItems)} {compact} {onComponentClick} />
+        <ComponentPillList {items} {onComponentClick} />
     </div>
 {/if}
 

@@ -248,9 +248,11 @@ export async function getCorrelationJobStatus(): Promise<CorrelationJobStatus | 
 }
 
 /** Submit a SLURM job to harvest correlations */
-export async function submitCorrelationJob(): Promise<SubmitJobResponse> {
+export async function submitCorrelationJob(params: HarvestParams): Promise<SubmitJobResponse> {
     const response = await fetch(`${API_URL}/api/correlations/jobs/submit`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
     });
     if (!response.ok) {
         const error = await response.json();

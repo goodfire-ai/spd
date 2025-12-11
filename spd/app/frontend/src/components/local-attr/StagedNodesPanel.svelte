@@ -97,7 +97,6 @@
                                 seqIdx={node.seqIdx}
                                 {summary}
                                 {detail}
-                                compact={true}
                                 onPinComponent={pinComponent}
                             />
                         {:else}
@@ -108,7 +107,6 @@
                                 {summary}
                                 detail={null}
                                 {isLoading}
-                                compact={true}
                                 onPinComponent={pinComponent}
                             />
                         {/if}

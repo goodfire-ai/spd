@@ -1,5 +1,6 @@
 <script lang="ts">
-    import CorrelationStatType, {
+    import {
+        type CorrelationStatType,
         viewSettings,
         CORRELATION_STAT_LABELS,
         CORRELATION_STAT_DESCRIPTIONS,

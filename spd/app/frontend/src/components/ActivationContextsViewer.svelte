@@ -256,38 +256,33 @@
                             <ComponentCorrelationTable
                                 title="PMI"
                                 mathNotation="log(P(both) / P(A)P(B))"
-                                items={correlations.pmi}
-                                maxItems={N_CORRELATIONS_TO_DISPLAY}
+                                items={correlations.pmi.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
                         {#if viewSettings.isCorrelationStatVisible("precision")}
                             <ComponentCorrelationTable
                                 title="Precision"
                                 mathNotation="P(that | this)"
-                                items={correlations.precision}
-                                maxItems={N_CORRELATIONS_TO_DISPLAY}
+                                items={correlations.precision.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
                         {#if viewSettings.isCorrelationStatVisible("recall")}
                             <ComponentCorrelationTable
                                 title="Recall"
                                 mathNotation="P(this | that)"
-                                items={correlations.recall}
-                                maxItems={N_CORRELATIONS_TO_DISPLAY}
+                                items={correlations.recall.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
                         {#if viewSettings.isCorrelationStatVisible("f1")}
                             <ComponentCorrelationTable
                                 title="F1"
-                                items={correlations.f1}
-                                maxItems={N_CORRELATIONS_TO_DISPLAY}
+                                items={correlations.f1.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
                         {#if viewSettings.isCorrelationStatVisible("jaccard")}
                             <ComponentCorrelationTable
                                 title="Jaccard"
-                                items={correlations.jaccard}
-                                maxItems={N_CORRELATIONS_TO_DISPLAY}
+                                items={correlations.jaccard.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
                     </div>

@@ -79,11 +79,11 @@
         correlationJobStatus = await api.getCorrelationJobStatus();
     }
 
-    async function submitCorrelationJob() {
+    async function submitCorrelationJob(params: api.HarvestParams) {
         if (correlationJobSubmitting) return;
         correlationJobSubmitting = true;
         try {
-            await api.submitCorrelationJob();
+            await api.submitCorrelationJob(params);
             await loadCorrelationJobStatus();
         } finally {
             correlationJobSubmitting = false;
@@ -209,14 +209,14 @@
                 >
                     Activation Contexts
                 </button>
-                <CorrelationJobStatus
-                    status={correlationJobStatus}
-                    onSubmit={submitCorrelationJob}
-                    submitting={correlationJobSubmitting}
-                />
             {/if}
         </div>
         <div class="tab-bar-right">
+            <CorrelationJobStatus
+                status={correlationJobStatus}
+                onSubmit={submitCorrelationJob}
+                submitting={correlationJobSubmitting}
+            />
             <ViewSettingsDropdown />
             {#if loadedRun}
                 <div

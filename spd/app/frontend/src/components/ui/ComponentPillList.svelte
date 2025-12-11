@@ -6,14 +6,13 @@
 
     type Props = {
         items: CorrelatedComponent[];
-        compact?: boolean;
         onComponentClick?: (componentKey: string) => void;
     };
 
-    let { items, compact = false, onComponentClick }: Props = $props();
+    let { items, onComponentClick }: Props = $props();
 </script>
 
-<div class="components" class:compact>
+<div class="components">
     {#each items as { component_key, score, count_i, count_j, count_ij, n_tokens } (component_key)}
         <button
             class="component-pill"
@@ -27,12 +26,7 @@
                 <span class="component-score">{score.toFixed(2)}</span>
             </div>
             {#if viewSettings.showSetOverlapVis}
-                <SetOverlapVis
-                    countA={count_i}
-                    countB={count_j}
-                    countIntersection={count_ij}
-                    totalCount={n_tokens}
-                />
+                <SetOverlapVis countA={count_i} countB={count_j} countIntersection={count_ij} totalCount={n_tokens} />
             {/if}
         </button>
     {/each}
@@ -50,12 +44,6 @@
         border: 1px solid var(--border-default);
     }
 
-    .components.compact {
-        font-size: 10px;
-        gap: var(--space-1);
-        padding: var(--space-1);
-    }
-
     .component-pill {
         display: inline-flex;
         flex-direction: column;
@@ -69,11 +57,6 @@
         font-family: inherit;
         font-size: inherit;
         min-width: 80px;
-    }
-
-    .components.compact .component-pill {
-        padding: 2px 4px;
-        min-width: 60px;
     }
 
     .pill-content {

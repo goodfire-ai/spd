@@ -63,11 +63,11 @@ def _update_status(
 
 def main(
     wandb_path: str,
-    n_batches: int = 500,
-    batch_size: int = 32,
-    context_length: int = 128,
-    ci_threshold: float = 1e-6,
-    status_file: str | None = None,
+    n_batches: int,
+    batch_size: int,
+    context_length: int,
+    ci_threshold: float,
+    status_file: str,
 ) -> None:
     """Harvest component correlations for a run.
 
@@ -79,7 +79,7 @@ def main(
         ci_threshold: CI threshold for binarization
         status_file: Path to status file (created by job submission, required for job tracking)
     """
-    status_path = Path(status_file) if status_file else None
+    status_path = Path(status_file)
 
     # Update status to running
     if status_path:
