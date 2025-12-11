@@ -128,9 +128,11 @@
                 <button class="tab-close" onclick={() => onCloseGraph(graph.id)}>×</button>
             </div>
         {/each}
-        <button class="btn-new-graph" class:active={isNewGraphMode} onclick={onNewGraph} disabled={isNewGraphMode}>
-            + New
-        </button>
+        {#if card.graphs.length > 0}
+            <button class="btn-new-graph" class:active={isNewGraphMode} onclick={onNewGraph} disabled={isNewGraphMode}>
+                + New
+            </button>
+        {/if}
     </div>
 
     {#if isNewGraphMode}
