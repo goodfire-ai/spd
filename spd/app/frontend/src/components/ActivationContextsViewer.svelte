@@ -3,7 +3,7 @@
     import * as api from "../lib/api";
     import { getComponentCorrelations, getComponentTokenStats } from "../lib/localAttributionsApi";
     import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
-    import { viewSettings } from "../lib/viewSettings.svelte";
+    import { displaySettings } from "../lib/displaySettings.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationTable from "./local-attr/ComponentCorrelationTable.svelte";
@@ -252,34 +252,34 @@
                 <SectionHeader title="Correlated Components" />
                 {#if correlations}
                     <div class="correlations-grid">
-                        {#if viewSettings.isCorrelationStatVisible("pmi")}
+                        {#if displaySettings.isCorrelationStatVisible("pmi")}
                             <ComponentCorrelationTable
                                 title="PMI"
                                 mathNotation="log(P(both) / P(A)P(B))"
                                 items={correlations.pmi.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
-                        {#if viewSettings.isCorrelationStatVisible("precision")}
+                        {#if displaySettings.isCorrelationStatVisible("precision")}
                             <ComponentCorrelationTable
                                 title="Precision"
                                 mathNotation="P(that | this)"
                                 items={correlations.precision.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
-                        {#if viewSettings.isCorrelationStatVisible("recall")}
+                        {#if displaySettings.isCorrelationStatVisible("recall")}
                             <ComponentCorrelationTable
                                 title="Recall"
                                 mathNotation="P(this | that)"
                                 items={correlations.recall.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
-                        {#if viewSettings.isCorrelationStatVisible("f1")}
+                        {#if displaySettings.isCorrelationStatVisible("f1")}
                             <ComponentCorrelationTable
                                 title="F1"
                                 items={correlations.f1.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                             />
                         {/if}
-                        {#if viewSettings.isCorrelationStatVisible("jaccard")}
+                        {#if displaySettings.isCorrelationStatVisible("jaccard")}
                             <ComponentCorrelationTable
                                 title="Jaccard"
                                 items={correlations.jaccard.slice(0, N_CORRELATIONS_TO_DISPLAY)}

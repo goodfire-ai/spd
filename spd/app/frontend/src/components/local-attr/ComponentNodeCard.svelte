@@ -6,7 +6,7 @@
         TokenStats,
     } from "../../lib/localAttributionsTypes";
     import { getComponentCorrelations, getComponentTokenStats } from "../../lib/localAttributionsApi";
-    import { viewSettings } from "../../lib/viewSettings.svelte";
+    import { displaySettings } from "../../lib/displaySettings.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationTable from "./ComponentCorrelationTable.svelte";
@@ -151,7 +151,7 @@
         <SectionHeader title="Correlated Components" />
         {#if correlations}
             <div class="correlations-grid">
-                {#if viewSettings.isCorrelationStatVisible("pmi")}
+                {#if displaySettings.isCorrelationStatVisible("pmi")}
                     <ComponentCorrelationTable
                         title="PMI"
                         mathNotation="log(P(both) / P(A)P(B))"
@@ -159,7 +159,7 @@
                         onComponentClick={handleCorrelationClick}
                     />
                 {/if}
-                {#if viewSettings.isCorrelationStatVisible("precision")}
+                {#if displaySettings.isCorrelationStatVisible("precision")}
                     <ComponentCorrelationTable
                         title="Precision"
                         mathNotation="P(that | this)"
@@ -167,7 +167,7 @@
                         onComponentClick={handleCorrelationClick}
                     />
                 {/if}
-                {#if viewSettings.isCorrelationStatVisible("recall")}
+                {#if displaySettings.isCorrelationStatVisible("recall")}
                     <ComponentCorrelationTable
                         title="Recall"
                         mathNotation="P(this | that)"
@@ -175,14 +175,14 @@
                         onComponentClick={handleCorrelationClick}
                     />
                 {/if}
-                {#if viewSettings.isCorrelationStatVisible("f1")}
+                {#if displaySettings.isCorrelationStatVisible("f1")}
                     <ComponentCorrelationTable
                         title="F1"
                         items={correlations.f1.slice(0, N_CORRELATIONS_TO_DISPLAY)}
                         onComponentClick={handleCorrelationClick}
                     />
                 {/if}
-                {#if viewSettings.isCorrelationStatVisible("jaccard")}
+                {#if displaySettings.isCorrelationStatVisible("jaccard")}
                     <ComponentCorrelationTable
                         title="Jaccard"
                         items={correlations.jaccard.slice(0, N_CORRELATIONS_TO_DISPLAY)}

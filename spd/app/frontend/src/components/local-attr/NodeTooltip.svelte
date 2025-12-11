@@ -22,6 +22,7 @@
         componentDetailsCache: Record<string, ComponentDetail>;
         componentDetailsLoading: Record<string, boolean>;
         outputProbs: Record<string, OutputProbEntry>;
+        nodeCiVals: Record<string, number>;
         tokens: string[];
         onMouseEnter: () => void;
         onMouseLeave: () => void;
@@ -35,6 +36,7 @@
         componentDetailsCache,
         componentDetailsLoading,
         outputProbs,
+        nodeCiVals,
         tokens,
         onMouseEnter,
         onMouseLeave,
@@ -51,6 +53,14 @@
 
     const isWte = $derived(hoveredNode.layer === "wte");
     const isOutput = $derived(hoveredNode.layer === "output");
+    const isComponent = $derived(!isWte && !isOutput);
+
+    // Get CI value for component nodes
+    const ciVal = $derived.by(() => {
+        if (!isComponent) return null;
+        const key = `${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`;
+        return nodeCiVals[key] ?? null;
+    });
 
     const token = $derived.by(() => {
         if (hoveredNode.seqIdx >= tokens.length) {
@@ -70,6 +80,9 @@
     onmouseleave={onMouseLeave}
 >
     <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
+    {#if isComponent && ciVal !== null}
+        <div class="ci-value">CI: {ciVal.toFixed(3)}</div>
+    {/if}
     {#if isWte}
         <p class="wte-info">Input embedding at position {hoveredNode.seqIdx}</p>
         <div class="wte-content">
@@ -121,6 +134,14 @@
         max-height: 80vh;
         overflow-y: auto;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .ci-value {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--accent-primary);
+        font-weight: 600;
+        margin: var(--space-1) 0 var(--space-2) 0;
     }
 
     .wte-info {

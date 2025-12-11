@@ -4,7 +4,7 @@ import json
 import math
 import queue
 import threading
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from itertools import groupby
 from typing import Annotated, Any, Literal
 
@@ -15,8 +15,6 @@ from pydantic import BaseModel
 
 from spd.app.backend.compute import (
     Edge,
-    LocalAttributionResult,
-    OptimizedLocalAttributionResult,
     compute_local_attributions,
     compute_local_attributions_optimized,
 )
@@ -34,7 +32,6 @@ from spd.app.backend.schemas import OutputProbability
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import runtime_cast
 
 
 class EdgeData(BaseModel):
@@ -62,7 +59,9 @@ class GraphData(BaseModel):
     tokens: list[str]
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
-    nodeImportance: dict[str, float]  # node key -> sum of squared edge values
+    nodeCiVals: dict[
+        str, float
+    ]  # node key -> CI value (or output prob for output nodes or 1 for wte node)
     maxAbsAttr: float  # max absolute edge value
     l0_total: int  # total active components at current CI threshold
 
@@ -171,6 +170,72 @@ DEVICE = get_device()
 GLOBAL_EDGE_LIMIT = 5_000
 
 
+ProgressCallback = Callable[[int, int, str], None]
+
+
+def build_output_probs(
+    output_probs_tensor: torch.Tensor,
+    output_prob_threshold: float,
+    token_strings: dict[int, str],
+) -> dict[str, OutputProbability]:
+    """Build output probs dict from tensor."""
+    raw_output_probs: dict[str, OutputProbability] = {}
+    for s in range(output_probs_tensor.shape[0]):
+        for c_idx in range(output_probs_tensor.shape[1]):
+            prob = float(output_probs_tensor[s, c_idx].item())
+            if prob < output_prob_threshold:
+                continue
+            key = f"{s}:{c_idx}"
+            raw_output_probs[key] = OutputProbability(
+                prob=round(prob, 6),
+                token=token_strings[c_idx],
+            )
+    return raw_output_probs
+
+
+def stream_computation(
+    work: Callable[[ProgressCallback], GraphData | GraphDataWithOptimization],
+) -> StreamingResponse:
+    """Run graph computation in a thread with SSE streaming for progress updates."""
+    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+
+    def on_progress(current: int, total: int, stage: str) -> None:
+        progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
+
+    def compute_thread() -> None:
+        try:
+            result = work(on_progress)
+            progress_queue.put({"type": "result", "result": result})
+        except Exception as e:
+            progress_queue.put({"type": "error", "error": str(e)})
+
+    def generate() -> Generator[str]:
+        thread = threading.Thread(target=compute_thread)
+        thread.start()
+
+        while True:
+            try:
+                msg = progress_queue.get(timeout=0.1)
+            except queue.Empty:
+                if not thread.is_alive():
+                    break
+                continue
+
+            if msg["type"] == "progress":
+                yield f"data: {json.dumps(msg)}\n\n"
+            elif msg["type"] == "error":
+                yield f"data: {json.dumps(msg)}\n\n"
+                break
+            elif msg["type"] == "result":
+                complete_data = {"type": "complete", "data": msg["result"].model_dump()}
+                yield f"data: {json.dumps(complete_data)}\n\n"
+                break
+
+        thread.join()
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @router.post("/tokenize")
 @log_errors
 def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
@@ -196,28 +261,14 @@ def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
 NormalizeType = Literal["none", "target", "layer"]
 
 
-# Pseudo-layers that don't have true CI values and should be exempt from CI threshold filtering
-NON_CI_LAYERS = frozenset(["wte", "output"])
-
-
-def compute_edge_stats(edges: list[Edge]) -> tuple[dict[str, float], float]:
-    """Compute node importance and max absolute edge value.
-
-    Returns:
-        (node_importance, max_abs_attr) where node_importance is sum of squared edge values per node.
-    """
-    importance: dict[str, float] = {}
+def compute_max_abs_attr(edges: list[Edge]) -> float:
+    """Compute max absolute edge strength for normalization."""
     max_abs_attr = 0.0
     for edge in edges:
-        val_sq = edge.strength * edge.strength
-        src_key = str(edge.source)
-        tgt_key = str(edge.target)
-        importance[src_key] = importance.get(src_key, 0.0) + val_sq
-        importance[tgt_key] = importance.get(tgt_key, 0.0) + val_sq
         abs_val = abs(edge.strength)
         if abs_val > max_abs_attr:
             max_abs_attr = abs_val
-    return importance, max_abs_attr
+    return max_abs_attr
 
 
 @router.post("")
@@ -241,101 +292,53 @@ def compute_graph_stream(
     token_strings = [loaded.token_strings[t] for t in token_ids]
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
-    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+    def work(on_progress: ProgressCallback) -> GraphData:
+        result = compute_local_attributions(
+            model=loaded.model,
+            tokens=tokens_tensor,
+            sources_by_target=loaded.sources_by_target,
+            output_prob_threshold=output_prob_threshold,
+            sampling=loaded.config.sampling,
+            device=DEVICE,
+            show_progress=False,
+            on_progress=on_progress,
+        )
 
-    def on_progress(current: int, total: int, stage: str) -> None:
-        progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
+        raw_output_probs = build_output_probs(
+            result.output_probs[0].cpu(), output_prob_threshold, loaded.token_strings
+        )
+        graph_id = db.save_graph(
+            prompt_id=prompt_id,
+            graph=StoredGraph(
+                edges=result.edges,
+                output_probs=raw_output_probs,
+                node_ci_vals=result.node_ci_vals,
+            ),
+        )
 
-    def compute_thread() -> None:
-        try:
-            result = compute_local_attributions(
-                model=loaded.model,
-                tokens=tokens_tensor,
-                sources_by_target=loaded.sources_by_target,
-                output_prob_threshold=output_prob_threshold,
-                sampling=loaded.config.sampling,
-                device=DEVICE,
-                show_progress=False,
-                on_progress=on_progress,
-            )
-            progress_queue.put({"type": "result", "result": result})
-        except Exception as e:
-            progress_queue.put({"type": "error", "error": str(e)})
+        filtered_node_ci_vals = {k: v for k, v in result.node_ci_vals.items() if v > ci_threshold}
+        node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
+            filtered_node_ci_vals, len(token_ids), raw_output_probs
+        )
+        edges_data, max_abs_attr = process_edges_for_response(
+            raw_edges=result.edges,
+            normalize=normalize,
+            num_tokens=len(token_ids),
+            node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
+            is_optimized=False,
+        )
 
-    def generate() -> Generator[str]:
-        thread = threading.Thread(target=compute_thread)
-        thread.start()
+        return GraphData(
+            id=graph_id,
+            tokens=token_strings,
+            edges=edges_data,
+            outputProbs=raw_output_probs,
+            nodeCiVals=node_ci_vals_with_pseudo,
+            maxAbsAttr=max_abs_attr,
+            l0_total=len(filtered_node_ci_vals),
+        )
 
-        while True:
-            try:
-                msg = progress_queue.get(timeout=0.1)
-            except queue.Empty:
-                if not thread.is_alive():
-                    break
-                continue
-
-            if msg["type"] == "progress":
-                yield f"data: {json.dumps(msg)}\n\n"
-            elif msg["type"] == "error":
-                yield f"data: {json.dumps(msg)}\n\n"
-                break
-            elif msg["type"] == "result":
-                result = runtime_cast(LocalAttributionResult, msg["result"])
-
-                # Build raw edges and output probs for storage
-                raw_edges = result.edges
-                raw_output_probs_tensor = result.output_probs[0].cpu()
-                raw_output_probs: dict[str, OutputProbability] = {}
-                for s in range(raw_output_probs_tensor.shape[0]):
-                    for c_idx in range(raw_output_probs_tensor.shape[1]):
-                        prob = float(raw_output_probs_tensor[s, c_idx].item())
-                        if prob < output_prob_threshold:
-                            continue
-                        key = f"{s}:{c_idx}"
-                        raw_output_probs[key] = OutputProbability(
-                            prob=round(prob, 6),
-                            token=loaded.token_strings[c_idx],
-                        )
-
-                # Store all edges (unfiltered, unnormalized) with CI values
-                graph_id = db.save_graph(
-                    prompt_id=prompt_id,
-                    graph=StoredGraph(
-                        edges=raw_edges,
-                        output_probs=raw_output_probs,
-                        node_ci_vals=result.node_ci_vals,
-                    ),
-                )
-
-                filtered_node_ci_vals = {
-                    k: v for k, v in result.node_ci_vals.items() if v > ci_threshold
-                }
-                l0_total = len(filtered_node_ci_vals)
-
-                edges_data, node_importance, max_abs_attr = process_edges_for_response(
-                    raw_edges=raw_edges,
-                    normalize=normalize,
-                    num_tokens=len(token_ids),
-                    node_ci_vals=filtered_node_ci_vals,
-                    is_optimized=False,
-                )
-
-                response_data = GraphData(
-                    id=graph_id,
-                    tokens=token_strings,
-                    edges=edges_data,
-                    outputProbs=raw_output_probs,
-                    nodeImportance=node_importance,
-                    maxAbsAttr=max_abs_attr,
-                    l0_total=l0_total,
-                )
-                complete_data = {"type": "complete", "data": response_data.model_dump()}
-                yield f"data: {json.dumps(complete_data)}\n\n"
-                break
-
-        thread.join()
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return stream_computation(work)
 
 
 def _edge_to_edge_data(edge: Edge) -> EdgeData:
@@ -459,158 +462,117 @@ def compute_graph_optimized_stream(
         ce_kl_rounding_threshold=0.5,
     )
 
-    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+    def work(on_progress: ProgressCallback) -> GraphDataWithOptimization:
+        result = compute_local_attributions_optimized(
+            model=loaded.model,
+            tokens=tokens_tensor,
+            sources_by_target=loaded.sources_by_target,
+            optim_config=optim_config,
+            output_prob_threshold=output_prob_threshold,
+            device=DEVICE,
+            show_progress=False,
+            on_progress=on_progress,
+        )
 
-    def on_progress(current: int, total: int, stage: str) -> None:
-        progress_queue.put({"type": "progress", "current": current, "total": total, "stage": stage})
+        raw_output_probs = build_output_probs(
+            result.output_probs[0].cpu(), output_prob_threshold, loaded.token_strings
+        )
+        graph_id = db.save_graph(
+            prompt_id=prompt_id,
+            graph=StoredGraph(
+                edges=result.edges,
+                output_probs=raw_output_probs,
+                node_ci_vals=result.node_ci_vals,
+                optimization_params=opt_params,
+                label_prob=result.label_prob,
+            ),
+        )
 
-    def compute_thread() -> None:
-        try:
-            result = compute_local_attributions_optimized(
-                model=loaded.model,
-                tokens=tokens_tensor,
-                sources_by_target=loaded.sources_by_target,
-                optim_config=optim_config,
-                output_prob_threshold=output_prob_threshold,
-                device=DEVICE,
-                show_progress=False,
-                on_progress=on_progress,
-            )
-            progress_queue.put({"type": "result", "result": result})
-        except Exception as e:
-            progress_queue.put({"type": "error", "error": str(e)})
+        filtered_node_ci_vals = {k: v for k, v in result.node_ci_vals.items() if v > ci_threshold}
+        node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
+            filtered_node_ci_vals, len(token_ids), raw_output_probs
+        )
+        edges_data, max_abs_attr = process_edges_for_response(
+            raw_edges=result.edges,
+            normalize=normalize,
+            num_tokens=len(token_ids),
+            node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
+            is_optimized=True,
+        )
 
-    def generate() -> Generator[str]:
-        thread = threading.Thread(target=compute_thread)
-        thread.start()
+        return GraphDataWithOptimization(
+            id=graph_id,
+            tokens=token_strings,
+            edges=edges_data,
+            outputProbs=raw_output_probs,
+            nodeCiVals=node_ci_vals_with_pseudo,
+            maxAbsAttr=max_abs_attr,
+            l0_total=len(filtered_node_ci_vals),
+            optimization=OptimizationResult(
+                imp_min_coeff=imp_min_coeff,
+                steps=steps,
+                pnorm=pnorm,
+                label_token=label_token,
+                label_str=label_str,
+                ce_loss_coeff=ce_loss_coeff,
+                label_prob=result.label_prob,
+                kl_loss_coeff=kl_loss_coeff,
+            ),
+        )
 
-        while True:
-            try:
-                msg = progress_queue.get(timeout=0.1)
-            except queue.Empty:
-                if not thread.is_alive():
-                    break
-                continue
+    return stream_computation(work)
 
-            if msg["type"] == "progress":
-                yield f"data: {json.dumps(msg)}\n\n"
-            elif msg["type"] == "error":
-                yield f"data: {json.dumps(msg)}\n\n"
-                break
-            elif msg["type"] == "result":
-                result = runtime_cast(OptimizedLocalAttributionResult, msg["result"])
 
-                # Build raw edges and output probs for storage
-                raw_edges = result.edges
-                raw_output_probs_tensor = result.output_probs[0].cpu()
-                raw_output_probs: dict[str, OutputProbability] = {}
-                for s in range(raw_output_probs_tensor.shape[0]):
-                    for c_idx in range(raw_output_probs_tensor.shape[1]):
-                        prob = float(raw_output_probs_tensor[s, c_idx].item())
-                        if prob < output_prob_threshold:
-                            continue
-                        key = f"{s}:{c_idx}"
-                        raw_output_probs[key] = OutputProbability(
-                            prob=round(prob, 6),
-                            token=loaded.token_strings[c_idx],
-                        )
+def _add_pseudo_layer_nodes(
+    node_ci_vals: dict[str, float],
+    num_tokens: int,
+    output_probs: dict[str, OutputProbability],
+) -> dict[str, float]:
+    """Add wte and output pseudo-nodes for simpler rendering and filtering logic.
 
-                # Store all edges (unfiltered, unnormalized) with CI values
-                graph_id = db.save_graph(
-                    prompt_id=prompt_id,
-                    graph=StoredGraph(
-                        edges=raw_edges,
-                        output_probs=raw_output_probs,
-                        node_ci_vals=result.node_ci_vals,
-                        optimization_params=opt_params,
-                        label_prob=result.label_prob,
-                    ),
-                )
-
-                filtered_node_ci_vals = {
-                    k: v for k, v in result.node_ci_vals.items() if v > ci_threshold
-                }
-                l0_total = len(filtered_node_ci_vals)
-
-                edges_data, node_importance, max_abs_attr = process_edges_for_response(
-                    raw_edges=raw_edges,
-                    normalize=normalize,
-                    num_tokens=len(token_ids),
-                    node_ci_vals=filtered_node_ci_vals,
-                    is_optimized=True,
-                )
-
-                response_data = GraphDataWithOptimization(
-                    id=graph_id,
-                    tokens=token_strings,
-                    edges=edges_data,
-                    outputProbs=raw_output_probs,
-                    nodeImportance=node_importance,
-                    maxAbsAttr=max_abs_attr,
-                    l0_total=l0_total,
-                    optimization=OptimizationResult(
-                        imp_min_coeff=imp_min_coeff,
-                        steps=steps,
-                        pnorm=pnorm,
-                        label_token=label_token,
-                        label_str=label_str,
-                        ce_loss_coeff=ce_loss_coeff,
-                        label_prob=result.label_prob,
-                        kl_loss_coeff=kl_loss_coeff,
-                    ),
-                )
-                complete_data = {"type": "complete", "data": response_data.model_dump()}
-                yield f"data: {json.dumps(complete_data)}\n\n"
-                break
-
-        thread.join()
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    wte nodes get CI=1.0 (always visible), output nodes use their probability.
+    """
+    result = dict(node_ci_vals)
+    for seq_pos in range(num_tokens):
+        result[f"wte:{seq_pos}:0"] = 1.0
+    for key, output_prob in output_probs.items():
+        seq_pos, token_id = key.split(":")
+        result[f"output:{seq_pos}:{token_id}"] = output_prob.prob
+    return result
 
 
 def process_edges_for_response(
     raw_edges: list[Edge],
     normalize: NormalizeType,
     num_tokens: int,
-    node_ci_vals: dict[str, float],
+    node_ci_vals_with_pseudo: dict[str, float],
     is_optimized: bool,
     edge_limit: int = GLOBAL_EDGE_LIMIT,
-) -> tuple[list[EdgeData], dict[str, float], float]:
-    """Single source of truth for edge processing pipeline.
+) -> tuple[list[EdgeData], float]:
+    """Process edges: filter by CI, normalize, and limit."""
 
-    Applies filtering, normalization, limiting, and computes stats.
-    Guarantees identical processing for compute and retrieval paths.
-
-    Args:
-        edges: Raw edges from computation or database
-        normalize: Normalization type ("none", "target", "layer")
-        num_tokens: Number of tokens in the prompt (for filtering)
-        node_ci_vals: CI values per node (layer:seq:c_idx -> ci_val)
-        is_optimized: Whether this is an optimized graph (applies additional filtering)
-        edge_limit: Maximum number of edges to return
-
-    Returns:
-        (edges_data, node_importance, max_abs_attr)
-    """
+    # Filter to final seq position for optimized graphs
     if is_optimized:
         final_seq_pos = num_tokens - 1
-        raw_edges = [edge for edge in raw_edges if edge.target.seq_pos == final_seq_pos]
+        raw_edges = [e for e in raw_edges if e.target.seq_pos == final_seq_pos]
 
-    edges = []
-    for edge in raw_edges:
-        valid_source = edge.source.layer in NON_CI_LAYERS or str(edge.source) in node_ci_vals
-        valid_target = edge.target.layer in NON_CI_LAYERS or str(edge.target) in node_ci_vals
-        if valid_source and valid_target:
-            edges.append(edge)
+    # Only include edges that connect to nodes in node_ci_vals_with_pseudo
+    edges = [
+        e
+        for e in raw_edges
+        if str(e.source) in node_ci_vals_with_pseudo and str(e.target) in node_ci_vals_with_pseudo
+    ]
 
     edges = _normalize_edges(edges=edges, normalize=normalize)
-    node_importance, max_abs_attr = compute_edge_stats(edges=edges)
-    # Clip to edge limit for response
+    max_abs_attr = compute_max_abs_attr(edges=edges)
+
     if len(edges) > edge_limit:
         print(f"[WARNING] Edge limit {edge_limit} exceeded ({len(edges)} edges), truncating")
         edges = sorted(edges, key=lambda e: abs(e.strength), reverse=True)[:edge_limit]
+
     edges_data = [_edge_to_edge_data(e) for e in edges]
-    return edges_data, node_importance, max_abs_attr
+
+    return edges_data, max_abs_attr
 
 
 @router.get("/{prompt_id}")
@@ -642,11 +604,14 @@ def get_graphs(
         filtered_node_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
         l0_total = len(filtered_node_ci_vals)
 
-        edges_data, node_importance, max_abs_attr = process_edges_for_response(
+        node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
+            filtered_node_ci_vals, num_tokens, graph.output_probs
+        )
+        edges_data, max_abs_attr = process_edges_for_response(
             raw_edges=graph.edges,
             normalize=normalize,
             num_tokens=num_tokens,
-            node_ci_vals=filtered_node_ci_vals,
+            node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
             is_optimized=is_optimized,
         )
 
@@ -658,7 +623,7 @@ def get_graphs(
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=graph.output_probs,
-                    nodeImportance=node_importance,
+                    nodeCiVals=node_ci_vals_with_pseudo,
                     maxAbsAttr=max_abs_attr,
                     l0_total=l0_total,
                 )
@@ -678,7 +643,7 @@ def get_graphs(
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=graph.output_probs,
-                    nodeImportance=node_importance,
+                    nodeCiVals=node_ci_vals_with_pseudo,
                     maxAbsAttr=max_abs_attr,
                     l0_total=l0_total,
                     optimization=OptimizationResult(

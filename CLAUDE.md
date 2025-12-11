@@ -13,14 +13,22 @@ SPD (Stochastic Parameter Decomposition) is a research framework for analyzing n
 
 **Available experiments** (defined in `spd/registry.py`):
 
-- `tms_5-2` - TMS with 5 features, 2 hidden dimensions
-- `tms_5-2-id` - TMS with 5 features, 2 hidden dimensions (fixed identity in-between)
-- `tms_40-10` - TMS with 40 features, 10 hidden dimensions  
-- `tms_40-10-id` - TMS with 40 features, 10 hidden dimensions (fixed identity in-between)
-- `resid_mlp1` - ResidualMLP with 1 layer
-- `resid_mlp2` - ResidualMLP with 2 layers
-- `resid_mlp3` - ResidualMLP with 3 layers
-- `ss_emb` - Language model experiments (loaded from HuggingFace)
+- **TMS (Toy Model of Superposition)**:
+  - `tms_5-2` - TMS with 5 features, 2 hidden dimensions
+  - `tms_5-2-id` - TMS with 5 features, 2 hidden dimensions (fixed identity in-between)
+  - `tms_40-10` - TMS with 40 features, 10 hidden dimensions
+  - `tms_40-10-id` - TMS with 40 features, 10 hidden dimensions (fixed identity in-between)
+- **ResidualMLP**:
+  - `resid_mlp1` - ResidualMLP with 1 layer
+  - `resid_mlp2` - ResidualMLP with 2 layers
+  - `resid_mlp3` - ResidualMLP with 3 layers
+- **Language Models**:
+  - `ss_llama_simple`, `ss_llama_simple-1L`, `ss_llama_simple-2L` - Simple Stories Llama variants
+  - `ss_llama_simple_mlp`, `ss_llama_simple_mlp-1L`, `ss_llama_simple_mlp-2L` - Llama MLP-only variants
+  - `ss_gpt2`, `ss_gpt2_simple`, `ss_gpt2_simple_noln` - Simple Stories GPT-2 variants
+  - `ss_gpt2_simple-1L`, `ss_gpt2_simple-2L` - GPT-2 simple layer variants
+  - `gpt2` - Standard GPT-2
+  - `ts` - TinyStories
 
 ## Research Papers
 
@@ -48,6 +56,7 @@ This repository implements methods from two key research papers on parameter dec
 
 - `make install-dev` - Install package with dev dependencies and pre-commit hooks
 - `make install` - Install package only (`pip install -e .`)
+- `make install-app` - Install frontend dependencies (`npm install` in `spd/app/frontend/`)
 
 **Code Quality:**
 
@@ -69,6 +78,10 @@ This repository implements methods from two key research papers on parameter dec
 - `make test-all` - Run all tests including slow ones
 - `python -m pytest tests/test_specific.py` - Run specific test file
 - `python -m pytest tests/test_specific.py::test_function` - Run specific test
+
+**Running the App:**
+
+- `make app` - Launch the SPD visualization app (backend + frontend)
 
 ## Architecture Overview
 
@@ -121,17 +134,29 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 
 ## Common Usage Patterns
 
-### Running Experiments Locally (`spd-simple`)
+### Running Experiments Locally (`spd-local`)
 
-For collaborators and simple local execution, use `spd-simple`:
+For collaborators and simple local execution, use `spd-local`:
 
 ```bash
-spd-simple tms_5-2           # Run on single GPU (default)
-spd-simple tms_5-2 --cpu     # Run on CPU
-spd-simple tms_5-2 --dp 4    # Run on 4 GPUs (single node DDP)
+spd-local tms_5-2           # Run on single GPU (default)
+spd-local tms_5-2 --cpu     # Run on CPU
+spd-local tms_5-2 --dp 4    # Run on 4 GPUs (single node DDP)
 ```
 
 This runs experiments directly without SLURM, git snapshots, or W&B views/reports.
+
+### Web App for Visualization
+
+The SPD app provides interactive visualization of component decompositions and attributions:
+
+```bash
+make app                        # Launch backend + frontend dev servers
+# or
+python -m spd.app.run_app
+```
+
+The app has its own detailed documentation in `spd/app/CLAUDE.md` and `spd/app/README.md`.
 
 ### Running on SLURM Cluster (`spd-run`)
 
@@ -172,7 +197,7 @@ spd-run --sweep --n_agents 10                                 # Sweep all experi
 spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom sweep params file
 ```
 
-**Supported experiments:** `tms_5-2`, `tms_5-2-id`, `tms_40-10`, `tms_40-10-id`, `resid_mlp1`, `resid_mlp2`, `resid_mlp3`, `ss_emb`
+**Supported experiments:** All experiments in `spd/registry.py` (run `spd-local --help` to see available options)
 
 **How it works:**
 

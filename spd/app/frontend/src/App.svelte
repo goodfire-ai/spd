@@ -10,7 +10,7 @@
     import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
-    import ViewSettingsDropdown from "./components/ui/ViewSettingsDropdown.svelte";
+    import DisplaySettingsDropdown from "./components/ui/DisplaySettingsDropdown.svelte";
     import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
@@ -232,7 +232,7 @@
                     {/if}
                 </div>
             {/if}
-            <ViewSettingsDropdown />
+            <DisplaySettingsDropdown />
         </div>
     </nav>
 

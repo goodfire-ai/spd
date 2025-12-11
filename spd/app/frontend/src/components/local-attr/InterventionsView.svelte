@@ -89,7 +89,7 @@
     }
 
     // All nodes from the graph (for rendering)
-    const allNodes = $derived(new SvelteSet(Object.keys(graph.data.nodeImportance)));
+    const allNodes = $derived(new SvelteSet(Object.keys(graph.data.nodeCiVals)));
 
     // Interventable nodes only (for selection)
     const interventableNodes = $derived.by(() => {
@@ -687,6 +687,7 @@
             {componentDetailsCache}
             {componentDetailsLoading}
             outputProbs={graph.data.outputProbs}
+            nodeCiVals={graph.data.nodeCiVals}
             {tokens}
             onMouseEnter={() => (isHoveringTooltip = true)}
             onMouseLeave={() => {

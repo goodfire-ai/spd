@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getTokenHighlightBg } from "../../lib/colors";
     import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
-    import { viewSettings } from "../../lib/viewSettings.svelte";
+    import { displaySettings } from "../../lib/displaySettings.svelte";
     import SetOverlapVis from "./SetOverlapVis.svelte";
 
     type Props = {
@@ -25,7 +25,7 @@
                 <span class="component-key">{component_key}</span>
                 <span class="component-score">{score.toFixed(2)}</span>
             </div>
-            {#if viewSettings.showSetOverlapVis}
+            {#if displaySettings.showSetOverlapVis}
                 <SetOverlapVis countA={count_i} countB={count_j} countIntersection={count_ij} totalCount={n_tokens} />
             {/if}
         </button>
