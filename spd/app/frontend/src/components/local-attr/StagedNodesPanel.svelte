@@ -1,12 +1,12 @@
 <script lang="ts">
-    import {
-        getLayerDisplayName,
-        type PinnedNode,
-        type ComponentDetail,
-        type ActivationContextsSummary,
-        type ComponentSummary,
-        type OutputProbEntry,
+    import type {
+        PinnedNode,
+        ComponentDetail,
+        ActivationContextsSummary,
+        ComponentSummary,
+        OutputProbEntry,
     } from "../../lib/localAttributionsTypes";
+    import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 

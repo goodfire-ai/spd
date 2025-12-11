@@ -1,11 +1,11 @@
 <script lang="ts">
-    import {
-        getLayerDisplayName,
-        type ActivationContextsSummary,
-        type ComponentDetail,
-        type ComponentSummary,
-        type OutputProbEntry,
+    import type {
+        ActivationContextsSummary,
+        ComponentDetail,
+        ComponentSummary,
+        OutputProbEntry,
     } from "../../lib/localAttributionsTypes";
+    import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 

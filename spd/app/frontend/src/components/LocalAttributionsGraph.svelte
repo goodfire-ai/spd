@@ -1,16 +1,16 @@
 <script lang="ts">
     import { SvelteSet } from "svelte/reactivity";
-    import {
-        formatNodeKeyForDisplay,
-        type GraphData,
-        type ActivationContextsSummary,
-        type PinnedNode,
-        type HoveredNode,
-        type HoveredEdge,
-        type LayerInfo,
-        type NodePosition,
-        type ComponentDetail,
+    import type {
+        GraphData,
+        ActivationContextsSummary,
+        PinnedNode,
+        HoveredNode,
+        HoveredEdge,
+        LayerInfo,
+        NodePosition,
+        ComponentDetail,
     } from "../lib/localAttributionsTypes";
+    import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
     import { lerp, hashString, seededShuffle } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
