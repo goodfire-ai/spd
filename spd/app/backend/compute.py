@@ -649,11 +649,11 @@ def compute_intervention_forward(
     with torch.no_grad():
         # SPD model forward pass (with component masks)
         spd_logits: Float[Tensor, "1 seq vocab"] = model(tokens, mask_infos=mask_infos)
-        spd_probs = torch.softmax(spd_logits, dim=-1)
+        spd_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(spd_logits, dim=-1)
 
         # Target model forward pass (no masks)
         target_logits: Float[Tensor, "1 seq vocab"] = model(tokens)
-        target_probs = torch.softmax(target_logits, dim=-1)
+        target_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(target_logits, dim=-1)
 
     # Get top-k predictions per position (based on SPD model's top-k)
     predictions_per_position: list[list[tuple[str, int, float, float, float]]] = []
@@ -673,7 +673,7 @@ def compute_intervention_forward(
                     token_str,
                     tid,
                     float(spd_prob.item()),
-                    float(pos_spd_logits[token_id].item()),
+                    float(pos_spd_logits[tid].item()),
                     target_prob,
                 )
             )
