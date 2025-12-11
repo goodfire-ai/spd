@@ -6,6 +6,7 @@
         ComponentSummary,
         OutputProbEntry,
     } from "../../lib/localAttributionsTypes";
+    import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
@@ -68,7 +69,7 @@
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">
-                            <strong>{node.layer}:{node.seqIdx}:{node.cIdx}</strong>
+                            <strong>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</strong>
                             <span class="token-preview">"{token}"</span>
                         </div>
                         <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>

@@ -135,6 +135,23 @@ export type ComponentProbeResult = {
     ci_values: number[];
 };
 
+// Display name mapping for special layers
+const LAYER_DISPLAY_NAMES: Record<string, string> = {
+    lm_head: "W_U",
+};
+
+/** Get display name for a layer (e.g., "lm_head" -> "W_U") */
+export function getLayerDisplayName(layer: string): string {
+    return LAYER_DISPLAY_NAMES[layer] ?? layer;
+}
+
+/** Format a node key for display, replacing layer names with display names */
+export function formatNodeKeyForDisplay(nodeKey: string): string {
+    const [layer, ...rest] = nodeKey.split(":");
+    const displayName = getLayerDisplayName(layer);
+    return [displayName, ...rest].join(":");
+}
+
 // Node intervention helpers
 // "wte" and "output" are pseudo-layers used for visualization but are not part of the
 // decomposed model. They cannot be intervened on - only the internal layers (attn/mlp)

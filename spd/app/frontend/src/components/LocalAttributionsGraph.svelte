@@ -10,6 +10,7 @@
         NodePosition,
         ComponentDetail,
     } from "../lib/localAttributionsTypes";
+    import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
     import { lerp, hashString, seededShuffle } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
@@ -20,8 +21,8 @@
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
 
-    // Row order for layout (qkv share a row)
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "output"];
+    // Row order for layout (qkv share a row, lm_head before output)
+    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
     const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
 
     type Props = {
@@ -68,6 +69,9 @@
     function parseLayer(name: string): LayerInfo {
         if (name === "wte") {
             return { name, block: -1, type: "embed", subtype: "wte" };
+        }
+        if (name === "lm_head") {
+            return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
         }
         if (name === "output") {
             return { name, block: Infinity, type: "output", subtype: "output" };
@@ -123,6 +127,7 @@
         // Sort rows for Y positioning
         const parseRow = (r: string) => {
             if (r === "wte") return { block: -1, subtype: "wte" };
+            if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
             if (r === "output") return { block: Infinity, subtype: "output" };
             const mQkv = r.match(/h\.(\d+)\.qkv/);
             if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
@@ -590,7 +595,9 @@
                     ? `${info.block}.q/k/v`
                     : layer === "wte" || layer === "output"
                       ? layer
-                      : `${info.block}.${info.subtype}`}
+                      : layer === "lm_head"
+                        ? "W_U"
+                        : `${info.block}.${info.subtype}`}
                 <text
                     x={LABEL_WIDTH - 10}
                     y={yCenter}
@@ -691,11 +698,11 @@
         <div class="edge-tooltip" style="left: {edgeTooltipPos.x}px; top: {edgeTooltipPos.y}px;">
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Src</span>
-                <code>{hoveredEdge.src}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.src)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Tgt</span>
-                <code>{hoveredEdge.tgt}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>

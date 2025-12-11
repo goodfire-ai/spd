@@ -5,6 +5,7 @@
         ComponentSummary,
         OutputProbEntry,
     } from "../../lib/localAttributionsTypes";
+    import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
@@ -67,7 +68,7 @@
     onmouseenter={onMouseEnter}
     onmouseleave={onMouseLeave}
 >
-    <h3>{hoveredNode.layer}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
+    <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
     {#if isWte}
         <div class="wte-content">
             <div class="wte-token">"{inputToken}"</div>
