@@ -16,7 +16,6 @@ from spd.log import logger
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 
-
 # =============================================================================
 # Schemas
 # =============================================================================
@@ -44,6 +43,7 @@ class PromptSearchResponse(BaseModel):
     query: PromptSearchQuery
     count: int
     results: list[PromptPreview]
+
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 

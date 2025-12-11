@@ -95,6 +95,7 @@ class GraphDataWithOptimization(GraphData):
 
     optimization: OptimizationResult
 
+
 router = APIRouter(prefix="/api/graphs", tags=["graphs"])
 
 DEVICE = get_device()

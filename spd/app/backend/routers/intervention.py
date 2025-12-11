@@ -9,7 +9,6 @@ from spd.app.backend.dependencies import DepDB, DepLoadedRun
 from spd.app.backend.utils import log_errors
 from spd.utils.distributed_utils import get_device
 
-
 # =============================================================================
 # Schemas
 # =============================================================================
@@ -63,6 +62,7 @@ class InterventionRunSummary(BaseModel):
     selected_nodes: list[str]
     result: InterventionResponse
     created_at: str
+
 
 router = APIRouter(prefix="/api/intervention", tags=["intervention"])
 

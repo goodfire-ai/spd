@@ -7,7 +7,6 @@ defined in their respective router files.
 
 from pydantic import BaseModel
 
-
 # =============================================================================
 # Shared Types (used by database.py, state.py, lib/activation_contexts.py)
 # =============================================================================

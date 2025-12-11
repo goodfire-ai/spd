@@ -28,7 +28,6 @@ from spd.app.backend.schemas import (
 from spd.app.backend.utils import log_errors
 from spd.log import logger
 
-
 # =============================================================================
 # Router-specific Schemas
 # =============================================================================
@@ -91,6 +90,7 @@ class TokenStatsResponse(BaseModel):
 
     input: TokenPRLiftPMI  # Stats for input tokens
     output: TokenPRLiftPMI  # Stats for output (predicted) tokens
+
 
 router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts"])
 
