@@ -17,7 +17,7 @@
     import { SvelteSet } from "svelte/reactivity";
 
     // Layout constants
-    const COMPONENT_SIZE = 8;
+    const COMPONENT_SIZE = 6;
     const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
