@@ -39,7 +39,9 @@ export type OptimizationResult = {
     label_token: number | null;
     label_str: string | null;
     ce_loss_coeff: number | null;
-    label_prob: number | null;
+    // Label probabilities (null for KL-only optimization)
+    ci_label_prob: number | null; // P(label_token) with CI mask (deterministic)
+    stoch_label_prob: number | null; // P(label_token) with stochastic masks
     // KL loss param (optional)
     kl_loss_coeff: number | null;
 };
