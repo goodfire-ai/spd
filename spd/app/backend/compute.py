@@ -23,6 +23,8 @@ from spd.app.backend.optim_cis.run_optim_cis import (
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
+from spd.routing import AllLayersRouter
+from spd.utils.component_utils import calc_stochastic_component_mask_info
 
 
 @dataclass
@@ -95,12 +97,20 @@ class LocalAttributionResult:
 
 
 @dataclass
+class LabelProbs:
+    """Label probabilities for both CI-masked and stochastic-masked forward passes."""
+
+    ci_masked: float  # P(label_token) with CI mask (deterministic)
+    stoch_masked: float  # P(label_token) with stochastic masks (mean over samples)
+
+
+@dataclass
 class OptimizedLocalAttributionResult:
     """Result of computing local attributions with optimized CI values."""
 
     edges: list[Edge]
     output_probs: Float[Tensor, "seq vocab"]
-    label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
+    label_probs: LabelProbs | None  # None if KL-only (no label_token)
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
 
 
@@ -414,6 +424,42 @@ def compute_local_attributions(
     )
 
 
+N_STOCHASTIC_SAMPLES = 10
+
+
+def compute_stochastic_label_prob(
+    model: ComponentModel,
+    tokens: Float[Tensor, "1 seq"],
+    ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
+    sampling: SamplingType,
+    label_token: int,
+    n_samples: int = N_STOCHASTIC_SAMPLES,
+) -> float:
+    """Compute label probability using stochastic masks.
+
+    Takes n_samples stochastic mask samples, computes logits for each,
+    averages the logits, then applies softmax to get the probability.
+    """
+    weight_deltas = model.calc_weight_deltas()
+
+    logits_sum: Tensor | None = None
+    for _ in range(n_samples):
+        mask_infos = calc_stochastic_component_mask_info(
+            causal_importances=ci_lower_leaky,
+            component_mask_sampling=sampling,
+            weight_deltas=weight_deltas,
+            router=AllLayersRouter(),
+        )
+        logits: Float[Tensor, "1 seq vocab"] = model(tokens, mask_infos=mask_infos)
+        final_logits = logits[0, -1, :]  # [vocab]
+        logits_sum = final_logits if logits_sum is None else logits_sum + final_logits
+
+    assert logits_sum is not None
+    mean_logits = logits_sum / n_samples
+    probs = torch.softmax(mean_logits, dim=-1)
+    return float(probs[label_token].item())
+
+
 def compute_local_attributions_optimized(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
@@ -441,13 +487,20 @@ def compute_local_attributions_optimized(
     )
     ci_outputs = ci_params.create_ci_outputs(model, device)
 
-    # Get label probability with optimized CI mask (if CE loss is used)
-    label_prob: float | None = None
+    # Compute label probabilities with CI mask and stochastic masks (if CE loss is used)
+    label_probs: LabelProbs | None = None
     if optim_config.ce_loss_config is not None:
+        label_token = optim_config.ce_loss_config.label_token
         with torch.no_grad():
-            label_prob = compute_label_prob(
-                model, tokens, ci_outputs.lower_leaky, optim_config.ce_loss_config.label_token
+            ci_label_prob = compute_label_prob(model, tokens, ci_outputs.lower_leaky, label_token)
+            stoch_label_prob = compute_stochastic_label_prob(
+                model=model,
+                tokens=tokens,
+                ci_lower_leaky=ci_outputs.lower_leaky,
+                sampling=optim_config.sampling,
+                label_token=label_token,
             )
+        label_probs = LabelProbs(ci_masked=ci_label_prob, stoch_masked=stoch_label_prob)
 
     # Signal transition to graph computation stage
     if on_progress is not None:
@@ -467,7 +520,7 @@ def compute_local_attributions_optimized(
     return OptimizedLocalAttributionResult(
         edges=result.edges,
         output_probs=result.output_probs,
-        label_prob=label_prob,
+        label_probs=label_probs,
         node_ci_vals=result.node_ci_vals,
     )
 
