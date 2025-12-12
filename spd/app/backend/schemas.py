@@ -247,6 +247,7 @@ class TokenPrediction(BaseModel):
     token_id: int
     prob: float
     logit: float
+    target_prob: float
 
 
 class InterventionResponse(BaseModel):

@@ -11,6 +11,7 @@ export type TokenPrediction = {
     token_id: number;
     prob: number;
     logit: number;
+    target_prob: number;
 };
 
 export type InterventionResponse = {
