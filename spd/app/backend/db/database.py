@@ -84,6 +84,16 @@ class InterventionRunRecord(BaseModel):
     created_at: str
 
 
+class ForkedInterventionRunRecord(BaseModel):
+    """A forked intervention run with modified tokens."""
+
+    id: int
+    intervention_run_id: int
+    token_replacements: list[tuple[int, int]]  # [(seq_pos, new_token_id), ...]
+    result_json: str  # JSON-encoded InterventionResponse
+    created_at: str
+
+
 class LocalAttrDB:
     """SQLite database for storing and querying local attribution data.
 
@@ -228,6 +238,17 @@ class LocalAttrDB:
 
             CREATE INDEX IF NOT EXISTS idx_intervention_runs_graph
                 ON intervention_runs(graph_id);
+
+            CREATE TABLE IF NOT EXISTS forked_intervention_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                intervention_run_id INTEGER NOT NULL REFERENCES intervention_runs(id) ON DELETE CASCADE,
+                token_replacements TEXT NOT NULL,  -- JSON array of [seq_pos, new_token_id] tuples
+                result TEXT NOT NULL,  -- JSON InterventionResponse
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_forked_intervention_runs_parent
+                ON forked_intervention_runs(intervention_run_id);
         """)
         conn.commit()
 
@@ -802,3 +823,92 @@ class LocalAttrDB:
         cursor = conn.execute("DELETE FROM intervention_runs WHERE graph_id = ?", (graph_id,))
         conn.commit()
         return cursor.rowcount
+
+    # -------------------------------------------------------------------------
+    # Forked intervention run operations
+    # -------------------------------------------------------------------------
+
+    def save_forked_intervention_run(
+        self,
+        intervention_run_id: int,
+        token_replacements: list[tuple[int, int]],
+        result_json: str,
+    ) -> int:
+        """Save a forked intervention run.
+
+        Args:
+            intervention_run_id: The parent intervention run ID.
+            token_replacements: List of (seq_pos, new_token_id) tuples.
+            result_json: JSON-encoded InterventionResponse.
+
+        Returns:
+            The forked intervention run ID.
+        """
+        conn = self._get_conn()
+        cursor = conn.execute(
+            """INSERT INTO forked_intervention_runs (intervention_run_id, token_replacements, result)
+               VALUES (?, ?, ?)""",
+            (intervention_run_id, json.dumps(token_replacements), result_json),
+        )
+        conn.commit()
+        fork_id = cursor.lastrowid
+        assert fork_id is not None
+        return fork_id
+
+    def get_forked_intervention_runs(
+        self, intervention_run_id: int
+    ) -> list[ForkedInterventionRunRecord]:
+        """Get all forked runs for an intervention run.
+
+        Args:
+            intervention_run_id: The parent intervention run ID.
+
+        Returns:
+            List of forked intervention run records, ordered by creation time.
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT id, intervention_run_id, token_replacements, result, created_at
+               FROM forked_intervention_runs
+               WHERE intervention_run_id = ?
+               ORDER BY created_at""",
+            (intervention_run_id,),
+        ).fetchall()
+
+        return [
+            ForkedInterventionRunRecord(
+                id=row["id"],
+                intervention_run_id=row["intervention_run_id"],
+                token_replacements=json.loads(row["token_replacements"]),
+                result_json=row["result"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def get_intervention_run(self, run_id: int) -> InterventionRunRecord | None:
+        """Get a single intervention run by ID."""
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT id, graph_id, selected_nodes, result, created_at
+               FROM intervention_runs
+               WHERE id = ?""",
+            (run_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return InterventionRunRecord(
+            id=row["id"],
+            graph_id=row["graph_id"],
+            selected_nodes=json.loads(row["selected_nodes"]),
+            result_json=row["result"],
+            created_at=row["created_at"],
+        )
+
+    def delete_forked_intervention_run(self, fork_id: int) -> None:
+        """Delete a forked intervention run."""
+        conn = self._get_conn()
+        conn.execute("DELETE FROM forked_intervention_runs WHERE id = ?", (fork_id,))
+        conn.commit()

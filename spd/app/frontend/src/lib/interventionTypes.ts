@@ -9,14 +9,22 @@ export type InterventionNode = {
 export type TokenPrediction = {
     token: string;
     token_id: number;
-    prob: number;
-    logit: number;
+    spd_prob: number;
     target_prob: number;
+    logit: number;
 };
 
 export type InterventionResponse = {
     input_tokens: string[];
     predictions_per_position: TokenPrediction[][];
+};
+
+/** A forked intervention run with modified tokens */
+export type ForkedInterventionRun = {
+    id: number;
+    token_replacements: [number, number][]; // [(seq_pos, new_token_id), ...]
+    result: InterventionResponse;
+    created_at: string;
 };
 
 /** Persisted intervention run from the server */
@@ -25,6 +33,7 @@ export type InterventionRunSummary = {
     selected_nodes: string[]; // node keys (layer:seq:cIdx)
     result: InterventionResponse;
     created_at: string;
+    forked_runs?: ForkedInterventionRun[]; // child runs with modified tokens
 };
 
 /** Request to run and save an intervention */

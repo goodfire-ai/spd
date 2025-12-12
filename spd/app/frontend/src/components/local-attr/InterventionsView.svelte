@@ -1,16 +1,17 @@
 <script lang="ts">
-    import { SvelteSet } from "svelte/reactivity";
-    import type { StoredGraph } from "./types";
+    import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
     import {
         isInterventableNode,
         type ActivationContextsSummary,
         type ComponentDetail,
         type LayerInfo,
         type NodePosition,
+        type TokenInfo,
     } from "../../lib/localAttributionsTypes";
-    import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
-    import { lerp, calcTooltipPos } from "./graphUtils";
+    import { calcTooltipPos, computeComponentOffsets, lerp, sortComponentsByImportance } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
+    import TokenDropdown from "./TokenDropdown.svelte";
+    import type { StoredGraph } from "./types";
 
     // Layout constants
     const COMPONENT_SIZE = 8;
@@ -23,24 +24,36 @@
     // Logits display constants
     const MAX_PREDICTIONS = 5;
 
+    import type { ForkedInterventionRun } from "../../lib/interventionTypes";
+
     type Props = {
         graph: StoredGraph;
+        composerSelection: Set<string>;
+        activeRunId: number | null;
         tokens: string[];
+        tokenIds: number[];
+        allTokens: TokenInfo[];
         initialTopK: number;
         activationContextsSummary: ActivationContextsSummary | null;
         componentDetailsCache: Record<string, ComponentDetail>;
         componentDetailsLoading: Record<string, boolean>;
         runningIntervention: boolean;
         onLoadComponentDetail: (layer: string, cIdx: number) => void;
-        onSelectionChange: (selection: SvelteSet<string>) => void;
+        onSelectionChange: (selection: Set<string>) => void;
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
         onDeleteRun: (runId: number) => void;
+        onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRun>;
+        onDeleteFork: (forkId: number) => void;
     };
 
     let {
         graph,
+        composerSelection,
+        activeRunId,
         tokens,
+        tokenIds,
+        allTokens,
         initialTopK,
         activationContextsSummary,
         componentDetailsCache,
@@ -51,10 +64,66 @@
         onRunIntervention,
         onSelectRun,
         onDeleteRun,
+        onForkRun,
+        onDeleteFork,
     }: Props = $props();
 
     // Local topK state for the composer
     let topK = $state(initialTopK);
+
+    // Fork modal state
+    // Per-position state: { value: display string, tokenId: selected token ID or null }
+    type ForkSlotState = { value: string; tokenId: number | null };
+    let forkingRunId = $state<number | null>(null);
+    let forkSlotStates = $state<ForkSlotState[]>([]);
+    let forkingInProgress = $state(false);
+
+    function openForkModal(runId: number) {
+        forkingRunId = runId;
+        // Initialize each slot with the original token
+        forkSlotStates = tokens.map((tok, idx) => ({
+            value: tok,
+            tokenId: tokenIds[idx],
+        }));
+    }
+
+    function closeForkModal() {
+        forkingRunId = null;
+        forkSlotStates = [];
+    }
+
+    function handleForkSlotSelect(seqPos: number, tokenId: number | null, tokenString: string) {
+        forkSlotStates = forkSlotStates.map((slot, idx) => (idx === seqPos ? { value: tokenString, tokenId } : slot));
+    }
+
+    function resetForkSlot(seqPos: number) {
+        forkSlotStates = forkSlotStates.map((slot, idx) =>
+            idx === seqPos ? { value: tokens[idx], tokenId: tokenIds[idx] } : slot,
+        );
+    }
+
+    // Computed: which positions have valid replacements (different from original)
+    const forkReplacements = $derived.by(() => {
+        const replacements: [number, number][] = [];
+        for (let i = 0; i < forkSlotStates.length; i++) {
+            const slot = forkSlotStates[i];
+            if (slot.tokenId !== null && slot.tokenId !== tokenIds[i]) {
+                replacements.push([i, slot.tokenId]);
+            }
+        }
+        return replacements;
+    });
+
+    async function submitFork() {
+        if (forkingRunId === null || forkReplacements.length === 0) return;
+        forkingInProgress = true;
+        try {
+            await onForkRun(forkingRunId, forkReplacements);
+            closeForkModal();
+        } finally {
+            forkingInProgress = false;
+        }
+    }
 
     // Composer state
     let componentGap = $state(4);
@@ -89,11 +158,11 @@
     }
 
     // All nodes from the graph (for rendering)
-    const allNodes = $derived(new SvelteSet(Object.keys(graph.data.nodeCiVals)));
+    const allNodes = $derived(new Set(Object.keys(graph.data.nodeCiVals)));
 
     // Interventable nodes only (for selection)
     const interventableNodes = $derived.by(() => {
-        const nodes = new SvelteSet<string>();
+        const nodes = new Set<string>();
         for (const nodeKey of allNodes) {
             if (isInterventableNode(nodeKey)) nodes.add(nodeKey);
         }
@@ -110,8 +179,8 @@
     // Compute layout for composer
     const layout = $derived.by(() => {
         const nodesPerLayerSeq: Record<string, number[]> = {};
-        const allLayers = new SvelteSet<string>();
-        const allRows = new SvelteSet<string>();
+        const allLayers = new Set<string>();
+        const allRows = new Set<string>();
 
         for (const nodeKey of allNodes) {
             const [layer, seqIdx, cIdx] = nodeKey.split(":");
@@ -134,7 +203,7 @@
             return { block: +m[1], subtype: m[3] };
         };
 
-        const rows = Array.from(allRows).sort((a, b) => {
+        const rows: string[] = Array.from(allRows).sort((a, b) => {
             const infoA = parseRow(a);
             const infoB = parseRow(b);
             if (infoA.block !== infoB.block) return infoA.block - infoB.block;
@@ -216,13 +285,20 @@
                     }
                 }
 
-                layerNodes.sort((a, b) => a - b);
-                layerNodes.forEach((cIdx, i) => {
+                const sorted = sortComponentsByImportance(
+                    layerNodes,
+                    layer,
+                    seqIdx,
+                    graph.data.nodeCiVals,
+                    graph.data.outputProbs,
+                );
+                const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
+                for (const cIdx of layerNodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
-                        x: baseX + i * (COMPONENT_SIZE + componentGap) + COMPONENT_SIZE / 2,
+                        x: baseX + offsets[cIdx] + COMPONENT_SIZE / 2,
                         y: baseY + COMPONENT_SIZE / 2,
                     };
-                });
+                }
             }
         }
 
@@ -246,17 +322,17 @@
 
     // Derived values
     const maxAbsAttr = $derived(graph.data.maxAbsAttr || 1);
-    const selectedCount = $derived(graph.composerSelection.size);
+    const selectedCount = $derived(composerSelection.size);
     const interventableCount = $derived(interventableNodes.size);
 
     // Selection helpers
     function isNodeSelected(nodeKey: string): boolean {
-        return graph.composerSelection.has(nodeKey);
+        return composerSelection.has(nodeKey);
     }
 
     function toggleNode(nodeKey: string) {
         if (!isInterventableNode(nodeKey)) return; // Can't toggle non-interventable nodes
-        const newSelection = new SvelteSet(graph.composerSelection);
+        const newSelection = new Set(composerSelection);
         if (newSelection.has(nodeKey)) {
             newSelection.delete(nodeKey);
         } else {
@@ -266,11 +342,11 @@
     }
 
     function selectAll() {
-        onSelectionChange(new SvelteSet(interventableNodes));
+        onSelectionChange(new Set(interventableNodes));
     }
 
     function clearSelection() {
-        onSelectionChange(new SvelteSet());
+        onSelectionChange(new Set());
     }
 
     // Hover handlers
@@ -365,7 +441,7 @@
 
             // Toggle selection for nodes in rect
             if (nodesToToggle.length > 0) {
-                const newSelection = new SvelteSet(graph.composerSelection);
+                const newSelection = new Set(composerSelection);
                 for (const nodeKey of nodesToToggle) {
                     if (newSelection.has(nodeKey)) {
                         newSelection.delete(nodeKey);
@@ -617,7 +693,7 @@
         {:else}
             <div class="runs-list">
                 {#each graph.interventionRuns.slice().reverse() as run (run.id)}
-                    {@const isActive = graph.activeRunId === run.id}
+                    {@const isActive = activeRunId === run.id}
                     <div
                         class="run-card"
                         class:active={isActive}
@@ -629,6 +705,14 @@
                         <div class="run-header">
                             <span class="run-time">{formatTime(run.created_at)}</span>
                             <span class="run-nodes">{run.selected_nodes.length} nodes</span>
+                            <button
+                                class="fork-btn"
+                                title="Fork with modified tokens"
+                                onclick={(e) => {
+                                    e.stopPropagation();
+                                    openForkModal(run.id);
+                                }}>⑂</button
+                            >
                             <button
                                 class="delete-btn"
                                 onclick={(e) => {
@@ -657,12 +741,18 @@
                                                 {@const pred = preds[rank]}
                                                 <td
                                                     class:has-pred={!!pred}
-                                                    style={pred ? `background: ${getOutputHeaderColor(pred.prob)}` : ""}
+                                                    style={pred
+                                                        ? `background: ${getOutputHeaderColor(pred.spd_prob)}`
+                                                        : ""}
                                                 >
                                                     {#if pred}
                                                         <span class="pred-token">"{pred.token}"</span>
-                                                        <span class="pred-prob spd">SPD: {formatProb(pred.prob)}</span>
-                                                        <span class="pred-prob targ">Targ: {formatProb(pred.target_prob)}</span>
+                                                        <span class="pred-prob spd"
+                                                            >SPD: {formatProb(pred.spd_prob)}</span
+                                                        >
+                                                        <span class="pred-prob targ"
+                                                            >Targ: {formatProb(pred.target_prob)}</span
+                                                        >
                                                     {:else}
                                                         -
                                                     {/if}
@@ -673,6 +763,77 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <!-- Forked runs -->
+                        {#if run.forked_runs && run.forked_runs.length > 0}
+                            <div class="forked-runs">
+                                <div class="forked-runs-header">
+                                    <span class="fork-icon">⑂</span>
+                                    <span>{run.forked_runs.length} fork{run.forked_runs.length > 1 ? "s" : ""}</span>
+                                </div>
+                                {#each run.forked_runs as fork (fork.id)}
+                                    <div class="forked-run-card">
+                                        <div class="fork-header">
+                                            <span class="fork-time">{formatTime(fork.created_at)}</span>
+                                            <span class="fork-changes"
+                                                >{fork.token_replacements.length} change{fork.token_replacements
+                                                    .length > 1
+                                                    ? "s"
+                                                    : ""}</span
+                                            >
+                                            <button
+                                                class="delete-btn"
+                                                onclick={(e) => {
+                                                    e.stopPropagation();
+                                                    onDeleteFork(fork.id);
+                                                }}>✕</button
+                                            >
+                                        </div>
+                                        <!-- Mini logits for fork -->
+                                        <div class="logits-mini">
+                                            <table>
+                                                <thead>
+                                                    <tr>
+                                                        {#each fork.result.input_tokens as token, idx (idx)}
+                                                            {@const isChanged = fork.token_replacements.some(
+                                                                (r) => r[0] === idx,
+                                                            )}
+                                                            <th title={token} class:changed={isChanged}>
+                                                                <span class="token-text">"{token}"</span>
+                                                            </th>
+                                                        {/each}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {#each Array(Math.min(3, MAX_PREDICTIONS)) as _, rank (rank)}
+                                                        <tr>
+                                                            {#each fork.result.predictions_per_position as preds, idx (idx)}
+                                                                {@const pred = preds[rank]}
+                                                                <td
+                                                                    class:has-pred={!!pred}
+                                                                    style={pred
+                                                                        ? `background: ${getOutputHeaderColor(pred.spd_prob)}`
+                                                                        : ""}
+                                                                >
+                                                                    {#if pred}
+                                                                        <span class="pred-token">"{pred.token}"</span>
+                                                                        <span class="pred-prob"
+                                                                            >{formatProb(pred.spd_prob)}</span
+                                                                        >
+                                                                    {:else}
+                                                                        -
+                                                                    {/if}
+                                                                </td>
+                                                            {/each}
+                                                        </tr>
+                                                    {/each}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
                     </div>
                 {/each}
             </div>
@@ -697,6 +858,61 @@
                 handleNodeMouseLeave();
             }}
         />
+    {/if}
+
+    <!-- Fork Modal -->
+    {#if forkingRunId !== null}
+        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+        <div
+            class="modal-overlay"
+            onclick={closeForkModal}
+            onkeydown={(e) => e.key === "Escape" && closeForkModal()}
+            role="dialog"
+            aria-modal="true"
+            tabindex="-1"
+        >
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <div class="fork-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+                <div class="modal-header">
+                    <h3>Fork Run</h3>
+                    <button class="close-btn" onclick={closeForkModal}>✕</button>
+                </div>
+                <div class="modal-body">
+                    <p class="modal-description">
+                        Replace tokens and run the same subnetwork. Changes: {forkReplacements.length}
+                    </p>
+                    <div class="token-editor">
+                        {#each forkSlotStates as slot, idx (idx)}
+                            {@const isReplaced = slot.tokenId !== null && slot.tokenId !== tokenIds[idx]}
+                            <div class="token-slot" class:replaced={isReplaced}>
+                                <span class="token-label">pos {idx}: "{tokens[idx]}"</span>
+                                <TokenDropdown
+                                    tokens={allTokens}
+                                    value={slot.value}
+                                    selectedTokenId={slot.tokenId}
+                                    onSelect={(tokenId, tokenString) => handleForkSlotSelect(idx, tokenId, tokenString)}
+                                    placeholder="Search..."
+                                />
+                                {#if isReplaced}
+                                    <button class="reset-btn" onclick={() => resetForkSlot(idx)}>↩</button>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="cancel-btn" onclick={closeForkModal}>Cancel</button>
+                    <button
+                        class="submit-btn"
+                        disabled={forkReplacements.length === 0 || forkingInProgress}
+                        onclick={submitFork}
+                    >
+                        {forkingInProgress ? "Running..." : "Fork & Run"}
+                    </button>
+                </div>
+            </div>
+        </div>
     {/if}
 </div>
 
@@ -941,12 +1157,18 @@
         margin-left: auto;
     }
 
+    .fork-btn,
     .delete-btn {
         padding: 2px 6px;
         background: transparent;
         border: none;
         color: var(--text-muted);
         font-size: var(--text-xs);
+        cursor: pointer;
+    }
+
+    .fork-btn:hover {
+        color: var(--text-primary);
     }
 
     .delete-btn:hover {
@@ -1012,5 +1234,195 @@
     .pred-prob.targ {
         color: var(--text-muted);
         opacity: 0.8;
+    }
+
+    /* Forked runs */
+    .forked-runs {
+        margin-top: var(--space-2);
+        padding-top: var(--space-2);
+        border-top: 1px dashed var(--border-subtle);
+    }
+
+    .forked-runs-header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        margin-bottom: var(--space-1);
+    }
+
+    .fork-icon {
+        font-size: var(--text-sm);
+    }
+
+    .forked-run-card {
+        background: var(--bg-inset);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        padding: var(--space-1);
+        margin-bottom: var(--space-1);
+    }
+
+    .fork-header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        font-size: var(--text-xs);
+        margin-bottom: var(--space-1);
+    }
+
+    .fork-time {
+        color: var(--text-muted);
+    }
+
+    .fork-changes {
+        color: var(--status-info);
+        margin-left: auto;
+    }
+
+    .logits-mini th.changed {
+        background: rgba(var(--status-info-rgb, 59, 130, 246), 0.2);
+    }
+
+    /* Fork Modal */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .fork-modal {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+        min-width: 400px;
+        max-width: 90vw;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--space-3);
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .modal-header h3 {
+        margin: 0;
+        font-size: var(--text-base);
+        font-weight: 600;
+    }
+
+    .close-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: var(--text-base);
+    }
+
+    .close-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .modal-body {
+        padding: var(--space-3);
+        overflow-y: auto;
+    }
+
+    .modal-description {
+        margin: 0 0 var(--space-3) 0;
+        color: var(--text-secondary);
+        font-size: var(--text-sm);
+    }
+
+    .token-editor {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+    }
+
+    .token-slot {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: var(--space-1);
+        background: var(--bg-inset);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+    }
+
+    .token-slot.replaced {
+        border-color: var(--status-info);
+        background: rgba(var(--status-info-rgb), 0.1);
+    }
+
+    .token-label {
+        font-size: 9px;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        white-space: pre;
+    }
+
+    .reset-btn {
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 10px;
+        padding: 0;
+    }
+
+    .reset-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-2);
+        padding: var(--space-3);
+        border-top: 1px solid var(--border-subtle);
+    }
+
+    .cancel-btn,
+    .submit-btn {
+        padding: var(--space-1) var(--space-3);
+        border-radius: var(--radius-sm);
+        font-size: var(--text-sm);
+        cursor: pointer;
+    }
+
+    .cancel-btn {
+        background: transparent;
+        border: 1px solid var(--border-default);
+        color: var(--text-secondary);
+    }
+
+    .cancel-btn:hover {
+        background: var(--bg-hover);
+    }
+
+    .submit-btn {
+        background: var(--status-info);
+        border: none;
+        color: white;
+    }
+
+    .submit-btn:hover:not(:disabled) {
+        filter: brightness(1.1);
+    }
+
+    .submit-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 </style>

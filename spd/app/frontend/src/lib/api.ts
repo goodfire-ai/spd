@@ -152,6 +152,7 @@ export async function getComponentDetail(layer: string, componentIdx: number): P
 
 // Intervention types
 import type {
+    ForkedInterventionRun,
     InterventionNode,
     InterventionResponse,
     InterventionRunSummary,
@@ -207,6 +208,35 @@ export async function deleteInterventionRun(runId: number): Promise<void> {
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || "Failed to delete intervention run");
+    }
+}
+
+/** Fork an intervention run with modified tokens */
+export async function forkInterventionRun(
+    runId: number,
+    tokenReplacements: [number, number][],
+    topK: number = 10,
+): Promise<ForkedInterventionRun> {
+    const response = await fetch(`${API_URL}/api/intervention/runs/${runId}/fork`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token_replacements: tokenReplacements, top_k: topK }),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to fork intervention run");
+    }
+    return (await response.json()) as ForkedInterventionRun;
+}
+
+/** Delete a forked intervention run */
+export async function deleteForkedInterventionRun(forkId: number): Promise<void> {
+    const response = await fetch(`${API_URL}/api/intervention/forks/${forkId}`, {
+        method: "DELETE",
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to delete forked intervention run");
     }
 }
 

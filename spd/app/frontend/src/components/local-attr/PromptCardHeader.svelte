@@ -10,8 +10,8 @@
         onUseOptimizedChange: (useOptimized: boolean) => void;
         onOptimizeConfigChange: (update: Partial<OptimizeConfig>) => void;
         onCompute: () => void;
-        onSelectGraph: (graphId: string) => void;
-        onCloseGraph: (graphId: string) => void;
+        onSelectGraph: (graphId: number) => void;
+        onCloseGraph: (graphId: number) => void;
         onNewGraph: () => void;
     };
 

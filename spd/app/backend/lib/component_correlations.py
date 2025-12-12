@@ -521,11 +521,7 @@ def harvest_correlations(
 
             # Accumulate co-occurrence: (B*S, n_components).T @ (B*S, n_components)
             flat_acts = binary_acts.view(B * S, n_components)
-            count_ij += einops.einsum(
-                flat_acts,
-                flat_acts,
-                "BxS n_components, BxS n_components -> n_components n_components",
-            )
+            count_ij += flat_acts.T @ flat_acts
 
             # === Input token stats (vectorized) ===
             # One-hot encode input tokens: (B, S) -> (B*S, vocab_size)

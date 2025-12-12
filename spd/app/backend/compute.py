@@ -541,8 +541,8 @@ def extract_active_from_ci(
 ) -> dict[str, tuple[float, list[int]]]:
     """Build inverted index data directly from CI values.
 
-    For regular component layers, a component is active at positions where CI >= threshold.
-    For the output layer, a token is active at positions where prob >= threshold.
+    For regular component layers, a component is active at positions where CI > threshold.
+    For the output layer, a token is active at positions where prob > threshold.
     For wte, a single pseudo-component (idx 0) is always active at all positions.
 
     Args:
@@ -562,7 +562,7 @@ def extract_active_from_ci(
         n_components = ci_tensor.shape[-1]
         for c_idx in range(n_components):
             ci_per_pos = ci_tensor[0, :, c_idx]
-            positions = torch.where(ci_per_pos >= ci_threshold)[0].tolist()
+            positions = torch.where(ci_per_pos > ci_threshold)[0].tolist()
             if positions:
                 key = f"{layer}:{c_idx}"
                 max_ci = float(ci_per_pos.max().item())
@@ -571,7 +571,7 @@ def extract_active_from_ci(
     # Output layer - use probability threshold
     for c_idx in range(output_probs.shape[-1]):
         prob_per_pos = output_probs[0, :, c_idx]
-        positions = torch.where(prob_per_pos >= output_prob_threshold)[0].tolist()
+        positions = torch.where(prob_per_pos > output_prob_threshold)[0].tolist()
         if positions:
             key = f"output:{c_idx}"
             max_prob = float(prob_per_pos.max().item())

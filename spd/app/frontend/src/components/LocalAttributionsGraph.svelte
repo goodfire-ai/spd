@@ -12,7 +12,7 @@
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
-    import { lerp, calcTooltipPos } from "./local-attr/graphUtils";
+    import { lerp, calcTooltipPos, sortComponentsByImportance, computeComponentOffsets } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
 
     // Constants
@@ -30,6 +30,7 @@
         topK: number;
         componentGap: number;
         layerGap: number;
+        hideUnconnectedEdges: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
         componentDetailsCache: Record<string, ComponentDetail>;
@@ -44,6 +45,7 @@
         topK,
         componentGap,
         layerGap,
+        hideUnconnectedEdges,
         activationContextsSummary,
         stagedNodes,
         componentDetailsCache,
@@ -205,7 +207,6 @@
         for (const layer of allLayers) {
             const info = parseLayer(layer);
             const isQkv = QKV_SUBTYPES.includes(info.subtype);
-            const isOutput = layer === "output";
 
             for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
                 const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -226,7 +227,8 @@
                     }
                 }
 
-                const offsets = getComponentOffsets(nodes, layer, seqIdx, isOutput);
+                const sorted = sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs);
+                const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
                 for (const cIdx of nodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
@@ -244,42 +246,6 @@
 
         return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal };
     });
-
-    // Get component offsets (sorted by importance)
-    function getComponentOffsets(
-        components: number[],
-        layer: string,
-        seqIdx: number,
-        isOutput: boolean,
-    ): Record<number, number> {
-        const n = components.length;
-        const offsets: Record<number, number> = {};
-
-        const sorted = [...components].sort((a, b) => {
-            if (isOutput) {
-                // Output nodes: sort by probability (highest first)
-                const keyA = `${seqIdx}:${a}`;
-                const keyB = `${seqIdx}:${b}`;
-                const entryA = data.outputProbs[keyA];
-                const entryB = data.outputProbs[keyB];
-                if (!entryA) throw new Error(`Missing outputProbs entry for ${keyA}`);
-                if (!entryB) throw new Error(`Missing outputProbs entry for ${keyB}`);
-                return entryB.prob - entryA.prob;
-            }
-            // Component nodes: sort by CI (highest first)
-            const keyA = `${layer}:${seqIdx}:${a}`;
-            const keyB = `${layer}:${seqIdx}:${b}`;
-            const ciA = data.nodeCiVals[keyA];
-            const ciB = data.nodeCiVals[keyB];
-            if (ciA === undefined) throw new Error(`Missing nodeCiVals for ${keyA}`);
-            if (ciB === undefined) throw new Error(`Missing nodeCiVals for ${keyB}`);
-            return ciB - ciA;
-        });
-        for (let i = 0; i < n; i++) {
-            offsets[sorted[i]] = i * (COMPONENT_SIZE + componentGap);
-        }
-        return offsets;
-    }
 
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
@@ -476,11 +442,12 @@
         }
     }
 
-    // Track previously highlighted/dimmed edges to minimize DOM updates
+    // Track previously highlighted/dimmed/hidden edges to minimize DOM updates
     let prevHighlightedEdges = new SvelteSet<Element>();
     let prevDimmedEdges = new SvelteSet<Element>();
+    let prevHiddenEdges = new SvelteSet<Element>();
 
-    // Update edge highlighting via $effect (DOM manipulation for performance)
+    // Update edge highlighting and visibility via $effect (DOM manipulation for performance)
     // Only updates edges that actually changed state
     $effect(() => {
         if (!graphContainer) {
@@ -489,10 +456,13 @@
 
         const currentHighlighted = new SvelteSet<Element>();
         const currentDimmed = new SvelteSet<Element>();
+        const currentHidden = new SvelteSet<Element>();
         // Only target visible edges for highlighting (not hit areas)
         const edges = graphContainer.querySelectorAll(".edge-visible");
+        const hasSelection = highlightedKeys.size > 0;
+        const shouldHideUnconnected = hideUnconnectedEdges && hasSelection;
 
-        // Build set of currently highlighted and dimmed edges
+        // Build set of currently highlighted, dimmed, and hidden edges
         edges.forEach((el) => {
             const src = el.getAttribute("data-src") || "";
             const tgt = el.getAttribute("data-tgt") || "";
@@ -509,6 +479,9 @@
                     // No edge hovered, highlight all pinned-connected edges
                     currentHighlighted.add(el);
                 }
+            } else if (shouldHideUnconnected) {
+                // Hide edges not connected to any selected node
+                currentHidden.add(el);
             }
         });
 
@@ -540,8 +513,23 @@
             }
         }
 
+        // Remove hidden class from edges no longer hidden
+        for (const el of prevHiddenEdges) {
+            if (!currentHidden.has(el)) {
+                el.classList.remove("hidden");
+            }
+        }
+
+        // Add hidden class to newly hidden edges
+        for (const el of currentHidden) {
+            if (!prevHiddenEdges.has(el)) {
+                el.classList.add("hidden");
+            }
+        }
+
         prevHighlightedEdges = currentHighlighted;
         prevDimmedEdges = currentDimmed;
+        prevHiddenEdges = currentHidden;
     });
 
     // Notify parent of edge count changes
@@ -737,12 +725,6 @@
         display: block;
     }
 
-    /* :global(.edge) {
-        transition:
-            opacity 0.1s,
-            stroke-width 0.1s;
-    } */
-
     :global(.edge.highlighted) {
         opacity: 1 !important;
         stroke-width: 3 !important;
@@ -752,16 +734,13 @@
         opacity: 0.15 !important;
     }
 
+    :global(.edge.hidden) {
+        display: none;
+    }
+
     .node-group {
         cursor: pointer;
     }
-
-    /* .node {
-        transition:
-            stroke-width 0.1s,
-            filter 0.1s;
-        pointer-events: none; Let the group handle events
-    } */
 
     .node.highlighted {
         stroke: var(--accent-primary) !important;

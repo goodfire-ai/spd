@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { colors } from "../../lib/colors";
+
     type Props = {
         /** Number of items in set A (subject/query component) */
         countA: number;
@@ -8,30 +10,62 @@
         countIntersection: number;
         /** Total count to scale against (e.g. total tokens in dataset) */
         totalCount: number;
+        /** Scale bar relative to population (shows white "rest") or union only */
+        relativeTo?: "population" | "union";
     };
 
-    let { countA, countB, countIntersection, totalCount }: Props = $props();
+    let { countA, countB, countIntersection, totalCount, relativeTo = "population" }: Props = $props();
 
     const countAOnly = $derived(Math.max(0, countA - countIntersection));
     const countBOnly = $derived(Math.max(0, countB - countIntersection));
+    const countUnion = $derived(countAOnly + countIntersection + countBOnly);
 
-    // Cumulative widths (all starting from x=0, stacked back to front)
-    // Back layer: total (white)
-    // Then: A-only + intersection + B-only (red for B-only visible portion)
-    // Then: A-only + intersection (purple for intersection visible portion)
-    // Front: A-only (blue)
-    const pctTotal = 100;
-    const pctUnion = $derived(((countAOnly + countIntersection + countBOnly) / totalCount) * 100);
-    const pctAWithIntersection = $derived(((countAOnly + countIntersection) / totalCount) * 100);
-    const pctAOnly = $derived((countAOnly / totalCount) * 100);
+    // Population-relative percentages (includes white "rest" background)
+    const pctUnionPop = $derived((countUnion / totalCount) * 100);
+    const pctAWithIntersectionPop = $derived(((countAOnly + countIntersection) / totalCount) * 100);
+    const pctAOnlyPop = $derived((countAOnly / totalCount) * 100);
+
+    // Union-relative percentages (scaled to 100% of union, no "rest")
+    // Add 5 to each non-zero segment then normalize - boosts visibility of small sections
+    const BOOST = 3;
+    const unionSegments = $derived.by(() => {
+        if (countUnion === 0) return { aOnly: 0, intersection: 0, bOnly: 0 };
+
+        const baseAOverUnion = (countAOnly / countUnion) * 100;
+        const baseIntersectionOverUnion = (countIntersection / countUnion) * 100;
+        const baseBOverUnion = (countBOnly / countUnion) * 100;
+        if (countAOnly + countIntersection + countBOnly !== countUnion) {
+            throw new Error(
+                "countAOnly + countIntersection + countBOnly !== countUnion" +
+                    `: ${countAOnly} + ${countIntersection} + ${countBOnly} !== ${countUnion}`,
+            );
+        }
+
+        // Add boost to non-zero segments
+        const boosted = [baseAOverUnion, baseIntersectionOverUnion, baseBOverUnion].map((r) => r + BOOST);
+        const total = boosted.reduce((sum, v) => sum + v, 0);
+        const scale = total > 0 ? 100 / total : 0;
+
+        return {
+            aOnly: boosted[0] * scale,
+            intersection: boosted[1] * scale,
+            bOnly: boosted[2] * scale,
+        };
+    });
+
+    // Final widths based on relativeTo
+    const isUnion = $derived(relativeTo === "union");
+    const pctOther = $derived(isUnion ? 100 : pctUnionPop);
+    const pctBoth = $derived(isUnion ? unionSegments.aOnly + unionSegments.intersection : pctAWithIntersectionPop);
+    const pctSelf = $derived(isUnion ? unionSegments.aOnly : pctAOnlyPop);
 </script>
 
 <div class="set-overlap-vis" title="A: {countA}, B: {countB}, A∩B: {countIntersection}">
-    <!-- Back to front: total (white) -> union shows B-only (red) -> A+intersection (purple) -> A-only (blue) -->
-    <div class="bar leftover" style="width: {pctTotal}%"></div>
-    <div class="bar other" style="width: {pctUnion}%"></div>
-    <div class="bar both" style="width: {pctAWithIntersection}%"></div>
-    <div class="bar self" style="width: {pctAOnly}%"></div>
+    <!-- Back to front: leftover (white) -> other/B-only -> both/intersection -> self/A-only -->
+    <div class="bar leftover" class:hidden={isUnion}></div>
+    <div class="bar" style="width: {pctOther}%; background: {colors.setOverlap.other}"></div>
+    <div class="bar" style="width: {pctBoth}%; background: {colors.setOverlap.both}"></div>
+    <div class="bar" style="width: {pctSelf}%; background: {colors.setOverlap.self}"></div>
 </div>
 
 <style>
@@ -46,21 +80,16 @@
         left: 0;
         top: 0;
         height: 100%;
+        transition: width 150ms ease-out;
     }
 
     .leftover {
+        width: 100%;
         background: white;
+        transition: opacity 150ms ease-out;
     }
 
-    .other {
-        background: rgb(255, 0, 0);
-    }
-
-    .both {
-        background: rgb(176, 0, 176);
-    }
-
-    .self {
-        background: rgb(0, 0, 255);
+    .leftover.hidden {
+        opacity: 0;
     }
 </style>

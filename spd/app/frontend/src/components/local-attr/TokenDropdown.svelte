@@ -23,6 +23,8 @@
     let inputValue = $derived(selectedTokenId !== null && value ? formatTokenDisplay(value) : value);
     let isOpen = $state(false);
     let highlightedIndex = $state(0);
+    let inputElement: HTMLInputElement | null = $state(null);
+    let dropdownPos = $state({ top: 0, left: 0 });
 
     const filteredTokens = $derived.by(() => {
         if (!inputValue.trim()) return [];
@@ -39,6 +41,12 @@
         return matches;
     });
 
+    function updateDropdownPosition() {
+        if (!inputElement) return;
+        const rect = inputElement.getBoundingClientRect();
+        dropdownPos = { top: rect.bottom + 2, left: rect.left };
+    }
+
     function handleSelect(token: TokenInfo) {
         inputValue = formatTokenDisplay(token.string);
         onSelect(token.id, token.string);
@@ -49,6 +57,7 @@
         if (!isOpen || filteredTokens.length === 0) {
             if (e.key === "ArrowDown" && inputValue.trim()) {
                 e.preventDefault();
+                updateDropdownPosition();
                 isOpen = true;
             }
             return;
@@ -77,6 +86,7 @@
     }
 
     function handleInput(e: Event) {
+        updateDropdownPosition();
         isOpen = true;
         highlightedIndex = 0;
         // When user types, clear the selected token ID so they must pick again
@@ -86,6 +96,7 @@
 
     function handleFocus() {
         if (inputValue.trim()) {
+            updateDropdownPosition();
             isOpen = true;
         }
     }
@@ -100,6 +111,7 @@
 
 <div class="token-dropdown">
     <input
+        bind:this={inputElement}
         type="text"
         bind:value={inputValue}
         onfocus={handleFocus}
@@ -111,7 +123,7 @@
     />
 
     {#if isOpen && filteredTokens.length > 0}
-        <ul class="dropdown-list">
+        <ul class="dropdown-list" style="top: {dropdownPos.top}px; left: {dropdownPos.left}px;">
             {#each filteredTokens as token, i (token.id)}
                 <li>
                     <button
@@ -128,7 +140,9 @@
             {/each}
         </ul>
     {:else if isOpen && inputValue.trim() && filteredTokens.length === 0}
-        <div class="dropdown-empty">No matching tokens</div>
+        <div class="dropdown-empty" style="top: {dropdownPos.top}px; left: {dropdownPos.left}px;">
+            No matching tokens
+        </div>
     {/if}
 </div>
 
@@ -158,9 +172,7 @@
     }
 
     .dropdown-list {
-        position: absolute;
-        top: calc(100% + 2px);
-        left: 0;
+        position: fixed;
         min-width: 200px;
         max-height: 300px;
         overflow-y: auto;
@@ -171,7 +183,7 @@
         border: 1px solid var(--border-strong);
         border-radius: var(--radius-sm);
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        z-index: 1000;
+        z-index: 10000;
     }
 
     .dropdown-item {
@@ -205,9 +217,7 @@
     }
 
     .dropdown-empty {
-        position: absolute;
-        top: calc(100% + 2px);
-        left: 0;
+        position: fixed;
         min-width: 150px;
         padding: var(--space-2) var(--space-3);
         background: var(--bg-elevated);
@@ -216,6 +226,6 @@
         color: var(--text-muted);
         font-size: var(--text-sm);
         font-family: var(--font-sans);
-        z-index: 1000;
+        z-index: 10000;
     }
 </style>
