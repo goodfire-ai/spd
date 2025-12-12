@@ -30,7 +30,7 @@
         topK: number;
         componentGap: number;
         layerGap: number;
-        hideUnconnectedEdges: boolean;
+        hideUnpinnedEdges: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
         componentDetailsCache: Record<string, ComponentDetail>;
@@ -45,7 +45,7 @@
         topK,
         componentGap,
         layerGap,
-        hideUnconnectedEdges,
+        hideUnpinnedEdges,
         activationContextsSummary,
         stagedNodes,
         componentDetailsCache,
@@ -61,6 +61,25 @@
     let isHoveringTooltip = $state(false);
     let tooltipPos = $state({ x: 0, y: 0 });
     let edgeTooltipPos = $state({ x: 0, y: 0 });
+
+    // Shift key temporarily toggles hide unpinned edges
+    let shiftHeld = $state(false);
+    const effectiveHideUnpinned = $derived(shiftHeld ? !hideUnpinnedEdges : hideUnpinnedEdges);
+
+    $effect(() => {
+        function onKeyDown(e: KeyboardEvent) {
+            if (e.key === "Shift") shiftHeld = true;
+        }
+        function onKeyUp(e: KeyboardEvent) {
+            if (e.key === "Shift") shiftHeld = false;
+        }
+        window.addEventListener("keydown", onKeyDown);
+        window.addEventListener("keyup", onKeyUp);
+        return () => {
+            window.removeEventListener("keydown", onKeyDown);
+            window.removeEventListener("keyup", onKeyUp);
+        };
+    });
 
     // Refs
     let graphContainer: HTMLDivElement;
@@ -101,6 +120,12 @@
 
     // All nodes from nodeCiVals (for layout and rendering)
     const allNodes = $derived(new SvelteSet(Object.keys(data.nodeCiVals)));
+
+    // Pre-compute pinned node keys for efficient lookup
+    const pinnedNodeKeys = $derived(new Set(stagedNodes.map((p) => `${p.layer}:${p.seqIdx}:${p.cIdx}`)));
+
+    // For hover, we match by component (layer:cIdx), ignoring seqIdx
+    const hoveredComponentKey = $derived(hoveredNode ? `${hoveredNode.layer}:${hoveredNode.cIdx}` : null);
 
     // Filter edges by topK (for rendering)
     const filteredEdges = $derived.by(() => {
@@ -249,20 +274,50 @@
 
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
-    // Check if an edge is connected to any pinned node (exact match including seqIdx)
-    function isEdgeConnectedToPinnedNode(src: string, tgt: string): boolean {
-        if (stagedNodes.length === 0) return false;
-        const [srcLayer, srcSeqIdx, srcCIdx] = src.split(":");
-        const [tgtLayer, tgtSeqIdx, tgtCIdx] = tgt.split(":");
-        for (const pinned of stagedNodes) {
-            if (
-                (srcLayer === pinned.layer && +srcSeqIdx === pinned.seqIdx && +srcCIdx === pinned.cIdx) ||
-                (tgtLayer === pinned.layer && +tgtSeqIdx === pinned.seqIdx && +tgtCIdx === pinned.cIdx)
-            ) {
-                return true;
-            }
+    // Check if a node key matches the currently hovered component (same layer:cIdx, any seqIdx)
+    function nodeMatchesHoveredComponent(nodeKey: string): boolean {
+        if (!hoveredComponentKey) return false;
+        const [layer, , cIdx] = nodeKey.split(":");
+        return `${layer}:${cIdx}` === hoveredComponentKey;
+    }
+
+    type EdgeState = "normal" | "highlighted" | "hidden";
+
+    // Hover acts as a "promotion": hidden → normal → highlighted
+    function getEdgeState(src: string, tgt: string): EdgeState {
+        const hasPinned = pinnedNodeKeys.size > 0;
+        const connectedToPinned = pinnedNodeKeys.has(src) || pinnedNodeKeys.has(tgt);
+        const connectedToHoveredNode = nodeMatchesHoveredComponent(src) || nodeMatchesHoveredComponent(tgt);
+        const isThisEdgeHovered = hoveredEdge?.src === src && hoveredEdge?.tgt === tgt;
+
+        // No pinned nodes - just node hover behavior
+        if (!hasPinned) {
+            return connectedToHoveredNode ? "highlighted" : "normal";
         }
-        return false;
+
+        // Has pinned nodes
+        if (effectiveHideUnpinned) {
+            if (!connectedToPinned) {
+                // Show (not highlighted) edges connected to hovered component
+                if (connectedToHoveredNode) return "normal";
+                return "hidden";
+            }
+            // Highlight edges connected to pinned on edge/node hover
+            if (isThisEdgeHovered || connectedToHoveredNode) return "highlighted";
+            return "normal";
+        } else {
+            // Show all edges, connected ones highlighted by default
+            // Edge hover: only that edge highlighted, others normal
+            if (hoveredEdge) {
+                return isThisEdgeHovered ? "highlighted" : "normal";
+            }
+            // Node hover: highlight connected to hovered component
+            if (hoveredNode) {
+                return connectedToHoveredNode ? "highlighted" : "normal";
+            }
+            // No hover: connected to pinned are highlighted
+            return connectedToPinned ? "highlighted" : "normal";
+        }
     }
 
     // Build SVG edges string (for {@html} - performance optimization)
@@ -295,7 +350,7 @@
         // Render in reverse order so largest edges' hit areas are on top
         for (let i = filteredEdges.length - 1; i >= 0; i--) {
             const edge = filteredEdges[i];
-            if (!isEdgeConnectedToPinnedNode(edge.src, edge.tgt)) continue;
+            if (!pinnedNodeKeys.has(edge.src) && !pinnedNodeKeys.has(edge.tgt)) continue;
 
             const p1 = nodePositions[edge.src];
             const p2 = nodePositions[edge.tgt];
@@ -313,37 +368,13 @@
     });
 
     function isNodePinned(layer: string, seqIdx: number, cIdx: number): boolean {
-        return stagedNodes.some((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
+        return pinnedNodeKeys.has(`${layer}:${seqIdx}:${cIdx}`);
     }
 
-    // Check if a node key should be highlighted
-    // - Pinned nodes: exact match (layer + seqIdx + cIdx)
-    // - Hovered: highlight all nodes with same component (layer + cIdx) across all positions
-    function isKeyHighlighted(key: string): boolean {
-        const [layer, seqIdx, cIdx] = key.split(":");
-        // Exact match for pinned nodes
-        if (stagedNodes.some((p) => p.layer === layer && p.seqIdx === +seqIdx && p.cIdx === +cIdx)) {
-            return true;
-        }
-        // For hover: highlight all nodes with same component (across all positions)
-        if (hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)) {
-            if (layer === hoveredNode.layer && +cIdx === hoveredNode.cIdx) {
-                return true;
-            }
-        }
-        return false;
+    // Check if a node key should be highlighted (pinned or hovered component)
+    function isNodeHighlighted(nodeKey: string): boolean {
+        return pinnedNodeKeys.has(nodeKey) || nodeMatchesHoveredComponent(nodeKey);
     }
-
-    // Set of highlighted node keys for edge highlighting
-    const highlightedKeys = $derived.by(() => {
-        const keys = new SvelteSet<string>();
-        for (const nodeKey of Object.keys(nodePositions)) {
-            if (isKeyHighlighted(nodeKey)) {
-                keys.add(nodeKey);
-            }
-        }
-        return keys;
-    });
 
     // Pre-compute node styles (fill, opacity) - only recomputes when data/layout changes, not on hover
     const nodeStyles = $derived.by(() => {
@@ -442,94 +473,19 @@
         }
     }
 
-    // Track previously highlighted/dimmed/hidden edges to minimize DOM updates
-    let prevHighlightedEdges = new SvelteSet<Element>();
-    let prevDimmedEdges = new SvelteSet<Element>();
-    let prevHiddenEdges = new SvelteSet<Element>();
-
-    // Update edge highlighting and visibility via $effect (DOM manipulation for performance)
-    // Only updates edges that actually changed state
+    // Update edge classes based on state (DOM manipulation for performance with @html edges)
     $effect(() => {
-        if (!graphContainer) {
-            return;
-        }
+        if (!graphContainer) return;
 
-        const currentHighlighted = new SvelteSet<Element>();
-        const currentDimmed = new SvelteSet<Element>();
-        const currentHidden = new SvelteSet<Element>();
-        // Only target visible edges for highlighting (not hit areas)
         const edges = graphContainer.querySelectorAll(".edge-visible");
-        const hasSelection = highlightedKeys.size > 0;
-        const shouldHideUnconnected = hideUnconnectedEdges && hasSelection;
-
-        // Build set of currently highlighted, dimmed, and hidden edges
         edges.forEach((el) => {
             const src = el.getAttribute("data-src") || "";
             const tgt = el.getAttribute("data-tgt") || "";
-            const isConnectedToPinned = highlightedKeys.has(src) || highlightedKeys.has(tgt);
+            const state = getEdgeState(src, tgt);
 
-            if (isConnectedToPinned) {
-                // Check if this is the hovered edge
-                if (hoveredEdge && hoveredEdge.src === src && hoveredEdge.tgt === tgt) {
-                    currentHighlighted.add(el);
-                } else if (hoveredEdge) {
-                    // Another edge is being hovered, dim this one
-                    currentDimmed.add(el);
-                } else {
-                    // No edge hovered, highlight all pinned-connected edges
-                    currentHighlighted.add(el);
-                }
-            } else if (shouldHideUnconnected) {
-                // Hide edges not connected to any selected node
-                currentHidden.add(el);
-            }
+            el.classList.toggle("highlighted", state === "highlighted");
+            el.classList.toggle("hidden", state === "hidden");
         });
-
-        // Remove highlight from edges no longer highlighted
-        for (const el of prevHighlightedEdges) {
-            if (!currentHighlighted.has(el)) {
-                el.classList.remove("highlighted");
-            }
-        }
-
-        // Add highlight to newly highlighted edges
-        for (const el of currentHighlighted) {
-            if (!prevHighlightedEdges.has(el)) {
-                el.classList.add("highlighted");
-            }
-        }
-
-        // Remove dimmed from edges no longer dimmed
-        for (const el of prevDimmedEdges) {
-            if (!currentDimmed.has(el)) {
-                el.classList.remove("dimmed");
-            }
-        }
-
-        // Add dimmed to newly dimmed edges
-        for (const el of currentDimmed) {
-            if (!prevDimmedEdges.has(el)) {
-                el.classList.add("dimmed");
-            }
-        }
-
-        // Remove hidden class from edges no longer hidden
-        for (const el of prevHiddenEdges) {
-            if (!currentHidden.has(el)) {
-                el.classList.remove("hidden");
-            }
-        }
-
-        // Add hidden class to newly hidden edges
-        for (const el of currentHidden) {
-            if (!prevHiddenEdges.has(el)) {
-                el.classList.add("hidden");
-            }
-        }
-
-        prevHighlightedEdges = currentHighlighted;
-        prevDimmedEdges = currentDimmed;
-        prevHiddenEdges = currentHidden;
     });
 
     // Notify parent of edge count changes
@@ -583,7 +539,7 @@
                     {@const [layer, seqIdxStr, cIdxStr] = key.split(":")}
                     {@const seqIdx = parseInt(seqIdxStr)}
                     {@const cIdx = parseInt(cIdxStr)}
-                    {@const isHighlighted = isKeyHighlighted(key)}
+                    {@const isHighlighted = isNodeHighlighted(key)}
                     {@const style = nodeStyles[key]}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -691,7 +647,6 @@
 <style>
     .graph-wrapper {
         display: flex;
-        border: 1px solid var(--border-default);
         background: var(--bg-surface);
         overflow: hidden;
     }
@@ -727,10 +682,6 @@
     :global(.edge.highlighted) {
         opacity: 1 !important;
         stroke-width: 3 !important;
-    }
-
-    :global(.edge.dimmed) {
-        opacity: 0.15 !important;
     }
 
     :global(.edge.hidden) {

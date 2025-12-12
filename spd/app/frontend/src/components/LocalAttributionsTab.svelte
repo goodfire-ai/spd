@@ -28,14 +28,6 @@
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
-    /** Format token for display: strip leading space, add ## prefix if no leading space */
-    function formatTokenDisplay(tokenString: string): string {
-        if (tokenString.startsWith(" ")) {
-            return tokenString.slice(1);
-        }
-        return "##" + tokenString;
-    }
-
     // Props - activation contexts state is lifted to App.svelte
     type Props = {
         activationContextsSummary: ActivationContextsSummary | null;
@@ -56,7 +48,7 @@
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
-    let activeCardId = $state<number | null>(null);
+    let activeCardPromptId = $state<number | null>(null);
 
     // Prompt picker state
     let showPromptPicker = $state(false);
@@ -111,7 +103,7 @@
 
     // Edge count is derived from the graph rendering, not stored per-graph
     let filteredEdgeCount = $state<number | null>(null);
-    let hideUnconnectedEdges = $state(false);
+    let hideUnpinnedEdges = $state(false);
 
     // Component details cache (shared across graphs)
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
@@ -147,14 +139,11 @@
     // token ID. We don't re-tokenize text because the same string (e.g. "art") can map to
     // different tokens depending on context (continuation "##art" vs word-initial " art").
     // The dropdown's onSelect callback sets labelTokenId directly.
-    //
-    // FUTURE: formatTokenDisplay() is WordPiece-specific. For BPE tokenizers (GPT-2 style),
-    // the display logic will need to be tokenizer-aware.
 
     // Derived state
-    const activeCard = $derived(promptCards.find((c) => c.id === activeCardId) ?? null);
+    const activeCard = $derived(promptCards.find((c) => c.id === activeCardPromptId) ?? null);
     const activeGraph = $derived.by(() => {
-        const card = promptCards.find((c) => c.id === activeCardId);
+        const card = promptCards.find((c) => c.id === activeCardPromptId);
         if (!card) return null;
         return card.graphs.find((g) => g.id === card.activeGraphId) ?? null;
     });
@@ -173,13 +162,13 @@
             loadPromptsList();
             loadAllTokens();
             promptCards = [];
-            activeCardId = null;
+            activeCardPromptId = null;
         } else if (currentRunId === null && previousRunId !== null) {
             previousRunId = null;
             prompts = [];
             allTokens = [];
             promptCards = [];
-            activeCardId = null;
+            activeCardPromptId = null;
         }
     });
 
@@ -236,7 +225,7 @@
             useOptimized: false,
         };
         promptCards = [...promptCards, newCard];
-        activeCardId = promptId;
+        activeCardPromptId = promptId;
     }
 
     function handleSelectPrompt(prompt: PromptPreview) {
@@ -255,8 +244,8 @@
 
     function handleCloseCard(cardId: number) {
         promptCards = promptCards.filter((c) => c.id !== cardId);
-        if (activeCardId === cardId) {
-            activeCardId = promptCards.length > 0 ? promptCards[promptCards.length - 1].id : null;
+        if (activeCardPromptId === cardId) {
+            activeCardPromptId = promptCards.length > 0 ? promptCards[promptCards.length - 1].id : null;
         }
     }
 
@@ -660,8 +649,8 @@
                 <div class="card-tabs-row">
                     <PromptCardTabs
                         cards={promptCards}
-                        {activeCardId}
-                        onSelectCard={(id) => (activeCardId = id)}
+                        activeCardId={activeCardPromptId}
+                        onSelectCard={(id) => (activeCardPromptId = id)}
                         onCloseCard={handleCloseCard}
                         onAddClick={() => (showPromptPicker = !showPromptPicker)}
                     />
@@ -722,40 +711,6 @@
                             </div>
 
                             {#if activeCard.activeView === "graph"}
-                                <div class="graph-stats">
-                                    {#if activeGraph.data.optimization}
-                                        {#if activeGraph.data.optimization.label_str !== null && activeGraph.data.optimization.label_prob !== null}
-                                            <span
-                                                ><strong>Target:</strong> "{formatTokenDisplay(
-                                                    activeGraph.data.optimization.label_str,
-                                                )}"
-                                                <span class="token-id"
-                                                    >(#{activeGraph.data.optimization.label_token})</span
-                                                >
-                                                @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span
-                                            >
-                                        {/if}
-                                        {#if activeGraph.data.optimization.kl_loss_coeff !== null}
-                                            <span
-                                                ><strong>KL Loss:</strong> coeff={activeGraph.data.optimization
-                                                    .kl_loss_coeff}</span
-                                            >
-                                        {/if}
-                                    {/if}
-                                    <span
-                                        ><strong>L0:</strong>
-                                        {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
-                                            .viewSettings.ciThreshold}</span
-                                    >
-                                </div>
-
-                                <!-- {#if computeError}
-                                    <div class="error-banner">
-                                        {computeError}
-                                        <button onclick={() => computeGraphForCard()}>Retry</button>
-                                    </div>
-                                {/if} -->
-
                                 <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
                                     {#if loadingCardId === activeCard.id && loadingState}
                                         <ComputeProgressOverlay state={loadingState} />
@@ -769,21 +724,31 @@
                                         normalizeEdges={activeGraph.viewSettings.normalizeEdges}
                                         ciThreshold={activeGraph.viewSettings.ciThreshold}
                                         ciThresholdLoading={refetchingGraphId === activeGraph.id}
-                                        {hideUnconnectedEdges}
+                                        {hideUnpinnedEdges}
                                         onTopKChange={handleTopKChange}
                                         onComponentGapChange={handleComponentGapChange}
                                         onLayerGapChange={handleLayerGapChange}
                                         onNormalizeChange={handleNormalizeChange}
                                         onCiThresholdChange={handleCiThresholdChange}
-                                        onHideUnconnectedEdgesChange={(v) => (hideUnconnectedEdges = v)}
+                                        onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     />
+                                    <div class="graph-info">
+                                        <span class="l0-info"
+                                            ><strong>L0:</strong>
+                                            {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
+                                                .viewSettings.ciThreshold}</span
+                                        >
+                                        {#if pinnedNodes.length > 0}
+                                            <span class="pinned-count">{pinnedNodes.length} pinned</span>
+                                        {/if}
+                                    </div>
                                     {#key activeGraph.id}
                                         <LocalAttributionsGraph
                                             data={activeGraph.data}
                                             topK={activeGraph.viewSettings.topK}
                                             componentGap={activeGraph.viewSettings.componentGap}
                                             layerGap={activeGraph.viewSettings.layerGap}
-                                            {hideUnconnectedEdges}
+                                            {hideUnpinnedEdges}
                                             {activationContextsSummary}
                                             stagedNodes={pinnedNodes}
                                             {componentDetailsCache}
@@ -812,7 +777,17 @@
                                     tokens={activeCard.tokens}
                                     tokenIds={activeCard.tokenIds}
                                     {allTokens}
-                                    initialTopK={activeGraph.viewSettings.topK}
+                                    topK={activeGraph.viewSettings.topK}
+                                    componentGap={activeGraph.viewSettings.componentGap}
+                                    layerGap={activeGraph.viewSettings.layerGap}
+                                    normalizeEdges={activeGraph.viewSettings.normalizeEdges}
+                                    ciThreshold={activeGraph.viewSettings.ciThreshold}
+                                    ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                    onTopKChange={handleTopKChange}
+                                    onComponentGapChange={handleComponentGapChange}
+                                    onLayerGapChange={handleLayerGapChange}
+                                    onNormalizeChange={handleNormalizeChange}
+                                    onCiThresholdChange={handleCiThresholdChange}
                                     {activationContextsSummary}
                                     {componentDetailsCache}
                                     {componentDetailsLoading}
@@ -903,9 +878,7 @@
     .graph-view-tabs {
         display: flex;
         gap: var(--space-1);
-        margin-bottom: var(--space-2);
-        padding-top: var(--space-2);
-        border-top: 1px solid var(--border-subtle);
+        /* border-top: 1px solid var(--border-subtle); */
     }
 
     .graph-view-tab {
@@ -949,28 +922,34 @@
         background: rgba(255, 255, 255, 0.3);
     }
 
-    .graph-stats {
+    .graph-info {
         display: flex;
+        align-items: center;
         gap: var(--space-4);
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-default);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
-        color: var(--accent-primary);
+        color: var(--text-muted);
     }
 
-    .graph-stats strong {
-        color: var(--text-muted);
+    .graph-info strong {
+        color: var(--text-secondary);
         font-weight: 500;
     }
 
-    .graph-stats .token-id {
-        color: var(--text-muted);
-        font-size: var(--text-xs);
+    .graph-info .pinned-count {
+        color: var(--accent-primary);
     }
 
     .graph-area {
-        flex: 1;
+        display: flex;
+        flex-direction: column;
         position: relative;
         min-height: 400px;
+        border: 1px solid var(--border-default);
+        overflow: hidden;
     }
 
     .graph-area.loading {

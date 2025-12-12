@@ -147,6 +147,25 @@
         border-color: var(--border-strong);
     }
 
+    .staged-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--space-2);
+    }
+
+    .unstage-btn {
+        background: var(--bg-inset);
+        color: var(--text-primary);
+        border: 1px solid var(--border-strong);
+    }
+
+    .unstage-btn:hover {
+        background: var(--status-negative);
+        color: var(--bg-base);
+        border-color: var(--status-negative);
+    }
+
     .staged-items {
         display: flex;
         flex-direction: row;

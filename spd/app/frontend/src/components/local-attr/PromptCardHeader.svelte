@@ -135,6 +135,8 @@
         {/if}
     </div>
 
+    <div class="divider-line"></div>
+
     {#if isNewGraphMode}
         <!-- Editable config for creating new graph -->
         <div class="staged-controls">
@@ -333,6 +335,10 @@
         gap: var(--space-4);
     }
 
+    .divider-line {
+        border-top: 1px solid var(--border-default);
+    }
+
     .compute-options {
         display: flex;
         align-items: center;
@@ -509,7 +515,6 @@
         font-size: var(--text-xs);
         font-family: var(--font-mono);
         font-weight: 500;
-        color: var(--text-secondary);
         cursor: pointer;
     }
 
@@ -533,8 +538,7 @@
 
     .staged-controls.readonly {
         background: var(--bg-inset);
-        padding: var(--space-2);
-        border-radius: var(--radius-sm);
+        /* padding: var(--space-2); */
     }
 
     .staged-controls.readonly input {
@@ -561,7 +565,7 @@
 
     .compute-options input[type="text"] {
         width: 110px;
-        padding: var(--space-1);
+        /* padding: var(--space-1); */
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);
         color: var(--text-primary);

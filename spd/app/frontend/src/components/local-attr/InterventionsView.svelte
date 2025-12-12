@@ -1,5 +1,6 @@
 <script lang="ts">
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
+    import type { NormalizeType } from "../../lib/localAttributionsApi";
     import {
         isInterventableNode,
         type ActivationContextsSummary,
@@ -12,6 +13,8 @@
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
     import type { StoredGraph } from "./types";
+    import ViewControls from "./ViewControls.svelte";
+    import { SvelteSet } from "svelte/reactivity";
 
     // Layout constants
     const COMPONENT_SIZE = 8;
@@ -33,7 +36,19 @@
         tokens: string[];
         tokenIds: number[];
         allTokens: TokenInfo[];
-        initialTopK: number;
+        // View settings (shared with main graph)
+        topK: number;
+        componentGap: number;
+        layerGap: number;
+        normalizeEdges: NormalizeType;
+        ciThreshold: number;
+        ciThresholdLoading: boolean;
+        onTopKChange: (value: number) => void;
+        onComponentGapChange: (value: number) => void;
+        onLayerGapChange: (value: number) => void;
+        onNormalizeChange: (value: NormalizeType) => void;
+        onCiThresholdChange: (value: number) => void;
+        // Other props
         activationContextsSummary: ActivationContextsSummary | null;
         componentDetailsCache: Record<string, ComponentDetail>;
         componentDetailsLoading: Record<string, boolean>;
@@ -54,7 +69,17 @@
         tokens,
         tokenIds,
         allTokens,
-        initialTopK,
+        topK,
+        componentGap,
+        layerGap,
+        normalizeEdges,
+        ciThreshold,
+        ciThresholdLoading,
+        onTopKChange,
+        onComponentGapChange,
+        onLayerGapChange,
+        onNormalizeChange,
+        onCiThresholdChange,
         activationContextsSummary,
         componentDetailsCache,
         componentDetailsLoading,
@@ -67,9 +92,6 @@
         onForkRun,
         onDeleteFork,
     }: Props = $props();
-
-    // Local topK state for the composer
-    let topK = $state(initialTopK);
 
     // Fork modal state
     // Per-position state: { value: display string, tokenId: selected token ID or null }
@@ -125,10 +147,6 @@
         }
     }
 
-    // Composer state
-    let componentGap = $state(4);
-    let layerGap = $state(30);
-
     // Hover state for composer
     let hoveredNode = $state<{ layer: string; seqIdx: number; cIdx: number } | null>(null);
     let isHoveringTooltip = $state(false);
@@ -158,11 +176,11 @@
     }
 
     // All nodes from the graph (for rendering)
-    const allNodes = $derived(new Set(Object.keys(graph.data.nodeCiVals)));
+    const allNodes = $derived(new SvelteSet(Object.keys(graph.data.nodeCiVals)));
 
     // Interventable nodes only (for selection)
     const interventableNodes = $derived.by(() => {
-        const nodes = new Set<string>();
+        const nodes = new SvelteSet<string>();
         for (const nodeKey of allNodes) {
             if (isInterventableNode(nodeKey)) nodes.add(nodeKey);
         }
@@ -176,11 +194,14 @@
         return sortedEdges.slice(0, topK);
     });
 
+    // Edge count for ViewControls
+    const filteredEdgeCount = $derived(filteredEdges.length);
+
     // Compute layout for composer
     const layout = $derived.by(() => {
         const nodesPerLayerSeq: Record<string, number[]> = {};
-        const allLayers = new Set<string>();
-        const allRows = new Set<string>();
+        const allLayers = new SvelteSet<string>();
+        const allRows = new SvelteSet<string>();
 
         for (const nodeKey of allNodes) {
             const [layer, seqIdx, cIdx] = nodeKey.split(":");
@@ -244,7 +265,7 @@
         const seqWidths = maxComponentsPerSeq.map((n) =>
             Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + componentGap) + COL_PADDING * 2),
         );
-        const seqXStarts = [MARGIN.left + LABEL_WIDTH];
+        const seqXStarts = [MARGIN.left];
         for (let i = 0; i < seqWidths.length - 1; i++) {
             seqXStarts.push(seqXStarts[i] + seqWidths[i]);
         }
@@ -332,7 +353,7 @@
 
     function toggleNode(nodeKey: string) {
         if (!isInterventableNode(nodeKey)) return; // Can't toggle non-interventable nodes
-        const newSelection = new Set(composerSelection);
+        const newSelection = new SvelteSet(composerSelection);
         if (newSelection.has(nodeKey)) {
             newSelection.delete(nodeKey);
         } else {
@@ -342,11 +363,11 @@
     }
 
     function selectAll() {
-        onSelectionChange(new Set(interventableNodes));
+        onSelectionChange(new SvelteSet(interventableNodes));
     }
 
     function clearSelection() {
-        onSelectionChange(new Set());
+        onSelectionChange(new SvelteSet());
     }
 
     // Hover handlers
@@ -441,7 +462,7 @@
 
             // Toggle selection for nodes in rect
             if (nodesToToggle.length > 0) {
-                const newSelection = new Set(composerSelection);
+                const newSelection = new SvelteSet(composerSelection);
                 for (const nodeKey of nodesToToggle) {
                     if (newSelection.has(nodeKey)) {
                         newSelection.delete(nodeKey);
@@ -510,22 +531,30 @@
 </script>
 
 <div class="interventions-view">
-    <!-- Composer Panel (Left) -->
-    <div class="composer-panel">
-        <div class="composer-header">
-            <span class="title">Composer</span>
-            <span class="node-count">{selectedCount} / {interventableCount} nodes selected</span>
-        </div>
+    <!-- Composer Graph (Left) -->
+    <div class="composer-graph">
+        <!-- Shared view controls -->
+        <ViewControls
+            {topK}
+            {componentGap}
+            {layerGap}
+            {filteredEdgeCount}
+            {normalizeEdges}
+            {ciThreshold}
+            {ciThresholdLoading}
+            {onTopKChange}
+            {onComponentGapChange}
+            {onLayerGapChange}
+            {onNormalizeChange}
+            {onCiThresholdChange}
+        />
 
-        <div class="composer-controls">
-            <div class="topk-control">
-                <label for="topk-slider">Show Top K Edges:</label>
-                <input id="topk-slider" type="range" min="10" max="2000" step="10" bind:value={topK} />
-                <span class="topk-value">{topK}</span>
-            </div>
+        <!-- Intervention controls -->
+        <div class="intervention-controls">
+            <span class="node-count">{selectedCount} / {interventableCount} selected</span>
             <div class="button-group">
                 <button onclick={selectAll}>Select All</button>
-                <button onclick={clearSelection}>Clear All</button>
+                <button onclick={clearSelection}>Clear</button>
                 <button
                     class="run-btn"
                     onclick={onRunIntervention}
@@ -536,145 +565,147 @@
             </div>
         </div>
 
-        <div class="composer-hint">Click to toggle, drag to select multiple</div>
-
-        <div class="composer-graph">
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <svg
-                bind:this={svgElement}
-                style="min-width: {layout.width}px; min-height: {layout.height}px; width: 100%; height: 100%;"
-                onmousedown={handleSvgMouseDown}
-                onmousemove={handleSvgMouseMove}
-                onmouseup={handleSvgMouseUp}
-                onmouseleave={handleSvgMouseUp}
-            >
-                <!-- Token headers -->
-                {#each tokens as token, pos (pos)}
-                    {@const x = layout.seqXStarts[pos]}
-                    {@const w = layout.seqWidths[pos]}
-                    {@const cx = x + w / 2}
-                    <text
-                        x={cx}
-                        y={MARGIN.top - 30}
-                        text-anchor="middle"
-                        font-size="10"
-                        font-family="'Berkeley Mono', 'SF Mono', monospace"
-                        fill={colors.textPrimary}
-                        style="white-space: pre">"{token}"</text
-                    >
-                    <text
-                        x={cx}
-                        y={MARGIN.top - 18}
-                        text-anchor="middle"
-                        font-size="9"
-                        font-family="'Berkeley Mono', 'SF Mono', monospace"
-                        fill={colors.textMuted}>[{pos}]</text
-                    >
-                {/each}
-
-                <!-- Layer labels -->
-                {#each Object.entries(layout.layerYPositions) as [layer, y] (layer)}
-                    <text
-                        x={MARGIN.left + LABEL_WIDTH - 8}
-                        y={y + COMPONENT_SIZE / 2}
-                        text-anchor="end"
-                        dominant-baseline="middle"
-                        font-size="10"
-                        font-weight="500"
-                        font-family="'Berkeley Mono', 'SF Mono', monospace"
-                        fill={colors.textSecondary}>{getRowLabel(layer)}</text
-                    >
-                {/each}
-
-                <!-- Edges -->
-                <g class="edges-layer" opacity="0.6">
-                    {#each filteredEdges as edge (`${edge.src}-${edge.tgt}`)}
-                        {@const path = getEdgePath(edge.src, edge.tgt)}
-                        {#if path}
-                            <path
-                                d={path}
-                                stroke={getEdgeColor(edge.val)}
-                                stroke-width={getEdgeWidth(edge.val)}
-                                fill="none"
-                                opacity={getEdgeOpacity(edge.val)}
-                            />
-                        {/if}
+        <!-- Graph wrapper for sticky layout -->
+        <div class="graph-wrapper">
+            <!-- Sticky layer labels (left) -->
+            <div class="layer-labels-container" style="width: {LABEL_WIDTH}px;">
+                <svg width={LABEL_WIDTH} height={layout.height} style="display: block;">
+                    {#each Object.entries(layout.layerYPositions) as [layer, y] (layer)}
+                        {@const yCenter = y + COMPONENT_SIZE / 2}
+                        <text
+                            x={LABEL_WIDTH - 10}
+                            y={yCenter}
+                            text-anchor="end"
+                            dominant-baseline="middle"
+                            font-size="10"
+                            font-weight="500"
+                            font-family="'Berkeley Mono', 'SF Mono', monospace"
+                            fill={colors.textSecondary}>{getRowLabel(layer)}</text
+                        >
                     {/each}
-                </g>
+                </svg>
+            </div>
 
-                <!-- Nodes -->
-                <g class="nodes-layer">
-                    {#each allNodes as nodeKey (nodeKey)}
-                        {@const pos = layout.nodePositions[nodeKey]}
-                        {@const [layer, seqIdx, cIdx] = nodeKey.split(":")}
-                        {@const interventable = isInterventableNode(nodeKey)}
-                        {@const selected = interventable && isNodeSelected(nodeKey)}
-                        {@const isOutput = layer === "output"}
-                        {@const outputEntry = isOutput ? graph.data.outputProbs[`${seqIdx}:${cIdx}`] : null}
-                        {#if pos}
-                            <!-- svelte-ignore a11y_click_events_have_key_events -->
-                            <!-- svelte-ignore a11y_no_static_element_interactions -->
-                            <g
-                                class="node-group"
-                                class:selected
-                                class:non-interventable={!interventable}
-                                onmouseenter={(e) => handleNodeMouseEnter(e, layer, +seqIdx, +cIdx)}
-                                onmouseleave={handleNodeMouseLeave}
-                                onclick={() => handleNodeClick(nodeKey)}
+            <!-- Scrollable graph area -->
+            <div class="graph-container">
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <svg
+                    bind:this={svgElement}
+                    width={layout.width}
+                    height={layout.height}
+                    style="display: block;"
+                    onmousedown={handleSvgMouseDown}
+                    onmousemove={handleSvgMouseMove}
+                    onmouseup={handleSvgMouseUp}
+                    onmouseleave={handleSvgMouseUp}
+                >
+                    <!-- Edges -->
+                    <g class="edges-layer" opacity="0.6">
+                        {#each filteredEdges as edge (`${edge.src}-${edge.tgt}`)}
+                            {@const path = getEdgePath(edge.src, edge.tgt)}
+                            {#if path}
+                                <path
+                                    d={path}
+                                    stroke={getEdgeColor(edge.val)}
+                                    stroke-width={getEdgeWidth(edge.val)}
+                                    fill="none"
+                                    opacity={getEdgeOpacity(edge.val)}
+                                />
+                            {/if}
+                        {/each}
+                    </g>
+
+                    <!-- Nodes -->
+                    <g class="nodes-layer">
+                        {#each allNodes as nodeKey (nodeKey)}
+                            {@const pos = layout.nodePositions[nodeKey]}
+                            {@const [layer, seqIdx, cIdx] = nodeKey.split(":")}
+                            {@const interventable = isInterventableNode(nodeKey)}
+                            {@const selected = interventable && isNodeSelected(nodeKey)}
+                            {#if pos}
+                                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                                <g
+                                    class="node-group"
+                                    class:selected
+                                    class:non-interventable={!interventable}
+                                    onmouseenter={(e) => handleNodeMouseEnter(e, layer, +seqIdx, +cIdx)}
+                                    onmouseleave={handleNodeMouseLeave}
+                                    onclick={() => handleNodeClick(nodeKey)}
+                                >
+                                    <rect
+                                        x={pos.x - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
+                                        y={pos.y - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
+                                        width={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
+                                        height={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
+                                        fill="transparent"
+                                    />
+                                    <rect
+                                        class="node"
+                                        x={pos.x - COMPONENT_SIZE / 2}
+                                        y={pos.y - COMPONENT_SIZE / 2}
+                                        width={COMPONENT_SIZE}
+                                        height={COMPONENT_SIZE}
+                                        fill={!interventable
+                                            ? colors.textMuted
+                                            : selected
+                                              ? colors.accent
+                                              : colors.nodeDefault}
+                                        stroke={selected ? colors.accent : "none"}
+                                        stroke-width={selected ? 2 : 0}
+                                        rx="1"
+                                        opacity={!interventable ? 0.3 : selected ? 1 : 0.4}
+                                    />
+                                </g>
+                            {/if}
+                        {/each}
+                    </g>
+
+                    <!-- Selection rectangle -->
+                    {#if selectionRect}
+                        <rect
+                            class="selection-rect"
+                            x={selectionRect.x}
+                            y={selectionRect.y}
+                            width={selectionRect.width}
+                            height={selectionRect.height}
+                            fill="rgba(99, 102, 241, 0.1)"
+                            stroke={colors.accent}
+                            stroke-width="1"
+                            stroke-dasharray="4 2"
+                        />
+                    {/if}
+                </svg>
+
+                <!-- Sticky token labels (bottom) -->
+                <div class="token-labels-container">
+                    <svg width={layout.width} height="50" style="display: block;">
+                        {#each tokens as token, i (i)}
+                            {@const colCenter = layout.seqXStarts[i] + layout.seqWidths[i] / 2}
+                            <text
+                                x={colCenter}
+                                y="20"
+                                text-anchor="middle"
+                                font-size="11"
+                                font-family="'Berkeley Mono', 'SF Mono', monospace"
+                                font-weight="500"
+                                fill={colors.textPrimary}
+                                style="white-space: pre"
                             >
-                                <rect
-                                    x={pos.x - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
-                                    y={pos.y - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
-                                    width={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
-                                    height={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
-                                    fill="transparent"
-                                />
-                                <rect
-                                    class="node"
-                                    x={pos.x - COMPONENT_SIZE / 2}
-                                    y={pos.y - COMPONENT_SIZE / 2}
-                                    width={COMPONENT_SIZE}
-                                    height={COMPONENT_SIZE}
-                                    fill={!interventable
-                                        ? colors.textMuted
-                                        : selected
-                                          ? colors.accent
-                                          : colors.nodeDefault}
-                                    stroke={selected ? colors.accent : "none"}
-                                    stroke-width={selected ? 2 : 0}
-                                    rx="1"
-                                    opacity={!interventable ? 0.3 : selected ? 1 : 0.4}
-                                />
-                                {#if isOutput && outputEntry}
-                                    <text
-                                        x={pos.x}
-                                        y={pos.y + COMPONENT_SIZE + 10}
-                                        text-anchor="middle"
-                                        font-size="8"
-                                        font-family="'Berkeley Mono', 'SF Mono', monospace"
-                                        fill={colors.textMuted}>"{outputEntry.token}"</text
-                                    >
-                                {/if}
-                            </g>
-                        {/if}
-                    {/each}
-                </g>
-
-                <!-- Selection rectangle -->
-                {#if selectionRect}
-                    <rect
-                        class="selection-rect"
-                        x={selectionRect.x}
-                        y={selectionRect.y}
-                        width={selectionRect.width}
-                        height={selectionRect.height}
-                        fill="rgba(99, 102, 241, 0.1)"
-                        stroke={colors.accent}
-                        stroke-width="1"
-                        stroke-dasharray="4 2"
-                    />
-                {/if}
-            </svg>
+                                {token}
+                            </text>
+                            <text
+                                x={colCenter}
+                                y="36"
+                                text-anchor="middle"
+                                font-size="9"
+                                font-family="'Berkeley Mono', 'SF Mono', monospace"
+                                fill={colors.textMuted}>[{i}]</text
+                            >
+                        {/each}
+                    </svg>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -861,7 +892,6 @@
 
     <!-- Fork Modal -->
     {#if forkingRunId !== null}
-        <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
         <div
             class="modal-overlay"
             onclick={closeForkModal}
@@ -871,7 +901,6 @@
             tabindex="-1"
         >
             <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div class="fork-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
                 <div class="modal-header">
                     <h3>Fork Run</h3>
@@ -923,30 +952,23 @@
         gap: var(--space-4);
     }
 
-    /* Composer Panel */
-    .composer-panel {
-        flex: 2;
+    /* Composer Graph */
+    .composer-graph {
         display: flex;
         flex-direction: column;
-        min-width: 0;
-        background: var(--bg-surface);
         border: 1px solid var(--border-default);
-        padding: var(--space-3);
+        background: var(--bg-surface);
+        overflow: hidden;
     }
 
-    .composer-header {
+    .intervention-controls {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        margin-bottom: var(--space-2);
-        padding-bottom: var(--space-2);
-        border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .composer-header .title {
-        font-weight: 600;
-        font-family: var(--font-sans);
-        color: var(--text-primary);
+        gap: var(--space-4);
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-default);
+        flex-shrink: 0;
     }
 
     .node-count {
@@ -955,41 +977,10 @@
         color: var(--text-muted);
     }
 
-    .composer-controls {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-        margin-bottom: var(--space-2);
-    }
-
-    .topk-control {
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        color: var(--text-secondary);
-    }
-
-    .topk-control label {
-        white-space: nowrap;
-    }
-
-    .topk-control input[type="range"] {
-        flex: 1;
-        min-width: 100px;
-        max-width: 200px;
-    }
-
-    .topk-value {
-        min-width: 40px;
-        text-align: right;
-        color: var(--text-primary);
-    }
-
     .button-group {
         display: flex;
         gap: var(--space-2);
+        margin-left: auto;
     }
 
     .button-group button {
@@ -1020,21 +1011,36 @@
         cursor: not-allowed;
     }
 
-    .composer-hint {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--text-muted);
-        margin-bottom: var(--space-2);
+    .graph-wrapper {
+        display: flex;
+        overflow: hidden;
     }
 
-    .composer-graph {
-        flex: 1;
+    .layer-labels-container {
+        position: sticky;
+        left: 0;
+        background: var(--bg-surface);
+        border-right: 1px solid var(--border-default);
+        z-index: 11;
+        flex-shrink: 0;
+    }
+
+    .graph-container {
         overflow: auto;
+        flex: 1;
+        position: relative;
         background: var(--bg-inset);
-        border: 1px solid var(--border-subtle);
     }
 
-    .composer-graph svg {
+    .token-labels-container {
+        position: sticky;
+        bottom: 0;
+        background: var(--bg-surface);
+        border-top: 1px solid var(--border-default);
+        z-index: 10;
+    }
+
+    .graph-container svg {
         cursor: crosshair;
     }
 

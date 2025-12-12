@@ -9,13 +9,13 @@
         normalizeEdges: NormalizeType;
         ciThreshold: number;
         ciThresholdLoading: boolean;
-        hideUnconnectedEdges: boolean;
+        hideUnpinnedEdges?: boolean;
         onTopKChange: (value: number) => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
-        onHideUnconnectedEdgesChange: (value: boolean) => void;
+        onHideUnpinnedEdgesChange?: (value: boolean) => void;
     };
 
     let {
@@ -26,32 +26,31 @@
         normalizeEdges,
         ciThreshold,
         ciThresholdLoading,
-        hideUnconnectedEdges,
+        hideUnpinnedEdges,
         onTopKChange,
         onComponentGapChange,
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
-        onHideUnconnectedEdgesChange,
+        onHideUnpinnedEdgesChange,
     }: Props = $props();
 
-    // Local state for CI threshold input - allows typing without immediate updates
-    let ciThresholdInput = $state(ciThreshold.toString());
+    // Local state for inputs (immediate UI feedback, apply on blur)
+    let localTopK = $state(topK);
+    let localComponentGap = $state(componentGap);
+    let localLayerGap = $state(layerGap);
+    let localCiThreshold = $state(ciThreshold.toString());
 
-    // Sync when prop changes (e.g., from external source)
+    // Sync local state when props change externally
+    $effect(() => void (localTopK = topK));
+    $effect(() => void (localComponentGap = componentGap));
+    $effect(() => void (localLayerGap = layerGap));
     $effect(() => {
-        if (!ciThresholdLoading) {
-            ciThresholdInput = ciThreshold.toString();
-        }
+        if (!ciThresholdLoading) localCiThreshold = ciThreshold.toString();
     });
 
-    function applyCiThreshold() {
-        if (ciThresholdInput === "") return;
-        const value = parseFloat(ciThresholdInput);
-        if (isNaN(value)) throw new Error();
-        if (value !== ciThreshold) {
-            onCiThresholdChange(value);
-        }
+    function applyIfChanged<T>(local: T, prop: T, apply: (v: T) => void) {
+        if (local !== prop) apply(local);
     }
 </script>
 
@@ -68,11 +67,9 @@
         <span>Top K Edges</span>
         <input
             type="number"
-            value={topK}
-            oninput={(e) => {
-                if (e.currentTarget.value === "") return;
-                onTopKChange(parseInt(e.currentTarget.value));
-            }}
+            bind:value={localTopK}
+            onblur={() => applyIfChanged(localTopK, topK, onTopKChange)}
+            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             min={0}
             max={10_000}
             step={100}
@@ -82,14 +79,12 @@
         <span>Node CI Threshold</span>
         <input
             type="number"
-            bind:value={ciThresholdInput}
-            onblur={applyCiThreshold}
-            onkeydown={(e) => {
-                if (e.key === "Enter") {
-                    applyCiThreshold();
-                    e.currentTarget.blur();
-                }
+            bind:value={localCiThreshold}
+            onblur={() => {
+                const v = parseFloat(localCiThreshold);
+                if (!isNaN(v) && v !== ciThreshold) onCiThresholdChange(v);
             }}
+            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             min={0}
             step={0.1}
             disabled={ciThresholdLoading}
@@ -99,11 +94,9 @@
         <span>Node Gap</span>
         <input
             type="number"
-            value={componentGap}
-            oninput={(e) => {
-                if (e.currentTarget.value === "") return;
-                onComponentGapChange(parseInt(e.currentTarget.value));
-            }}
+            bind:value={localComponentGap}
+            onblur={() => applyIfChanged(localComponentGap, componentGap, onComponentGapChange)}
+            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             min={0}
             max={20}
             step={1}
@@ -113,24 +106,24 @@
         <span>Layer Gap</span>
         <input
             type="number"
-            value={layerGap}
-            oninput={(e) => {
-                if (e.currentTarget.value === "") return;
-                onLayerGapChange(parseInt(e.currentTarget.value));
-            }}
+            bind:value={localLayerGap}
+            onblur={() => applyIfChanged(localLayerGap, layerGap, onLayerGapChange)}
+            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             min={10}
             max={100}
             step={5}
         />
     </label>
-    <label class="checkbox">
-        <input
-            type="checkbox"
-            checked={hideUnconnectedEdges}
-            onchange={(e) => onHideUnconnectedEdgesChange(e.currentTarget.checked)}
-        />
-        <span>Hide unconnected edges</span>
-    </label>
+    {#if onHideUnpinnedEdgesChange}
+        <label class="checkbox">
+            <input
+                type="checkbox"
+                checked={hideUnpinnedEdges}
+                onchange={(e) => onHideUnpinnedEdgesChange(e.currentTarget.checked)}
+            />
+            <span>Hide unpinned edges</span>
+        </label>
+    {/if}
 
     {#if filteredEdgeCount !== null}
         <div class="legend">
@@ -152,7 +145,7 @@
         gap: var(--space-4);
         padding: var(--space-2) var(--space-3);
         background: var(--bg-surface);
-        border: 1px solid var(--border-default);
+        border-bottom: 1px solid var(--border-default);
     }
 
     label {

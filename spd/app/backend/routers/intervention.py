@@ -27,7 +27,7 @@ class InterventionRequest(BaseModel):
 
     text: str
     nodes: list[InterventionNode]
-    top_k: int = 10
+    top_k: int
 
 
 class TokenPrediction(BaseModel):
@@ -72,7 +72,7 @@ class InterventionRunSummary(BaseModel):
     selected_nodes: list[str]
     result: InterventionResponse
     created_at: str
-    forked_runs: list[ForkedInterventionRunSummary] = []
+    forked_runs: list[ForkedInterventionRunSummary]
 
 
 class ForkInterventionRequest(BaseModel):
@@ -216,6 +216,7 @@ def run_and_save_intervention(
         selected_nodes=request.selected_nodes,
         result=response,
         created_at=saved_run.created_at,
+        forked_runs=[],
     )
 
 
