@@ -228,6 +228,7 @@ def _multibatch_pgd_fwd_bwd(
         ci = model.calc_causal_importances(
             pre_weight_acts=target_model_output.cache,
             sampling=sampling,
+            pre_unembed_acts=target_model_output.cache["lm_head"],
         ).lower_leaky
 
         # It's important that we call this every microbatch to ensure stochastic routing masks are

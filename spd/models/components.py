@@ -9,7 +9,7 @@ from torch import Tensor, nn
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
-CiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]
+CiFnType = Literal["mlp", "vector_mlp", "shared_mlp", "shared_mlp_with_pre_unembed"]
 
 
 class ParallelLinear(nn.Module):
@@ -110,6 +110,40 @@ class VectorSharedMLPCiFn(nn.Module):
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
         return self.layers(x)
+
+
+class VectorSharedMLPWithPreUnembedCiFn(nn.Module):
+    """Like VectorSharedMLPCiFn but concatenates pre-unembedding activations with the input.
+    
+    This CI function takes both the module's input vector and the pre-unembedding activations
+    (the final hidden states before the lm_head), concatenates them, and passes the result
+    through a shared MLP. Only works for language models.
+    """
+
+    def __init__(self, C: int, input_dim: int, pre_unembed_dim: int, hidden_dims: list[int]):
+        super().__init__()
+        self.input_dim = input_dim
+        self.pre_unembed_dim = pre_unembed_dim
+        total_input_dim = input_dim + pre_unembed_dim
+        
+        self.layers = nn.Sequential()
+        for i in range(len(hidden_dims)):
+            in_dim = total_input_dim if i == 0 else hidden_dims[i - 1]
+            output_dim = hidden_dims[i]
+            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
+            self.layers.append(nn.GELU())
+        final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else total_input_dim
+        self.layers.append(Linear(final_dim, C, nonlinearity="linear"))
+
+    @override
+    def forward(
+        self,
+        x: Float[Tensor, "... d_in"],
+        pre_unembed_acts: Float[Tensor, "... d_model"],
+    ) -> Float[Tensor, "... C"]:
+        # Concatenate pre_weight_acts and pre_unembed_acts along the last dimension
+        combined = torch.cat([x, pre_unembed_acts], dim=-1)
+        return self.layers(combined)
 
 
 WeightDeltaAndMask = tuple[Float[Tensor, "d_out d_in"], Float[Tensor, "..."]]

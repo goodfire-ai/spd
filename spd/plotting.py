@@ -212,6 +212,7 @@ def get_single_feature_causal_importances(
         pre_weight_acts=pre_weight_acts,
         detach_inputs=False,
         sampling=sampling,
+         pre_unembed_acts=pre_weight_acts["lm_head"]
     )
 
 

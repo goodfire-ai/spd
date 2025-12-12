@@ -311,6 +311,7 @@ def evaluate(
             pre_weight_acts=target_output.cache,
             detach_inputs=False,
             sampling=run_config.sampling,
+            pre_unembed_acts=target_output.cache["lm_head"],
         )
 
         for metric in metrics:
