@@ -91,6 +91,7 @@
 
     // Edge count is derived from the graph rendering, not stored per-graph
     let filteredEdgeCount = $state<number | null>(null);
+    let hideUnconnectedEdges = $state(false);
 
     // Component details cache (shared across graphs)
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
@@ -706,11 +707,13 @@
                                         normalizeEdges={activeGraph.viewSettings.normalizeEdges}
                                         ciThreshold={activeGraph.viewSettings.ciThreshold}
                                         ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                        {hideUnconnectedEdges}
                                         onTopKChange={handleTopKChange}
                                         onComponentGapChange={handleComponentGapChange}
                                         onLayerGapChange={handleLayerGapChange}
                                         onNormalizeChange={handleNormalizeChange}
                                         onCiThresholdChange={handleCiThresholdChange}
+                                        onHideUnconnectedEdgesChange={(v) => (hideUnconnectedEdges = v)}
                                     />
                                     {#key activeGraph.id}
                                         <LocalAttributionsGraph
@@ -718,6 +721,7 @@
                                             topK={activeGraph.viewSettings.topK}
                                             componentGap={activeGraph.viewSettings.componentGap}
                                             layerGap={activeGraph.viewSettings.layerGap}
+                                            {hideUnconnectedEdges}
                                             {activationContextsSummary}
                                             stagedNodes={pinnedNodes}
                                             {componentDetailsCache}
