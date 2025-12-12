@@ -142,7 +142,7 @@ def optimize(
 
     if config.identity_module_patterns is not None:
         insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
-
+    print(target_model)
     target_model.requires_grad_(False)
 
     model = ComponentModel(
@@ -267,6 +267,7 @@ def optimize(
                 pre_weight_acts=target_model_output.cache,
                 detach_inputs=False,
                 sampling=config.sampling,
+                 pre_unembed_acts=target_model_output.cache["lm_head"]
             )
 
             alive_tracker.update(ci=ci.lower_leaky)
