@@ -4,6 +4,7 @@
         ComponentDetail,
         ComponentSummary,
         OutputProbEntry,
+        Edge,
     } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
@@ -24,6 +25,7 @@
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
         tokens: string[];
+        edges: Edge[];
         onMouseEnter: () => void;
         onMouseLeave: () => void;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
@@ -38,6 +40,7 @@
         outputProbs,
         nodeCiVals,
         tokens,
+        edges,
         onMouseEnter,
         onMouseLeave,
         onPinComponent,
@@ -105,6 +108,7 @@
                 seqIdx={hoveredNode.seqIdx}
                 {summary}
                 {detail}
+                {edges}
                 {onPinComponent}
             />
         {:else}
@@ -116,6 +120,7 @@
                 {summary}
                 detail={null}
                 {isLoading}
+                {edges}
                 {onPinComponent}
             />
         {/if}

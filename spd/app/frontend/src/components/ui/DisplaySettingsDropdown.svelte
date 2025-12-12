@@ -48,6 +48,14 @@
                         />
                         <span class="stat-label">Set overlap bars</span>
                     </label>
+                    <label class="checkbox-item single-row">
+                        <input
+                            type="checkbox"
+                            checked={displaySettings.showEdgeAttributions}
+                            onchange={() => displaySettings.toggleEdgeAttributions()}
+                        />
+                        <span class="stat-label">Edge attributions</span>
+                    </label>
                 </div>
             </div>
         </div>

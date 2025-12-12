@@ -735,6 +735,7 @@
                                     {activationContextsSummary}
                                     outputProbs={activeGraph.data.outputProbs}
                                     tokens={activeCard.tokens}
+                                    edges={activeGraph.data.edges}
                                     onStagedNodesChange={handlePinnedNodesChange}
                                 />
                             {:else}

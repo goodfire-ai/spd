@@ -8,9 +8,10 @@
         items: CorrelatedComponent[];
         onComponentClick?: (componentKey: string) => void;
         pageSize: number;
+        colorScheme?: "green" | "red";
     };
 
-    let { items, onComponentClick, pageSize = 40 }: Props = $props();
+    let { items, onComponentClick, pageSize = 40, colorScheme = "green" }: Props = $props();
 
     let currentPage = $state(0);
     const totalPages = $derived(Math.ceil(items.length / pageSize));
@@ -24,6 +25,9 @@
 
     function getBgColor(score: number): string {
         const intensity = lerp(0, 0.8, score);
+        if (colorScheme === "red") {
+            return `rgba(220, 38, 38, ${intensity})`;
+        }
         return `rgba(22, 163, 74, ${intensity})`;
     }
 </script>
