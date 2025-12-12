@@ -5,6 +5,7 @@
         ComponentSummary,
         OutputProbEntry,
         PinnedNode,
+        Edge,
     } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
@@ -17,6 +18,7 @@
         activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         tokens: string[];
+        edges: Edge[];
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
     };
 
@@ -27,6 +29,7 @@
         activationContextsSummary,
         outputProbs,
         tokens,
+        edges,
         onStagedNodesChange,
     }: Props = $props();
 
@@ -97,6 +100,7 @@
                                 seqIdx={node.seqIdx}
                                 {summary}
                                 {detail}
+                                {edges}
                                 onPinComponent={pinComponent}
                             />
                         {:else}
@@ -107,6 +111,7 @@
                                 {summary}
                                 detail={null}
                                 {isLoading}
+                                {edges}
                                 onPinComponent={pinComponent}
                             />
                         {/if}

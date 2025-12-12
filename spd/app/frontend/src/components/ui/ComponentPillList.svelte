@@ -52,7 +52,7 @@
                     <span class="component-text">{component_key}</span>
                     <span class="component-text">({score.toFixed(2)})</span>
                 </div>
-                {#if displaySettings.showSetOverlapVis}
+                {#if displaySettings.showSetOverlapVis && n_tokens > 0}
                     <SetOverlapVis
                         countA={count_i}
                         countB={count_j}

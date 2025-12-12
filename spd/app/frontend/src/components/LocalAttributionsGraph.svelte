@@ -634,6 +634,7 @@
             outputProbs={data.outputProbs}
             nodeCiVals={data.nodeCiVals}
             tokens={data.tokens}
+            edges={data.edges}
             onMouseEnter={() => (isHoveringTooltip = true)}
             onMouseLeave={() => {
                 isHoveringTooltip = false;

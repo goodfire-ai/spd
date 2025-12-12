@@ -882,6 +882,7 @@
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
             {tokens}
+            edges={graph.data.edges}
             onMouseEnter={() => (isHoveringTooltip = true)}
             onMouseLeave={() => {
                 isHoveringTooltip = false;

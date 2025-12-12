@@ -30,6 +30,7 @@ const DEFAULT_ON_STATS: CorrelationStatType[] = ["pmi", "precision", "recall", "
 type StoredSettings = {
     visibleCorrelationStats?: string[];
     showSetOverlapVis?: boolean;
+    showEdgeAttributions?: boolean;
 };
 
 function loadFromStorage(): StoredSettings | undefined {
@@ -53,6 +54,10 @@ function loadShowSetOverlapVis(): boolean {
     return loadFromStorage()?.showSetOverlapVis ?? true;
 }
 
+function loadShowEdgeAttributions(): boolean {
+    return loadFromStorage()?.showEdgeAttributions ?? true;
+}
+
 function saveToStorage(settings: StoredSettings) {
     try {
         const current = loadFromStorage();
@@ -70,6 +75,9 @@ class DisplaySettingsState {
 
     // Whether to show set overlap visualizations
     showSetOverlapVis = $state(loadShowSetOverlapVis());
+
+    // Whether to show edge attribution lists in hover panel
+    showEdgeAttributions = $state(loadShowEdgeAttributions());
 
     toggleCorrelationStat(stat: CorrelationStatType) {
         if (this.visibleCorrelationStats.has(stat)) {
@@ -90,6 +98,11 @@ class DisplaySettingsState {
     toggleSetOverlapVis() {
         this.showSetOverlapVis = !this.showSetOverlapVis;
         saveToStorage({ showSetOverlapVis: this.showSetOverlapVis });
+    }
+
+    toggleEdgeAttributions() {
+        this.showEdgeAttributions = !this.showEdgeAttributions;
+        saveToStorage({ showEdgeAttributions: this.showEdgeAttributions });
     }
 }
 

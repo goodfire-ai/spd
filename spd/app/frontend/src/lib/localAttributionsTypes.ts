@@ -15,6 +15,12 @@ export type Edge = {
     val: number;
 };
 
+export type EdgeAttribution = {
+    nodeKey: string; // "layer:seq:cIdx"
+    value: number; // raw attribution value (positive or negative)
+    normalizedMagnitude: number; // |value| / maxAbsValue, for color intensity (0-1)
+};
+
 export type OutputProbEntry = {
     prob: number;
     token: string;
