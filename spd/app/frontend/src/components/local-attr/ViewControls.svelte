@@ -9,11 +9,13 @@
         normalizeEdges: NormalizeType;
         ciThreshold: number;
         ciThresholdLoading: boolean;
+        hideUnconnectedEdges: boolean;
         onTopKChange: (value: number) => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
+        onHideUnconnectedEdgesChange: (value: boolean) => void;
     };
 
     let {
@@ -24,11 +26,13 @@
         normalizeEdges,
         ciThreshold,
         ciThresholdLoading,
+        hideUnconnectedEdges,
         onTopKChange,
         onComponentGapChange,
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
+        onHideUnconnectedEdgesChange,
     }: Props = $props();
 
     // Local state for CI threshold input - allows typing without immediate updates
@@ -119,6 +123,14 @@
             step={5}
         />
     </label>
+    <label class="checkbox">
+        <input
+            type="checkbox"
+            checked={hideUnconnectedEdges}
+            onchange={(e) => onHideUnconnectedEdgesChange(e.currentTarget.checked)}
+        />
+        <span>Hide unconnected edges</span>
+    </label>
 
     {#if filteredEdgeCount !== null}
         <div class="legend">
@@ -195,6 +207,15 @@
     select:focus {
         outline: none;
         border-color: var(--accent-primary-dim);
+    }
+
+    .checkbox {
+        cursor: pointer;
+    }
+
+    .checkbox input[type="checkbox"] {
+        cursor: pointer;
+        accent-color: var(--accent-primary);
     }
 
     .legend {

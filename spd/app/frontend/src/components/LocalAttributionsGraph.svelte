@@ -30,6 +30,7 @@
         topK: number;
         componentGap: number;
         layerGap: number;
+        hideUnconnectedEdges: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
         componentDetailsCache: Record<string, ComponentDetail>;
@@ -44,6 +45,7 @@
         topK,
         componentGap,
         layerGap,
+        hideUnconnectedEdges,
         activationContextsSummary,
         stagedNodes,
         componentDetailsCache,
@@ -440,11 +442,12 @@
         }
     }
 
-    // Track previously highlighted/dimmed edges to minimize DOM updates
+    // Track previously highlighted/dimmed/hidden edges to minimize DOM updates
     let prevHighlightedEdges = new SvelteSet<Element>();
     let prevDimmedEdges = new SvelteSet<Element>();
+    let prevHiddenEdges = new SvelteSet<Element>();
 
-    // Update edge highlighting via $effect (DOM manipulation for performance)
+    // Update edge highlighting and visibility via $effect (DOM manipulation for performance)
     // Only updates edges that actually changed state
     $effect(() => {
         if (!graphContainer) {
@@ -453,10 +456,13 @@
 
         const currentHighlighted = new SvelteSet<Element>();
         const currentDimmed = new SvelteSet<Element>();
+        const currentHidden = new SvelteSet<Element>();
         // Only target visible edges for highlighting (not hit areas)
         const edges = graphContainer.querySelectorAll(".edge-visible");
+        const hasSelection = highlightedKeys.size > 0;
+        const shouldHideUnconnected = hideUnconnectedEdges && hasSelection;
 
-        // Build set of currently highlighted and dimmed edges
+        // Build set of currently highlighted, dimmed, and hidden edges
         edges.forEach((el) => {
             const src = el.getAttribute("data-src") || "";
             const tgt = el.getAttribute("data-tgt") || "";
@@ -473,6 +479,9 @@
                     // No edge hovered, highlight all pinned-connected edges
                     currentHighlighted.add(el);
                 }
+            } else if (shouldHideUnconnected) {
+                // Hide edges not connected to any selected node
+                currentHidden.add(el);
             }
         });
 
@@ -504,8 +513,23 @@
             }
         }
 
+        // Remove hidden class from edges no longer hidden
+        for (const el of prevHiddenEdges) {
+            if (!currentHidden.has(el)) {
+                el.classList.remove("hidden");
+            }
+        }
+
+        // Add hidden class to newly hidden edges
+        for (const el of currentHidden) {
+            if (!prevHiddenEdges.has(el)) {
+                el.classList.add("hidden");
+            }
+        }
+
         prevHighlightedEdges = currentHighlighted;
         prevDimmedEdges = currentDimmed;
+        prevHiddenEdges = currentHidden;
     });
 
     // Notify parent of edge count changes
@@ -713,6 +737,10 @@
 
     :global(.edge.dimmed) {
         opacity: 0.15 !important;
+    }
+
+    :global(.edge.hidden) {
+        display: none;
     }
 
     .node-group {
