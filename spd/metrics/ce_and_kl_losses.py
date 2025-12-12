@@ -141,7 +141,7 @@ class CEandKLLosses(Metric):
 
         # Rounded causal importances as masks
         rounded_mask_infos = make_mask_infos(
-            {k: (v > self.rounding_threshold).float() for k, v in ci.items()}
+            {k: (v > self.rounding_threshold).to(v.dtype) for k, v in ci.items()}
         )
         rounded_masked_logits = self.model(batch, mask_infos=rounded_mask_infos)
         rounded_masked_ce_loss = ce_vs_labels(rounded_masked_logits)

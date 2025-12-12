@@ -230,8 +230,8 @@ def plot_attention_maps_post_training(
 
         for layer_index in range(model.config.n_layers):
             for head_index in range(model.config.n_heads):
-                avg_attn = avg_attn_weights[layer_index, head_index, :, :].cpu().numpy()
-                max_attn = max_attn_weights[layer_index, head_index, :, :].cpu().numpy()
+                avg_attn = avg_attn_weights[layer_index, head_index, :, :].cpu().float().numpy()
+                max_attn = max_attn_weights[layer_index, head_index, :, :].cpu().float().numpy()
 
                 fig, ax = plt.subplots(1, 2, figsize=(12, 6))
                 assert isinstance(ax, np.ndarray), "Expected ax to be a numpy array of axes"

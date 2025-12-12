@@ -12,7 +12,7 @@ from spd.configs import Config
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
-from spd.run_spd import optimize
+from spd.run_spd import DTYPE_MAP, optimize
 from spd.utils.distributed_utils import (
     DistributedState,
     call_on_rank0_then_broadcast,
@@ -107,6 +107,8 @@ def main(
             pretrained_model_class.from_pretrained,  # pyright: ignore[reportAttributeAccessIssue]
             config.pretrained_model_name,
         )
+
+    target_model.to(DTYPE_MAP[config.dtype])
     target_model.eval()
 
     if is_main_process():

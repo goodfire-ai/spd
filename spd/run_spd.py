@@ -20,6 +20,7 @@ from tqdm import tqdm
 
 from spd.configs import (
     Config,
+    DType,
     LossMetricConfigType,
     MetricConfigType,
     PGDMultiBatchConfig,
@@ -51,6 +52,11 @@ from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 from spd.utils.wandb_utils import try_wandb
+
+DTYPE_MAP: dict[DType, torch.dtype] = {
+    "float32": torch.float32,
+    "bfloat16": torch.bfloat16,
+}
 
 
 def run_faithfulness_warmup(
@@ -126,6 +132,11 @@ def optimize(
     ln_stds: dict[str, float] | None = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
+
+    # Set default dtype for all tensor operations
+    torch_dtype = DTYPE_MAP[config.dtype]
+    torch.set_default_dtype(torch_dtype)
+    logger.info(f"Set default torch dtype to {config.dtype}")
 
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)

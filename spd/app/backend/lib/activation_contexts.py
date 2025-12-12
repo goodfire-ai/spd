@@ -182,18 +182,18 @@ def get_activations_data(
             ci_at_active = window_ci_values[:, n_tokens_either_side]
 
             # Move to CPU/numpy once (faster than .tolist())
-            batch_idx_np = batch_idx.cpu().numpy()
-            seq_idx_np = seq_idx.cpu().numpy()
-            comp_idx_np = comp_idx.cpu().numpy()
-            window_token_ids_np = window_token_ids.cpu().numpy()
-            window_ci_values_np = window_ci_values.cpu().numpy()
-            ci_at_active_np = ci_at_active.cpu().numpy()
+            batch_idx_np = batch_idx.cpu().float().numpy()
+            seq_idx_np = seq_idx.cpu().float().numpy()
+            comp_idx_np = comp_idx.cpu().float().numpy()
+            window_token_ids_np = window_token_ids.cpu().float().numpy()
+            window_ci_values_np = window_ci_values.cpu().float().numpy()
+            ci_at_active_np = ci_at_active.cpu().float().numpy()
 
             # Get token IDs at active position for token counting
             active_token_ids = window_token_ids_np[:, n_tokens_either_side]
 
             # Get predicted tokens at each firing position
-            firing_predicted_tokens = predicted_token_ids[batch_idx, seq_idx].cpu().numpy()
+            firing_predicted_tokens = predicted_token_ids[batch_idx, seq_idx].cpu().float().numpy()
 
             # Process by component - group firings and use batch add
             unique_components = np.unique(comp_idx_np)

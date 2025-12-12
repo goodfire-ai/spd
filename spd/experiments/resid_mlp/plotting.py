@@ -65,7 +65,7 @@ def plot_individual_feature_response(
                 color=cmap_viridis(f / n_features),
                 marker=".",
                 s=s[order],
-                alpha=alpha[order].numpy(),  # pyright: ignore[reportArgumentType]
+                alpha=alpha[order].float().numpy(),  # pyright: ignore[reportArgumentType]
                 # According to the announcement, alpha is allowed to be an iterable since v3.4.0,
                 # but the docs & type annotations seem to be wrong. Here's the announcement:
                 # https://matplotlib.org/stable/users/prev_whats_new/whats_new_3.4.0.html#transparency-alpha-can-be-set-as-an-array-in-collections

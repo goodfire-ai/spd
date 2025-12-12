@@ -227,6 +227,8 @@ TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 
 SamplingType = Literal["continuous", "binomial"]
 
+DType = Literal["float32", "bfloat16"]
+
 
 class Config(BaseConfig):
     # --- WandB
@@ -245,6 +247,10 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
+    dtype: DType = Field(
+        default="float32",
+        description="Default torch dtype for computation. Supports 'float32' and 'bfloat16'.",
+    )
     C: PositiveInt = Field(
         ...,
         description="The number of subcomponents per layer",

@@ -406,8 +406,8 @@ def plot_neuron_contribution_pairs(
 
     # Plot points separately for each layer with different colors
     for layer in range(n_layers):
-        x_values = relu_conns[layer].flatten().cpu().detach().numpy()
-        y_values = max_component_contributions[layer].flatten().cpu().detach().numpy()
+        x_values = relu_conns[layer].flatten().cpu().detach().float().numpy()
+        y_values = max_component_contributions[layer].flatten().cpu().detach().float().numpy()
 
         layer_label = {0: "First MLP", 1: "Second MLP", 2: "Third MLP"}.get(layer, f"Layer {layer}")
 
@@ -451,8 +451,8 @@ def plot_neuron_contribution_pairs(
 
     # Add some statistics to the plot
     # Calculate correlation for all points combined
-    all_x = relu_conns.flatten().cpu().detach().numpy()
-    all_y = max_component_contributions.flatten().cpu().detach().numpy()
+    all_x = relu_conns.flatten().cpu().detach().float().numpy()
+    all_y = max_component_contributions.flatten().cpu().detach().float().numpy()
     correlation = np.corrcoef(all_x, all_y)[0, 1]
     ax.text(
         0.05,

@@ -122,7 +122,7 @@ class TMSAnalyzer:
         # Filter subnets
         filtered_subnets = subnets[mask]
 
-        subnets_indices = subnet_feature_norms_order[:n_significant].cpu().numpy()
+        subnets_indices = subnet_feature_norms_order[:n_significant].cpu().float().numpy()
 
         return filtered_subnets, subnets_indices, n_significant
 
@@ -148,7 +148,7 @@ class VectorPlotter:
 
         for subnet_idx in range(n_subnets):
             ax = axs[subnet_idx]
-            self._plot_single_vector(ax, subnets[subnet_idx].cpu().detach().numpy(), colors)
+            self._plot_single_vector(ax, subnets[subnet_idx].cpu().detach().float().numpy(), colors)
             self._style_axis(ax)
 
             ax.set_title(
@@ -225,7 +225,7 @@ class NetworkDiagramPlotter:
             ax = axs[subnet_idx]
             self._plot_single_network(
                 ax,
-                subnets_abs[subnet_idx].cpu().detach().numpy(),
+                subnets_abs[subnet_idx].cpu().detach().float().numpy(),
                 subnets_abs.max().item(),
                 n_features,
                 n_hidden,
@@ -464,9 +464,13 @@ class FullNetworkDiagramPlotter:
         plot_configs.append(
             {
                 "title": "Target model",
-                "linear1_weights": model.linear1.weight.T.detach().cpu().numpy(),
+                "linear1_weights": model.linear1.weight.T.detach().cpu().float().numpy(),
                 "hidden_weights": [
-                    cast(torch.nn.Linear, model.hidden_layers[i]).weight.T.detach().cpu().numpy()
+                    cast(torch.nn.Linear, model.hidden_layers[i])
+                    .weight.T.detach()
+                    .cpu()
+                    .float()
+                    .numpy()
                     for i in range(config.n_hidden_layers)
                 ]
                 if config.n_hidden_layers > 0 and model.hidden_layers is not None
@@ -476,10 +480,10 @@ class FullNetworkDiagramPlotter:
         )
 
         # Sum of components
-        sum_linear1 = linear1_subnets.sum(dim=0).numpy()
+        sum_linear1 = linear1_subnets.sum(dim=0).float().numpy()
         sum_hidden = None
         if hidden_layer_components:
-            sum_hidden = [hw.sum(dim=0).numpy() for hw in hidden_layer_components]
+            sum_hidden = [hw.sum(dim=0).float().numpy() for hw in hidden_layer_components]
         plot_configs.append(
             {
                 "title": "Sum of components",
@@ -494,7 +498,7 @@ class FullNetworkDiagramPlotter:
             comp_type = component_types[idx]
             if comp_type == "linear":
                 # Linear component: show weights in linear1/2, zeros in hidden
-                linear_weights = linear1_subnets[idx].numpy()
+                linear_weights = linear1_subnets[idx].float().numpy()
                 hidden_weights = None
                 if config.n_hidden_layers > 0 and model.hidden_layers is not None:
                     # Show zeros for hidden layers (not identity)
@@ -507,7 +511,7 @@ class FullNetworkDiagramPlotter:
                 linear_weights = np.zeros((config.n_features, config.n_hidden))
                 hidden_weights = None
                 if hidden_layer_components is not None:
-                    hidden_weights = [hw[idx].numpy() for hw in hidden_layer_components]
+                    hidden_weights = [hw[idx].float().numpy() for hw in hidden_layer_components]
 
             plot_configs.append(
                 {
@@ -789,7 +793,7 @@ class HiddenLayerPlotter:
 
         for idx in range(n_subnets):
             ax = axs[idx]
-            ax.imshow(weights[idx].cpu().detach().numpy(), cmap=cmap, vmin=vmin, vmax=vmax)
+            ax.imshow(weights[idx].cpu().detach().float().numpy(), cmap=cmap, vmin=vmin, vmax=vmax)
 
             # Set title
             if idx == 0:
@@ -923,7 +927,7 @@ class TMSPlotter:
         _, max_cosine_sim, _ = self.analyzer.compute_cosine_similarities()
 
         fig, ax = plt.subplots()
-        ax.bar(range(max_cosine_sim.shape[0]), max_cosine_sim.cpu().detach().numpy())
+        ax.bar(range(max_cosine_sim.shape[0]), max_cosine_sim.cpu().detach().float().numpy())
         ax.axhline(1, color="grey", linestyle="--")
         ax.set_xlabel("Input feature index")
         ax.set_ylabel("Max cosine similarity")
