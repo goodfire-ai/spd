@@ -91,6 +91,7 @@ class ComponentModel(LoadableModule):
             )
 
         self.target_model = target_model
+        self.target_model.compile()
         self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
         self.target_module_paths = get_target_module_paths(target_model, target_module_patterns)
