@@ -7,6 +7,8 @@ import type {
     GraphData,
     ActivationContextsSummary,
     ComponentDetail,
+    ComponentCorrelations,
+    TokenStats,
     SearchResult,
     TokenizeResult,
     ComponentProbeResult,
@@ -345,4 +347,27 @@ export async function probeComponent(text: string, layer: string, componentIdx: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, layer, component_idx: componentIdx }),
     });
+}
+
+// Component correlations
+
+export async function getComponentCorrelations(
+    layer: string,
+    componentIdx: number,
+    topK: number = 10,
+): Promise<ComponentCorrelations | null> {
+    const url = new URL(`${API_URL}/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
+    url.searchParams.set("top_k", String(topK));
+    return fetchJson<ComponentCorrelations | null>(url.toString());
+}
+
+// Token stats from batch job (P/R/lift)
+export async function getComponentTokenStats(
+    layer: string,
+    componentIdx: number,
+    topK: number = 10,
+): Promise<TokenStats | null> {
+    const url = new URL(`${API_URL}/api/correlations/token_stats/${encodeURIComponent(layer)}/${componentIdx}`);
+    url.searchParams.set("top_k", String(topK));
+    return fetchJson<TokenStats | null>(url.toString());
 }

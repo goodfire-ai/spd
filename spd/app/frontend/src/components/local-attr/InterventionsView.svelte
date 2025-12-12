@@ -9,7 +9,7 @@
         type NodePosition,
     } from "../../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
-    import { lerp } from "./graphUtils";
+    import { lerp, calcTooltipPos } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
 
     // Layout constants
@@ -89,7 +89,7 @@
     }
 
     // All nodes from the graph (for rendering)
-    const allNodes = $derived(new SvelteSet(Object.keys(graph.data.nodeImportance)));
+    const allNodes = $derived(new SvelteSet(Object.keys(graph.data.nodeCiVals)));
 
     // Interventable nodes only (for selection)
     const interventableNodes = $derived.by(() => {
@@ -294,17 +294,6 @@
             if (!isHoveringTooltip) hoveredNode = null;
             hoverTimeout = null;
         }, 50);
-    }
-
-    function calcTooltipPos(mouseX: number, mouseY: number) {
-        const padding = 15;
-        let left = mouseX + padding;
-        let top = mouseY + padding;
-        if (typeof window !== "undefined") {
-            if (left + 400 > window.innerWidth) left = mouseX - 400 - padding;
-            if (top + 300 > window.innerHeight) top = mouseY - 300 - padding;
-        }
-        return { x: Math.max(0, left), y: Math.max(0, top) };
     }
 
     function handleNodeClick(nodeKey: string) {
@@ -699,6 +688,7 @@
             {componentDetailsCache}
             {componentDetailsLoading}
             outputProbs={graph.data.outputProbs}
+            nodeCiVals={graph.data.nodeCiVals}
             {tokens}
             onMouseEnter={() => (isHoveringTooltip = true)}
             onMouseLeave={() => {

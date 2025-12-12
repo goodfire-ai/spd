@@ -7,14 +7,16 @@
     import { CANONICAL_RUNS, formatRunIdForDisplay } from "./lib/registry";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
+    import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
+    import DisplaySettingsDropdown from "./components/ui/DisplaySettingsDropdown.svelte";
     import { onMount } from "svelte";
 
     let loadingTrainRun = $state(false);
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
-    let trainWandbRunEntry = $state<string | null>("goodfire/spd/jyo9duz5");
+    let trainWandbRunEntry = $state<string | null>(CANONICAL_RUNS[0].wandbRunId);
     let contextLength = $state<number | null>(512);
 
     let loadedRun = $state<LoadedRun | null>(null);
@@ -24,6 +26,10 @@
     // Lifted activation contexts state - shared between tabs
     let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
     let activationContextsMissing = $state(false);
+
+    // Correlation job state
+    let correlationJobStatus = $state<api.CorrelationJobStatus | null>(null);
+    let correlationJobSubmitting = $state(false);
 
     async function loadStatus() {
         if (loadingTrainRun) return;
@@ -46,8 +52,9 @@
             trainWandbRunEntry = loadedRun.wandb_path;
             contextLength = loadedRun.context_length;
 
-            // Load activation contexts summary
+            // Load activation contexts summary and correlation status
             loadActivationContextsSummary();
+            loadCorrelationJobStatus();
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
@@ -64,9 +71,33 @@
             if (status === 404) {
                 activationContextsMissing = true;
                 activationContextsSummary = null;
-            }
+            } else throw e;
         }
     }
+
+    async function loadCorrelationJobStatus() {
+        correlationJobStatus = await api.getCorrelationJobStatus();
+    }
+
+    async function submitCorrelationJob(params: api.HarvestParams) {
+        if (correlationJobSubmitting) return;
+        correlationJobSubmitting = true;
+        try {
+            await api.submitCorrelationJob(params);
+            await loadCorrelationJobStatus();
+        } finally {
+            correlationJobSubmitting = false;
+        }
+    }
+
+    // Poll correlation job status while pending/running
+    $effect(() => {
+        const s = correlationJobStatus?.status;
+        if (s !== "pending" && s !== "running") return;
+
+        const interval = setInterval(loadCorrelationJobStatus, 1000);
+        return () => clearInterval(interval);
+    });
 
     async function loadRun(event: Event) {
         event.preventDefault();
@@ -75,15 +106,12 @@
         try {
             loadingTrainRun = true;
             loadedRun = null;
-            console.log("loading run", input);
             await api.loadRun(input, contextLength);
+        } finally {
             // Set loading false before calling loadStatus, otherwise the guard returns early
             loadingTrainRun = false;
-            await loadStatus();
-        } catch (error) {
-            console.error("error loading run", error);
-            loadingTrainRun = false;
         }
+        await loadStatus();
     }
 
     onMount(() => {
@@ -183,21 +211,29 @@
                 </button>
             {/if}
         </div>
-        {#if loadedRun}
-            <div
-                class="config-wrapper"
-                role="group"
-                onmouseenter={() => (showConfig = true)}
-                onmouseleave={() => (showConfig = false)}
-            >
-                <button type="button" class="config-button">Config</button>
-                {#if showConfig}
-                    <div class="config-dropdown">
-                        <pre>{loadedRun.config_yaml}</pre>
-                    </div>
-                {/if}
-            </div>
-        {/if}
+        <div class="tab-bar-right">
+            {#if loadedRun}
+                <CorrelationJobStatus
+                    status={correlationJobStatus}
+                    onSubmit={submitCorrelationJob}
+                    submitting={correlationJobSubmitting}
+                />
+                <div
+                    class="config-wrapper"
+                    role="group"
+                    onmouseenter={() => (showConfig = true)}
+                    onmouseleave={() => (showConfig = false)}
+                >
+                    <button type="button" class="config-button">Config</button>
+                    {#if showConfig}
+                        <div class="config-dropdown">
+                            <pre>{loadedRun.config_yaml}</pre>
+                        </div>
+                    {/if}
+                </div>
+            {/if}
+            <DisplaySettingsDropdown />
+        </div>
     </nav>
 
     <main class="main-content">
@@ -246,7 +282,6 @@
         padding: var(--space-2) var(--space-3);
         background: var(--bg-surface);
         border-bottom: 1px solid var(--border-default);
-        /* flex-shrink: 0; */
     }
 
     .run-input {
@@ -399,6 +434,12 @@
     .tab-buttons {
         display: flex;
         gap: var(--space-2);
+    }
+
+    .tab-bar-right {
+        display: flex;
+        gap: var(--space-2);
+        align-items: center;
     }
 
     .main-content {

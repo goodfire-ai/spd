@@ -223,10 +223,18 @@ class AppRunner:
                         print(f"\033[{lines_to_clear}A\033[J", end="")
 
                     # Print box with tail
-                    print(f"{AnsiEsc.DIM}┌─ logs {'─' * 32}{AnsiEsc.RESET}")
+                    local_logfile = LOGFILE.relative_to(os.getcwd())
+                    print(
+                        f"{AnsiEsc.DIM}┌─ logs ({local_logfile}) {'─' * (60 - len(str(local_logfile)))}{AnsiEsc.RESET}"
+                    )
                     for line in tail:
-                        print(f"{AnsiEsc.DIM}│ {line.rstrip()}{AnsiEsc.RESET}")
-                    print(f"{AnsiEsc.DIM}└{'─' * 40}{AnsiEsc.RESET}")
+                        clipped_line = (
+                            line.rstrip()[:100] + "..."
+                            if len(line.rstrip()) > 100
+                            else line.rstrip()
+                        )
+                        print(f"{AnsiEsc.DIM}│ {clipped_line}{AnsiEsc.RESET}")
+                    print(f"{AnsiEsc.DIM}└{'─' * 80}{AnsiEsc.RESET}")
 
                     prev_lines = tail
             except FileNotFoundError:

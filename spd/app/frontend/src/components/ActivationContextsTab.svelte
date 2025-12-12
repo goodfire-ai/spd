@@ -48,8 +48,6 @@
             });
             harvestMetadata = data;
             onHarvestComplete();
-        } catch (error) {
-            console.error("Error loading contexts", error);
         } finally {
             loading = false;
             progress = null;

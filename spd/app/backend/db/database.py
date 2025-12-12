@@ -4,9 +4,9 @@ Stores runs, activation contexts, attribution graphs, and component activations.
 Attribution graphs can be cached to avoid recomputation.
 """
 
-import gzip
 import json
 import sqlite3
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -18,9 +18,16 @@ from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
     ModelActivationContexts,
     OutputProbability,
+    SubcomponentActivationContexts,
+    SubcomponentMetadata,
 )
+from spd.log import logger
+from spd.settings import REPO_ROOT
 
-DEFAULT_DB_PATH = Path.home() / ".spd" / "local_attr.db"
+# Persistent data directories
+_APP_DATA_DIR = REPO_ROOT / ".data" / "app"
+DEFAULT_DB_PATH = _APP_DATA_DIR / "local_attr.db"
+CORRELATIONS_DIR = _APP_DATA_DIR / "correlations"
 
 
 class Run(BaseModel):
@@ -59,7 +66,7 @@ class StoredGraph(BaseModel):
 
     id: int = -1  # -1 for unsaved graphs, set by DB on save
     edges: list[Edge]
-    output_probs: dict[str, OutputProbability]
+    output_probs: dict[str, OutputProbability]  # seq:c_idx -> {prob, token}
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
     optimization_params: OptimizationParams | None = None
     label_prob: float | None = (
@@ -131,11 +138,26 @@ class LocalAttrDB:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS activation_contexts (
-                run_id INTEGER PRIMARY KEY REFERENCES runs(id),
-                data BLOB NOT NULL,
-                config TEXT
+            -- Metadata per run+context_length
+            CREATE TABLE IF NOT EXISTS activation_contexts_meta (
+                run_id INTEGER NOT NULL REFERENCES runs(id),
+                context_length INTEGER NOT NULL,
+                config TEXT,
+                PRIMARY KEY (run_id, context_length)
             );
+
+            -- Normalized: one row per component
+            CREATE TABLE IF NOT EXISTS component_activation_contexts (
+                run_id INTEGER NOT NULL REFERENCES runs(id),
+                context_length INTEGER NOT NULL,
+                component_key TEXT NOT NULL,  -- "layer:component_idx"
+                mean_ci REAL NOT NULL,
+                data TEXT NOT NULL,  -- JSON of SubcomponentActivationContexts (without key/mean_ci)
+                PRIMARY KEY (run_id, context_length, component_key)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_component_activation_contexts_run
+                ON component_activation_contexts(run_id, context_length);
 
             CREATE TABLE IF NOT EXISTS prompts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,12 +194,12 @@ class LocalAttrDB:
                 steps INTEGER,
                 pnorm REAL,
 
-                -- Cached data (gzipped JSON)
-                edges_data BLOB NOT NULL,
-                output_probs_data BLOB NOT NULL,
-
+                -- The actual graph data (JSON)
+                edges_data TEXT NOT NULL,
                 -- Node CI values: "layer:seq:c_idx" -> ci_val (required for all graphs)
                 node_ci_vals TEXT NOT NULL,
+                -- Output probabilities: "seq:c_idx" -> {prob, token}
+                output_probs_data TEXT NOT NULL,
 
                 -- Optimization stats (NULL for standard graphs)
                 label_prob REAL,
@@ -248,53 +270,130 @@ class LocalAttrDB:
         return Run(id=row["id"], wandb_path=row["wandb_path"])
 
     # -------------------------------------------------------------------------
-    # Activation contexts operations
+    # Component contexts operations
     # -------------------------------------------------------------------------
 
-    def get_activation_contexts(self, run_id: int) -> ModelActivationContexts | None:
-        """Get the stored activation contexts for a run as a Pydantic model."""
-        conn = self._get_conn()
-        row = conn.execute(
-            "SELECT data FROM activation_contexts WHERE run_id = ?", (run_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        decompressed = gzip.decompress(row["data"])
-        json_data = json.loads(decompressed.decode("utf-8"))
-        return ModelActivationContexts.model_validate(json_data)
-
-    def set_activation_contexts(
+    def set_component_activation_contexts(
         self,
         run_id: int,
+        context_length: int,
         contexts: ModelActivationContexts,
         config: ActivationContextsGenerationConfig | None = None,
     ) -> None:
-        """Store activation contexts for a run."""
+        """Store activation contexts in normalized form (one row per component)."""
+        t0 = time.perf_counter()
         conn = self._get_conn()
-        json_bytes = json.dumps(contexts.model_dump()).encode("utf-8")
-        compressed = gzip.compress(json_bytes)
+
+        # Store metadata
         config_json = json.dumps(config.model_dump()) if config else None
         conn.execute(
-            "INSERT OR REPLACE INTO activation_contexts (run_id, data, config) VALUES (?, ?, ?)",
-            (run_id, compressed, config_json),
+            "INSERT OR REPLACE INTO activation_contexts_meta (run_id, context_length, config) VALUES (?, ?, ?)",
+            (run_id, context_length, config_json),
+        )
+
+        # Delete existing component rows for this run+context_length
+        conn.execute(
+            "DELETE FROM component_activation_contexts WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
+        )
+
+        # Build rows for insert
+        rows: list[tuple[int, int, str, float, str]] = []
+        for layer_name, subcomps in contexts.layers.items():
+            for subcomp in subcomps:
+                component_key = f"{layer_name}:{subcomp.subcomponent_idx}"
+                data_dict = subcomp.model_dump(exclude={"subcomponent_idx", "mean_ci"})
+                data_json = json.dumps(data_dict)
+                rows.append((run_id, context_length, component_key, subcomp.mean_ci, data_json))
+
+        t1 = time.perf_counter()
+
+        conn.executemany(
+            """INSERT INTO component_activation_contexts
+               (run_id, context_length, component_key, mean_ci, data)
+               VALUES (?, ?, ?, ?, ?)""",
+            rows,
         )
         conn.commit()
+        t2 = time.perf_counter()
 
-    def has_activation_contexts(self, run_id: int) -> bool:
-        """Check if activation contexts exist for a run."""
+        logger.info(
+            f"Stored {len(rows)} component contexts: "
+            f"prep={1000 * (t1 - t0):.0f}ms, insert={1000 * (t2 - t1):.0f}ms"
+        )
+
+    def get_component_activation_contexts_summary(
+        self, run_id: int, context_length: int
+    ) -> dict[str, list[SubcomponentMetadata]] | None:
+        """Get lightweight summary: component_key -> mean_ci (no blob loading)."""
+        conn = self._get_conn()
+
+        # Check if data exists
+        row = conn.execute(
+            "SELECT 1 FROM activation_contexts_meta WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
+        ).fetchone()
+        if row is None:
+            return None
+
+        rows = conn.execute(
+            """SELECT component_key, mean_ci FROM component_activation_contexts
+               WHERE run_id = ? AND context_length = ?
+               ORDER BY mean_ci DESC""",
+            (run_id, context_length),
+        ).fetchall()
+
+        # Group by layer
+        result: dict[str, list[SubcomponentMetadata]] = {}
+        for row in rows:
+            key = row["component_key"]
+            layer, idx_str = key.rsplit(":", 1)
+            if layer not in result:
+                result[layer] = []
+            result[layer].append(
+                SubcomponentMetadata(subcomponent_idx=int(idx_str), mean_ci=row["mean_ci"])
+            )
+        return result
+
+    def get_component_activation_context_detail(
+        self, run_id: int, context_length: int, layer: str, component_idx: int
+    ) -> SubcomponentActivationContexts | None:
+        """Get full data for a single component (fast: only loads one small row)."""
+        conn = self._get_conn()
+        component_key = f"{layer}:{component_idx}"
+
+        row = conn.execute(
+            """SELECT mean_ci, data FROM component_activation_contexts
+               WHERE run_id = ? AND context_length = ? AND component_key = ?""",
+            (run_id, context_length, component_key),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        data_dict = json.loads(row["data"])
+        data_dict["subcomponent_idx"] = component_idx
+        data_dict["mean_ci"] = row["mean_ci"]
+
+        return SubcomponentActivationContexts.model_validate(data_dict)
+
+    def has_component_activation_contexts(self, run_id: int, context_length: int) -> bool:
+        """Check if normalized component contexts exist."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT 1 FROM activation_contexts WHERE run_id = ?", (run_id,)
+            "SELECT 1 FROM activation_contexts_meta WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
         ).fetchone()
         return row is not None
 
-    def get_activation_contexts_config(
-        self, run_id: int
+    def get_component_activation_contexts_config(
+        self, run_id: int, context_length: int
     ) -> ActivationContextsGenerationConfig | None:
-        """Get the config used to generate activation contexts for a run."""
+        """Get the config from normalized storage."""
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT config FROM activation_contexts WHERE run_id = ?", (run_id,)
+            "SELECT config FROM activation_contexts_meta WHERE run_id = ? AND context_length = ?",
+            (run_id, context_length),
         ).fetchone()
         if row is None or row["config"] is None:
             return None
@@ -492,13 +591,8 @@ class LocalAttrDB:
         """
         conn = self._get_conn()
 
-        # Compress edges and output probs
         edges_json = json.dumps([asdict(e) for e in graph.edges])
-        edges_compressed = gzip.compress(edges_json.encode("utf-8"))
-
         probs_json = json.dumps({k: v.model_dump() for k, v in graph.output_probs.items()})
-        probs_compressed = gzip.compress(probs_json.encode("utf-8"))
-
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
         is_optimized = 1 if graph.optimization_params else 0
 
@@ -537,8 +631,8 @@ class LocalAttrDB:
                     kl_loss_coeff,
                     steps,
                     pnorm,
-                    edges_compressed,
-                    probs_compressed,
+                    edges_json,
+                    probs_json,
                     node_ci_vals_json,
                     label_prob,
                 ),
@@ -584,11 +678,10 @@ class LocalAttrDB:
 
         results: list[StoredGraph] = []
         for row in rows:
-            edges_json = json.loads(gzip.decompress(row["edges_data"]).decode("utf-8"))
-            edges = [_edge_from_dict(e) for e in edges_json]
-
-            probs_json = json.loads(gzip.decompress(row["output_probs_data"]).decode("utf-8"))
-            output_probs = {k: OutputProbability(**v) for k, v in probs_json.items()}
+            edges = [_edge_from_dict(e) for e in json.loads(row["edges_data"])]
+            output_probs = {
+                k: OutputProbability(**v) for k, v in json.loads(row["output_probs_data"]).items()
+            }
 
             node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
 

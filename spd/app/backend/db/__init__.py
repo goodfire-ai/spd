@@ -1,8 +1,5 @@
 """Database module for the SPD app backend."""
 
-from spd.app.backend.db.database import (
-    LocalAttrDB as LocalAttrDB,
-)
-from spd.app.backend.db.database import (
-    Run as Run,
-)
+from spd.app.backend.db.database import CORRELATIONS_DIR as CORRELATIONS_DIR
+from spd.app.backend.db.database import LocalAttrDB as LocalAttrDB
+from spd.app.backend.db.database import Run as Run

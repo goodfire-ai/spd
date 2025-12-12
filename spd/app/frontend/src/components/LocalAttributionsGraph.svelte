@@ -12,7 +12,7 @@
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
-    import { lerp, hashString, seededShuffle } from "./local-attr/graphUtils";
+    import { lerp, calcTooltipPos } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
 
     // Constants
@@ -28,7 +28,6 @@
     type Props = {
         data: GraphData;
         topK: number;
-        nodeLayout: "importance" | "shuffled" | "jittered";
         componentGap: number;
         layerGap: number;
         activationContextsSummary: ActivationContextsSummary | null;
@@ -43,7 +42,6 @@
     let {
         data,
         topK,
-        nodeLayout,
         componentGap,
         layerGap,
         activationContextsSummary,
@@ -89,18 +87,18 @@
         return layer;
     }
 
-    // Use pre-computed values from backend, derive max importance
+    // Use pre-computed values from backend, derive max CI
     const maxAbsAttr = $derived(data.maxAbsAttr || 1);
-    const maxImportance = $derived.by(() => {
-        let max = 1;
-        for (const imp of Object.values(data.nodeImportance)) {
-            if (imp > max) max = imp;
+    const maxCi = $derived.by(() => {
+        let max = 0;
+        for (const ci of Object.values(data.nodeCiVals)) {
+            if (ci > max) max = ci;
         }
-        return max;
+        return max || 1; // Avoid division by zero
     });
 
-    // All nodes from nodeImportance (for layout and rendering)
-    const allNodes = $derived(new SvelteSet(Object.keys(data.nodeImportance)));
+    // All nodes from nodeCiVals (for layout and rendering)
+    const allNodes = $derived(new SvelteSet(Object.keys(data.nodeCiVals)));
 
     // Filter edges by topK (for rendering)
     const filteredEdges = $derived.by(() => {
@@ -228,8 +226,7 @@
                     }
                 }
 
-                const cellWidth = seqWidths[seqIdx] - COL_PADDING * 2;
-                const offsets = getComponentOffsets(nodes, layer, seqIdx, isOutput, cellWidth);
+                const offsets = getComponentOffsets(nodes, layer, seqIdx, isOutput);
 
                 for (const cIdx of nodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
@@ -248,65 +245,38 @@
         return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal };
     });
 
-    // Get component offsets based on layout strategy
+    // Get component offsets (sorted by importance)
     function getComponentOffsets(
         components: number[],
         layer: string,
         seqIdx: number,
         isOutput: boolean,
-        cellWidth: number,
     ): Record<number, number> {
         const n = components.length;
         const offsets: Record<number, number> = {};
 
-        if (nodeLayout === "importance") {
-            const sorted = [...components].sort((a, b) => {
-                if (isOutput) {
-                    const entryA = data.outputProbs[`${seqIdx}:${a}`];
-                    const entryB = data.outputProbs[`${seqIdx}:${b}`];
-                    return (entryB?.prob ?? 0) - (entryA?.prob ?? 0);
-                }
-                const impA = data.nodeImportance[`${layer}:${seqIdx}:${a}`] ?? 0;
-                const impB = data.nodeImportance[`${layer}:${seqIdx}:${b}`] ?? 0;
-                return impB - impA;
-            });
-            for (let i = 0; i < n; i++) {
-                offsets[sorted[i]] = i * (COMPONENT_SIZE + componentGap);
+        const sorted = [...components].sort((a, b) => {
+            if (isOutput) {
+                // Output nodes: sort by probability (highest first)
+                const keyA = `${seqIdx}:${a}`;
+                const keyB = `${seqIdx}:${b}`;
+                const entryA = data.outputProbs[keyA];
+                const entryB = data.outputProbs[keyB];
+                if (!entryA) throw new Error(`Missing outputProbs entry for ${keyA}`);
+                if (!entryB) throw new Error(`Missing outputProbs entry for ${keyB}`);
+                return entryB.prob - entryA.prob;
             }
-            return offsets;
-        }
-
-        if (nodeLayout === "shuffled") {
-            const seed = hashString(`${layer}:${seqIdx}`);
-            const shuffled = seededShuffle([...components], seed);
-            for (let i = 0; i < n; i++) {
-                offsets[shuffled[i]] = i * (COMPONENT_SIZE + componentGap);
-            }
-            return offsets;
-        }
-
-        // jittered
-        const seed = hashString(`${layer}:${seqIdx}`);
-        const shuffled = seededShuffle([...components], seed);
-
-        let jitterSeed = seed;
-        const jitterRandom = () => {
-            jitterSeed |= 0;
-            jitterSeed = (jitterSeed + 0x6d2b79f5) | 0;
-            let t = Math.imul(jitterSeed ^ (jitterSeed >>> 15), 1 | jitterSeed);
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-
-        const totalSpace = cellWidth - n * COMPONENT_SIZE;
-        const gap = totalSpace / (n + 1);
-        const maxJitter = gap / 2;
-
+            // Component nodes: sort by CI (highest first)
+            const keyA = `${layer}:${seqIdx}:${a}`;
+            const keyB = `${layer}:${seqIdx}:${b}`;
+            const ciA = data.nodeCiVals[keyA];
+            const ciB = data.nodeCiVals[keyB];
+            if (ciA === undefined) throw new Error(`Missing nodeCiVals for ${keyA}`);
+            if (ciB === undefined) throw new Error(`Missing nodeCiVals for ${keyB}`);
+            return ciB - ciA;
+        });
         for (let i = 0; i < n; i++) {
-            const baseOffset = gap + i * (COMPONENT_SIZE + gap);
-            const jitter = (jitterRandom() - 0.5) * 2 * maxJitter;
-            const jitteredOffset = Math.max(0, Math.min(cellWidth - COMPONENT_SIZE, baseOffset + jitter));
-            offsets[shuffled[i]] = jitteredOffset;
+            offsets[sorted[i]] = i * (COMPONENT_SIZE + componentGap);
         }
         return offsets;
     }
@@ -428,8 +398,9 @@
                     opacity = 0.4 + probEntry.prob * 0.6;
                 }
             } else {
-                const importance = data.nodeImportance[`${layer}:${seqIdx}:${cIdx}`] || 0;
-                const intensity = Math.min(1, importance / maxImportance);
+                // Component nodes: opacity based on CI (brighter = higher CI)
+                const ci = data.nodeCiVals[`${layer}:${seqIdx}:${cIdx}`] || 0;
+                const intensity = Math.min(1, ci / maxCi);
                 opacity = 0.2 + intensity * 0.8;
             }
 
@@ -481,6 +452,12 @@
         hoveredNode = null;
     }
 
+    function pinComponent(layer: string, cIdx: number, seqIdx: number) {
+        const alreadyPinned = stagedNodes.some((p) => p.layer === layer && p.cIdx === cIdx && p.seqIdx === seqIdx);
+        if (alreadyPinned) return;
+        onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
+    }
+
     function handleEdgeMouseEnter(event: MouseEvent) {
         const target = event.target as SVGElement;
         if (target.classList.contains("edge-hit-area")) {
@@ -497,17 +474,6 @@
         if (target.classList.contains("edge-hit-area")) {
             hoveredEdge = null;
         }
-    }
-
-    function calcTooltipPos(mouseX: number, mouseY: number) {
-        const padding = 15;
-        let left = mouseX + padding;
-        let top = mouseY + padding;
-        if (typeof window !== "undefined") {
-            if (left + 500 > window.innerWidth) left = mouseX - 500 - padding;
-            if (top + 400 > window.innerHeight) top = mouseY - 400 - padding;
-        }
-        return { x: Math.max(0, left), y: Math.max(0, top) };
     }
 
     // Track previously highlighted/dimmed edges to minimize DOM updates
@@ -722,12 +688,14 @@
             {componentDetailsCache}
             {componentDetailsLoading}
             outputProbs={data.outputProbs}
+            nodeCiVals={data.nodeCiVals}
             tokens={data.tokens}
             onMouseEnter={() => (isHoveringTooltip = true)}
             onMouseLeave={() => {
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
+            onPinComponent={pinComponent}
         />
     {/if}
 </div>

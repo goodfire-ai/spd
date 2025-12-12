@@ -24,22 +24,14 @@
             const result = await api.searchDataset(query.trim(), split);
             metadata = result;
             await loadPage(1);
-        } catch (e) {
-            console.error("Search error:", e);
-            error = e instanceof Error ? e.message : "Search failed";
         } finally {
             loading = false;
         }
     }
 
     async function loadPage(page: number) {
-        try {
-            currentPageResults = await api.getDatasetSearchPage(page, pageSize);
-            currentPage = page;
-        } catch (e) {
-            console.error("Error loading page:", e);
-            error = e instanceof Error ? e.message : "Failed to load page";
-        }
+        currentPageResults = await api.getDatasetSearchPage(page, pageSize);
+        currentPage = page;
     }
 
     function handleKeydown(event: KeyboardEvent) {

@@ -6,37 +6,84 @@ import threading
 from collections.abc import Generator
 from typing import Annotated, Any
 
+import torch
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from torch.utils.data import DataLoader
 
+from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
-    ComponentProbeRequest,
-    ComponentProbeResponse,
-    HarvestMetadata,
-    ModelActivationContexts,
     SubcomponentActivationContexts,
     SubcomponentMetadata,
 )
-from spd.app.backend.state import RunState, StateManager
 from spd.app.backend.utils import log_errors
+from spd.log import logger
+from spd.utils.distributed_utils import get_device
+
+
+class HarvestMetadata(BaseModel):
+    """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
+
+    layers: dict[str, list[SubcomponentMetadata]]
+
+
+class ComponentProbeRequest(BaseModel):
+    """Request to probe a component's CI on custom text."""
+
+    text: str
+    layer: str
+    component_idx: int
+
+
+class ComponentProbeResponse(BaseModel):
+    """Response with CI values for a component on custom text."""
+
+    tokens: list[str]
+    ci_values: list[float]
+
+
+class CorrelatedComponent(BaseModel):
+    """A component correlated with a query component."""
+
+    component_key: str
+    score: float
+
+
+class ComponentCorrelationsResponse(BaseModel):
+    """Correlation data for a component across different metrics."""
+
+    precision: list[CorrelatedComponent]
+    recall: list[CorrelatedComponent]
+    jaccard: list[CorrelatedComponent]
+    pmi: list[CorrelatedComponent]
+
+
+class TokenPRLiftPMI(BaseModel):
+    """Token precision, recall, lift, and PMI lists."""
+
+    top_recall: list[tuple[str, float]]  # [(token, value), ...] sorted desc
+    top_precision: list[tuple[str, float]]  # [(token, value), ...] sorted desc
+    top_lift: list[tuple[str, float]]  # [(token, lift), ...] sorted desc
+    top_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest positive association
+    bottom_pmi: list[tuple[str, float]] | None  # [(token, pmi), ...] highest negative association
+
+
+class TokenStatsResponse(BaseModel):
+    """Token stats for a component (from batch job).
+
+    Contains both input token stats (what tokens activate this component)
+    and output token stats (what tokens this component predicts).
+    """
+
+    input: TokenPRLiftPMI  # Stats for input tokens
+    output: TokenPRLiftPMI  # Stats for output (predicted) tokens
+
 
 router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts"])
-
-
-def _ensure_activation_contexts_cached(
-    manager: StateManager,
-    loaded: RunState,
-) -> ModelActivationContexts | None:
-    """Load activation contexts into cache if not already loaded."""
-    if loaded.activation_contexts_cache is None:
-        contexts = manager.db.get_activation_contexts(loaded.run.id)
-        if contexts is not None:
-            loaded.activation_contexts_cache = contexts
-    return loaded.activation_contexts_cache
 
 
 @router.get("/summary")
@@ -46,19 +93,16 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    contexts = _ensure_activation_contexts_cached(manager, loaded)
-
-    if contexts is None:
+    summary = manager.db.get_component_activation_contexts_summary(
+        loaded.run.id, loaded.context_length
+    )
+    if summary is None:
+        logger.error(
+            f"No activation contexts found for {loaded.run.wandb_path} at context length {loaded.context_length}"
+        )
         raise HTTPException(
             status_code=404, detail="No activation contexts found. Generate them first."
         )
-
-    summary: dict[str, list[SubcomponentMetadata]] = {}
-    for layer, subcomps in contexts.layers.items():
-        summary[layer] = [
-            SubcomponentMetadata(subcomponent_idx=s.subcomponent_idx, mean_ci=s.mean_ci)
-            for s in subcomps
-        ]
     return summary
 
 
@@ -69,7 +113,7 @@ def get_activation_contexts_config(
     loaded: DepLoadedRun,
 ) -> ActivationContextsGenerationConfig | None:
     """Return the config used to generate the stored activation contexts."""
-    return manager.db.get_activation_contexts_config(loaded.run.id)
+    return manager.db.get_component_activation_contexts_config(loaded.run.id, loaded.context_length)
 
 
 @router.get("/{layer}/{component_idx}")
@@ -81,22 +125,12 @@ def get_activation_context_detail(
     loaded: DepLoadedRun,
 ) -> SubcomponentActivationContexts:
     """Return full activation context data for a single component."""
-    contexts = _ensure_activation_contexts_cached(manager, loaded)
-
-    if contexts is None:
-        raise HTTPException(status_code=404, detail="No activation contexts found")
-
-    layer_data = contexts.layers.get(layer)
-    if layer_data is None:
-        raise HTTPException(status_code=404, detail=f"Layer '{layer}' not found")
-
-    for subcomp in layer_data:
-        if subcomp.subcomponent_idx == component_idx:
-            return subcomp
-
-    raise HTTPException(
-        status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
+    detail = manager.db.get_component_activation_context_detail(
+        loaded.run.id, loaded.context_length, layer, component_idx
     )
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"Component {layer}:{component_idx} not found")
+    return detail
 
 
 @router.get("/subcomponents")
@@ -149,8 +183,6 @@ def generate_activation_contexts(
                 tokenizer=loaded.tokenizer,
                 train_loader=train_loader,
                 token_strings=loaded.token_strings,
-                # TODO: Re-enable token uplift after performance optimization
-                # token_base_rates=loaded.token_base_rates,
                 importance_threshold=importance_threshold,
                 n_batches=n_batches,
                 n_tokens_either_side=n_tokens_either_side,
@@ -158,10 +190,11 @@ def generate_activation_contexts(
                 separation_tokens=separation_tokens,
                 onprogress=on_progress,
             )
-            db.set_activation_contexts(loaded.run.id, act_contexts, config)
-
-            # Clear cache so it reloads from DB
-            loaded.activation_contexts_cache = None
+            logger.info("Saving activation contexts to database...")
+            db.set_component_activation_contexts(
+                loaded.run.id, loaded.context_length, act_contexts, config
+            )
+            logger.info("Saved activation contexts to database")
 
             metadata = HarvestMetadata(
                 layers={
@@ -213,11 +246,6 @@ def probe_component(
     Fast endpoint for testing hypotheses about component activation.
     Only requires a single forward pass.
     """
-    import torch
-
-    from spd.app.backend.compute import compute_ci_only
-    from spd.utils.distributed_utils import get_device
-
     device = get_device()
 
     token_ids = loaded.tokenizer.encode(request.text, add_special_tokens=False)

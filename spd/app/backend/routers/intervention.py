@@ -2,18 +2,68 @@
 
 import torch
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from spd.app.backend.compute import compute_intervention_forward
 from spd.app.backend.dependencies import DepDB, DepLoadedRun
-from spd.app.backend.schemas import (
-    InterventionRequest,
-    InterventionResponse,
-    InterventionRunSummary,
-    RunInterventionRequest,
-    TokenPrediction,
-)
 from spd.app.backend.utils import log_errors
 from spd.utils.distributed_utils import get_device
+
+# =============================================================================
+# Schemas
+# =============================================================================
+
+
+class InterventionNode(BaseModel):
+    """A specific node to activate during intervention."""
+
+    layer: str
+    seq_pos: int
+    component_idx: int
+
+
+class InterventionRequest(BaseModel):
+    """Request for intervention forward pass."""
+
+    text: str
+    nodes: list[InterventionNode]
+    top_k: int = 10
+
+
+class TokenPrediction(BaseModel):
+    """A single token prediction with probability."""
+
+    token: str
+    token_id: int
+    spd_prob: float
+    target_prob: float
+    logit: float
+
+
+class InterventionResponse(BaseModel):
+    """Response from intervention forward pass."""
+
+    input_tokens: list[str]
+    predictions_per_position: list[list[TokenPrediction]]
+
+
+class RunInterventionRequest(BaseModel):
+    """Request to run and save an intervention."""
+
+    graph_id: int
+    text: str
+    selected_nodes: list[str]  # node keys (layer:seq:cIdx)
+    top_k: int = 10
+
+
+class InterventionRunSummary(BaseModel):
+    """Summary of a saved intervention run."""
+
+    id: int
+    selected_nodes: list[str]
+    result: InterventionResponse
+    created_at: str
+
 
 router = APIRouter(prefix="/api/intervention", tags=["intervention"])
 
@@ -60,9 +110,13 @@ def _run_intervention_forward(
     predictions_per_position = [
         [
             TokenPrediction(
-                token=token, token_id=token_id, prob=prob, logit=logit, target_prob=target_prob
+                token=token,
+                token_id=token_id,
+                spd_prob=spd_prob,
+                target_prob=target_prob,
+                logit=logit,
             )
-            for token, token_id, prob, logit, target_prob in pos_predictions
+            for token, token_id, spd_prob, target_prob, logit in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]
@@ -98,9 +152,13 @@ def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> Inte
     predictions_per_position = [
         [
             TokenPrediction(
-                token=token, token_id=token_id, prob=prob, logit=logit, target_prob=target_prob
+                token=token,
+                token_id=token_id,
+                spd_prob=spd_prob,
+                target_prob=target_prob,
+                logit=logit,
             )
-            for token, token_id, prob, logit, target_prob in pos_predictions
+            for token, token_id, spd_prob, target_prob, logit in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]

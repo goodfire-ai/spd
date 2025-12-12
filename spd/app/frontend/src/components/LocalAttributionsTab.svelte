@@ -83,7 +83,6 @@
     // Default view settings for new graphs
     const defaultViewSettings: ViewSettings = {
         topK: 200,
-        nodeLayout: "importance",
         componentGap: 4,
         layerGap: 30,
         normalizeEdges: "layer",
@@ -108,8 +107,6 @@
         try {
             const detail = await attrApi.getComponentDetail(layer, cIdx);
             componentDetailsCache[cacheKey] = detail;
-        } catch (e) {
-            console.error(`Failed to load component detail for ${cacheKey}:`, e);
         } finally {
             componentDetailsLoading[cacheKey] = false;
         }
@@ -166,28 +163,16 @@
     });
 
     async function loadServerStatus() {
-        try {
-            loadedRun = await mainApi.getStatus();
-            serverError = null;
-        } catch (e) {
-            serverError = e instanceof Error ? e.message : "Failed to connect to server";
-        }
+        loadedRun = await mainApi.getStatus();
+        serverError = null;
     }
 
     async function loadPromptsList() {
-        try {
-            prompts = await attrApi.listPrompts();
-        } catch (e) {
-            console.error("[LocalAttr] loadPromptsList FAILED:", e);
-        }
+        prompts = await attrApi.listPrompts();
     }
 
     async function loadAllTokens() {
-        try {
-            allTokens = await attrApi.getAllTokens();
-        } catch (e) {
-            console.error("[LocalAttr] loadAllTokens FAILED:", e);
-        }
+        allTokens = await attrApi.getAllTokens();
     }
 
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
@@ -195,35 +180,31 @@
 
         // Fetch stored graphs for this prompt (includes composer selection and intervention runs)
         let graphs: StoredGraph[] = [];
-        try {
-            const storedGraphs = await attrApi.getGraphs(
-                promptId,
-                defaultViewSettings.normalizeEdges,
-                defaultViewSettings.ciThreshold,
-            );
-            graphs = await Promise.all(
-                storedGraphs.map(async (data, idx) => {
-                    const isOptimized = !!data.optimization;
-                    const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
+        const storedGraphs = await attrApi.getGraphs(
+            promptId,
+            defaultViewSettings.normalizeEdges,
+            defaultViewSettings.ciThreshold,
+        );
+        graphs = await Promise.all(
+            storedGraphs.map(async (data, idx) => {
+                const isOptimized = !!data.optimization;
+                const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
 
-                    // Load intervention runs for this graph
-                    const runs = await mainApi.getInterventionRuns(data.id);
+                // Load intervention runs for this graph
+                const runs = await mainApi.getInterventionRuns(data.id);
 
-                    return {
-                        id: `graph-${idx}-${Date.now()}`,
-                        dbId: data.id,
-                        label,
-                        data,
-                        viewSettings: { ...defaultViewSettings },
-                        composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
-                        interventionRuns: runs,
-                        activeRunId: null,
-                    };
-                }),
-            );
-        } catch (e) {
-            console.warn("Failed to fetch graphs:", e);
-        }
+                return {
+                    id: `graph-${idx}-${Date.now()}`,
+                    dbId: data.id,
+                    label,
+                    data,
+                    viewSettings: { ...defaultViewSettings },
+                    composerSelection: filterInterventableNodes(Object.keys(data.nodeCiVals)),
+                    interventionRuns: runs,
+                    activeRunId: null,
+                };
+            }),
+        );
 
         const newCard: PromptCard = {
             id: cardId,
@@ -352,8 +333,6 @@
                     ),
                 };
             });
-        } catch (e) {
-            console.error("Intervention failed:", e);
         } finally {
             runningIntervention = false;
         }
@@ -384,27 +363,23 @@
     async function handleDeleteRun(runId: number) {
         if (!activeCard || !activeGraph) return;
 
-        try {
-            await mainApi.deleteInterventionRun(runId);
+        await mainApi.deleteInterventionRun(runId);
 
-            promptCards = promptCards.map((card) => {
-                if (card.id !== activeCard.id) return card;
-                return {
-                    ...card,
-                    graphs: card.graphs.map((g) => {
-                        if (g.id !== activeGraph.id) return g;
-                        const newRuns = g.interventionRuns.filter((r) => r.id !== runId);
-                        return {
-                            ...g,
-                            interventionRuns: newRuns,
-                            activeRunId: g.activeRunId === runId ? null : g.activeRunId,
-                        };
-                    }),
-                };
-            });
-        } catch (e) {
-            console.error("Failed to delete run:", e);
-        }
+        promptCards = promptCards.map((card) => {
+            if (card.id !== activeCard.id) return card;
+            return {
+                ...card,
+                graphs: card.graphs.map((g) => {
+                    if (g.id !== activeGraph.id) return g;
+                    const newRuns = g.interventionRuns.filter((r) => r.id !== runId);
+                    return {
+                        ...g,
+                        interventionRuns: newRuns,
+                        activeRunId: g.activeRunId === runId ? null : g.activeRunId,
+                    };
+                }),
+            };
+        });
     }
 
     async function computeGraphForCard() {
@@ -431,92 +406,85 @@
             };
         }
 
-        try {
-            let data: GraphData;
+        let data: GraphData;
 
-            if (isOptimized) {
-                const useCE = optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null;
-                const useKL = optConfig.klLossCoeff > 0;
+        if (isOptimized) {
+            const useCE = optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null;
+            const useKL = optConfig.klLossCoeff > 0;
 
-                // Validate: at least one loss type must be active
-                if (!useCE && !useKL) {
-                    throw new Error("At least one loss type must be active (set coeff > 0)");
-                }
-                // Validate: CE coeff > 0 requires label token
-                if (optConfig.ceLossCoeff > 0 && !optConfig.labelTokenId) {
-                    throw new Error("Label token required when ce_coeff > 0");
-                }
-
-                // Build params with optional CE/KL settings
-                const params: attrApi.ComputeGraphOptimizedParams = {
-                    promptId: activeCard.promptId,
-                    normalize: defaultViewSettings.normalizeEdges,
-                    impMinCoeff: optConfig.impMinCoeff,
-                    steps: optConfig.steps,
-                    pnorm: optConfig.pnorm,
-                    outputProbThreshold: 0.01,
-                    ciThreshold: defaultViewSettings.ciThreshold,
-                };
-                if (useCE) {
-                    params.labelToken = optConfig.labelTokenId!;
-                    params.ceLossCoeff = optConfig.ceLossCoeff;
-                }
-                if (useKL) {
-                    params.klLossCoeff = optConfig.klLossCoeff;
-                }
-
-                data = await attrApi.computeGraphOptimizedStreaming(params, (progress) => {
-                    if (!loadingState) return;
-                    if (progress.stage === "graph") {
-                        loadingState.currentStage = 1;
-                        loadingState.stages[1].progress = progress.current / progress.total;
-                    } else {
-                        loadingState.stages[0].progress = progress.current / progress.total;
-                    }
-                });
-            } else {
-                data = await attrApi.computeGraphStreaming(
-                    {
-                        promptId: activeCard.promptId,
-                        normalize: defaultViewSettings.normalizeEdges,
-                        ciThreshold: defaultViewSettings.ciThreshold,
-                    },
-                    (progress) => {
-                        if (!loadingState) return;
-                        loadingState.stages[0].progress = progress.current / progress.total;
-                    },
-                );
+            // Validate: at least one loss type must be active
+            if (!useCE && !useKL) {
+                throw new Error("At least one loss type must be active (set coeff > 0)");
+            }
+            // Validate: CE coeff > 0 requires label token
+            if (optConfig.ceLossCoeff > 0 && !optConfig.labelTokenId) {
+                throw new Error("Label token required when ce_coeff > 0");
             }
 
-            const graphId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-            const label = isOptimized ? `Optimized (${optConfig.steps} steps)` : "Standard";
+            // Build params with optional CE/KL settings
+            const params: attrApi.ComputeGraphOptimizedParams = {
+                promptId: activeCard.promptId,
+                normalize: defaultViewSettings.normalizeEdges,
+                impMinCoeff: optConfig.impMinCoeff,
+                steps: optConfig.steps,
+                pnorm: optConfig.pnorm,
+                outputProbThreshold: 0.01,
+                ciThreshold: defaultViewSettings.ciThreshold,
+            };
+            if (useCE) {
+                params.labelToken = optConfig.labelTokenId!;
+                params.ceLossCoeff = optConfig.ceLossCoeff;
+            }
+            if (useKL) {
+                params.klLossCoeff = optConfig.klLossCoeff;
+            }
 
-            promptCards = promptCards.map((card) => {
-                if (card.id !== activeCard.id) return card;
-                return {
-                    ...card,
-                    graphs: [
-                        ...card.graphs,
-                        {
-                            id: graphId,
-                            dbId: data.id,
-                            label,
-                            data,
-                            viewSettings: { ...defaultViewSettings },
-                            composerSelection: filterInterventableNodes(Object.keys(data.nodeImportance)),
-                            interventionRuns: [],
-                            activeRunId: null,
-                        },
-                    ],
-                    activeGraphId: graphId,
-                };
+            data = await attrApi.computeGraphOptimizedStreaming(params, (progress) => {
+                if (!loadingState) return;
+                if (progress.stage === "graph") {
+                    loadingState.currentStage = 1;
+                    loadingState.stages[1].progress = progress.current / progress.total;
+                } else {
+                    loadingState.stages[0].progress = progress.current / progress.total;
+                }
             });
-        } catch (e) {
-            computeError = e instanceof Error ? e.message : "Failed to compute graph";
-        } finally {
-            loadingCardId = null;
-            loadingState = null;
+        } else {
+            const params: attrApi.ComputeGraphParams = {
+                promptId: activeCard.promptId,
+                normalize: defaultViewSettings.normalizeEdges,
+                ciThreshold: defaultViewSettings.ciThreshold,
+            };
+            data = await attrApi.computeGraphStreaming(params, (progress) => {
+                if (!loadingState) return;
+                loadingState.stages[0].progress = progress.current / progress.total;
+            });
         }
+
+        const graphId = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const label = isOptimized ? `Optimized (${optConfig.steps} steps)` : "Standard";
+
+        promptCards = promptCards.map((card) => {
+            if (card.id !== activeCard.id) return card;
+            return {
+                ...card,
+                graphs: [
+                    ...card.graphs,
+                    {
+                        id: graphId,
+                        dbId: data.id,
+                        label,
+                        data,
+                        viewSettings: { ...defaultViewSettings },
+                        composerSelection: filterInterventableNodes(Object.keys(data.nodeCiVals)),
+                        interventionRuns: [],
+                        activeRunId: null,
+                    },
+                ],
+                activeGraphId: graphId,
+            };
+        });
+        loadingCardId = null;
+        loadingState = null;
     }
 
     // Refetch graph data when normalize or ciThreshold changes (these affect server-side filtering)
@@ -542,13 +510,11 @@
                         return {
                             ...g,
                             data: matchingData,
-                            composerSelection: filterInterventableNodes(Object.keys(matchingData.nodeImportance)),
+                            composerSelection: filterInterventableNodes(Object.keys(matchingData.nodeCiVals)),
                         };
                     }),
                 };
             });
-        } catch (e) {
-            console.warn("Failed to refetch graph:", e);
         } finally {
             refetchingGraphId = null;
         }
@@ -586,10 +552,6 @@
         updateActiveGraphViewSettings({ topK: value });
     }
 
-    function handleLayoutChange(value: "importance" | "shuffled" | "jittered") {
-        updateActiveGraphViewSettings({ nodeLayout: value });
-    }
-
     function handleComponentGapChange(value: number) {
         updateActiveGraphViewSettings({ componentGap: value });
     }
@@ -611,8 +573,6 @@
                 generateCount = count;
             });
             await loadPromptsList();
-        } catch (e) {
-            console.error("[LocalAttr] generatePrompts FAILED:", e);
         } finally {
             generatingGraphs = false;
         }
@@ -726,12 +686,12 @@
                                     >
                                 </div>
 
-                                {#if computeError}
+                                <!-- {#if computeError}
                                     <div class="error-banner">
                                         {computeError}
                                         <button onclick={() => computeGraphForCard()}>Retry</button>
                                     </div>
-                                {/if}
+                                {/if} -->
 
                                 <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
                                     {#if loadingCardId === activeCard.id && loadingState}
@@ -740,7 +700,6 @@
 
                                     <ViewControls
                                         topK={activeGraph.viewSettings.topK}
-                                        nodeLayout={activeGraph.viewSettings.nodeLayout}
                                         componentGap={activeGraph.viewSettings.componentGap}
                                         layerGap={activeGraph.viewSettings.layerGap}
                                         {filteredEdgeCount}
@@ -748,7 +707,6 @@
                                         ciThreshold={activeGraph.viewSettings.ciThreshold}
                                         ciThresholdLoading={refetchingGraphId === activeGraph.id}
                                         onTopKChange={handleTopKChange}
-                                        onLayoutChange={handleLayoutChange}
                                         onComponentGapChange={handleComponentGapChange}
                                         onLayerGapChange={handleLayerGapChange}
                                         onNormalizeChange={handleNormalizeChange}
@@ -758,7 +716,6 @@
                                         <LocalAttributionsGraph
                                             data={activeGraph.data}
                                             topK={activeGraph.viewSettings.topK}
-                                            nodeLayout={activeGraph.viewSettings.nodeLayout}
                                             componentGap={activeGraph.viewSettings.componentGap}
                                             layerGap={activeGraph.viewSettings.layerGap}
                                             {activationContextsSummary}
@@ -770,16 +727,16 @@
                                             onEdgeCountChange={(count) => (filteredEdgeCount = count)}
                                         />
                                     {/key}
-                                    <StagedNodesPanel
-                                        stagedNodes={pinnedNodes}
-                                        {componentDetailsCache}
-                                        {componentDetailsLoading}
-                                        {activationContextsSummary}
-                                        outputProbs={activeGraph.data.outputProbs}
-                                        tokens={activeCard.tokens}
-                                        onStagedNodesChange={handlePinnedNodesChange}
-                                    />
                                 </div>
+                                <StagedNodesPanel
+                                    stagedNodes={pinnedNodes}
+                                    {componentDetailsCache}
+                                    {componentDetailsLoading}
+                                    {activationContextsSummary}
+                                    outputProbs={activeGraph.data.outputProbs}
+                                    tokens={activeCard.tokens}
+                                    onStagedNodesChange={handlePinnedNodesChange}
+                                />
                             {:else}
                                 <!-- Interventions view -->
                                 <InterventionsView

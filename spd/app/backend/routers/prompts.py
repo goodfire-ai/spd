@@ -7,14 +7,43 @@ from typing import Annotated
 import torch
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from spd.app.backend.compute import compute_ci_only, extract_active_from_ci
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
-from spd.app.backend.schemas import PromptPreview, PromptSearchQuery, PromptSearchResponse
 from spd.app.backend.utils import log_errors
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
+
+# =============================================================================
+# Schemas
+# =============================================================================
+
+
+class PromptPreview(BaseModel):
+    """Preview of a stored prompt for listing."""
+
+    id: int
+    token_ids: list[int]
+    tokens: list[str]
+    preview: str
+
+
+class PromptSearchQuery(BaseModel):
+    """Query parameters for prompt search."""
+
+    components: list[str]
+    mode: str
+
+
+class PromptSearchResponse(BaseModel):
+    """Response from prompt search endpoint."""
+
+    query: PromptSearchQuery
+    count: int
+    results: list[PromptPreview]
+
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 

@@ -1,229 +1,205 @@
 <script lang="ts">
-    import type { ComponentDetail, ComponentSummary } from "../../lib/localAttributionsTypes";
+    import type {
+        ComponentDetail,
+        ComponentSummary,
+        ComponentCorrelations,
+        TokenStats,
+    } from "../../lib/localAttributionsTypes";
+    import { getComponentCorrelations, getComponentTokenStats } from "../../lib/localAttributionsApi";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
-    import TokenHighlights from "../TokenHighlights.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
+    import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
+    import TokenStatsSection from "../ui/TokenStatsSection.svelte";
+    import SectionHeader from "../ui/SectionHeader.svelte";
+    import StatusText from "../ui/StatusText.svelte";
 
     type Props = {
         layer: string;
         cIdx: number;
         seqIdx: number;
         summary: ComponentSummary | null;
-        compact: boolean;
+        onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     } & ({ detail: ComponentDetail; isLoading?: never } | { detail: null; isLoading: boolean });
 
-    let { layer, cIdx, seqIdx, summary, compact, detail, isLoading }: Props = $props();
+    let { layer, cIdx, seqIdx, summary, detail, isLoading, onPinComponent }: Props = $props();
 
-    // Expandable state for compact mode
-    let expanded = $state(false);
+    // Handle clicking a correlated component - parse key and pin it at same seqIdx
+    function handleCorrelationClick(componentKey: string) {
+        if (!onPinComponent) return;
+        // componentKey format: "layer:cIdx" e.g. "h.0.attn.q_proj:5"
+        const [clickedLayer, clickedCIdx] = componentKey.split(":");
+        onPinComponent(clickedLayer, parseInt(clickedCIdx), seqIdx);
+    }
 
-    const COMPACT_MAX_EXAMPLES = 5;
+    // Correlations state
+    let correlations = $state<ComponentCorrelations | null>(null);
+    let correlationsLoading = $state(false);
 
-    // Show full paged table when not compact, or when compact but expanded
-    let showFullTable = $derived(!compact || expanded);
+    // Token stats state (from batch job)
+    let tokenStats = $state<TokenStats | null>(null);
+    let tokenStatsLoading = $state(false);
 
-    // Token precisions sorted by precision descending (backend sorts by recall)
-    const tokenPrecisionsSorted = $derived.by(() => {
-        if (!detail || detail.pr_tokens.length === 0) return [];
-        const indices = detail.pr_tokens.map((_, i) => i);
-        indices.sort((a, b) => detail.pr_precisions[b] - detail.pr_precisions[a]);
-        return indices.map((i) => ({ token: detail.pr_tokens[i], precision: detail.pr_precisions[i] }));
+    // Fetch correlations when component changes
+    $effect(() => {
+        correlations = null;
+        correlationsLoading = true;
+        getComponentCorrelations(layer, cIdx, 1000)
+            .then((data) => {
+                correlations = data;
+            })
+            .finally(() => {
+                correlationsLoading = false;
+            });
     });
+
+    // Fetch token stats when component changes
+    $effect(() => {
+        tokenStats = null;
+        tokenStatsLoading = true;
+        getComponentTokenStats(layer, cIdx, 1000)
+            .then((data) => {
+                tokenStats = data;
+            })
+            .finally(() => {
+                tokenStatsLoading = false;
+            });
+    });
+
+    const N_TOKENS_TO_DISPLAY_INPUT = 50;
+    const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
+
+    // === Input token stats (what tokens activate this component) ===
+    const inputTopPmi = $derived.by(() => {
+        if (!tokenStats) return [];
+        return tokenStats.input.top_pmi.slice(0, N_TOKENS_TO_DISPLAY_INPUT).map(([token, value]) => ({ token, value }));
+    });
+
+    // === Output token stats (what tokens this component predicts) ===
+    const outputTopPmi = $derived.by(() => {
+        if (!tokenStats) return [];
+        return tokenStats.output.top_pmi
+            .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+            .map(([token, value]) => ({ token, value }));
+    });
+
+    const outputBottomPmi = $derived.by(() => {
+        if (!tokenStats) return [];
+        return tokenStats.output.bottom_pmi
+            .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+            .map(([token, value]) => ({ token, value }));
+    });
+
+    // Activating tokens from token stats (for highlighting)
+    const activatingTokens = $derived.by(() => {
+        if (!tokenStats) return [];
+        return tokenStats.input.top_recall.map(([token]) => token);
+    });
+
+    // Format mean CI for display
+    function formatMeanCi(ci: number): string {
+        return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
+    }
 </script>
 
-<div class="component-node-card" class:compact>
-    <p class="stats">
-        <strong>Position:</strong>
-        {seqIdx}
+<div class="component-node-card">
+    <SectionHeader title="Position {seqIdx}" level="h4">
         {#if summary}
-            {#if seqIdx !== undefined}|{/if}
-            <strong>Mean CI:</strong>
-            {summary.mean_ci.toFixed(4)}
+            <span class="mean-ci">Mean CI: {formatMeanCi(summary.mean_ci)}</span>
         {/if}
-    </p>
+    </SectionHeader>
+
+    <div class="token-stats-row">
+        <TokenStatsSection
+            sectionTitle="Input Tokens"
+            sectionSubtitle="(what activates this component)"
+            loading={tokenStatsLoading}
+            lists={[
+                {
+                    title: "Top PMI",
+                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                    items: inputTopPmi,
+                },
+            ]}
+        />
+
+        <TokenStatsSection
+            sectionTitle="Output Tokens"
+            sectionSubtitle="(what this component predicts)"
+            loading={tokenStatsLoading}
+            lists={[
+                {
+                    title: "Top PMI",
+                    mathNotation: "positive association with predictions",
+                    items: outputTopPmi,
+                },
+                {
+                    title: "Bottom PMI",
+                    mathNotation: "negative association with predictions",
+                    items: outputBottomPmi,
+                },
+            ]}
+        />
+    </div>
 
     <ComponentProbeInput {layer} componentIdx={cIdx} />
 
+    <!-- Component correlations -->
+    <div class="correlations-section">
+        <SectionHeader title="Correlated Components" />
+        {#if correlations}
+            <ComponentCorrelationMetrics {correlations} pageSize={16} onComponentClick={handleCorrelationClick} />
+        {:else if correlationsLoading}
+            <StatusText>Loading...</StatusText>
+        {:else}
+            <StatusText>No correlations available.</StatusText>
+        {/if}
+    </div>
+
     {#if detail}
         {#if detail.example_tokens.length > 0}
-            {#if showFullTable}
-                <!-- Full mode: paged table with filtering -->
-                <div class="examples-header">
-                    <h4>Activating Examples ({detail.example_tokens.length})</h4>
-                    {#if compact}
-                        <button class="collapse-btn" onclick={() => (expanded = false)}>Collapse</button>
-                    {/if}
-                </div>
-                <ActivationContextsPagedTable
-                    exampleTokens={detail.example_tokens}
-                    exampleCi={detail.example_ci}
-                    exampleActivePos={detail.example_active_pos}
-                    activatingTokens={detail.pr_tokens}
-                />
-            {:else}
-                <!-- Compact collapsed mode: simple inline examples -->
-                <h4>Top Activating Examples</h4>
-                <div class="examples-scroll-container">
-                    {#each detail.example_tokens.slice(0, COMPACT_MAX_EXAMPLES) as tokens, i (i)}
-                        <div class="example-row">
-                            <TokenHighlights
-                                tokenStrings={tokens}
-                                tokenCi={detail.example_ci[i]}
-                                activePosition={detail.example_active_pos[i]}
-                            />
-                        </div>
-                    {/each}
-                </div>
-                {#if detail.example_tokens.length > COMPACT_MAX_EXAMPLES}
-                    <button class="expand-btn" onclick={() => (expanded = true)}>
-                        Show all {detail.example_tokens.length} examples...
-                    </button>
-                {/if}
-            {/if}
+            <!-- Full mode: paged table with filtering -->
+            <SectionHeader title="Activating Examples ({detail.example_tokens.length})" />
+            <ActivationContextsPagedTable
+                exampleTokens={detail.example_tokens}
+                exampleCi={detail.example_ci}
+                exampleActivePos={detail.example_active_pos}
+                {activatingTokens}
+            />
         {/if}
-
-        <div class="tables-row">
-            {#if tokenPrecisionsSorted.length > 0}
-                <div>
-                    <h4>
-                        Token Precision
-                        <span class="math-notation">P(firing | token)</span>
-                    </h4>
-                    <table class="data-table">
-                        <tbody>
-                            {#each tokenPrecisionsSorted.slice(0, 10) as { token, precision } (token)}
-                                <tr>
-                                    <td><code>{token}</code></td>
-                                    <td>{precision.toFixed(3)}</td>
-                                </tr>
-                            {/each}
-                        </tbody>
-                    </table>
-                </div>
-            {/if}
-        </div>
     {:else if isLoading}
-        <p class="loading-text">Loading details...</p>
+        <StatusText>Loading details...</StatusText>
     {/if}
 </div>
 
 <style>
     .component-node-card {
-        font-size: var(--text-base);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
         font-family: var(--font-sans);
         color: var(--text-primary);
     }
 
-    .component-node-card.compact {
-        font-size: var(--text-sm);
-    }
-
-    .stats {
-        margin: var(--space-1) 0;
-        font-size: var(--text-sm);
-        color: var(--text-secondary);
-        font-family: var(--font-mono);
-    }
-
-    .stats strong {
+    .mean-ci {
+        font-weight: 400;
         color: var(--text-muted);
-        font-weight: 500;
-        font-size: var(--text-xs);
-        letter-spacing: 0.05em;
-    }
-
-    h4 {
-        margin: var(--space-3) 0 var(--space-1) 0;
-        font-size: var(--text-sm);
-        color: var(--text-secondary);
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        font-family: var(--font-sans);
-    }
-
-    .compact h4 {
-        margin: var(--space-2) 0 var(--space-1) 0;
-        font-size: var(--text-xs);
-    }
-
-    .examples-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--space-2);
-    }
-
-    .examples-header h4 {
-        margin: 0;
-    }
-
-    .examples-scroll-container {
-        overflow-x: auto;
-        overflow-y: clip;
-        scrollbar-width: none;
-    }
-
-    .examples-scroll-container::-webkit-scrollbar {
-        display: none;
-    }
-
-    .example-row {
-        margin: var(--space-2) 0;
         font-family: var(--font-mono);
-        font-size: var(--text-sm);
-        white-space: nowrap;
+        margin-left: var(--space-2);
     }
 
-    .expand-btn,
-    .collapse-btn {
-        font-size: var(--text-sm);
-        color: var(--accent-primary);
-        background: none;
-        border: none;
-        padding: var(--space-1) 0;
-    }
-
-    .expand-btn:hover,
-    .collapse-btn:hover {
-        color: var(--accent-primary-dim);
-    }
-
-    .tables-row {
+    .token-stats-row {
         display: flex;
         gap: var(--space-4);
-        flex-wrap: wrap;
     }
 
-    .data-table {
-        font-size: var(--text-sm);
-        margin-top: var(--space-1);
-        font-family: var(--font-mono);
-        border-collapse: collapse;
+    .token-stats-row > :global(*) {
+        flex: 1;
+        min-width: 0;
     }
 
-    .data-table td {
-        padding: var(--space-1) var(--space-2);
-        border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .data-table td:first-child {
-        color: var(--text-primary);
-    }
-
-    .data-table td:last-child {
-        color: var(--text-secondary);
-        text-align: right;
-    }
-
-    .data-table code {
-        color: var(--text-primary);
-        font-family: var(--font-mono);
-    }
-
-    .loading-text {
-        font-size: var(--text-sm);
-        color: var(--text-muted);
-        font-family: var(--font-mono);
-        letter-spacing: 0.05em;
+    .correlations-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
     }
 </style>

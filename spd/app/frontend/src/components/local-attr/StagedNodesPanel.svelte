@@ -1,10 +1,10 @@
 <script lang="ts">
     import type {
-        PinnedNode,
-        ComponentDetail,
         ActivationContextsSummary,
+        ComponentDetail,
         ComponentSummary,
         OutputProbEntry,
+        PinnedNode,
     } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
@@ -36,6 +36,12 @@
 
     function unstageNode(node: PinnedNode) {
         onStagedNodesChange(stagedNodes.filter((n) => n !== node));
+    }
+
+    function pinComponent(layer: string, cIdx: number, seqIdx: number) {
+        const alreadyPinned = stagedNodes.some((n) => n.layer === layer && n.cIdx === cIdx && n.seqIdx === seqIdx);
+        if (alreadyPinned) return;
+        onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
     }
 
     function getTokenAtPosition(seqIdx: number): string {
@@ -91,7 +97,7 @@
                                 seqIdx={node.seqIdx}
                                 {summary}
                                 {detail}
-                                compact={true}
+                                onPinComponent={pinComponent}
                             />
                         {:else}
                             <ComponentNodeCard
@@ -101,7 +107,7 @@
                                 {summary}
                                 detail={null}
                                 {isLoading}
-                                compact={true}
+                                onPinComponent={pinComponent}
                             />
                         {/if}
                     {/if}
@@ -115,7 +121,6 @@
     .staged-container {
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
-        border-top: none;
         padding: var(--space-3);
     }
 
@@ -151,52 +156,11 @@
 
     .staged-item {
         flex-shrink: 0;
-        min-width: 300px;
-        max-width: 400px;
+        width: fit-content;
+        max-width: 800px;
         border: 1px solid var(--border-default);
         padding: var(--space-3);
         background: var(--bg-elevated);
-    }
-
-    .staged-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding-bottom: var(--space-2);
-        border-bottom: 1px solid var(--border-subtle);
-        margin-bottom: var(--space-2);
-    }
-
-    .node-info {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-1);
-    }
-
-    .staged-header strong {
-        font-family: var(--font-mono);
-        font-size: var(--text-base);
-        color: var(--accent-primary);
-        font-weight: 600;
-    }
-
-    .token-preview {
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-        color: var(--text-muted);
-    }
-
-    .unstage-btn {
-        background: var(--bg-elevated);
-        color: var(--text-secondary);
-        border: 1px solid var(--border-default);
-        padding: var(--space-1) var(--space-2);
-    }
-
-    .unstage-btn:hover {
-        background: var(--bg-inset);
-        color: var(--text-primary);
-        border-color: var(--border-strong);
     }
 
     .wte-info {
