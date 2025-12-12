@@ -402,6 +402,23 @@ class Config(BaseConfig):
         )
     )
 
+    # --- Resume Configuration ---
+    auto_resume: bool = Field(
+        default=False,
+        description="Automatically resume from the latest checkpoint in out_dir if available. "
+        "Searches for model_*.pth files and resumes from the one with the highest step number.",
+    )
+    resume_from_checkpoint: Path | None = Field(
+        default=None,
+        description="Explicit path to checkpoint file to resume from. If specified, overrides "
+        "auto_resume. Checkpoint must be compatible with current config (same C, architecture, etc.).",
+    )
+    wandb_run_id: str | None = Field(
+        default=None,
+        description="WandB run ID for resuming an existing run. When resuming with the same run ID, "
+        "WandB will continue logging to the same run instead of creating a new one.",
+    )
+
     # --- Component Tracking ---
     ci_alive_threshold: Probability = Field(
         default=0.0,
