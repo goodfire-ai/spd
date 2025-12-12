@@ -12,7 +12,7 @@
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
-    import { lerp, calcTooltipPos } from "./local-attr/graphUtils";
+    import { lerp, calcTooltipPos, sortComponentsByImportance, computeComponentOffsets } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
 
     // Constants
@@ -205,7 +205,6 @@
         for (const layer of allLayers) {
             const info = parseLayer(layer);
             const isQkv = QKV_SUBTYPES.includes(info.subtype);
-            const isOutput = layer === "output";
 
             for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
                 const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -226,7 +225,8 @@
                     }
                 }
 
-                const offsets = getComponentOffsets(nodes, layer, seqIdx, isOutput);
+                const sorted = sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs);
+                const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
                 for (const cIdx of nodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
@@ -244,42 +244,6 @@
 
         return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal };
     });
-
-    // Get component offsets (sorted by importance)
-    function getComponentOffsets(
-        components: number[],
-        layer: string,
-        seqIdx: number,
-        isOutput: boolean,
-    ): Record<number, number> {
-        const n = components.length;
-        const offsets: Record<number, number> = {};
-
-        const sorted = [...components].sort((a, b) => {
-            if (isOutput) {
-                // Output nodes: sort by probability (highest first)
-                const keyA = `${seqIdx}:${a}`;
-                const keyB = `${seqIdx}:${b}`;
-                const entryA = data.outputProbs[keyA];
-                const entryB = data.outputProbs[keyB];
-                if (!entryA) throw new Error(`Missing outputProbs entry for ${keyA}`);
-                if (!entryB) throw new Error(`Missing outputProbs entry for ${keyB}`);
-                return entryB.prob - entryA.prob;
-            }
-            // Component nodes: sort by CI (highest first)
-            const keyA = `${layer}:${seqIdx}:${a}`;
-            const keyB = `${layer}:${seqIdx}:${b}`;
-            const ciA = data.nodeCiVals[keyA];
-            const ciB = data.nodeCiVals[keyB];
-            if (ciA === undefined) throw new Error(`Missing nodeCiVals for ${keyA}`);
-            if (ciB === undefined) throw new Error(`Missing nodeCiVals for ${keyB}`);
-            return ciB - ciA;
-        });
-        for (let i = 0; i < n; i++) {
-            offsets[sorted[i]] = i * (COMPONENT_SIZE + componentGap);
-        }
-        return offsets;
-    }
 
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 

@@ -28,3 +28,43 @@ export function calcTooltipPos(mouseX: number, mouseY: number): { x: number; y: 
     }
     return { x: Math.max(0, left), y: Math.max(0, top) };
 }
+
+/**
+ * Sort component indices by importance (CI for internal nodes, probability for output nodes).
+ * Returns a new sorted array (highest importance first).
+ */
+export function sortComponentsByImportance(
+    components: number[],
+    layer: string,
+    seqIdx: number,
+    nodeCiVals: Record<string, number>,
+    outputProbs: Record<string, { prob: number }>,
+): number[] {
+    const isOutput = layer === "output";
+    return [...components].sort((a, b) => {
+        if (isOutput) {
+            const keyA = `${seqIdx}:${a}`;
+            const keyB = `${seqIdx}:${b}`;
+            return (outputProbs[keyB]?.prob ?? 0) - (outputProbs[keyA]?.prob ?? 0);
+        }
+        const keyA = `${layer}:${seqIdx}:${a}`;
+        const keyB = `${layer}:${seqIdx}:${b}`;
+        return (nodeCiVals[keyB] ?? 0) - (nodeCiVals[keyA] ?? 0);
+    });
+}
+
+/**
+ * Compute X offsets for components given their display order.
+ * Returns a map from component index to its X offset in pixels.
+ */
+export function computeComponentOffsets(
+    sortedComponents: number[],
+    componentSize: number,
+    componentGap: number,
+): Record<number, number> {
+    const offsets: Record<number, number> = {};
+    for (let i = 0; i < sortedComponents.length; i++) {
+        offsets[sortedComponents[i]] = i * (componentSize + componentGap);
+    }
+    return offsets;
+}

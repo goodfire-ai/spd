@@ -9,7 +9,7 @@
         type NodePosition,
     } from "../../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
-    import { lerp, calcTooltipPos } from "./graphUtils";
+    import { lerp, calcTooltipPos, sortComponentsByImportance, computeComponentOffsets } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
 
     // Layout constants
@@ -216,13 +216,14 @@
                     }
                 }
 
-                layerNodes.sort((a, b) => a - b);
-                layerNodes.forEach((cIdx, i) => {
+                const sorted = sortComponentsByImportance(layerNodes, layer, seqIdx, graph.data.nodeCiVals, graph.data.outputProbs);
+                const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
+                for (const cIdx of layerNodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
-                        x: baseX + i * (COMPONENT_SIZE + componentGap) + COMPONENT_SIZE / 2,
+                        x: baseX + offsets[cIdx] + COMPONENT_SIZE / 2,
                         y: baseY + COMPONENT_SIZE / 2,
                     };
-                });
+                }
             }
         }
 
