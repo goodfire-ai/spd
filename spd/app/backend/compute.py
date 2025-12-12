@@ -605,8 +605,8 @@ class InterventionResult:
 
     input_tokens: list[str]
     predictions_per_position: list[
-        list[tuple[str, int, float, float]]
-    ]  # [(token, id, prob, logit)]
+        list[tuple[str, int, float, float, float]]
+    ]  # [(token, id, spd_prob, logit, target_prob)]
 
 
 def compute_intervention_forward(
@@ -647,26 +647,34 @@ def compute_intervention_forward(
     mask_infos = make_mask_infos(component_masks, routing_masks="all")
 
     with torch.no_grad():
-        logits: Float[Tensor, "1 seq vocab"] = model(tokens, mask_infos=mask_infos)
-        probs = torch.softmax(logits, dim=-1)
+        # SPD model forward pass (with component masks)
+        spd_logits: Float[Tensor, "1 seq vocab"] = model(tokens, mask_infos=mask_infos)
+        spd_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(spd_logits, dim=-1)
 
-    # Get top-k predictions per position
-    predictions_per_position: list[list[tuple[str, int, float, float]]] = []
+        # Target model forward pass (no masks)
+        target_logits: Float[Tensor, "1 seq vocab"] = model(tokens)
+        target_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(target_logits, dim=-1)
+
+    # Get top-k predictions per position (based on SPD model's top-k)
+    predictions_per_position: list[list[tuple[str, int, float, float, float]]] = []
     for pos in range(seq_len):
-        pos_probs = probs[0, pos]
-        pos_logits = logits[0, pos]
-        top_probs, top_ids = torch.topk(pos_probs, top_k)
+        pos_spd_probs = spd_probs[0, pos]
+        pos_spd_logits = spd_logits[0, pos]
+        pos_target_probs = target_probs[0, pos]
+        top_probs, top_ids = torch.topk(pos_spd_probs, top_k)
 
-        pos_predictions: list[tuple[str, int, float, float]] = []
-        for prob, token_id in zip(top_probs, top_ids, strict=True):
+        pos_predictions: list[tuple[str, int, float, float, float]] = []
+        for spd_prob, token_id in zip(top_probs, top_ids, strict=True):
             tid = int(token_id.item())
             token_str = tokenizer.decode([tid])
+            target_prob = float(pos_target_probs[tid].item())
             pos_predictions.append(
                 (
                     token_str,
                     tid,
-                    float(prob.item()),
-                    float(pos_logits[token_id].item()),
+                    float(spd_prob.item()),
+                    float(pos_spd_logits[tid].item()),
+                    target_prob,
                 )
             )
         predictions_per_position.append(pos_predictions)

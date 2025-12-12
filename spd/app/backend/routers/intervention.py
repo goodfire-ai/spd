@@ -35,7 +35,8 @@ class TokenPrediction(BaseModel):
 
     token: str
     token_id: int
-    prob: float
+    spd_prob: float
+    target_prob: float
     logit: float
 
 
@@ -108,8 +109,14 @@ def _run_intervention_forward(
 
     predictions_per_position = [
         [
-            TokenPrediction(token=token, token_id=token_id, prob=prob, logit=logit)
-            for token, token_id, prob, logit in pos_predictions
+            TokenPrediction(
+                token=token,
+                token_id=token_id,
+                spd_prob=spd_prob,
+                target_prob=target_prob,
+                logit=logit,
+            )
+            for token, token_id, spd_prob, target_prob, logit in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]
@@ -144,8 +151,14 @@ def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> Inte
 
     predictions_per_position = [
         [
-            TokenPrediction(token=token, token_id=token_id, prob=prob, logit=logit)
-            for token, token_id, prob, logit in pos_predictions
+            TokenPrediction(
+                token=token,
+                token_id=token_id,
+                spd_prob=spd_prob,
+                target_prob=target_prob,
+                logit=logit,
+            )
+            for token, token_id, spd_prob, target_prob, logit in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]
