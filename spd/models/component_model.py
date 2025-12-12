@@ -23,6 +23,7 @@ from spd.models.components import (
     MLPCiFn,
     VectorMLPCiFn,
     VectorSharedMLPCiFn,
+    VectorSharedMLPWithPreUnembedCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import ModelPath
@@ -195,6 +196,7 @@ class ComponentModel(LoadableModule):
         component_C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
+        pre_unembed_dim: int | None = None,
     ) -> nn.Module:
         """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
         if isinstance(target_module, nn.Embedding):
@@ -222,6 +224,16 @@ class ComponentModel(LoadableModule):
                 return VectorSharedMLPCiFn(
                     C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
                 )
+            case "shared_mlp_with_pre_unembed":
+                assert pre_unembed_dim is not None, (
+                    "pre_unembed_dim must be provided for shared_mlp_with_pre_unembed"
+                )
+                return VectorSharedMLPWithPreUnembedCiFn(
+                    C=component_C,
+                    input_dim=input_dim,
+                    pre_unembed_dim=pre_unembed_dim,
+                    hidden_dims=ci_fn_hidden_dims,
+                )
 
     @staticmethod
     def _create_ci_fns(
@@ -231,6 +243,31 @@ class ComponentModel(LoadableModule):
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
+        # For shared_mlp_with_pre_unembed, we need to determine the pre_unembed_dim.
+        # For language models, this is the input dim of lm_head (the final projection layer).
+        pre_unembed_dim: int | None = None
+        if ci_fn_type == "shared_mlp_with_pre_unembed":
+            # Try to find lm_head to get pre_unembed_dim
+            lm_head_path = next(
+                (p for p in target_module_paths if p.endswith("lm_head")), None
+            )
+            if lm_head_path is not None:
+                lm_head = target_model.get_submodule(lm_head_path)
+                match lm_head:
+                    case nn.Linear():
+                        pre_unembed_dim = lm_head.weight.shape[1]
+                    case RadfordConv1D():
+                        pre_unembed_dim = lm_head.weight.shape[0]
+                    case _:
+                        raise ValueError(
+                            f"lm_head module type {type(lm_head)} not supported for "
+                            "shared_mlp_with_pre_unembed"
+                        )
+            else:
+                raise ValueError(
+                    "shared_mlp_with_pre_unembed requires an lm_head module in target_module_paths"
+                )
+
         ci_fns: dict[str, nn.Module] = {}
         for target_module_path in target_module_paths:
             target_module = target_model.get_submodule(target_module_path)
@@ -239,6 +276,7 @@ class ComponentModel(LoadableModule):
                 C,
                 ci_fn_type,
                 ci_fn_hidden_dims,
+                pre_unembed_dim=pre_unembed_dim,
             )
         return ci_fns
 
@@ -492,12 +530,15 @@ class ComponentModel(LoadableModule):
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
         sampling: SamplingType,
         detach_inputs: bool = False,
+        pre_unembed_acts: Float[Tensor, "... d_model"] | None = None,
     ) -> CIOutputs:
         """Calculate causal importances.
 
         Args:
             pre_weight_acts: The activations before each layer in the target model.
             detach_inputs: Whether to detach the inputs to the causal importance function.
+            pre_unembed_acts: Optional pre-unembedding activations (hidden states before lm_head).
+                Required when using shared_mlp_with_pre_unembed CI function type.
 
         Returns:
             Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.
@@ -517,13 +558,25 @@ class ComponentModel(LoadableModule):
                     )
                 case VectorMLPCiFn() | VectorSharedMLPCiFn():
                     ci_fn_input = input_activations
+                case VectorSharedMLPWithPreUnembedCiFn():
+                    ci_fn_input = input_activations
                 case _:
                     raise ValueError(f"Unknown ci_fn type: {type(ci_fn)}")
 
             if detach_inputs:
                 ci_fn_input = ci_fn_input.detach()
 
-            ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input))
+            # Call CI function - some types need additional inputs
+            if isinstance(ci_fn, VectorSharedMLPWithPreUnembedCiFn):
+                assert pre_unembed_acts is not None, (
+                    "pre_unembed_acts must be provided for VectorSharedMLPWithPreUnembedCiFn"
+                )
+                detached_pre_unembed = (
+                    pre_unembed_acts.detach() if detach_inputs else pre_unembed_acts
+                )
+                ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input, detached_pre_unembed))
+            else:
+                ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input))
 
             if sampling == "binomial":
                 ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
