@@ -13,6 +13,7 @@
     let { items, onComponentClick, pageSize = 40 }: Props = $props();
 
     let currentPage = $state(0);
+    let hoveredKey = $state<string | null>(null);
     const totalPages = $derived(Math.ceil(items.length / pageSize));
     const paginatedItems = $derived(items.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
 
@@ -22,8 +23,8 @@
         currentPage = 0;
     });
 
-    function getBgColor(score: number): string {
-        const intensity = lerp(0, 0.8, score);
+    function getBorderColor(score: number): string {
+        const intensity = lerp(0.3, 1, score);
         return `rgba(22, 163, 74, ${intensity})`;
     }
 </script>
@@ -38,16 +39,18 @@
     {/if}
     <div class="components">
         {#each paginatedItems as { component_key, score, count_i, count_j, count_ij, n_tokens } (component_key)}
-            {@const bgColor = getBgColor(score)}
-            {@const textColor = score > 0.8 ? "white" : "var(--text-primary)"}
+            {@const borderColor = getBorderColor(score)}
             <button
                 class="component-pill"
                 class:clickable={!!onComponentClick}
-                style="background: {bgColor};"
+                style="border-left: 8px solid {borderColor};"
                 onclick={() => onComponentClick?.(component_key)}
+                onmouseenter={() => (hoveredKey = component_key)}
+                onmouseleave={() => (hoveredKey = null)}
             >
                 <div class="pill-content">
-                    <span class="component-text" style="color: {textColor};">{component_key} {score.toFixed(2)}</span>
+                    <span class="component-text">{component_key}</span>
+                    <span class="component-text">({score.toFixed(2)})</span>
                 </div>
                 {#if displaySettings.showSetOverlapVis}
                     <SetOverlapVis
@@ -55,6 +58,7 @@
                         countB={count_j}
                         countIntersection={count_ij}
                         totalCount={n_tokens}
+                        relativeTo={hoveredKey === component_key ? "union" : "population"}
                     />
                 {/if}
             </button>
@@ -113,11 +117,12 @@
         flex-direction: column;
         gap: 2px;
         padding: 4px 6px;
-        border-radius: 3px;
         white-space: nowrap;
         cursor: default;
         position: relative;
-        border: 1px solid var(--border-default);
+        border: none;
+        background: var(--bg-surface);
+        color: var(--text-primary);
         font-family: inherit;
         font-size: inherit;
         min-width: 80px;
@@ -126,6 +131,7 @@
     .pill-content {
         display: flex;
         align-items: center;
+        justify-content: space-between;
         gap: var(--space-1);
     }
 

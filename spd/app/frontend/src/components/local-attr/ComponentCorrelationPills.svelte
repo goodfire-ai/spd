@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
+    import { colors } from "../../lib/colors";
     import ComponentPillList from "../ui/ComponentPillList.svelte";
 
     type Props = {
@@ -15,7 +16,11 @@
 </script>
 
 {#if items.length > 0}
-    <div class="correlation-column">
+    <div
+        class="correlation-column"
+        style="--color-this: {colors.setOverlap.self}; --color-that: {colors.setOverlap.other}; --color-both: {colors
+            .setOverlap.both};"
+    >
         <h5>
             {title}
             {#if mathNotation}
@@ -48,16 +53,16 @@
         margin-left: var(--space-1);
     }
 
-    /* Colors for math notation - match SetOverlapVis: blue=A, red=B, purple=intersection */
+    /* Colors for math notation - match SetOverlapVis */
     .math-notation :global(.color-this) {
-        color: rgb(0, 0, 255);
+        color: var(--color-this);
     }
 
     .math-notation :global(.color-that) {
-        color: rgb(255, 0, 0);
+        color: var(--color-that);
     }
 
     .math-notation :global(.color-both) {
-        color: rgb(176, 0, 176);
+        color: var(--color-both);
     }
 </style>

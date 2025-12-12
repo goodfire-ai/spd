@@ -724,12 +724,6 @@
         display: block;
     }
 
-    /* :global(.edge) {
-        transition:
-            opacity 0.1s,
-            stroke-width 0.1s;
-    } */
-
     :global(.edge.highlighted) {
         opacity: 1 !important;
         stroke-width: 3 !important;
@@ -746,13 +740,6 @@
     .node-group {
         cursor: pointer;
     }
-
-    /* .node {
-        transition:
-            stroke-width 0.1s,
-            filter 0.1s;
-        pointer-events: none; Let the group handle events
-    } */
 
     .node.highlighted {
         stroke: var(--accent-primary) !important;

@@ -21,10 +21,17 @@ export const colors = {
     tokenHighlightOpacity: 0.4,
 
     // Node default
-    nodeDefault: "#888888",
+    nodeDefault: "#4374dd",
 
     // Accent (for active states) - blue
     accent: "#2563eb",
+
+    // Set overlap visualization (A/B/intersection)
+    setOverlap: {
+        self: "rgb(20, 184, 166)", // teal - A-only
+        both: "rgb(100, 116, 139)", // slate - intersection
+        other: "rgb(249, 115, 22)", // orange - B-only
+    },
 } as const;
 
 /** Get output node fill color based on probability */

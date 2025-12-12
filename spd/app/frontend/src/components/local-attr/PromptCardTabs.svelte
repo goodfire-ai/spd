@@ -3,9 +3,9 @@
 
     type Props = {
         cards: PromptCard[];
-        activeCardId: string | null;
-        onSelectCard: (cardId: string) => void;
-        onCloseCard: (cardId: string) => void;
+        activeCardId: number | null;
+        onSelectCard: (cardId: number) => void;
+        onCloseCard: (cardId: number) => void;
         onAddClick: () => void;
     };
 

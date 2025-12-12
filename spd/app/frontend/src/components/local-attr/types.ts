@@ -1,4 +1,3 @@
-import type { SvelteSet } from "svelte/reactivity";
 import type { GraphData } from "../../lib/localAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/localAttributionsApi";
@@ -11,26 +10,28 @@ export type ViewSettings = {
     ciThreshold: number;
 };
 
+/** Persisted graph data from the database */
 export type StoredGraph = {
-    id: string;
-    dbId: number; // database ID for API calls
+    id: number; // database ID
     label: string;
     data: GraphData;
     viewSettings: ViewSettings;
-    // Composer state for interventions
-    composerSelection: SvelteSet<string>; // currently selected node keys
-    interventionRuns: InterventionRunSummary[]; // persisted runs
+    interventionRuns: InterventionRunSummary[];
+};
+
+/** Transient UI state for the intervention composer, keyed by graph ID */
+export type ComposerState = {
+    selection: Set<string>; // currently selected node keys
     activeRunId: number | null; // which run is selected (for restoring selection)
 };
 
 export type PromptCard = {
-    id: string;
-    promptId: number;
+    id: number; // database prompt ID
     tokens: string[];
     tokenIds: number[];
     isCustom: boolean;
     graphs: StoredGraph[];
-    activeGraphId: string | null; // null means "new graph" mode when graphs exist, or initial state
+    activeGraphId: number | null; // null means "new graph" mode when graphs exist, or initial state
     activeView: "graph" | "interventions";
     // Config for creating new graphs (per-card, not shared globally)
     newGraphConfig: OptimizeConfig;
