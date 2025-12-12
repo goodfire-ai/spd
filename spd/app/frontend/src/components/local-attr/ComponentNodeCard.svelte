@@ -5,14 +5,14 @@
         ComponentCorrelations,
         TokenStats,
         Edge,
-        CorrelatedComponent,
+        EdgeAttribution,
     } from "../../lib/localAttributionsTypes";
     import { getComponentCorrelations, getComponentTokenStats } from "../../lib/localAttributionsApi";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
-    import ComponentPillList from "../ui/ComponentPillList.svelte";
+    import EdgeAttributionList from "../ui/EdgeAttributionList.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
@@ -109,15 +109,11 @@
     const currentNodeKey = $derived(`${layer}:${seqIdx}:${cIdx}`);
     const N_EDGES_TO_DISPLAY = 20;
 
-    // Convert edge to CorrelatedComponent format for ComponentPillList
-    function edgeToItem(targetNodeKey: string, val: number, maxVal: number): CorrelatedComponent {
+    function edgeToAttribution(nodeKey: string, val: number, maxAbsVal: number): EdgeAttribution {
         return {
-            component_key: targetNodeKey,
-            score: Math.abs(val) / maxVal,
-            count_i: 0,
-            count_j: 0,
-            count_ij: 0,
-            n_tokens: 0,
+            nodeKey,
+            value: val,
+            normalizedMagnitude: Math.abs(val) / maxAbsVal,
         };
     }
 
@@ -125,30 +121,30 @@
     const incomingPositive = $derived.by(() => {
         const filtered = edges.filter((e) => e.tgt === currentNodeKey && e.val > 0);
         const sorted = filtered.sort((a, b) => b.val - a.val).slice(0, N_EDGES_TO_DISPLAY);
-        const maxVal = sorted[0]?.val || 1;
-        return sorted.map((e) => edgeToItem(e.src, e.val, maxVal));
+        const maxAbsVal = sorted[0]?.val || 1;
+        return sorted.map((e) => edgeToAttribution(e.src, e.val, maxAbsVal));
     });
 
     const incomingNegative = $derived.by(() => {
         const filtered = edges.filter((e) => e.tgt === currentNodeKey && e.val < 0);
         const sorted = filtered.sort((a, b) => a.val - b.val).slice(0, N_EDGES_TO_DISPLAY);
-        const maxVal = Math.abs(sorted[0]?.val || 1);
-        return sorted.map((e) => edgeToItem(e.src, e.val, maxVal));
+        const maxAbsVal = Math.abs(sorted[0]?.val || 1);
+        return sorted.map((e) => edgeToAttribution(e.src, e.val, maxAbsVal));
     });
 
     // Outgoing edges: edges where this node is the source (what this node influences)
     const outgoingPositive = $derived.by(() => {
         const filtered = edges.filter((e) => e.src === currentNodeKey && e.val > 0);
         const sorted = filtered.sort((a, b) => b.val - a.val).slice(0, N_EDGES_TO_DISPLAY);
-        const maxVal = sorted[0]?.val || 1;
-        return sorted.map((e) => edgeToItem(e.tgt, e.val, maxVal));
+        const maxAbsVal = sorted[0]?.val || 1;
+        return sorted.map((e) => edgeToAttribution(e.tgt, e.val, maxAbsVal));
     });
 
     const outgoingNegative = $derived.by(() => {
         const filtered = edges.filter((e) => e.src === currentNodeKey && e.val < 0);
         const sorted = filtered.sort((a, b) => a.val - b.val).slice(0, N_EDGES_TO_DISPLAY);
-        const maxVal = Math.abs(sorted[0]?.val || 1);
-        return sorted.map((e) => edgeToItem(e.tgt, e.val, maxVal));
+        const maxAbsVal = Math.abs(sorted[0]?.val || 1);
+        return sorted.map((e) => edgeToAttribution(e.tgt, e.val, maxAbsVal));
     });
 
     const hasAnyEdges = $derived(
@@ -231,23 +227,23 @@
                         <h5>Incoming</h5>
                         {#if incomingPositive.length > 0}
                             <div class="edge-list">
-                                <span class="edge-list-title">Most attributed</span>
-                                <ComponentPillList
+                                <span class="edge-list-title">Positive</span>
+                                <EdgeAttributionList
                                     items={incomingPositive}
                                     pageSize={10}
-                                    onComponentClick={handleEdgeNodeClick}
-                                    colorScheme="green"
+                                    onNodeClick={handleEdgeNodeClick}
+                                    direction="positive"
                                 />
                             </div>
                         {/if}
                         {#if incomingNegative.length > 0}
                             <div class="edge-list">
-                                <span class="edge-list-title">Least attributed</span>
-                                <ComponentPillList
+                                <span class="edge-list-title">Negative</span>
+                                <EdgeAttributionList
                                     items={incomingNegative}
                                     pageSize={10}
-                                    onComponentClick={handleEdgeNodeClick}
-                                    colorScheme="red"
+                                    onNodeClick={handleEdgeNodeClick}
+                                    direction="negative"
                                 />
                             </div>
                         {/if}
@@ -258,23 +254,23 @@
                         <h5>Outgoing</h5>
                         {#if outgoingPositive.length > 0}
                             <div class="edge-list">
-                                <span class="edge-list-title">Most attributed</span>
-                                <ComponentPillList
+                                <span class="edge-list-title">Positive</span>
+                                <EdgeAttributionList
                                     items={outgoingPositive}
                                     pageSize={10}
-                                    onComponentClick={handleEdgeNodeClick}
-                                    colorScheme="green"
+                                    onNodeClick={handleEdgeNodeClick}
+                                    direction="positive"
                                 />
                             </div>
                         {/if}
                         {#if outgoingNegative.length > 0}
                             <div class="edge-list">
-                                <span class="edge-list-title">Least attributed</span>
-                                <ComponentPillList
+                                <span class="edge-list-title">Negative</span>
+                                <EdgeAttributionList
                                     items={outgoingNegative}
                                     pageSize={10}
-                                    onComponentClick={handleEdgeNodeClick}
-                                    colorScheme="red"
+                                    onNodeClick={handleEdgeNodeClick}
+                                    direction="negative"
                                 />
                             </div>
                         {/if}

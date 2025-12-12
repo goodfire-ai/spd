@@ -1,16 +1,16 @@
 <script lang="ts">
-    import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
-    import { displaySettings } from "../../lib/displaySettings.svelte";
-    import SetOverlapVis from "./SetOverlapVis.svelte";
+    import type { EdgeAttribution } from "../../lib/localAttributionsTypes";
+    import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
     import { lerp } from "../local-attr/graphUtils";
 
     type Props = {
-        items: CorrelatedComponent[];
-        onComponentClick?: (componentKey: string) => void;
+        items: EdgeAttribution[];
+        onNodeClick?: (nodeKey: string) => void;
         pageSize: number;
+        direction: "positive" | "negative";
     };
 
-    let { items, onComponentClick, pageSize = 40 }: Props = $props();
+    let { items, onNodeClick, pageSize, direction }: Props = $props();
 
     let currentPage = $state(0);
     const totalPages = $derived(Math.ceil(items.length / pageSize));
@@ -22,13 +22,16 @@
         currentPage = 0;
     });
 
-    function getBgColor(score: number): string {
-        const intensity = lerp(0, 0.8, score);
-        return `rgba(22, 163, 74, ${intensity})`;
+    function getBgColor(normalizedMagnitude: number): string {
+        const intensity = lerp(0, 0.8, normalizedMagnitude);
+        if (direction === "negative") {
+            return `rgba(220, 38, 38, ${intensity})`; // red
+        }
+        return `rgba(22, 163, 74, ${intensity})`; // green
     }
 </script>
 
-<div class="component-pill-list">
+<div class="edge-attribution-list">
     {#if totalPages > 1}
         <div class="pagination">
             <button onclick={() => currentPage--} disabled={currentPage === 0}>&lt;</button>
@@ -36,40 +39,31 @@
             <button onclick={() => currentPage++} disabled={currentPage >= totalPages - 1}>&gt;</button>
         </div>
     {/if}
-    <div class="components">
-        {#each paginatedItems as { component_key, score, count_i, count_j, count_ij, n_tokens } (component_key)}
-            {@const bgColor = getBgColor(score)}
-            {@const textColor = score > 0.8 ? "white" : "var(--text-primary)"}
+    <div class="items">
+        {#each paginatedItems as { nodeKey, value, normalizedMagnitude } (nodeKey)}
+            {@const bgColor = getBgColor(normalizedMagnitude)}
+            {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
             <button
-                class="component-pill"
-                class:clickable={!!onComponentClick}
+                class="edge-pill"
+                class:clickable={!!onNodeClick}
                 style="background: {bgColor};"
-                onclick={() => onComponentClick?.(component_key)}
+                onclick={() => onNodeClick?.(nodeKey)}
             >
-                <div class="pill-content">
-                    <span class="component-text" style="color: {textColor};">{component_key} {score.toFixed(2)}</span>
-                </div>
-                {#if displaySettings.showSetOverlapVis && n_tokens > 0}
-                    <SetOverlapVis
-                        countA={count_i}
-                        countB={count_j}
-                        countIntersection={count_ij}
-                        totalCount={n_tokens}
-                    />
-                {/if}
+                <span class="node-key" style="color: {textColor};">{formatNodeKeyForDisplay(nodeKey)}</span>
+                <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
             </button>
         {/each}
     </div>
 </div>
 
 <style>
-    .component-pill-list {
+    .edge-attribution-list {
         display: flex;
         flex-direction: column;
         gap: var(--space-1);
     }
 
-    .components {
+    .items {
         display: flex;
         flex-wrap: wrap;
         gap: var(--space-2);
@@ -108,28 +102,24 @@
         cursor: default;
     }
 
-    .component-pill {
+    .edge-pill {
         display: inline-flex;
-        flex-direction: column;
-        gap: 2px;
+        align-items: center;
+        gap: var(--space-2);
         padding: 4px 6px;
         border-radius: 3px;
         white-space: nowrap;
         cursor: default;
-        position: relative;
         border: 1px solid var(--border-default);
         font-family: inherit;
         font-size: inherit;
-        min-width: 80px;
     }
 
-    .pill-content {
-        display: flex;
-        align-items: center;
-        gap: var(--space-1);
-    }
-
-    .component-pill.clickable {
+    .edge-pill.clickable {
         cursor: pointer;
+    }
+
+    .value {
+        opacity: 0.8;
     }
 </style>
