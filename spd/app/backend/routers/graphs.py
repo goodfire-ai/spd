@@ -76,7 +76,9 @@ class OptimizationResult(BaseModel):
     label_token: int | None = None
     label_str: str | None = None
     ce_loss_coeff: float | None = None
-    label_prob: float | None = None
+    # Label probabilities (None for KL-only optimization)
+    ci_label_prob: float | None = None  # P(label_token) with CI mask (deterministic)
+    stoch_label_prob: float | None = None  # P(label_token) with stochastic masks
     # KL loss param (optional)
     kl_loss_coeff: float | None = None
 
@@ -477,6 +479,11 @@ def compute_graph_optimized_stream(
         raw_output_probs = build_output_probs(
             result.output_probs[0].cpu(), output_prob_threshold, loaded.token_strings
         )
+
+        # Extract label probabilities if available
+        ci_label_prob = result.label_probs.ci_masked if result.label_probs else None
+        stoch_label_prob = result.label_probs.stoch_masked if result.label_probs else None
+
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
@@ -484,7 +491,8 @@ def compute_graph_optimized_stream(
                 output_probs=raw_output_probs,
                 node_ci_vals=result.node_ci_vals,
                 optimization_params=opt_params,
-                label_prob=result.label_prob,
+                ci_label_prob=ci_label_prob,
+                stoch_label_prob=stoch_label_prob,
             ),
         )
 
@@ -515,7 +523,8 @@ def compute_graph_optimized_stream(
                 label_token=label_token,
                 label_str=label_str,
                 ce_loss_coeff=ce_loss_coeff,
-                label_prob=result.label_prob,
+                ci_label_prob=ci_label_prob,
+                stoch_label_prob=stoch_label_prob,
                 kl_loss_coeff=kl_loss_coeff,
             ),
         )
@@ -653,7 +662,8 @@ def get_graphs(
                         label_token=graph.optimization_params.label_token,
                         label_str=label_str,
                         ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
-                        label_prob=graph.label_prob,
+                        ci_label_prob=graph.ci_label_prob,
+                        stoch_label_prob=graph.stoch_label_prob,
                         kl_loss_coeff=graph.optimization_params.kl_loss_coeff,
                     ),
                 )

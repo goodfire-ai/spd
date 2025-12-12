@@ -724,7 +724,7 @@
                             {#if activeCard.activeView === "graph"}
                                 <div class="graph-stats">
                                     {#if activeGraph.data.optimization}
-                                        {#if activeGraph.data.optimization.label_str !== null && activeGraph.data.optimization.label_prob !== null}
+                                        {#if activeGraph.data.optimization.label_str !== null && activeGraph.data.optimization.ci_label_prob !== null}
                                             <span
                                                 ><strong>Target:</strong> "{formatTokenDisplay(
                                                     activeGraph.data.optimization.label_str,
@@ -732,8 +732,13 @@
                                                 <span class="token-id"
                                                     >(#{activeGraph.data.optimization.label_token})</span
                                                 >
-                                                @ {(activeGraph.data.optimization.label_prob * 100).toFixed(1)}%</span
-                                            >
+                                                <span class="label-probs">
+                                                    CI: {(activeGraph.data.optimization.ci_label_prob * 100).toFixed(1)}%
+                                                    {#if activeGraph.data.optimization.stoch_label_prob !== null}
+                                                        | Stoch: {(activeGraph.data.optimization.stoch_label_prob * 100).toFixed(1)}%
+                                                    {/if}
+                                                </span>
+                                            </span>
                                         {/if}
                                         {#if activeGraph.data.optimization.kl_loss_coeff !== null}
                                             <span
