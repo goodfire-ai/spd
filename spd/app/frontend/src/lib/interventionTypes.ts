@@ -9,9 +9,9 @@ export type InterventionNode = {
 export type TokenPrediction = {
     token: string;
     token_id: number;
-    prob: number;
-    logit: number;
+    spd_prob: number;
     target_prob: number;
+    logit: number;
 };
 
 export type InterventionResponse = {

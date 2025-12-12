@@ -658,11 +658,11 @@
                                                 {@const pred = preds[rank]}
                                                 <td
                                                     class:has-pred={!!pred}
-                                                    style={pred ? `background: ${getOutputHeaderColor(pred.prob)}` : ""}
+                                                    style={pred ? `background: ${getOutputHeaderColor(pred.spd_prob)}` : ""}
                                                 >
                                                     {#if pred}
                                                         <span class="pred-token">"{pred.token}"</span>
-                                                        <span class="pred-prob spd">SPD: {formatProb(pred.prob)}</span>
+                                                        <span class="pred-prob spd">SPD: {formatProb(pred.spd_prob)}</span>
                                                         <span class="pred-prob targ">Targ: {formatProb(pred.target_prob)}</span>
                                                     {:else}
                                                         -

@@ -116,7 +116,7 @@ def _run_intervention_forward(
                 target_prob=target_prob,
                 logit=logit,
             )
-            for token, token_id, spd_prob, target_prob, logit in pos_predictions
+            for token, token_id, spd_prob, logit, target_prob in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]
@@ -158,7 +158,7 @@ def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> Inte
                 target_prob=target_prob,
                 logit=logit,
             )
-            for token, token_id, spd_prob, target_prob, logit in pos_predictions
+            for token, token_id, spd_prob, logit, target_prob in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]
