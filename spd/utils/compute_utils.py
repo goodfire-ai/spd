@@ -218,6 +218,8 @@ uv sync --no-dev --link-mode copy -q
 echo "Activating virtual environment"
 source .venv/bin/activate
 
+export OMP_NUM_THREADS=1
+
 echo "Debug: SLURM_NODEID=$SLURM_NODEID"
 echo "Debug: SLURM_PROCID=$SLURM_PROCID"
 echo "Debug: SLURM_JOB_NODELIST=$SLURM_JOB_NODELIST"

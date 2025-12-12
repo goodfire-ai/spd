@@ -69,9 +69,9 @@ class StoredGraph(BaseModel):
     output_probs: dict[str, OutputProbability]  # seq:c_idx -> {prob, token}
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
     optimization_params: OptimizationParams | None = None
-    label_prob: float | None = (
-        None  # P(label_token) with optimized CI mask, only for optimized graphs
-    )
+    # Label probabilities for optimized graphs (None for standard graphs or KL-only)
+    ci_label_prob: float | None = None  # P(label_token) with CI mask (deterministic)
+    stoch_label_prob: float | None = None  # P(label_token) with stochastic masks
 
 
 class InterventionRunRecord(BaseModel):
@@ -211,8 +211,9 @@ class LocalAttrDB:
                 -- Output probabilities: "seq:c_idx" -> {prob, token}
                 output_probs_data TEXT NOT NULL,
 
-                -- Optimization stats (NULL for standard graphs)
-                label_prob REAL,
+                -- Label probabilities (NULL for standard graphs or KL-only)
+                ci_label_prob REAL,
+                stoch_label_prob REAL,
 
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -624,7 +625,8 @@ class LocalAttrDB:
         kl_loss_coeff = None
         steps = None
         pnorm = None
-        label_prob = None
+        ci_label_prob = None
+        stoch_label_prob = None
 
         if graph.optimization_params:
             label_token = graph.optimization_params.label_token
@@ -633,7 +635,8 @@ class LocalAttrDB:
             kl_loss_coeff = graph.optimization_params.kl_loss_coeff
             steps = graph.optimization_params.steps
             pnorm = graph.optimization_params.pnorm
-            label_prob = graph.label_prob  # May be None for KL-only optimization
+            ci_label_prob = graph.ci_label_prob  # May be None for KL-only optimization
+            stoch_label_prob = graph.stoch_label_prob
 
         try:
             cursor = conn.execute(
@@ -641,8 +644,8 @@ class LocalAttrDB:
                    (prompt_id, is_optimized,
                     label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
                     edges_data, output_probs_data, node_ci_vals,
-                    label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ci_label_prob, stoch_label_prob)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
@@ -655,7 +658,8 @@ class LocalAttrDB:
                     edges_json,
                     probs_json,
                     node_ci_vals_json,
-                    label_prob,
+                    ci_label_prob,
+                    stoch_label_prob,
                 ),
             )
             conn.commit()
@@ -682,7 +686,7 @@ class LocalAttrDB:
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
                       label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
-                      label_prob
+                      ci_label_prob, stoch_label_prob
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
@@ -707,7 +711,8 @@ class LocalAttrDB:
             node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
 
             opt_params: OptimizationParams | None = None
-            label_prob: float | None = None
+            ci_label_prob: float | None = None
+            stoch_label_prob: float | None = None
 
             if row["is_optimized"]:
                 opt_params = OptimizationParams(
@@ -718,7 +723,8 @@ class LocalAttrDB:
                     ce_loss_coeff=row["ce_loss_coeff"],
                     kl_loss_coeff=row["kl_loss_coeff"],
                 )
-                label_prob = row["label_prob"]
+                ci_label_prob = row["ci_label_prob"]
+                stoch_label_prob = row["stoch_label_prob"]
 
             results.append(
                 StoredGraph(
@@ -727,7 +733,8 @@ class LocalAttrDB:
                     output_probs=output_probs,
                     node_ci_vals=node_ci_vals,
                     optimization_params=opt_params,
-                    label_prob=label_prob,
+                    ci_label_prob=ci_label_prob,
+                    stoch_label_prob=stoch_label_prob,
                 )
             )
 
