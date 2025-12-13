@@ -1,4 +1,4 @@
-"""Run SPD on a model."""
+"""Run SPD (Stochastic Parameter Decomposition) on a model."""
 
 import gc
 from collections import defaultdict
