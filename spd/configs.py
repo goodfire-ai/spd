@@ -248,7 +248,7 @@ class Config(BaseConfig):
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
     dtype: DType = Field(
-        default="float32",
+        default="bfloat16",
         description="Default torch dtype for computation. Supports 'float32' and 'bfloat16'.",
     )
     C: PositiveInt = Field(
