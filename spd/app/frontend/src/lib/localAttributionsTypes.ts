@@ -65,6 +65,7 @@ export type ComponentDetail = {
     example_ci: number[][];
     example_active_pos: number[];
     example_active_ci: number[];
+    explanation?: string | null;
 };
 
 export type CorrelatedComponent = {

@@ -58,6 +58,22 @@ class SubcomponentActivationContexts(BaseModel):
     example_active_pos: list[int]  # [n_examples] - index into window
     example_active_ci: list[float]  # [n_examples]
 
+    # Optional user-provided explanation
+    explanation: str | None = None
+
 
 class ModelActivationContexts(BaseModel):
     layers: dict[str, list[SubcomponentActivationContexts]]
+
+
+class ComponentExplanationUpdate(BaseModel):
+    """Request to update a component explanation."""
+
+    explanation: str
+
+
+class ComponentExplanationResponse(BaseModel):
+    """Response with component explanation."""
+
+    component_key: str
+    explanation: str | None

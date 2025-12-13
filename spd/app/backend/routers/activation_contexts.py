@@ -17,6 +17,8 @@ from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.lib.activation_contexts import get_activations_data
 from spd.app.backend.schemas import (
     ActivationContextsGenerationConfig,
+    ComponentExplanationResponse,
+    ComponentExplanationUpdate,
     SubcomponentActivationContexts,
     SubcomponentMetadata,
 )
@@ -130,6 +132,13 @@ def get_activation_context_detail(
     )
     if detail is None:
         raise HTTPException(status_code=404, detail=f"Component {layer}:{component_idx} not found")
+
+    # Load explanation from database
+    component_key = f"{layer}:{component_idx}"
+    explanation = manager.db.get_component_explanation(
+        loaded.run.id, loaded.context_length, component_key
+    )
+    detail.explanation = explanation
     return detail
 
 
@@ -264,3 +273,50 @@ def probe_component(
     token_strings = [loaded.token_strings[t] for t in token_ids]
 
     return ComponentProbeResponse(tokens=token_strings, ci_values=ci_values)
+
+
+@router.put("/{layer}/{component_idx}/explanation")
+@log_errors
+def set_component_explanation(
+    layer: str,
+    component_idx: int,
+    body: ComponentExplanationUpdate,
+    manager: DepStateManager,
+    loaded: DepLoadedRun,
+) -> ComponentExplanationResponse:
+    """Set or update the explanation for a component."""
+    component_key = f"{layer}:{component_idx}"
+    manager.db.set_component_explanation(
+        loaded.run.id, loaded.context_length, component_key, body.explanation
+    )
+    return ComponentExplanationResponse(component_key=component_key, explanation=body.explanation)
+
+
+@router.get("/{layer}/{component_idx}/explanation")
+@log_errors
+def get_component_explanation(
+    layer: str,
+    component_idx: int,
+    manager: DepStateManager,
+    loaded: DepLoadedRun,
+) -> ComponentExplanationResponse:
+    """Get the explanation for a component."""
+    component_key = f"{layer}:{component_idx}"
+    explanation = manager.db.get_component_explanation(
+        loaded.run.id, loaded.context_length, component_key
+    )
+    return ComponentExplanationResponse(component_key=component_key, explanation=explanation)
+
+
+@router.delete("/{layer}/{component_idx}/explanation")
+@log_errors
+def delete_component_explanation(
+    layer: str,
+    component_idx: int,
+    manager: DepStateManager,
+    loaded: DepLoadedRun,
+) -> dict[str, str]:
+    """Delete the explanation for a component."""
+    component_key = f"{layer}:{component_idx}"
+    manager.db.delete_component_explanation(loaded.run.id, loaded.context_length, component_key)
+    return {"status": "deleted"}

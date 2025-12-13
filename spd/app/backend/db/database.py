@@ -249,6 +249,15 @@ class LocalAttrDB:
 
             CREATE INDEX IF NOT EXISTS idx_forked_intervention_runs_parent
                 ON forked_intervention_runs(intervention_run_id);
+
+            CREATE TABLE IF NOT EXISTS component_explanations (
+                run_id INTEGER NOT NULL REFERENCES runs(id),
+                context_length INTEGER NOT NULL,
+                component_key TEXT NOT NULL,  -- "layer:component_idx"
+                explanation TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (run_id, context_length, component_key)
+            );
         """)
         conn.commit()
 
@@ -419,6 +428,65 @@ class LocalAttrDB:
         if row is None or row["config"] is None:
             return None
         return ActivationContextsGenerationConfig.model_validate(json.loads(row["config"]))
+
+    # -------------------------------------------------------------------------
+    # Component explanation operations
+    # -------------------------------------------------------------------------
+
+    def set_component_explanation(
+        self, run_id: int, context_length: int, component_key: str, explanation: str
+    ) -> None:
+        """Set or update the explanation for a component."""
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT OR REPLACE INTO component_explanations
+               (run_id, context_length, component_key, explanation, updated_at)
+               VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+            (run_id, context_length, component_key, explanation),
+        )
+        conn.commit()
+
+    def get_component_explanation(
+        self, run_id: int, context_length: int, component_key: str
+    ) -> str | None:
+        """Get the explanation for a component, or None if not set."""
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT explanation FROM component_explanations
+               WHERE run_id = ? AND context_length = ? AND component_key = ?""",
+            (run_id, context_length, component_key),
+        ).fetchone()
+        return row["explanation"] if row else None
+
+    def get_all_component_explanations(
+        self, run_id: int, context_length: int
+    ) -> dict[str, str]:
+        """Get all component explanations for a run and context_length.
+
+        Returns:
+            Dict mapping component_key to explanation.
+        """
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT component_key, explanation
+               FROM component_explanations
+               WHERE run_id = ? AND context_length = ?""",
+            (run_id, context_length),
+        ).fetchall()
+
+        return {row["component_key"]: row["explanation"] for row in rows}
+
+    def delete_component_explanation(
+        self, run_id: int, context_length: int, component_key: str
+    ) -> None:
+        """Delete the explanation for a component."""
+        conn = self._get_conn()
+        conn.execute(
+            """DELETE FROM component_explanations
+               WHERE run_id = ? AND context_length = ? AND component_key = ?""",
+            (run_id, context_length, component_key),
+        )
+        conn.commit()
 
     # -------------------------------------------------------------------------
     # Prompt operations

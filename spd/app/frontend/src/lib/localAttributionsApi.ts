@@ -371,3 +371,36 @@ export async function getComponentTokenStats(
     url.searchParams.set("top_k", String(topK));
     return fetchJson<TokenStats | null>(url.toString());
 }
+
+// Component explanations
+
+export async function setComponentExplanation(
+    layer: string,
+    componentIdx: number,
+    explanation: string,
+): Promise<void> {
+    await fetchJson(
+        `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}/explanation`,
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ explanation }),
+        },
+    );
+}
+
+export async function getComponentExplanation(layer: string, componentIdx: number): Promise<string | null> {
+    const response = await fetchJson<{ explanation: string | null }>(
+        `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}/explanation`,
+    );
+    return response.explanation;
+}
+
+export async function deleteComponentExplanation(layer: string, componentIdx: number): Promise<void> {
+    await fetchJson(
+        `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}/explanation`,
+        {
+            method: "DELETE",
+        },
+    );
+}

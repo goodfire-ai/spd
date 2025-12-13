@@ -7,7 +7,12 @@
         Edge,
         EdgeAttribution,
     } from "../../lib/localAttributionsTypes";
-    import { getComponentCorrelations, getComponentTokenStats } from "../../lib/localAttributionsApi";
+    import {
+        getComponentCorrelations,
+        getComponentTokenStats,
+        setComponentExplanation,
+        deleteComponentExplanation,
+    } from "../../lib/localAttributionsApi";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
@@ -43,6 +48,49 @@
     // Token stats state (from batch job)
     let tokenStats = $state<TokenStats | null>(null);
     let tokenStatsLoading = $state(false);
+
+    // Explanation editing state
+    let isEditingExplanation = $state(false);
+    let explanationText = $state("");
+    let isSavingExplanation = $state(false);
+
+    // Initialize explanation text when detail changes
+    $effect(() => {
+        if (detail?.explanation) {
+            explanationText = detail.explanation;
+        } else {
+            explanationText = "";
+        }
+    });
+
+    async function saveExplanation() {
+        if (!detail) return;
+        isSavingExplanation = true;
+        try {
+            if (explanationText.trim()) {
+                await setComponentExplanation(layer, detail.subcomponent_idx, explanationText);
+                if (detail) detail.explanation = explanationText;
+            } else {
+                await deleteComponentExplanation(layer, detail.subcomponent_idx);
+                if (detail) detail.explanation = null;
+            }
+            isEditingExplanation = false;
+        } catch (error) {
+            console.error("Failed to save explanation:", error);
+            alert("Failed to save explanation. Please try again.");
+        } finally {
+            isSavingExplanation = false;
+        }
+    }
+
+    function cancelEditExplanation() {
+        if (detail?.explanation) {
+            explanationText = detail.explanation;
+        } else {
+            explanationText = "";
+        }
+        isEditingExplanation = false;
+    }
 
     // Fetch correlations when component changes
     $effect(() => {
@@ -169,6 +217,42 @@
             <span class="mean-ci">Mean CI: {formatMeanCi(summary.mean_ci)}</span>
         {/if}
     </SectionHeader>
+
+    <!-- Explanation section -->
+    {#if detail}
+        <div class="explanation-section">
+            <div class="explanation-header">
+                <h5>Explanation</h5>
+                {#if !isEditingExplanation}
+                    <button class="edit-btn" onclick={() => (isEditingExplanation = true)} disabled={isLoading}>
+                        {detail.explanation ? "Edit" : "Add"}
+                    </button>
+                {/if}
+            </div>
+
+            {#if isEditingExplanation}
+                <textarea
+                    class="explanation-input"
+                    bind:value={explanationText}
+                    placeholder="Describe what this component does..."
+                    rows="4"
+                    disabled={isSavingExplanation}
+                />
+                <div class="explanation-actions">
+                    <button class="save-btn" onclick={saveExplanation} disabled={isSavingExplanation}>
+                        {isSavingExplanation ? "Saving..." : "Save"}
+                    </button>
+                    <button class="cancel-btn" onclick={cancelEditExplanation} disabled={isSavingExplanation}>
+                        Cancel
+                    </button>
+                </div>
+            {:else if detail.explanation}
+                <p class="explanation-text">{detail.explanation}</p>
+            {:else}
+                <p class="explanation-empty">No explanation yet.</p>
+            {/if}
+        </div>
+    {/if}
 
     <div class="token-stats-row">
         <TokenStatsSection
@@ -363,5 +447,123 @@
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-style: italic;
+    }
+
+    /* Explanation section styles */
+    .explanation-section {
+        padding: var(--space-3);
+        border: 1px solid var(--border-subtle);
+        border-radius: 4px;
+        background: var(--bg-subtle, #f9fafb);
+    }
+
+    .explanation-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--space-2);
+    }
+
+    .explanation-header h5 {
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        font-weight: 600;
+        letter-spacing: 0.05em;
+    }
+
+    .edit-btn,
+    .save-btn,
+    .cancel-btn {
+        font-size: var(--text-sm);
+        padding: var(--space-1) var(--space-2);
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: var(--font-sans);
+    }
+
+    .edit-btn {
+        background: var(--accent-primary);
+        color: white;
+        border: none;
+    }
+
+    .edit-btn:hover:not(:disabled) {
+        background: var(--accent-primary-dim);
+    }
+
+    .edit-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .save-btn {
+        background: var(--status-positive, #10b981);
+        color: white;
+        border: none;
+    }
+
+    .save-btn:hover:not(:disabled) {
+        background: var(--status-positive-dim, #059669);
+    }
+
+    .cancel-btn {
+        background: transparent;
+        color: var(--text-secondary);
+        border: 1px solid var(--border-subtle);
+    }
+
+    .cancel-btn:hover:not(:disabled) {
+        background: var(--bg-hover, #f3f4f6);
+    }
+
+    .save-btn:disabled,
+    .cancel-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .explanation-input {
+        width: 100%;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        padding: var(--space-2);
+        border: 1px solid var(--border-subtle);
+        border-radius: 4px;
+        resize: vertical;
+        color: var(--text-primary);
+    }
+
+    .explanation-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+
+    .explanation-input:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .explanation-actions {
+        display: flex;
+        gap: var(--space-2);
+        margin-top: var(--space-2);
+    }
+
+    .explanation-text {
+        font-size: var(--text-sm);
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        line-height: 1.5;
+        margin: 0;
+        white-space: pre-wrap;
+    }
+
+    .explanation-empty {
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+        font-family: var(--font-sans);
+        font-style: italic;
+        margin: 0;
     }
 </style>
