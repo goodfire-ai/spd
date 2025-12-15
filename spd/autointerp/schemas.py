@@ -44,8 +44,8 @@ class ComponentData:
 @dataclass
 class ArchitectureInfo:
     n_layers: int
-    c_per_layer: int
-    model_name: str
+    c: int
+    model_class: str
     dataset_name: str
     dataset_description: str
 

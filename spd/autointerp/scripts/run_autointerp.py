@@ -14,7 +14,6 @@ import fire
 
 from spd.autointerp.harvest import HarvestConfig, harvest, save_harvest
 from spd.autointerp.interpret import run_interpret
-from spd.autointerp.schemas import ArchitectureInfo
 from spd.data import train_loader_and_tokenizer
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
@@ -62,28 +61,15 @@ def harvest_cmd(
 
 
 def interpret_cmd(
-    run_id: str,
-    model_name: str,
-    dataset_name: str,
-    dataset_description: str,
-    n_layers: int,
-    c_per_layer: int,
+    wandb_path: str,
     model: str = "claude-haiku-4-5-20251001",
-    max_concurrent: int = 50,
+    max_concurrent: int = 10,
 ) -> None:
     """Interpret harvested components."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     assert api_key, "ANTHROPIC_API_KEY not set"
 
-    arch = ArchitectureInfo(
-        n_layers=n_layers,
-        c_per_layer=c_per_layer,
-        model_name=model_name,
-        dataset_name=dataset_name,
-        dataset_description=dataset_description,
-    )
-
-    run_interpret(run_id, arch, api_key, model, max_concurrent)
+    run_interpret(wandb_path, api_key, model, max_concurrent)
 
 
 if __name__ == "__main__":

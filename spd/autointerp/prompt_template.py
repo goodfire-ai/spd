@@ -38,17 +38,25 @@ TEMPLATE = jinja2.Template(
     """\
 Hi Claude,
 
-I'm working on interpretability research and could use your help labeling a component from a neural network. We've decomposed a language model into sparse components using SPD (Stochastic Parameter Decomposition), and I'd like to understand what this particular component does.
+I'm working on interpretability research and could use your help labeling a component from a neural
+network. We've decomposed a language model into sparse components using SPD (Stochastic Parameter
+Decomposition), and I'd like to understand what this particular component does. To give some
+background, in spd, we learn decompositions of a model's parameter weight matrices, in terms of
+rank-1 components. We train the decomposition such that very few of these components need to be
+present in order to recreate the behaviour of the orginal model on any given prompt. This means that
+locally, the model becomes extremely low rank and more inherently interpretable. These components 
+are then treated as the basic atoms of computation.
+
 
 ## Context
 
-**Model**: {{ arch.model_name }} ({{ arch.n_layers }} layers, {{ arch.c_per_layer }} components per layer)
+**Target model (the model we're decomposing)**: {{ arch.model_class }} ({{ arch.n_layers }} layers, {{ arch.c }} components per layer)
 
 **Training data**: {{ arch.dataset_name }} — {{ arch.dataset_description }}
 
-**This component**: {{ c.layer }}:{{ c.component_idx }} — the {{ layer_info }}
+This component is from {{ layer_info }}.
 
-Mean causal importance: {{ "%.4f"|format(c.mean_ci) }}
+Mean causal importance (how densely this component is active in the training data): {{ "%.4f"|format(c.mean_ci) }}
 
 ---
 
