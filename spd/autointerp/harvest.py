@@ -147,12 +147,16 @@ class Harvester:
         ci: Float[Tensor, "B S n_comp"],
     ) -> None:
         """Reservoir sample activation examples from high-CI firings."""
+        import time
+
+        t0 = time.perf_counter()
         is_firing = ci > self.ci_threshold
         batch_idx, seq_idx, component_idx = torch.where(is_firing)
         if len(batch_idx) == 0:
             return
+        print(f"where: {time.perf_counter() - t0:.3f}s, n_firings={len(batch_idx)}")
 
-        # Pad for window extraction
+        t0 = time.perf_counter()
         batch_padded = torch.nn.functional.pad(
             batch,
             (self.context_tokens_per_side, self.context_tokens_per_side),
@@ -161,8 +165,9 @@ class Harvester:
         ci_padded = torch.nn.functional.pad(
             ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
         )
+        print(f"pad: {time.perf_counter() - t0:.3f}s")
 
-        # Extract windows vectorized
+        t0 = time.perf_counter()
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
@@ -175,13 +180,16 @@ class Harvester:
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
         ci_at_firing = ci[batch_idx, seq_idx, component_idx]
+        print(f"window extract: {time.perf_counter() - t0:.3f}s")
 
-        # Move to CPU and add to reservoirs
+        t0 = time.perf_counter()
         component_idx_list = component_idx.cpu().tolist()
         ci_at_firing_list = ci_at_firing.cpu().tolist()
         token_windows_list = token_windows.cpu().tolist()
         ci_windows_list = ci_windows.cpu().tolist()
+        print(f"to list: {time.perf_counter() - t0:.3f}s")
 
+        t0 = time.perf_counter()
         for i, comp_idx in enumerate(component_idx_list):
             self.activation_example_samplers[comp_idx].add(
                 (
@@ -191,6 +199,7 @@ class Harvester:
                     self.context_tokens_per_side,
                 )
             )
+        print(f"reservoir add: {time.perf_counter() - t0:.3f}s")
 
     def build_results(self, tokenizer: PreTrainedTokenizerBase) -> list[ComponentData]:
         """Convert accumulated state into ComponentData objects."""
