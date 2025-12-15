@@ -1,4 +1,4 @@
-import heapq
+import random
 import time
 from collections import defaultdict
 from collections.abc import Callable
@@ -54,9 +54,9 @@ def get_activations_data(
     device = next(cm.parameters()).device
 
     # for each (module_name, component_idx), track:
-    # - the top-k activating examples
-    examples = defaultdict[str, defaultdict[int, _TopKExamples]](
-        lambda: defaultdict(lambda: _TopKExamples(k=topk_examples))
+    # - reservoir sampled examples
+    examples = defaultdict[str, defaultdict[int, _ReservoirExamples]](
+        lambda: defaultdict(lambda: _ReservoirExamples(k=topk_examples))
     )
     # - the sum of causal importances
     C = cm.C
@@ -338,14 +338,13 @@ class _SubcomponentExample:
         return self.token_ci_values[self.active_pos_in_window]
 
 
-class _TopKExamples:
-    """Maintains top-k examples by CI value using a min-heap."""
+class _ReservoirExamples:
+    """Uniform random sampling from a stream via reservoir sampling."""
 
     def __init__(self, k: int):
         self.k = k
-        # Min-heap of tuples (importance, counter, example)
-        self.heap: list[tuple[float, int, _SubcomponentExample]] = []
-        self._counter: int = 0
+        self.samples: list[_SubcomponentExample] = []
+        self.n_seen = 0
 
     def add_batch(
         self,
@@ -355,28 +354,13 @@ class _TopKExamples:
         ci_at_active: NDArray[np.float32],
         pad_token_id: int,
     ) -> None:
-        """Add a batch of examples, keeping only top-k overall.
-
-        This is more efficient than calling maybe_add() repeatedly because:
-        1. We pre-sort by CI value and only process candidates that could make top-k
-        2. We use numpy arrays directly instead of Python lists where possible
-        """
+        """Add a batch of examples using reservoir sampling for uniform random selection."""
         n_examples = len(ci_at_active)
         if n_examples == 0:
             return
 
-        # Sort by CI descending - we only need to consider examples that could make top-k
-        sorted_indices = np.argsort(ci_at_active)[::-1]
-
-        # Early termination threshold: if heap is full, we can skip examples below min
-        min_threshold = self.heap[0][0] if len(self.heap) >= self.k else float("-inf")
-
-        for idx in sorted_indices:
-            ci_val = float(ci_at_active[idx])
-
-            # Early termination: since sorted descending, if we're below threshold, stop
-            if len(self.heap) >= self.k and ci_val <= min_threshold:
-                break
+        for idx in range(n_examples):
+            self.n_seen += 1
 
             # Trim padding from this example
             tokens = window_token_ids[idx]
@@ -391,22 +375,21 @@ class _TopKExamples:
                 token_ci_values=ci_vals[start_idx:end_idx].tolist(),
             )
 
-            key = (ci_val, self._counter, ex)
-            self._counter += 1
-
-            if len(self.heap) < self.k:
-                heapq.heappush(self.heap, key)
-                min_threshold = self.heap[0][0]
-            elif ci_val > self.heap[0][0]:
-                heapq.heapreplace(self.heap, key)
-                min_threshold = self.heap[0][0]
+            if len(self.samples) < self.k:
+                self.samples.append(ex)
+            elif random.randint(1, self.n_seen) <= self.k:
+                self.samples[random.randrange(self.k)] = ex
 
     def as_columnar(
         self,
         token_strings: dict[int, str],
     ) -> tuple[list[list[str]], list[list[float]], list[int], list[float]]:
-        """Return columnar data: (example_tokens, example_ci, active_pos, active_ci)"""
-        sorted_examples = [ex for _, _, ex in sorted(self.heap, key=lambda t: t[0], reverse=True)]
+        """Return columnar data: (example_tokens, example_ci, active_pos, active_ci).
+
+        Samples are sorted by CI value (descending) for display.
+        """
+        # Sort samples by CI value at active position (descending)
+        sorted_examples = sorted(self.samples, key=lambda ex: ex.active_pos_ci, reverse=True)
 
         example_tokens = []
         example_ci = []
