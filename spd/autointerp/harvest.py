@@ -147,14 +147,10 @@ class Harvester:
         ci: Float[Tensor, "B S n_comp"],
     ) -> None:
         """Reservoir sample activation examples from high-CI firings."""
-        import time
-
-        t0 = time.perf_counter()
         is_firing = ci > self.ci_threshold
         batch_idx, seq_idx, component_idx = torch.where(is_firing)
         if len(batch_idx) == 0:
             return
-        n_firings_total = len(batch_idx)
 
         # Subsample if too many firings - we only need enough to feed the reservoirs
         MAX_FIRINGS_PER_BATCH = 10_000
@@ -164,11 +160,6 @@ class Harvester:
             seq_idx = seq_idx[keep]
             component_idx = component_idx[keep]
 
-        print(
-            f"where: {time.perf_counter() - t0:.3f}s, n_firings={n_firings_total}, kept={len(batch_idx)}"
-        )
-
-        t0 = time.perf_counter()
         batch_padded = torch.nn.functional.pad(
             batch,
             (self.context_tokens_per_side, self.context_tokens_per_side),
@@ -177,9 +168,7 @@ class Harvester:
         ci_padded = torch.nn.functional.pad(
             ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
         )
-        print(f"pad: {time.perf_counter() - t0:.3f}s")
 
-        t0 = time.perf_counter()
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
@@ -192,16 +181,12 @@ class Harvester:
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
         ci_at_firing = ci[batch_idx, seq_idx, component_idx]
-        print(f"window extract: {time.perf_counter() - t0:.3f}s")
 
-        t0 = time.perf_counter()
         component_idx_list = component_idx.cpu().tolist()
         ci_at_firing_list = ci_at_firing.cpu().tolist()
         token_windows_list = token_windows.cpu().tolist()
         ci_windows_list = ci_windows.cpu().tolist()
-        print(f"to list: {time.perf_counter() - t0:.3f}s")
 
-        t0 = time.perf_counter()
         for i, comp_idx in enumerate(component_idx_list):
             self.activation_example_samplers[comp_idx].add(
                 (
@@ -211,7 +196,6 @@ class Harvester:
                     self.context_tokens_per_side,
                 )
             )
-        print(f"reservoir add: {time.perf_counter() - t0:.3f}s")
 
     def build_results(self, tokenizer: PreTrainedTokenizerBase) -> list[ComponentData]:
         """Convert accumulated state into ComponentData objects."""
@@ -229,7 +213,9 @@ class Harvester:
             f"  Computing stats for {n_total} components across {len(self.layer_names)} layers..."
         )
         components = []
-        for layer_idx, layer_name in enumerate(self.layer_names):
+        for layer_idx, layer_name in tqdm.tqdm(
+            enumerate(self.layer_names), total=len(self.layer_names), desc="Building components"
+        ):
             for component_idx in range(self.components_per_layer):
                 flat_idx = layer_idx * self.components_per_layer + component_idx
                 mean_ci = float(mean_ci_per_component[flat_idx])

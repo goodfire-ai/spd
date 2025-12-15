@@ -27,7 +27,7 @@ def harvest_cmd(
     batch_size: int = 256,
     context_length: int = 512,
     ci_threshold: float = 1e-6,
-    activation_examples_per_component: int = 1000,
+    activation_examples_per_component: int = 100,
     activation_context_tokens_per_side: int = 10,
 ) -> None:
     """Harvest correlations and activation contexts."""
