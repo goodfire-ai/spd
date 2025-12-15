@@ -5,14 +5,15 @@ import os
 from pathlib import Path
 
 import fire
+import torch
 import wandb
 from simple_stories_train.run_info import RunInfo as SSRunInfo
 
-from spd.configs import Config
+from spd.configs import Config, DType
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
-from spd.run_spd import DTYPE_MAP, optimize
+from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
     DistributedState,
     call_on_rank0_then_broadcast,
@@ -25,6 +26,11 @@ from spd.utils.distributed_utils import (
 from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
 from spd.utils.run_utils import get_output_dir
 from spd.utils.wandb_utils import init_wandb
+
+DTYPE_MAP: dict[DType, torch.dtype] = {
+    "float32": torch.float32,
+    "bfloat16": torch.bfloat16,
+}
 
 
 @with_distributed_cleanup
@@ -108,7 +114,7 @@ def main(
             config.pretrained_model_name,
         )
 
-    target_model.to(DTYPE_MAP[config.dtype])
+    # target_model.to(DTYPE_MAP[config.dtype])
     target_model.eval()
 
     if is_main_process():
