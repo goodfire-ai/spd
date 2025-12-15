@@ -129,12 +129,16 @@ class Harvester:
         ci: Float[Tensor, "B S n_comp"],
     ) -> None:
         """Update example heaps with high-CI firings from this batch."""
+        import time
+
+        t0 = time.perf_counter()
         is_firing = ci > self.ci_threshold
         batch_idx, seq_idx, component_idx = torch.where(is_firing)
         if len(batch_idx) == 0:
             return
+        print(f"where: {time.perf_counter() - t0:.3f}s, n_firings={len(batch_idx)}")
 
-        # Pad tensors for window extraction
+        t0 = time.perf_counter()
         batch_padded = torch.nn.functional.pad(
             batch,
             (self.context_tokens_per_side, self.context_tokens_per_side),
@@ -143,8 +147,9 @@ class Harvester:
         ci_padded = torch.nn.functional.pad(
             ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
         )
+        print(f"pad: {time.perf_counter() - t0:.3f}s")
 
-        # Extract windows vectorized
+        t0 = time.perf_counter()
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
@@ -157,14 +162,16 @@ class Harvester:
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
         ci_at_firing = ci[batch_idx, seq_idx, component_idx]
+        print(f"window extract: {time.perf_counter() - t0:.3f}s")
 
-        # Move to numpy once for heap operations
+        t0 = time.perf_counter()
         component_idx_np = component_idx.cpu().numpy()
         ci_at_firing_np = ci_at_firing.cpu().numpy()
         token_windows_np = token_windows.cpu().numpy()
         ci_windows_np = ci_windows.cpu().numpy()
+        print(f"to numpy: {time.perf_counter() - t0:.3f}s")
 
-        # Group by component and batch-add with early termination
+        t0 = time.perf_counter()
         for comp_idx in np.unique(component_idx_np):
             mask = component_idx_np == comp_idx
             self._batch_add_examples(
@@ -173,6 +180,9 @@ class Harvester:
                 token_windows=token_windows_np[mask],
                 ci_windows=ci_windows_np[mask],
             )
+        print(
+            f"heap ops: {time.perf_counter() - t0:.3f}s, n_components={len(np.unique(component_idx_np))}"
+        )
 
     def _batch_add_examples(
         self,
