@@ -80,7 +80,7 @@ def _load_lm_batch(
 
     dataset_config = DatasetConfig(
         name=cfg.task_config.dataset_name,
-        hf_tokenizer_path=pretrained_model_name,
+        hf_tokenizer_path=cfg.tokenizer_name,
         split=cfg.task_config.train_data_split,
         n_ctx=cfg.task_config.max_seq_len,
         seed=seed,  # Use run-specific seed
