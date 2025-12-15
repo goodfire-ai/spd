@@ -71,7 +71,7 @@ def permute_to_identity_hungarian(
     effective_rows = min(batch, C)
 
     # Hungarian algorithm on the effective_rows x C submatrix
-    cost_matrix = -ci_vals[:effective_rows].detach().cpu().numpy()
+    cost_matrix = -ci_vals[:effective_rows].detach().cpu().float().numpy()
     _, col_indices = linear_sum_assignment(cost_matrix)
 
     # Build complete permutation

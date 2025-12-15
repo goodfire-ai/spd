@@ -61,7 +61,7 @@ def _plot_causal_importances_figure(
     images = []
     for j, (mask_name, mask) in enumerate(ci_vals.items()):
         # mask has shape (batch, C) or (batch, pos, C)
-        mask_data = mask.detach().cpu().numpy()
+        mask_data = mask.detach().cpu().float().numpy()
         if has_pos_dim:
             assert mask_data.ndim == 3
             mask_data = mask_data[:, 0, :]
@@ -127,7 +127,7 @@ def plot_mean_component_cis_both_scales(
     processed_data = []
     for module_name, mean_component_ci in mean_component_cis.items():
         sorted_components = torch.sort(mean_component_ci, descending=True)[0]
-        processed_data.append((module_name, sorted_components.detach().cpu().numpy()))
+        processed_data.append((module_name, sorted_components.detach().cpu().float().numpy()))
 
     # Create both figures
     images = []
@@ -326,7 +326,7 @@ def plot_UV_matrices(
     for j, (name, component) in enumerate(sorted(components.items())):
         # Plot V matrix
         V = component.V if all_perm_indices is None else component.V[:, all_perm_indices[name]]
-        V_np = V.detach().cpu().numpy()
+        V_np = V.detach().cpu().float().numpy()
         im = axs[j, 0].matshow(V_np, aspect="auto", cmap="coolwarm")
         axs[j, 0].set_ylabel("d_in index")
         axs[j, 0].set_xlabel("Component index")
@@ -335,7 +335,7 @@ def plot_UV_matrices(
 
         # Plot U matrix
         U = component.U if all_perm_indices is None else component.U[all_perm_indices[name], :]
-        U_np = U.detach().cpu().numpy()
+        U_np = U.detach().cpu().float().numpy()
         im = axs[j, 1].matshow(U_np, aspect="auto", cmap="coolwarm")
         axs[j, 1].set_ylabel("Component index")
         axs[j, 1].set_xlabel("d_out index")
@@ -400,7 +400,7 @@ def plot_component_activation_density(
         col = i // n_rows
         ax = axs[row, col]
 
-        data = density.detach().cpu().numpy()
+        data = density.detach().cpu().float().numpy()
         ax.hist(data, bins=bins)
         ax.set_yscale("log")  # Beware, memory leak unless gc.collect() is called after eval loop
         ax.set_title(module_name)  # Add module name as title to each subplot
@@ -469,7 +469,7 @@ def plot_ci_values_histograms(
         col = i // n_rows
         ax = axs[row, col]
 
-        data = layer_ci.flatten().cpu().numpy()
+        data = layer_ci.flatten().cpu().float().numpy()
         ax.hist(data, bins=bins)
         ax.set_yscale("log")  # Beware, memory leak unless gc.collect() is called after eval loop
         ax.set_title(f"Causal importances for {layer_name}")

@@ -22,9 +22,9 @@ def calc_stochastic_component_mask_info(
     for layer, ci in causal_importances.items():
         match component_mask_sampling:
             case "binomial":
-                stochastic_source = torch.randint(0, 2, ci.shape, device=device).float()
+                stochastic_source = torch.randint(0, 2, ci.shape, device=device).to(dtype)
             case "continuous":
-                stochastic_source = torch.rand_like(ci)
+                stochastic_source = torch.rand_like(ci).to(dtype)
         component_masks[layer] = ci + (1 - ci) * stochastic_source
 
     weight_deltas_and_masks: dict[str, WeightDeltaAndMask] | None = None

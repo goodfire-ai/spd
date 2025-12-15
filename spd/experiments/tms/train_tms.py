@@ -97,7 +97,7 @@ def plot_intro_diagram(model: TMSModel, filepath: Path) -> None:
     plt.rcParams["figure.dpi"] = 200
     _, ax = plt.subplots(1, 1, figsize=(2, 2))
 
-    W = WA.cpu().detach().numpy()
+    W = WA.cpu().detach().float().numpy()
     ax.scatter(W[:, 0], W[:, 1], c=color)
     ax.set_aspect("equal")
     ax.add_collection(
@@ -135,7 +135,7 @@ def plot_cosine_similarity_distribution(
 
     _, ax = plt.subplots(1, 1, figsize=(4, 4))
 
-    sims = masked_sims.cpu().numpy()
+    sims = masked_sims.cpu().float().numpy()
     ax.scatter(sims, np.zeros_like(sims), alpha=0.5)
     ax.set_xlim(-1, 1)
     ax.set_xlabel("Cosine Similarity")

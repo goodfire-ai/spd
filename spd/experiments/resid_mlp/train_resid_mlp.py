@@ -130,7 +130,7 @@ def train(
         loss = loss.mean()
         final_losses.append(loss)
     final_losses = torch.stack(final_losses).mean().cpu().detach()
-    logger.info(f"Final losses: {final_losses.numpy()}")
+    logger.info(f"Final losses: {final_losses.float().numpy()}")
     return final_losses
 
 
