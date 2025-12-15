@@ -11,13 +11,11 @@ Usage:
 import os
 
 import fire
-from transformers import AutoTokenizer
 
 from spd.autointerp.harvest import HarvestConfig, harvest, save_harvest
 from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import ArchitectureInfo
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
+from spd.data import train_loader_and_tokenizer
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
@@ -26,10 +24,10 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 def harvest_cmd(
     wandb_path: str,
     n_batches: int,
-    batch_size: int = 32,
-    context_length: int = 256,
-    ci_threshold: float = 0.01,
-    activation_examples_per_component: int = 20,
+    batch_size: int = 256,
+    context_length: int = 512,
+    ci_threshold: float = 1e-6,
+    activation_examples_per_component: int = 1000,
     activation_context_tokens_per_side: int = 10,
 ) -> None:
     """Harvest correlations and activation contexts."""
@@ -45,29 +43,7 @@ def harvest_cmd(
     model.eval()
 
     spd_config = run_info.config
-    assert spd_config.tokenizer_name is not None
-    tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
-
-    task_config = spd_config.task_config
-    assert isinstance(task_config, LMTaskConfig)
-
-    train_data_config = DatasetConfig(
-        name=task_config.dataset_name,
-        hf_tokenizer_path=spd_config.tokenizer_name,
-        split=task_config.train_data_split,
-        n_ctx=context_length,
-        is_tokenized=task_config.is_tokenized,
-        streaming=task_config.streaming,
-        column_name=task_config.column_name,
-        shuffle_each_epoch=task_config.shuffle_each_epoch,
-    )
-
-    train_loader, _ = create_data_loader(
-        dataset_config=train_data_config,
-        batch_size=batch_size,
-        buffer_size=task_config.buffer_size,
-        global_seed=spd_config.seed,
-    )
+    train_loader, tokenizer = train_loader_and_tokenizer(spd_config, context_length, batch_size)
 
     harvest_config = HarvestConfig(
         wandb_path=clean_path,
@@ -79,7 +55,7 @@ def harvest_cmd(
         activation_context_tokens_per_side=activation_context_tokens_per_side,
     )
 
-    result = harvest(harvest_config, model, tokenizer, train_loader, spd_config)  # pyright: ignore[reportArgumentType]
+    result = harvest(harvest_config, model, tokenizer, train_loader, spd_config)
 
     out_dir = save_harvest(result, run_id)
     print(f"Saved {len(result.components)} components to {out_dir}")

@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoTokenizer, PreTrainedTokenizer
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.base_config import BaseConfig
 from spd.configs import Config
@@ -328,3 +329,34 @@ def create_data_loader_from_config(
     )
 
     return data_loader, tokenizer
+
+
+def train_loader_and_tokenizer(
+    spd_config: Config, context_length: int, batch_size: int
+) -> tuple[DataLoader[Any], PreTrainedTokenizerBase]:
+    assert spd_config.tokenizer_name is not None
+    tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
+    assert isinstance(tokenizer, PreTrainedTokenizerBase)
+
+    task_config = spd_config.task_config
+    assert isinstance(task_config, LMTaskConfig)
+
+    train_data_config = DatasetConfig(
+        name=task_config.dataset_name,
+        hf_tokenizer_path=spd_config.tokenizer_name,
+        split=task_config.train_data_split,
+        n_ctx=context_length,
+        is_tokenized=task_config.is_tokenized,
+        streaming=task_config.streaming,
+        column_name=task_config.column_name,
+        shuffle_each_epoch=task_config.shuffle_each_epoch,
+    )
+
+    train_loader, _ = create_data_loader(
+        dataset_config=train_data_config,
+        batch_size=batch_size,
+        buffer_size=task_config.buffer_size,
+        global_seed=spd_config.seed,
+    )
+
+    return train_loader, tokenizer

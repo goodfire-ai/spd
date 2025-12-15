@@ -215,6 +215,7 @@ class Harvester:
 
     def build_results(self, tokenizer: PreTrainedTokenizerBase) -> list[ComponentData]:
         """Convert accumulated state into ComponentData objects."""
+        print("  Moving tensors to CPU...")
         mean_ci_per_component = (self.ci_sums / self.total_tokens_processed).cpu()
         firing_counts = self.firing_counts.cpu()
         cooccurrence_counts = self.cooccurrence_counts.cpu()
@@ -223,6 +224,10 @@ class Harvester:
         output_token_prob_mass = self.output_token_prob_mass.cpu()
         output_token_prob_totals = self.output_token_prob_totals.cpu()
 
+        n_total = len(self.layer_names) * self.components_per_layer
+        print(
+            f"  Computing stats for {n_total} components across {len(self.layer_names)} layers..."
+        )
         components = []
         for layer_idx, layer_name in enumerate(self.layer_names):
             for component_idx in range(self.components_per_layer):
@@ -339,7 +344,10 @@ def harvest(
 
             harvester.process_batch(batch, ci_flat, probs)
 
+    print(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
+    print("Building component results...")
     components = harvester.build_results(tokenizer)
+    print(f"Built {len(components)} components (skipped components with no firings)")
     return HarvestResult(components=components, config=config)
 
 
