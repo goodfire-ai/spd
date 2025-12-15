@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,41 @@ from spd.autointerp.schemas import (
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.wandb_utils import parse_wandb_run_path
+
+# Pricing per million tokens (as of Dec 2024)
+MODEL_PRICING_IO_PER_MILLION: dict[str, tuple[float, float]] = {
+    "claude-haiku-4-5-20251001": (1.00, 5.00),
+}
+
+
+@dataclass
+class CostTracker:
+    """Track cumulative API costs."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    completed: int = 0
+    total: int = 0
+    model: str = ""
+
+    def add(self, input_tokens: int, output_tokens: int) -> None:
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+        self.completed += 1
+
+    def cost_usd(self) -> float:
+        input_price, output_price = MODEL_PRICING_IO_PER_MILLION.get(self.model, (1.00, 5.00))
+        input_cost = (self.input_tokens / 1_000_000) * input_price
+        output_cost = (self.output_tokens / 1_000_000) * output_price
+        return input_cost + output_cost
+
+    def log(self) -> None:
+        cost = self.cost_usd()
+        print(
+            f"  [{self.completed}/{self.total}] ${cost:.2f} "
+            f"({self.input_tokens:,} in, {self.output_tokens:,} out)"
+        )
+
 
 INTERPRETATION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -49,8 +84,8 @@ async def interpret_component(
     model: str,
     component: ComponentData,
     arch: ArchitectureInfo,
-) -> InterpretationResult:
-    """Send a single interpretation request."""
+) -> tuple[InterpretationResult, int, int]:
+    """Send a single interpretation request. Returns (result, input_tokens, output_tokens)."""
     prompt = format_prompt(component, arch)
 
     response = await client.beta.messages.create(
@@ -68,14 +103,26 @@ async def interpret_component(
     assert content_block.type == "text"
     raw = content_block.text
     parsed = json.loads(raw)
+    assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}: {parsed}"
+    assert isinstance(label := (parsed["label"]), str), (
+        f"Expected 'label' to be a string, got {parsed['label']}"
+    )
+    assert isinstance(confidence := (parsed["confidence"]), str), (
+        f"Expected 'confidence' to be a string, got {parsed['confidence']}"
+    )
+    assert isinstance(reasoning := (parsed["reasoning"]), str), (
+        f"Expected 'reasoning' to be a string, got {parsed['reasoning']}"
+    )
 
-    return InterpretationResult(
+    result = InterpretationResult(
         component_key=component.component_key,
-        label=parsed["label"],
-        confidence=parsed["confidence"],
-        reasoning=parsed["reasoning"],
+        label=label,
+        confidence=confidence,
+        reasoning=reasoning,
         raw_response=raw,
     )
+
+    return result, response.usage.input_tokens, response.usage.output_tokens
 
 
 async def interpret_all(
@@ -105,15 +152,20 @@ async def interpret_all(
     semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
     client = anthropic.AsyncAnthropic(api_key=api_key)
+    cost_tracker = CostTracker(total=len(remaining), model=interpreter_model)
 
     async def process_one(component: ComponentData) -> None:
         async with semaphore:
-            result = await interpret_component(client, interpreter_model, component, arch)
+            result, in_tok, out_tok = await interpret_component(
+                client, interpreter_model, component, arch
+            )
 
         async with output_lock:
             results.append(result)
             with open(output_path, "a") as f:
                 f.write(json.dumps(asdict(result)) + "\n")
+            cost_tracker.add(in_tok, out_tok)
+            cost_tracker.log()
 
     await tqdm_asyncio.gather(*[process_one(c) for c in remaining], desc="Interpreting components")
 
