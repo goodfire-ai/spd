@@ -60,7 +60,7 @@
     const pctSelf = $derived(isUnion ? unionSegments.aOnly : pctAOnlyPop);
 </script>
 
-<div class="set-overlap-vis" title="A: {countA}, B: {countB}, A∩B: {countIntersection}">
+<div class="set-overlap-vis" title="A \ B: {countAOnly}, A∩B: {countIntersection} B \ A: {countBOnly}">
     <!-- Back to front: leftover (white) -> other/B-only -> both/intersection -> self/A-only -->
     <div class="bar leftover" class:hidden={isUnion}></div>
     <div class="bar" style="width: {pctOther}%; background: {colors.setOverlap.other}"></div>

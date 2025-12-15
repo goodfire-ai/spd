@@ -25,7 +25,8 @@
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
         tokens: string[];
-        edges: Edge[];
+        edgesBySource: Map<string, Edge[]>;
+        edgesByTarget: Map<string, Edge[]>;
         onMouseEnter: () => void;
         onMouseLeave: () => void;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
@@ -40,7 +41,8 @@
         outputProbs,
         nodeCiVals,
         tokens,
-        edges,
+        edgesBySource,
+        edgesByTarget,
         onMouseEnter,
         onMouseLeave,
         onPinComponent,
@@ -108,7 +110,8 @@
                 seqIdx={hoveredNode.seqIdx}
                 {summary}
                 {detail}
-                {edges}
+                {edgesBySource}
+                {edgesByTarget}
                 {onPinComponent}
             />
         {:else}
@@ -120,7 +123,8 @@
                 {summary}
                 detail={null}
                 {isLoading}
-                {edges}
+                {edgesBySource}
+                {edgesByTarget}
                 {onPinComponent}
             />
         {/if}

@@ -766,7 +766,8 @@
                                     {activationContextsSummary}
                                     outputProbs={activeGraph.data.outputProbs}
                                     tokens={activeCard.tokens}
-                                    edges={activeGraph.data.edges}
+                                    edgesBySource={activeGraph.data.edgesBySource}
+                                    edgesByTarget={activeGraph.data.edgesByTarget}
                                     onStagedNodesChange={handlePinnedNodesChange}
                                 />
                             {:else if activeComposerState}

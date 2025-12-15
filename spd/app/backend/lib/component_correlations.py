@@ -97,10 +97,8 @@ class ComponentCorrelations:
                 union = count_this + count_others - cooccurence_counts
                 scores = (intersection / union).nan_to_num(float("-inf"))
             case "pmi":
-                # pmi = log(lift)
-                # lift = P(this | that) / P(this)
-                #      = P(this, that) / P(this)P(that)
-                p_this_that = cooccurence_counts / count_others
+                # pmi = log(P(this, that) / (P(this) * P(that)))
+                p_this_that = cooccurence_counts / self.count_total
                 p_this = count_this / self.count_total
                 p_that = count_others / self.count_total
                 lift = p_this_that / (p_this * p_that)
