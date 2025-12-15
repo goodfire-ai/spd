@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import anthropic
+from tqdm.asyncio import tqdm_asyncio
 
 from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.harvest import HarvestResult, load_harvest
@@ -114,7 +115,7 @@ async def interpret_all(
             with open(output_path, "a") as f:
                 f.write(json.dumps(asdict(result)) + "\n")
 
-    await asyncio.gather(*[process_one(c) for c in remaining])
+    await tqdm_asyncio.gather(*[process_one(c) for c in remaining], desc="Interpreting components")
 
     return results
 

@@ -32,7 +32,6 @@ dependencies = [
     "uvicorn",
     "anthropic>=0.75.0",
     "openrouter>=0.1.1",
-    "trio>=0.27.0",
     "httpx>=0.28.0",
     "py-spy>=0.4.1",
 ]

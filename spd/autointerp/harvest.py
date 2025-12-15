@@ -197,6 +197,54 @@ class Harvester:
                 )
             )
 
+    def _log_base_rate_summary(self, firing_counts: Tensor, input_token_totals: Tensor) -> None:
+        """Log summary statistics about base rates for sanity checking."""
+        # Component firing distribution
+        active_counts = firing_counts[firing_counts > 0]
+        if len(active_counts) == 0:
+            print("  WARNING: No components fired above threshold!")
+            return
+
+        sorted_counts = active_counts.sort().values
+        n_active = len(active_counts)
+        print("\n  === Base Rate Summary ===")
+        print(f"  Components with firings: {n_active} / {len(firing_counts)}")
+        print(
+            f"  Firing counts - min: {int(sorted_counts[0])}, "
+            f"median: {int(sorted_counts[n_active // 2])}, "
+            f"max: {int(sorted_counts[-1])}"
+        )
+
+        # Flag sparse components
+        LOW_FIRING_THRESHOLD = 100
+        n_sparse = int((active_counts < LOW_FIRING_THRESHOLD).sum())
+        if n_sparse > 0:
+            print(
+                f"  WARNING: {n_sparse} components have <{LOW_FIRING_THRESHOLD} firings "
+                f"(stats may be noisy)"
+            )
+
+        # Token occurrence distribution
+        active_tokens = input_token_totals[input_token_totals > 0]
+        sorted_token_counts = active_tokens.sort().values
+        n_tokens = len(active_tokens)
+        print(
+            f"  Tokens seen: {n_tokens} unique, "
+            f"occurrences - min: {int(sorted_token_counts[0])}, "
+            f"median: {int(sorted_token_counts[n_tokens // 2])}, "
+            f"max: {int(sorted_token_counts[-1])}"
+        )
+
+        # Flag rare tokens
+        RARE_TOKEN_THRESHOLD = 10
+        n_rare = int((active_tokens < RARE_TOKEN_THRESHOLD).sum())
+        if n_rare > 0:
+            print(
+                f"  Note: {n_rare} tokens have <{RARE_TOKEN_THRESHOLD} occurrences "
+                f"(high precision/recall with these may be spurious)"
+            )
+        print()
+
     def build_results(self, tokenizer: PreTrainedTokenizerBase) -> list[ComponentData]:
         """Convert accumulated state into ComponentData objects."""
         print("  Moving tensors to CPU...")
@@ -207,6 +255,8 @@ class Harvester:
         input_token_totals = self.input_token_totals.cpu()
         output_token_prob_mass = self.output_token_prob_mass.cpu()
         output_token_prob_totals = self.output_token_prob_totals.cpu()
+
+        self._log_base_rate_summary(firing_counts, input_token_totals)
 
         n_total = len(self.layer_names) * self.components_per_layer
         print(
