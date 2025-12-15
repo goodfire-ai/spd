@@ -1,12 +1,12 @@
-"""Interpret components using Claude API with trio for concurrency."""
+"""Interpret components using Claude API with asyncio for concurrency."""
 
+import asyncio
 import json
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-import httpx
-import trio
+import anthropic
 
 from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.harvest import HarvestResult, load_harvest
@@ -20,8 +20,6 @@ from spd.autointerp.schemas import (
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.wandb_utils import parse_wandb_run_path
-
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
 INTERPRETATION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -45,8 +43,7 @@ INTERPRETATION_SCHEMA: dict[str, Any] = {
 
 
 async def interpret_component(
-    client: httpx.AsyncClient,
-    api_key: str,
+    client: anthropic.AsyncAnthropic,
     model: str,
     component: ComponentData,
     arch: ArchitectureInfo,
@@ -54,31 +51,20 @@ async def interpret_component(
     """Send a single interpretation request."""
     prompt = format_prompt(component, arch)
 
-    response = await client.post(
-        ANTHROPIC_API_URL,
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "anthropic-beta": "structured-outputs-2025-11-13",
-            "content-type": "application/json",
+    response = await client.beta.messages.create(
+        model=model,
+        max_tokens=300,
+        betas=["structured-outputs-2025-11-13"],
+        messages=[{"role": "user", "content": prompt}],
+        output_format={
+            "type": "json_schema",
+            "schema": INTERPRETATION_SCHEMA,
         },
-        json={
-            "model": model,
-            "max_tokens": 300,
-            "messages": [{"role": "user", "content": prompt}],
-            "output_format": {
-                "type": "json_schema",
-                "json_schema": INTERPRETATION_SCHEMA,
-            },
-        },
-        timeout=60.0,
     )
-    if response.status_code != 200:
-        print(f"API error {response.status_code}: {response.text}")
-    response.raise_for_status()
 
-    data = response.json()
-    raw = data["content"][0]["text"]
+    content_block = response.content[0]
+    assert content_block.type == "text"
+    raw = content_block.text
     parsed = json.loads(raw)
 
     return InterpretationResult(
@@ -114,21 +100,20 @@ async def interpret_all(
     remaining = [c for c in harvest.components if c.component_key not in completed]
     print(f"Interpreting {len(remaining)} components ({max_concurrent} concurrent)")
 
-    semaphore = trio.Semaphore(max_concurrent)
-    output_lock = trio.Lock()
+    semaphore = asyncio.Semaphore(max_concurrent)
+    output_lock = asyncio.Lock()
+    client = anthropic.AsyncAnthropic(api_key=api_key)
 
-    async def process_one(client: httpx.AsyncClient, component: ComponentData) -> None:
+    async def process_one(component: ComponentData) -> None:
         async with semaphore:
-            result = await interpret_component(client, api_key, interpreter_model, component, arch)
+            result = await interpret_component(client, interpreter_model, component, arch)
 
         async with output_lock:
             results.append(result)
             with open(output_path, "a") as f:
                 f.write(json.dumps(asdict(result)) + "\n")
 
-    async with httpx.AsyncClient() as client, trio.open_nursery() as nursery:
-        for component in remaining:
-            nursery.start_soon(process_one, client, component)
+    await asyncio.gather(*[process_one(c) for c in remaining])
 
     return results
 
@@ -172,14 +157,15 @@ def run_interpret(
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / "results.jsonl"
 
-    results = trio.run(
-        interpret_all,
-        harvest,
-        arch,
-        api_key,
-        interpreter_model,
-        max_concurrent,
-        output_path,
+    results = asyncio.run(
+        interpret_all(
+            harvest,
+            arch,
+            api_key,
+            interpreter_model,
+            max_concurrent,
+            output_path,
+        )
     )
 
     print(f"Completed {len(results)} interpretations -> {output_path}")
