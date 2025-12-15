@@ -29,8 +29,8 @@ def harvest_cmd(
     batch_size: int = 32,
     context_length: int = 256,
     ci_threshold: float = 0.01,
-    n_examples: int = 20,
-    context_window: int = 10,
+    activation_examples_per_component: int = 20,
+    activation_context_tokens_per_side: int = 10,
 ) -> None:
     """Harvest correlations and activation contexts."""
     device = get_device()
@@ -75,8 +75,8 @@ def harvest_cmd(
         batch_size=batch_size,
         context_length=context_length,
         ci_threshold=ci_threshold,
-        n_examples=n_examples,
-        context_window=context_window,
+        activation_examples_per_component=activation_examples_per_component,
+        activation_context_tokens_per_side=activation_context_tokens_per_side,
     )
 
     result = harvest(harvest_config, model, tokenizer, train_loader, spd_config)  # pyright: ignore[reportArgumentType]

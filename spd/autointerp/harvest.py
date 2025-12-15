@@ -31,14 +31,224 @@ class HarvestConfig:
     batch_size: int
     context_length: int
     ci_threshold: float
-    n_examples: int
-    context_window: int  # tokens on each side
+    activation_examples_per_component: int
+    activation_context_tokens_per_side: int
 
 
 @dataclass
 class HarvestResult:
     components: list[ComponentData]
     config: HarvestConfig
+
+
+class Harvester:
+    """Accumulates correlations, token stats, and activation examples in a single pass."""
+
+    def __init__(
+        self,
+        layer_names: list[str],
+        components_per_layer: int,
+        vocab_size: int,
+        ci_threshold: float,
+        max_examples_per_component: int,
+        context_tokens_per_side: int,
+        pad_token_id: int,
+        device: torch.device,
+    ):
+        self.layer_names = layer_names
+        self.components_per_layer = components_per_layer
+        self.vocab_size = vocab_size
+        self.ci_threshold = ci_threshold
+        self.max_examples_per_component = max_examples_per_component
+        self.context_tokens_per_side = context_tokens_per_side
+        self.pad_token_id = pad_token_id
+        self.device = device
+
+        n_components = len(layer_names) * components_per_layer
+
+        # Correlation accumulators
+        self.firing_counts = torch.zeros(n_components, device=device)
+        self.cooccurrence_counts = torch.zeros(n_components, n_components, device=device)
+        self.ci_sums = torch.zeros(n_components, device=device)
+
+        # Token stat accumulators
+        self.input_token_counts = torch.zeros(n_components, vocab_size, device=device)
+        self.input_token_totals = torch.zeros(vocab_size, device=device)
+        self.output_token_counts = torch.zeros(n_components, vocab_size, device=device)
+        self.output_token_totals = torch.zeros(vocab_size, device=device)
+
+        # Min-heaps for top-k activation examples per component
+        # Entry: (ci_value, token_ids, ci_values_in_window, active_pos_in_window)
+        self.activation_example_heaps: list[list[tuple[float, list[int], list[float], int]]] = [
+            [] for _ in range(n_components)
+        ]
+
+        self.total_tokens_processed = 0
+
+    def process_batch(
+        self,
+        batch: Int[Tensor, "B S"],
+        ci_flat: Float[Tensor, "B S n_comp"],
+        output_probs: Float[Tensor, "B S V"],
+    ) -> None:
+        """Accumulate stats from a single batch."""
+        B, S, n_components = ci_flat.shape
+        self.total_tokens_processed += B * S
+
+        # Binary firing indicators for correlations
+        is_firing = (ci_flat > self.ci_threshold).float()
+        is_firing_flat = is_firing.view(B * S, n_components)
+
+        # Correlation accumulators
+        self.firing_counts += is_firing.sum(dim=(0, 1))
+        self.cooccurrence_counts += is_firing_flat.T @ is_firing_flat
+        self.ci_sums += ci_flat.sum(dim=(0, 1))
+
+        # Input token stats: which tokens co-occur with component firings
+        batch_flat = batch.view(B * S)
+        input_onehot = torch.zeros(B * S, self.vocab_size, device=self.device)
+        input_onehot.scatter_(1, batch_flat.unsqueeze(1), 1.0)
+        self.input_token_counts += is_firing_flat.T @ input_onehot
+        self.input_token_totals += input_onehot.sum(dim=0)
+
+        # Output token stats: which tokens are predicted when component fires
+        output_probs_flat = output_probs.view(B * S, self.vocab_size)
+        self.output_token_counts += is_firing_flat.T @ output_probs_flat
+        self.output_token_totals += output_probs_flat.sum(dim=0)
+
+        self._collect_activation_examples(batch, ci_flat)
+
+    def _collect_activation_examples(
+        self,
+        batch: Int[Tensor, "B S"],
+        ci: Float[Tensor, "B S n_comp"],
+    ) -> None:
+        """Update example heaps with high-CI firings from this batch."""
+        batch_padded = torch.nn.functional.pad(
+            batch,
+            (self.context_tokens_per_side, self.context_tokens_per_side),
+            value=self.pad_token_id,
+        )
+
+        # Find all positions where CI exceeds threshold
+        is_firing = ci > self.ci_threshold
+        batch_idx, seq_idx, component_idx = torch.where(is_firing)
+        if len(batch_idx) == 0:
+            return
+
+        ci_at_firing = ci[batch_idx, seq_idx, component_idx]
+
+        # Extract token windows around each firing
+        window_size = 2 * self.context_tokens_per_side + 1
+        offsets = torch.arange(
+            -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
+        )
+        seq_idx_padded = seq_idx + self.context_tokens_per_side
+        window_seq_indices = seq_idx_padded.unsqueeze(1) + offsets
+        batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
+        token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
+
+        # Extract CI values across the window for this component
+        ci_padded = torch.nn.functional.pad(
+            ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
+        )
+        component_idx_expanded = component_idx.unsqueeze(1).expand(-1, window_size)
+        ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
+
+        # Move to CPU for heap operations
+        component_indices = component_idx.cpu().tolist()
+        ci_values = ci_at_firing.cpu().tolist()
+        token_windows_list = token_windows.cpu().tolist()
+        ci_windows_list = ci_windows.cpu().tolist()
+
+        for i, comp_idx in enumerate(component_indices):
+            ci_value = ci_values[i]
+            heap = self.activation_example_heaps[comp_idx]
+            entry = (
+                ci_value,
+                token_windows_list[i],
+                ci_windows_list[i],
+                self.context_tokens_per_side,
+            )
+
+            if len(heap) < self.max_examples_per_component:
+                heapq.heappush(heap, entry)
+            elif ci_value > heap[0][0]:
+                heapq.heapreplace(heap, entry)
+
+    def build_results(self, tokenizer: PreTrainedTokenizerBase) -> list[ComponentData]:
+        """Convert accumulated state into ComponentData objects."""
+        mean_ci_per_component = (self.ci_sums / self.total_tokens_processed).cpu()
+        firing_counts = self.firing_counts.cpu()
+        cooccurrence_counts = self.cooccurrence_counts.cpu()
+        input_token_counts = self.input_token_counts.cpu()
+        input_token_totals = self.input_token_totals.cpu()
+        output_token_counts = self.output_token_counts.cpu()
+        output_token_totals = self.output_token_totals.cpu()
+
+        components = []
+        for layer_idx, layer_name in enumerate(self.layer_names):
+            for component_idx in range(self.components_per_layer):
+                flat_idx = layer_idx * self.components_per_layer + component_idx
+                mean_ci = float(mean_ci_per_component[flat_idx])
+
+                # Skip dead components
+                if mean_ci < self.ci_threshold:
+                    continue
+
+                # Build activation examples from heap
+                heap = self.activation_example_heaps[flat_idx]
+                sorted_examples = sorted(heap, key=lambda x: x[0], reverse=True)
+                activation_examples = [
+                    ActivationExample(
+                        tokens=[tokenizer.decode([t]) for t in token_ids],
+                        ci_values=ci_vals_in_window,
+                        active_pos=active_pos_in_window,
+                        active_ci=ci_at_active,
+                    )
+                    for ci_at_active, token_ids, ci_vals_in_window, active_pos_in_window in sorted_examples[
+                        : self.max_examples_per_component
+                    ]
+                ]
+
+                input_stats = _compute_token_stats(
+                    input_token_counts[flat_idx],
+                    input_token_totals,
+                    firing_counts[flat_idx],
+                    self.total_tokens_processed,
+                    tokenizer,
+                )
+                output_stats = _compute_token_stats(
+                    output_token_counts[flat_idx],
+                    output_token_totals,
+                    firing_counts[flat_idx],
+                    self.total_tokens_processed,
+                    tokenizer,
+                )
+
+                correlations = _compute_correlations(
+                    flat_idx,
+                    firing_counts,
+                    cooccurrence_counts,
+                    self.total_tokens_processed,
+                    self.layer_names,
+                    self.components_per_layer,
+                )
+
+                components.append(
+                    ComponentData(
+                        component_key=f"{layer_name}:{component_idx}",
+                        layer=layer_name,
+                        component_idx=component_idx,
+                        mean_ci=mean_ci,
+                        activation_examples=activation_examples,
+                        input_token_stats=input_stats,
+                        output_token_stats=output_stats,
+                        correlations=correlations,
+                    )
+                )
+
+        return components
 
 
 def harvest(
@@ -51,39 +261,29 @@ def harvest(
     """Single-pass harvest of correlations, token stats, and activation contexts."""
     device = next(model.parameters()).device
     layer_names = list(model.target_module_paths)
-    C = model.C
-    n_components = len(layer_names) * C
     vocab_size = tokenizer.vocab_size
+    pad_token_id = tokenizer.pad_token_id
     assert isinstance(vocab_size, int)
+    assert isinstance(pad_token_id, int)
 
-    # Accumulators
-    count_i = torch.zeros(n_components, device=device)
-    count_ij = torch.zeros(n_components, n_components, device=device)
-    ci_sum = torch.zeros(n_components, device=device)
-    input_counts = torch.zeros(n_components, vocab_size, device=device)
-    input_totals = torch.zeros(vocab_size, device=device)
-    output_counts = torch.zeros(n_components, vocab_size, device=device)
-    output_totals = torch.zeros(vocab_size, device=device)
-
-    # Top-k activation examples per component
-    examples: list[list[tuple[float, list[int], list[float], int]]] = [
-        [] for _ in range(n_components)
-    ]  # (ci, tokens, ci_values, active_pos)
-
-    n_tokens = 0
-    pad_id = tokenizer.pad_token_id
-    assert isinstance(pad_id, int)
+    harvester = Harvester(
+        layer_names=layer_names,
+        components_per_layer=model.C,
+        vocab_size=vocab_size,
+        ci_threshold=config.ci_threshold,
+        max_examples_per_component=config.activation_examples_per_component,
+        context_tokens_per_side=config.activation_context_tokens_per_side,
+        pad_token_id=pad_token_id,
+        device=device,
+    )
 
     train_iter = iter(train_loader)
     for _ in tqdm.tqdm(range(config.n_batches), desc="Harvesting"):
         batch = extract_batch_data(next(train_iter)).to(device)
-        B, S = batch.shape
-        n_tokens += B * S
 
         with torch.no_grad():
             out = model(batch, cache_type="input")
-            logits = out.output
-            probs = torch.softmax(logits, dim=-1)
+            probs = torch.softmax(out.output, dim=-1)
 
             ci_dict = model.calc_causal_importances(
                 pre_weight_acts=out.cache,
@@ -93,269 +293,109 @@ def harvest(
 
             # Stack CI: (B, S, n_layers, C) -> (B, S, n_components)
             ci_stacked = torch.stack([ci_dict[layer] for layer in layer_names], dim=2)
-            ci_flat: Float[Tensor, "B S n_comp"] = ci_stacked.view(B, S, n_components)
+            B, S, _, _ = ci_stacked.shape
+            ci_flat: Float[Tensor, "B S n_comp"] = ci_stacked.view(B, S, -1)
 
-            # Binary activations
-            binary = (ci_flat > config.ci_threshold).float()
-            flat_binary = binary.view(B * S, n_components)
+            harvester.process_batch(batch, ci_flat, probs)
 
-            # Accumulate
-            count_i += binary.sum(dim=(0, 1))
-            count_ij += flat_binary.T @ flat_binary
-            ci_sum += ci_flat.sum(dim=(0, 1))
-
-            # Input token stats
-            batch_flat = batch.view(B * S)
-            input_onehot = torch.zeros(B * S, vocab_size, device=device)
-            input_onehot.scatter_(1, batch_flat.unsqueeze(1), 1.0)
-            input_counts += flat_binary.T @ input_onehot
-            input_totals += input_onehot.sum(dim=0)
-
-            # Output token stats
-            probs_flat = probs.view(B * S, vocab_size)
-            output_counts += flat_binary.T @ probs_flat
-            output_totals += probs_flat.sum(dim=0)
-
-            # Collect activation examples
-            _collect_examples(
-                batch,
-                ci_flat,
-                config.ci_threshold,
-                config.n_examples,
-                config.context_window,
-                pad_id,
-                examples,
-            )
-
-    # Build component data
-    mean_ci = (ci_sum / n_tokens).cpu()
-    components = _build_components(
-        layer_names,
-        C,
-        mean_ci,
-        config.ci_threshold,
-        count_i.cpu(),
-        count_ij.cpu(),
-        n_tokens,
-        input_counts.cpu(),
-        input_totals.cpu(),
-        output_counts.cpu(),
-        output_totals.cpu(),
-        examples,
-        tokenizer,
-        config.n_examples,
-    )
-
+    components = harvester.build_results(tokenizer)
     return HarvestResult(components=components, config=config)
 
 
-def _collect_examples(
-    batch: Int[Tensor, "B S"],
-    ci: Float[Tensor, "B S n_comp"],
-    threshold: float,
-    n_examples: int,
-    context_window: int,
-    pad_id: int,
-    examples: list[list[tuple[float, list[int], list[float], int]]],
-) -> None:
-    """Collect top-k activation examples per component."""
-    device = batch.device
-
-    # Pad for window extraction
-    batch_padded = torch.nn.functional.pad(batch, (context_window, context_window), value=pad_id)
-
-    # Find firings
-    mask = ci > threshold
-    b_idx, s_idx, c_idx = torch.where(mask)
-    if len(b_idx) == 0:
-        return
-
-    ci_vals = ci[b_idx, s_idx, c_idx]
-
-    # Extract windows
-    window_size = 2 * context_window + 1
-    offsets = torch.arange(-context_window, context_window + 1, device=device)
-    s_padded = s_idx + context_window
-    window_indices = s_padded.unsqueeze(1) + offsets
-    b_expanded = b_idx.unsqueeze(1).expand(-1, window_size)
-
-    tokens_window = batch_padded[b_expanded, window_indices]
-
-    # Get CI for entire window (for this component)
-    # ci shape: (B, S, n_comp), need to extract window for each firing
-    ci_padded = torch.nn.functional.pad(ci, (0, 0, context_window, context_window), value=0.0)
-    c_expanded = c_idx.unsqueeze(1).expand(-1, window_size)
-    ci_window = ci_padded[b_expanded, window_indices, c_expanded]
-
-    # Move to CPU for heap operations
-    c_idx_cpu = c_idx.cpu().tolist()
-    ci_vals_cpu = ci_vals.cpu().tolist()
-    tokens_cpu = tokens_window.cpu().tolist()
-    ci_window_cpu = ci_window.cpu().tolist()
-
-    for i, comp in enumerate(c_idx_cpu):
-        ci_val = ci_vals_cpu[i]
-        heap = examples[comp]
-
-        if len(heap) < n_examples:
-            heapq.heappush(heap, (ci_val, tokens_cpu[i], ci_window_cpu[i], context_window))
-        elif ci_val > heap[0][0]:
-            heapq.heapreplace(heap, (ci_val, tokens_cpu[i], ci_window_cpu[i], context_window))
-
-
-def _build_components(
-    layer_names: list[str],
-    C: int,
-    mean_ci: Tensor,
-    ci_threshold: float,
-    count_i: Tensor,
-    count_ij: Tensor,
-    n_tokens: int,
-    input_counts: Tensor,
-    input_totals: Tensor,
-    output_counts: Tensor,
-    output_totals: Tensor,
-    examples: list[list[tuple[float, list[int], list[float], int]]],
-    tokenizer: PreTrainedTokenizerBase,
-    n_examples: int,
-) -> list[ComponentData]:
-    """Build ComponentData for each live component."""
-    components = []
-
-    for layer_idx, layer in enumerate(layer_names):
-        for c_idx in range(C):
-            flat_idx = layer_idx * C + c_idx
-            m_ci = float(mean_ci[flat_idx])
-
-            # Skip dead components
-            if m_ci < ci_threshold:
-                continue
-
-            component_key = f"{layer}:{c_idx}"
-
-            # Activation examples
-            heap = examples[flat_idx]
-            sorted_examples = sorted(heap, key=lambda x: x[0], reverse=True)
-            act_examples = [
-                ActivationExample(
-                    tokens=[tokenizer.decode([t]) for t in toks],
-                    ci_values=ci_vals,
-                    active_pos=pos,
-                    active_ci=ci_val,
-                )
-                for ci_val, toks, ci_vals, pos in sorted_examples[:n_examples]
-            ]
-
-            # Token stats
-            input_stats = _compute_token_stats(
-                input_counts[flat_idx], input_totals, count_i[flat_idx], n_tokens, tokenizer
-            )
-            output_stats = _compute_token_stats(
-                output_counts[flat_idx], output_totals, count_i[flat_idx], n_tokens, tokenizer
-            )
-
-            # Correlations
-            correlations = _compute_correlations(
-                flat_idx, count_i, count_ij, n_tokens, layer_names, C
-            )
-
-            components.append(
-                ComponentData(
-                    component_key=component_key,
-                    layer=layer,
-                    component_idx=c_idx,
-                    mean_ci=m_ci,
-                    activation_examples=act_examples,
-                    input_token_stats=input_stats,
-                    output_token_stats=output_stats,
-                    correlations=correlations,
-                )
-            )
-
-    return components
+# Pure functions for computing stats from accumulated tensors
 
 
 def _compute_token_stats(
-    counts: Tensor,
-    totals: Tensor,
-    firing_count: Tensor,
-    n_tokens: int,
+    token_counts_for_component: Tensor,
+    token_totals: Tensor,
+    component_firing_count: Tensor,
+    total_tokens: int,
     tokenizer: PreTrainedTokenizerBase,
     top_k: int = 10,
 ) -> TokenStats:
-    """Compute precision/recall/PMI for tokens."""
-    fc = float(firing_count)
-    assert fc > 0
+    """Compute precision/recall/PMI for tokens associated with a component."""
+    firing_count = float(component_firing_count)
+    assert firing_count > 0
 
-    valid = (counts > 0) & (totals > 0)
-    recall = counts / fc
-    precision = torch.where(totals > 0, counts / totals, torch.zeros_like(counts))
-    pmi = torch.log(counts * n_tokens / (fc * totals + 1e-10))
-    pmi = torch.where(valid, pmi, torch.full_like(pmi, float("-inf")))
+    has_cooccurrence = (token_counts_for_component > 0) & (token_totals > 0)
+    recall = token_counts_for_component / firing_count
+    precision = torch.where(
+        token_totals > 0, token_counts_for_component / token_totals, torch.zeros_like(token_totals)
+    )
+    pmi = torch.log(
+        token_counts_for_component * total_tokens / (firing_count * token_totals + 1e-10)
+    )
+    pmi = torch.where(has_cooccurrence, pmi, torch.full_like(pmi, float("-inf")))
 
-    def top(vals: Tensor) -> list[tuple[str, float]]:
-        masked = torch.where(valid, vals, torch.full_like(vals, float("-inf")))
-        top_vals, top_idx = torch.topk(masked, min(top_k, int(valid.sum())))
+    def get_top_k(values: Tensor) -> list[tuple[str, float]]:
+        masked = torch.where(has_cooccurrence, values, torch.full_like(values, float("-inf")))
+        top_values, top_indices = torch.topk(masked, min(top_k, int(has_cooccurrence.sum())))
         return [
-            (tokenizer.decode([int(idx)]), round(float(v), 3))
-            for idx, v in zip(top_idx.tolist(), top_vals.tolist(), strict=True)
-            if v > float("-inf")
+            (tokenizer.decode([int(token_id)]), round(float(value), 3))
+            for token_id, value in zip(top_indices.tolist(), top_values.tolist(), strict=True)
+            if value > float("-inf")
         ]
 
     return TokenStats(
-        top_precision=top(precision),
-        top_recall=top(recall),
-        top_pmi=top(pmi),
+        top_precision=get_top_k(precision),
+        top_recall=get_top_k(recall),
+        top_pmi=get_top_k(pmi),
     )
 
 
 def _compute_correlations(
-    idx: int,
-    count_i: Tensor,
-    count_ij: Tensor,
-    n_tokens: int,
+    component_flat_idx: int,
+    firing_counts: Tensor,
+    cooccurrence_counts: Tensor,
+    total_tokens: int,
     layer_names: list[str],
-    C: int,
+    components_per_layer: int,
     top_k: int = 5,
 ) -> ComponentCorrelations:
-    """Compute correlation metrics with other components."""
-    n_comp = len(count_i)
-    ci = float(count_i[idx])
-    assert ci > 0
+    """Compute correlation metrics between this component and all others."""
+    n_components = len(firing_counts)
+    this_firing_count = float(firing_counts[component_flat_idx])
+    assert this_firing_count > 0
 
-    cooc = count_ij[idx]
-    precision = cooc / ci
-    recall = cooc / (count_i + 1e-10)
-    pmi = torch.log(cooc * n_tokens / (ci * count_i + 1e-10))
+    cooccurrences_with_this = cooccurrence_counts[component_flat_idx]
+    precision = cooccurrences_with_this / this_firing_count
+    recall = cooccurrences_with_this / (firing_counts + 1e-10)
+    pmi = torch.log(
+        cooccurrences_with_this * total_tokens / (this_firing_count * firing_counts + 1e-10)
+    )
 
-    # Mask self and zeros
-    mask = torch.ones(n_comp, dtype=torch.bool)
-    mask[idx] = False
-    mask &= count_i > 0
-    mask &= cooc > 0
+    # Exclude self and components with no co-occurrences
+    is_valid = torch.ones(n_components, dtype=torch.bool)
+    is_valid[component_flat_idx] = False
+    is_valid &= firing_counts > 0
+    is_valid &= cooccurrences_with_this > 0
 
-    def idx_to_key(i: int) -> str:
-        layer_idx = i // C
-        comp_idx = i % C
-        return f"{layer_names[layer_idx]}:{comp_idx}"
+    def flat_idx_to_key(flat_idx: int) -> str:
+        layer_idx = flat_idx // components_per_layer
+        component_idx = flat_idx % components_per_layer
+        return f"{layer_names[layer_idx]}:{component_idx}"
 
-    def top(vals: Tensor, largest: bool = True) -> list[tuple[str, float]]:
-        masked = torch.where(
-            mask, vals, torch.full_like(vals, float("-inf") if largest else float("inf"))
+    def get_top_k(values: Tensor, largest: bool = True) -> list[tuple[str, float]]:
+        sentinel = float("-inf") if largest else float("inf")
+        masked = torch.where(is_valid, values, torch.full_like(values, sentinel))
+        top_values, top_indices = torch.topk(
+            masked, min(top_k, int(is_valid.sum())), largest=largest
         )
-        top_vals, top_idx = torch.topk(masked, min(top_k, int(mask.sum())), largest=largest)
         return [
-            (idx_to_key(int(i)), round(float(v), 3))
-            for i, v in zip(top_idx.tolist(), top_vals.tolist(), strict=True)
-            if (v > float("-inf") if largest else v < float("inf"))
+            (flat_idx_to_key(int(flat_idx)), round(float(value), 3))
+            for flat_idx, value in zip(top_indices.tolist(), top_values.tolist(), strict=True)
+            if (value > float("-inf") if largest else value < float("inf"))
         ]
 
     return ComponentCorrelations(
-        precision=top(precision),
-        recall=top(recall),
-        pmi=top(pmi, largest=True),
-        bottom_pmi=top(pmi, largest=False),
+        precision=get_top_k(precision),
+        recall=get_top_k(recall),
+        pmi=get_top_k(pmi, largest=True),
+        bottom_pmi=get_top_k(pmi, largest=False),
     )
+
+
+# I/O
 
 
 def save_harvest(result: HarvestResult, run_id: str) -> Path:
@@ -363,11 +403,9 @@ def save_harvest(result: HarvestResult, run_id: str) -> Path:
     out_dir = AUTOINTERP_DATA_DIR / run_id / "harvest"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Config
     config_path = out_dir / "config.json"
     config_path.write_text(json.dumps(asdict(result.config), indent=2))
 
-    # Components as JSONL
     components_path = out_dir / "components.jsonl"
     with open(components_path, "w") as f:
         for comp in result.components:
@@ -390,7 +428,6 @@ def load_harvest(run_id: str) -> HarvestResult:
     with open(components_path) as f:
         for line in f:
             data = json.loads(line)
-            # Reconstruct nested dataclasses
             data["activation_examples"] = [
                 ActivationExample(**ex) for ex in data["activation_examples"]
             ]
