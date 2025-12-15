@@ -90,21 +90,13 @@ From {{ arch.dataset_name }}:
 
 ## What I'm Looking For
 
-1. **Label** (3-10 words): What does this component detect or represent? Be specific.
-
-2. **Confidence** (low/medium/high): How clear-cut is this?
-
-3. **Reasoning** (2-4 sentences): What evidence supports this? What's ambiguous?
+- **Label** (3-10 words): What does this component detect or represent? Be specific.
+- **Confidence** (low/medium/high): How clear-cut is this?
+- **Reasoning** (2-4 sentences): What evidence supports this? What's ambiguous?
 
 Keep in mind:
 - Earlier layers often capture local/syntactic patterns; later layers capture semantics
 - MLP layers represent features; attention layers move information
 - The training data is narrow — interpret components in that context
-
-```
-Label: <your label>
-Confidence: <low/medium/high>
-Reasoning: <your reasoning>
-```
 """
 )

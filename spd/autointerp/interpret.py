@@ -1,9 +1,9 @@
 """Interpret components using Claude API with trio for concurrency."""
 
 import json
-import re
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import httpx
 import trio
@@ -18,6 +18,26 @@ from spd.autointerp.schemas import (
 )
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+
+INTERPRETATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "label": {
+            "type": "string",
+            "description": "3-10 word label describing what the component detects/represents",
+        },
+        "confidence": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "description": "How clear-cut the interpretation is",
+        },
+        "reasoning": {
+            "type": "string",
+            "description": "2-4 sentences explaining the evidence and ambiguities",
+        },
+    },
+    "required": ["label", "confidence", "reasoning"],
+}
 
 
 async def interpret_component(
@@ -35,12 +55,17 @@ async def interpret_component(
         headers={
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "structured-outputs-2025-11-13",
             "content-type": "application/json",
         },
         json={
             "model": model,
             "max_tokens": 300,
             "messages": [{"role": "user", "content": prompt}],
+            "output_format": {
+                "type": "json_schema",
+                "json_schema": INTERPRETATION_SCHEMA,
+            },
         },
         timeout=60.0,
     )
@@ -48,30 +73,15 @@ async def interpret_component(
 
     data = response.json()
     raw = data["content"][0]["text"]
-
-    label, confidence, reasoning = _parse_response(raw)
+    parsed = json.loads(raw)
 
     return InterpretationResult(
         component_key=component.component_key,
-        label=label,
-        confidence=confidence,
-        reasoning=reasoning,
+        label=parsed["label"],
+        confidence=parsed["confidence"],
+        reasoning=parsed["reasoning"],
         raw_response=raw,
     )
-
-
-def _parse_response(text: str) -> tuple[str, str, str]:
-    """Parse label/confidence/reasoning from response."""
-    # Try to find the structured format
-    label_match = re.search(r"Label:\s*(.+?)(?:\n|$)", text)
-    conf_match = re.search(r"Confidence:\s*(\w+)", text)
-    reason_match = re.search(r"Reasoning:\s*(.+?)(?:```|$)", text, re.DOTALL)
-
-    label = label_match.group(1).strip() if label_match else "PARSE_ERROR"
-    confidence = conf_match.group(1).strip().lower() if conf_match else "unknown"
-    reasoning = reason_match.group(1).strip() if reason_match else text
-
-    return label, confidence, reasoning
 
 
 async def interpret_all(

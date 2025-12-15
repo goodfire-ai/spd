@@ -5,6 +5,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import numpy as np
 import torch
 import tqdm
 from jaxtyping import Float, Int
@@ -128,21 +129,22 @@ class Harvester:
         ci: Float[Tensor, "B S n_comp"],
     ) -> None:
         """Update example heaps with high-CI firings from this batch."""
-        batch_padded = torch.nn.functional.pad(
-            batch,
-            (self.context_tokens_per_side, self.context_tokens_per_side),
-            value=WINDOW_PAD_SENTINEL,
-        )
-
-        # Find all positions where CI exceeds threshold
         is_firing = ci > self.ci_threshold
         batch_idx, seq_idx, component_idx = torch.where(is_firing)
         if len(batch_idx) == 0:
             return
 
-        ci_at_firing = ci[batch_idx, seq_idx, component_idx]
+        # Pad tensors for window extraction
+        batch_padded = torch.nn.functional.pad(
+            batch,
+            (self.context_tokens_per_side, self.context_tokens_per_side),
+            value=WINDOW_PAD_SENTINEL,
+        )
+        ci_padded = torch.nn.functional.pad(
+            ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
+        )
 
-        # Extract token windows around each firing
+        # Extract windows vectorized
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
@@ -150,35 +152,66 @@ class Harvester:
         seq_idx_padded = seq_idx + self.context_tokens_per_side
         window_seq_indices = seq_idx_padded.unsqueeze(1) + offsets
         batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
-        token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
-
-        # Extract CI values across the window for this component
-        ci_padded = torch.nn.functional.pad(
-            ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
-        )
         component_idx_expanded = component_idx.unsqueeze(1).expand(-1, window_size)
+
+        token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
+        ci_at_firing = ci[batch_idx, seq_idx, component_idx]
 
-        # Move to CPU for heap operations
-        component_indices = component_idx.cpu().tolist()
-        ci_values = ci_at_firing.cpu().tolist()
-        token_windows_list = token_windows.cpu().tolist()
-        ci_windows_list = ci_windows.cpu().tolist()
+        # Move to numpy once for heap operations
+        component_idx_np = component_idx.cpu().numpy()
+        ci_at_firing_np = ci_at_firing.cpu().numpy()
+        token_windows_np = token_windows.cpu().numpy()
+        ci_windows_np = ci_windows.cpu().numpy()
 
-        for i, comp_idx in enumerate(component_indices):
-            ci_value = ci_values[i]
-            heap = self.activation_example_heaps[comp_idx]
+        # Group by component and batch-add with early termination
+        for comp_idx in np.unique(component_idx_np):
+            mask = component_idx_np == comp_idx
+            self._batch_add_examples(
+                heap=self.activation_example_heaps[comp_idx],
+                ci_at_firing=ci_at_firing_np[mask],
+                token_windows=token_windows_np[mask],
+                ci_windows=ci_windows_np[mask],
+            )
+
+    def _batch_add_examples(
+        self,
+        heap: list[tuple[float, list[int], list[float], int]],
+        ci_at_firing: np.ndarray,
+        token_windows: np.ndarray,
+        ci_windows: np.ndarray,
+    ) -> None:
+        """Add examples to heap with sort + early termination."""
+        n = len(ci_at_firing)
+        if n == 0:
+            return
+
+        # Sort by CI descending - process highest first
+        sorted_indices = np.argsort(ci_at_firing)[::-1]
+        min_threshold = (
+            heap[0][0] if len(heap) >= self.max_examples_per_component else float("-inf")
+        )
+
+        for idx in sorted_indices:
+            ci_val = float(ci_at_firing[idx])
+
+            # Early termination: sorted descending, so all remaining are below threshold
+            if len(heap) >= self.max_examples_per_component and ci_val <= min_threshold:
+                break
+
             entry = (
-                ci_value,
-                token_windows_list[i],
-                ci_windows_list[i],
+                ci_val,
+                token_windows[idx].tolist(),
+                ci_windows[idx].tolist(),
                 self.context_tokens_per_side,
             )
 
             if len(heap) < self.max_examples_per_component:
                 heapq.heappush(heap, entry)
-            elif ci_value > heap[0][0]:
+                min_threshold = heap[0][0]
+            elif ci_val > heap[0][0]:
                 heapq.heapreplace(heap, entry)
+                min_threshold = heap[0][0]
 
     def build_results(self, tokenizer: PreTrainedTokenizerBase) -> list[ComponentData]:
         """Convert accumulated state into ComponentData objects."""
