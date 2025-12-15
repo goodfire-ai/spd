@@ -74,10 +74,12 @@ class Harvester:
         self.ci_sums = torch.zeros(n_components, device=device)
 
         # Token stat accumulators
+        # Input: actual counts of token co-occurrences with component firings
         self.input_token_counts = torch.zeros(n_components, vocab_size, device=device)
         self.input_token_totals = torch.zeros(vocab_size, device=device)
-        self.output_token_counts = torch.zeros(n_components, vocab_size, device=device)
-        self.output_token_totals = torch.zeros(vocab_size, device=device)
+        # Output: accumulated probability mass (soft counts) weighted by firing
+        self.output_token_prob_mass = torch.zeros(n_components, vocab_size, device=device)
+        self.output_token_prob_totals = torch.zeros(vocab_size, device=device)
 
         # Min-heaps for top-k activation examples per component
         # Entry: (ci_value, token_ids, ci_values_in_window, active_pos_in_window)
@@ -113,10 +115,10 @@ class Harvester:
         self.input_token_counts += is_firing_flat.T @ input_onehot
         self.input_token_totals += input_onehot.sum(dim=0)
 
-        # Output token stats: which tokens are predicted when component fires
+        # Output token stats: probability mass on each token when component fires
         output_probs_flat = output_probs.view(B * S, self.vocab_size)
-        self.output_token_counts += is_firing_flat.T @ output_probs_flat
-        self.output_token_totals += output_probs_flat.sum(dim=0)
+        self.output_token_prob_mass += is_firing_flat.T @ output_probs_flat
+        self.output_token_prob_totals += output_probs_flat.sum(dim=0)
 
         self._collect_activation_examples(batch, ci_flat)
 
@@ -185,8 +187,8 @@ class Harvester:
         cooccurrence_counts = self.cooccurrence_counts.cpu()
         input_token_counts = self.input_token_counts.cpu()
         input_token_totals = self.input_token_totals.cpu()
-        output_token_counts = self.output_token_counts.cpu()
-        output_token_totals = self.output_token_totals.cpu()
+        output_token_prob_mass = self.output_token_prob_mass.cpu()
+        output_token_prob_totals = self.output_token_prob_totals.cpu()
 
         components = []
         for layer_idx, layer_name in enumerate(self.layer_names):
@@ -194,8 +196,9 @@ class Harvester:
                 flat_idx = layer_idx * self.components_per_layer + component_idx
                 mean_ci = float(mean_ci_per_component[flat_idx])
 
-                # Skip dead components
-                if mean_ci < self.ci_threshold:
+                # Skip components that never fired above threshold
+                component_firing_count = float(firing_counts[flat_idx])
+                if component_firing_count == 0:
                     continue
 
                 # Build activation examples from heap
@@ -227,8 +230,8 @@ class Harvester:
                     tokenizer,
                 )
                 output_stats = _compute_token_stats(
-                    output_token_counts[flat_idx],
-                    output_token_totals,
+                    output_token_prob_mass[flat_idx],
+                    output_token_prob_totals,
                     firing_counts[flat_idx],
                     self.total_tokens_processed,
                     tokenizer,
@@ -311,24 +314,29 @@ def harvest(
 
 
 def _compute_token_stats(
-    token_counts_for_component: Tensor,
-    token_totals: Tensor,
+    token_mass_for_component: Tensor,
+    token_mass_totals: Tensor,
     component_firing_count: Tensor,
     total_tokens: int,
     tokenizer: PreTrainedTokenizerBase,
     top_k: int = 10,
 ) -> TokenStats:
-    """Compute precision/recall/PMI for tokens associated with a component."""
+    """Compute precision/recall/PMI for tokens associated with a component.
+
+    Works with either hard counts (input tokens) or soft probability mass (output tokens).
+    """
     firing_count = float(component_firing_count)
     assert firing_count > 0
 
-    has_cooccurrence = (token_counts_for_component > 0) & (token_totals > 0)
-    recall = token_counts_for_component / firing_count
+    has_cooccurrence = (token_mass_for_component > 0) & (token_mass_totals > 0)
+    recall = token_mass_for_component / firing_count
     precision = torch.where(
-        token_totals > 0, token_counts_for_component / token_totals, torch.zeros_like(token_totals)
+        token_mass_totals > 0,
+        token_mass_for_component / token_mass_totals,
+        torch.zeros_like(token_mass_totals),
     )
     pmi = torch.log(
-        token_counts_for_component * total_tokens / (firing_count * token_totals + 1e-10)
+        token_mass_for_component * total_tokens / (firing_count * token_mass_totals + 1e-10)
     )
     pmi = torch.where(has_cooccurrence, pmi, torch.full_like(pmi, float("-inf")))
 
