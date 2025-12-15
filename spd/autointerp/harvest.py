@@ -1,4 +1,12 @@
-"""Harvest correlations and activation contexts in a single pass."""
+"""Harvest correlations and activation contexts.
+
+note for simplestories:
+n_toks_total = 600,000,000
+2.3 seconds per batch of size 256 * 512 toks each
+
+((n_toks_total / (256 * 512)) * 2.3) seconds in hours ≈ 3 hours to harvest the whole dataset
+
+"""
 
 import json
 import random

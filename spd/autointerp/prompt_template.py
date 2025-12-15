@@ -7,7 +7,10 @@ from spd.autointerp.schemas import ArchitectureInfo, ComponentData
 
 def format_prompt(component: ComponentData, arch: ArchitectureInfo) -> str:
     return TEMPLATE.render(
-        c=component, arch=arch, layer_info=_parse_layer(component.layer, arch.n_layers)
+        c=component,
+        arch=arch,
+        layer_info=_parse_layer(component.layer, arch.n_layers),
+        interpretation_schema=INTERPRETATION_SCHEMA,
     )
 
 
@@ -32,6 +35,28 @@ def _parse_layer(layer: str, n_layers: int) -> str:
     }.get(sublayer, sublayer)
 
     return f"{sublayer_desc} in layer {layer_num} of {n_layers}"
+
+
+INTERPRETATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "label": {
+            "type": "string",
+            "description": "3-10 word label describing what the component detects/represents",
+        },
+        "confidence": {
+            "type": "string",
+            "enum": ["low", "medium", "high"],
+            "description": "How clear-cut the interpretation is",
+        },
+        "reasoning": {
+            "type": "string",
+            "description": "2-4 sentences explaining the evidence and ambiguities",
+        },
+    },
+    "required": ["label", "confidence", "reasoning"],
+    "additionalProperties": False,
+}
 
 
 TEMPLATE = jinja2.Template(
@@ -106,5 +131,16 @@ Keep in mind:
 - Earlier layers often capture local/syntactic patterns; later layers capture semantics
 - MLP layers represent features; attention layers move information
 - The training data is narrow — interpret components in that context
+
+---
+
+## Response Format
+
+Your response should be in JSON format, matching this schema:
+```json
+{{ interpretation_schema_json }}
+```
+
+Please directly output the JSON object, without any other text or comments. Thank you!
 """
 )

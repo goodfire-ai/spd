@@ -13,11 +13,7 @@ Usage:
 
 import os
 
-import fire
-
-from spd.autointerp.harvest import HarvestConfig, harvest, harvest_parallel, save_harvest
-from spd.autointerp.interpret import HAIKU_4_5_20251001, run_interpret
-from spd.utils.wandb_utils import parse_wandb_run_path
+from spd.autointerp.interpret import OpenRouterModelName
 
 
 def harvest_cmd(
@@ -35,6 +31,9 @@ def harvest_cmd(
     Args:
         d: Number of GPUs for distributed harvesting. If None, uses single GPU.
     """
+    from spd.autointerp.harvest import HarvestConfig, harvest, harvest_parallel, save_harvest
+    from spd.utils.wandb_utils import parse_wandb_run_path
+
     entity, project, run_id = parse_wandb_run_path(wandb_path)
     clean_path = f"{entity}/{project}/{run_id}"
 
@@ -61,15 +60,18 @@ def harvest_cmd(
 
 def interpret_cmd(
     wandb_path: str,
-    model: str = HAIKU_4_5_20251001,
-    max_concurrent: int = 10,
+    model: OpenRouterModelName = OpenRouterModelName.GEMINI_2_5_FLASH,
+    max_concurrent: int = 20,
 ) -> None:
-    """Interpret harvested components."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    assert api_key, "ANTHROPIC_API_KEY not set"
+    from spd.autointerp.interpret import run_interpret
 
+    """Interpret harvested components."""
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    assert api_key, "OPENROUTER_API_KEY not set"
     run_interpret(wandb_path, api_key, model, max_concurrent)
 
 
 if __name__ == "__main__":
+    import fire
+
     fire.Fire({"harvest": harvest_cmd, "interpret": interpret_cmd})
