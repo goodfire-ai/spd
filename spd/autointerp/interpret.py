@@ -39,6 +39,7 @@ INTERPRETATION_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["label", "confidence", "reasoning"],
+    "additionalProperties": False,
 }
 
 
