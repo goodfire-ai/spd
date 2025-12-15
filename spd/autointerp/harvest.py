@@ -172,17 +172,27 @@ class Harvester:
         print(f"to numpy: {time.perf_counter() - t0:.3f}s")
 
         t0 = time.perf_counter()
-        for comp_idx in np.unique(component_idx_np):
-            mask = component_idx_np == comp_idx
+        # Sort by component index once, then slice by boundaries
+        sort_order = np.argsort(component_idx_np)
+        sorted_comp_idx = component_idx_np[sort_order]
+        sorted_ci = ci_at_firing_np[sort_order]
+        sorted_token_windows = token_windows_np[sort_order]
+        sorted_ci_windows = ci_windows_np[sort_order]
+
+        change_points = np.where(np.diff(sorted_comp_idx) != 0)[0] + 1
+        boundaries = np.concatenate([[0], change_points, [len(sorted_comp_idx)]])
+        n_components = len(boundaries) - 1
+
+        for i in range(n_components):
+            start, end = boundaries[i], boundaries[i + 1]
+            comp_idx = int(sorted_comp_idx[start])
             self._batch_add_examples(
                 heap=self.activation_example_heaps[comp_idx],
-                ci_at_firing=ci_at_firing_np[mask],
-                token_windows=token_windows_np[mask],
-                ci_windows=ci_windows_np[mask],
+                ci_at_firing=sorted_ci[start:end],
+                token_windows=sorted_token_windows[start:end],
+                ci_windows=sorted_ci_windows[start:end],
             )
-        print(
-            f"heap ops: {time.perf_counter() - t0:.3f}s, n_components={len(np.unique(component_idx_np))}"
-        )
+        print(f"heap ops: {time.perf_counter() - t0:.3f}s, n_components={n_components}")
 
     def _batch_add_examples(
         self,
