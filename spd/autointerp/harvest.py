@@ -154,7 +154,19 @@ class Harvester:
         batch_idx, seq_idx, component_idx = torch.where(is_firing)
         if len(batch_idx) == 0:
             return
-        print(f"where: {time.perf_counter() - t0:.3f}s, n_firings={len(batch_idx)}")
+        n_firings_total = len(batch_idx)
+
+        # Subsample if too many firings - we only need enough to feed the reservoirs
+        MAX_FIRINGS_PER_BATCH = 10_000
+        if len(batch_idx) > MAX_FIRINGS_PER_BATCH:
+            keep = torch.randperm(len(batch_idx), device=self.device)[:MAX_FIRINGS_PER_BATCH]
+            batch_idx = batch_idx[keep]
+            seq_idx = seq_idx[keep]
+            component_idx = component_idx[keep]
+
+        print(
+            f"where: {time.perf_counter() - t0:.3f}s, n_firings={n_firings_total}, kept={len(batch_idx)}"
+        )
 
         t0 = time.perf_counter()
         batch_padded = torch.nn.functional.pad(
