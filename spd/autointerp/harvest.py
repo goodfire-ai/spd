@@ -23,6 +23,10 @@ from spd.configs import Config
 from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 
+# Sentinel for padding token windows at sequence boundaries.
+# Using -1 ensures it's never a valid token ID.
+WINDOW_PAD_SENTINEL = -1
+
 
 @dataclass
 class HarvestConfig:
@@ -52,7 +56,6 @@ class Harvester:
         ci_threshold: float,
         max_examples_per_component: int,
         context_tokens_per_side: int,
-        pad_token_id: int,
         device: torch.device,
     ):
         self.layer_names = layer_names
@@ -61,7 +64,6 @@ class Harvester:
         self.ci_threshold = ci_threshold
         self.max_examples_per_component = max_examples_per_component
         self.context_tokens_per_side = context_tokens_per_side
-        self.pad_token_id = pad_token_id
         self.device = device
 
         n_components = len(layer_names) * components_per_layer
@@ -127,7 +129,7 @@ class Harvester:
         batch_padded = torch.nn.functional.pad(
             batch,
             (self.context_tokens_per_side, self.context_tokens_per_side),
-            value=self.pad_token_id,
+            value=WINDOW_PAD_SENTINEL,
         )
 
         # Find all positions where CI exceeds threshold
@@ -199,9 +201,15 @@ class Harvester:
                 # Build activation examples from heap
                 heap = self.activation_example_heaps[flat_idx]
                 sorted_examples = sorted(heap, key=lambda x: x[0], reverse=True)
+
+                def decode_token(token_id: int) -> str:
+                    if token_id == WINDOW_PAD_SENTINEL:
+                        return "<pad>"
+                    return tokenizer.decode([token_id])
+
                 activation_examples = [
                     ActivationExample(
-                        tokens=[tokenizer.decode([t]) for t in token_ids],
+                        tokens=[decode_token(t) for t in token_ids],
                         ci_values=ci_vals_in_window,
                         active_pos=active_pos_in_window,
                         active_ci=ci_at_active,
@@ -262,9 +270,7 @@ def harvest(
     device = next(model.parameters()).device
     layer_names = list(model.target_module_paths)
     vocab_size = tokenizer.vocab_size
-    pad_token_id = tokenizer.pad_token_id
     assert isinstance(vocab_size, int)
-    assert isinstance(pad_token_id, int)
 
     harvester = Harvester(
         layer_names=layer_names,
@@ -273,7 +279,6 @@ def harvest(
         ci_threshold=config.ci_threshold,
         max_examples_per_component=config.activation_examples_per_component,
         context_tokens_per_side=config.activation_context_tokens_per_side,
-        pad_token_id=pad_token_id,
         device=device,
     )
 
