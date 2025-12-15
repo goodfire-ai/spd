@@ -21,7 +21,6 @@ python -m spd.autointerp.scripts.run_autointerp harvest <wandb_path> \
 
 # Interpret - get Claude labels
 python -m spd.autointerp.scripts.run_autointerp interpret <wandb_path> \
-    --model claude-haiku-4-5-20251001 \
     --max_concurrent 50
 ```
 

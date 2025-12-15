@@ -182,10 +182,10 @@ class Harvester:
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
         ci_at_firing = ci[batch_idx, seq_idx, component_idx]
 
-        component_idx_list = component_idx.cpu().tolist()
-        ci_at_firing_list = ci_at_firing.cpu().tolist()
-        token_windows_list = token_windows.cpu().tolist()
-        ci_windows_list = ci_windows.cpu().tolist()
+        component_idx_list: list[int] = component_idx.cpu().tolist()
+        ci_at_firing_list: list[float] = ci_at_firing.cpu().tolist()
+        token_windows_list: list[list[int]] = token_windows.cpu().tolist()
+        ci_windows_list: list[list[float]] = ci_windows.cpu().tolist()
 
         for i, comp_idx in enumerate(component_idx_list):
             self.activation_example_samplers[comp_idx].add(

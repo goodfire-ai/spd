@@ -13,7 +13,7 @@ import os
 import fire
 
 from spd.autointerp.harvest import HarvestConfig, harvest, save_harvest
-from spd.autointerp.interpret import run_interpret
+from spd.autointerp.interpret import HAIKU_4_5_20251001, run_interpret
 from spd.data import train_loader_and_tokenizer
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
@@ -62,7 +62,7 @@ def harvest_cmd(
 
 def interpret_cmd(
     wandb_path: str,
-    model: str = "claude-haiku-4-5-20251001",
+    model: str = HAIKU_4_5_20251001,
     max_concurrent: int = 10,
 ) -> None:
     """Interpret harvested components."""

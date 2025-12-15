@@ -22,9 +22,11 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.wandb_utils import parse_wandb_run_path
 
+HAIKU_4_5_20251001 = "claude-haiku-4-5-20251001"
+
 # Pricing per million tokens (as of Dec 2024)
 MODEL_PRICING_IO_PER_MILLION: dict[str, tuple[float, float]] = {
-    "claude-haiku-4-5-20251001": (1.00, 5.00),
+    HAIKU_4_5_20251001: (1.00, 5.00),
 }
 
 
@@ -197,8 +199,8 @@ def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
 def run_interpret(
     wandb_path: str,
     api_key: str,
-    interpreter_model: str = "claude-haiku-4-5-20251001",
-    max_concurrent: int = 50,
+    interpreter_model: str,
+    max_concurrent: int,
 ) -> list[InterpretationResult]:
     """Main entrypoint: load harvest, interpret all components, save results."""
     _, _, run_id = parse_wandb_run_path(wandb_path)
