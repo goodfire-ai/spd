@@ -64,7 +64,13 @@ class SPDRunInfo(RunInfo[Config]):
             config_path = Path(path).parent / "final_config.yaml"
 
         with open(config_path) as f:
-            config = Config(**yaml.safe_load(f))
+            raw_config = yaml.safe_load(f)
+            # Remove loss_metric_configs and grad_clip_norm
+            raw_config.pop("loss_metric_configs", None)
+            raw_config.pop("grad_clip_norm", None)
+            raw_config.pop("grad_clip_norm_components", None)
+            raw_config.pop("grad_clip_norm_ci_fns", None)
+            config = Config(**raw_config)
 
         return cls(checkpoint_path=comp_model_path, config=config)
 
