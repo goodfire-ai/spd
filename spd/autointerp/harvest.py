@@ -9,7 +9,6 @@ import torch
 import tqdm
 from jaxtyping import Float, Int
 from torch import Tensor
-from torch.utils.data import DataLoader
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.autointerp.schemas import (
@@ -19,8 +18,6 @@ from spd.autointerp.schemas import (
     ComponentData,
     TokenStats,
 )
-from spd.configs import Config
-from spd.models.component_model import ComponentModel
 from spd.utils.general_utils import extract_batch_data
 
 # Sentinel for padding token windows at sequence boundaries.
@@ -30,6 +27,15 @@ WINDOW_PAD_SENTINEL = -1
 
 # Entry: (ci_value, token_ids, ci_values_in_window, active_pos_in_window)
 ActivationExampleTuple = tuple[float, list[int], list[float], int]
+
+
+@dataclass
+class ReservoirState:
+    """Serializable state of a ReservoirSampler."""
+
+    k: int
+    samples: list[ActivationExampleTuple]
+    n_seen: int
 
 
 class ReservoirSampler:
@@ -47,6 +53,67 @@ class ReservoirSampler:
         elif random.randint(1, self.n_seen) <= self.k:
             self.samples[random.randrange(self.k)] = item
 
+    def get_state(self) -> ReservoirState:
+        return ReservoirState(k=self.k, samples=list(self.samples), n_seen=self.n_seen)
+
+    @staticmethod
+    def from_state(state: ReservoirState) -> "ReservoirSampler":
+        sampler = ReservoirSampler(k=state.k)
+        sampler.samples = list(state.samples)
+        sampler.n_seen = state.n_seen
+        return sampler
+
+    @staticmethod
+    def merge(states: list[ReservoirState]) -> "ReservoirSampler":
+        """Merge multiple reservoir states into one.
+
+        Each sample from reservoir i has probability n_i / sum(n_j) of being in the final reservoir.
+        We achieve this by weighted random sampling from the combined pool.
+        """
+        assert len(states) > 0
+        k = states[0].k
+        assert all(s.k == k for s in states)
+
+        total_seen = sum(s.n_seen for s in states)
+        if total_seen == 0:
+            return ReservoirSampler(k)
+
+        # Build weighted pool: (sample, weight) where weight = n_seen for that reservoir
+        weighted_samples: list[tuple[ActivationExampleTuple, int]] = []
+        for state in states:
+            for sample in state.samples:
+                weighted_samples.append((sample, state.n_seen))
+
+        # Sample k items with probability proportional to weight
+        result = ReservoirSampler(k)
+        result.n_seen = total_seen
+
+        if len(weighted_samples) <= k:
+            result.samples = [s for s, _ in weighted_samples]
+        else:
+            # Weighted random sampling without replacement
+            weights = [w for _, w in weighted_samples]
+            indices = []
+            remaining_weights = list(weights)
+            remaining_indices = list(range(len(weighted_samples)))
+
+            for _ in range(k):
+                r = random.random() * sum(remaining_weights)
+                cumsum = 0.0
+                for i, (idx, w) in enumerate(
+                    zip(remaining_indices, remaining_weights, strict=True)
+                ):
+                    cumsum += w
+                    if r <= cumsum:
+                        indices.append(idx)
+                        remaining_indices.pop(i)
+                        remaining_weights.pop(i)
+                        break
+
+            result.samples = [weighted_samples[i][0] for i in indices]
+
+        return result
+
 
 @dataclass
 class HarvestConfig:
@@ -63,6 +130,31 @@ class HarvestConfig:
 class HarvestResult:
     components: list[ComponentData]
     config: HarvestConfig
+
+
+@dataclass
+class HarvesterState:
+    """Serializable state of a Harvester for parallel merging."""
+
+    layer_names: list[str]
+    components_per_layer: int
+    vocab_size: int
+    ci_threshold: float
+    max_examples_per_component: int
+    context_tokens_per_side: int
+
+    # Tensor accumulators (on CPU)
+    firing_counts: Tensor
+    cooccurrence_counts: Tensor
+    ci_sums: Tensor
+    input_token_counts: Tensor
+    input_token_totals: Tensor
+    output_token_prob_mass: Tensor
+    output_token_prob_totals: Tensor
+    total_tokens_processed: int
+
+    # Reservoir states
+    reservoir_states: list[ReservoirState]
 
 
 class Harvester:
@@ -196,6 +288,51 @@ class Harvester:
                     self.context_tokens_per_side,
                 )
             )
+
+    def get_state(self) -> HarvesterState:
+        """Extract serializable state for parallel merging. Moves tensors to CPU."""
+        return HarvesterState(
+            layer_names=self.layer_names,
+            components_per_layer=self.components_per_layer,
+            vocab_size=self.vocab_size,
+            ci_threshold=self.ci_threshold,
+            max_examples_per_component=self.max_examples_per_component,
+            context_tokens_per_side=self.context_tokens_per_side,
+            firing_counts=self.firing_counts.cpu(),
+            cooccurrence_counts=self.cooccurrence_counts.cpu(),
+            ci_sums=self.ci_sums.cpu(),
+            input_token_counts=self.input_token_counts.cpu(),
+            input_token_totals=self.input_token_totals.cpu(),
+            output_token_prob_mass=self.output_token_prob_mass.cpu(),
+            output_token_prob_totals=self.output_token_prob_totals.cpu(),
+            total_tokens_processed=self.total_tokens_processed,
+            reservoir_states=[s.get_state() for s in self.activation_example_samplers],
+        )
+
+    @staticmethod
+    def from_state(state: HarvesterState, device: torch.device) -> "Harvester":
+        """Reconstruct Harvester from state. Used after merging."""
+        harvester = Harvester(
+            layer_names=state.layer_names,
+            components_per_layer=state.components_per_layer,
+            vocab_size=state.vocab_size,
+            ci_threshold=state.ci_threshold,
+            max_examples_per_component=state.max_examples_per_component,
+            context_tokens_per_side=state.context_tokens_per_side,
+            device=device,
+        )
+        harvester.firing_counts = state.firing_counts.to(device)
+        harvester.cooccurrence_counts = state.cooccurrence_counts.to(device)
+        harvester.ci_sums = state.ci_sums.to(device)
+        harvester.input_token_counts = state.input_token_counts.to(device)
+        harvester.input_token_totals = state.input_token_totals.to(device)
+        harvester.output_token_prob_mass = state.output_token_prob_mass.to(device)
+        harvester.output_token_prob_totals = state.output_token_prob_totals.to(device)
+        harvester.total_tokens_processed = state.total_tokens_processed
+        harvester.activation_example_samplers = [
+            ReservoirSampler.from_state(s) for s in state.reservoir_states
+        ]
+        return harvester
 
     def _log_base_rate_summary(self, firing_counts: Tensor, input_token_totals: Tensor) -> None:
         """Log summary statistics about base rates for sanity checking."""
@@ -334,15 +471,73 @@ class Harvester:
         return components
 
 
-def harvest(
-    config: HarvestConfig,
-    model: ComponentModel,
-    tokenizer: PreTrainedTokenizerBase,
-    train_loader: DataLoader[Int[Tensor, "B S"]],
-    spd_config: Config,
-) -> HarvestResult:
+def merge_harvester_states(states: list[HarvesterState]) -> HarvesterState:
+    """Merge multiple HarvesterStates from parallel workers into one."""
+    assert len(states) > 0
+    first = states[0]
+
+    # Verify all states have compatible configs
+    for s in states[1:]:
+        assert s.layer_names == first.layer_names
+        assert s.components_per_layer == first.components_per_layer
+        assert s.vocab_size == first.vocab_size
+        assert s.ci_threshold == first.ci_threshold
+
+    # Sum tensor accumulators
+    firing_counts = torch.stack([s.firing_counts for s in states]).sum(dim=0)
+    cooccurrence_counts = torch.stack([s.cooccurrence_counts for s in states]).sum(dim=0)
+    ci_sums = torch.stack([s.ci_sums for s in states]).sum(dim=0)
+    input_token_counts = torch.stack([s.input_token_counts for s in states]).sum(dim=0)
+    input_token_totals = torch.stack([s.input_token_totals for s in states]).sum(dim=0)
+    output_token_prob_mass = torch.stack([s.output_token_prob_mass for s in states]).sum(dim=0)
+    output_token_prob_totals = torch.stack([s.output_token_prob_totals for s in states]).sum(dim=0)
+    total_tokens_processed = sum(s.total_tokens_processed for s in states)
+
+    # Merge reservoir samplers
+    n_components = len(first.reservoir_states)
+    merged_reservoirs = []
+    for comp_idx in range(n_components):
+        component_reservoir_states = [s.reservoir_states[comp_idx] for s in states]
+        merged = ReservoirSampler.merge(component_reservoir_states)
+        merged_reservoirs.append(merged.get_state())
+
+    return HarvesterState(
+        layer_names=first.layer_names,
+        components_per_layer=first.components_per_layer,
+        vocab_size=first.vocab_size,
+        ci_threshold=first.ci_threshold,
+        max_examples_per_component=first.max_examples_per_component,
+        context_tokens_per_side=first.context_tokens_per_side,
+        firing_counts=firing_counts,
+        cooccurrence_counts=cooccurrence_counts,
+        ci_sums=ci_sums,
+        input_token_counts=input_token_counts,
+        input_token_totals=input_token_totals,
+        output_token_prob_mass=output_token_prob_mass,
+        output_token_prob_totals=output_token_prob_totals,
+        total_tokens_processed=total_tokens_processed,
+        reservoir_states=merged_reservoirs,
+    )
+
+
+def harvest(config: HarvestConfig) -> HarvestResult:
     """Single-pass harvest of correlations, token stats, and activation contexts."""
-    device = next(model.parameters()).device
+    from spd.data import train_loader_and_tokenizer
+    from spd.models.component_model import ComponentModel, SPDRunInfo
+    from spd.utils.distributed_utils import get_device
+
+    device = torch.device(get_device())
+    print(f"Loading model on {device}")
+
+    run_info = SPDRunInfo.from_path(config.wandb_path)
+    model = ComponentModel.from_run_info(run_info).to(device)
+    model.eval()
+
+    spd_config = run_info.config
+    train_loader, tokenizer = train_loader_and_tokenizer(
+        spd_config, config.context_length, config.batch_size
+    )
+
     layer_names = list(model.target_module_paths)
     vocab_size = tokenizer.vocab_size
     assert isinstance(vocab_size, int)
@@ -382,6 +577,141 @@ def harvest(
     print("Building component results...")
     components = harvester.build_results(tokenizer)
     print(f"Built {len(components)} components (skipped components with no firings)")
+    return HarvestResult(components=components, config=config)
+
+
+# Parallel harvesting
+
+
+def _harvest_worker(
+    rank: int,
+    world_size: int,
+    wandb_path: str,
+    n_batches: int,
+    batch_size: int,
+    context_length: int,
+    ci_threshold: float,
+    activation_examples_per_component: int,
+    activation_context_tokens_per_side: int,
+    result_queue: "torch.multiprocessing.Queue[HarvesterState]",
+) -> None:
+    """Worker function for parallel harvesting. Runs in subprocess."""
+    from spd.data import train_loader_and_tokenizer
+    from spd.models.component_model import ComponentModel, SPDRunInfo
+
+    device = torch.device(f"cuda:{rank}")
+    print(f"[Worker {rank}] Starting on {device}")
+
+    run_info = SPDRunInfo.from_path(wandb_path)
+    model = ComponentModel.from_run_info(run_info).to(device)
+    model.eval()
+
+    spd_config = run_info.config
+    train_loader, tokenizer = train_loader_and_tokenizer(spd_config, context_length, batch_size)
+
+    layer_names = list(model.target_module_paths)
+    vocab_size = tokenizer.vocab_size
+    assert isinstance(vocab_size, int)
+
+    harvester = Harvester(
+        layer_names=layer_names,
+        components_per_layer=model.C,
+        vocab_size=vocab_size,
+        ci_threshold=ci_threshold,
+        max_examples_per_component=activation_examples_per_component,
+        context_tokens_per_side=activation_context_tokens_per_side,
+        device=device,
+    )
+
+    # Each worker processes every world_size-th batch
+    train_iter = iter(train_loader)
+    batches_processed = 0
+    for batch_idx in range(n_batches):
+        batch_data = extract_batch_data(next(train_iter))
+        if batch_idx % world_size != rank:
+            continue
+
+        batch = batch_data.to(device)
+        with torch.no_grad():
+            out = model(batch, cache_type="input")
+            probs = torch.softmax(out.output, dim=-1)
+            ci_dict = model.calc_causal_importances(
+                pre_weight_acts=out.cache,
+                detach_inputs=True,
+                sampling=spd_config.sampling,
+            ).lower_leaky
+
+            ci_stacked = torch.stack([ci_dict[layer] for layer in layer_names], dim=2)
+            B, S, _, _ = ci_stacked.shape
+            ci_flat: Float[Tensor, "B S n_comp"] = ci_stacked.view(B, S, -1)
+            harvester.process_batch(batch, ci_flat, probs)
+
+        batches_processed += 1
+        if batches_processed % 100 == 0:
+            print(f"[Worker {rank}] Processed {batches_processed} batches")
+
+    print(
+        f"[Worker {rank}] Done. Processed {batches_processed} batches, {harvester.total_tokens_processed:,} tokens"
+    )
+    state = harvester.get_state()
+    result_queue.put(state)
+
+
+def harvest_parallel(
+    config: HarvestConfig,
+    n_gpus: int = 8,
+) -> HarvestResult:
+    """Parallel harvest across multiple GPUs using multiprocessing."""
+    import torch.multiprocessing as mp
+
+    mp.set_start_method("spawn", force=True)
+    result_queue: mp.Queue[HarvesterState] = mp.Queue()
+
+    processes = []
+    for rank in range(n_gpus):
+        p = mp.Process(
+            target=_harvest_worker,
+            args=(
+                rank,
+                n_gpus,
+                config.wandb_path,
+                config.n_batches,
+                config.batch_size,
+                config.context_length,
+                config.ci_threshold,
+                config.activation_examples_per_component,
+                config.activation_context_tokens_per_side,
+                result_queue,
+            ),
+        )
+        p.start()
+        processes.append(p)
+
+    print(f"Launched {n_gpus} workers. Waiting for results...")
+    states = [result_queue.get() for _ in range(n_gpus)]
+
+    for p in processes:
+        p.join()
+
+    print("All workers finished. Merging states...")
+    merged_state = merge_harvester_states(states)
+    print(f"Merged. Total tokens: {merged_state.total_tokens_processed:,}")
+
+    # Load tokenizer for final build_results
+    from spd.data import train_loader_and_tokenizer
+    from spd.models.component_model import SPDRunInfo
+
+    run_info = SPDRunInfo.from_path(config.wandb_path)
+    _, tokenizer = train_loader_and_tokenizer(
+        run_info.config, config.context_length, config.batch_size
+    )
+
+    # Build final results from merged state
+    harvester = Harvester.from_state(merged_state, torch.device("cpu"))
+    print("Building component results...")
+    components = harvester.build_results(tokenizer)
+    print(f"Built {len(components)} components")
+
     return HarvestResult(components=components, config=config)
 
 
