@@ -1,11 +1,10 @@
 """Harvest correlations and activation contexts in a single pass."""
 
-import heapq
 import json
+import random
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-import numpy as np
 import torch
 import tqdm
 from jaxtyping import Float, Int
@@ -27,6 +26,26 @@ from spd.utils.general_utils import extract_batch_data
 # Sentinel for padding token windows at sequence boundaries.
 # Using -1 ensures it's never a valid token ID.
 WINDOW_PAD_SENTINEL = -1
+
+
+# Entry: (ci_value, token_ids, ci_values_in_window, active_pos_in_window)
+ActivationExampleTuple = tuple[float, list[int], list[float], int]
+
+
+class ReservoirSampler:
+    """Uniform random sampling from a stream via reservoir sampling."""
+
+    def __init__(self, k: int):
+        self.k = k
+        self.samples: list[ActivationExampleTuple] = []
+        self.n_seen = 0
+
+    def add(self, item: ActivationExampleTuple) -> None:
+        self.n_seen += 1
+        if len(self.samples) < self.k:
+            self.samples.append(item)
+        elif random.randint(1, self.n_seen) <= self.k:
+            self.samples[random.randrange(self.k)] = item
 
 
 @dataclass
@@ -82,10 +101,9 @@ class Harvester:
         self.output_token_prob_mass = torch.zeros(n_components, vocab_size, device=device)
         self.output_token_prob_totals = torch.zeros(vocab_size, device=device)
 
-        # Min-heaps for top-k activation examples per component
-        # Entry: (ci_value, token_ids, ci_values_in_window, active_pos_in_window)
-        self.activation_example_heaps: list[list[tuple[float, list[int], list[float], int]]] = [
-            [] for _ in range(n_components)
+        # Reservoir samplers for activation examples per component
+        self.activation_example_samplers = [
+            ReservoirSampler(k=max_examples_per_component) for _ in range(n_components)
         ]
 
         self.total_tokens_processed = 0
@@ -128,17 +146,13 @@ class Harvester:
         batch: Int[Tensor, "B S"],
         ci: Float[Tensor, "B S n_comp"],
     ) -> None:
-        """Update example heaps with high-CI firings from this batch."""
-        import time
-
-        t0 = time.perf_counter()
+        """Reservoir sample activation examples from high-CI firings."""
         is_firing = ci > self.ci_threshold
         batch_idx, seq_idx, component_idx = torch.where(is_firing)
         if len(batch_idx) == 0:
             return
-        print(f"where: {time.perf_counter() - t0:.3f}s, n_firings={len(batch_idx)}")
 
-        t0 = time.perf_counter()
+        # Pad for window extraction
         batch_padded = torch.nn.functional.pad(
             batch,
             (self.context_tokens_per_side, self.context_tokens_per_side),
@@ -147,9 +161,8 @@ class Harvester:
         ci_padded = torch.nn.functional.pad(
             ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
         )
-        print(f"pad: {time.perf_counter() - t0:.3f}s")
 
-        t0 = time.perf_counter()
+        # Extract windows vectorized
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
@@ -162,76 +175,22 @@ class Harvester:
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
         ci_at_firing = ci[batch_idx, seq_idx, component_idx]
-        print(f"window extract: {time.perf_counter() - t0:.3f}s")
 
-        t0 = time.perf_counter()
-        component_idx_np = component_idx.cpu().numpy()
-        ci_at_firing_np = ci_at_firing.cpu().numpy()
-        token_windows_np = token_windows.cpu().numpy()
-        ci_windows_np = ci_windows.cpu().numpy()
-        print(f"to numpy: {time.perf_counter() - t0:.3f}s")
+        # Move to CPU and add to reservoirs
+        component_idx_list = component_idx.cpu().tolist()
+        ci_at_firing_list = ci_at_firing.cpu().tolist()
+        token_windows_list = token_windows.cpu().tolist()
+        ci_windows_list = ci_windows.cpu().tolist()
 
-        t0 = time.perf_counter()
-        # Sort by component index once, then slice by boundaries
-        sort_order = np.argsort(component_idx_np)
-        sorted_comp_idx = component_idx_np[sort_order]
-        sorted_ci = ci_at_firing_np[sort_order]
-        sorted_token_windows = token_windows_np[sort_order]
-        sorted_ci_windows = ci_windows_np[sort_order]
-
-        change_points = np.where(np.diff(sorted_comp_idx) != 0)[0] + 1
-        boundaries = np.concatenate([[0], change_points, [len(sorted_comp_idx)]])
-        n_components = len(boundaries) - 1
-
-        for i in range(n_components):
-            start, end = boundaries[i], boundaries[i + 1]
-            comp_idx = int(sorted_comp_idx[start])
-            self._batch_add_examples(
-                heap=self.activation_example_heaps[comp_idx],
-                ci_at_firing=sorted_ci[start:end],
-                token_windows=sorted_token_windows[start:end],
-                ci_windows=sorted_ci_windows[start:end],
+        for i, comp_idx in enumerate(component_idx_list):
+            self.activation_example_samplers[comp_idx].add(
+                (
+                    ci_at_firing_list[i],
+                    token_windows_list[i],
+                    ci_windows_list[i],
+                    self.context_tokens_per_side,
+                )
             )
-        print(f"heap ops: {time.perf_counter() - t0:.3f}s, n_components={n_components}")
-
-    def _batch_add_examples(
-        self,
-        heap: list[tuple[float, list[int], list[float], int]],
-        ci_at_firing: np.ndarray,
-        token_windows: np.ndarray,
-        ci_windows: np.ndarray,
-    ) -> None:
-        """Add examples to heap with sort + early termination."""
-        n = len(ci_at_firing)
-        if n == 0:
-            return
-
-        # Sort by CI descending - process highest first
-        sorted_indices = np.argsort(ci_at_firing)[::-1]
-        min_threshold = (
-            heap[0][0] if len(heap) >= self.max_examples_per_component else float("-inf")
-        )
-
-        for idx in sorted_indices:
-            ci_val = float(ci_at_firing[idx])
-
-            # Early termination: sorted descending, so all remaining are below threshold
-            if len(heap) >= self.max_examples_per_component and ci_val <= min_threshold:
-                break
-
-            entry = (
-                ci_val,
-                token_windows[idx].tolist(),
-                ci_windows[idx].tolist(),
-                self.context_tokens_per_side,
-            )
-
-            if len(heap) < self.max_examples_per_component:
-                heapq.heappush(heap, entry)
-                min_threshold = heap[0][0]
-            elif ci_val > heap[0][0]:
-                heapq.heapreplace(heap, entry)
-                min_threshold = heap[0][0]
 
     def build_results(self, tokenizer: PreTrainedTokenizerBase) -> list[ComponentData]:
         """Convert accumulated state into ComponentData objects."""
@@ -259,9 +218,9 @@ class Harvester:
                 if component_firing_count == 0:
                     continue
 
-                # Build activation examples from heap
-                heap = self.activation_example_heaps[flat_idx]
-                sorted_examples = sorted(heap, key=lambda x: x[0], reverse=True)
+                # Build activation examples from reservoir (sort by CI for display)
+                sampler = self.activation_example_samplers[flat_idx]
+                sorted_samples = sorted(sampler.samples, key=lambda x: x[0], reverse=True)
 
                 def decode_token(token_id: int) -> str:
                     if token_id == WINDOW_PAD_SENTINEL:
@@ -275,9 +234,7 @@ class Harvester:
                         active_pos=active_pos_in_window,
                         active_ci=ci_at_active,
                     )
-                    for ci_at_active, token_ids, ci_vals_in_window, active_pos_in_window in sorted_examples[
-                        : self.max_examples_per_component
-                    ]
+                    for ci_at_active, token_ids, ci_vals_in_window, active_pos_in_window in sorted_samples
                 ]
 
                 input_stats = _compute_token_stats(
