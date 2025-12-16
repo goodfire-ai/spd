@@ -34,6 +34,7 @@
     let tokenStats = $state<TokenStats | null>(null);
     let tokenStatsLoading = $state(false);
 
+    // Layer metadata is already sorted by mean_ci desc from backend
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
     let currentMetadata = $derived<api.SubcomponentMetadata>(currentLayerMetadata[currentPage]);
@@ -54,6 +55,34 @@
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
         }
+    }
+
+    // Search for a specific subcomponent index
+    let searchValue = $state("");
+    let searchError = $state<string | null>(null);
+
+    function handleSearchInput(event: Event) {
+        const target = event.target as HTMLInputElement;
+        searchValue = target.value;
+        searchError = null;
+
+        if (searchValue === "") return;
+
+        const targetIdx = parseInt(searchValue);
+        if (isNaN(targetIdx)) {
+            searchError = "Invalid number";
+            return;
+        }
+
+        // Find the page index that contains this subcomponent index
+        const pageIndex = currentLayerMetadata.findIndex((m) => m.subcomponent_idx === targetIdx);
+
+        if (pageIndex === -1) {
+            searchError = `Not found`;
+            return;
+        }
+
+        currentPage = pageIndex;
     }
 
     function previousPage() {
@@ -200,6 +229,21 @@
             <span>of {totalPages}</span>
             <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
         </div>
+
+        <div class="search-box">
+            <label for="search-input">Go to index:</label>
+            <input
+                id="search-input"
+                type="number"
+                placeholder="e.g. 42"
+                value={searchValue}
+                oninput={handleSearchInput}
+                class="search-input"
+            />
+            {#if searchError}
+                <span class="search-error">{searchError}</span>
+            {/if}
+        </div>
     </div>
 
     {#if loadingComponent}
@@ -345,6 +389,44 @@
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .search-box {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .search-input {
+        width: 70px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        appearance: textfield;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .search-input::-webkit-inner-spin-button,
+    .search-input::-webkit-outer-spin-button {
+        appearance: none;
+        margin: 0;
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
+
+    .search-error {
+        font-size: var(--text-xs);
+        color: var(--semantic-error);
         white-space: nowrap;
     }
 
