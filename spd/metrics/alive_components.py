@@ -21,8 +21,7 @@ class AliveComponentsTracker:
 
     def __init__(
         self,
-        target_module_paths: list[str],
-        C: int,
+        module_to_c: dict[str, int],
         device: str,
         n_examples_until_dead: int,
         ci_alive_threshold: float,
@@ -31,8 +30,7 @@ class AliveComponentsTracker:
         """Initialize the tracker.
 
         Args:
-            target_module_paths: List of module names to track
-            C: Number of components per module
+            module_to_c: Dictionary mapping module names to their C values
             device: Device to store tensors on
             n_examples_until_dead: Number of examples without firing before component is considered dead
             ci_alive_threshold: Causal importance threshold above which a component is considered 'firing'
@@ -44,7 +42,7 @@ class AliveComponentsTracker:
         self.n_batches_until_dead = self.n_examples_until_dead // global_n_examples_per_batch
 
         self.n_batches_since_fired: dict[str, Int[Tensor, " C"]] = {
-            m: torch.zeros(C, dtype=torch.int64, device=device) for m in target_module_paths
+            m: torch.zeros(c, dtype=torch.int64, device=device) for m, c in module_to_c.items()
         }
 
     def update(self, ci: dict[str, Float[Tensor, "... C"]]) -> None:

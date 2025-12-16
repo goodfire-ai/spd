@@ -141,14 +141,17 @@ def optimize(
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
     if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+        # identity_module_patterns is list[tuple[str, int]] after validation
+        insert_identity_operations_(
+            target_model,
+            identity_patterns=config.identity_module_patterns,  # pyright: ignore[reportArgumentType]
+        )
 
     target_model.requires_grad_(False)
 
     model = ComponentModel(
         target_model=target_model,
         target_module_patterns=config.all_module_patterns,
-        C=config.C,
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
@@ -230,8 +233,7 @@ def optimize(
         else sample_batch.shape  # else it's a batch of token ids
     )
     alive_tracker = AliveComponentsTracker(
-        target_module_paths=model.target_module_paths,
-        C=config.C,
+        module_to_c=model.module_to_c,
         device=device,
         n_examples_until_dead=config.n_examples_until_dead,
         ci_alive_threshold=config.ci_alive_threshold,

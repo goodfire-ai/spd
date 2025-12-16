@@ -38,8 +38,7 @@ def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel
 
     comp_model = ComponentModel(
         target_model=target,
-        target_module_patterns=["fc"],
-        C=1,
+        target_module_patterns=[("fc", 1)],
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
         pretrained_model_output_attr=None,

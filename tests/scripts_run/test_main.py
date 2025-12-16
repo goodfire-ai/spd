@@ -77,10 +77,26 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
+        def get_c_value(config: Any) -> int:
+            """Get C value from config (handles migrated format where C is in patterns)."""
+            # After migration, C is embedded in all_module_patterns as tuples of (pattern, c)
+            c_values = {c for _, c in config.all_module_patterns}
+            assert len(c_values) == 1, f"Expected uniform C, got {c_values}"
+            return next(iter(c_values))
+
         def there_is_one_with(props: dict[str, Any]):
             matching = []
             for config in configs:
-                if all(config.__dict__[k] == v for k, v in props.items()):
+                matches = True
+                for k, v in props.items():
+                    if k == "C":
+                        if get_c_value(config) != v:
+                            matches = False
+                            break
+                    elif config.__dict__[k] != v:
+                        matches = False
+                        break
+                if matches:
                     matching.append(config)
             return len(matching) == 1
 
@@ -112,10 +128,25 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
+        def get_c_value(config: Any) -> int:
+            """Get C value from config (handles migrated format where C is in patterns)."""
+            c_values = {c for _, c in config.all_module_patterns}
+            assert len(c_values) == 1, f"Expected uniform C, got {c_values}"
+            return next(iter(c_values))
+
         def there_is_one_with(props: dict[str, Any]):
             matching = []
             for config in configs:
-                if all(config.__dict__[k] == v for k, v in props.items()):
+                matches = True
+                for k, v in props.items():
+                    if k == "C":
+                        if get_c_value(config) != v:
+                            matches = False
+                            break
+                    elif config.__dict__[k] != v:
+                        matches = False
+                        break
+                if matches:
                     matching.append(config)
             return len(matching) == 1
 

@@ -102,7 +102,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
     target_model.requires_grad_(False)
 
     if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)  # pyright: ignore[reportArgumentType]
 
     dataset = InductionDataset(
         seq_len=ih_transformer_config.seq_len,

@@ -59,25 +59,56 @@ def replace_std_values_in_layernorm(
         module.std = std
 
 
-def get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
-    """Find the target_module_patterns that match real modules in the target model.
+def get_target_module_paths_with_c(
+    model: nn.Module, target_module_patterns: list[tuple[str, int]]
+) -> dict[str, int]:
+    """Find modules matching patterns and return mapping of module_path -> C value.
 
-    e.g. `["layers.*.mlp_in"]` ->  `["layers.1.mlp_in", "layers.2.mlp_in"]`.
+    For modules matching multiple patterns, the most specific pattern wins
+    (pattern with fewest wildcards). Ties are broken alphabetically by pattern.
+
+    Args:
+        model: The target model
+        target_module_patterns: List of (pattern, C_value) tuples
+
+    Returns:
+        Dictionary mapping module paths to their C values
+
+    Raises:
+        ValueError: If any pattern doesn't match any modules
+
+    Example:
+        >>> patterns = [("h.*.mlp.*", 100), ("h.*.mlp.c_fc", 50)]
+        >>> get_target_module_paths_with_c(model, patterns)
+        {'h.0.mlp.c_fc': 50, 'h.0.mlp.down_proj': 100, ...}
+        # h.0.mlp.c_fc uses C=50 (1 wildcard beats 2 wildcards)
     """
+    # module -> (wildcard_count, pattern_for_tiebreak, C)
+    module_to_info: dict[str, tuple[int, str, int]] = {}
 
-    names_out: list[str] = []
-    matched_patterns: set[str] = set()
-    for name, _ in model.named_modules():
-        for pattern in target_module_patterns:
+    for pattern, c in target_module_patterns:
+        wildcard_count = pattern.count("*")
+        matched_any = False
+
+        for name, _ in model.named_modules():
             if fnmatch.fnmatch(name, pattern):
-                matched_patterns.add(pattern)
-                names_out.append(name)
+                matched_any = True
 
-    unmatched_patterns = set(target_module_patterns) - matched_patterns
-    if unmatched_patterns:
-        raise ValueError(
-            f"The following patterns in target_module_patterns did not match any modules: "
-            f"{sorted(unmatched_patterns)}"
-        )
+                # Conflict resolution: fewest wildcards wins, then alphabetically by pattern
+                if name not in module_to_info:
+                    module_to_info[name] = (wildcard_count, pattern, c)
+                else:
+                    current_wc, current_pattern, _ = module_to_info[name]
+                    # More specific (fewer wildcards) wins; alphabetical tiebreak
+                    if wildcard_count < current_wc or (
+                        wildcard_count == current_wc and pattern < current_pattern
+                    ):
+                        module_to_info[name] = (wildcard_count, pattern, c)
 
-    return names_out
+        if not matched_any:
+            raise ValueError(
+                f"Pattern '{pattern}' in target_module_patterns did not match any modules"
+            )
+
+    # Return just module name -> C mapping
+    return {name: c for name, (_, _, c) in module_to_info.items()}

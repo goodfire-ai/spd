@@ -87,17 +87,16 @@ def app_with_state():
         target_model.eval()
         target_model.requires_grad_(False)
 
-        target_module_patterns = [
-            "h.*.mlp.c_fc",
-            "h.*.mlp.down_proj",
-            "h.*.attn.q_proj",
-            "h.*.attn.k_proj",
-            "h.*.attn.v_proj",
-            "h.*.attn.o_proj",
+        target_module_patterns: list[tuple[str, int]] = [
+            ("h.*.mlp.c_fc", 8),
+            ("h.*.mlp.down_proj", 8),
+            ("h.*.attn.q_proj", 8),
+            ("h.*.attn.k_proj", 8),
+            ("h.*.attn.v_proj", 8),
+            ("h.*.attn.o_proj", 8),
         ]
 
         config = Config(
-            C=8,
             n_mask_samples=1,
             ci_fn_type="shared_mlp",
             ci_fn_hidden_dims=[16],
@@ -129,7 +128,6 @@ def app_with_state():
         model = ComponentModel(
             target_model=target_model,
             target_module_patterns=target_module_patterns,
-            C=config.C,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             pretrained_model_output_attr=config.pretrained_model_output_attr,

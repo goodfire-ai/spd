@@ -18,7 +18,8 @@ class CIMeanPerComponent(Metric):
     def __init__(self, model: ComponentModel, device: str) -> None:
         self.components = model.components
         self.component_ci_sums: dict[str, Tensor] = {
-            module_name: torch.zeros(model.C, device=device) for module_name in self.components
+            module_name: torch.zeros(model.module_to_c[module_name], device=device)
+            for module_name in self.components
         }
         self.examples_seen: dict[str, Tensor] = {
             module_name: torch.tensor(0, device=device) for module_name in self.components

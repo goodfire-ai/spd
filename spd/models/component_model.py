@@ -27,7 +27,7 @@ from spd.models.components import (
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import ModelPath
 from spd.utils.general_utils import resolve_class, runtime_cast
-from spd.utils.module_utils import get_target_module_paths
+from spd.utils.module_utils import get_target_module_paths_with_c
 
 
 @dataclass
@@ -75,8 +75,7 @@ class ComponentModel(LoadableModule):
     def __init__(
         self,
         target_model: nn.Module,
-        target_module_patterns: list[str],
-        C: int,
+        target_module_patterns: list[tuple[str, int]],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
@@ -91,14 +90,15 @@ class ComponentModel(LoadableModule):
             )
 
         self.target_model = target_model
-        self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-        self.target_module_paths = get_target_module_paths(target_model, target_module_patterns)
+
+        # Get module paths with their C values
+        self.module_to_c = get_target_module_paths_with_c(target_model, target_module_patterns)
+        self.target_module_paths = list(self.module_to_c.keys())
 
         self.components = ComponentModel._create_components(
             target_model=target_model,
-            target_module_paths=self.target_module_paths,
-            C=C,
+            module_to_c=self.module_to_c,
         )
         self._components = nn.ModuleDict(
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
@@ -106,8 +106,7 @@ class ComponentModel(LoadableModule):
 
         self.ci_fns = ComponentModel._create_ci_fns(
             target_model=target_model,
-            target_module_paths=self.target_module_paths,
-            C=C,
+            module_to_c=self.module_to_c,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
         )
@@ -122,6 +121,20 @@ class ComponentModel(LoadableModule):
             # For other sigmoid types, use the same function for both
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+
+    @property
+    def C(self) -> int:
+        """Return the uniform C value if all modules have the same C.
+
+        Raises AssertionError if modules have different C values.
+        For code that needs per-module C values, use module_to_c directly.
+        """
+        c_values = set(self.module_to_c.values())
+        assert len(c_values) == 1, (
+            f"Cannot use uniform C property when modules have different C values: {self.module_to_c}. "
+            "Use model.module_to_c[module_name] instead."
+        )
+        return next(iter(c_values))
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -180,13 +193,12 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_components(
         target_model: nn.Module,
-        target_module_paths: list[str],
-        C: int,
+        module_to_c: dict[str, int],
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
-        for target_module_path in target_module_paths:
-            target_module = target_model.get_submodule(target_module_path)
-            components[target_module_path] = ComponentModel._create_component(target_module, C)
+        for module_path, c in module_to_c.items():
+            target_module = target_model.get_submodule(module_path)
+            components[module_path] = ComponentModel._create_component(target_module, c)
         return components
 
     @staticmethod
@@ -226,17 +238,16 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_ci_fns(
         target_model: nn.Module,
-        target_module_paths: list[str],
-        C: int,
+        module_to_c: dict[str, int],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
-        for target_module_path in target_module_paths:
-            target_module = target_model.get_submodule(target_module_path)
-            ci_fns[target_module_path] = ComponentModel._create_ci_fn(
+        for module_path, c in module_to_c.items():
+            target_module = target_model.get_submodule(module_path)
+            ci_fns[module_path] = ComponentModel._create_ci_fn(
                 target_module,
-                C,
+                c,
                 ci_fn_type,
                 ci_fn_hidden_dims,
             )
@@ -457,14 +468,15 @@ class ComponentModel(LoadableModule):
         target_model.requires_grad_(False)
 
         if config.identity_module_patterns is not None:
+            # identity_module_patterns is list[tuple[str, int]] after validation
             insert_identity_operations_(
-                target_model, identity_patterns=config.identity_module_patterns
+                target_model,
+                identity_patterns=config.identity_module_patterns,  # pyright: ignore[reportArgumentType]
             )
 
         comp_model = ComponentModel(
             target_model=target_model,
             target_module_patterns=config.all_module_patterns,
-            C=config.C,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,

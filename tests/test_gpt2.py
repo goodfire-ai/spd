@@ -98,7 +98,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
     target_model.eval()
 
     if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)  # pyright: ignore[reportArgumentType]
 
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
