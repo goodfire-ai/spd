@@ -8,25 +8,14 @@ AUTOINTERP_DATA_DIR = Path(".data/autointerp")
 
 @dataclass
 class ActivationExample:
-    tokens: list[str]
+    token_ids: list[int]
     ci_values: list[float]
-    active_pos: int
-    active_ci: float
 
 
 @dataclass
-class TokenStats:
-    top_precision: list[tuple[str, float]]
-    top_recall: list[tuple[str, float]]
-    top_pmi: list[tuple[str, float]]
-
-
-@dataclass
-class ComponentCorrelations:
-    precision: list[tuple[str, float]]  # (component_key, score)
-    recall: list[tuple[str, float]]
-    pmi: list[tuple[str, float]]
-    bottom_pmi: list[tuple[str, float]]
+class ComponentTokenPMI:
+    top: list[tuple[int, float]]
+    bottom: list[tuple[int, float]]
 
 
 @dataclass
@@ -36,18 +25,18 @@ class ComponentData:
     component_idx: int
     mean_ci: float
     activation_examples: list[ActivationExample]
-    input_token_stats: TokenStats
-    output_token_stats: TokenStats
-    correlations: ComponentCorrelations
+    input_token_pmi: ComponentTokenPMI
+    output_token_pmi: ComponentTokenPMI
 
 
 @dataclass
 class ArchitectureInfo:
-    n_layers: int
+    n_blocks: int
     c: int
     model_class: str
     dataset_name: str
     dataset_description: str
+    tokenizer_name: str
 
 
 @dataclass

@@ -19,12 +19,13 @@ from spd.autointerp.interpret import OpenRouterModelName
 def harvest_cmd(
     wandb_path: str,
     n_batches: int,
-    d: int | None = None,
+    n_gpus: int | None = None,
     batch_size: int = 256,
     context_length: int = 512,
     ci_threshold: float = 1e-6,
-    activation_examples_per_component: int = 100,
+    activation_examples_per_component: int = 1000,
     activation_context_tokens_per_side: int = 10,
+    pmi_token_top_k: int = 40,
 ) -> None:
     """Harvest correlations and activation contexts.
 
@@ -45,11 +46,12 @@ def harvest_cmd(
         ci_threshold=ci_threshold,
         activation_examples_per_component=activation_examples_per_component,
         activation_context_tokens_per_side=activation_context_tokens_per_side,
+        pmi_token_top_k=pmi_token_top_k,
     )
 
-    if d is not None:
-        print(f"Distributed harvest: {clean_path} with {d} GPUs")
-        result = harvest_parallel(config, d)
+    if n_gpus is not None:
+        print(f"Distributed harvest: {clean_path} with {n_gpus} GPUs")
+        result = harvest_parallel(config, n_gpus)
     else:
         print(f"Single-GPU harvest: {clean_path}")
         result = harvest(config)

@@ -10,10 +10,12 @@ from typing import Any
 from openrouter import OpenRouter
 from openrouter.components import JSONSchemaConfig, ResponseFormatJSONSchema
 from tqdm.asyncio import tqdm_asyncio
+from transformers import AutoTokenizer
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.harvest import HarvestResult, load_harvest
-from spd.autointerp.prompt_template import format_prompt
+from spd.autointerp.prompt_template import format_prompt_template
 from spd.autointerp.schemas import (
     AUTOINTERP_DATA_DIR,
     ArchitectureInfo,
@@ -40,8 +42,9 @@ MODEL_PRICING_IO_PER_MILLION: dict[str, tuple[float, float]] = {
 
 class CostTracker:
     def __init__(self, model: str) -> None:
-        self.model = model
-        self.input_price, self.output_price = MODEL_PRICING_IO_PER_MILLION[model]
+        i, o = MODEL_PRICING_IO_PER_MILLION[model]
+        self.input_price = i
+        self.output_price = o
 
         self.input_tokens = 0
         self.output_tokens = 0
@@ -92,9 +95,10 @@ async def interpret_component(
     model: str,
     component: ComponentData,
     arch: ArchitectureInfo,
+    tokenizer: PreTrainedTokenizerBase,
 ) -> tuple[InterpretationResult, int, int]:
     """Send a single interpretation request. Returns (result, input_tokens, output_tokens)."""
-    prompt = format_prompt(component, arch)
+    prompt = format_prompt_template(component, arch, tokenizer)
 
     response = await client.chat.send_async(
         model=model,
@@ -103,7 +107,7 @@ async def interpret_component(
         response_format=ResponseFormatJSONSchema(
             json_schema=JSONSchemaConfig(
                 name="interpretation",
-                schema_=INTERPRETATION_SCHEMA,
+                schema_={**INTERPRETATION_SCHEMA, "additionalProperties": False},
                 strict=True,
             )
         ),
@@ -160,15 +164,19 @@ async def interpret_all(
     remaining = [c for c in harvest.components if c.component_key not in completed]
     print(f"Interpreting {len(remaining)} components ({max_concurrent} concurrent)")
 
+    remaining = remaining[:1]
+
     semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
 
+    tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
+    assert isinstance(tokenizer, PreTrainedTokenizerBase)
     cost_tracker = CostTracker(model=interpreter_model)
 
     async def process_one(component: ComponentData) -> None:
         async with semaphore:
             result, in_tok, out_tok = await interpret_component(
-                client, interpreter_model, component, arch
+                client, interpreter_model, component, arch, tokenizer
             )
 
         async with output_lock:
@@ -199,12 +207,14 @@ def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
     config = run_info.config
     task_config = config.task_config
     assert isinstance(task_config, LMTaskConfig)
+    assert config.tokenizer_name is not None, "tokenizer_name is required"
     return ArchitectureInfo(
-        n_layers=n_blocks,
+        n_blocks=n_blocks,
         c=model.C,
         model_class=config.pretrained_model_class,
         dataset_name=task_config.dataset_name,
         dataset_description=DATASET_DESCRIPTIONS[task_config.dataset_name],
+        tokenizer_name=config.tokenizer_name,
     )
 
 

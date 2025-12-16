@@ -10,7 +10,6 @@ n_toks_total = 600,000,000
 
 import json
 import random
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
@@ -33,7 +32,7 @@ from spd.utils.general_utils import extract_batch_data
 WINDOW_PAD_SENTINEL = -1
 
 
-# Entry: (token_ids, ci_values_in_window)
+# Entry: (ci_value, token_ids, ci_values_in_window, active_pos_in_window)
 ActivationExampleTuple = tuple[list[int], list[float]]
 
 
@@ -196,19 +195,11 @@ class Harvester:
 
         # Token stat accumulators
         # Input: actual counts of token co-occurrences with component firings
-        self.input_token_counts: Int[Tensor, "n_components vocab"] = torch.zeros(
-            n_components, vocab_size, device=device, dtype=torch.long
-        )
-        self.input_token_totals: Int[Tensor, " vocab"] = torch.zeros(
-            vocab_size, device=device, dtype=torch.long
-        )
+        self.input_token_counts = torch.zeros(n_components, vocab_size, device=device)
+        self.input_token_totals = torch.zeros(vocab_size, device=device)
         # Output: accumulated probability mass (soft counts) weighted by firing
-        self.output_token_prob_mass: Float[Tensor, "n_components vocab"] = torch.zeros(
-            n_components, vocab_size, device=device
-        )
-        self.output_token_prob_totals: Float[Tensor, " vocab"] = torch.zeros(
-            vocab_size, device=device
-        )
+        self.output_token_prob_mass = torch.zeros(n_components, vocab_size, device=device)
+        self.output_token_prob_totals = torch.zeros(vocab_size, device=device)
 
         # Reservoir samplers for activation examples per component
         self.activation_example_samplers = [
@@ -227,20 +218,26 @@ class Harvester:
         B, S, n_components = ci_flat.shape
         self.total_tokens_processed += B * S
 
+        t = perf_counter()
+
+        # Binary firing indicators for correlations
         is_firing = (ci_flat > self.ci_threshold).float()
         is_firing_flat = is_firing.view(B * S, n_components)
 
+        # Correlation accumulators
         self.firing_counts += is_firing.sum(dim=(0, 1))
+        self.cooccurrence_counts += is_firing_flat.T @ is_firing_flat
         self.ci_sums += ci_flat.sum(dim=(0, 1))
 
         # Input token stats: which tokens co-occur with component firings
         batch_flat = batch.view(B * S)
-        token_indices = batch_flat.unsqueeze(0).expand(n_components, -1)
-        self.input_token_counts.scatter_add_(
-            dim=1, index=token_indices, src=is_firing_flat.T.long()
-        )
-        self.input_token_totals.scatter_add_(
-            dim=0, index=batch_flat, src=torch.ones(B * S, device=self.device, dtype=torch.long)
+        input_onehot = torch.zeros(B * S, self.vocab_size, device=self.device)
+        input_onehot.scatter_(1, batch_flat.unsqueeze(1), 1.0)
+        self.input_token_counts += is_firing_flat.T @ input_onehot
+        self.input_token_totals += input_onehot.sum(dim=0)
+
+        print(
+            f"Time taken to accumulate input token stats: {-(t - (t := perf_counter())):.2f} seconds"
         )
 
         # Output token stats: probability mass on each token when component fires
@@ -248,7 +245,15 @@ class Harvester:
         self.output_token_prob_mass += is_firing_flat.T @ output_probs_flat
         self.output_token_prob_totals += output_probs_flat.sum(dim=0)
 
+        print(
+            f"Time taken to accumulate output token stats: {-(t - (t := perf_counter())):.2f} seconds"
+        )
+
         self._collect_activation_examples(batch, ci_flat)
+
+        print(
+            f"Time taken to collect activation examples: {-(t - (t := perf_counter())):.2f} seconds"
+        )
 
     def _collect_activation_examples(
         self,
@@ -263,7 +268,6 @@ class Harvester:
             return
 
         print(f"    Time taken to find firings: {-(t - (t := perf_counter())):.2f} seconds")
-
         # Subsample if too many firings - we only need enough to feed the reservoirs
         MAX_FIRINGS_PER_BATCH = 10_000
         if len(batch_idx) > MAX_FIRINGS_PER_BATCH:
@@ -280,7 +284,6 @@ class Harvester:
             value=WINDOW_PAD_SENTINEL,
         )
         print(f"    Time taken to pad batch: {-(t - (t := perf_counter())):.2f} seconds")
-
         ci_padded = torch.nn.functional.pad(
             ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
         )
@@ -298,9 +301,10 @@ class Harvester:
 
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
+
         print(f"    Time taken to find token windows: {-(t - (t := perf_counter())):.2f} seconds")
 
-        self._add_activation_examples(
+        self.add_activation_examples(
             component_idx_list=component_idx.cpu().tolist(),
             token_windows_list=token_windows.cpu().tolist(),
             ci_windows_list=ci_windows.cpu().tolist(),
@@ -310,7 +314,7 @@ class Harvester:
             f"    Time taken to add activation examples: {-(t - (t := perf_counter())):.2f} seconds"
         )
 
-    def _add_activation_examples(
+    def add_activation_examples(
         self,
         component_idx_list: list[int],
         token_windows_list: list[list[int]],
@@ -417,7 +421,7 @@ class Harvester:
             )
         print()
 
-    def build_results(self, pmi_top_k_tokens: int) -> list[ComponentData]:
+    def build_results(self, pmi_token_top_k: int) -> list[ComponentData]:
         """Convert accumulated state into ComponentData objects."""
         print("  Moving tensors to CPU...")
         mean_ci_per_component = (self.ci_sums / self.total_tokens_processed).cpu()
@@ -460,15 +464,14 @@ class Harvester:
                     token_mass_totals=input_token_totals,
                     component_firing_count=component_firing_count,
                     total_tokens=self.total_tokens_processed,
-                    top_k=pmi_top_k_tokens,
+                    top_k=pmi_token_top_k,
                 )
-
                 output_token_pmi = _compute_token_pmi(
                     token_mass_for_component=output_token_prob_mass[flat_idx],
                     token_mass_totals=output_token_prob_totals,
                     component_firing_count=component_firing_count,
                     total_tokens=self.total_tokens_processed,
-                    top_k=pmi_top_k_tokens,
+                    top_k=pmi_token_top_k,
                 )
 
                 components.append(
@@ -581,17 +584,16 @@ def harvest(config: HarvestConfig) -> HarvestResult:
                 sampling=spd_config.sampling,
             ).lower_leaky
 
-            # Stack CI: { layer: (B, S, C) } -> (B, S, l*c)
-            ci_flat: Float[Tensor, "B S n_comp"] = torch.cat(
-                [ci_dict[layer] for layer in layer_names], dim=2
-            )
-            assert ci_flat.shape[2] == len(layer_names) * model.C
+            # Stack CI: (B, S, n_layers, C) -> (B, S, n_components)
+            ci_stacked = torch.stack([ci_dict[layer] for layer in layer_names], dim=2)
+            B, S, _, _ = ci_stacked.shape
+            ci_flat: Float[Tensor, "B S n_comp"] = ci_stacked.view(B, S, -1)
 
             harvester.process_batch(batch, ci_flat, probs)
 
     print(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
     print("Building component results...")
-    components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
+    components = harvester.build_results(pmi_token_top_k=config.pmi_token_top_k)
     print(f"Built {len(components)} components (skipped components with no firings)")
     return HarvestResult(components=components, config=config)
 
@@ -609,7 +611,7 @@ def _harvest_worker(
     ci_threshold: float,
     activation_examples_per_component: int,
     activation_context_tokens_per_side: int,
-    state_dir: Path,
+    result_queue: "torch.multiprocessing.Queue[HarvesterState]",
 ) -> None:
     """Worker function for parallel harvesting. Runs in subprocess."""
     from spd.data import train_loader_and_tokenizer
@@ -642,13 +644,7 @@ def _harvest_worker(
     # Each worker processes every world_size-th batch
     train_iter = iter(train_loader)
     batches_processed = 0
-    progress_update_interval = 10
-    last_progress_time = time.time() - progress_update_interval
     for batch_idx in range(n_batches):
-        if time.time() - last_progress_time > progress_update_interval:
-            print(f"[Worker {rank}] Processed {batches_processed} batches")
-            last_progress_time = time.time()
-
         batch_data = extract_batch_data(next(train_iter))
         if batch_idx % world_size != rank:
             continue
@@ -663,23 +659,20 @@ def _harvest_worker(
                 sampling=spd_config.sampling,
             ).lower_leaky
 
-            ci_flat: Float[Tensor, "B S n_comp"] = torch.cat(
-                [ci_dict[layer] for layer in layer_names], dim=2
-            )
-            assert ci_flat.shape[2] == len(layer_names) * model.C
+            ci_stacked = torch.stack([ci_dict[layer] for layer in layer_names], dim=2)
+            B, S, _, _ = ci_stacked.shape
+            ci_flat: Float[Tensor, "B S n_comp"] = ci_stacked.view(B, S, -1)
             harvester.process_batch(batch, ci_flat, probs)
 
         batches_processed += 1
-        if batches_processed % 10 == 0:
+        if batches_processed % 100 == 0:
             print(f"[Worker {rank}] Processed {batches_processed} batches")
 
     print(
         f"[Worker {rank}] Done. Processed {batches_processed} batches, {harvester.total_tokens_processed:,} tokens"
     )
     state = harvester.get_state()
-    state_path = state_dir / f"worker_{rank}.pt"
-    torch.save(state, state_path)
-    print(f"[Worker {rank}] Saved state to {state_path}")
+    result_queue.put(state)
 
 
 def harvest_parallel(
@@ -687,68 +680,45 @@ def harvest_parallel(
     n_gpus: int = 8,
 ) -> HarvestResult:
     """Parallel harvest across multiple GPUs using multiprocessing."""
-    import tempfile
-
     import torch.multiprocessing as mp
 
-    from spd.models.component_model import ComponentModel, SPDRunInfo
-
-    # Pre-cache wandb files in main process before spawning workers.
-    # This prevents all workers from hitting the wandb API simultaneously,
-    # which causes timeouts and authentication errors.
-    # We need to load both the SPD run info AND the pretrained model it references.
-    print("Pre-caching model files from wandb...")
-    run_info = SPDRunInfo.from_path(config.wandb_path)
-    # This also downloads the pretrained base model referenced in the config
-    _ = ComponentModel.from_run_info(run_info)
-    print("Model files cached. Spawning workers...")
-
     mp.set_start_method("spawn", force=True)
+    result_queue: mp.Queue[HarvesterState] = mp.Queue()
 
-    # Use a temp directory for worker states instead of a queue.
-    # This avoids shared memory issues where workers exit before the main
-    # process can deserialize torch tensors from the queue.
-    with tempfile.TemporaryDirectory() as state_dir:
-        state_dir_path = Path(state_dir)
+    processes = []
+    for rank in range(n_gpus):
+        p = mp.Process(
+            target=_harvest_worker,
+            args=(
+                rank,
+                n_gpus,
+                config.wandb_path,
+                config.n_batches,
+                config.batch_size,
+                config.context_length,
+                config.ci_threshold,
+                config.activation_examples_per_component,
+                config.activation_context_tokens_per_side,
+                result_queue,
+            ),
+        )
+        p.start()
+        processes.append(p)
 
-        processes = []
-        for rank in range(n_gpus):
-            p = mp.Process(
-                target=_harvest_worker,
-                args=(
-                    rank,
-                    n_gpus,
-                    config.wandb_path,
-                    config.n_batches,
-                    config.batch_size,
-                    config.context_length,
-                    config.ci_threshold,
-                    config.activation_examples_per_component,
-                    config.activation_context_tokens_per_side,
-                    state_dir_path,
-                ),
-            )
-            p.start()
-            processes.append(p)
+    print(f"Launched {n_gpus} workers. Waiting for results...")
+    states = [result_queue.get() for _ in range(n_gpus)]
 
-        print(f"Launched {n_gpus} workers. Waiting for completion...")
-        for p in processes:
-            p.join()
+    for p in processes:
+        p.join()
 
-        print("All workers finished. Loading states from disk...")
-        states = []
-        for rank in range(n_gpus):
-            state_path = state_dir_path / f"worker_{rank}.pt"
-            states.append(torch.load(state_path, weights_only=False))
-
-    print("Merging states...")
+    print("All workers finished. Merging states...")
     merged_state = merge_harvester_states(states)
     print(f"Merged. Total tokens: {merged_state.total_tokens_processed:,}")
 
     # Build final results from merged state
     harvester = Harvester.from_state(merged_state, torch.device("cpu"))
     print("Building component results...")
-    components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
+    components = harvester.build_results(pmi_token_top_k=config.pmi_token_top_k)
     print(f"Built {len(components)} components")
 
     return HarvestResult(components=components, config=config)
@@ -764,7 +734,7 @@ def _compute_token_pmi(
     total_tokens: int,
     top_k: int,
 ) -> ComponentTokenPMI:
-    """Compute precision/recall/PMI for tokens associated with a component.
+    """Compute PMI for tokens associated with a component.
 
     Works with either hard counts (input tokens) or soft probability mass (output tokens).
     """
@@ -830,8 +800,6 @@ def load_harvest(run_id: str) -> HarvestResult:
             data["activation_examples"] = [
                 ActivationExample(**ex) for ex in data["activation_examples"]
             ]
-            data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
-            data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
             components.append(ComponentData(**data))
 
     return HarvestResult(components=components, config=config)

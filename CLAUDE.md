@@ -278,3 +278,44 @@ value = config.key
 ```
 
 More detail in STYLE.md
+
+## Software Engineering Principles
+
+- If you have an invariant in your head, assert it. Are you afraid to assert? sounds like your program might already be broken. Assert, assert, assert. Never soft fail
+- never write: `if everythingIsOk: continueHappyPath()`.x instead do `assert everythingIsOk`
+- You should have a VERY good reason to handle an error gracefully. If your program isn't working like it should then it shouldn't be running, you should be fixing it
+- Write your invariants into types as much as possible.
+  - if you either have a and b, or neither, don't make them both independently optional, put them in an optional tuple
+- Don't use bare dictionaries for structures whose values aren't homogenous
+  - good: { <id>: <val>}
+  - bad: {"tokens": …, "loss": …}
+- Keep I/O as high up as possible, make as many functions as possible pure.
+- Default args are a good idea far less often than they're typically used
+- You should have a very good reason for having a default value for an argument, especially if it's caller also defaults to the same thing
+- Keep defaults high in the call stack.
+- Delete unused code. If an argument is always x, strongly consider removing as an argument and just inlining
+- Differentiate no data from empty collections. Often it's important to differentiate `None` from `[]`
+- Do not write try catch blocks unless it absolutely makes sense
+- Comments hide sloppy code. If you feel the need to write a comment, consider that you should instead
+  - name your functions more clearly
+  - name your variables more clearly
+  - separate a chunk of logic into a function
+  - seperate an inlined computation into a meaningfully named variable
+
+Some other notes:
+
+- Please don’t write dialogic / narrativised comments or code. Instead, write comments that describe
+  the code as is, not the diff you're making.
+  - These are examples of narrativising comments:
+    - `# the function now uses y instead of x`
+    - `# changed to be faster`
+    - `# we now traverse in reverse`
+  - Here's an example of a bad diff:
+    ```diff
+95 -      # Reservoir states
+96 -      reservoir_states: list[ReservoirState]
+95 +      # Reservoir state (tensor-based)
+96 +      reservoir: TensorReservoirState
+    ```
+    This is bad because the new comment makes reference to a change in code, not just the state of
+    the code.
