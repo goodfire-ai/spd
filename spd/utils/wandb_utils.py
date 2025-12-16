@@ -1,4 +1,5 @@
 import os
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,58 @@ WORKSPACE_TEMPLATES = {
     "resid_mlp2": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
     "resid_mlp3": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
 }
+
+
+# Regex patterns for parsing W&B run references
+_WANDB_PATH_RE = re.compile(r"^([^/\s]+)/([^/\s]+)/([a-z0-9]{8})$")
+_WANDB_PATH_WITH_RUNS_RE = re.compile(r"^([^/\s]+)/([^/\s]+)/runs/([a-z0-9]{8})$")
+_WANDB_URL_RE = re.compile(
+    r"^https://wandb\.ai/([^/]+)/([^/]+)/runs/([a-z0-9]{8})(?:/[^?]*)?(?:\?.*)?$"
+)
+
+
+def parse_wandb_run_path(input_path: str) -> tuple[str, str, str]:
+    """Parse various W&B run reference formats into (entity, project, run_id).
+
+    Accepts:
+    - "entity/project/runId" (compact form)
+    - "entity/project/runs/runId" (with /runs/)
+    - "wandb:entity/project/runId" (with wandb: prefix)
+    - "wandb:entity/project/runs/runId" (full wandb: form)
+    - "https://wandb.ai/entity/project/runs/runId..." (URL)
+
+    Returns:
+        Tuple of (entity, project, run_id)
+
+    Raises:
+        ValueError: If the input doesn't match any expected format.
+    """
+    s = input_path.strip()
+
+    # Strip wandb: prefix if present
+    if s.startswith("wandb:"):
+        s = s[6:]
+
+    # Try compact form: entity/project/runid
+    if m := _WANDB_PATH_RE.match(s):
+        return m.group(1), m.group(2), m.group(3)
+
+    # Try form with /runs/: entity/project/runs/runid
+    if m := _WANDB_PATH_WITH_RUNS_RE.match(s):
+        return m.group(1), m.group(2), m.group(3)
+
+    # Try full URL
+    if m := _WANDB_URL_RE.match(s):
+        return m.group(1), m.group(2), m.group(3)
+
+    raise ValueError(
+        f"Invalid W&B run reference. Expected one of:\n"
+        f' - "entity/project/xxxxxxxx"\n'
+        f' - "entity/project/runs/xxxxxxxx"\n'
+        f' - "wandb:entity/project/runs/xxxxxxxx"\n'
+        f' - "https://wandb.ai/entity/project/runs/xxxxxxxx"\n'
+        f'Got: "{input_path}"'
+    )
 
 
 class SPDWandbSection(Enum):
