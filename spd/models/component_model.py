@@ -122,20 +122,6 @@ class ComponentModel(LoadableModule):
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
 
-    @property
-    def C(self) -> int:
-        """Return the uniform C value if all modules have the same C.
-
-        Raises AssertionError if modules have different C values.
-        For code that needs per-module C values, use module_to_c directly.
-        """
-        c_values = set(self.module_to_c.values())
-        assert len(c_values) == 1, (
-            f"Cannot use uniform C property when modules have different C values: {self.module_to_c}. "
-            "Use model.module_to_c[module_name] instead."
-        )
-        return next(iter(c_values))
-
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
 

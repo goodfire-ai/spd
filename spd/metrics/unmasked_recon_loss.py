@@ -20,7 +20,10 @@ def _unmasked_recon_loss_update(
 ) -> tuple[Float[Tensor, ""], int]:
     all_ones_mask_infos = make_mask_infos(
         # (C,) will broadcast to (B, S, C)
-        {k: torch.ones(model.C, device=batch.device) for k in model.target_module_paths}
+        {
+            k: torch.ones(model.module_to_c[k], device=batch.device)
+            for k in model.target_module_paths
+        }
     )
     out = model(batch, mask_infos=all_ones_mask_infos)
     loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
