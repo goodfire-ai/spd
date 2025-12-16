@@ -299,7 +299,13 @@
                 const sorted =
                     layer === "output" || !clusterMapping.mapping
                         ? sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs)
-                        : sortComponentsByCluster(nodes, layer, seqIdx, data.nodeCiVals, clusterMapping.getClusterId.bind(clusterMapping));
+                        : sortComponentsByCluster(
+                              nodes,
+                              layer,
+                              seqIdx,
+                              data.nodeCiVals,
+                              clusterMapping.getClusterId.bind(clusterMapping),
+                          );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
                 for (const cIdx of nodes) {
@@ -331,7 +337,15 @@
         const maxY = Math.max(...Object.values(layerYPositions), 0) + COMPONENT_SIZE;
         const heightVal = maxY + MARGIN.bottom;
 
-        return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal, clusterSpans: allClusterSpans };
+        return {
+            nodePositions,
+            layerYPositions,
+            seqWidths,
+            seqXStarts,
+            width: widthVal,
+            height: heightVal,
+            clusterSpans: allClusterSpans,
+        };
     });
 
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
@@ -634,7 +648,11 @@
                     {@const isPinned = pinnedNodeKeys.has(key)}
                     {@const inSameCluster = isNodeInSameCluster(key)}
                     {@const isHoveredComponent = nodeMatchesHoveredComponent(key)}
-                    {@const isDimmed = (hoveredNode !== null || hoveredBarClusterId !== null) && !isHoveredComponent && !inSameCluster && !isPinned}
+                    {@const isDimmed =
+                        (hoveredNode !== null || hoveredBarClusterId !== null) &&
+                        !isHoveredComponent &&
+                        !inSameCluster &&
+                        !isPinned}
                     {@const style = nodeStyles[key]}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->

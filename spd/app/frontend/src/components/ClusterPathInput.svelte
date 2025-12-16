@@ -2,6 +2,7 @@
     import type { LoadedRun } from "../lib/api";
     import { loadClusterMapping } from "../lib/api";
     import { clusterMapping } from "../lib/clusterMapping.svelte";
+    import { CANONICAL_RUNS } from "../lib/registry";
 
     type Props = {
         loadedRun: LoadedRun | null;
@@ -12,6 +13,21 @@
     let inputPath = $state("");
     let loading = $state(false);
     let error = $state<string | null>(null);
+    let showDropdown = $state(false);
+    let showLoadedTooltip = $state(false);
+
+    // Get cluster mappings for the current run from the registry
+    const availableClusterMappings = $derived.by(() => {
+        if (!loadedRun) return [];
+        const entry = CANONICAL_RUNS.find((r) => r.wandbRunId === loadedRun.wandb_path);
+        return entry?.clusterMappings ?? [];
+    });
+
+    // Lookup notes for the currently loaded cluster (if it's from the registry)
+    const loadedClusterNotes = $derived.by(() => {
+        if (!clusterMapping.filePath) return null;
+        return availableClusterMappings.find((m) => m.path === clusterMapping.filePath)?.notes ?? null;
+    });
 
     // Clear cluster mapping when run changes
     $effect(() => {
@@ -45,29 +61,80 @@
             handleLoad();
         }
     }
+
+    async function selectClusterMapping(path: string) {
+        showDropdown = false;
+        inputPath = path;
+        await handleLoad();
+    }
 </script>
 
 {#if loadedRun}
     <div class="cluster-input-wrapper">
         {#if clusterMapping.filePath}
-            <div class="cluster-loaded">
+            <div
+                class="cluster-loaded"
+                role="group"
+                onmouseenter={() => (showLoadedTooltip = true)}
+                onmouseleave={() => (showLoadedTooltip = false)}
+            >
                 <span class="cluster-label">Clusters:</span>
-                <span class="cluster-path" title={clusterMapping.filePath}>
-                    {clusterMapping.filePath.split("/").pop()}
+                <span class="cluster-path">
+                    {clusterMapping.filePath.split("_").pop()?.replace(".json", "")}
                 </span>
                 <button type="button" class="clear-button" onclick={handleClear} title="Clear cluster mapping">
                     x
                 </button>
+                {#if showLoadedTooltip}
+                    <div class="cluster-tooltip">
+                        {#if loadedClusterNotes}
+                            <div class="tooltip-notes">{loadedClusterNotes}</div>
+                        {/if}
+                        <div class="tooltip-path">{clusterMapping.filePath}</div>
+                    </div>
+                {/if}
             </div>
         {:else}
             <div class="cluster-form">
-                <input
-                    type="text"
-                    placeholder="path/to/cluster_mapping_<id>.json"
-                    bind:value={inputPath}
-                    onkeydown={handleKeydown}
-                    disabled={loading}
-                />
+                <div class="input-with-dropdown">
+                    <input
+                        type="text"
+                        placeholder="path/to/cluster_mapping_<id>.json"
+                        bind:value={inputPath}
+                        onkeydown={handleKeydown}
+                        disabled={loading}
+                        class:has-dropdown={availableClusterMappings.length > 0}
+                    />
+                    {#if availableClusterMappings.length > 0}
+                        <div
+                            class="dropdown-wrapper"
+                            role="group"
+                            onmouseenter={() => (showDropdown = true)}
+                            onmouseleave={() => (showDropdown = false)}
+                        >
+                            <button type="button" class="dropdown-button" title="Select from predefined mappings">
+                                ▼
+                            </button>
+                            {#if showDropdown}
+                                <div class="cluster-dropdown">
+                                    {#each availableClusterMappings as mapping (mapping.path)}
+                                        <button
+                                            type="button"
+                                            class="cluster-entry"
+                                            onclick={() => selectClusterMapping(mapping.path)}
+                                            title={mapping.path}
+                                        >
+                                            <span class="entry-id">
+                                                {mapping.path.split("_").pop()?.replace(".json", "")}
+                                            </span>
+                                            <span class="entry-notes">{mapping.notes}</span>
+                                        </button>
+                                    {/each}
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
+                </div>
                 <button type="button" onclick={handleLoad} disabled={loading || !inputPath.trim()}>
                     {loading ? "..." : "Load"}
                 </button>
@@ -92,6 +159,11 @@
         gap: var(--space-1);
     }
 
+    .input-with-dropdown {
+        display: flex;
+        align-items: stretch;
+    }
+
     .cluster-form input {
         width: 260px;
         padding: var(--space-1) var(--space-2);
@@ -103,6 +175,12 @@
         font-family: var(--font-mono);
     }
 
+    .cluster-form input.has-dropdown {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+        border-right: none;
+    }
+
     .cluster-form input::placeholder {
         color: var(--text-muted);
     }
@@ -110,6 +188,86 @@
     .cluster-form input:focus {
         outline: none;
         border-color: var(--accent-primary-dim);
+    }
+
+    .dropdown-wrapper {
+        position: relative;
+    }
+
+    .dropdown-button {
+        padding: var(--space-1) var(--space-2);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        border-top-right-radius: var(--radius-sm);
+        border-bottom-right-radius: var(--radius-sm);
+        border-top-left-radius: 0;
+        border-bottom-left-radius: 0;
+        cursor: pointer;
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        height: 100%;
+        display: flex;
+        align-items: center;
+    }
+
+    .dropdown-button:hover {
+        background: var(--bg-inset);
+        color: var(--text-primary);
+    }
+
+    .cluster-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        padding-top: var(--space-1);
+        z-index: 1000;
+        min-width: 280px;
+    }
+
+    .cluster-dropdown > :first-child {
+        border-top-left-radius: var(--radius-md);
+        border-top-right-radius: var(--radius-md);
+    }
+
+    .cluster-dropdown > :last-child {
+        border-bottom-left-radius: var(--radius-md);
+        border-bottom-right-radius: var(--radius-md);
+    }
+
+    .cluster-entry {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-1);
+        width: 100%;
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        border-top: none;
+        cursor: pointer;
+        text-align: left;
+        font-family: var(--font-sans);
+        border-radius: 0;
+    }
+
+    .cluster-entry:first-child {
+        border-top: 1px solid var(--border-default);
+    }
+
+    .cluster-entry:hover {
+        background: var(--bg-inset);
+    }
+
+    .entry-id {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        font-weight: 600;
+        color: var(--accent-primary);
+    }
+
+    .entry-notes {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
     }
 
     .cluster-form button {
@@ -135,6 +293,7 @@
     }
 
     .cluster-loaded {
+        position: relative;
         display: flex;
         align-items: center;
         gap: var(--space-1);
@@ -142,6 +301,34 @@
         background: var(--bg-elevated);
         border: 1px solid var(--accent-primary-dim);
         border-radius: var(--radius-sm);
+    }
+
+    .cluster-tooltip {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: var(--space-1);
+        padding: var(--space-2);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        min-width: 200px;
+        max-width: 400px;
+    }
+
+    .tooltip-notes {
+        font-size: var(--text-sm);
+        color: var(--text-primary);
+        margin-bottom: var(--space-1);
+    }
+
+    .tooltip-path {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
+        word-break: break-all;
     }
 
     .cluster-label {

@@ -351,8 +351,20 @@
                 // Output nodes always sort by probability; internal nodes sort by cluster if mapping loaded, else by CI
                 const sorted =
                     layer === "output" || !clusterMapping.mapping
-                        ? sortComponentsByImportance(layerNodes, layer, seqIdx, graph.data.nodeCiVals, graph.data.outputProbs)
-                        : sortComponentsByCluster(layerNodes, layer, seqIdx, graph.data.nodeCiVals, clusterMapping.getClusterId.bind(clusterMapping));
+                        ? sortComponentsByImportance(
+                              layerNodes,
+                              layer,
+                              seqIdx,
+                              graph.data.nodeCiVals,
+                              graph.data.outputProbs,
+                          )
+                        : sortComponentsByCluster(
+                              layerNodes,
+                              layer,
+                              seqIdx,
+                              graph.data.nodeCiVals,
+                              clusterMapping.getClusterId.bind(clusterMapping),
+                          );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
                 for (const cIdx of layerNodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
@@ -701,7 +713,11 @@
                             {@const selected = interventable && isNodeSelected(nodeKey)}
                             {@const inSameCluster = isNodeInSameCluster(nodeKey)}
                             {@const isHoveredComponent = nodeMatchesHoveredComponent(nodeKey)}
-                            {@const isDimmed = (hoveredNode !== null || hoveredBarClusterId !== null) && !isHoveredComponent && !inSameCluster && !selected}
+                            {@const isDimmed =
+                                (hoveredNode !== null || hoveredBarClusterId !== null) &&
+                                !isHoveredComponent &&
+                                !inSameCluster &&
+                                !selected}
                             {#if pos}
                                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                                 <!-- svelte-ignore a11y_no_static_element_interactions -->
