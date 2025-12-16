@@ -789,12 +789,14 @@
                                     normalizeEdges={activeGraph.viewSettings.normalizeEdges}
                                     ciThreshold={activeGraph.viewSettings.ciThreshold}
                                     ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                    {hideUnpinnedEdges}
                                     {hideNodeCard}
                                     onTopKChange={handleTopKChange}
                                     onComponentGapChange={handleComponentGapChange}
                                     onLayerGapChange={handleLayerGapChange}
                                     onNormalizeChange={handleNormalizeChange}
                                     onCiThresholdChange={handleCiThresholdChange}
+                                    onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     {activationContextsSummary}
                                     {componentDetailsCache}
