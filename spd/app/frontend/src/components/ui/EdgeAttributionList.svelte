@@ -27,7 +27,7 @@
         if (direction === "negative") {
             return `rgba(220, 38, 38, ${intensity})`; // red
         }
-        return `rgba(22, 163, 74, ${intensity})`; // green
+        return `rgba(22, 74, 193, ${intensity})`; // blue
     }
 </script>
 
@@ -106,7 +106,7 @@
         display: inline-flex;
         align-items: center;
         gap: var(--space-2);
-        padding: 4px 6px;
+        padding: 2px 4px;
         border-radius: 3px;
         white-space: nowrap;
         cursor: default;

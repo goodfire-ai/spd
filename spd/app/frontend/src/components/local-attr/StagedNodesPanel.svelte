@@ -18,7 +18,8 @@
         activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         tokens: string[];
-        edges: Edge[];
+        edgesBySource: Map<string, Edge[]>;
+        edgesByTarget: Map<string, Edge[]>;
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
     };
 
@@ -29,7 +30,8 @@
         activationContextsSummary,
         outputProbs,
         tokens,
-        edges,
+        edgesBySource,
+        edgesByTarget,
         onStagedNodesChange,
     }: Props = $props();
 
@@ -100,7 +102,8 @@
                                 seqIdx={node.seqIdx}
                                 {summary}
                                 {detail}
-                                {edges}
+                                {edgesBySource}
+                                {edgesByTarget}
                                 onPinComponent={pinComponent}
                             />
                         {:else}
@@ -111,7 +114,8 @@
                                 {summary}
                                 detail={null}
                                 {isLoading}
-                                {edges}
+                                {edgesBySource}
+                                {edgesByTarget}
                                 onPinComponent={pinComponent}
                             />
                         {/if}

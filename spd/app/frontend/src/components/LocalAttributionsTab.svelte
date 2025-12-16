@@ -104,6 +104,7 @@
     // Edge count is derived from the graph rendering, not stored per-graph
     let filteredEdgeCount = $state<number | null>(null);
     let hideUnpinnedEdges = $state(false);
+    let hideNodeCard = $state(false);
 
     // Component details cache (shared across graphs)
     let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
@@ -725,12 +726,14 @@
                                         ciThreshold={activeGraph.viewSettings.ciThreshold}
                                         ciThresholdLoading={refetchingGraphId === activeGraph.id}
                                         {hideUnpinnedEdges}
+                                        {hideNodeCard}
                                         onTopKChange={handleTopKChange}
                                         onComponentGapChange={handleComponentGapChange}
                                         onLayerGapChange={handleLayerGapChange}
                                         onNormalizeChange={handleNormalizeChange}
                                         onCiThresholdChange={handleCiThresholdChange}
                                         onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
+                                        onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     />
                                     <div class="graph-info">
                                         <span class="l0-info"
@@ -749,6 +752,7 @@
                                             componentGap={activeGraph.viewSettings.componentGap}
                                             layerGap={activeGraph.viewSettings.layerGap}
                                             {hideUnpinnedEdges}
+                                            {hideNodeCard}
                                             {activationContextsSummary}
                                             stagedNodes={pinnedNodes}
                                             {componentDetailsCache}
@@ -766,7 +770,8 @@
                                     {activationContextsSummary}
                                     outputProbs={activeGraph.data.outputProbs}
                                     tokens={activeCard.tokens}
-                                    edges={activeGraph.data.edges}
+                                    edgesBySource={activeGraph.data.edgesBySource}
+                                    edgesByTarget={activeGraph.data.edgesByTarget}
                                     onStagedNodesChange={handlePinnedNodesChange}
                                 />
                             {:else if activeComposerState}
@@ -784,11 +789,13 @@
                                     normalizeEdges={activeGraph.viewSettings.normalizeEdges}
                                     ciThreshold={activeGraph.viewSettings.ciThreshold}
                                     ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                    {hideNodeCard}
                                     onTopKChange={handleTopKChange}
                                     onComponentGapChange={handleComponentGapChange}
                                     onLayerGapChange={handleLayerGapChange}
                                     onNormalizeChange={handleNormalizeChange}
                                     onCiThresholdChange={handleCiThresholdChange}
+                                    onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     {activationContextsSummary}
                                     {componentDetailsCache}
                                     {componentDetailsLoading}

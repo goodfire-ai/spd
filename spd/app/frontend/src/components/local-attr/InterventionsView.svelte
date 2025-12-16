@@ -17,7 +17,7 @@
     import { SvelteSet } from "svelte/reactivity";
 
     // Layout constants
-    const COMPONENT_SIZE = 8;
+    const COMPONENT_SIZE = 6;
     const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
@@ -43,11 +43,13 @@
         normalizeEdges: NormalizeType;
         ciThreshold: number;
         ciThresholdLoading: boolean;
+        hideNodeCard: boolean;
         onTopKChange: (value: number) => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
+        onHideNodeCardChange: (value: boolean) => void;
         // Other props
         activationContextsSummary: ActivationContextsSummary | null;
         componentDetailsCache: Record<string, ComponentDetail>;
@@ -80,6 +82,8 @@
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
+        hideNodeCard,
+        onHideNodeCardChange,
         activationContextsSummary,
         componentDetailsCache,
         componentDetailsLoading,
@@ -542,11 +546,13 @@
             {normalizeEdges}
             {ciThreshold}
             {ciThresholdLoading}
+            {hideNodeCard}
             {onTopKChange}
             {onComponentGapChange}
             {onLayerGapChange}
             {onNormalizeChange}
             {onCiThresholdChange}
+            {onHideNodeCardChange}
         />
 
         <!-- Intervention controls -->
@@ -876,13 +882,15 @@
         <NodeTooltip
             {hoveredNode}
             {tooltipPos}
+            {hideNodeCard}
             {activationContextsSummary}
             {componentDetailsCache}
             {componentDetailsLoading}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
             {tokens}
-            edges={graph.data.edges}
+            edgesBySource={graph.data.edgesBySource}
+            edgesByTarget={graph.data.edgesByTarget}
             onMouseEnter={() => (isHoveringTooltip = true)}
             onMouseLeave={() => {
                 isHoveringTooltip = false;

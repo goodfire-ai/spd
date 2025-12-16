@@ -14,6 +14,7 @@ import type {
     ComponentProbeResult,
     TokenInfo,
 } from "./localAttributionsTypes";
+import { buildEdgeIndexes } from "./localAttributionsTypes";
 import { API_URL } from "./api";
 
 class LocalAttributionsApiError extends Error {
@@ -155,7 +156,8 @@ export async function computeGraphStreaming(
             } else if (data.type === "error") {
                 throw new LocalAttributionsApiError(data.error, 500);
             } else if (data.type === "complete") {
-                result = data.data;
+                const { edgesBySource, edgesByTarget } = buildEdgeIndexes(data.data.edges);
+                result = { ...data.data, edgesBySource, edgesByTarget };
                 await reader.cancel();
                 break;
             }
@@ -247,7 +249,8 @@ export async function computeGraphOptimizedStreaming(
             } else if (data.type === "error") {
                 throw new LocalAttributionsApiError(data.error, 500);
             } else if (data.type === "complete") {
-                result = data.data;
+                const { edgesBySource, edgesByTarget } = buildEdgeIndexes(data.data.edges);
+                result = { ...data.data, edgesBySource, edgesByTarget };
                 await reader.cancel();
                 break;
             }
@@ -336,7 +339,11 @@ export async function getGraphs(promptId: number, normalize: NormalizeType, ciTh
     const url = new URL(`${API_URL}/api/graphs/${promptId}`);
     url.searchParams.set("normalize", normalize);
     url.searchParams.set("ci_threshold", String(ciThreshold));
-    return fetchJson<GraphData[]>(url.toString());
+    const graphs = await fetchJson<Omit<GraphData, "edgesBySource" | "edgesByTarget">[]>(url.toString());
+    return graphs.map((g) => {
+        const { edgesBySource, edgesByTarget } = buildEdgeIndexes(g.edges);
+        return { ...g, edgesBySource, edgesByTarget };
+    });
 }
 
 // Probe component CI on custom text

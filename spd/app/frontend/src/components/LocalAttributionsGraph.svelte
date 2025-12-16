@@ -31,6 +31,7 @@
         componentGap: number;
         layerGap: number;
         hideUnpinnedEdges: boolean;
+        hideNodeCard: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
         componentDetailsCache: Record<string, ComponentDetail>;
@@ -46,6 +47,7 @@
         componentGap,
         layerGap,
         hideUnpinnedEdges,
+        hideNodeCard,
         activationContextsSummary,
         stagedNodes,
         componentDetailsCache,
@@ -67,18 +69,32 @@
     const effectiveHideUnpinned = $derived(shiftHeld ? !hideUnpinnedEdges : hideUnpinnedEdges);
 
     $effect(() => {
+        console.log("[shift] effect running, setting up listeners");
         function onKeyDown(e: KeyboardEvent) {
-            if (e.key === "Shift") shiftHeld = true;
+            console.log("[shift] keydown:", e.key);
+            if (e.key === "Shift") {
+                console.log("[shift] setting shiftHeld = true");
+                shiftHeld = true;
+            }
         }
         function onKeyUp(e: KeyboardEvent) {
-            if (e.key === "Shift") shiftHeld = false;
+            console.log("[shift] keyup:", e.key);
+            if (e.key === "Shift") {
+                console.log("[shift] setting shiftHeld = false");
+                shiftHeld = false;
+            }
         }
         window.addEventListener("keydown", onKeyDown);
         window.addEventListener("keyup", onKeyUp);
         return () => {
+            console.log("[shift] effect cleanup, removing listeners");
             window.removeEventListener("keydown", onKeyDown);
             window.removeEventListener("keyup", onKeyUp);
         };
+    });
+
+    $effect(() => {
+        console.log("[shift] shiftHeld:", shiftHeld, "hideUnpinnedEdges:", hideUnpinnedEdges, "effectiveHideUnpinned:", effectiveHideUnpinned);
     });
 
     // Refs
@@ -628,13 +644,15 @@
         <NodeTooltip
             {hoveredNode}
             {tooltipPos}
+            {hideNodeCard}
             {activationContextsSummary}
             {componentDetailsCache}
             {componentDetailsLoading}
             outputProbs={data.outputProbs}
             nodeCiVals={data.nodeCiVals}
             tokens={data.tokens}
-            edges={data.edges}
+            edgesBySource={data.edgesBySource}
+            edgesByTarget={data.edgesByTarget}
             onMouseEnter={() => (isHoveringTooltip = true)}
             onMouseLeave={() => {
                 isHoveringTooltip = false;

@@ -30,12 +30,41 @@ export type GraphData = {
     id: number;
     tokens: string[];
     edges: Edge[];
+    edgesBySource: Map<string, Edge[]>; // nodeKey -> edges where this node is source
+    edgesByTarget: Map<string, Edge[]>; // nodeKey -> edges where this node is target
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
     nodeCiVals: Record<string, number>; // node key -> CI value (or output prob for output nodes or 1 for wte node)
     maxAbsAttr: number; // max absolute edge value
     l0_total: number; // total active components at current CI threshold
     optimization?: OptimizationResult;
 };
+
+/** Build edge indexes from flat edge array (single pass) */
+export function buildEdgeIndexes(edges: Edge[]): {
+    edgesBySource: Map<string, Edge[]>;
+    edgesByTarget: Map<string, Edge[]>;
+} {
+    const edgesBySource = new Map<string, Edge[]>();
+    const edgesByTarget = new Map<string, Edge[]>();
+
+    for (const edge of edges) {
+        const bySrc = edgesBySource.get(edge.src);
+        if (bySrc) {
+            bySrc.push(edge);
+        } else {
+            edgesBySource.set(edge.src, [edge]);
+        }
+
+        const byTgt = edgesByTarget.get(edge.tgt);
+        if (byTgt) {
+            byTgt.push(edge);
+        } else {
+            edgesByTarget.set(edge.tgt, [edge]);
+        }
+    }
+
+    return { edgesBySource, edgesByTarget };
+}
 
 export type OptimizationResult = {
     imp_min_coeff: number;

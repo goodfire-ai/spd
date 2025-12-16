@@ -27,11 +27,13 @@
         cIdx: number;
         seqIdx: number;
         summary: ComponentSummary | null;
-        edges: Edge[];
+        edgesBySource: Map<string, Edge[]>;
+        edgesByTarget: Map<string, Edge[]>;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     } & ({ detail: ComponentDetail; isLoading?: never } | { detail: null; isLoading: boolean });
 
-    let { layer, cIdx, seqIdx, summary, edges, detail, isLoading, onPinComponent }: Props = $props();
+    let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, detail, isLoading, onPinComponent }: Props =
+        $props();
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -131,43 +133,38 @@
     const currentNodeKey = $derived(`${layer}:${seqIdx}:${cIdx}`);
     const N_EDGES_TO_DISPLAY = 20;
 
-    function edgeToAttribution(nodeKey: string, val: number, maxAbsVal: number): EdgeAttribution {
-        return {
-            nodeKey,
-            value: val,
-            normalizedMagnitude: Math.abs(val) / maxAbsVal,
-        };
+    function getTopEdgeAttributions(
+        edges: Edge[],
+        isPositive: boolean,
+        getNodeKey: (e: Edge) => string,
+    ): EdgeAttribution[] {
+        const filtered = edges.filter((e) => (isPositive ? e.val > 0 : e.val < 0));
+        const sorted = filtered
+            .sort((a, b) => (isPositive ? b.val - a.val : a.val - b.val))
+            .slice(0, N_EDGES_TO_DISPLAY);
+        const maxAbsVal = Math.abs(sorted[0]?.val || 1);
+        return sorted.map((e) => ({
+            nodeKey: getNodeKey(e),
+            value: e.val,
+            normalizedMagnitude: Math.abs(e.val) / maxAbsVal,
+        }));
     }
 
-    // Incoming edges: edges where this node is the target (what influences this node)
-    const incomingPositive = $derived.by(() => {
-        const filtered = edges.filter((e) => e.tgt === currentNodeKey && e.val > 0);
-        const sorted = filtered.sort((a, b) => b.val - a.val).slice(0, N_EDGES_TO_DISPLAY);
-        const maxAbsVal = sorted[0]?.val || 1;
-        return sorted.map((e) => edgeToAttribution(e.src, e.val, maxAbsVal));
-    });
+    const incomingPositive = $derived(
+        getTopEdgeAttributions(edgesByTarget.get(currentNodeKey) ?? [], true, (e) => e.src),
+    );
 
-    const incomingNegative = $derived.by(() => {
-        const filtered = edges.filter((e) => e.tgt === currentNodeKey && e.val < 0);
-        const sorted = filtered.sort((a, b) => a.val - b.val).slice(0, N_EDGES_TO_DISPLAY);
-        const maxAbsVal = Math.abs(sorted[0]?.val || 1);
-        return sorted.map((e) => edgeToAttribution(e.src, e.val, maxAbsVal));
-    });
+    const incomingNegative = $derived(
+        getTopEdgeAttributions(edgesByTarget.get(currentNodeKey) ?? [], false, (e) => e.src),
+    );
 
-    // Outgoing edges: edges where this node is the source (what this node influences)
-    const outgoingPositive = $derived.by(() => {
-        const filtered = edges.filter((e) => e.src === currentNodeKey && e.val > 0);
-        const sorted = filtered.sort((a, b) => b.val - a.val).slice(0, N_EDGES_TO_DISPLAY);
-        const maxAbsVal = sorted[0]?.val || 1;
-        return sorted.map((e) => edgeToAttribution(e.tgt, e.val, maxAbsVal));
-    });
+    const outgoingPositive = $derived(
+        getTopEdgeAttributions(edgesBySource.get(currentNodeKey) ?? [], true, (e) => e.tgt),
+    );
 
-    const outgoingNegative = $derived.by(() => {
-        const filtered = edges.filter((e) => e.src === currentNodeKey && e.val < 0);
-        const sorted = filtered.sort((a, b) => a.val - b.val).slice(0, N_EDGES_TO_DISPLAY);
-        const maxAbsVal = Math.abs(sorted[0]?.val || 1);
-        return sorted.map((e) => edgeToAttribution(e.tgt, e.val, maxAbsVal));
-    });
+    const outgoingNegative = $derived(
+        getTopEdgeAttributions(edgesBySource.get(currentNodeKey) ?? [], false, (e) => e.tgt),
+    );
 
     const hasAnyEdges = $derived(
         incomingPositive.length > 0 ||
@@ -207,39 +204,6 @@
             <span class="interpretation-label">No interpretation available</span>
         </div>
     {/if}
-
-    <div class="token-stats-row">
-        <TokenStatsSection
-            sectionTitle="Input Tokens"
-            sectionSubtitle="(what activates this component)"
-            loading={tokenStatsLoading}
-            lists={[
-                {
-                    title: "Top PMI",
-                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
-                    items: inputTopPmi,
-                },
-            ]}
-        />
-
-        <TokenStatsSection
-            sectionTitle="Output Tokens"
-            sectionSubtitle="(what this component predicts)"
-            loading={tokenStatsLoading}
-            lists={[
-                {
-                    title: "Top PMI",
-                    mathNotation: "positive association with predictions",
-                    items: outputTopPmi,
-                },
-                {
-                    title: "Bottom PMI",
-                    mathNotation: "negative association with predictions",
-                    items: outputBottomPmi,
-                },
-            ]}
-        />
-    </div>
 
     <ComponentProbeInput {layer} componentIdx={cIdx} />
 
@@ -317,6 +281,53 @@
             </div>
         </div>
     {/if}
+
+    <div class="token-stats-row">
+        <TokenStatsSection
+            sectionTitle="Input Tokens"
+            sectionSubtitle="(what activates this component)"
+            loading={tokenStatsLoading}
+            lists={[
+                {
+                    title: "Top PMI",
+                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                    items: inputTopPmi,
+                },
+            ]}
+        />
+
+        <TokenStatsSection
+            sectionTitle="Output Tokens"
+            sectionSubtitle="(what this component predicts)"
+            loading={tokenStatsLoading}
+            lists={[
+                {
+                    title: "Top PMI",
+                    mathNotation: "positive association with predictions",
+                    items: outputTopPmi,
+                },
+                {
+                    title: "Bottom PMI",
+                    mathNotation: "negative association with predictions",
+                    items: outputBottomPmi,
+                },
+            ]}
+        />
+    </div>
+
+    <ComponentProbeInput {layer} componentIdx={cIdx} />
+
+    <!-- Component correlations -->
+    <div class="correlations-section">
+        <SectionHeader title="Correlated Components" />
+        {#if correlations}
+            <ComponentCorrelationMetrics {correlations} pageSize={16} onComponentClick={handleCorrelationClick} />
+        {:else if correlationsLoading}
+            <StatusText>Loading...</StatusText>
+        {:else}
+            <StatusText>No correlations available.</StatusText>
+        {/if}
+    </div>
 
     {#if detail}
         {#if detail.example_tokens.length > 0}

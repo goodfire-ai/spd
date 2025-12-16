@@ -19,13 +19,15 @@
     type Props = {
         hoveredNode: HoveredNode;
         tooltipPos: { x: number; y: number };
+        hideNodeCard?: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         componentDetailsCache: Record<string, ComponentDetail>;
         componentDetailsLoading: Record<string, boolean>;
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
         tokens: string[];
-        edges: Edge[];
+        edgesBySource: Map<string, Edge[]>;
+        edgesByTarget: Map<string, Edge[]>;
         onMouseEnter: () => void;
         onMouseLeave: () => void;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
@@ -34,13 +36,15 @@
     let {
         hoveredNode,
         tooltipPos,
+        hideNodeCard = false,
         activationContextsSummary,
         componentDetailsCache,
         componentDetailsLoading,
         outputProbs,
         nodeCiVals,
         tokens,
-        edges,
+        edgesBySource,
+        edgesByTarget,
         onMouseEnter,
         onMouseLeave,
         onPinComponent,
@@ -97,7 +101,7 @@
         </div>
     {:else if isOutput}
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
-    {:else}
+    {:else if !hideNodeCard}
         {@const cacheKey = `${hoveredNode.layer}:${hoveredNode.cIdx}`}
         {@const detail = componentDetailsCache[cacheKey] ?? null}
         {@const summary = findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
@@ -108,7 +112,8 @@
                 seqIdx={hoveredNode.seqIdx}
                 {summary}
                 {detail}
-                {edges}
+                {edgesBySource}
+                {edgesByTarget}
                 {onPinComponent}
             />
         {:else}
@@ -120,7 +125,8 @@
                 {summary}
                 detail={null}
                 {isLoading}
-                {edges}
+                {edgesBySource}
+                {edgesByTarget}
                 {onPinComponent}
             />
         {/if}

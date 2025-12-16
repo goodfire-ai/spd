@@ -10,6 +10,7 @@ export function lerp(min: number, max: number, t: number): number {
 /** Calculate tooltip position that stays within viewport bounds. */
 export function calcTooltipPos(mouseX: number, mouseY: number): { x: number; y: number } {
     const padding = 15;
+    const tooltipMaxWidth = 800;
     // Tooltip has max-height: 80vh, so use that as the estimate
     const tooltipHeight = typeof window !== "undefined" ? window.innerHeight * 0.8 : 400;
 
@@ -17,10 +18,13 @@ export function calcTooltipPos(mouseX: number, mouseY: number): { x: number; y: 
     let top = mouseY + padding;
 
     if (typeof window !== "undefined") {
-        // If mouse is in right half of screen, position tooltip to the left
-        if (mouseX > window.innerWidth / 2) {
-            left = padding;
+        // If tooltip would overflow right edge, position to left of cursor
+        if (left + tooltipMaxWidth > window.innerWidth) {
+            left = mouseX - tooltipMaxWidth - padding;
         }
+        // Clamp to left edge
+        left = Math.max(padding, left);
+
         // Clamp to bottom of screen (don't flip, just constrain)
         if (top + tooltipHeight > window.innerHeight) {
             top = window.innerHeight - tooltipHeight - padding;
