@@ -68,7 +68,6 @@ def get_activations_data(
     component_predicted_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
-    # - the sum of causal importances (initialized per-module with correct C)
     component_sum_cis: dict[str, Float[Tensor, " C"]] = {
         module_name: torch.zeros(cm.module_to_c[module_name], device=device, dtype=torch.float)
         for module_name in cm.target_module_paths

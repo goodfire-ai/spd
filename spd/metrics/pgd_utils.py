@@ -35,16 +35,16 @@ def pgd_masked_recon_loss_update(
     routing_masks = router.get_masks(module_names=model.target_module_paths, mask_shape=batch_dims)
 
     # Create per-module adv_sources tensors (supports different C per module)
-    adv_sources: dict[str, Float[Tensor, "*batch_dims C2"]] = {}
+    adv_sources: dict[str, Float[Tensor, "*batch_dims mask_c"]] = {}
     for module_name in model.target_module_paths:
-        module_C = model.module_to_c[module_name]
-        C2 = module_C if weight_deltas is None else module_C + 1
+        module_c = model.module_to_c[module_name]
+        mask_c = module_c if weight_deltas is None else module_c + 1
         match pgd_config.mask_scope:
             case "unique_per_datapoint":
-                shape = torch.Size([*batch_dims, C2])
+                shape = torch.Size([*batch_dims, mask_c])
             case "shared_across_batch":
                 singleton_batch_dims = [1 for _ in batch_dims]
-                shape = torch.Size([*singleton_batch_dims, C2])
+                shape = torch.Size([*singleton_batch_dims, mask_c])
         adv_sources[module_name] = _get_pgd_init_tensor(
             pgd_config.init, shape, batch.device
         ).requires_grad_(True)
@@ -119,11 +119,11 @@ def calc_multibatch_pgd_masked_recon_loss(
     singleton_batch_dims = list(1 for _ in batch_dims)
 
     # Create per-module adv_sources tensors (supports different C per module)
-    adv_sources: dict[str, Float[Tensor, "*ones C2"]] = {}
+    adv_sources: dict[str, Float[Tensor, "*ones mask_c"]] = {}
     for module_name in model.target_module_paths:
-        module_C = model.module_to_c[module_name]
-        C2 = module_C if not use_delta_component else module_C + 1
-        shape = torch.Size([*singleton_batch_dims, C2])
+        module_c = model.module_to_c[module_name]
+        mask_c = module_c if not use_delta_component else module_c + 1
+        shape = torch.Size([*singleton_batch_dims, mask_c])
         adv_sources[module_name] = _get_pgd_init_tensor(
             init=pgd_config.init, shape=shape, device=device
         ).requires_grad_(True)
@@ -156,7 +156,7 @@ def calc_multibatch_pgd_masked_recon_loss(
 def _forward_with_adv_sources(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    adv_sources: dict[str, Float[Tensor, "*batch_dim_or_ones C2"]],
+    adv_sources: dict[str, Float[Tensor, "*batch_dim_or_ones mask_c"]],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing_masks: RoutingMasks,
@@ -195,7 +195,7 @@ def _forward_with_adv_sources(
 
 
 def _multibatch_pgd_fwd_bwd(
-    adv_sources: dict[str, Float[Tensor, "*ones C2"]],
+    adv_sources: dict[str, Float[Tensor, "*ones mask_c"]],
     pgd_config: PGDMultiBatchConfig,
     model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
@@ -206,7 +206,7 @@ def _multibatch_pgd_fwd_bwd(
     router: Router,
     sampling: SamplingType,
     batch_dims: tuple[int, ...],
-) -> tuple[Float[Tensor, ""], int, dict[str, Float[Tensor, "*ones C2"]]]:
+) -> tuple[Float[Tensor, ""], int, dict[str, Float[Tensor, "*ones mask_c"]]]:
     """Perform a forward and backward pass over multiple batches with gradient accumulation.
 
     Returns:

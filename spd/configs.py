@@ -302,7 +302,7 @@ class Config(BaseConfig):
         return self._convert_patterns_to_tuples(self.target_module_patterns)
 
     @property
-    def identity_patterns_with_c(self) -> list[tuple[str, int]] | None:
+    def identity_module_patterns_with_c(self) -> list[tuple[str, int]] | None:
         """Return identity_module_patterns as properly typed list[tuple[str, int]] or None."""
         if self.identity_module_patterns is None:
             return None
@@ -316,7 +316,7 @@ class Config(BaseConfig):
         """
         result = self.target_patterns_with_c.copy()
 
-        identity_patterns = self.identity_patterns_with_c
+        identity_patterns = self.identity_module_patterns_with_c
         if identity_patterns is not None:
             for pattern, c_val in identity_patterns:
                 result.append((f"{pattern}.pre_identity", c_val))

@@ -182,9 +182,11 @@ class ComponentModel(LoadableModule):
         module_to_c: dict[str, int],
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
-        for module_path, c in module_to_c.items():
-            target_module = target_model.get_submodule(module_path)
-            components[module_path] = ComponentModel._create_component(target_module, c)
+        for target_module_path, target_module_c in module_to_c.items():
+            target_module = target_model.get_submodule(target_module_path)
+            components[target_module_path] = ComponentModel._create_component(
+                target_module, target_module_c
+            )
         return components
 
     @staticmethod
@@ -229,11 +231,11 @@ class ComponentModel(LoadableModule):
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
-        for module_path, c in module_to_c.items():
-            target_module = target_model.get_submodule(module_path)
-            ci_fns[module_path] = ComponentModel._create_ci_fn(
+        for target_module_path, target_module_c in module_to_c.items():
+            target_module = target_model.get_submodule(target_module_path)
+            ci_fns[target_module_path] = ComponentModel._create_ci_fn(
                 target_module,
-                c,
+                target_module_c,
                 ci_fn_type,
                 ci_fn_hidden_dims,
             )
@@ -453,10 +455,10 @@ class ComponentModel(LoadableModule):
         target_model.eval()
         target_model.requires_grad_(False)
 
-        if config.identity_patterns_with_c is not None:
+        if config.identity_module_patterns_with_c is not None:
             insert_identity_operations_(
                 target_model,
-                identity_patterns=config.identity_patterns_with_c,
+                identity_patterns=config.identity_module_patterns_with_c,
             )
 
         comp_model = ComponentModel(

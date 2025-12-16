@@ -157,10 +157,10 @@ def test_from_run_info():
             ),
         )
 
-        if config.identity_patterns_with_c is not None:
+        if config.identity_module_patterns_with_c is not None:
             insert_identity_operations_(
                 target_model,
-                identity_patterns=config.identity_patterns_with_c,
+                identity_patterns=config.identity_module_patterns_with_c,
             )
 
         cm = ComponentModel(

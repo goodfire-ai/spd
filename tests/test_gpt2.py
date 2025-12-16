@@ -99,8 +99,10 @@ def test_gpt_2_decomposition_happy_path() -> None:
     target_model = hf_model_class.from_pretrained(config.pretrained_model_name)
     target_model.eval()
 
-    if config.identity_patterns_with_c is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_patterns_with_c)
+    if config.identity_module_patterns_with_c is not None:
+        insert_identity_operations_(
+            target_model, identity_patterns=config.identity_module_patterns_with_c
+        )
 
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,

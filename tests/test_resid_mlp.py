@@ -88,8 +88,10 @@ def test_resid_mlp_decomposition_happy_path() -> None:
     target_model = ResidMLP(config=resid_mlp_model_config).to(device)
     target_model.requires_grad_(False)
 
-    if config.identity_patterns_with_c is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_patterns_with_c)
+    if config.identity_module_patterns_with_c is not None:
+        insert_identity_operations_(
+            target_model, identity_patterns=config.identity_module_patterns_with_c
+        )
 
     assert isinstance(config.task_config, ResidMLPTaskConfig)
     # Create dataset
