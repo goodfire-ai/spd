@@ -10,12 +10,14 @@
         ciThreshold: number;
         ciThresholdLoading: boolean;
         hideUnpinnedEdges?: boolean;
+        hideNodeCard?: boolean;
         onTopKChange: (value: number) => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
         onHideUnpinnedEdgesChange?: (value: boolean) => void;
+        onHideNodeCardChange?: (value: boolean) => void;
     };
 
     let {
@@ -27,12 +29,14 @@
         ciThreshold,
         ciThresholdLoading,
         hideUnpinnedEdges,
+        hideNodeCard,
         onTopKChange,
         onComponentGapChange,
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
         onHideUnpinnedEdgesChange,
+        onHideNodeCardChange,
     }: Props = $props();
 
     // Local state for inputs (immediate UI feedback, apply on blur)
@@ -122,6 +126,16 @@
                 onchange={(e) => onHideUnpinnedEdgesChange(e.currentTarget.checked)}
             />
             <span>Hide unpinned edges</span>
+        </label>
+    {/if}
+    {#if onHideNodeCardChange}
+        <label class="checkbox">
+            <input
+                type="checkbox"
+                checked={hideNodeCard}
+                onchange={(e) => onHideNodeCardChange(e.currentTarget.checked)}
+            />
+            <span>Hide node card</span>
         </label>
     {/if}
 

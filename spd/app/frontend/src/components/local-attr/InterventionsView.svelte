@@ -43,11 +43,13 @@
         normalizeEdges: NormalizeType;
         ciThreshold: number;
         ciThresholdLoading: boolean;
+        hideNodeCard: boolean;
         onTopKChange: (value: number) => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
+        onHideNodeCardChange: (value: boolean) => void;
         // Other props
         activationContextsSummary: ActivationContextsSummary | null;
         componentDetailsCache: Record<string, ComponentDetail>;
@@ -80,6 +82,8 @@
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
+        hideNodeCard,
+        onHideNodeCardChange,
         activationContextsSummary,
         componentDetailsCache,
         componentDetailsLoading,
@@ -542,11 +546,13 @@
             {normalizeEdges}
             {ciThreshold}
             {ciThresholdLoading}
+            {hideNodeCard}
             {onTopKChange}
             {onComponentGapChange}
             {onLayerGapChange}
             {onNormalizeChange}
             {onCiThresholdChange}
+            {onHideNodeCardChange}
         />
 
         <!-- Intervention controls -->
@@ -876,6 +882,7 @@
         <NodeTooltip
             {hoveredNode}
             {tooltipPos}
+            {hideNodeCard}
             {activationContextsSummary}
             {componentDetailsCache}
             {componentDetailsLoading}
