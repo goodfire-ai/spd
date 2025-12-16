@@ -1,6 +1,7 @@
 """FastAPI routers for the SPD backend API."""
 
 from spd.app.backend.routers.activation_contexts import router as activation_contexts_router
+from spd.app.backend.routers.clusters import router as clusters_router
 from spd.app.backend.routers.correlations import router as correlations_router
 from spd.app.backend.routers.dataset_search import router as dataset_search_router
 from spd.app.backend.routers.graphs import router as graphs_router
@@ -10,6 +11,7 @@ from spd.app.backend.routers.runs import router as runs_router
 
 __all__ = [
     "activation_contexts_router",
+    "clusters_router",
     "correlations_router",
     "dataset_search_router",
     "graphs_router",

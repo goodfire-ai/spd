@@ -1,5 +1,6 @@
 <script lang="ts">
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
+    import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import type { NormalizeType } from "../../lib/localAttributionsApi";
     import {
         isInterventableNode,
@@ -156,6 +157,30 @@
     let isHoveringTooltip = $state(false);
     let tooltipPos = $state({ x: 0, y: 0 });
     let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    // Get cluster ID of hovered node (for cluster-wide rotation effect)
+    const hoveredClusterId = $derived.by(() => {
+        if (!hoveredNode) return undefined;
+        return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+    });
+
+    // Check if a node is in the same cluster as the hovered node (for cluster rotation effect)
+    function isNodeInSameCluster(nodeKey: string): boolean {
+        // Only trigger if hovered node has a numeric cluster ID (not singleton/no mapping)
+        if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
+        const [layer, , cIdxStr] = nodeKey.split(":");
+        const cIdx = parseInt(cIdxStr);
+        const nodeClusterId = clusterMapping.getClusterId(layer, cIdx);
+        return nodeClusterId === hoveredClusterId;
+    }
+
+    // Check if a node matches the hovered component (same layer:cIdx across any seqIdx)
+    function nodeMatchesHoveredComponent(nodeKey: string): boolean {
+        if (!hoveredNode) return false;
+        const [layer, , cIdxStr] = nodeKey.split(":");
+        const cIdx = parseInt(cIdxStr);
+        return layer === hoveredNode.layer && cIdx === hoveredNode.cIdx;
+    }
 
     // Drag-to-select state
     let isDragging = $state(false);
@@ -628,6 +653,9 @@
                             {@const [layer, seqIdx, cIdx] = nodeKey.split(":")}
                             {@const interventable = isInterventableNode(nodeKey)}
                             {@const selected = interventable && isNodeSelected(nodeKey)}
+                            {@const inSameCluster = isNodeInSameCluster(nodeKey)}
+                            {@const isHoveredComponent = nodeMatchesHoveredComponent(nodeKey)}
+                            {@const isDimmed = hoveredNode !== null && !isHoveredComponent && !inSameCluster && !selected}
                             {#if pos}
                                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -648,6 +676,8 @@
                                     />
                                     <rect
                                         class="node"
+                                        class:cluster-hovered={inSameCluster}
+                                        class:dimmed={isDimmed}
                                         x={pos.x - COMPONENT_SIZE / 2}
                                         y={pos.y - COMPONENT_SIZE / 2}
                                         width={COMPONENT_SIZE}
@@ -1058,9 +1088,20 @@
     }
 
     .node-group .node {
+        transform-box: fill-box;
+        transform-origin: center;
         transition:
             opacity 0.1s,
-            fill 0.1s;
+            fill 0.1s,
+            transform 0.15s ease-out;
+    }
+
+    .node-group .node.cluster-hovered {
+        transform: rotate(45deg);
+    }
+
+    .node-group .node.dimmed {
+        transform: scale(0.5);
     }
 
     .node-group:hover .node {

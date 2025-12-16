@@ -12,6 +12,7 @@
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
+    import { clusterMapping } from "../lib/clusterMapping.svelte";
     import { lerp, calcTooltipPos, sortComponentsByImportance, computeComponentOffsets } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
 
@@ -94,7 +95,14 @@
     });
 
     $effect(() => {
-        console.log("[shift] shiftHeld:", shiftHeld, "hideUnpinnedEdges:", hideUnpinnedEdges, "effectiveHideUnpinned:", effectiveHideUnpinned);
+        console.log(
+            "[shift] shiftHeld:",
+            shiftHeld,
+            "hideUnpinnedEdges:",
+            hideUnpinnedEdges,
+            "effectiveHideUnpinned:",
+            effectiveHideUnpinned,
+        );
     });
 
     // Refs
@@ -142,6 +150,12 @@
 
     // For hover, we match by component (layer:cIdx), ignoring seqIdx
     const hoveredComponentKey = $derived(hoveredNode ? `${hoveredNode.layer}:${hoveredNode.cIdx}` : null);
+
+    // Get cluster ID of hovered node (for cluster-wide rotation effect)
+    const hoveredClusterId = $derived.by(() => {
+        if (!hoveredNode) return undefined;
+        return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+    });
 
     // Filter edges by topK (for rendering)
     const filteredEdges = $derived.by(() => {
@@ -297,6 +311,16 @@
         return `${layer}:${cIdx}` === hoveredComponentKey;
     }
 
+    // Check if a node is in the same cluster as the hovered node (for cluster rotation effect)
+    function isNodeInSameCluster(nodeKey: string): boolean {
+        // Only trigger if hovered node has a numeric cluster ID (not singleton/no mapping)
+        if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
+        const [layer, , cIdxStr] = nodeKey.split(":");
+        const cIdx = parseInt(cIdxStr);
+        const nodeClusterId = clusterMapping.getClusterId(layer, cIdx);
+        return nodeClusterId === hoveredClusterId;
+    }
+
     type EdgeState = "normal" | "highlighted" | "hidden";
 
     // Hover acts as a "promotion": hidden → normal → highlighted
@@ -327,9 +351,9 @@
             if (hoveredEdge) {
                 return isThisEdgeHovered ? "highlighted" : "normal";
             }
-            // Node hover: highlight connected to hovered component
+            // Node hover: highlight connected to hovered component OR pinned nodes
             if (hoveredNode) {
-                return connectedToHoveredNode ? "highlighted" : "normal";
+                return connectedToHoveredNode || connectedToPinned ? "highlighted" : "normal";
             }
             // No hover: connected to pinned are highlighted
             return connectedToPinned ? "highlighted" : "normal";
@@ -556,6 +580,10 @@
                     {@const seqIdx = parseInt(seqIdxStr)}
                     {@const cIdx = parseInt(cIdxStr)}
                     {@const isHighlighted = isNodeHighlighted(key)}
+                    {@const isPinned = pinnedNodeKeys.has(key)}
+                    {@const inSameCluster = isNodeInSameCluster(key)}
+                    {@const isHoveredComponent = nodeMatchesHoveredComponent(key)}
+                    {@const isDimmed = hoveredNode !== null && !isHoveredComponent && !inSameCluster && !isPinned}
                     {@const style = nodeStyles[key]}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -577,6 +605,8 @@
                         <rect
                             class="node"
                             class:highlighted={isHighlighted}
+                            class:cluster-hovered={inSameCluster}
+                            class:dimmed={isDimmed}
                             x={pos.x - COMPONENT_SIZE / 2}
                             y={pos.y - COMPONENT_SIZE / 2}
                             width={COMPONENT_SIZE}
@@ -709,6 +739,20 @@
 
     .node-group {
         cursor: pointer;
+    }
+
+    .node {
+        transform-box: fill-box;
+        transform-origin: center;
+        transition: transform 0.15s ease-out;
+    }
+
+    .node.cluster-hovered {
+        transform: rotate(45deg);
+    }
+
+    .node.dimmed {
+        transform: scale(0.5);
     }
 
     .node.highlighted {
