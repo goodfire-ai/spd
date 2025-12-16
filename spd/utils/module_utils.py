@@ -79,10 +79,13 @@ def get_target_module_paths_with_c(
             with equal specificity match the same module
 
     Example:
+        More specific pattern (fewer wildcards) wins over less specific:
+
         >>> patterns = [("h.*.mlp.*", 100), ("h.*.mlp.c_fc", 50)]
         >>> get_target_module_paths_with_c(model, patterns)
         {'h.0.mlp.c_fc': 50, 'h.0.mlp.down_proj': 100, ...}
-        # h.0.mlp.c_fc uses C=50 (1 wildcard beats 2 wildcards)
+
+        Here h.0.mlp.c_fc gets C=50 (1 wildcard) instead of C=100 (2 wildcards).
     """
     # module -> (wildcard_count, pattern, C)
     module_to_info: dict[str, tuple[int, str, int]] = {}
