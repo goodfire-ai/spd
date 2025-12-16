@@ -64,37 +64,32 @@
     let tooltipPos = $state({ x: 0, y: 0 });
     let edgeTooltipPos = $state({ x: 0, y: 0 });
 
-    // Shift key temporarily toggles hide unpinned edges
-    let shiftHeld = $state(false);
-    const effectiveHideUnpinned = $derived(shiftHeld ? !hideUnpinnedEdges : hideUnpinnedEdges);
+    // Alt/Option key temporarily toggles hide unpinned edges
+    let altHeld = $state(false);
+    const effectiveHideUnpinned = $derived(altHeld ? !hideUnpinnedEdges : hideUnpinnedEdges);
 
     $effect(() => {
-        console.log("[shift] effect running, setting up listeners");
         function onKeyDown(e: KeyboardEvent) {
-            console.log("[shift] keydown:", e.key);
-            if (e.key === "Shift") {
-                console.log("[shift] setting shiftHeld = true");
-                shiftHeld = true;
+            if (e.key === "Alt") {
+                altHeld = true;
             }
         }
         function onKeyUp(e: KeyboardEvent) {
-            console.log("[shift] keyup:", e.key);
-            if (e.key === "Shift") {
-                console.log("[shift] setting shiftHeld = false");
-                shiftHeld = false;
+            if (e.key === "Alt") {
+                altHeld = false;
             }
+        }
+        function onBlur() {
+            altHeld = false;
         }
         window.addEventListener("keydown", onKeyDown);
         window.addEventListener("keyup", onKeyUp);
+        window.addEventListener("blur", onBlur);
         return () => {
-            console.log("[shift] effect cleanup, removing listeners");
             window.removeEventListener("keydown", onKeyDown);
             window.removeEventListener("keyup", onKeyUp);
+            window.removeEventListener("blur", onBlur);
         };
-    });
-
-    $effect(() => {
-        console.log("[shift] shiftHeld:", shiftHeld, "hideUnpinnedEdges:", hideUnpinnedEdges, "effectiveHideUnpinned:", effectiveHideUnpinned);
     });
 
     // Refs
