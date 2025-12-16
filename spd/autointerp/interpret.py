@@ -14,7 +14,7 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.compute import get_model_n_blocks
-from spd.autointerp.harvest import HarvestResult, load_harvest
+from spd.autointerp.harvest import HarvestResult
 from spd.autointerp.prompt_template import format_prompt_template
 from spd.autointerp.schemas import (
     AUTOINTERP_DATA_DIR,
@@ -229,7 +229,8 @@ def run_interpret(
 
     arch = get_architecture_info(wandb_path)
 
-    harvest = load_harvest(run_id)
+    harvest_path = AUTOINTERP_DATA_DIR / run_id / "harvest"
+    harvest = HarvestResult.load(harvest_path)
 
     out_dir = AUTOINTERP_DATA_DIR / run_id / "interpretations"
     out_dir.mkdir(parents=True, exist_ok=True)

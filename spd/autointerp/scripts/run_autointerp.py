@@ -32,7 +32,8 @@ def harvest_cmd(
     Args:
         d: Number of GPUs for distributed harvesting. If None, uses single GPU.
     """
-    from spd.autointerp.harvest import HarvestConfig, harvest, harvest_parallel, save_harvest
+    from spd.autointerp.harvest import HarvestConfig, harvest, harvest_parallel
+    from spd.autointerp.schemas import AUTOINTERP_DATA_DIR
     from spd.utils.wandb_utils import parse_wandb_run_path
 
     entity, project, run_id = parse_wandb_run_path(wandb_path)
@@ -56,7 +57,8 @@ def harvest_cmd(
         print(f"Single-GPU harvest: {clean_path}")
         result = harvest(config)
 
-    out_dir = save_harvest(result, run_id)
+    out_dir = AUTOINTERP_DATA_DIR / run_id / "harvest"
+    result.save(out_dir)
     print(f"Saved {len(result.components)} components to {out_dir}")
 
 
