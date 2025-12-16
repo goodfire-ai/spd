@@ -1,5 +1,3 @@
-"""Interpret components using Claude API with asyncio for concurrency."""
-
 import asyncio
 import json
 from dataclasses import asdict
@@ -17,19 +15,16 @@ from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.harvest import HarvestResult
 from spd.autointerp.prompt_template import format_prompt_template
 from spd.autointerp.schemas import (
-    AUTOINTERP_DATA_DIR,
     ArchitectureInfo,
     ComponentData,
     InterpretationResult,
 )
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel, SPDRunInfo
-from spd.utils.wandb_utils import parse_wandb_run_path
 
 
-# haiku doesn't seem to support response_format via OpenRouter API
 class OpenRouterModelName(StrEnum):
-    # HAIKU_4_5_20251001 = "anthropic/claude-haiku-4.5"
+    # HAIKU_4_5_20251001 = "anthropic/claude-haiku-4.5"  # haiku doesn't seem to support response_format via OpenRouter API
     GEMINI_2_5_FLASH = "google/gemini-2.5-flash"
 
 
@@ -116,7 +111,12 @@ async def interpret_component(
     message = response.choices[0].message
     assert isinstance(message.content, str), f"Expected string content, got {type(message.content)}"
     raw = message.content
-    parsed = json.loads(raw)
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse JSON: `{raw}`") from e
+
     assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}: {parsed}"
     assert isinstance(label := (parsed["label"]), str), (
         f"Expected 'label' to be a string, got {parsed['label']}"
@@ -141,7 +141,7 @@ async def interpret_component(
 
 
 async def interpret_all(
-    harvest: HarvestResult,
+    components: list[ComponentData],
     arch: ArchitectureInfo,
     openrouter_api_key: str,
     interpreter_model: str,
@@ -161,10 +161,8 @@ async def interpret_all(
                 completed.add(data["component_key"])
         print(f"Resuming: {len(completed)} already completed")
 
-    remaining = [c for c in harvest.components if c.component_key not in completed]
+    remaining = [c for c in components if c.component_key not in completed]
     print(f"Interpreting {len(remaining)} components ({max_concurrent} concurrent)")
-
-    remaining = remaining[:1]
 
     semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
@@ -223,22 +221,19 @@ def run_interpret(
     openrouter_api_key: str,
     interpreter_model: str,
     max_concurrent: int,
+    activation_contexts_dir: Path,
+    autointerp_dir: Path,
 ) -> list[InterpretationResult]:
     """Main entrypoint: load harvest, interpret all components, save results."""
-    _, _, run_id = parse_wandb_run_path(wandb_path)
-
     arch = get_architecture_info(wandb_path)
 
-    harvest_path = AUTOINTERP_DATA_DIR / run_id / "harvest"
-    harvest = HarvestResult.load(harvest_path)
+    components, _ = HarvestResult.load_components(activation_contexts_dir)
 
-    out_dir = AUTOINTERP_DATA_DIR / run_id / "interpretations"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    output_path = out_dir / "results.jsonl"
+    output_path = autointerp_dir / "results.jsonl"
 
     results = asyncio.run(
         interpret_all(
-            harvest,
+            components,
             arch,
             openrouter_api_key,
             interpreter_model,
@@ -251,13 +246,12 @@ def run_interpret(
     return results
 
 
-def load_interpretations(run_id: str) -> list[InterpretationResult]:
+def load_interpretations(out_dir: Path) -> list[InterpretationResult]:
     """Load interpretation results from disk."""
-    path = AUTOINTERP_DATA_DIR / run_id / "interpretations" / "results.jsonl"
-    assert path.exists(), f"No interpretations found at {path}"
-
-    results = []
-    with open(path) as f:
+    output_path = out_dir / "results.jsonl"
+    assert output_path.exists(), f"No interpretations found at {output_path}"
+    results: list[InterpretationResult] = []
+    with open(output_path) as f:
         for line in f:
             results.append(InterpretationResult(**json.loads(line)))
     return results

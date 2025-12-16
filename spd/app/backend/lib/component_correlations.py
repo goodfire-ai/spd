@@ -1,10 +1,10 @@
-"""Component correlation computation and storage.
+"""Component correlation data structures and loading.
 
-Computes pairwise correlation metrics between components based on their
-co-occurrence patterns across a dataset. Metrics include precision, recall,
-Jaccard similarity, and PMI.
+Data classes for querying pairwise correlation metrics between components
+(precision, recall, Jaccard similarity, PMI) and per-component token statistics.
 
-Also computes per-component token statistics (precision, recall, lift).
+Data is produced by the harvest pipeline (spd.autointerp.harvest) and loaded
+from .data/harvest/<run_id>/correlations/.
 """
 
 import math
@@ -12,19 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-import einops
 import torch
-import tqdm
 from jaxtyping import Float, Int
 from torch import Tensor
-from torch.utils.data import DataLoader
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.db.database import CORRELATIONS_DIR
-from spd.configs import Config
+from spd.autointerp.schemas import get_correlations_dir
 from spd.log import logger
-from spd.models.component_model import ComponentModel
-from spd.utils.general_utils import extract_batch_data
 
 
 @dataclass
@@ -225,13 +219,13 @@ class ComponentCorrelations:
 
 
 def get_correlations_path(wandb_run_id: str) -> Path:
-    """Get the path where correlations are stored for a run."""
-    return CORRELATIONS_DIR / wandb_run_id / "component_correlations.pt"
+    """Get the path where correlations are stored for a run (from harvest output)."""
+    return get_correlations_dir(wandb_run_id) / "component_correlations.pt"
 
 
 def get_token_stats_path(wandb_run_id: str) -> Path:
-    """Get the path where token stats are stored for a run."""
-    return CORRELATIONS_DIR / wandb_run_id / "token_stats.pt"
+    """Get the path where token stats are stored for a run (from harvest output)."""
+    return get_correlations_dir(wandb_run_id) / "token_stats.pt"
 
 
 @dataclass
@@ -426,149 +420,3 @@ class ComponentTokenStats:
             output_totals=data["output_totals"],
             firing_counts=data["firing_counts"],
         )
-
-
-@dataclass
-class HarvestResult:
-    """Result of harvest_correlations containing both correlation and token stats."""
-
-    correlations: ComponentCorrelations
-    token_stats: ComponentTokenStats
-
-
-def harvest_correlations(
-    config: Config,
-    cm: ComponentModel,
-    train_loader: DataLoader[Int[Tensor, "B S"]],
-    ci_threshold: float,
-    n_batches: int,
-    vocab_size: int,
-) -> HarvestResult:
-    """Stream through dataset, accumulate co-occurrence counts and token stats.
-
-    Args:
-        config: Model config (for sampling settings)
-        cm: Component model to compute CI values
-        train_loader: DataLoader yielding batches of token IDs
-        ci_threshold: Threshold for binarizing CI values (component is "active" if CI > threshold)
-        n_batches: Number of batches to process
-        vocab_size: Size of the vocabulary (for output token stats)
-
-    Returns:
-        HarvestResult with ComponentCorrelations and ComponentTokenStats
-    """
-    device = next(cm.parameters()).device
-
-    # Build flattened component key list: ["layer:cIdx", ...]
-    component_keys: list[str] = []
-    layer_names = list(cm.target_module_paths)
-    for layer_name in layer_names:
-        for c_idx in range(cm.C):
-            component_keys.append(f"{layer_name}:{c_idx}")
-
-    n_components = len(component_keys)
-    n_layers = len(layer_names)
-    logger.info(
-        f"Harvesting correlations for {n_components} components "
-        f"({n_layers} layers × {cm.C} components), vocab_size={vocab_size}"
-    )
-
-    # Correlation accumulators - use float32 for accumulation stability
-    count_i = torch.zeros(n_components, device=device, dtype=torch.float32)
-    count_ij = torch.zeros(n_components, n_components, device=device, dtype=torch.float32)
-    n_tokens = 0
-
-    # Token stats accumulators (tensorized)
-    # Input tokens: (n_components, vocab_size) - integer counts
-    input_counts = torch.zeros(n_components, vocab_size, device=device, dtype=torch.float32)
-    # Input totals: (vocab_size,) - total count of each input token
-    input_totals = torch.zeros(vocab_size, device=device, dtype=torch.float32)
-
-    # Output tokens: (n_components, vocab_size) - sum of probabilities
-    output_counts = torch.zeros(n_components, vocab_size, device=device, dtype=torch.float32)
-    # Output totals: (vocab_size,) - total probability mass for each output token
-    output_totals = torch.zeros(vocab_size, device=device, dtype=torch.float32)
-
-    train_iter = iter(train_loader)
-    for _ in tqdm.tqdm(range(n_batches), desc="Harvesting correlations + token stats"):
-        batch: Int[Tensor, "B S"] = extract_batch_data(next(train_iter)).to(
-            device, non_blocking=True
-        )
-        B, S = batch.shape
-        n_tokens += B * S
-
-        with torch.no_grad():
-            output_with_cache = cm(batch, cache_type="input")
-            logits = output_with_cache.output  # (B, S, vocab_size)
-            probs = torch.softmax(logits, dim=-1)  # (B, S, vocab_size)
-
-            ci_vals = cm.calc_causal_importances(
-                pre_weight_acts=output_with_cache.cache,
-                detach_inputs=True,
-                sampling=config.sampling,
-            ).lower_leaky
-
-            # Stack CI values across layers: (B, S, n_layers, C) -> (B, S, n_components)
-            ci_list = [ci_vals[layer] for layer in layer_names]
-            ci_stacked = torch.stack(ci_list, dim=2)
-            ci_flat: Float[Tensor, "B S n_components"] = ci_stacked.view(B, S, n_components)
-
-            # Binarize to float32
-            binary_acts = (ci_flat > ci_threshold).to(torch.float32)
-
-            # Accumulate firing counts
-            count_i += binary_acts.sum(dim=(0, 1))
-
-            # Accumulate co-occurrence: (B*S, n_components).T @ (B*S, n_components)
-            flat_acts = binary_acts.view(B * S, n_components)
-            count_ij += flat_acts.T @ flat_acts
-
-            # === Input token stats (vectorized) ===
-            # One-hot encode input tokens: (B, S) -> (B*S, vocab_size)
-            batch_flat = batch.view(B * S)
-            input_onehot = torch.zeros(B * S, vocab_size, device=device, dtype=torch.float32)
-            input_onehot.scatter_(1, batch_flat.unsqueeze(1), 1.0)
-
-            input_counts += einops.einsum(
-                flat_acts, input_onehot, "BxS n_components, BxS vocab -> n_components vocab"
-            )
-
-            # Accumulate input totals
-            input_totals += input_onehot.sum(dim=0)
-
-            # === Output token stats (vectorized) ===
-            # probs: (B, S, vocab_size) -> (B*S, vocab_size)
-            probs_flat = probs.view(B * S, vocab_size)
-
-            # This sums up probabilities weighted by whether component fired
-            output_counts += einops.einsum(
-                flat_acts, probs_flat, "BxS n_components, BxS vocab -> n_components vocab"
-            )
-
-            # Accumulate output totals (marginal probability mass per token)
-            output_totals += probs_flat.sum(dim=0)
-
-            assert torch.isfinite(count_i).all(), "count_i has non-finite values"
-            assert torch.isfinite(count_ij).all(), "count_ij has non-finite values"
-            assert torch.isfinite(input_counts).all(), "input_counts has non-finite values"
-            assert torch.isfinite(output_counts).all(), "output_counts has non-finite values"
-
-    correlations = ComponentCorrelations(
-        component_keys=component_keys,
-        count_i=count_i,
-        count_ij=count_ij,
-        count_total=n_tokens,
-    )
-
-    token_stats = ComponentTokenStats(
-        component_keys=component_keys,
-        vocab_size=vocab_size,
-        n_tokens=n_tokens,
-        input_counts=input_counts,
-        input_totals=input_totals,
-        output_counts=output_counts,
-        output_totals=output_totals,
-        firing_counts=count_i.clone(),
-    )
-
-    return HarvestResult(correlations=correlations, token_stats=token_stats)

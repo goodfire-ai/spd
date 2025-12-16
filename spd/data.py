@@ -332,20 +332,20 @@ def create_data_loader_from_config(
 
 
 def train_loader_and_tokenizer(
-    spd_config: Config, context_length: int, batch_size: int
+    config: Config, batch_size: int
 ) -> tuple[DataLoader[Any], PreTrainedTokenizerBase]:
-    assert spd_config.tokenizer_name is not None
-    tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
+    assert config.tokenizer_name is not None
+    tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
 
-    task_config = spd_config.task_config
+    task_config = config.task_config
     assert isinstance(task_config, LMTaskConfig)
 
     train_data_config = DatasetConfig(
         name=task_config.dataset_name,
-        hf_tokenizer_path=spd_config.tokenizer_name,
+        hf_tokenizer_path=config.tokenizer_name,
         split=task_config.train_data_split,
-        n_ctx=context_length,
+        n_ctx=task_config.max_seq_len,
         is_tokenized=task_config.is_tokenized,
         streaming=task_config.streaming,
         column_name=task_config.column_name,
@@ -356,7 +356,7 @@ def train_loader_and_tokenizer(
         dataset_config=train_data_config,
         batch_size=batch_size,
         buffer_size=task_config.buffer_size,
-        global_seed=spd_config.seed,
+        global_seed=config.seed,
     )
 
     return train_loader, tokenizer

@@ -14,6 +14,7 @@ from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import RunState
 from spd.app.backend.utils import build_token_lookup, log_errors
+from spd.autointerp.loaders import HarvestData
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
@@ -165,13 +166,15 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
 
     prompt_count = manager.db.get_prompt_count(run.id, context_length)
 
+    # Check if harvest data exists
+    _, _, run_id = parse_wandb_run_path(run.wandb_path)
+    harvest_data = HarvestData(wandb_run_id=run_id)
+
     return LoadedRun(
         id=run.id,
         wandb_path=run.wandb_path,
         config_yaml=config_yaml,
-        has_activation_contexts=manager.db.has_component_activation_contexts(
-            run.id, context_length
-        ),
+        has_activation_contexts=harvest_data.has_activation_contexts(),
         has_prompts=prompt_count > 0,
         prompt_count=prompt_count,
         context_length=context_length,

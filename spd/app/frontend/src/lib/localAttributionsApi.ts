@@ -371,3 +371,19 @@ export async function getComponentTokenStats(
     url.searchParams.set("top_k", String(topK));
     return fetchJson<TokenStats | null>(url.toString());
 }
+
+// Interpretation labels
+export type Interpretation = {
+    label: string;
+    confidence: "low" | "medium" | "high";
+    reasoning: string;
+};
+
+export async function getComponentInterpretation(
+    layer: string,
+    componentIdx: number,
+): Promise<Interpretation | null> {
+    return fetchJson<Interpretation | null>(
+        `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
+    );
+}

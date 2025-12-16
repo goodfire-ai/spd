@@ -32,6 +32,7 @@ class HarvesterState:
     # Tensor accumulators (on CPU)
     firing_counts: Tensor
     ci_sums: Tensor
+    count_ij: Tensor  # Component co-occurrence matrix
     input_token_counts: Tensor
     input_token_totals: Tensor
     output_token_prob_mass: Tensor
@@ -56,6 +57,7 @@ class HarvesterState:
         # Sum tensor accumulators
         firing_counts = torch.stack([s.firing_counts for s in states]).sum(dim=0)
         ci_sums = torch.stack([s.ci_sums for s in states]).sum(dim=0)
+        count_ij = torch.stack([s.count_ij for s in states]).sum(dim=0)
         input_token_counts = torch.stack([s.input_token_counts for s in states]).sum(dim=0)
         input_token_totals = torch.stack([s.input_token_totals for s in states]).sum(dim=0)
         output_token_prob_mass = torch.stack([s.output_token_prob_mass for s in states]).sum(dim=0)
@@ -80,6 +82,7 @@ class HarvesterState:
             context_tokens_per_side=first.context_tokens_per_side,
             firing_counts=firing_counts,
             ci_sums=ci_sums,
+            count_ij=count_ij,
             input_token_counts=input_token_counts,
             input_token_totals=input_token_totals,
             output_token_prob_mass=output_token_prob_mass,
@@ -115,6 +118,7 @@ class Harvester:
         # Correlation accumulators
         self.firing_counts = torch.zeros(n_components, device=device)
         self.ci_sums = torch.zeros(n_components, device=device)
+        self.count_ij = torch.zeros(n_components, n_components, device=device, dtype=torch.float32)
 
         # Token stat accumulators
         self.input_token_counts: Int[Tensor, "n_components vocab"] = torch.zeros(
@@ -154,6 +158,7 @@ class Harvester:
         output_probs_flat = output_probs.view(B * S, self.vocab_size)
 
         self._accumulate_firing_stats(ci_flat, is_firing)
+        self._accumulate_cooccurrence_stats(is_firing_flat)
         self._accumulate_input_token_stats(batch_flat, is_firing_flat, n_components)
         self._accumulate_output_token_stats(output_probs_flat, is_firing_flat)
         self._collect_activation_examples(batch, ci_flat)
@@ -165,6 +170,13 @@ class Harvester:
     ) -> None:
         self.firing_counts += is_firing.sum(dim=(0, 1))
         self.ci_sums += ci_flat.sum(dim=(0, 1))
+
+    def _accumulate_cooccurrence_stats(
+        self,
+        is_firing_flat: Float[Tensor, "BS n_comp"],
+    ) -> None:
+        """Accumulate component-component co-occurrence counts."""
+        self.count_ij += is_firing_flat.T @ is_firing_flat
 
     def _accumulate_input_token_stats(
         self, batch_flat: Tensor, is_firing_flat: Tensor, n_components: int
@@ -195,8 +207,6 @@ class Harvester:
         batch_idx, seq_idx, component_idx = torch.where(is_firing)
         if len(batch_idx) == 0:
             return
-        
-        print(f"got {len(batch_idx)} firings")
 
         # Subsample if too many firings
         MAX_FIRINGS_PER_BATCH = 10_000
@@ -249,6 +259,7 @@ class Harvester:
             context_tokens_per_side=self.context_tokens_per_side,
             firing_counts=self.firing_counts.cpu(),
             ci_sums=self.ci_sums.cpu(),
+            count_ij=self.count_ij.cpu(),
             input_token_counts=self.input_token_counts.cpu(),
             input_token_totals=self.input_token_totals.cpu(),
             output_token_prob_mass=self.output_token_prob_mass.cpu(),
@@ -271,6 +282,7 @@ class Harvester:
         )
         harvester.firing_counts = state.firing_counts.to(device)
         harvester.ci_sums = state.ci_sums.to(device)
+        harvester.count_ij = state.count_ij.to(device)
         harvester.input_token_counts = state.input_token_counts.to(device)
         harvester.input_token_totals = state.input_token_totals.to(device)
         harvester.output_token_prob_mass = state.output_token_prob_mass.to(device)

@@ -70,14 +70,31 @@ def format_prompt_template(
 ) -> str:
     lookup = build_token_lookup(tokenizer, tokenizer.name_or_path)
 
+    PADDING_SENTINEL = -1
+
     examples_str = ""
     for example_idx, example in enumerate(component.activation_examples):
-        full_text = tokenizer.decode(example.token_ids)
+        # Filter out padding sentinel (-1) for decoding
+        valid_token_ids: list[int] = []
+        for tid in example.token_ids:
+            if tid == PADDING_SENTINEL:
+                continue
+            assert tid >= 0, (
+                f"Unexpected token_id {tid} (expected valid token or {PADDING_SENTINEL})"
+            )
+            valid_token_ids.append(tid)
+
+        full_text = tokenizer.decode(valid_token_ids) if valid_token_ids else ""
         full_text_escaped_str = full_text.replace('"', '\\"')
+
+        def token_str(token_id: int) -> str:
+            if token_id == PADDING_SENTINEL:
+                return "<pad>"
+            return lookup[token_id]
 
         token_activation_pairs_str = ", ".join(
             [
-                f'("{lookup[token_id]}", {ci:.2f})'
+                f'("{token_str(token_id)}", {ci:.2f})'
                 for token_id, ci in zip(example.token_ids, example.ci_values, strict=True)
             ]
         )
@@ -198,6 +215,7 @@ if __name__ == "__main__":
         dataset_name="OpenWebText",
         dataset_description="OpenWebText is a dataset of web text",
         c=256,
+        tokenizer_name="openai-community/gpt2",
     )
     from transformers import AutoTokenizer
 

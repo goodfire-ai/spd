@@ -7,7 +7,12 @@
         Edge,
         EdgeAttribution,
     } from "../../lib/localAttributionsTypes";
-    import { getComponentCorrelations, getComponentTokenStats } from "../../lib/localAttributionsApi";
+    import {
+        getComponentCorrelations,
+        getComponentTokenStats,
+        getComponentInterpretation,
+        type Interpretation,
+    } from "../../lib/localAttributionsApi";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
@@ -44,6 +49,10 @@
     let tokenStats = $state<TokenStats | null>(null);
     let tokenStatsLoading = $state(false);
 
+    // Interpretation state
+    let interpretation = $state<Interpretation | null>(null);
+    let interpretationLoading = $state(false);
+
     // Fetch correlations when component changes
     $effect(() => {
         correlations = null;
@@ -67,6 +76,19 @@
             })
             .finally(() => {
                 tokenStatsLoading = false;
+            });
+    });
+
+    // Fetch interpretation when component changes
+    $effect(() => {
+        interpretation = null;
+        interpretationLoading = true;
+        getComponentInterpretation(layer, cIdx)
+            .then((data) => {
+                interpretation = data;
+            })
+            .finally(() => {
+                interpretationLoading = false;
             });
     });
 
@@ -169,6 +191,22 @@
             <span class="mean-ci">Mean CI: {formatMeanCi(summary.mean_ci)}</span>
         {/if}
     </SectionHeader>
+
+    <!-- Interpretation label -->
+    {#if interpretation}
+        <div class="interpretation-badge" title={interpretation.reasoning}>
+            <span class="interpretation-label">{interpretation.label}</span>
+            <span class="confidence confidence-{interpretation.confidence}">{interpretation.confidence}</span>
+        </div>
+    {:else if interpretationLoading}
+        <div class="interpretation-badge loading">
+            <span class="interpretation-label">Loading interpretation...</span>
+        </div>
+    {:else}
+        <div class="interpretation-badge empty">
+            <span class="interpretation-label">No interpretation available</span>
+        </div>
+    {/if}
 
     <div class="token-stats-row">
         <TokenStatsSection
@@ -310,6 +348,51 @@
         color: var(--text-muted);
         font-family: var(--font-mono);
         margin-left: var(--space-2);
+    }
+
+    .interpretation-badge {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-secondary);
+        border-radius: var(--radius-md);
+        border-left: 3px solid var(--color-accent, #6366f1);
+    }
+
+    .interpretation-badge.loading,
+    .interpretation-badge.empty {
+        opacity: 0.5;
+        border-left-color: var(--text-muted);
+    }
+
+    .interpretation-label {
+        font-weight: 500;
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+    }
+
+    .confidence {
+        font-size: var(--text-xs);
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+
+    .confidence-high {
+        background: color-mix(in srgb, #22c55e 20%, transparent);
+        color: #22c55e;
+    }
+
+    .confidence-medium {
+        background: color-mix(in srgb, #eab308 20%, transparent);
+        color: #eab308;
+    }
+
+    .confidence-low {
+        background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+        color: var(--text-muted);
     }
 
     .token-stats-row {
