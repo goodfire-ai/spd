@@ -245,11 +245,6 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
-    C: PositiveInt | None = Field(
-        default=None,
-        description="DEPRECATED: Use per-module C values in target_module_patterns instead. "
-        "Each pattern should be a 2-element list: ['pattern', C_value].",
-    )
     n_mask_samples: PositiveInt = Field(
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",

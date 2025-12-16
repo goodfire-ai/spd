@@ -37,7 +37,6 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[8],
@@ -50,8 +49,8 @@ def test_resid_mlp_decomposition_happy_path() -> None:
             StochasticReconLossConfig(coeff=1.0),
             FaithfulnessLossConfig(coeff=1.0),
         ],
-        target_module_patterns=["layers.*.mlp_in", "layers.*.mlp_out"],
-        identity_module_patterns=["layers.*.mlp_in"],
+        target_module_patterns=[("layers.*.mlp_in", 10), ("layers.*.mlp_out", 10)],
+        identity_module_patterns=[("layers.*.mlp_in", 10)],
         output_loss_type="mse",
         # Training
         lr=1e-3,

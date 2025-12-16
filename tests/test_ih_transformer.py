@@ -44,12 +44,11 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="vector_mlp",
         ci_fn_hidden_dims=[128],
-        target_module_patterns=["blocks.*.attn.q_proj", "blocks.*.attn.k_proj"],
-        identity_module_patterns=["blocks.*.attn.q_proj"],
+        target_module_patterns=[("blocks.*.attn.q_proj", 10), ("blocks.*.attn.k_proj", 10)],
+        identity_module_patterns=[("blocks.*.attn.q_proj", 10)],
         # Loss Coefficients
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(

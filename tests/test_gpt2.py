@@ -30,12 +30,14 @@ def test_gpt_2_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="vector_mlp",
         ci_fn_hidden_dims=[128],
-        target_module_patterns=["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
-        identity_module_patterns=["transformer.h.1.attn.c_attn"],
+        target_module_patterns=[
+            ("transformer.h.2.attn.c_attn", 10),
+            ("transformer.h.3.mlp.c_fc", 10),
+        ],
+        identity_module_patterns=[("transformer.h.1.attn.c_attn", 10)],
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
                 coeff=1e-2,
