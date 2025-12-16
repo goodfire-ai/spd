@@ -31,6 +31,7 @@
         componentGap: number;
         layerGap: number;
         hideUnpinnedEdges: boolean;
+        hideNodeCard: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
         componentDetailsCache: Record<string, ComponentDetail>;
@@ -46,6 +47,7 @@
         componentGap,
         layerGap,
         hideUnpinnedEdges,
+        hideNodeCard,
         activationContextsSummary,
         stagedNodes,
         componentDetailsCache,
@@ -637,6 +639,7 @@
         <NodeTooltip
             {hoveredNode}
             {tooltipPos}
+            {hideNodeCard}
             {activationContextsSummary}
             {componentDetailsCache}
             {componentDetailsLoading}

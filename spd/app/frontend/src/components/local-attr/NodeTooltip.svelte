@@ -19,6 +19,7 @@
     type Props = {
         hoveredNode: HoveredNode;
         tooltipPos: { x: number; y: number };
+        hideNodeCard?: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         componentDetailsCache: Record<string, ComponentDetail>;
         componentDetailsLoading: Record<string, boolean>;
@@ -35,6 +36,7 @@
     let {
         hoveredNode,
         tooltipPos,
+        hideNodeCard = false,
         activationContextsSummary,
         componentDetailsCache,
         componentDetailsLoading,
@@ -99,7 +101,7 @@
         </div>
     {:else if isOutput}
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
-    {:else}
+    {:else if !hideNodeCard}
         {@const cacheKey = `${hoveredNode.layer}:${hoveredNode.cIdx}`}
         {@const detail = componentDetailsCache[cacheKey] ?? null}
         {@const summary = findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
