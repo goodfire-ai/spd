@@ -6,15 +6,14 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 400
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
   - 256
 sigmoid_type: leaky_hard
 target_module_patterns:
-  - "layers.*.mlp_in"
-  - "layers.*.mlp_out"
+  - ["layers.*.mlp_in", 400]
+  - ["layers.*.mlp_out", 400]
 use_delta_component: true
 
 # --- Loss config ---

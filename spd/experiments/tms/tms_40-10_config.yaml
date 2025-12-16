@@ -6,12 +6,13 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 200
 n_mask_samples: 1
 ci_fn_type: "mlp"
 ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["linear1", "linear2"]
+target_module_patterns:
+  - ["linear1", 200]
+  - ["linear2", 200]
 identity_module_patterns: null
 use_delta_component: true
 

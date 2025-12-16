@@ -5,12 +5,16 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 2000
 n_mask_samples: 1
 ci_fn_type: "vector_mlp"
 ci_fn_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["h.*.mlp.c_fc", "h.*.mlp.c_proj", "h.*.attn.k_proj", "h.*.attn.v_proj", "h.*.attn.c_proj"]
+target_module_patterns:
+  - ["h.*.mlp.c_fc", 2000]
+  - ["h.*.mlp.c_proj", 2000]
+  - ["h.*.attn.k_proj", 2000]
+  - ["h.*.attn.v_proj", 2000]
+  - ["h.*.attn.c_proj", 2000]
 identity_module_patterns: null
 sampling: "continuous"
 use_delta_component: true
