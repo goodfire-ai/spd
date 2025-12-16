@@ -13,7 +13,15 @@
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
     import { clusterMapping } from "../lib/clusterMapping.svelte";
-    import { lerp, calcTooltipPos, sortComponentsByImportance, computeComponentOffsets } from "./local-attr/graphUtils";
+    import {
+        lerp,
+        calcTooltipPos,
+        sortComponentsByImportance,
+        sortComponentsByCluster,
+        computeComponentOffsets,
+        computeClusterSpans,
+        type ClusterSpan,
+    } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
 
     // Constants
@@ -21,6 +29,8 @@
     const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
+    const CLUSTER_BAR_HEIGHT = 3;
+    const CLUSTER_BAR_GAP = 2;
 
     // Row order for layout (qkv share a row, lm_head before output)
     const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
@@ -61,6 +71,7 @@
     // UI state
     let hoveredNode = $state<HoveredNode | null>(null);
     let hoveredEdge = $state<HoveredEdge | null>(null);
+    let hoveredBarClusterId = $state<number | null>(null);
     let isHoveringTooltip = $state(false);
     let tooltipPos = $state({ x: 0, y: 0 });
     let edgeTooltipPos = $state({ x: 0, y: 0 });
@@ -151,8 +162,9 @@
     // For hover, we match by component (layer:cIdx), ignoring seqIdx
     const hoveredComponentKey = $derived(hoveredNode ? `${hoveredNode.layer}:${hoveredNode.cIdx}` : null);
 
-    // Get cluster ID of hovered node (for cluster-wide rotation effect)
+    // Get cluster ID of hovered node or bar (for cluster-wide rotation effect)
     const hoveredClusterId = $derived.by(() => {
+        if (hoveredBarClusterId !== null) return hoveredBarClusterId;
         if (!hoveredNode) return undefined;
         return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
@@ -165,7 +177,7 @@
     });
 
     // Build layout
-    const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height } = $derived.by(() => {
+    const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height, clusterSpans } = $derived.by(() => {
         const nodesPerLayerSeq: Record<string, number[]> = {};
         const allLayers = new SvelteSet<string>();
         const allRows = new SvelteSet<string>();
@@ -255,8 +267,9 @@
             seqXStarts.push(seqXStarts[i] + seqWidths[i]);
         }
 
-        // Position nodes
+        // Position nodes and compute cluster spans
         const nodePositions: Record<string, NodePosition> = {};
+        const allClusterSpans: ClusterSpan[] = [];
         const QKV_GROUP_GAP = COMPONENT_SIZE + componentGap;
 
         for (const layer of allLayers) {
@@ -282,7 +295,11 @@
                     }
                 }
 
-                const sorted = sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs);
+                // Output nodes always sort by probability; internal nodes sort by cluster if mapping loaded, else by CI
+                const sorted =
+                    layer === "output" || !clusterMapping.mapping
+                        ? sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs)
+                        : sortComponentsByCluster(nodes, layer, seqIdx, data.nodeCiVals, clusterMapping.getClusterId.bind(clusterMapping));
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
                 for (const cIdx of nodes) {
@@ -290,6 +307,21 @@
                         x: baseX + offsets[cIdx] + COMPONENT_SIZE / 2,
                         y: baseY + COMPONENT_SIZE / 2,
                     };
+                }
+
+                // Compute cluster spans for this layer/seqIdx (skip output layer)
+                if (layer !== "output" && clusterMapping.mapping) {
+                    const spans = computeClusterSpans(
+                        sorted,
+                        layer,
+                        seqIdx,
+                        baseX,
+                        baseY,
+                        COMPONENT_SIZE,
+                        offsets,
+                        clusterMapping.getClusterId.bind(clusterMapping),
+                    );
+                    allClusterSpans.push(...spans);
                 }
             }
         }
@@ -299,7 +331,7 @@
         const maxY = Math.max(...Object.values(layerYPositions), 0) + COMPONENT_SIZE;
         const heightVal = maxY + MARGIN.bottom;
 
-        return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal };
+        return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal, clusterSpans: allClusterSpans };
     });
 
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
@@ -573,6 +605,25 @@
                 {@html edgesSvgString}
             </g>
 
+            <!-- Cluster bars (below nodes) -->
+            <g class="cluster-bars-layer">
+                {#each clusterSpans as span (`${span.layer}:${span.seqIdx}:${span.clusterId}`)}
+                    {@const isHighlighted = hoveredClusterId === span.clusterId}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <rect
+                        class="cluster-bar"
+                        class:highlighted={isHighlighted}
+                        x={span.xStart}
+                        y={span.y + CLUSTER_BAR_GAP}
+                        width={span.xEnd - span.xStart}
+                        height={CLUSTER_BAR_HEIGHT}
+                        rx="1"
+                        onmouseenter={() => (hoveredBarClusterId = span.clusterId)}
+                        onmouseleave={() => (hoveredBarClusterId = null)}
+                    />
+                {/each}
+            </g>
+
             <!-- Nodes (reactive for interactivity) -->
             <g class="nodes-layer">
                 {#each Object.entries(nodePositions) as [key, pos] (key)}
@@ -583,7 +634,7 @@
                     {@const isPinned = pinnedNodeKeys.has(key)}
                     {@const inSameCluster = isNodeInSameCluster(key)}
                     {@const isHoveredComponent = nodeMatchesHoveredComponent(key)}
-                    {@const isDimmed = hoveredNode !== null && !isHoveredComponent && !inSameCluster && !isPinned}
+                    {@const isDimmed = (hoveredNode !== null || hoveredBarClusterId !== null) && !isHoveredComponent && !inSameCluster && !isPinned}
                     {@const style = nodeStyles[key]}
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -760,6 +811,21 @@
         stroke-width: 2px !important;
         filter: brightness(1.2);
         opacity: 1 !important;
+    }
+
+    .cluster-bar {
+        fill: var(--text-secondary);
+        opacity: 0.5;
+        cursor: pointer;
+        transition:
+            opacity 0.15s ease-out,
+            fill 0.15s ease-out;
+    }
+
+    .cluster-bar:hover,
+    .cluster-bar.highlighted {
+        fill: var(--text-primary);
+        opacity: 0.8;
     }
 
     .edge-tooltip {
