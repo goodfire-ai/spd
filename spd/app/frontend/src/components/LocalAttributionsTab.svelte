@@ -1,4 +1,5 @@
 <script lang="ts">
+    import type { Loadable } from "../lib";
     import * as mainApi from "../lib/api";
     import * as attrApi from "../lib/localAttributionsApi";
     import {
@@ -31,10 +32,9 @@
     // Props - activation contexts state is lifted to App.svelte
     type Props = {
         activationContextsSummary: ActivationContextsSummary | null;
-        activationContextsMissing: boolean;
     };
 
-    let { activationContextsSummary, activationContextsMissing }: Props = $props();
+    let { activationContextsSummary }: Props = $props();
 
     // Server state
     let loadedRun = $state<mainApi.LoadedRun | null>(null);
@@ -107,22 +107,21 @@
     let hideNodeCard = $state(false);
 
     // Component details cache (shared across graphs)
-    let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
-    let componentDetailsLoading = $state<Record<string, boolean>>({});
+    let componentDetailsCache = $state<Record<string, Loadable<ComponentDetail>>>({});
 
     // Pinned nodes for attributions graph
     let pinnedNodes = $state<PinnedNode[]>([]);
 
     async function loadComponentDetail(layer: string, cIdx: number) {
         const cacheKey = `${layer}:${cIdx}`;
-        if (componentDetailsCache[cacheKey] || componentDetailsLoading[cacheKey]) return;
+        if (componentDetailsCache[cacheKey]?.status === "loading") return;
 
-        componentDetailsLoading[cacheKey] = true;
+        componentDetailsCache[cacheKey] = { status: "loading" };
         try {
             const detail = await attrApi.getComponentDetail(layer, cIdx);
-            componentDetailsCache[cacheKey] = detail;
-        } finally {
-            componentDetailsLoading[cacheKey] = false;
+            componentDetailsCache[cacheKey] = { status: "loaded", data: detail };
+        } catch (error) {
+            componentDetailsCache[cacheKey] = { status: "error", error };
         }
     }
 
@@ -642,7 +641,7 @@
         </div>
     {:else}
         <div class="main-content">
-            {#if activationContextsMissing}
+            {#if activationContextsSummary === null}
                 <div class="warning-banner">Activation contexts not generated. Component hover info unavailable.</div>
             {/if}
 
@@ -723,8 +722,9 @@
                                         layerGap={activeGraph.viewSettings.layerGap}
                                         {filteredEdgeCount}
                                         normalizeEdges={activeGraph.viewSettings.normalizeEdges}
-                                        ciThreshold={activeGraph.viewSettings.ciThreshold}
-                                        ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                        ciThreshold={refetchingGraphId === activeGraph.id
+                                            ? { status: "loading" }
+                                            : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
                                         {hideUnpinnedEdges}
                                         {hideNodeCard}
                                         onTopKChange={handleTopKChange}
@@ -756,7 +756,6 @@
                                             {activationContextsSummary}
                                             stagedNodes={pinnedNodes}
                                             {componentDetailsCache}
-                                            {componentDetailsLoading}
                                             onStagedNodesChange={handlePinnedNodesChange}
                                             onLoadComponentDetail={loadComponentDetail}
                                             onEdgeCountChange={(count) => (filteredEdgeCount = count)}
@@ -766,7 +765,6 @@
                                 <StagedNodesPanel
                                     stagedNodes={pinnedNodes}
                                     {componentDetailsCache}
-                                    {componentDetailsLoading}
                                     {activationContextsSummary}
                                     outputProbs={activeGraph.data.outputProbs}
                                     tokens={activeCard.tokens}
@@ -787,8 +785,9 @@
                                     componentGap={activeGraph.viewSettings.componentGap}
                                     layerGap={activeGraph.viewSettings.layerGap}
                                     normalizeEdges={activeGraph.viewSettings.normalizeEdges}
-                                    ciThreshold={activeGraph.viewSettings.ciThreshold}
-                                    ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                    ciThreshold={refetchingGraphId === activeGraph.id
+                                        ? { status: "loading" }
+                                        : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
                                     {hideNodeCard}
                                     onTopKChange={handleTopKChange}
                                     onComponentGapChange={handleComponentGapChange}
@@ -798,7 +797,6 @@
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     {activationContextsSummary}
                                     {componentDetailsCache}
-                                    {componentDetailsLoading}
                                     {runningIntervention}
                                     onLoadComponentDetail={loadComponentDetail}
                                     onSelectionChange={handleComposerSelectionChange}

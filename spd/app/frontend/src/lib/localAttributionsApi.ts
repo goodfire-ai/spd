@@ -54,19 +54,6 @@ export async function getActivationContextsSummary(): Promise<ActivationContexts
     return fetchJson<ActivationContextsSummary>(`${API_URL}/api/activation_contexts/summary`);
 }
 
-export type ActivationContextsConfig = {
-    importance_threshold: number;
-    n_batches: number;
-    batch_size: number;
-    n_tokens_either_side: number;
-    topk_examples: number;
-    separation_tokens: number;
-};
-
-export async function getActivationContextsConfig(): Promise<ActivationContextsConfig | null> {
-    return fetchJson<ActivationContextsConfig | null>(`${API_URL}/api/activation_contexts/config`);
-}
-
 export async function getComponentDetail(layer: string, componentIdx: number): Promise<ComponentDetail> {
     return fetchJson<ComponentDetail>(
         `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`,
@@ -386,10 +373,7 @@ export type Interpretation = {
     reasoning: string;
 };
 
-export async function getComponentInterpretation(
-    layer: string,
-    componentIdx: number,
-): Promise<Interpretation | null> {
+export async function getComponentInterpretation(layer: string, componentIdx: number): Promise<Interpretation | null> {
     return fetchJson<Interpretation | null>(
         `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
     );

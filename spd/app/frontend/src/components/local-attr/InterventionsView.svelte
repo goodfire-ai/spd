@@ -15,6 +15,7 @@
     import type { StoredGraph } from "./types";
     import ViewControls from "./ViewControls.svelte";
     import { SvelteSet } from "svelte/reactivity";
+    import type { Loadable } from "../../lib/index";
 
     // Layout constants
     const COMPONENT_SIZE = 6;
@@ -41,8 +42,7 @@
         componentGap: number;
         layerGap: number;
         normalizeEdges: NormalizeType;
-        ciThreshold: number;
-        ciThresholdLoading: boolean;
+        ciThreshold: Loadable<number>;
         hideNodeCard: boolean;
         onTopKChange: (value: number) => void;
         onComponentGapChange: (value: number) => void;
@@ -52,8 +52,7 @@
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
         activationContextsSummary: ActivationContextsSummary | null;
-        componentDetailsCache: Record<string, ComponentDetail>;
-        componentDetailsLoading: Record<string, boolean>;
+        componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
         runningIntervention: boolean;
         onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onSelectionChange: (selection: Set<string>) => void;
@@ -76,7 +75,6 @@
         layerGap,
         normalizeEdges,
         ciThreshold,
-        ciThresholdLoading,
         onTopKChange,
         onComponentGapChange,
         onLayerGapChange,
@@ -86,7 +84,6 @@
         onHideNodeCardChange,
         activationContextsSummary,
         componentDetailsCache,
-        componentDetailsLoading,
         runningIntervention,
         onLoadComponentDetail,
         onSelectionChange,
@@ -545,7 +542,6 @@
             {filteredEdgeCount}
             {normalizeEdges}
             {ciThreshold}
-            {ciThresholdLoading}
             {hideNodeCard}
             {onTopKChange}
             {onComponentGapChange}
@@ -885,7 +881,6 @@
             {hideNodeCard}
             {activationContextsSummary}
             {componentDetailsCache}
-            {componentDetailsLoading}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
             {tokens}

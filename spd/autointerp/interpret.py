@@ -20,6 +20,7 @@ from spd.autointerp.schemas import (
     InterpretationResult,
 )
 from spd.experiments.lm.configs import LMTaskConfig
+from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 
@@ -55,13 +56,6 @@ class CostTracker:
         output_cost = (self.output_tokens / 1_000_000) * self.output_price
         return input_cost + output_cost
 
-    def log(self) -> None:
-        cost = self.cost_usd()
-        print(
-            f"  [{self.completed}] ${cost:.2f} "
-            f"({self.input_tokens:,} in, {self.output_tokens:,} out)"
-        )
-
 
 INTERPRETATION_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -84,6 +78,8 @@ INTERPRETATION_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+FAKING_RESPONSES = False
+
 
 async def interpret_component(
     client: OpenRouter,
@@ -91,31 +87,49 @@ async def interpret_component(
     component: ComponentData,
     arch: ArchitectureInfo,
     tokenizer: PreTrainedTokenizerBase,
-) -> tuple[InterpretationResult, int, int]:
+) -> tuple[InterpretationResult, int, int] | None:
     """Send a single interpretation request. Returns (result, input_tokens, output_tokens)."""
     prompt = format_prompt_template(component, arch, tokenizer)
 
-    response = await client.chat.send_async(
-        model=model,
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}],
-        response_format=ResponseFormatJSONSchema(
-            json_schema=JSONSchemaConfig(
-                name="interpretation",
-                schema_={**INTERPRETATION_SCHEMA, "additionalProperties": False},
-                strict=True,
-            )
-        ),
-    )
+    if FAKING_RESPONSES:
+        result = InterpretationResult(
+            component_key=component.component_key,
+            label="The concept of love",
+            confidence="high",
+            reasoning="The component fires when the word 'love' is present in the input.",
+            raw_response="""\
+{
+    "label": "The concept of love",
+    "confidence": "high",
+    "reasoning": "The component fires when the word 'love' is present in the input."
+}""",
+        )
+        return result, 0, 0
+    else:
+        response = await client.chat.send_async(
+            model=model,
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+            response_format=ResponseFormatJSONSchema(
+                json_schema=JSONSchemaConfig(
+                    name="interpretation",
+                    schema_={**INTERPRETATION_SCHEMA, "additionalProperties": False},
+                    strict=True,
+                )
+            ),
+        )
 
-    message = response.choices[0].message
-    assert isinstance(message.content, str), f"Expected string content, got {type(message.content)}"
-    raw = message.content
+        message = response.choices[0].message
+        assert isinstance(message.content, str), (
+            f"Expected string content, got {type(message.content)}"
+        )
+        raw = message.content
 
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Failed to parse JSON: `{raw}`") from e
+    except json.JSONDecodeError:
+        print(f"Failed to parse JSON: `{raw}`")
+        return None
 
     assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}: {parsed}"
     assert isinstance(label := (parsed["label"]), str), (
@@ -154,6 +168,7 @@ async def interpret_all(
 
     # Resume: load existing results
     if output_path.exists():
+        print(f"Resuming: {output_path} exists")
         with open(output_path) as f:
             for line in f:
                 data = json.loads(line)
@@ -161,8 +176,10 @@ async def interpret_all(
                 completed.add(data["component_key"])
         print(f"Resuming: {len(completed)} already completed")
 
-    remaining = [c for c in components if c.component_key not in completed]
+    components_mean_ci_desc = sorted(components, key=lambda c: c.mean_ci, reverse=True)
+    remaining = [c for c in components_mean_ci_desc if c.component_key not in completed]
     print(f"Interpreting {len(remaining)} components ({max_concurrent} concurrent)")
+    start_idx = len(results)
 
     semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
@@ -171,22 +188,29 @@ async def interpret_all(
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
     cost_tracker = CostTracker(model=interpreter_model)
 
-    async def process_one(component: ComponentData) -> None:
+    async def process_one(component: ComponentData, index: int) -> None:
         async with semaphore:
-            result, in_tok, out_tok = await interpret_component(
-                client, interpreter_model, component, arch, tokenizer
-            )
+            res = await interpret_component(client, interpreter_model, component, arch, tokenizer)
+            if res is None:
+                logger.error(f"Failed to interpret component {component.component_key}")
+                return
+            result, in_tok, out_tok = res
 
         async with output_lock:
             results.append(result)
             with open(output_path, "a") as f:
                 f.write(json.dumps(asdict(result)) + "\n")
             cost_tracker.add(in_tok, out_tok)
-            cost_tracker.log()
+
+            if index % 100 == 0:
+                tqdm_asyncio.write(
+                    f"[{index}] ${cost_tracker.cost_usd():.2f} ({cost_tracker.input_tokens:,} in, {cost_tracker.output_tokens:,} out)"
+                )
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
         await tqdm_asyncio.gather(
-            *[process_one(c) for c in remaining], desc="Interpreting components"
+            *[process_one(c, index) for index, c in enumerate(remaining, start=start_idx)],
+            desc="Interpreting components",
         )
 
     return results

@@ -12,7 +12,7 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
-from spd.app.backend.state import RunState
+from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import build_token_lookup, log_errors
 from spd.autointerp.loaders import HarvestData
 from spd.data import DatasetConfig, create_data_loader
@@ -144,6 +144,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         token_strings=token_strings,
         train_loader=train_loader,
         context_length=context_length,
+        harvest=HarvestCache(run_id=run_id),
     )
 
     logger.info(f"[API] Run {run.id} loaded on {DEVICE}")

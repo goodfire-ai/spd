@@ -12,14 +12,17 @@ Performance (SimpleStories, 600M tokens, batch_size=256):
 """
 
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
 import torch
 import tqdm
 from jaxtyping import Float, Int
 from torch import Tensor
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.autointerp.lib.harvester import Harvester, HarvesterState
 from spd.autointerp.schemas import (
@@ -30,26 +33,162 @@ from spd.autointerp.schemas import (
 from spd.log import logger
 from spd.utils.general_utils import extract_batch_data
 
+# =============================================================================
+# Correlation Data Classes
+# =============================================================================
+
 
 @dataclass
-class HarvestConfig:
-    wandb_path: str
-    n_batches: int
-    batch_size: int
-    ci_threshold: float
-    activation_examples_per_component: int
-    activation_context_tokens_per_side: int
-    pmi_token_top_k: int
+class CorrelatedComponent:
+    """A component correlated with a query component."""
+
+    component_key: str
+    score: float
+
+
+@dataclass
+class CorrelatedComponentWithCounts:
+    """A component correlated with a query component, including raw counts for visualization."""
+
+    component_key: str
+    score: float
+    count_i: int
+    """Firing count of the this component"""
+    count_j: int
+    """Firing count of the other component"""
+    count_ij: int
+    """Co-occurrence count"""
+    count_total: int
+    """Total tokens seen"""
+
+
+Metric = Literal["precision", "recall", "jaccard", "pmi"]
 
 
 @dataclass
 class ComponentCorrelations:
-    """Component co-occurrence data for correlation analysis."""
+    """Stores correlation statistics between components."""
 
     component_keys: list[str]
+    """List of component keys: ["h.0.attn.q_proj:0", "h.0.attn.q_proj:1", ...]"""
     count_i: Int[Tensor, " n_components"]
+    """Firing count per component"""
     count_ij: Int[Tensor, "n_components n_components"]
+    """Co-occurrence matrix: count_ij[i, j] = count of tokens where component i and j both fired"""
     count_total: int
+    """Total tokens seen"""
+    _key_to_idx_map: dict[str, int] | None = None
+    """Lazily built index map for O(1) lookup"""
+
+    def _ensure_key_map(self) -> dict[str, int]:
+        if self._key_to_idx_map is None:
+            self._key_to_idx_map = {k: i for i, k in enumerate(self.component_keys)}
+        return self._key_to_idx_map
+
+    def _key_to_idx(self, key: str) -> int:
+        return self._ensure_key_map()[key]
+
+    def has_component(self, key: str) -> bool:
+        return key in self._ensure_key_map()
+
+    def _compute_scores(self, component_key: str, metric: Metric) -> tuple[Tensor, int] | None:
+        """Compute scores for a component. Returns (scores, component_idx)."""
+        i = self._key_to_idx(component_key)
+
+        count_this = int(self.count_i[i].item())
+        if count_this == 0:
+            return None
+
+        count_others = self.count_i
+
+        cooccurence_counts: Float[Tensor, " n_components"] = self.count_ij[i]
+
+        match metric:
+            case "precision":
+                scores = (cooccurence_counts / count_this).nan_to_num(float("-inf"))
+            case "recall":
+                scores = (cooccurence_counts / count_others).nan_to_num(float("-inf"))
+            case "jaccard":
+                intersection = cooccurence_counts
+                union = count_this + count_others - cooccurence_counts
+                scores = (intersection / union).nan_to_num(float("-inf"))
+            case "pmi":
+                p_this_that = cooccurence_counts / self.count_total
+                p_this = count_this / self.count_total
+                p_that = count_others / self.count_total
+                lift = p_this_that / (p_this * p_that)
+                scores = torch.log(lift).nan_to_num(float("-inf"))
+
+        scores[i] = float("-inf")
+        scores[self.count_i == 0] = float("-inf")
+        scores[cooccurence_counts == 0] = float("-inf")
+
+        return scores, i
+
+    def get_correlated(
+        self,
+        component_key: str,
+        metric: Metric,
+        top_k: int,
+    ) -> list[CorrelatedComponent]:
+        """Get top-k correlated components for a given component."""
+        result = self._compute_scores(component_key, metric)
+        if result is None:
+            return []
+
+        scores, _ = result
+        top_k_clamped = min(top_k, len(scores))
+        top_values, top_indices = torch.topk(scores, top_k_clamped)
+
+        output = []
+        for idx, val in zip(top_indices.tolist(), top_values.tolist(), strict=True):
+            if val == float("-inf"):
+                continue
+            assert math.isfinite(val), (
+                f"Unexpected non-finite score {val} for {self.component_keys[idx]}"
+            )
+            output.append(CorrelatedComponent(component_key=self.component_keys[idx], score=val))
+
+        return output
+
+    def get_correlated_with_counts(
+        self,
+        component_key: str,
+        metric: Metric,
+        top_k: int,
+        largest: bool = True,
+    ) -> list[CorrelatedComponentWithCounts]:
+        """Get top-k or bottom-k correlated components with raw counts."""
+        result = self._compute_scores(component_key, metric)
+        if result is None:
+            return []
+
+        scores, i = result
+        count_i_val = int(self.count_i[i].item())
+        count_ij_row = self.count_ij[i]
+
+        top_k_clamped = min(top_k, len(scores))
+        top_values, top_indices = torch.topk(scores, top_k_clamped, largest=largest)
+
+        output = []
+        for idx, val in zip(top_indices.tolist(), top_values.tolist(), strict=True):
+            if val == float("-inf"):
+                continue
+            assert math.isfinite(val), (
+                f"Unexpected non-finite score {val} for {self.component_keys[idx]}"
+            )
+            output.append(
+                CorrelatedComponentWithCounts(
+                    component_key=self.component_keys[idx],
+                    score=val,
+                    count_i=count_i_val,
+                    count_j=int(self.count_i[idx].item()),
+                    count_ij=int(count_ij_row[idx].item()),
+                    count_total=self.count_total,
+                )
+            )
+
+        return output
 
     def save(self, path: Path) -> None:
         """Save correlations to a .pt file."""
@@ -78,17 +217,124 @@ class ComponentCorrelations:
 
 
 @dataclass
+class TokenPRLift:
+    """Token precision, recall, lift, and PMI for a single component."""
+
+    top_recall: list[tuple[str, float]]
+    top_precision: list[tuple[str, float]]
+    top_lift: list[tuple[str, float]]
+    top_pmi: list[tuple[str, float]]
+    bottom_pmi: list[tuple[str, float]] | None
+
+
+@dataclass
 class ComponentTokenStats:
-    """Token statistics for all components."""
+    """Token statistics for all components, stored as tensors."""
 
     component_keys: list[str]
     vocab_size: int
     n_tokens: int
+
     input_counts: Float[Tensor, "n_components vocab"]
     input_totals: Float[Tensor, " vocab"]
     output_counts: Float[Tensor, "n_components vocab"]
     output_totals: Float[Tensor, " vocab"]
     firing_counts: Float[Tensor, " n_components"]
+
+    _key_to_idx_map: dict[str, int] | None = None
+
+    def _key_to_idx(self, key: str) -> int:
+        if self._key_to_idx_map is None:
+            self._key_to_idx_map = {k: i for i, k in enumerate(self.component_keys)}
+        return self._key_to_idx_map[key]
+
+    @staticmethod
+    def _compute_token_stats(
+        counts: Float[Tensor, " vocab"],
+        totals: Float[Tensor, " vocab"],
+        n_tokens: int,
+        firing_count: float,
+        tokenizer: PreTrainedTokenizerBase,
+        top_k: int,
+    ) -> TokenPRLift | None:
+        """Compute P/R/lift/PMI from count tensors."""
+        if firing_count == 0:
+            return None
+
+        valid_mask = (counts > 0) & (totals > 0)
+        if not valid_mask.any():
+            return None
+
+        recall = counts / firing_count
+        precision = torch.where(totals > 0, counts / totals, torch.zeros_like(counts))
+        base_rate = firing_count / n_tokens
+        lift = precision / base_rate if base_rate > 0 else torch.zeros_like(precision)
+
+        pmi = torch.log(counts * n_tokens / (firing_count * totals))
+        pmi = torch.where(valid_mask, pmi, torch.full_like(pmi, float("-inf")))
+
+        def get_top_k(values: Tensor, k: int, largest: bool = True) -> list[tuple[str, float]]:
+            masked = torch.where(
+                valid_mask,
+                values,
+                torch.full_like(values, float("-inf") if largest else float("inf")),
+            )
+            top_vals, top_idx = torch.topk(
+                masked, min(k, int(valid_mask.sum().item())), largest=largest
+            )
+            result = []
+            for idx, val in zip(top_idx.tolist(), top_vals.tolist(), strict=True):
+                if val == float("-inf"):
+                    continue
+                assert math.isfinite(val), f"Unexpected non-finite score {val} for token {idx}"
+                token_str = tokenizer.decode([idx])
+                result.append((token_str, round(val, 3 if abs(val) < 10 else 2)))
+            return result
+
+        return TokenPRLift(
+            top_recall=get_top_k(recall, top_k),
+            top_precision=get_top_k(precision, top_k),
+            top_lift=get_top_k(lift, top_k),
+            top_pmi=get_top_k(pmi, top_k, largest=True),
+            bottom_pmi=get_top_k(pmi, top_k, largest=False),
+        )
+
+    def get_input_tok_stats(
+        self, component_key: str, tokenizer: PreTrainedTokenizerBase, top_k: int = 10
+    ) -> TokenPRLift | None:
+        """Compute P/R/lift/PMI for input tokens."""
+        idx = self._key_to_idx(component_key)
+        tok_stats = self._compute_token_stats(
+            self.input_counts[idx],
+            self.input_totals,
+            self.n_tokens,
+            self.firing_counts[idx].item(),
+            tokenizer,
+            top_k,
+        )
+        if tok_stats is None:
+            return None
+        return TokenPRLift(
+            top_recall=tok_stats.top_recall,
+            top_precision=tok_stats.top_precision,
+            top_lift=tok_stats.top_lift,
+            top_pmi=tok_stats.top_pmi,
+            bottom_pmi=None,
+        )
+
+    def get_output_tok_stats(
+        self, component_key: str, tokenizer: PreTrainedTokenizerBase, top_k: int = 10
+    ) -> TokenPRLift | None:
+        """Compute P/R/lift/PMI for output tokens."""
+        idx = self._key_to_idx(component_key)
+        return self._compute_token_stats(
+            self.output_counts[idx],
+            self.output_totals,
+            self.n_tokens,
+            self.firing_counts[idx].item(),
+            tokenizer,
+            top_k,
+        )
 
     def save(self, path: Path) -> None:
         """Save token stats to a .pt file."""
@@ -123,6 +369,22 @@ class ComponentTokenStats:
             output_totals=data["output_totals"],
             firing_counts=data["firing_counts"],
         )
+
+
+# =============================================================================
+# Harvest Config
+# =============================================================================
+
+
+@dataclass
+class HarvestConfig:
+    wandb_path: str
+    n_batches: int
+    batch_size: int
+    ci_threshold: float
+    activation_examples_per_component: int
+    activation_context_tokens_per_side: int
+    pmi_token_top_k: int
 
 
 @dataclass

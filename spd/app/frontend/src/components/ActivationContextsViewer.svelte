@@ -1,11 +1,17 @@
 <script lang="ts">
-    import type { ComponentDetail, HarvestMetadata } from "../lib/api";
+    import type { SubcomponentActivationContexts, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
-    import { getComponentCorrelations, getComponentTokenStats } from "../lib/localAttributionsApi";
+    import {
+        getComponentCorrelations,
+        getComponentInterpretation,
+        getComponentTokenStats,
+        type Interpretation,
+    } from "../lib/localAttributionsApi";
     import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
+    import InterpretationBadge from "./ui/InterpretationBadge.svelte";
     import SectionHeader from "./ui/SectionHeader.svelte";
     import StatusText from "./ui/StatusText.svelte";
     import TokenStatsSection from "./ui/TokenStatsSection.svelte";
@@ -23,7 +29,7 @@
     let currentPage = $state(0);
     let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
 
-    let componentCache = $state<Record<string, ComponentDetail>>({});
+    let componentCache = $state<Record<string, SubcomponentActivationContexts>>({});
     let loadingComponent = $state(false);
 
     // Correlations state
@@ -33,6 +39,10 @@
     // Token stats state (from batch job)
     let tokenStats = $state<TokenStats | null>(null);
     let tokenStatsLoading = $state(false);
+
+    // Interpretation state
+    let interpretation = $state<Interpretation | null>(null);
+    let interpretationLoading = $state(false);
 
     // Layer metadata is already sorted by mean_ci desc from backend
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
@@ -132,16 +142,6 @@
         };
     });
 
-    // Correlation job status (for showing message when no data)
-    let correlationJobStatus = $state<api.CorrelationJobStatus | null>(null);
-
-    // Fetch correlation job status once on mount
-    $effect(() => {
-        api.getCorrelationJobStatus().then((s) => {
-            correlationJobStatus = s;
-        });
-    });
-
     // Fetch correlations when component changes
     $effect(() => {
         const layer = selectedLayer;
@@ -173,6 +173,23 @@
             })
             .finally(() => {
                 tokenStatsLoading = false;
+            });
+    });
+
+    // Fetch interpretation when component changes
+    $effect(() => {
+        const layer = selectedLayer;
+        const cIdx = currentMetadata?.subcomponent_idx;
+        if (cIdx === undefined) return;
+
+        interpretation = null;
+        interpretationLoading = true;
+        getComponentInterpretation(layer, cIdx)
+            .then((data) => {
+                interpretation = data;
+            })
+            .finally(() => {
+                interpretationLoading = false;
             });
     });
 
@@ -254,6 +271,8 @@
                 <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
             </SectionHeader>
 
+            <InterpretationBadge {interpretation} loading={interpretationLoading} />
+
             <div class="token-stats-row">
                 <TokenStatsSection
                     sectionTitle="Input Tokens"
@@ -296,16 +315,8 @@
                     <ComponentCorrelationMetrics {correlations} pageSize={40} />
                 {:else if correlationsLoading}
                     <StatusText>Loading...</StatusText>
-                {:else if correlationJobStatus === null}
-                    <StatusText>No correlations data. Use "Harvest" in the top bar to compute.</StatusText>
-                {:else if correlationJobStatus.status === "pending"}
-                    <StatusText variant="pending">Job {correlationJobStatus.job_id} pending...</StatusText>
-                {:else if correlationJobStatus.status === "running"}
-                    <StatusText variant="running">Job {correlationJobStatus.job_id} running...</StatusText>
-                {:else if correlationJobStatus.status === "failed"}
-                    <StatusText variant="failed">Correlation job failed. Check top bar to retry.</StatusText>
                 {:else}
-                    <StatusText>No correlations for this component.</StatusText>
+                    <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
                 {/if}
             </div>
 
@@ -457,6 +468,9 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-3);
+        padding: var(--space-4);
+        background: var(--bg-inset);
+        border: 1px solid var(--border-default);
     }
 
     .mean-ci {

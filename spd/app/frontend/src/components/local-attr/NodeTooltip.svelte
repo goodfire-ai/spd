@@ -1,4 +1,5 @@
 <script lang="ts">
+    import type { Loadable } from "../../lib/index";
     import type {
         ActivationContextsSummary,
         ComponentDetail,
@@ -21,8 +22,7 @@
         tooltipPos: { x: number; y: number };
         hideNodeCard?: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
-        componentDetailsCache: Record<string, ComponentDetail>;
-        componentDetailsLoading: Record<string, boolean>;
+        componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
         tokens: string[];
@@ -39,7 +39,6 @@
         hideNodeCard = false,
         activationContextsSummary,
         componentDetailsCache,
-        componentDetailsLoading,
         outputProbs,
         nodeCiVals,
         tokens,
@@ -102,34 +101,16 @@
     {:else if isOutput}
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
     {:else if !hideNodeCard}
-        {@const cacheKey = `${hoveredNode.layer}:${hoveredNode.cIdx}`}
-        {@const detail = componentDetailsCache[cacheKey] ?? null}
-        {@const summary = findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
-        {#if detail}
-            <ComponentNodeCard
-                layer={hoveredNode.layer}
-                cIdx={hoveredNode.cIdx}
-                seqIdx={hoveredNode.seqIdx}
-                {summary}
-                {detail}
-                {edgesBySource}
-                {edgesByTarget}
-                {onPinComponent}
-            />
-        {:else}
-            {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
-            <ComponentNodeCard
-                layer={hoveredNode.layer}
-                cIdx={hoveredNode.cIdx}
-                seqIdx={hoveredNode.seqIdx}
-                {summary}
-                detail={null}
-                {isLoading}
-                {edgesBySource}
-                {edgesByTarget}
-                {onPinComponent}
-            />
-        {/if}
+        <ComponentNodeCard
+            layer={hoveredNode.layer}
+            cIdx={hoveredNode.cIdx}
+            seqIdx={hoveredNode.seqIdx}
+            summary={findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
+            detail={componentDetailsCache[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
+            {edgesBySource}
+            {edgesByTarget}
+            {onPinComponent}
+        />
     {/if}
 </div>
 

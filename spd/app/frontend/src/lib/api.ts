@@ -76,78 +76,14 @@ export type HarvestMetadata = {
     layers: Record<string, SubcomponentMetadata[]>;
 };
 
-// Full component detail (matches SubcomponentActivationContexts on backend)
-export type ComponentDetail = SubcomponentActivationContexts;
-
-// Streaming version with lazy-loading support
-export async function getSubcomponentActivationContexts(
-    config: ActivationContextsConfig,
-    onProgress?: (progress: ProgressUpdate) => void,
-): Promise<HarvestMetadata> {
-    const url = new URL(`${API_URL}/api/activation_contexts/subcomponents`);
-    for (const [key, value] of Object.entries(config)) {
-        url.searchParams.set(key, String(value));
-    }
-    const response = await fetch(url.toString(), { method: "GET" });
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Failed to get layer activation contexts");
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-        throw new Error("Response body is not readable");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let result: HarvestMetadata | null = null;
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete SSE messages (ending with \n\n)
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || ""; // Keep incomplete message in buffer
-
-        for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
-
-            const data = JSON.parse(line.substring(6)); // Remove "data: " prefix
-
-            if (data.type === "progress" && onProgress) {
-                onProgress({ progress: data.progress });
-            } else if (data.type === "complete") {
-                result = data.result as HarvestMetadata;
-                // Close the reader early - we got what we need
-                await reader.cancel();
-                break;
-            }
-        }
-
-        // Break out of outer loop if we got the result
-        if (result) break;
-    }
-
-    if (!result) {
-        throw new Error("No result received from stream");
-    }
-
-    return result;
-}
-
-// Lazy-load individual component data
-export async function getComponentDetail(layer: string, componentIdx: number): Promise<ComponentDetail> {
+export async function getComponentDetail(layer: string, componentIdx: number): Promise<SubcomponentActivationContexts> {
     const url = `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`;
     const response = await fetch(url, { method: "GET" });
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || `Failed to get component ${componentIdx} for layer ${layer}`);
     }
-    return (await response.json()) as ComponentDetail;
+    return (await response.json()) as SubcomponentActivationContexts;
 }
 
 // Intervention types
@@ -238,57 +174,6 @@ export async function deleteForkedInterventionRun(forkId: number): Promise<void>
         const error = await response.json();
         throw new Error(error.detail || "Failed to delete forked intervention run");
     }
-}
-
-// Correlation job types and API
-
-export type HarvestParams = {
-    n_batches: number;
-    batch_size: number;
-    context_length: number;
-    ci_threshold: number;
-};
-
-// Discriminated union for job status - all jobs have these base fields
-type JobBase = { job_id: string; submitted_at: string; params: HarvestParams };
-
-export type PendingStatus = JobBase & { status: "pending"; last_log_line: string | null };
-export type RunningStatus = JobBase & { status: "running"; last_log_line: string | null };
-export type CompletedStatus = JobBase & { status: "completed"; n_tokens: number; n_components: number };
-export type FailedStatus = JobBase & { status: "failed"; error: string };
-
-export type CorrelationJobStatus = PendingStatus | RunningStatus | CompletedStatus | FailedStatus;
-
-export type SubmitJobResponse = {
-    job_id: string;
-    status: "pending";
-};
-
-/** Get the correlation job status for the current run. Returns null if no job exists (404). */
-export async function getCorrelationJobStatus(): Promise<CorrelationJobStatus | null> {
-    const response = await fetch(`${API_URL}/api/correlations/jobs/status`);
-    if (response.status === 404) {
-        return null;
-    }
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Failed to get correlation job status");
-    }
-    return (await response.json()) as CorrelationJobStatus;
-}
-
-/** Submit a SLURM job to harvest correlations */
-export async function submitCorrelationJob(params: HarvestParams): Promise<SubmitJobResponse> {
-    const response = await fetch(`${API_URL}/api/correlations/jobs/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-    });
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || "Failed to submit correlation job");
-    }
-    return (await response.json()) as SubmitJobResponse;
 }
 
 // =============================================================================

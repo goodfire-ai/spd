@@ -11,19 +11,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
-from spd.app.backend.lib.component_correlations import (
-    ComponentCorrelations,
-    ComponentTokenStats,
-    get_correlations_path,
-    get_token_stats_path,
-)
-from spd.app.backend.lib.component_correlations import (
-    CorrelatedComponentWithCounts as CorrelatedComponentDC,
-)
-from spd.app.backend.utils import log_errors, timer
-from spd.autointerp.loaders import load_interpretations
+from spd.app.backend.utils import log_errors
+from spd.autointerp.harvest import CorrelatedComponentWithCounts
 from spd.log import logger
-from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 class CorrelatedComponent(BaseModel):
@@ -95,9 +85,7 @@ def get_component_interpretation(
 
     Returns None if no interpretation exists for this component.
     """
-    _, _, run_id = parse_wandb_run_path(loaded.run.wandb_path)
-
-    interpretations = load_interpretations(run_id)
+    interpretations = loaded.harvest.interpretations
     if interpretations is None:
         return None
 
@@ -132,24 +120,14 @@ def get_component_token_stats(
     and output tokens (what this component predicts).
     Returns None if token stats haven't been harvested for this run.
     """
-    run_id = loaded.run.wandb_path.split("/")[-1]
-
-    path = get_token_stats_path(run_id)
-    if not path.exists():
+    token_stats = loaded.harvest.token_stats
+    if token_stats is None:
         return None
-
-    with timer(f"Loading token stats for {run_id}"):
-        token_stats = ComponentTokenStats.load(path)
 
     component_key = f"{layer}:{component_idx}"
 
-    with timer(f"Getting input token stats for {component_key}"):
-        input_stats = token_stats.get_input_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
-
-    with timer(f"Getting output token stats for {component_key}"):
-        output_stats = token_stats.get_output_tok_stats(
-            component_key, loaded.tokenizer, top_k=top_k
-        )
+    input_stats = token_stats.get_input_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
+    output_stats = token_stats.get_output_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
 
     if input_stats is None or output_stats is None:
         return None
@@ -190,24 +168,19 @@ def get_component_correlations(
     """
     start = time.perf_counter()
 
-    run_id = loaded.run.wandb_path.split("/")[-1]
-
-    path = get_correlations_path(run_id)
-    if not path.exists():
+    correlations = loaded.harvest.correlations
+    if correlations is None:
         return None
-
-    with timer(f"Loading correlations for {run_id}"):
-        correlations = ComponentCorrelations.load(path)
 
     component_key = f"{layer}:{component_idx}"
 
-    if component_key not in correlations.component_keys:
+    if not correlations.has_component(component_key):
         raise HTTPException(
             status_code=404, detail=f"Component {component_key} not found in correlations"
         )
 
     # annoying thing we have to do because we have separate model objects and pydantic DTOs
-    def to_schema(c: CorrelatedComponentDC) -> CorrelatedComponent:
+    def to_schema(c: CorrelatedComponentWithCounts) -> CorrelatedComponent:
         return CorrelatedComponent(
             component_key=c.component_key,
             score=c.score,

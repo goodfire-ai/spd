@@ -14,6 +14,7 @@
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
     import { lerp, calcTooltipPos, sortComponentsByImportance, computeComponentOffsets } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
+    import type { Loadable } from "../lib";
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -34,8 +35,7 @@
         hideNodeCard: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
-        componentDetailsCache: Record<string, ComponentDetail>;
-        componentDetailsLoading: Record<string, boolean>;
+        componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
         onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onEdgeCountChange?: (count: number) => void;
@@ -51,7 +51,6 @@
         activationContextsSummary,
         stagedNodes,
         componentDetailsCache,
-        componentDetailsLoading,
         onStagedNodesChange,
         onLoadComponentDetail,
         onEdgeCountChange,
@@ -94,7 +93,14 @@
     });
 
     $effect(() => {
-        console.log("[shift] shiftHeld:", shiftHeld, "hideUnpinnedEdges:", hideUnpinnedEdges, "effectiveHideUnpinned:", effectiveHideUnpinned);
+        console.log(
+            "[shift] shiftHeld:",
+            shiftHeld,
+            "hideUnpinnedEdges:",
+            hideUnpinnedEdges,
+            "effectiveHideUnpinned:",
+            effectiveHideUnpinned,
+        );
     });
 
     // Refs
@@ -456,19 +462,17 @@
     }
 
     function handleNodeClick(layer: string, seqIdx: number, cIdx: number) {
+        toggleComponentPinned(layer, cIdx, seqIdx);
+        hoveredNode = null;
+    }
+
+    function toggleComponentPinned(layer: string, cIdx: number, seqIdx: number) {
         const idx = stagedNodes.findIndex((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
         if (idx >= 0) {
             onStagedNodesChange(stagedNodes.filter((_, i) => i !== idx));
         } else {
             onStagedNodesChange([...stagedNodes, { layer, seqIdx, cIdx }]);
         }
-        hoveredNode = null;
-    }
-
-    function pinComponent(layer: string, cIdx: number, seqIdx: number) {
-        const alreadyPinned = stagedNodes.some((p) => p.layer === layer && p.cIdx === cIdx && p.seqIdx === seqIdx);
-        if (alreadyPinned) return;
-        onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
     }
 
     function handleEdgeMouseEnter(event: MouseEvent) {
@@ -647,7 +651,6 @@
             {hideNodeCard}
             {activationContextsSummary}
             {componentDetailsCache}
-            {componentDetailsLoading}
             outputProbs={data.outputProbs}
             nodeCiVals={data.nodeCiVals}
             tokens={data.tokens}
@@ -658,7 +661,7 @@
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
-            onPinComponent={pinComponent}
+            onPinComponent={toggleComponentPinned}
         />
     {/if}
 </div>

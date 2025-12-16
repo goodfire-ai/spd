@@ -1,4 +1,5 @@
 <script lang="ts">
+    import type { Loadable } from "../../lib/index";
     import type {
         ActivationContextsSummary,
         ComponentDetail,
@@ -13,8 +14,7 @@
 
     type Props = {
         stagedNodes: PinnedNode[];
-        componentDetailsCache: Record<string, ComponentDetail>;
-        componentDetailsLoading: Record<string, boolean>;
+        componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
         activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         tokens: string[];
@@ -26,7 +26,6 @@
     let {
         stagedNodes,
         componentDetailsCache,
-        componentDetailsLoading,
         activationContextsSummary,
         outputProbs,
         tokens,
@@ -43,10 +42,13 @@
         onStagedNodesChange(stagedNodes.filter((n) => n !== node));
     }
 
-    function pinComponent(layer: string, cIdx: number, seqIdx: number) {
+    function toggleComponentPinned(layer: string, cIdx: number, seqIdx: number) {
         const alreadyPinned = stagedNodes.some((n) => n.layer === layer && n.cIdx === cIdx && n.seqIdx === seqIdx);
-        if (alreadyPinned) return;
-        onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
+        if (alreadyPinned) {
+            onStagedNodesChange(stagedNodes.filter((n) => n.layer !== layer || n.cIdx !== cIdx || n.seqIdx !== seqIdx));
+        } else {
+            onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
+        }
     }
 
     function getTokenAtPosition(seqIdx: number): string {
@@ -92,33 +94,18 @@
                         <OutputNodeCard cIdx={node.cIdx} {outputProbs} seqIdx={node.seqIdx} />
                     {:else}
                         {@const cacheKey = `${node.layer}:${node.cIdx}`}
-                        {@const detail = componentDetailsCache[cacheKey] ?? null}
-                        {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
+                        {@const detail = componentDetailsCache[cacheKey]}
                         {@const summary = findComponentSummary(node.layer, node.cIdx)}
-                        {#if detail}
-                            <ComponentNodeCard
-                                layer={node.layer}
-                                cIdx={node.cIdx}
-                                seqIdx={node.seqIdx}
-                                {summary}
-                                {detail}
-                                {edgesBySource}
-                                {edgesByTarget}
-                                onPinComponent={pinComponent}
-                            />
-                        {:else}
-                            <ComponentNodeCard
-                                layer={node.layer}
-                                cIdx={node.cIdx}
-                                seqIdx={node.seqIdx}
-                                {summary}
-                                detail={null}
-                                {isLoading}
-                                {edgesBySource}
-                                {edgesByTarget}
-                                onPinComponent={pinComponent}
-                            />
-                        {/if}
+                        <ComponentNodeCard
+                            layer={node.layer}
+                            cIdx={node.cIdx}
+                            seqIdx={node.seqIdx}
+                            {summary}
+                            {detail}
+                            {edgesBySource}
+                            {edgesByTarget}
+                            onPinComponent={toggleComponentPinned}
+                        />
                     {/if}
                 </div>
             {/each}

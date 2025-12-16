@@ -13,9 +13,7 @@ from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
-from spd.autointerp.loaders import load_activation_contexts
 from spd.utils.distributed_utils import get_device
-from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 class ComponentProbeRequest(BaseModel):
@@ -42,9 +40,7 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    _, _, run_id = parse_wandb_run_path(loaded.run.wandb_path)
-
-    contexts = load_activation_contexts(run_id)
+    contexts = loaded.harvest.activation_contexts
     if contexts is None:
         raise HTTPException(
             status_code=404,
@@ -76,9 +72,7 @@ def get_activation_context_detail(
     loaded: DepLoadedRun,
 ) -> SubcomponentActivationContexts:
     """Return full activation context data for a single component."""
-    _, _, run_id = parse_wandb_run_path(loaded.run.wandb_path)
-
-    contexts = load_activation_contexts(run_id)
+    contexts = loaded.harvest.activation_contexts
     if contexts is None:
         raise HTTPException(
             status_code=404,
@@ -103,18 +97,21 @@ def get_activation_context_detail(
     example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in comp.activation_examples]
     example_ci = [ex.ci_values for ex in comp.activation_examples]
 
+    # TODO wtf is going on here. Maybe the comp:seq:c_idx str in malformed?
     # Use middle of window as active position
-    assert comp.activation_examples, f"Component {component_key} has no activation examples"
-    window_size = len(comp.activation_examples[0].token_ids)
-    active_pos = window_size // 2
+    # assert comp.activation_examples, f"Component {component_key} has no activation examples"
+    # window_size = len(comp.activation_examples[0].token_ids)
+    # active_pos = window_size // 2
 
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,
         mean_ci=comp.mean_ci,
         example_tokens=example_tokens,
         example_ci=example_ci,
-        example_active_pos=[active_pos] * len(comp.activation_examples),
-        example_active_ci=[ex.ci_values[active_pos] for ex in comp.activation_examples],
+        example_active_pos=[0] * len(comp.activation_examples),
+        example_active_ci=[0.0] * len(comp.activation_examples),
+        # example_active_pos=[active_pos] * len(comp.activation_examples),
+        # example_active_ci=[ex.ci_values[active_pos] for ex in comp.activation_examples],
     )
 
 

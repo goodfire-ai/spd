@@ -1,26 +1,28 @@
 <script lang="ts">
-    import type {
-        ComponentDetail,
-        ComponentSummary,
-        ComponentCorrelations,
-        TokenStats,
-        Edge,
-        EdgeAttribution,
-    } from "../../lib/localAttributionsTypes";
+    import { displaySettings } from "../../lib/displaySettings.svelte";
     import {
         getComponentCorrelations,
-        getComponentTokenStats,
         getComponentInterpretation,
+        getComponentTokenStats,
         type Interpretation,
     } from "../../lib/localAttributionsApi";
-    import { displaySettings } from "../../lib/displaySettings.svelte";
+    import type {
+        ComponentCorrelations,
+        ComponentDetail,
+        ComponentSummary,
+        Edge,
+        EdgeAttribution,
+        TokenStats,
+    } from "../../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
     import EdgeAttributionList from "../ui/EdgeAttributionList.svelte";
-    import TokenStatsSection from "../ui/TokenStatsSection.svelte";
+    import InterpretationBadge from "../ui/InterpretationBadge.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
+    import TokenStatsSection from "../ui/TokenStatsSection.svelte";
+    import type { Loadable } from "../../lib/index";
 
     type Props = {
         layer: string;
@@ -29,11 +31,11 @@
         summary: ComponentSummary | null;
         edgesBySource: Map<string, Edge[]>;
         edgesByTarget: Map<string, Edge[]>;
+        detail: Loadable<ComponentDetail>;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
-    } & ({ detail: ComponentDetail; isLoading?: never } | { detail: null; isLoading: boolean });
+    };
 
-    let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, detail, isLoading, onPinComponent }: Props =
-        $props();
+    let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, onPinComponent, detail }: Props = $props();
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -44,53 +46,53 @@
     }
 
     // Correlations state
-    let correlations = $state<ComponentCorrelations | null>(null);
-    let correlationsLoading = $state(false);
+    let correlations = $state<Loadable<ComponentCorrelations>>(null);
 
     // Token stats state (from batch job)
-    let tokenStats = $state<TokenStats | null>(null);
-    let tokenStatsLoading = $state(false);
+    let tokenStats = $state<Loadable<TokenStats>>(null);
 
     // Interpretation state
-    let interpretation = $state<Interpretation | null>(null);
-    let interpretationLoading = $state(false);
+    let interpretation = $state<Loadable<Interpretation>>(null);
 
     // Fetch correlations when component changes
     $effect(() => {
-        correlations = null;
-        correlationsLoading = true;
+        correlations = { status: "loading" };
         getComponentCorrelations(layer, cIdx, 1000)
             .then((data) => {
-                correlations = data;
+                correlations = data ? { status: "loaded", data } : null;
             })
-            .finally(() => {
-                correlationsLoading = false;
+            .catch((error) => {
+                correlations = { status: "error", error };
             });
     });
 
     // Fetch token stats when component changes
     $effect(() => {
-        tokenStats = null;
-        tokenStatsLoading = true;
+        tokenStats = { status: "loading" };
         getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
-                tokenStats = data;
+                tokenStats = data ? { status: "loaded", data } : null;
             })
-            .finally(() => {
-                tokenStatsLoading = false;
+            .catch((error) => {
+                tokenStats = { status: "error", error };
             });
     });
 
     // Fetch interpretation when component changes
     $effect(() => {
-        interpretation = null;
-        interpretationLoading = true;
+        interpretation = { status: "loading" };
         getComponentInterpretation(layer, cIdx)
             .then((data) => {
-                interpretation = data;
+                // null isn't exactly an error here. It just means there's no harvested interpretation,
+                // but just use the error state for now to display a message
+                if (data != null) {
+                    interpretation = { status: "loaded", data };
+                } else {
+                    interpretation = { status: "error", error: "No interpretation found" };
+                }
             })
-            .finally(() => {
-                interpretationLoading = false;
+            .catch((error) => {
+                interpretation = { status: "error", error };
             });
     });
 
@@ -99,29 +101,31 @@
 
     // === Input token stats (what tokens activate this component) ===
     const inputTopPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.input.top_pmi.slice(0, N_TOKENS_TO_DISPLAY_INPUT).map(([token, value]) => ({ token, value }));
+        if (tokenStats == null || tokenStats.status !== "loaded") return [];
+        return tokenStats.data.input.top_pmi
+            .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+            .map(([token, value]) => ({ token, value }));
     });
 
     // === Output token stats (what tokens this component predicts) ===
     const outputTopPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.output.top_pmi
+        if (tokenStats == null || tokenStats.status !== "loaded") return [];
+        return tokenStats.data.output.top_pmi
             .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
             .map(([token, value]) => ({ token, value }));
     });
 
     const outputBottomPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.output.bottom_pmi
+        if (tokenStats == null || tokenStats.status !== "loaded") return [];
+        return tokenStats.data.output.bottom_pmi
             .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
             .map(([token, value]) => ({ token, value }));
     });
 
     // Activating tokens from token stats (for highlighting)
     const activatingTokens = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.input.top_recall.map(([token]) => token);
+        if (tokenStats == null || tokenStats.status !== "loaded") return [];
+        return tokenStats.data.input.top_recall.map(([token]) => token);
     });
 
     // Format mean CI for display
@@ -189,35 +193,12 @@
         {/if}
     </SectionHeader>
 
-    <!-- Interpretation label -->
-    {#if interpretation}
-        <div class="interpretation-badge" title={interpretation.reasoning}>
-            <span class="interpretation-label">{interpretation.label}</span>
-            <span class="confidence confidence-{interpretation.confidence}">{interpretation.confidence}</span>
-        </div>
-    {:else if interpretationLoading}
-        <div class="interpretation-badge loading">
-            <span class="interpretation-label">Loading interpretation...</span>
-        </div>
-    {:else}
-        <div class="interpretation-badge empty">
-            <span class="interpretation-label">No interpretation available</span>
-        </div>
-    {/if}
+    <InterpretationBadge
+        interpretation={interpretation?.status === "loaded" ? interpretation.data : null}
+        loading={interpretation?.status === "loading"}
+    />
 
     <ComponentProbeInput {layer} componentIdx={cIdx} />
-
-    <!-- Component correlations -->
-    <div class="correlations-section">
-        <SectionHeader title="Correlated Components" />
-        {#if correlations}
-            <ComponentCorrelationMetrics {correlations} pageSize={16} onComponentClick={handleCorrelationClick} />
-        {:else if correlationsLoading}
-            <StatusText>Loading...</StatusText>
-        {:else}
-            <StatusText>No correlations available.</StatusText>
-        {/if}
-    </div>
 
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
@@ -286,7 +267,7 @@
         <TokenStatsSection
             sectionTitle="Input Tokens"
             sectionSubtitle="(what activates this component)"
-            loading={tokenStatsLoading}
+            loading={tokenStats != null && tokenStats.status === "loading"}
             lists={[
                 {
                     title: "Top PMI",
@@ -299,7 +280,7 @@
         <TokenStatsSection
             sectionTitle="Output Tokens"
             sectionSubtitle="(what this component predicts)"
-            loading={tokenStatsLoading}
+            loading={tokenStats?.status === "loading"}
             lists={[
                 {
                     title: "Top PMI",
@@ -315,34 +296,44 @@
         />
     </div>
 
-    <ComponentProbeInput {layer} componentIdx={cIdx} />
-
     <!-- Component correlations -->
     <div class="correlations-section">
         <SectionHeader title="Correlated Components" />
-        {#if correlations}
-            <ComponentCorrelationMetrics {correlations} pageSize={16} onComponentClick={handleCorrelationClick} />
-        {:else if correlationsLoading}
+        {#if correlations?.status === "loading"}
             <StatusText>Loading...</StatusText>
+        {:else if correlations?.status === "loaded"}
+            <ComponentCorrelationMetrics
+                correlations={correlations.data}
+                pageSize={16}
+                onComponentClick={handleCorrelationClick}
+            />
+        {:else if correlations?.status === "error"}
+            <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
         {:else}
-            <StatusText>No correlations available.</StatusText>
+            <StatusText>Something went wrong loading correlations.</StatusText>
         {/if}
     </div>
 
-    {#if detail}
-        {#if detail.example_tokens.length > 0}
-            <!-- Full mode: paged table with filtering -->
-            <SectionHeader title="Activating Examples ({detail.example_tokens.length})" />
-            <ActivationContextsPagedTable
-                exampleTokens={detail.example_tokens}
-                exampleCi={detail.example_ci}
-                exampleActivePos={detail.example_active_pos}
-                {activatingTokens}
-            />
+    <div class="activating-examples-section">
+        <SectionHeader title="Activating Examples" />
+        {#if detail?.status === "loading"}
+            <StatusText>Loading details...</StatusText>
+        {:else if detail?.status === "loaded"}
+            {#if detail?.data.example_tokens.length > 0}
+                <!-- Full mode: paged table with filtering -->
+                <ActivationContextsPagedTable
+                    exampleTokens={detail?.data.example_tokens}
+                    exampleCi={detail?.data.example_ci}
+                    exampleActivePos={detail?.data.example_active_pos}
+                    {activatingTokens}
+                />
+            {/if}
+        {:else if detail?.status === "error"}
+            <StatusText>Error loading details: {String(detail?.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading details.</StatusText>
         {/if}
-    {:else if isLoading}
-        <StatusText>Loading details...</StatusText>
-    {/if}
+    </div>
 </div>
 
 <style>
@@ -359,51 +350,6 @@
         color: var(--text-muted);
         font-family: var(--font-mono);
         margin-left: var(--space-2);
-    }
-
-    .interpretation-badge {
-        display: flex;
-        align-items: center;
-        gap: var(--space-2);
-        padding: var(--space-2) var(--space-3);
-        background: var(--bg-secondary);
-        border-radius: var(--radius-md);
-        border-left: 3px solid var(--color-accent, #6366f1);
-    }
-
-    .interpretation-badge.loading,
-    .interpretation-badge.empty {
-        opacity: 0.5;
-        border-left-color: var(--text-muted);
-    }
-
-    .interpretation-label {
-        font-weight: 500;
-        color: var(--text-primary);
-        font-size: var(--text-sm);
-    }
-
-    .confidence {
-        font-size: var(--text-xs);
-        padding: 2px 6px;
-        border-radius: var(--radius-sm);
-        text-transform: uppercase;
-        font-weight: 600;
-    }
-
-    .confidence-high {
-        background: color-mix(in srgb, #22c55e 20%, transparent);
-        color: #22c55e;
-    }
-
-    .confidence-medium {
-        background: color-mix(in srgb, #eab308 20%, transparent);
-        color: #eab308;
-    }
-
-    .confidence-low {
-        background: color-mix(in srgb, var(--text-muted) 20%, transparent);
-        color: var(--text-muted);
     }
 
     .token-stats-row {

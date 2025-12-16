@@ -7,7 +7,6 @@
     import { CANONICAL_RUNS, formatRunIdForDisplay } from "./lib/registry";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
-    import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./components/ui/DisplaySettingsDropdown.svelte";
@@ -25,11 +24,6 @@
 
     // Lifted activation contexts state - shared between tabs
     let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
-    let activationContextsMissing = $state(false);
-
-    // Correlation job state
-    let correlationJobStatus = $state<api.CorrelationJobStatus | null>(null);
-    let correlationJobSubmitting = $state(false);
 
     async function loadStatus() {
         if (loadingTrainRun) return;
@@ -52,9 +46,8 @@
             trainWandbRunEntry = loadedRun.wandb_path;
             contextLength = loadedRun.context_length;
 
-            // Load activation contexts summary and correlation status
+            // Load activation contexts summary
             loadActivationContextsSummary();
-            loadCorrelationJobStatus();
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
@@ -65,39 +58,13 @@
     async function loadActivationContextsSummary() {
         try {
             activationContextsSummary = await attrApi.getActivationContextsSummary();
-            activationContextsMissing = false;
         } catch (e) {
             const status = (e as { status?: number }).status;
             if (status === 404) {
-                activationContextsMissing = true;
                 activationContextsSummary = null;
             } else throw e;
         }
     }
-
-    async function loadCorrelationJobStatus() {
-        correlationJobStatus = await api.getCorrelationJobStatus();
-    }
-
-    async function submitCorrelationJob(params: api.HarvestParams) {
-        if (correlationJobSubmitting) return;
-        correlationJobSubmitting = true;
-        try {
-            await api.submitCorrelationJob(params);
-            await loadCorrelationJobStatus();
-        } finally {
-            correlationJobSubmitting = false;
-        }
-    }
-
-    // Poll correlation job status while pending/running
-    $effect(() => {
-        const s = correlationJobStatus?.status;
-        if (s !== "pending" && s !== "running") return;
-
-        const interval = setInterval(loadCorrelationJobStatus, 1000);
-        return () => clearInterval(interval);
-    });
 
     async function loadRun(event: Event) {
         event.preventDefault();
@@ -119,7 +86,7 @@
         api.getWhoami().then((user) => (backendUser = user));
     });
 
-    let activeTab = $state<"prompts" | "activation-contexts" | "dataset-search" | null>(null);
+    let activeTab = $state<"prompts" | "components" | "dataset-search" | null>(null);
     let showConfig = $state(false);
     let showRegistry = $state(false);
 
@@ -204,20 +171,15 @@
                 </button>
                 <button
                     class="tab-button"
-                    class:active={activeTab === "activation-contexts"}
-                    onclick={() => (activeTab = "activation-contexts")}
+                    class:active={activeTab === "components"}
+                    onclick={() => (activeTab = "components")}
                 >
-                    Activation Contexts
+                    Components
                 </button>
             {/if}
         </div>
         <div class="tab-bar-right">
             {#if loadedRun}
-                <CorrelationJobStatus
-                    status={correlationJobStatus}
-                    onSubmit={submitCorrelationJob}
-                    submitting={correlationJobSubmitting}
-                />
                 <div
                     class="config-wrapper"
                     role="group"
@@ -249,10 +211,10 @@
         {#if loadedRun}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>
-                <LocalAttributionsTab {activationContextsSummary} {activationContextsMissing} />
+                <LocalAttributionsTab {activationContextsSummary} />
             </div>
-            <div class="tab-content" class:hidden={activeTab !== "activation-contexts"}>
-                <ActivationContextsTab onHarvestComplete={loadActivationContextsSummary} />
+            <div class="tab-content" class:hidden={activeTab !== "components"}>
+                <ActivationContextsTab {activationContextsSummary} />
             </div>
         {:else if loadingTrainRun}
             <div class="empty-state" class:hidden={activeTab === "dataset-search"}>

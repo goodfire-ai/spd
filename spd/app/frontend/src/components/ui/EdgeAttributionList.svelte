@@ -5,7 +5,7 @@
 
     type Props = {
         items: EdgeAttribution[];
-        onNodeClick?: (nodeKey: string) => void;
+        onNodeClick: (nodeKey: string) => void;
         pageSize: number;
         direction: "positive" | "negative";
     };
@@ -45,9 +45,8 @@
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
             <button
                 class="edge-pill"
-                class:clickable={!!onNodeClick}
                 style="background: {bgColor};"
-                onclick={() => onNodeClick?.(nodeKey)}
+                onclick={() => onNodeClick(nodeKey)}
             >
                 <span class="node-key" style="color: {textColor};">{formatNodeKeyForDisplay(nodeKey)}</span>
                 <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
