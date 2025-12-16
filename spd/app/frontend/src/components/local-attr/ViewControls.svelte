@@ -142,12 +142,6 @@
     {#if filteredEdgeCount !== null}
         <div class="legend">
             <span class="edge-count">Showing {filteredEdgeCount} edges</span>
-            <span class="legend-item">
-                <span class="edge-pos"></span> Positive
-            </span>
-            <span class="legend-item">
-                <span class="edge-neg"></span> Negative
-            </span>
         </div>
     {/if}
 </div>
@@ -233,29 +227,6 @@
         font-size: var(--text-sm);
         color: var(--text-secondary);
         font-family: var(--font-mono);
-    }
-
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: var(--space-1);
-        font-size: var(--text-xs);
-        letter-spacing: 0.05em;
-    }
-
-    .edge-pos,
-    .edge-neg {
-        display: inline-block;
-        width: 16px;
-        height: 2px;
-    }
-
-    .edge-pos {
-        background: var(--status-info);
-    }
-
-    .edge-neg {
-        background: var(--status-negative);
     }
 
     .edge-count {
