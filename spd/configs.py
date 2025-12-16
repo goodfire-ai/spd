@@ -282,29 +282,48 @@ class Config(BaseConfig):
         "[pattern, C_value]. Identity operations will be inserted at these modules.",
     )
 
+    def _convert_patterns_to_tuples(
+        self, patterns: list[str] | list[tuple[str, int]]
+    ) -> list[tuple[str, int]]:
+        """Convert pattern list to list of (pattern, C) tuples.
+
+        After _migrate_to_per_module_c validation, patterns are guaranteed to be
+        list[list[str, int]] (from YAML) which we convert to list[tuple[str, int]].
+        """
+        result: list[tuple[str, int]] = []
+        for item in patterns:
+            # item is a 2-element list/tuple after validation
+            if isinstance(item, str):
+                raise ValueError(
+                    f"Pattern '{item}' is a string but should be [pattern, C] tuple. "
+                    "This indicates _migrate_to_per_module_c validation didn't run."
+                )
+            result.append((str(item[0]), int(item[1])))
+        return result
+
+    @property
+    def target_patterns_with_c(self) -> list[tuple[str, int]]:
+        """Return target_module_patterns as properly typed list[tuple[str, int]]."""
+        return self._convert_patterns_to_tuples(self.target_module_patterns)
+
+    @property
+    def identity_patterns_with_c(self) -> list[tuple[str, int]] | None:
+        """Return identity_module_patterns as properly typed list[tuple[str, int]] or None."""
+        if self.identity_module_patterns is None:
+            return None
+        return self._convert_patterns_to_tuples(self.identity_module_patterns)
+
     @property
     def all_module_patterns(self) -> list[tuple[str, int]]:
         """Combine target and identity patterns with their C values.
 
         Returns list of (pattern, C) tuples with .pre_identity suffix added to identity patterns.
-        After validation, target_module_patterns and identity_module_patterns are always
-        list[tuple[str, int]] (converted from list of lists in YAML).
         """
-        # Cast to expected type - after _migrate_to_per_module_c, these are list[list[str, int]]
-        # which Pydantic converts to list[tuple[str, int]]
-        target_patterns = self.target_module_patterns
-        result: list[tuple[str, int]] = []
+        result = self.target_patterns_with_c.copy()
 
-        for item in target_patterns:
-            # After validation, item is a 2-element list/tuple
-            pattern = str(item[0])  # type: ignore[index]
-            c_val = int(item[1])  # type: ignore[index]
-            result.append((pattern, c_val))
-
-        if self.identity_module_patterns is not None:
-            for item in self.identity_module_patterns:
-                pattern = str(item[0])  # type: ignore[index]
-                c_val = int(item[1])  # type: ignore[index]
+        identity_patterns = self.identity_patterns_with_c
+        if identity_patterns is not None:
+            for pattern, c_val in identity_patterns:
                 result.append((f"{pattern}.pre_identity", c_val))
 
         return result

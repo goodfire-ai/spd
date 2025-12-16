@@ -140,11 +140,10 @@ def optimize(
     if is_main_process():
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
-    if config.identity_module_patterns is not None:
-        # identity_module_patterns is list[tuple[str, int]] after validation
+    if config.identity_patterns_with_c is not None:
         insert_identity_operations_(
             target_model,
-            identity_patterns=config.identity_module_patterns,  # pyright: ignore[reportArgumentType]
+            identity_patterns=config.identity_patterns_with_c,
         )
 
     target_model.requires_grad_(False)

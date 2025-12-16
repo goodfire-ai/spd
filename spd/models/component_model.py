@@ -467,11 +467,10 @@ class ComponentModel(LoadableModule):
         target_model.eval()
         target_model.requires_grad_(False)
 
-        if config.identity_module_patterns is not None:
-            # identity_module_patterns is list[tuple[str, int]] after validation
+        if config.identity_patterns_with_c is not None:
             insert_identity_operations_(
                 target_model,
-                identity_patterns=config.identity_module_patterns,  # pyright: ignore[reportArgumentType]
+                identity_patterns=config.identity_patterns_with_c,
             )
 
         comp_model = ComponentModel(
