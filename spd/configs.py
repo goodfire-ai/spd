@@ -634,23 +634,27 @@ class Config(BaseConfig):
 
         # Validate new format patterns have correct structure
         new_target_patterns = config_dict.get("target_module_patterns", [])
-        if new_target_patterns:
-            for i, pattern in enumerate(new_target_patterns):
-                if not (isinstance(pattern, (list, tuple)) and len(pattern) == 2):
-                    raise ValueError(
-                        f"target_module_patterns[{i}] must be a 2-element list [pattern, C], "
-                        f"got: {pattern}"
-                    )
-                if not isinstance(pattern[0], str):
-                    raise ValueError(
-                        f"target_module_patterns[{i}][0] must be a string pattern, "
-                        f"got: {type(pattern[0])}"
-                    )
-                if not isinstance(pattern[1], int) or pattern[1] <= 0:
-                    raise ValueError(
-                        f"target_module_patterns[{i}][1] must be a positive integer C value, "
-                        f"got: {pattern[1]}"
-                    )
+        if not new_target_patterns:
+            raise ValueError(
+                "target_module_patterns cannot be empty. "
+                "Specify at least one pattern: [['module_pattern', C], ...]"
+            )
+        for i, pattern in enumerate(new_target_patterns):
+            if not (isinstance(pattern, (list, tuple)) and len(pattern) == 2):
+                raise ValueError(
+                    f"target_module_patterns[{i}] must be a 2-element list [pattern, C], "
+                    f"got: {pattern}"
+                )
+            if not isinstance(pattern[0], str):
+                raise ValueError(
+                    f"target_module_patterns[{i}][0] must be a string pattern, "
+                    f"got: {type(pattern[0])}"
+                )
+            if not isinstance(pattern[1], int) or pattern[1] <= 0:
+                raise ValueError(
+                    f"target_module_patterns[{i}][1] must be a positive integer C value, "
+                    f"got: {pattern[1]}"
+                )
 
         new_identity_patterns = config_dict.get("identity_module_patterns")
         if new_identity_patterns:

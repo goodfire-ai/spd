@@ -65,7 +65,7 @@ def get_target_module_paths_with_c(
     """Find modules matching patterns and return mapping of module_path -> C value.
 
     For modules matching multiple patterns, the most specific pattern wins
-    (pattern with fewest wildcards). Ties are broken alphabetically by pattern.
+    (pattern with fewest wildcards). Equal specificity is an error.
 
     Args:
         model: The target model
@@ -75,7 +75,8 @@ def get_target_module_paths_with_c(
         Dictionary mapping module paths to their C values
 
     Raises:
-        ValueError: If any pattern doesn't match any modules
+        ValueError: If any pattern doesn't match any modules, or if two patterns
+            with equal specificity match the same module
 
     Example:
         >>> patterns = [("h.*.mlp.*", 100), ("h.*.mlp.c_fc", 50)]
@@ -83,7 +84,7 @@ def get_target_module_paths_with_c(
         {'h.0.mlp.c_fc': 50, 'h.0.mlp.down_proj': 100, ...}
         # h.0.mlp.c_fc uses C=50 (1 wildcard beats 2 wildcards)
     """
-    # module -> (wildcard_count, pattern_for_tiebreak, C)
+    # module -> (wildcard_count, pattern, C)
     module_to_info: dict[str, tuple[int, str, int]] = {}
 
     for pattern, c in target_module_patterns:
@@ -94,15 +95,18 @@ def get_target_module_paths_with_c(
             if fnmatch.fnmatch(name, pattern):
                 matched_any = True
 
-                # Conflict resolution: fewest wildcards wins, then alphabetically by pattern
                 if name not in module_to_info:
                     module_to_info[name] = (wildcard_count, pattern, c)
                 else:
                     current_wc, current_pattern, _ = module_to_info[name]
-                    # More specific (fewer wildcards) wins; alphabetical tiebreak
-                    if wildcard_count < current_wc or (
-                        wildcard_count == current_wc and pattern < current_pattern
-                    ):
+                    if wildcard_count == current_wc:
+                        raise ValueError(
+                            f"Module '{name}' matches patterns '{current_pattern}' and '{pattern}' "
+                            f"with equal specificity ({wildcard_count} wildcards). "
+                            "Use more specific patterns to resolve the conflict."
+                        )
+                    # More specific (fewer wildcards) wins
+                    if wildcard_count < current_wc:
                         module_to_info[name] = (wildcard_count, pattern, c)
 
         if not matched_any:

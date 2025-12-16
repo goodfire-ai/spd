@@ -46,7 +46,7 @@ target_module_patterns:
 When a module matches multiple patterns, **most specific pattern wins**:
 - Specificity = number of wildcards (`*`) in pattern
 - Fewer wildcards = more specific
-- Ties broken alphabetically by pattern name
+- Equal specificity is an error (user must resolve by using more specific patterns)
 
 Example:
 ```yaml
