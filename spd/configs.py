@@ -536,14 +536,14 @@ class Config(BaseConfig):
 
     @classmethod
     def _migrate_to_module_info(cls, config_dict: dict[str, Any]) -> None:
-        """Migrate old config formats to new ModulePatternInfoConfig format.
+        """Migrate old config format to new ModulePatternInfoConfig format.
 
         Modifies config_dict in place.
 
-        Handles three deprecated formats:
-        1. Old format: target_module_patterns as list of strings + global C
-        2. Tuple format: target_module_patterns as list of [pattern, C] tuples
-        3. New format: module_info as list of {module_pattern, C} dicts (no migration needed)
+        Handles migration from:
+        - Old format: target_module_patterns as list of strings + global C
+        To:
+        - New format: module_info as list of {module_pattern, C} dicts
         """
         # Check if already in new format
         if "module_info" in config_dict:
@@ -563,67 +563,40 @@ class Config(BaseConfig):
                 "Example: module_info: [{module_pattern: 'layer.*', C: 20}]"
             )
 
-        # Determine format of target_module_patterns
-        first_item = target_patterns[0]
-        is_string_format = isinstance(first_item, str)
-        is_tuple_format = isinstance(first_item, (list, tuple)) and len(first_item) == 2
-
-        # Convert to module_info format
-        module_info: list[dict[str, Any]] = []
-
-        if is_string_format:
-            # Old format: list of strings + global C
-            if global_c is None:
-                raise ValueError(
-                    "When using deprecated target_module_patterns (list of strings), "
-                    "you must specify a global 'C' value. "
-                    "Please update to new format: module_info: [{module_pattern: 'pattern', C: 20}]"
-                )
-            for pattern in target_patterns:
-                module_info.append({"module_pattern": pattern, "C": global_c})
-            logger.warning(
-                f"Converted deprecated target_module_patterns (strings) with global C={global_c}. "
-                "Please update to: module_info: [{module_pattern: '...', C: ...}]"
-            )
-
-        elif is_tuple_format:
-            # Tuple format: list of [pattern, C] tuples
-            for item in target_patterns:
-                pattern, c_val = item[0], item[1]
-                module_info.append({"module_pattern": pattern, "C": c_val})
-            logger.warning(
-                "Converted deprecated target_module_patterns (tuples) format. "
-                "Please update to: module_info: [{module_pattern: '...', C: ...}]"
-            )
-
-        else:
+        # Old format requires global C
+        if global_c is None:
             raise ValueError(
-                f"Unrecognized target_module_patterns format: {target_patterns}. "
-                "Use module_info: [{module_pattern: '...', C: ...}]"
+                "When using deprecated target_module_patterns, "
+                "you must specify a global 'C' value. "
+                "Please update to new format: module_info: [{module_pattern: 'pattern', C: 20}]"
             )
 
+        # Convert target_module_patterns to module_info
+        module_info: list[dict[str, Any]] = []
+        for pattern in target_patterns:
+            if not isinstance(pattern, str):
+                raise ValueError(
+                    f"Unrecognized target_module_patterns format: {target_patterns}. "
+                    "Use module_info: [{module_pattern: '...', C: ...}]"
+                )
+            module_info.append({"module_pattern": pattern, "C": global_c})
+
+        logger.warning(
+            f"Converted deprecated target_module_patterns with global C={global_c}. "
+            "Please update to: module_info: [{module_pattern: '...', C: ...}]"
+        )
         config_dict["module_info"] = module_info
 
         # Convert identity_module_patterns if present
         if identity_patterns:
             identity_module_info: list[dict[str, Any]] = []
-            first_identity = identity_patterns[0]
-
-            if isinstance(first_identity, str):
-                # Old format: list of strings + global C
-                if global_c is None:
+            for pattern in identity_patterns:
+                if not isinstance(pattern, str):
                     raise ValueError(
-                        "When using deprecated identity_module_patterns (list of strings), "
-                        "you must specify a global 'C' value."
+                        f"Unrecognized identity_module_patterns format: {identity_patterns}. "
+                        "Use identity_module_info: [{module_pattern: '...', C: ...}]"
                     )
-                for pattern in identity_patterns:
-                    identity_module_info.append({"module_pattern": pattern, "C": global_c})
-
-            elif isinstance(first_identity, (list, tuple)) and len(first_identity) == 2:
-                # Tuple format
-                for item in identity_patterns:
-                    pattern, c_val = item[0], item[1]
-                    identity_module_info.append({"module_pattern": pattern, "C": c_val})
+                identity_module_info.append({"module_pattern": pattern, "C": global_c})
 
             config_dict["identity_module_info"] = identity_module_info
             logger.warning(
