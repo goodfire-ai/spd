@@ -14,9 +14,6 @@ from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import build_token_lookup, log_errors
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.harvest.loaders import HarvestData
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
@@ -33,7 +30,6 @@ class LoadedRun(BaseModel):
     id: int
     wandb_path: str
     config_yaml: str
-    has_activation_contexts: bool
     has_prompts: bool
     prompt_count: int
     context_length: int
@@ -115,26 +111,6 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     logger.info(f"[API] Building token lookup for run {run.id}")
     token_strings = build_token_lookup(loaded_tokenizer, spd_config.tokenizer_name)
 
-    task_config = spd_config.task_config
-    assert isinstance(task_config, LMTaskConfig)
-    train_data_config = DatasetConfig(
-        name=task_config.dataset_name,
-        hf_tokenizer_path=spd_config.tokenizer_name,
-        split=task_config.train_data_split,
-        n_ctx=context_length,
-        is_tokenized=task_config.is_tokenized,
-        streaming=task_config.streaming,
-        column_name=task_config.column_name,
-        shuffle_each_epoch=task_config.shuffle_each_epoch,
-    )
-    logger.info(f"[API] Creating train loader for run {run.id}")
-    train_loader, _ = create_data_loader(
-        dataset_config=train_data_config,
-        batch_size=32,
-        buffer_size=task_config.buffer_size,
-        global_seed=spd_config.seed,
-    )
-
     manager.run_state = RunState(
         run=run,
         model=model,
@@ -142,7 +118,6 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         sources_by_target=sources_by_target,
         config=spd_config,
         token_strings=token_strings,
-        train_loader=train_loader,
         context_length=context_length,
         harvest=HarvestCache(run_id=run_id),
     )
@@ -167,15 +142,10 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
 
     prompt_count = manager.db.get_prompt_count(run.id, context_length)
 
-    # Check if harvest data exists
-    _, _, run_id = parse_wandb_run_path(run.wandb_path)
-    harvest_data = HarvestData(wandb_run_id=run_id)
-
     return LoadedRun(
         id=run.id,
         wandb_path=run.wandb_path,
         config_yaml=config_yaml,
-        has_activation_contexts=harvest_data.has_activation_contexts(),
         has_prompts=prompt_count > 0,
         prompt_count=prompt_count,
         context_length=context_length,

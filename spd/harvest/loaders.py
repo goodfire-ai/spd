@@ -1,44 +1,15 @@
-"""Loaders for reading harvest output files.
-
-These loaders provide a clean interface for the app to read harvest data.
-"""
+"""Loaders for reading harvest output files."""
 
 import json
-from dataclasses import dataclass
 
-from spd.autointerp.schemas import InterpretationResult
 from spd.harvest.harvest import ComponentCorrelations, ComponentTokenStats
 from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,
     get_activation_contexts_dir,
-    get_autointerp_dir,
     get_correlations_dir,
 )
-
-
-@dataclass
-class HarvestData:
-    """Lightweight handle for checking harvest data existence."""
-
-    wandb_run_id: str
-
-    def has_activation_contexts(self) -> bool:
-        path = get_activation_contexts_dir(self.wandb_run_id) / "components.jsonl"
-        return path.exists()
-
-    def has_correlations(self) -> bool:
-        path = get_correlations_dir(self.wandb_run_id) / "component_correlations.pt"
-        return path.exists()
-
-    def has_token_stats(self) -> bool:
-        path = get_correlations_dir(self.wandb_run_id) / "token_stats.pt"
-        return path.exists()
-
-    def has_interpretations(self) -> bool:
-        path = get_autointerp_dir(self.wandb_run_id) / "results.jsonl"
-        return path.exists()
 
 
 def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | None:
@@ -78,19 +49,3 @@ def load_token_stats(wandb_run_id: str) -> ComponentTokenStats | None:
     if not path.exists():
         return None
     return ComponentTokenStats.load(path)
-
-
-def load_interpretations(wandb_run_id: str) -> dict[str, InterpretationResult] | None:
-    """Load interpretation results from harvest output."""
-    autointerp_dir = get_autointerp_dir(wandb_run_id)
-    path = autointerp_dir / "results.jsonl"
-    if not path.exists():
-        return None
-
-    results: dict[str, InterpretationResult] = {}
-    with open(path) as f:
-        for line in f:
-            data = json.loads(line)
-            result = InterpretationResult(**data)
-            results[result.component_key] = result
-    return results

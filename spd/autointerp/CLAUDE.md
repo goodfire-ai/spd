@@ -28,13 +28,19 @@ Requires `ANTHROPIC_API_KEY` env var for interpret phase.
 
 ## Data Storage
 
+Data is stored outside the repo at `/mnt/polished-lake/spd/data/`:
+
 ```
-.data/autointerp/<run_id>/
-├── harvest/
-│   ├── config.json
-│   └── components.jsonl      # One ComponentData per line
-└── interpretations/
-    └── results.jsonl         # One InterpretationResult per line (append-only for resume)
+/mnt/polished-lake/spd/data/
+├── harvest/<run_id>/
+│   ├── activation_contexts/
+│   │   ├── config.json
+│   │   └── components.jsonl      # One ComponentData per line
+│   └── correlations/
+│       ├── component_correlations.pt
+│       └── token_stats.pt
+└── autointerp/<run_id>/
+    └── results.jsonl             # One InterpretationResult per line (append-only for resume)
 ```
 
 ## Architecture

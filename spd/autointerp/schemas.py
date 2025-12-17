@@ -1,6 +1,17 @@
 """Data types for autointerp pipeline."""
 
 from dataclasses import dataclass
+from pathlib import Path
+
+from spd.harvest.schemas import DATA_ROOT
+
+# Base directory for autointerp data (separate from harvest)
+AUTOINTERP_DATA_DIR = DATA_ROOT / "autointerp"
+
+
+def get_autointerp_dir(wandb_run_id: str) -> Path:
+    """Get the autointerp (interpretations) directory for a run."""
+    return AUTOINTERP_DATA_DIR / wandb_run_id
 
 
 @dataclass
@@ -9,7 +20,6 @@ class ArchitectureInfo:
     c: int
     model_class: str
     dataset_name: str
-    dataset_description: str
     tokenizer_name: str
 
 

@@ -162,23 +162,3 @@ def get_dataset_results(
         total_results=total_results,
         total_pages=total_pages,
     )
-
-
-@router.get("/metadata")
-@log_errors
-def get_dataset_metadata(
-    manager: DepStateManager,
-) -> DatasetSearchMetadata:
-    """Get metadata from the last dataset search.
-
-    Returns:
-        Search metadata (query, split, total results, search time)
-    """
-    search_state = manager.state.dataset_search_state
-    if search_state is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No search results available. Perform a search first.",
-        )
-
-    return DatasetSearchMetadata(**search_state.metadata)

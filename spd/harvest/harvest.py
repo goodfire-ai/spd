@@ -39,14 +39,6 @@ from spd.utils.general_utils import extract_batch_data
 
 
 @dataclass
-class CorrelatedComponent:
-    """A component correlated with a query component."""
-
-    component_key: str
-    score: float
-
-
-@dataclass
 class CorrelatedComponentWithCounts:
     """A component correlated with a query component, including raw counts for visualization."""
 
@@ -124,32 +116,6 @@ class ComponentCorrelations:
         scores[cooccurence_counts == 0] = float("-inf")
 
         return scores, i
-
-    def get_correlated(
-        self,
-        component_key: str,
-        metric: Metric,
-        top_k: int,
-    ) -> list[CorrelatedComponent]:
-        """Get top-k correlated components for a given component."""
-        result = self._compute_scores(component_key, metric)
-        if result is None:
-            return []
-
-        scores, _ = result
-        top_k_clamped = min(top_k, len(scores))
-        top_values, top_indices = torch.topk(scores, top_k_clamped)
-
-        output = []
-        for idx, val in zip(top_indices.tolist(), top_values.tolist(), strict=True):
-            if val == float("-inf"):
-                continue
-            assert math.isfinite(val), (
-                f"Unexpected non-finite score {val} for {self.component_keys[idx]}"
-            )
-            output.append(CorrelatedComponent(component_key=self.component_keys[idx], score=val))
-
-        return output
 
     def get_correlated_with_counts(
         self,

@@ -8,21 +8,15 @@ Contains:
 from dataclasses import dataclass, field
 from typing import Any
 
-from torch.utils.data import DataLoader
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.db import LocalAttrDB
 from spd.app.backend.db.database import Run
-from spd.app.backend.schemas import ModelActivationContexts
+from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
 from spd.harvest.harvest import ComponentCorrelations, ComponentTokenStats
-from spd.harvest.loaders import (
-    load_activation_contexts,
-    load_correlations,
-    load_interpretations,
-    load_token_stats,
-)
+from spd.harvest.loaders import load_activation_contexts, load_correlations, load_token_stats
 from spd.harvest.schemas import ComponentData
 from spd.models.component_model import ComponentModel
 
@@ -90,10 +84,8 @@ class RunState:
     sources_by_target: dict[str, list[str]]
     config: Config
     token_strings: dict[int, str]
-    train_loader: DataLoader[Any]
     context_length: int
     harvest: HarvestCache
-    activation_contexts_cache: ModelActivationContexts | None = None
 
 
 @dataclass

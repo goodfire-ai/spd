@@ -1,8 +1,9 @@
 """SQLite database for local attribution data.
 
 Stores runs, prompts, and attribution graphs.
-Activation contexts and correlations are now stored in the harvest pipeline output
-(.data/harvest/<run_id>/).
+Activation contexts and correlations are stored in the harvest pipeline output at
+/mnt/polished-lake/spd/data/harvest/<run_id>/.
+Interpretations are stored separately at /mnt/polished-lake/spd/data/autointerp/<run_id>/.
 """
 
 import json

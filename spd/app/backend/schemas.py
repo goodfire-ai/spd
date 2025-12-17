@@ -55,7 +55,3 @@ class SubcomponentActivationContexts(BaseModel):
     # Examples - columnar arrays (n_examples ~ topk, window_size ~ 2*n_tokens_either_side+1)
     example_tokens: list[list[str]]  # [n_examples][window_size]
     example_ci: list[list[float]]  # [n_examples][window_size]
-
-
-class ModelActivationContexts(BaseModel):
-    layers: dict[str, list[SubcomponentActivationContexts]]

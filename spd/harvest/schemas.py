@@ -3,10 +3,11 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from spd.settings import REPO_ROOT
+# Shared data directory (outside of repo, persists across checkouts)
+DATA_ROOT = Path("/mnt/polished-lake/spd/data")
 
-# Base directory for all harvest data
-HARVEST_DATA_DIR = REPO_ROOT / ".data" / "harvest"
+# Base directory for harvest data
+HARVEST_DATA_DIR = DATA_ROOT / "harvest"
 
 
 def get_harvest_dir(wandb_run_id: str) -> Path:
@@ -22,11 +23,6 @@ def get_activation_contexts_dir(wandb_run_id: str) -> Path:
 def get_correlations_dir(wandb_run_id: str) -> Path:
     """Get the correlations directory for a run."""
     return get_harvest_dir(wandb_run_id) / "correlations"
-
-
-def get_autointerp_dir(wandb_run_id: str) -> Path:
-    """Get the autointerp (interpretations) directory for a run."""
-    return get_harvest_dir(wandb_run_id) / "autointerp"
 
 
 @dataclass

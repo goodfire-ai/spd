@@ -147,7 +147,7 @@ async def request_component_interpretation(
         get_architecture_info,
         interpret_component,
     )
-    from spd.harvest.schemas import get_autointerp_dir
+    from spd.autointerp.schemas import get_autointerp_dir
 
     component_key = f"{layer}:{component_idx}"
 

@@ -5,7 +5,6 @@ export type RunState = {
     id: number;
     wandb_path: string;
     config_yaml: string;
-    has_activation_contexts: boolean;
     has_prompts: boolean;
     prompt_count: number;
     context_length: number;
