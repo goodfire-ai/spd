@@ -43,7 +43,6 @@
         layerGap: number;
         normalizeEdges: NormalizeType;
         ciThreshold: Loadable<number>;
-        ciThresholdLoading: boolean;
         hideUnpinnedEdges: boolean;
         hideNodeCard: boolean;
         onTopKChange: (value: number) => void;

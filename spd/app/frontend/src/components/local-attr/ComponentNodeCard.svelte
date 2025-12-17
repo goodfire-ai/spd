@@ -99,27 +99,52 @@
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
 
-    // === Input token stats (what tokens activate this component) ===
-    const inputTopPmi = $derived.by(() => {
-        if (tokenStats == null || tokenStats.status !== "loaded") return [];
-        return tokenStats.data.input.top_pmi
-            .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
-            .map(([token, value]) => ({ token, value }));
+    type TokenValue = { token: string; value: number };
+    type TokenList = { title: string; mathNotation?: string; items: TokenValue[] };
+
+    // Transform tokenStats into Loadable<TokenList[]> for input tokens section
+    const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                    items: tokenStats.data.input.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
     });
 
-    // === Output token stats (what tokens this component predicts) ===
-    const outputTopPmi = $derived.by(() => {
-        if (tokenStats == null || tokenStats.status !== "loaded") return [];
-        return tokenStats.data.output.top_pmi
-            .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
-            .map(([token, value]) => ({ token, value }));
-    });
-
-    const outputBottomPmi = $derived.by(() => {
-        if (tokenStats == null || tokenStats.status !== "loaded") return [];
-        return tokenStats.data.output.bottom_pmi
-            .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
-            .map(([token, value]) => ({ token, value }));
+    // Transform tokenStats into Loadable<TokenList[]> for output tokens section
+    const outputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "positive association with predictions",
+                    items: tokenStats.data.output.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+                {
+                    title: "Bottom PMI",
+                    mathNotation: "negative association with predictions",
+                    items: tokenStats.data.output.bottom_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
     });
 
     // Activating tokens from token stats (for highlighting)
@@ -264,32 +289,13 @@
         <TokenStatsSection
             sectionTitle="Input Tokens"
             sectionSubtitle="(what activates this component)"
-            loading={tokenStats != null && tokenStats.status === "loading"}
-            lists={[
-                {
-                    title: "Top PMI",
-                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
-                    items: inputTopPmi,
-                },
-            ]}
+            lists={inputTokenLists}
         />
 
         <TokenStatsSection
             sectionTitle="Output Tokens"
             sectionSubtitle="(what this component predicts)"
-            loading={tokenStats?.status === "loading"}
-            lists={[
-                {
-                    title: "Top PMI",
-                    mathNotation: "positive association with predictions",
-                    items: outputTopPmi,
-                },
-                {
-                    title: "Bottom PMI",
-                    mathNotation: "negative association with predictions",
-                    items: outputBottomPmi,
-                },
-            ]}
+            lists={outputTokenLists}
         />
     </div>
 

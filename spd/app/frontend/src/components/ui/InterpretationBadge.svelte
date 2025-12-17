@@ -16,7 +16,7 @@
     {:else if interpretation?.status === "loading"}
         <span class="interpretation-label">Loading interpretation...</span>
     {:else if interpretation?.status === "error"}
-        <span class="interpretation-label">{interpretation.error}</span>
+        <span class="interpretation-label">{String(interpretation.error)}</span>
     {:else}
         <span class="interpretation-label">Something went wrong</span>
     {/if}

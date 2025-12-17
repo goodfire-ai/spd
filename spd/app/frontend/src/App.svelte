@@ -93,7 +93,7 @@
 
 <div class="app-layout">
     <header class="top-bar">
-        <span class="backend-user">user: {backendUser ?? "..."}</span>
+        <span class="backend-user">user: {backendUser?.status === "loaded" ? backendUser.data : "..."}</span>
         <form onsubmit={loadRun} class="run-input">
             <label for="wandb-path">W&B Path/Link:</label>
             <div class="input-with-dropdown">

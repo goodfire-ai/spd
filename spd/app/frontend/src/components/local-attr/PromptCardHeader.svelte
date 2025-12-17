@@ -565,7 +565,6 @@
 
     .compute-options input[type="text"] {
         width: 110px;
-        /* padding: var(--space-1); */
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);
         color: var(--text-primary);
