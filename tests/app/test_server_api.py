@@ -88,7 +88,7 @@ def app_with_state():
         target_model.eval()
         target_model.requires_grad_(False)
 
-        module_patterns = [
+        target_module_patterns = [
             "h.*.mlp.c_fc",
             "h.*.mlp.down_proj",
             "h.*.attn.q_proj",
@@ -104,7 +104,9 @@ def app_with_state():
             ci_fn_hidden_dims=[16],
             sampling="continuous",
             sigmoid_type="leaky_hard",
-            module_info=[ModulePatternInfoConfig(module_pattern=p, C=C) for p in module_patterns],
+            module_info=[
+                ModulePatternInfoConfig(module_pattern=p, C=C) for p in target_module_patterns
+            ],
             pretrained_model_class="simple_stories_train.models.gpt2_simple.GPT2Simple",
             pretrained_model_output_attr="idx_0",
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",

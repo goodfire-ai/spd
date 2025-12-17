@@ -79,30 +79,7 @@ def expand_module_patterns(model: nn.Module, module_info: list[Any]) -> list[Mod
     """Expand module patterns to concrete module paths with their C values.
 
     For modules matching multiple patterns, the most specific pattern wins
-    (pattern with fewest wildcards). Equal specificity is an error.
-
-    Args:
-        model: The target model
-        module_info: List of ModulePatternInfoConfig specifying patterns and C values
-
-    Returns:
-        List of ModulePathInfo with expanded concrete module paths
-
-    Raises:
-        ValueError: If any pattern doesn't match any modules, or if two patterns
-            with equal specificity match the same module
-
-    Example:
-        More specific pattern (fewer wildcards) wins over less specific:
-
-        >>> module_info = [
-        ...     ModulePatternInfoConfig(module_pattern="h.*.mlp.*", C=100),
-        ...     ModulePatternInfoConfig(module_pattern="h.*.mlp.c_fc", C=50),
-        ... ]
-        >>> expand_module_patterns(model, module_info)
-        [ModulePathInfo(module_path='h.0.mlp.c_fc', C=50), ...]
-
-        Here h.0.mlp.c_fc gets C=50 (1 wildcard) instead of C=100 (2 wildcards).
+    (fewest wildcards). Equal specificity is an error.
     """
     # module -> (wildcard_count, pattern, C)
     module_to_info: dict[str, tuple[int, str, int]] = {}
