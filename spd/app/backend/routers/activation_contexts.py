@@ -57,9 +57,9 @@ def get_activation_contexts_summary(
             )
         )
 
-    # Sort by component_idx within each layer
+    # Sort by mean CI descending within each layer
     for layer in summary:
-        summary[layer].sort(key=lambda x: x.subcomponent_idx)
+        summary[layer].sort(key=lambda x: x.mean_ci, reverse=True)
 
     return dict(summary)
 
@@ -97,21 +97,11 @@ def get_activation_context_detail(
     example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in comp.activation_examples]
     example_ci = [ex.ci_values for ex in comp.activation_examples]
 
-    # TODO wtf is going on here. Maybe the comp:seq:c_idx str in malformed?
-    # Use middle of window as active position
-    # assert comp.activation_examples, f"Component {component_key} has no activation examples"
-    # window_size = len(comp.activation_examples[0].token_ids)
-    # active_pos = window_size // 2
-
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,
         mean_ci=comp.mean_ci,
         example_tokens=example_tokens,
         example_ci=example_ci,
-        example_active_pos=[0] * len(comp.activation_examples),
-        example_active_ci=[0.0] * len(comp.activation_examples),
-        # example_active_pos=[active_pos] * len(comp.activation_examples),
-        # example_active_ci=[ex.ci_values[active_pos] for ex in comp.activation_examples],
     )
 
 

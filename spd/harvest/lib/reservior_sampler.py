@@ -1,9 +1,12 @@
 import random
 from dataclasses import dataclass
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
 
 
 @dataclass
-class ReservoirState[T]:
+class ReservoirState(Generic[T]):  # noqa: UP046 - PEP 695 syntax breaks pickling
     """Serializable state of a ReservoirSampler."""
 
     k: int
@@ -57,7 +60,7 @@ class ReservoirState[T]:
         return ReservoirState(k=k, samples=merged_samples, n_seen=total_seen)
 
 
-class ReservoirSampler[T]:
+class ReservoirSampler(Generic[T]):  # noqa: UP046 - PEP 695 syntax breaks pickling
     """Uniform random sampling from a stream via reservoir sampling."""
 
     def __init__(self, k: int):
@@ -73,11 +76,11 @@ class ReservoirSampler[T]:
             self.samples[random.randrange(self.k)] = item
 
     def get_state(self) -> ReservoirState[T]:
-        return ReservoirState[T](k=self.k, samples=list(self.samples), n_seen=self.n_seen)
+        return ReservoirState(k=self.k, samples=list(self.samples), n_seen=self.n_seen)
 
     @staticmethod
     def from_state(state: ReservoirState[T]) -> "ReservoirSampler[T]":
-        sampler = ReservoirSampler(k=state.k)
+        sampler: ReservoirSampler[T] = ReservoirSampler(k=state.k)
         sampler.samples = list(state.samples)
         sampler.n_seen = state.n_seen
         return sampler

@@ -528,7 +528,6 @@
     </div>
 
     <div class="graph-container">
-        <!-- svelte-ignore a11y_no_static_element_interactions, a11y_mouse_events_have_key_events -->
         <svg {width} {height} onmouseover={handleEdgeMouseEnter} onmouseout={handleEdgeMouseLeave}>
             <!-- Edges (bulk rendered for performance, uses @html for large SVG performance) -->
             <g class="edges-layer">
@@ -544,8 +543,6 @@
                     {@const cIdx = parseInt(cIdxStr)}
                     {@const isHighlighted = isNodeHighlighted(key)}
                     {@const style = nodeStyles[key]}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <g
                         class="node-group"
                         onmouseenter={(e) => handleNodeMouseEnter(e, layer, seqIdx, cIdx)}

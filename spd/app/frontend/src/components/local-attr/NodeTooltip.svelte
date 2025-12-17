@@ -75,7 +75,6 @@
     });
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
     class="node-tooltip"
     style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"

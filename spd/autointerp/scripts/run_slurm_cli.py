@@ -16,13 +16,6 @@ def interpret(
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
 ) -> None:
-    """Submit interpret job to SLURM (CPU-only).
-
-    Examples:
-        spd-interpret wandb:spd/runs/abc123
-        spd-interpret wandb:spd/runs/abc123 --budget_usd 100
-        spd-interpret wandb:spd/runs/abc123 --max_concurrent 50
-    """
     from spd.autointerp.interpret import OpenRouterModelName
     from spd.autointerp.scripts.run_slurm import interpret as interpret_impl
 

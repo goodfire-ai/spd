@@ -1,14 +1,14 @@
 <script lang="ts">
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
-    import type { Interpretation, NormalizeType } from "../../lib/localAttributionsApi";
+    import type { NormalizeType } from "../../lib/localAttributionsApi";
     import {
         isInterventableNode,
         type ActivationContextsSummary,
-        type ComponentDetail,
         type LayerInfo,
         type NodePosition,
         type TokenInfo,
     } from "../../lib/localAttributionsTypes";
+    import { runState } from "../../lib/runState.svelte";
     import { calcTooltipPos, computeComponentOffsets, lerp, sortComponentsByImportance } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
@@ -54,17 +54,13 @@
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
         activationContextsSummary: ActivationContextsSummary | null;
-        componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
-        interpretationsCache: Record<string, Interpretation>;
         runningIntervention: boolean;
-        onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onSelectionChange: (selection: Set<string>) => void;
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
         onDeleteRun: (runId: number) => void;
         onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRun>;
         onDeleteFork: (forkId: number) => void;
-        onInterpretationGenerated?: (componentKey: string, interp: Interpretation) => void;
     };
 
     let {
@@ -89,17 +85,13 @@
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
         activationContextsSummary,
-        componentDetailsCache,
-        interpretationsCache,
         runningIntervention,
-        onLoadComponentDetail,
         onSelectionChange,
         onRunIntervention,
         onSelectRun,
         onDeleteRun,
         onForkRun,
         onDeleteFork,
-        onInterpretationGenerated,
     }: Props = $props();
 
     // Fork modal state
@@ -394,7 +386,7 @@
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
 
         if (layer !== "output" && activationContextsSummary) {
-            onLoadComponentDetail(layer, cIdx);
+            runState.loadComponentDetail(layer, cIdx);
         }
     }
 
@@ -604,7 +596,6 @@
 
             <!-- Scrollable graph area -->
             <div class="graph-container">
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <svg
                     bind:this={svgElement}
                     width={layout.width}
@@ -631,7 +622,6 @@
                         {/each}
                     </g>
 
-                    <!-- Nodes -->
                     <g class="nodes-layer">
                         {#each allNodes as nodeKey (nodeKey)}
                             {@const pos = layout.nodePositions[nodeKey]}
@@ -639,8 +629,6 @@
                             {@const interventable = isInterventableNode(nodeKey)}
                             {@const selected = interventable && isNodeSelected(nodeKey)}
                             {#if pos}
-                                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                                <!-- svelte-ignore a11y_no_static_element_interactions -->
                                 <g
                                     class="node-group"
                                     class:selected
@@ -894,8 +882,6 @@
             {tooltipPos}
             {hideNodeCard}
             {activationContextsSummary}
-            {componentDetailsCache}
-            {interpretationsCache}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
             {tokens}
@@ -906,7 +892,6 @@
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
-            {onInterpretationGenerated}
         />
     {/if}
 
@@ -920,7 +905,6 @@
             aria-modal="true"
             tabindex="-1"
         >
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="fork-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
                 <div class="modal-header">
                     <h3>Fork Run</h3>

@@ -90,20 +90,16 @@
                     {:else if isOutput}
                         <OutputNodeCard cIdx={node.cIdx} {outputProbs} seqIdx={node.seqIdx} />
                     {:else}
-                        {@const cacheKey = `${node.layer}:${node.cIdx}`}
-                        {@const detail = componentDetailsCache[cacheKey]}
                         {@const summary = findComponentSummary(node.layer, node.cIdx)}
                         <ComponentNodeCard
                             layer={node.layer}
                             cIdx={node.cIdx}
                             seqIdx={node.seqIdx}
                             {summary}
-                            {detail}
-                            {interpretationsCache}
+                            detail={runState.getComponentDetail(node.layer, node.cIdx)}
                             {edgesBySource}
                             {edgesByTarget}
                             onPinComponent={toggleComponentPinned}
-                            {onInterpretationGenerated}
                         />
                     {/if}
                 </div>

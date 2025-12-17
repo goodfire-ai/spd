@@ -20,7 +20,7 @@ const DEFAULT_ENTITY_PROJECT = "goodfire/spd";
 export const CANONICAL_RUNS: RegistryEntry[] = [
     {
         wandbRunId: "goodfire/spd/vjbol27n",
-        modelName: "ss_llama_simple_mlp=1.25M (4L)",
+        modelName: "ss_llama_simple_mlp-1.25M (4L)",
         notes: "Lucius' run, Dec 8",
     },
     {
@@ -34,15 +34,15 @@ export const CANONICAL_RUNS: RegistryEntry[] = [
     },
     {
         wandbRunId: "goodfire/spd/5cr21lbs",
-        modelName: "ss_llama_simple_mlp-1L",
+        modelName: "ss_llama_simple_mlp (1L)",
     },
     {
         wandbRunId: "goodfire/spd/itmexlj0",
-        modelName: "ss_llama_simple_mlp-2L",
+        modelName: "ss_llama_simple_mlp (2L)",
     },
     {
         wandbRunId: "goodfire/spd/33n6xjjt",
-        modelName: "ss_gpt2_simple-1L",
+        modelName: "ss_gpt2_simple (1L)",
     },
 ];
 

@@ -560,7 +560,7 @@ def _harvest_worker(
     from spd.models.component_model import ComponentModel, SPDRunInfo
 
     device = torch.device(f"cuda:{rank}")
-    print(f"[Worker {rank}] Starting on {device}")
+    print(f"[Worker {rank}] Starting on {device}", flush=True)
 
     run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
@@ -585,13 +585,8 @@ def _harvest_worker(
 
     train_iter = iter(train_loader)
     batches_processed = 0
-    progress_update_interval = 10
-    last_progress_time = time.time() - progress_update_interval
+    last_log_time = time.time()
     for batch_idx in range(n_batches):
-        if time.time() - last_progress_time > progress_update_interval:
-            print(f"[Worker {rank}] Processed {batches_processed} batches")
-            last_progress_time = time.time()
-
         batch_data = extract_batch_data(next(train_iter))
         if batch_idx % world_size != rank:
             continue
@@ -613,17 +608,20 @@ def _harvest_worker(
             harvester.process_batch(batch, ci_flat, probs)
 
         batches_processed += 1
-        if batches_processed % 10 == 0:
-            print(f"[Worker {rank}] Processed {batches_processed} batches")
+        now = time.time()
+        if now - last_log_time >= 10:
+            print(f"[Worker {rank}] {batches_processed} batches", flush=True)
+            last_log_time = now
 
     print(
-        f"[Worker {rank}] Done. Processed {batches_processed} batches, "
-        f"{harvester.total_tokens_processed:,} tokens"
+        f"[Worker {rank}] Done. {batches_processed} batches, "
+        f"{harvester.total_tokens_processed:,} tokens",
+        flush=True,
     )
     state = harvester.get_state()
     state_path = state_dir / f"worker_{rank}.pt"
     torch.save(state, state_path)
-    print(f"[Worker {rank}] Saved state to {state_path}")
+    print(f"[Worker {rank}] Saved state to {state_path}", flush=True)
 
 
 def harvest_parallel(
@@ -670,8 +668,17 @@ def harvest_parallel(
             processes.append(p)
 
         print(f"Launched {n_gpus} workers. Waiting for completion...")
-        for p in processes:
+        for i, p in enumerate(processes):
             p.join()
+            if p.exitcode != 0:
+                # Kill remaining workers and fail fast
+                for remaining in processes[i + 1 :]:
+                    remaining.terminate()
+                    remaining.join()
+                raise RuntimeError(
+                    f"Worker {p.pid} failed with exit code {p.exitcode}. "
+                    "Check stderr above for traceback."
+                )
 
         print("All workers finished. Loading states from disk...")
         states = []

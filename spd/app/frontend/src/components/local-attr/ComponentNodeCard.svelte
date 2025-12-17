@@ -223,14 +223,7 @@
         {/if}
     </SectionHeader>
 
-    <InterpretationBadge
-        {interpretation}
-        {layer}
-        {cIdx}
-        onInterpretationGenerated={handleInterpretationGenerated}
-    />
-
-    <ComponentProbeInput {layer} componentIdx={cIdx} />
+    <InterpretationBadge {interpretation} {layer} {cIdx} onInterpretationGenerated={handleInterpretationGenerated} />
 
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
@@ -248,7 +241,7 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="positive"
-                                                                    />
+                                />
                             </div>
                         {/if}
                         {#if incomingNegative.length > 0}
@@ -259,7 +252,7 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="negative"
-                                                                    />
+                                />
                             </div>
                         {/if}
                     </div>
@@ -275,7 +268,7 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="positive"
-                                                                    />
+                                />
                             </div>
                         {/if}
                         {#if outgoingNegative.length > 0}
@@ -286,7 +279,7 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="negative"
-                                                                    />
+                                />
                             </div>
                         {/if}
                     </div>
@@ -327,6 +320,8 @@
         {/if}
     </div>
 
+    <ComponentProbeInput {layer} componentIdx={cIdx} />
+
     <div class="activating-examples-section">
         <SectionHeader title="Activating Examples" />
         {#if detail?.status === "loading"}
@@ -337,7 +332,6 @@
                 <ActivationContextsPagedTable
                     exampleTokens={detail?.data.example_tokens}
                     exampleCi={detail?.data.example_ci}
-                    exampleActivePos={detail?.data.example_active_pos}
                     {activatingTokens}
                 />
             {/if}

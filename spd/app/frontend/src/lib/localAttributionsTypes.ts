@@ -92,8 +92,6 @@ export type ComponentDetail = {
     mean_ci: number;
     example_tokens: string[][];
     example_ci: number[][];
-    example_active_pos: number[];
-    example_active_ci: number[];
 };
 
 export type CorrelatedComponent = {

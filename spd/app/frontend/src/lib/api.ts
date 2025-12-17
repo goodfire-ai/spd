@@ -44,8 +44,6 @@ export type SubcomponentActivationContexts = {
     // Examples - columnar arrays (n_examples, window_size)
     example_tokens: string[][]; // [n_examples][window_size]
     example_ci: number[][]; // [n_examples][window_size]
-    example_active_pos: number[]; // [n_examples]
-    example_active_ci: number[]; // [n_examples]
 };
 
 export type ModelActivationContexts = {

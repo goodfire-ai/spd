@@ -34,6 +34,7 @@
     let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
 
     let componentCache = $state<Record<string, Loadable<SubcomponentActivationContexts>>>({});
+    const requestedKeys = new Set<string>();
 
     // Correlations state
     let correlations = $state<Loadable<ComponentCorrelations>>(null);
@@ -55,7 +56,6 @@
 
     let currentComponent = $derived.by(() => {
         const cacheKey = getCacheKey(selectedLayer, currentMetadata.subcomponent_idx);
-        $inspect(componentCache[cacheKey]);
         return componentCache[cacheKey] ?? null;
     });
 
@@ -119,8 +119,8 @@
 
         const cacheKey = getCacheKey(layer, meta.subcomponent_idx);
 
-        // skip if already cached
-        if (componentCache[cacheKey]?.status === "loaded") return;
+        if (requestedKeys.has(cacheKey)) return;
+        requestedKeys.add(cacheKey);
 
         let cancelled = false;
         componentCache[cacheKey] = { status: "loading" };
@@ -302,60 +302,57 @@
         </div>
     </div>
 
-    {#if currentComponent?.status === "loading"}
-        <div class="loading">Loading component data...</div>
-    {:else if currentComponent?.status === "error"}
-        <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
-    {:else if currentComponent === null}
-        <StatusText>Something went wrong loading component data.</StatusText>
-    {:else}
-        <div class="component-section">
-            <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
-                <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
-            </SectionHeader>
+    <div class="component-section">
+        <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
+            <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
+        </SectionHeader>
 
-            <InterpretationBadge {interpretation} />
+        <InterpretationBadge {interpretation} />
 
-            <div class="token-stats-row">
-                <TokenStatsSection
-                    sectionTitle="Input Tokens"
-                    sectionSubtitle="(what activates this component)"
-                    lists={inputTokenLists}
-                />
+        <div class="token-stats-row">
+            <TokenStatsSection
+                sectionTitle="Input Tokens"
+                sectionSubtitle="(what activates this component)"
+                lists={inputTokenLists}
+            />
 
-                <TokenStatsSection
-                    sectionTitle="Output Tokens"
-                    sectionSubtitle="(what this component predicts)"
-                    lists={outputTokenLists}
-                />
-            </div>
+            <TokenStatsSection
+                sectionTitle="Output Tokens"
+                sectionSubtitle="(what this component predicts)"
+                lists={outputTokenLists}
+            />
+        </div>
 
-            <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
-
-            <!-- Component correlations -->
-            <div class="correlations-section">
-                <SectionHeader title="Correlated Components" />
-                {#if correlations?.status === "loaded"}
-                    <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
-                {:else if correlations?.status === "loading"}
-                    <StatusText>Loading...</StatusText>
-                {:else if correlations?.status === "error"}
-                    <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
-                {:else}
-                    <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
-                {/if}
-            </div>
-
-            {#if currentComponent?.status === "loaded"}
-                <ActivationContextsPagedTable
-                    exampleTokens={currentComponent.data.example_tokens}
-                    exampleCi={currentComponent.data.example_ci}
-                    exampleActivePos={currentComponent.data.example_active_pos}
-                    activatingTokens={inputTopRecall.map(({ token }) => token)}
-                />
+        <!-- Component correlations -->
+        <div class="correlations-section">
+            <SectionHeader title="Correlated Components" />
+            {#if correlations?.status === "loaded"}
+                <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
+            {:else if correlations?.status === "loading"}
+                <StatusText>Loading...</StatusText>
+            {:else if correlations?.status === "error"}
+                <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
+            {:else}
+                <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
             {/if}
         </div>
-    {/if}
+
+        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
+
+        {#if currentComponent?.status === "loading"}
+            <div class="loading">Loading component data...</div>
+        {:else if currentComponent?.status === "loaded"}
+            <ActivationContextsPagedTable
+                exampleTokens={currentComponent.data.example_tokens}
+                exampleCi={currentComponent.data.example_ci}
+                activatingTokens={inputTopRecall.map(({ token }) => token)}
+            />
+        {:else if currentComponent?.status === "error"}
+            <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading component data.</StatusText>
+        {/if}
+    </div>
 </div>
 
 <style>

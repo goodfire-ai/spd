@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { EdgeAttribution } from "../../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
+    import type { Interpretation } from "../../lib/localAttributionsApi";
     import { runState } from "../../lib/runState.svelte";
     import { lerp } from "../local-attr/graphUtils";
 
@@ -19,14 +20,30 @@
         return `${parts[0]}:${parts[2]}`; // layer:cIdx
     }
 
-    function getInterpretationLabel(nodeKey: string): string | null {
+    function getInterpretation(nodeKey: string): Interpretation | undefined {
         const componentKey = getComponentKey(nodeKey);
-        return runState.getInterpretation(componentKey)?.label ?? null;
+        return runState.getInterpretation(componentKey);
     }
 
     let currentPage = $state(0);
     const totalPages = $derived(Math.ceil(items.length / pageSize));
     const paginatedItems = $derived(items.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
+
+    // Track which pill is being hovered and its position
+    let hoveredNodeKey = $state<string | null>(null);
+    let tooltipPosition = $state<{ top: number; left: number } | null>(null);
+
+    function handleMouseEnter(nodeKey: string, event: MouseEvent) {
+        hoveredNodeKey = nodeKey;
+        const target = event.currentTarget as HTMLElement;
+        const rect = target.getBoundingClientRect();
+        tooltipPosition = { top: rect.top, left: rect.left };
+    }
+
+    function handleMouseLeave() {
+        hoveredNodeKey = null;
+        tooltipPosition = null;
+    }
 
     // Reset page when items change
     $effect(() => {
@@ -40,6 +57,10 @@
             return `rgba(220, 38, 38, ${intensity})`; // red
         }
         return `rgba(22, 74, 193, ${intensity})`; // blue
+    }
+
+    async function copyToClipboard(text: string) {
+        await navigator.clipboard.writeText(text);
     }
 </script>
 
@@ -55,20 +76,38 @@
         {#each paginatedItems as { nodeKey, value, normalizedMagnitude } (nodeKey)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
-            {@const label = getInterpretationLabel(nodeKey)}
-            <button
-                class="edge-pill"
-                style="background: {bgColor};"
-                onclick={() => onNodeClick(nodeKey)}
-                title={nodeKey}
+            {@const interp = getInterpretation(nodeKey)}
+            {@const isHovered = hoveredNodeKey === nodeKey}
+            <div
+                class="pill-container"
+                onmouseenter={(e) => handleMouseEnter(nodeKey, e)}
+                onmouseleave={handleMouseLeave}
             >
-                {#if label}
-                    <span class="interp-label" style="color: {textColor};">{label}</span>
-                {:else}
-                    <span class="node-key" style="color: {textColor};">{formatNodeKeyForDisplay(nodeKey)}</span>
+                <button class="edge-pill" style="background: {bgColor};" onclick={() => onNodeClick(nodeKey)}>
+                    <span class="interp-label" style="color: {textColor};">{interp?.label ?? "N/A"}</span>
+                    <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
+                </button>
+                {#if isHovered && interp && tooltipPosition}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div
+                        class="tooltip"
+                        style="top: {tooltipPosition.top}px; left: {tooltipPosition.left}px;"
+                        onmouseenter={() => (hoveredNodeKey = nodeKey)}
+                        onmouseleave={handleMouseLeave}
+                    >
+                        <div class="tooltip-key">{formatNodeKeyForDisplay(nodeKey)}</div>
+                        <button class="tooltip-label copyable" onclick={() => copyToClipboard(interp.label)}>
+                            {interp.label}
+                            <svg class="copy-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        </button>
+                        <div class="tooltip-reasoning">{interp.reasoning}</div>
+                        <div class="tooltip-confidence">Confidence: {interp.confidence}</div>
+                    </div>
                 {/if}
-                <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
-            </button>
+            </div>
         {/each}
     </div>
 </div>
@@ -119,6 +158,10 @@
         cursor: default;
     }
 
+    .pill-container {
+        position: relative;
+    }
+
     .edge-pill {
         display: inline-flex;
         align-items: center;
@@ -143,5 +186,75 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .tooltip {
+        position: fixed;
+        transform: translateY(-100%);
+        margin-top: -8px;
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        z-index: 10000;
+        min-width: 200px;
+        max-width: 350px;
+    }
+
+    .tooltip-key {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        margin-bottom: var(--space-1);
+    }
+
+    .tooltip-label {
+        font-family: var(--font-sans);
+        font-weight: 600;
+        font-size: var(--text-sm);
+        color: var(--text-primary);
+        margin-bottom: var(--space-1);
+    }
+
+    .tooltip-label.copyable {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        background: none;
+        border: none;
+        padding: 2px 4px;
+        margin: -2px -4px;
+        margin-bottom: var(--space-1);
+        border-radius: 3px;
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .tooltip-label.copyable:hover {
+        background: var(--bg-surface);
+    }
+
+    .tooltip-label.copyable .copy-icon {
+        opacity: 0.4;
+        flex-shrink: 0;
+    }
+
+    .tooltip-label.copyable:hover .copy-icon {
+        opacity: 0.8;
+    }
+
+    .tooltip-reasoning {
+        font-family: var(--font-sans);
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        line-height: 1.4;
+        margin-bottom: var(--space-1);
+    }
+
+    .tooltip-confidence {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
     }
 </style>

@@ -5,6 +5,7 @@
         CORRELATION_STAT_LABELS,
         CORRELATION_STAT_DESCRIPTIONS,
     } from "../../lib/displaySettings.svelte";
+    import GearIcon from "./icons/GearIcon.svelte";
 
     let showDropdown = $state(false);
 
@@ -17,7 +18,9 @@
     onmouseenter={() => (showDropdown = true)}
     onmouseleave={() => (showDropdown = false)}
 >
-    <button type="button" class="settings-button">Display Settings</button>
+    <button type="button" class="settings-button" title="Display Settings">
+        <GearIcon />
+    </button>
     {#if showDropdown}
         <div class="settings-dropdown">
             <div class="settings-section">
@@ -65,18 +68,23 @@
 <style>
     .settings-wrapper {
         position: relative;
+        display: flex;
+        align-items: center;
+        padding: 0 var(--space-3);
+        border-left: 1px solid var(--border-default);
     }
 
     .settings-button {
-        padding: var(--space-1) var(--space-2);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-default);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--space-1);
+        background: transparent;
+        border: none;
         border-radius: var(--radius-sm);
         cursor: pointer;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
-        font-weight: 500;
+        color: var(--text-muted);
+        transition: color 0.15s, background 0.15s;
     }
 
     .settings-button:hover {

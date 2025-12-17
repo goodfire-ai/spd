@@ -9,6 +9,7 @@ from jaxtyping import Float, Int
 from torch import Tensor
 
 from spd.harvest.lib.reservior_sampler import ReservoirSampler, ReservoirState
+from spd.harvest.lib.sampling import sample_at_most_n_per_group, top_k_pmi
 from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
 
 # Sentinel for padding token windows at sequence boundaries.
@@ -208,13 +209,13 @@ class Harvester:
         if len(batch_idx) == 0:
             return
 
-        # Subsample if too many firings
-        MAX_FIRINGS_PER_BATCH = 10_000
-        if len(batch_idx) > MAX_FIRINGS_PER_BATCH:
-            keep = torch.randperm(len(batch_idx), device=self.device)[:MAX_FIRINGS_PER_BATCH]
-            batch_idx = batch_idx[keep]
-            seq_idx = seq_idx[keep]
-            component_idx = component_idx[keep]
+        # Cap firings per component to ensure rare components get examples.
+        # With ~3000 batches and topk=1000 examples, we only need ~1 per component per batch.
+        MAX_FIRINGS_PER_COMPONENT = 5
+        keep_mask = sample_at_most_n_per_group(component_idx, MAX_FIRINGS_PER_COMPONENT)
+        batch_idx = batch_idx[keep_mask]
+        seq_idx = seq_idx[keep_mask]
+        component_idx = component_idx[keep_mask]
 
         # Pad for context window extraction
         batch_padded = torch.nn.functional.pad(
@@ -412,26 +413,11 @@ def _compute_token_pmi(
     top_k: int,
 ) -> ComponentTokenPMI:
     """Compute PMI for tokens associated with a component."""
-    has_cooccurrence = (token_mass_for_component > 0) & (token_mass_totals > 0)
-
-    pmi = torch.log(
-        token_mass_for_component
-        * total_tokens
-        / (component_firing_count * token_mass_totals + 1e-10)
+    top, bottom = top_k_pmi(
+        cooccurrence_counts=token_mass_for_component,
+        marginal_counts=token_mass_totals,
+        target_count=component_firing_count,
+        total_count=total_tokens,
+        top_k=top_k,
     )
-
-    pmi = torch.where(has_cooccurrence, pmi, torch.full_like(pmi, float("-inf")))
-
-    top = torch.topk(pmi, min(top_k, int(has_cooccurrence.sum())))
-    bottom = torch.topk(pmi, min(top_k, int(has_cooccurrence.sum())), largest=False)
-
-    top_pmi = [
-        (int(token_id), float(value))
-        for token_id, value in zip(top.indices.tolist(), top.values.tolist(), strict=True)
-    ]
-    bottom_pmi = [
-        (int(token_id), float(value))
-        for token_id, value in zip(bottom.indices.tolist(), bottom.values.tolist(), strict=True)
-    ]
-
-    return ComponentTokenPMI(top=top_pmi, bottom=bottom_pmi)
+    return ComponentTokenPMI(top=top, bottom=bottom)
