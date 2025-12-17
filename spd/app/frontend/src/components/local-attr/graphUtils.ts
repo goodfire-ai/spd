@@ -91,7 +91,9 @@ export function sortComponentsByCluster(
     const sortByCI = (a: number, b: number) => {
         const keyA = `${layer}:${seqIdx}:${a}`;
         const keyB = `${layer}:${seqIdx}:${b}`;
-        return (nodeCiVals[keyB] ?? 0) - (nodeCiVals[keyA] ?? 0);
+        if (!(keyA in nodeCiVals) || !(keyB in nodeCiVals))
+            throw new Error(`Node CI value not found for key: ${keyA} or ${keyB}`);
+        return nodeCiVals[keyB] - nodeCiVals[keyA];
     };
 
     for (const group of clusterGroups.values()) {
