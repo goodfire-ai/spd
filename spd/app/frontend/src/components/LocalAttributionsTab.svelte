@@ -773,7 +773,6 @@
                                     onStagedNodesChange={handlePinnedNodesChange}
                                 />
                             {:else if activeComposerState}
-                                <!-- Interventions view -->
                                 <InterventionsView
                                     graph={activeGraph}
                                     composerSelection={activeComposerState.selection}
@@ -788,12 +787,14 @@
                                     ciThreshold={refetchingGraphId === activeGraph.id
                                         ? { status: "loading" }
                                         : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
+                                    {hideUnpinnedEdges}
                                     {hideNodeCard}
                                     onTopKChange={handleTopKChange}
                                     onComponentGapChange={handleComponentGapChange}
                                     onLayerGapChange={handleLayerGapChange}
                                     onNormalizeChange={handleNormalizeChange}
                                     onCiThresholdChange={handleCiThresholdChange}
+                                    onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     {activationContextsSummary}
                                     {componentDetailsCache}
@@ -884,7 +885,6 @@
     .graph-view-tabs {
         display: flex;
         gap: var(--space-1);
-        /* border-top: 1px solid var(--border-subtle); */
     }
 
     .graph-view-tab {

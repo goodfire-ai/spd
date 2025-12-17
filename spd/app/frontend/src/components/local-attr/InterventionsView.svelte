@@ -43,12 +43,15 @@
         layerGap: number;
         normalizeEdges: NormalizeType;
         ciThreshold: Loadable<number>;
+        ciThresholdLoading: boolean;
+        hideUnpinnedEdges: boolean;
         hideNodeCard: boolean;
         onTopKChange: (value: number) => void;
         onComponentGapChange: (value: number) => void;
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
+        onHideUnpinnedEdgesChange: (value: boolean) => void;
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
         activationContextsSummary: ActivationContextsSummary | null;
@@ -75,12 +78,14 @@
         layerGap,
         normalizeEdges,
         ciThreshold,
+        hideUnpinnedEdges,
+        hideNodeCard,
         onTopKChange,
         onComponentGapChange,
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
-        hideNodeCard,
+        onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
         activationContextsSummary,
         componentDetailsCache,
@@ -188,11 +193,15 @@
         return nodes;
     });
 
-    // Filter edges for rendering (topK by magnitude)
+    // Filter edges for rendering (topK by magnitude, optionally hide edges not connected to selected nodes)
     const filteredEdges = $derived.by(() => {
-        const edgesCopy = [...graph.data.edges];
-        const sortedEdges = edgesCopy.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
-        return sortedEdges.slice(0, topK);
+        let edges = [...graph.data.edges];
+        // If hideUnpinnedEdges is true and we have selected nodes, filter to only edges connected to them
+        if (hideUnpinnedEdges && composerSelection.size > 0) {
+            edges = edges.filter((e) => composerSelection.has(e.src) || composerSelection.has(e.tgt));
+        }
+        edges.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+        return edges.slice(0, topK);
     });
 
     // Edge count for ViewControls
@@ -542,12 +551,14 @@
             {filteredEdgeCount}
             {normalizeEdges}
             {ciThreshold}
+            {hideUnpinnedEdges}
             {hideNodeCard}
             {onTopKChange}
             {onComponentGapChange}
             {onLayerGapChange}
             {onNormalizeChange}
             {onCiThresholdChange}
+            {onHideUnpinnedEdgesChange}
             {onHideNodeCardChange}
         />
 
