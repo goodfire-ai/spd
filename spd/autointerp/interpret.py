@@ -218,7 +218,6 @@ async def interpret_all(
     openrouter_api_key: str,
     interpreter_model: str,
     output_path: Path,
-    budget: float | None = None,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
@@ -235,12 +234,10 @@ async def interpret_all(
 
     components_sorted = sorted(components, key=lambda c: c.mean_ci, reverse=True)
     remaining = [c for c in components_sorted if c.component_key not in completed]
-    budget_str = f"${budget:.2f} budget" if budget else "unlimited budget"
-    print(f"Interpreting {len(remaining)} components ({budget_str})")
+    print(f"Interpreting {len(remaining)} components")
     start_idx = len(results)
 
     output_lock = asyncio.Lock()
-    stop_event = asyncio.Event()
 
     # Scale jitter window to target ~1000 req/s initial rate
     initial_jitter_window = len(remaining) / 1000.0
@@ -254,9 +251,6 @@ async def interpret_all(
         client: OpenRouter,
         cost_tracker: CostTracker,
     ) -> None:
-        if stop_event.is_set():
-            return
-
         # Stagger initial requests to avoid thundering herd
         await asyncio.sleep(random.random() * initial_jitter_window)
 
@@ -267,20 +261,13 @@ async def interpret_all(
         result, in_tok, out_tok = res
 
         async with output_lock:
-            if stop_event.is_set():
-                return
-
             results.append(result)
             with open(output_path, "a") as f:
                 f.write(json.dumps(asdict(result)) + "\n")
             cost_tracker.add(in_tok, out_tok)
 
-            current_cost = cost_tracker.cost_usd()
-            if budget is not None and current_cost >= budget:
-                tqdm_asyncio.write(f"Budget exhausted: ${current_cost:.2f} >= ${budget:.2f}")
-                stop_event.set()
-
             if index % 100 == 0:
+                current_cost = cost_tracker.cost_usd()
                 tqdm_asyncio.write(
                     f"[{index}] ${current_cost:.2f} ({cost_tracker.input_tokens:,} in, {cost_tracker.output_tokens:,} out)"
                 )
@@ -327,14 +314,13 @@ def run_interpret(
     interpreter_model: str,
     activation_contexts_dir: Path,
     autointerp_dir: Path,
-    budget: float | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
     output_path = autointerp_dir / "results.jsonl"
 
     results = asyncio.run(
-        interpret_all(components, arch, openrouter_api_key, interpreter_model, output_path, budget)
+        interpret_all(components, arch, openrouter_api_key, interpreter_model, output_path)
     )
 
     print(f"Completed {len(results)} interpretations -> {output_path}")

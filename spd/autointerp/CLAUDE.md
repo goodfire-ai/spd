@@ -14,13 +14,13 @@ Both phases run on cluster. Interpret is IO-bound (API calls), doesn't need GPU.
 
 ```bash
 # Harvest - collect component statistics
-python -m spd.autointerp.scripts.run_autointerp harvest <wandb_path> \
+python -m spd.harvest.scripts.run_harvest <wandb_path> \
     --n_batches 1000 \
     --batch_size 256 \
     --context_length 512
 
-# Interpret - get Claude labels
-python -m spd.autointerp.scripts.run_autointerp interpret <wandb_path>
+# Interpret - get LLM labels
+python -m spd.autointerp.scripts.run_interpret <wandb_path> --model google/gemini-3-flash-preview
 ```
 
 Requires `OPENROUTER_API_KEY` env var for interpret phase.

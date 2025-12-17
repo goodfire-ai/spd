@@ -17,7 +17,6 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    budget_usd: float | None,
     model: OpenRouterModelName,
 ) -> None:
     """Interpret harvested components.
@@ -25,9 +24,7 @@ def main(
     Args:
         wandb_path: WandB run path for the target decomposition run.
         model: OpenRouter model to use for interpretation.
-        budget_usd: Stop after spending this much (USD). None = unlimited.
     """
-
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -47,7 +44,6 @@ def main(
         model,
         activation_contexts_dir,
         autointerp_dir,
-        budget_usd,
     )
 
 

@@ -39,7 +39,6 @@ def _submit_slurm_job(script_content: str, script_path: Path) -> str:
 def launch_interpret_job(
     wandb_path: str,
     model: OpenRouterModelName,
-    budget_usd: float | None,
     partition: str,
     time: str,
 ) -> None:
@@ -48,7 +47,6 @@ def launch_interpret_job(
     Args:
         wandb_path: WandB run path for the target decomposition run.
         model: OpenRouter model to use for interpretation.
-        budget_usd: Stop after spending this much (USD). None = unlimited.
         partition: SLURM partition name.
         time: Job time limit.
     """
@@ -61,17 +59,12 @@ def launch_interpret_job(
 
     job_name = f"interpret-{job_id}"
 
-    # Build command with optional cost limit
     cmd_parts = [
         "python -m spd.autointerp.scripts.run_interpret",
         f'"{wandb_path}"',
         f"--model {model.value}",
     ]
-    if budget_usd is not None:
-        cmd_parts.append(f"--budget_usd {budget_usd}")
     interpret_cmd = " \\\n    ".join(cmd_parts)
-
-    budget_str = f"{budget_usd:.2f} USD" if budget_usd is not None else "unlimited"
 
     script_content = f"""\
 #!/bin/bash
@@ -88,7 +81,6 @@ set -euo pipefail
 echo "=== Interpret ==="
 echo "WANDB_PATH: {wandb_path}"
 echo "MODEL: {model.value}"
-echo "BUDGET: {budget_str}"
 echo "SLURM_JOB_ID: $SLURM_JOB_ID"
 echo "================="
 
@@ -123,7 +115,6 @@ echo "Interpret complete!"
             "Job ID": slurm_job_id,
             "WandB path": wandb_path,
             "Model": model.value,
-            "Budget USD": budget_usd,
             "Log": f"~/slurm_logs/slurm-{slurm_job_id}.out",
             "Script": str(final_script_path),
         }
