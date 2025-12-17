@@ -21,7 +21,7 @@ export const colors = {
     tokenHighlightOpacity: 0.4,
 
     // Node default
-    nodeDefault: "#4374dd",
+    nodeDefault: "#6b7280",
 
     // Accent (for active states) - blue
     accent: "#2563eb",

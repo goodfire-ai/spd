@@ -6,6 +6,8 @@
 
     import { onMount } from "svelte";
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
+    import ClusterPathInput from "./components/ClusterPathInput.svelte";
+    import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import RunSelector from "./components/RunSelector.svelte";
@@ -87,8 +89,7 @@
                     {#if showRunMenu}
                         <div class="run-menu-dropdown">
                             <pre class="config-yaml">{runState.data.config_yaml}</pre>
-                            <button type="button" class="change-run-button" onclick={handleChangeRun}
-                                >Change Run</button
+                            <button type="button" class="change-run-button" onclick={handleChangeRun}>Change Run</button
                             >
                         </div>
                     {/if}
@@ -104,7 +105,7 @@
                 >
                     Dataset Search
                 </button>
-                {#if runState}
+                {#if runState?.status === "loaded" && runState.data}
                     <button
                         type="button"
                         class="tab-button"
@@ -121,11 +122,11 @@
                     >
                         Components
                     </button>
+                    <ClusterPathInput runState={runState.data} />
                 {/if}
             </nav>
 
             <div class="top-bar-spacer"></div>
-
             <DisplaySettingsDropdown />
         </header>
 
@@ -271,7 +272,9 @@
         font-size: var(--text-sm);
         color: var(--text-muted);
         cursor: pointer;
-        transition: color 0.15s, background 0.15s;
+        transition:
+            color 0.15s,
+            background 0.15s;
     }
 
     .tab-button:hover {

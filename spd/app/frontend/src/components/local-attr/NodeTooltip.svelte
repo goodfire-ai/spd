@@ -7,6 +7,7 @@
     } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import { runState } from "../../lib/runState.svelte";
+    import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
@@ -65,6 +66,11 @@
         return nodeCiVals[key] ?? null;
     });
 
+    // Get cluster ID for component nodes (undefined = no mapping, null = singleton, number = cluster)
+    const clusterId = $derived(
+        isComponent ? clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx) : undefined,
+    );
+
     const token = $derived.by(() => {
         if (hoveredNode.seqIdx >= tokens.length) {
             throw new Error(
@@ -84,6 +90,9 @@
     <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
     {#if isComponent && ciVal !== null}
         <div class="ci-value">CI: {ciVal.toFixed(3)}</div>
+    {/if}
+    {#if clusterId !== undefined}
+        <div class="cluster-id">Cluster: {clusterId ?? "null"}</div>
     {/if}
     {#if isWte}
         <p class="wte-info">Input embedding at position {hoveredNode.seqIdx}</p>
@@ -128,6 +137,14 @@
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         color: var(--accent-primary);
+        font-weight: 600;
+        margin: var(--space-1) 0 var(--space-2) 0;
+    }
+
+    .cluster-id {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
         font-weight: 600;
         margin: var(--space-1) 0 var(--space-2) 0;
     }
