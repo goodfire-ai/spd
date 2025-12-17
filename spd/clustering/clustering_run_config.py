@@ -69,6 +69,10 @@ class ClusteringRunConfig(BaseConfig):
         default=False,
         description="Whether to use streaming dataset loading (if supported by the dataset). see https://github.com/goodfire-ai/spd/pull/199",
     )
+    precomputed_activations_dir: Path | None = Field(
+        default=None,
+        description="Path to directory containing precomputed activation batches. If None, batches will be auto-generated before merging starts.",
+    )
 
     @model_validator(mode="before")
     def process_experiment_key(cls, values: dict[str, Any]) -> dict[str, Any]:

@@ -5,7 +5,7 @@ from jaxtyping import Bool, Int
 from muutils.tensor_info import array_summary
 from torch import Tensor
 
-from spd.clustering.consts import GroupIdxsTensor
+from spd.clustering.consts import ComponentIndexDtypeTorch, GroupIdxsTensor
 
 # pyright: reportUnnecessaryTypeIgnoreComment=false
 
@@ -200,8 +200,8 @@ class BatchedGroupMerge:
     def init_empty(cls, batch_size: int, n_components: int) -> "BatchedGroupMerge":
         """Initialize an empty BatchedGroupMerge with the given batch size and number of components."""
         return cls(
-            group_idxs=torch.full((batch_size, n_components), -1, dtype=torch.int16),
-            k_groups=torch.zeros(batch_size, dtype=torch.int16),
+            group_idxs=torch.full((batch_size, n_components), -1, dtype=ComponentIndexDtypeTorch),
+            k_groups=torch.zeros(batch_size, dtype=ComponentIndexDtypeTorch),
         )
 
     @property

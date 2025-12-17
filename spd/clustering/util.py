@@ -8,10 +8,13 @@ def format_scientific_latex(value: float) -> str:
 
     import math
 
-    exponent: int = int(math.floor(math.log10(abs(value))))
-    mantissa: float = value / (10**exponent)
+    try:
+        exponent: int = int(math.floor(math.log10(abs(value))))
+        mantissa: float = value / (10**exponent)
 
-    return f"${mantissa:.2f} \\times 10^{{{exponent}}}$"
+        return f"${mantissa:.2f} \\times 10^{{{exponent}}}$"
+    except Exception:
+        return f"${value}$"
 
 
 ModuleFilterSource = str | Callable[[str], bool] | set[str] | None

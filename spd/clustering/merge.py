@@ -8,14 +8,14 @@ import warnings
 from typing import Protocol
 
 import torch
-from jaxtyping import Bool, Float
+from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from tqdm import tqdm
 
+from spd.clustering.batched_activations import ActivationBatch, BatchedActivations
 from spd.clustering.compute_costs import (
     compute_mdl_cost,
     compute_merge_costs,
-    recompute_coacts_merge_pair,
 )
 from spd.clustering.consts import (
     ActivationsTensor,
@@ -27,6 +27,50 @@ from spd.clustering.consts import (
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory
+
+
+def recompute_coacts_from_scratch(
+    activations: Tensor,
+    current_merge: GroupMerge,
+    activation_threshold: float | None,
+) -> tuple[Tensor, Tensor]:
+    """
+    Recompute coactivations from fresh activations using current merge state.
+
+    Args:
+        activations: Fresh activation tensor [samples, n_components_original]
+        current_merge: Current merge state mapping original -> groups
+        activation_threshold: Threshold for binarizing activations
+
+    Returns:
+        (coact, activation_mask) - coact matrix [k_groups, k_groups] and
+                                   mask [samples, k_groups] for current groups
+    """
+    # Apply threshold
+    activation_mask: Bool[Tensor, "samples n_components"] = (
+        activations > activation_threshold if activation_threshold is not None else activations
+    )
+
+    # Map component-level activations to group-level using scatter_add
+    # This is more efficient than materializing the full merge matrix
+    # current_merge.group_idxs: [n_components] with values 0 to k_groups-1
+    n_samples: int = activation_mask.shape[0]
+    group_activations: Float[Tensor, "n_samples k_groups"] = torch.zeros(
+        (n_samples, current_merge.k_groups),
+        dtype=activation_mask.dtype,
+        device=activation_mask.device,
+    )
+
+    # Expand group_idxs to match batch dimension and scatter-add activations by group
+    group_idxs_expanded: Int[Tensor, "n_samples n_components"] = (
+        current_merge.group_idxs.unsqueeze(0).expand(n_samples, -1).to(activation_mask.device)
+    )
+    group_activations.scatter_add_(1, group_idxs_expanded, activation_mask)
+
+    # Compute coactivations
+    coact: ClusterCoactivationShaped = group_activations.float().T @ group_activations.float()
+
+    return coact, group_activations
 
 
 class LogCallback(Protocol):
@@ -48,20 +92,25 @@ class LogCallback(Protocol):
 
 def merge_iteration(
     merge_config: MergeConfig,
-    activations: ActivationsTensor,
+    batched_activations: BatchedActivations,
     component_labels: ComponentLabels,
     log_callback: LogCallback | None = None,
 ) -> MergeHistory:
     """
-    Merge iteration with optional logging/plotting callbacks.
+    Merge iteration with multi-batch support and optional logging/plotting callbacks.
 
-    This wraps the pure computation with logging capabilities while maintaining
-    the same core algorithm logic.
+    This implementation uses NaN masking to track invalid coactivation entries
+    and periodically recomputes the full coactivation matrix from fresh batches.
     """
 
-    # compute coactivations
+    # Load first batch
     # --------------------------------------------------
-    activation_mask_orig: BoolActivationsTensor | ActivationsTensor | None = (
+    first_batch: ActivationBatch = batched_activations._get_next_batch()
+    activations: ActivationsTensor = first_batch.activations
+
+    # Compute initial coactivations
+    # --------------------------------------------------
+    activation_mask_orig: BoolActivationsTensor | ActivationsTensor = (
         activations > merge_config.activation_threshold
         if merge_config.activation_threshold is not None
         else activations
@@ -99,6 +148,31 @@ def merge_iteration(
         total=num_iters,
     )
     for iter_idx in pbar:
+        # Recompute from batch if needed (do this BEFORE computing costs)
+        # --------------------------------------------------
+        # With NaN masking, we must recompute before every iteration (except first)
+        # because the coact matrix is invalidated after each merge.
+        # When recompute_costs_every is set, we cycle through batches;
+        # otherwise we reuse the same batch.
+        if iter_idx > 0:
+            # Check if we should load a new batch
+            should_load_new_batch: bool = (
+                merge_config.recompute_costs_every is not None
+                and iter_idx % merge_config.recompute_costs_every == 0
+            )
+
+            if should_load_new_batch:
+                new_batch: ActivationBatch = batched_activations._get_next_batch()
+                activations = new_batch.activations
+
+            # Always recompute coacts from current activations after iteration 0
+            # (needed because NaN masking invalidates the matrix)
+            current_coact, current_act_mask = recompute_coacts_from_scratch(
+                activations=activations,
+                current_merge=current_merge,
+                activation_threshold=merge_config.activation_threshold,
+            )
+
         # compute costs, figure out what to merge
         # --------------------------------------------------
         # HACK: this is messy
@@ -110,20 +184,38 @@ def merge_iteration(
 
         merge_pair: MergePair = merge_config.merge_pair_sample(costs)
 
+        # Store merge pair cost before updating
+        # --------------------------------------------------
+        merge_pair_cost: float = float(costs[merge_pair].item())
+
         # merge the pair
         # --------------------------------------------------
-        # we do this *before* logging, so we can see how the sampled pair cost compares
-        # to the costs of all the other possible pairs
-        current_merge, current_coact, current_act_mask = recompute_coacts_merge_pair(
-            coact=current_coact,
-            merges=current_merge,
-            merge_pair=merge_pair,
-            activation_mask=current_act_mask,
-        )
+        # Update merge state BEFORE NaN-ing out
+        current_merge = current_merge.merge_groups(merge_pair[0], merge_pair[1])
 
-        # metrics and logging
-        # --------------------------------------------------
+        # NaN out the merged components' rows/cols
+        i, j = merge_pair
+        new_idx: int = min(i, j)
+        remove_idx: int = max(i, j)
+
+        # Mark affected entries as invalid (can't compute cost anymore without recompute)
+        current_coact[remove_idx, :] = float("nan")
+        current_coact[:, remove_idx] = float("nan")
+        current_coact[new_idx, :] = float("nan")
+        current_coact[:, new_idx] = float("nan")
+
+        # Remove the deleted row/col to maintain shape consistency
+        mask: Bool[Tensor, " k_groups"] = torch.ones(
+            k_groups, dtype=torch.bool, device=current_coact.device
+        )
+        mask[remove_idx] = False
+        current_coact = current_coact[mask, :][:, mask]
+        current_act_mask = current_act_mask[:, mask]
+
+        k_groups -= 1
+
         # Store in history
+        # --------------------------------------------------
         merge_history.add_iteration(
             idx=iter_idx,
             selected_pair=merge_pair,
@@ -131,6 +223,7 @@ def merge_iteration(
         )
 
         # Compute metrics for logging
+        # --------------------------------------------------
         # the MDL loss computed here is the *cost of the current merge*, a single scalar value
         # rather than the *delta in cost from merging a specific pair* (which is what `costs` matrix contains)
         diag_acts: Float[Tensor, " k_groups"] = torch.diag(current_coact)
@@ -140,8 +233,6 @@ def merge_iteration(
             alpha=merge_config.alpha,
         )
         mdl_loss_norm: float = mdl_loss / current_act_mask.shape[0]
-        # this is the cost for the selected pair
-        merge_pair_cost: float = float(costs[merge_pair].item())
 
         # Update progress bar
         pbar.set_description(f"k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={merge_pair_cost:.4f}")
@@ -161,9 +252,8 @@ def merge_iteration(
                 diag_acts=diag_acts,
             )
 
-        # iterate and sanity checks
+        # Sanity checks
         # --------------------------------------------------
-        k_groups -= 1
         assert current_coact.shape[0] == k_groups, (
             "Coactivation matrix shape should match number of groups"
         )

@@ -10,7 +10,6 @@ Output structure:
 """
 
 import argparse
-import gc
 import os
 import tempfile
 from collections.abc import Callable
@@ -26,32 +25,26 @@ from matplotlib.figure import Figure
 from torch import Tensor
 from wandb.sdk.wandb_run import Run
 
-from spd.clustering.activations import (
-    ProcessedActivations,
-    component_activations,
-    process_activations,
+from spd.clustering.batched_activations import (
+    BatchedActivations,
+    precompute_batches_for_single_run,
 )
 from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.consts import (
-    ActivationsTensor,
-    BatchTensor,
     ClusterCoactivationShaped,
     ComponentLabels,
 )
-from spd.clustering.dataset import load_dataset
 from spd.clustering.ensemble_registry import _ENSEMBLE_REGISTRY_DB, register_clustering_run
 from spd.clustering.math.merge_matrix import GroupMerge
 from spd.clustering.math.semilog import semilog
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_history import MergeHistory
-from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
 from spd.clustering.storage import StorageBase
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
 from spd.log import logger
-from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.models.component_model import SPDRunInfo
 from spd.spd_types import TaskName
-from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
 
@@ -219,16 +212,16 @@ def main(run_config: ClusteringRunConfig) -> Path:
     """
     # Create ExecutionStamp and storage
     # don't create git snapshot -- if we are part of an ensemble, the snapshot should be created by the pipeline
-    execution_stamp = ExecutionStamp.create(
+    execution_stamp: ExecutionStamp = ExecutionStamp.create(
         run_type="cluster",
         create_snapshot=False,
     )
-    storage = ClusteringRunStorage(execution_stamp)
-    clustering_run_id = execution_stamp.run_id
+    storage: ClusteringRunStorage = ClusteringRunStorage(execution_stamp)
+    clustering_run_id: str = execution_stamp.run_id
     logger.info(f"Clustering run ID: {clustering_run_id}")
 
     # Register with ensemble if this is part of a pipeline
-    assigned_idx: int | None
+    assigned_idx: int | None = None
     if run_config.ensemble_id:
         assigned_idx = register_clustering_run(
             pipeline_run_id=run_config.ensemble_id,
@@ -243,8 +236,6 @@ def main(run_config: ClusteringRunConfig) -> Path:
             run_config,
             {"dataset_seed": run_config.dataset_seed + assigned_idx},
         )
-    else:
-        assigned_idx = None
 
     # save config
     run_config.to_file(storage.config_path)
@@ -253,30 +244,11 @@ def main(run_config: ClusteringRunConfig) -> Path:
     # start
     logger.info("Starting clustering run")
     logger.info(f"Output directory: {storage.base_dir}")
-    device = get_device()
 
-    spd_run = SPDRunInfo.from_path(run_config.model_path)
+    spd_run: SPDRunInfo = SPDRunInfo.from_path(run_config.model_path)
     task_name: TaskName = spd_run.config.task_config.task_name
 
-    # 1. Load dataset
-    logger.info(f"Loading dataset (seed={run_config.dataset_seed})")
-    load_dataset_kwargs: dict[str, Any] = dict()
-    if run_config.dataset_streaming:
-        logger.info("Using streaming dataset loading")
-        load_dataset_kwargs["config_kwargs"] = dict(streaming=True)
-        assert task_name == "lm", (
-            f"Streaming dataset loading only supported for 'lm' task, got '{task_name = }'. Remove dataset_streaming=True from config or use a different task."
-        )
-    batch: BatchTensor = load_dataset(
-        model_path=run_config.model_path,
-        task_name=task_name,
-        batch_size=run_config.batch_size,
-        seed=run_config.dataset_seed,
-        **load_dataset_kwargs,
-    )
-    batch = batch.to(device)
-
-    # 2. Setup WandB for this run
+    # Setup WandB for this run
     wandb_run: Run | None = None
     if run_config.wandb_project is not None:
         wandb_run = wandb.init(
@@ -293,58 +265,40 @@ def main(run_config: ClusteringRunConfig) -> Path:
                 f"assigned_idx:{assigned_idx}",
             ],
         )
-        # logger.info(f"WandB run: {wandb_run.url}")
 
-    # 3. Load model
-    logger.info("Loading model")
-    model = ComponentModel.from_run_info(spd_run).to(device)
+    # Load or compute activations
+    # =====================================
+    batched_activations: BatchedActivations
 
-    # 4. Compute activations
-    logger.info("Computing activations")
-    activations_dict: (
-        dict[str, Float[Tensor, "batch seq C"]] | dict[str, Float[Tensor, "batch C"]]
-    ) = component_activations(
-        model=model,
-        batch=batch,
-        device=device,
-    )
+    if run_config.precomputed_activations_dir is not None:
+        # Case 1: Use precomputed batches from disk (from ensemble pipeline)
+        logger.info(f"Loading precomputed batches from {run_config.precomputed_activations_dir}")
+        batched_activations = BatchedActivations(run_config.precomputed_activations_dir)
+        logger.info(f"Loaded {batched_activations.n_batches} precomputed batches")
 
-    # 5. Process activations
-    logger.info("Processing activations")
-    processed_activations: ProcessedActivations = process_activations(
-        activations=activations_dict,
-        filter_dead_threshold=run_config.merge_config.filter_dead_threshold,
-        seq_mode="concat" if task_name == "lm" else None,
-        filter_modules=run_config.merge_config.filter_modules,
-    )
+    else:
+        # Case 2: Generate batches for this single run
+        logger.info(f"Generating activation batches (seed={run_config.dataset_seed})")
 
-    # 6. Log activations (if WandB enabled)
-    if wandb_run is not None:
-        logger.info("Plotting activations")
-        plot_activations(
-            processed_activations=processed_activations,
-            save_dir=None,  # Don't save to disk, only WandB
-            n_samples_max=256,
-            wandb_run=wandb_run,
-        )
-        wandb_log_tensor(
-            wandb_run,
-            processed_activations.activations,
-            "activations",
-            0,
-            single=True,
+        batch_dir: Path = storage.base_dir / "batches"
+        batch_dir.mkdir(exist_ok=True)
+
+        # Generate all needed batches (respects recompute_costs_every)
+        n_batches: int = precompute_batches_for_single_run(
+            clustering_run_config=run_config,
+            output_dir=batch_dir,
+            base_seed=run_config.dataset_seed,
         )
 
-    # Clean up memory
-    activations: ActivationsTensor = processed_activations.activations
-    component_labels: ComponentLabels = ComponentLabels(processed_activations.labels.copy())
-    del processed_activations
-    del activations_dict
-    del model
-    del batch
-    gc.collect()
+        # Load batches
+        batched_activations = BatchedActivations(batch_dir)
+        logger.info(f"Generated and loaded {n_batches} batches")
 
-    # 7. Run merge iteration
+    # Get labels from batches
+    component_labels: ComponentLabels = batched_activations.labels
+
+    # Run merge iteration
+    # =====================================
     logger.info("Starting merging")
     log_callback: LogCallback | None = (
         partial(_log_callback, run=wandb_run, run_config=run_config)
@@ -354,7 +308,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
     history: MergeHistory = merge_iteration(
         merge_config=run_config.merge_config,
-        activations=activations,
+        batched_activations=batched_activations,
         component_labels=component_labels,
         log_callback=log_callback,
     )
@@ -412,6 +366,12 @@ def cli() -> None:
         action="store_true",
         help="Whether to use streaming dataset loading (if supported by the dataset)",
     )
+    parser.add_argument(
+        "--precomputed-activations-dir",
+        type=Path,
+        default=None,
+        help="Path to directory containing precomputed activation batches",
+    )
 
     args: argparse.Namespace = parser.parse_args()
 
@@ -431,6 +391,8 @@ def cli() -> None:
         overrides["wandb_project"] = args.wandb_project
     if args.wandb_entity is not None:
         overrides["wandb_entity"] = args.wandb_entity
+    if args.precomputed_activations_dir is not None:
+        overrides["precomputed_activations_dir"] = args.precomputed_activations_dir
 
     run_config = replace_pydantic_model(run_config, overrides)
 

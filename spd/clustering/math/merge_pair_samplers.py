@@ -25,6 +25,22 @@ class MergePairSampler(Protocol):
     ) -> MergePair: ...
 
 
+def get_valid_mask(
+    costs: ClusterCoactivationShaped,
+) -> ClusterCoactivationShaped:
+    """Get a boolean mask of valid merge pairs (non-NaN, non-diagonal)."""
+    k_groups: int = costs.shape[0]
+    valid_mask: ClusterCoactivationShaped = (
+        ~torch.isnan(costs)  # mask out NaN entries
+        & ~torch.eye(
+            k_groups, dtype=torch.bool, device=costs.device
+        )  # mask out diagonal (can't merge with self)
+    )
+    if not valid_mask.any():
+        raise ValueError("All non-diagonal costs are NaN, cannot sample merge pair")
+    return valid_mask
+
+
 def range_sampler(
     costs: ClusterCoactivationShaped,
     threshold: float = 0.05,
@@ -36,7 +52,7 @@ def range_sampler(
     of the range of non-diagonal costs, then randomly selects one.
 
     Args:
-        costs: Cost matrix for all possible merges
+        costs: Cost matrix for all possible merges (may contain NaN for invalid pairs)
         k_groups: Number of current groups
         threshold: Fraction of cost range to consider (0=min only, 1=all pairs)
 
@@ -47,22 +63,26 @@ def range_sampler(
     k_groups: int = costs.shape[0]
     assert costs.shape[1] == k_groups, "Cost matrix must be square"
 
-    # Find the range of non-diagonal costs
-    non_diag_costs: Float[Tensor, " k_groups_squared_minus_k"] = costs[
-        ~torch.eye(k_groups, dtype=torch.bool, device=costs.device)
-    ]
-    min_cost: float = float(non_diag_costs.min().item())
-    max_cost: float = float(non_diag_costs.max().item())
+    valid_mask: ClusterCoactivationShaped = get_valid_mask(costs)
+
+    # Get valid costs
+    valid_costs: Float[Tensor, " n_valid"] = costs[valid_mask]
+
+    # Find the range of valid costs
+    min_cost: float = float(valid_costs.min().item())
+    max_cost: float = float(valid_costs.max().item())
 
     # Calculate threshold cost
     max_considered_cost: float = (max_cost - min_cost) * threshold + min_cost
 
-    # Find all pairs below threshold
-    considered_idxs: Int[Tensor, "n_considered 2"] = torch.stack(
-        torch.where(costs <= max_considered_cost), dim=1
-    )
-    # Remove diagonal entries (i == j)
-    considered_idxs = considered_idxs[considered_idxs[:, 0] != considered_idxs[:, 1]]
+    # Find all valid pairs below threshold
+    within_range: Bool[Tensor, "k_groups k_groups"] = (costs <= max_considered_cost) & valid_mask
+
+    # Get indices of candidate pairs
+    considered_idxs: Int[Tensor, "n_considered 2"] = torch.stack(torch.where(within_range), dim=1)
+
+    if considered_idxs.shape[0] == 0:
+        raise ValueError("No valid pairs within threshold range")
 
     # Randomly select one of the considered pairs
     selected_idx: int = random.randint(0, considered_idxs.shape[0] - 1)
@@ -78,7 +98,7 @@ def mcmc_sampler(
     """Sample a merge pair using MCMC with probability proportional to exp(-cost/temperature).
 
     Args:
-        costs: Cost matrix for all possible merges
+        costs: Cost matrix for all possible merges (may contain NaN for invalid pairs)
         k_groups: Number of current groups
         temperature: Temperature parameter for softmax (higher = more uniform sampling)
 
@@ -89,21 +109,18 @@ def mcmc_sampler(
     k_groups: int = costs.shape[0]
     assert costs.shape[1] == k_groups, "Cost matrix must be square"
 
-    # Create mask for valid pairs (non-diagonal)
-    valid_mask: Bool[Tensor, "k_groups k_groups"] = ~torch.eye(
-        k_groups, dtype=torch.bool, device=costs.device
-    )
+    valid_mask: ClusterCoactivationShaped = get_valid_mask(costs)
 
     # Compute probabilities: exp(-cost/temperature)
     # Use stable softmax computation to avoid overflow
     costs_masked: ClusterCoactivationShaped = costs.clone()
-    costs_masked[~valid_mask] = float("inf")  # Set diagonal to inf so exp gives 0
+    costs_masked[~valid_mask] = float("inf")  # Set invalid entries to inf so exp gives 0
 
     # Subtract min for numerical stability
     min_cost: float = float(costs_masked[valid_mask].min())
     probs: ClusterCoactivationShaped = (
         torch.exp((min_cost - costs_masked) / temperature) * valid_mask
-    )  # Zero out diagonal
+    )  # Zero out invalid entries
     probs_flatten: Float[Tensor, " k_groups_squared"] = probs.flatten()
     probs_flatten = probs_flatten / probs_flatten.sum()
 

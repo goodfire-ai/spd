@@ -18,10 +18,13 @@ If there's an assumption you're making while writing code, assert it.
 - If you were wrong, then the code **should** fail.
 
 ## Type Annotations
-- Use jaxtyping for tensor shapes (though for now we don't do runtime checking)
+- **Always** use jaxtyping for tensor or numpy array shapes (though for now we don't do runtime checking)
 - Always use the PEP 604 typing format of `|` for unions and `type | None` over `Optional`.
 - Use `dict`, `list` and `tuple` not `Dict`, `List` and `Tuple`
-- Don't add type annotations when they're redundant. (i.e. `my_thing: Thing = Thing()` or `name: str = "John Doe"`)
+- Don't add type annotations only when they're redundant.
+	- i.e. `my_thing: Thing = Thing()` or `name: str = "John Doe"` don't need type annotations.
+	- however, `var = foo()` or `result = thing.bar()` should be annotated!
+- FOR CLAUDE: don't worry about cleaning up unused imports, we do this automatically with ruff using `make format`
 
 ## Tensor Operations
 - Try to use einops by default for clarity.

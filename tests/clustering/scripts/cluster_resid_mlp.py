@@ -12,6 +12,7 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
+from spd.clustering.batched_activations import BatchedActivations
 from spd.clustering.consts import ComponentLabels
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
@@ -74,7 +75,9 @@ dbg_auto(
         data_generation_type=DATASET.data_generation_type,
     )
 )
-DATALOADER = DatasetGeneratedDataLoader(DATASET, batch_size=N_SAMPLES, shuffle=False)
+DATALOADER: DatasetGeneratedDataLoader[Any] = DatasetGeneratedDataLoader(
+    DATASET, batch_size=N_SAMPLES, shuffle=False
+)
 
 # %%
 # Get component activations
@@ -148,9 +151,13 @@ def _plot_func(
         )
 
 
+BATCHED_ACTIVATIONS: BatchedActivations = BatchedActivations.from_tensor(
+    activations=PROCESSED_ACTIVATIONS.activations,
+    labels=list(PROCESSED_ACTIVATIONS.labels),
+)
 MERGE_HIST: MergeHistory = merge_iteration(
     merge_config=MERGE_CFG,
-    activations=PROCESSED_ACTIVATIONS.activations,
+    batched_activations=BATCHED_ACTIVATIONS,
     component_labels=PROCESSED_ACTIVATIONS.labels,
     log_callback=_plot_func,
 )
@@ -172,9 +179,13 @@ MERGE_HIST: MergeHistory = merge_iteration(
 ENSEMBLE_SIZE: int = 4
 HISTORIES: list[MergeHistory] = []
 for _i in range(ENSEMBLE_SIZE):
+    batched_acts: BatchedActivations = BatchedActivations.from_tensor(
+        activations=PROCESSED_ACTIVATIONS.activations,
+        labels=list(PROCESSED_ACTIVATIONS.labels),
+    )
     HISTORY: MergeHistory = merge_iteration(
         merge_config=MERGE_CFG,
-        activations=PROCESSED_ACTIVATIONS.activations,
+        batched_activations=batched_acts,
         component_labels=PROCESSED_ACTIVATIONS.labels,
         log_callback=None,
     )

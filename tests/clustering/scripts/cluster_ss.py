@@ -16,13 +16,16 @@ from spd.clustering.activations import (
     component_activations,
     process_activations,
 )
+from spd.clustering.batched_activations import BatchedActivations
 from spd.clustering.clustering_run_config import ClusteringRunConfig
+from spd.clustering.consts import DistancesArray
 from spd.clustering.dataset import load_dataset
 from spd.clustering.merge import merge_iteration
 from spd.clustering.merge_config import MergeConfig
 from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_dists_distribution
+from spd.configs import Config
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -43,11 +46,11 @@ MODEL_PATH: str = "wandb:goodfire/spd-pre-Sep-2025/runs/ioprgffh"
 SPD_RUN: SPDRunInfo = SPDRunInfo.from_path(MODEL_PATH)
 MODEL: ComponentModel = ComponentModel.from_pretrained(SPD_RUN.checkpoint_path)
 MODEL.to(DEVICE)
-SPD_CONFIG = SPD_RUN.config
+SPD_CONFIG: Config = SPD_RUN.config
 
 # Use load_dataset with RunConfig to get real data
 CONFIG: ClusteringRunConfig = ClusteringRunConfig(
-    merge_config=MergeConfig(),
+    merge_config=MergeConfig(batch_size=2),
     model_path=MODEL_PATH,
     batch_size=2,
     dataset_seed=42,
@@ -111,9 +114,13 @@ MERGE_CFG: MergeConfig = MergeConfig(
 ENSEMBLE_SIZE: int = 2
 HISTORIES: list[MergeHistory] = []
 for _i in range(ENSEMBLE_SIZE):
+    batched_acts: BatchedActivations = BatchedActivations.from_tensor(
+        activations=PROCESSED_ACTIVATIONS.activations,
+        labels=list(PROCESSED_ACTIVATIONS.labels),
+    )
     HISTORY: MergeHistory = merge_iteration(
         merge_config=MERGE_CFG,
-        activations=PROCESSED_ACTIVATIONS.activations,
+        batched_activations=batched_acts,
         component_labels=PROCESSED_ACTIVATIONS.labels,
         log_callback=None,
     )
@@ -125,7 +132,7 @@ ENSEMBLE: MergeHistoryEnsemble = MergeHistoryEnsemble(data=HISTORIES)
 # %%
 # Compute and plot distances
 # ============================================================
-DISTANCES = ENSEMBLE.get_distances()
+DISTANCES: DistancesArray = ENSEMBLE.get_distances()
 
 plot_dists_distribution(
     distances=DISTANCES,
