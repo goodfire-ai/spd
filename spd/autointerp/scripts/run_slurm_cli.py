@@ -8,21 +8,19 @@ import fire
 from spd.settings import DEFAULT_PARTITION_NAME
 
 
-def interpret(
+def main(
     wandb_path: str,
-    model: str = "google/gemini-2.5-flash",
-    max_concurrent: int = 20,
+    model: str = "google/gemini-3-flash-preview",
     budget_usd: float | None = None,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
 ) -> None:
     from spd.autointerp.interpret import OpenRouterModelName
-    from spd.autointerp.scripts.run_slurm import interpret as interpret_impl
+    from spd.autointerp.scripts.run_slurm import launch_interpret_job
 
-    interpret_impl(
+    launch_interpret_job(
         wandb_path=wandb_path,
         model=OpenRouterModelName(model),
-        max_concurrent=max_concurrent,
         budget_usd=budget_usd,
         partition=partition,
         time=time,
@@ -30,4 +28,4 @@ def interpret(
 
 
 def cli() -> None:
-    fire.Fire(interpret)
+    fire.Fire(main)

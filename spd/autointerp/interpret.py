@@ -1,12 +1,20 @@
 import asyncio
 import json
-from dataclasses import asdict
+import random
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
 from openrouter import OpenRouter
-from openrouter.components import JSONSchemaConfig, ResponseFormatJSONSchema
+from openrouter.components import JSONSchemaConfig, MessageTypedDict, ResponseFormatJSONSchema
+from openrouter.errors import (
+    BadGatewayResponseError,
+    EdgeNetworkTimeoutResponseError,
+    ProviderOverloadedResponseError,
+    RequestTimeoutResponseError,
+    ServiceUnavailableResponseError,
+    TooManyRequestsResponseError,
+)
 from tqdm.asyncio import tqdm_asyncio
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -20,43 +28,28 @@ from spd.harvest.schemas import ComponentData
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
+# Retry config
+MAX_RETRIES = 8
+BASE_DELAY_S = 0.5
+MAX_DELAY_S = 60.0
+JITTER_FACTOR = 0.5
+
+RETRYABLE_ERRORS = (
+    TooManyRequestsResponseError,
+    ProviderOverloadedResponseError,
+    ServiceUnavailableResponseError,
+    BadGatewayResponseError,
+    RequestTimeoutResponseError,
+    EdgeNetworkTimeoutResponseError,
+)
+
 
 class OpenRouterModelName(StrEnum):
-    # HAIKU_4_5_20251001 = "anthropic/claude-haiku-4.5"  # haiku doesn't seem to support response_format via OpenRouter API
     GEMINI_2_5_FLASH = "google/gemini-2.5-flash"
+    GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
 
 
-class CostTracker:
-    """Tracks API cost by accumulating tokens and fetching pricing from OpenRouter."""
-
-    def __init__(self) -> None:
-        self.input_tokens = 0
-        self.output_tokens = 0
-        self.input_price_per_token: float = 0
-        self.output_price_per_token: float = 0
-
-    async def init_pricing(self, client: OpenRouter, model_id: str) -> None:
-        """Fetch pricing for the model from OpenRouter API."""
-        response = await client.models.list_async()
-        for model in response.data:
-            if model.id == model_id:
-                self.input_price_per_token = float(model.pricing.prompt)
-                self.output_price_per_token = float(model.pricing.completion)
-                return
-        raise ValueError(f"Model {model_id} not found in OpenRouter models")
-
-    def add(self, input_tokens: int, output_tokens: int) -> None:
-        self.input_tokens += input_tokens
-        self.output_tokens += output_tokens
-
-    def cost_usd(self) -> float:
-        return (
-            self.input_tokens * self.input_price_per_token
-            + self.output_tokens * self.output_price_per_token
-        )
-
-
-INTERPRETATION_SCHEMA: dict[str, Any] = {
+INTERPRETATION_SCHEMA = {
     "type": "object",
     "properties": {
         "label": {
@@ -80,6 +73,78 @@ INTERPRETATION_SCHEMA: dict[str, Any] = {
 FAKING_RESPONSES = False
 
 
+@dataclass
+class CostTracker:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    input_price_per_token: float = 0.0
+    output_price_per_token: float = 0.0
+
+    def add(self, input_tokens: int, output_tokens: int) -> None:
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+
+    def cost_usd(self) -> float:
+        return (
+            self.input_tokens * self.input_price_per_token
+            + self.output_tokens * self.output_price_per_token
+        )
+
+
+async def chat_with_retry(
+    client: OpenRouter,
+    model: str,
+    messages: list[MessageTypedDict],
+    response_format: ResponseFormatJSONSchema,
+    max_tokens: int,
+    context_label: str,
+) -> tuple[str, int, int]:
+    """Send chat request with exponential backoff retry. Returns (content, input_tokens, output_tokens)."""
+    last_error: Exception | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = await client.chat.send_async(
+                model=model,
+                max_tokens=max_tokens,
+                messages=messages,
+                response_format=response_format,
+            )
+            message = response.choices[0].message
+            assert isinstance(message.content, str)
+            assert response.usage is not None
+            return (
+                message.content,
+                int(response.usage.prompt_tokens),
+                int(response.usage.completion_tokens),
+            )
+        except RETRYABLE_ERRORS as e:
+            last_error = e
+            if attempt == MAX_RETRIES - 1:
+                break
+
+            delay = min(BASE_DELAY_S * (2**attempt), MAX_DELAY_S)
+            jitter = delay * JITTER_FACTOR * random.random()
+            total_delay = delay + jitter
+
+            tqdm_asyncio.write(
+                f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
+                f"{type(e).__name__}, backing off {total_delay:.1f}s"
+            )
+            await asyncio.sleep(total_delay)
+
+    assert last_error is not None
+    raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")
+
+
+async def get_model_pricing(client: OpenRouter, model_id: str) -> tuple[float, float]:
+    """Returns (input_price, output_price) per token."""
+    response = await client.models.list_async()
+    for model in response.data:
+        if model.id == model_id:
+            return float(model.pricing.prompt), float(model.pricing.completion)
+    raise ValueError(f"Model {model_id} not found")
+
+
 async def interpret_component(
     client: OpenRouter,
     model: str,
@@ -87,27 +152,26 @@ async def interpret_component(
     arch: ArchitectureInfo,
     tokenizer: PreTrainedTokenizerBase,
 ) -> tuple[InterpretationResult, int, int] | None:
-    """Send a single interpretation request. Returns (result, input_tokens, output_tokens)."""
+    """Returns (result, input_tokens, output_tokens), or None on failure."""
     prompt = format_prompt_template(component, arch, tokenizer)
 
     if FAKING_RESPONSES:
-        result = InterpretationResult(
-            component_key=component.component_key,
-            label="The concept of love",
-            confidence="high",
-            reasoning="The component fires when the word 'love' is present in the input.",
-            raw_response="""\
-{
-    "label": "The concept of love",
-    "confidence": "high",
-    "reasoning": "The component fires when the word 'love' is present in the input."
-}""",
+        return (
+            InterpretationResult(
+                component_key=component.component_key,
+                label="The concept of love",
+                confidence="high",
+                reasoning="The component fires when the word 'love' is present in the input.",
+                raw_response='{"label": "The concept of love", "confidence": "high", "reasoning": "..."}',
+            ),
+            0,
+            0,
         )
-        return result, 0, 0
-    else:
-        response = await client.chat.send_async(
+
+    try:
+        raw, in_tok, out_tok = await chat_with_retry(
+            client=client,
             model=model,
-            max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
             response_format=ResponseFormatJSONSchema(
                 json_schema=JSONSchemaConfig(
@@ -116,41 +180,36 @@ async def interpret_component(
                     strict=True,
                 )
             ),
+            max_tokens=300,
+            context_label=component.component_key,
         )
-
-        message = response.choices[0].message
-        assert isinstance(message.content, str), (
-            f"Expected string content, got {type(message.content)}"
-        )
-        raw = message.content
+    except RuntimeError as e:
+        logger.error(str(e))
+        return None
 
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        print(f"Failed to parse JSON: `{raw}`")
+        logger.error(f"Failed to parse JSON: `{raw}`")
         return None
 
-    assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}: {parsed}"
-    assert isinstance(label := (parsed["label"]), str), (
-        f"Expected 'label' to be a string, got {parsed['label']}"
-    )
-    assert isinstance(confidence := (parsed["confidence"]), str), (
-        f"Expected 'confidence' to be a string, got {parsed['confidence']}"
-    )
-    assert isinstance(reasoning := (parsed["reasoning"]), str), (
-        f"Expected 'reasoning' to be a string, got {parsed['reasoning']}"
-    )
+    assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}"
+    label = parsed["label"]
+    confidence = parsed["confidence"]
+    reasoning = parsed["reasoning"]
+    assert isinstance(label, str) and isinstance(confidence, str) and isinstance(reasoning, str)
 
-    result = InterpretationResult(
-        component_key=component.component_key,
-        label=label,
-        confidence=confidence,
-        reasoning=reasoning,
-        raw_response=raw,
+    return (
+        InterpretationResult(
+            component_key=component.component_key,
+            label=label,
+            confidence=confidence,
+            reasoning=reasoning,
+            raw_response=raw,
+        ),
+        in_tok,
+        out_tok,
     )
-
-    assert response.usage is not None, "Expected usage in response"
-    return result, int(response.usage.prompt_tokens), int(response.usage.completion_tokens)
 
 
 async def interpret_all(
@@ -158,19 +217,13 @@ async def interpret_all(
     arch: ArchitectureInfo,
     openrouter_api_key: str,
     interpreter_model: str,
-    max_concurrent: int,
     output_path: Path,
     budget: float | None = None,
 ) -> list[InterpretationResult]:
-    """Interpret all components with bounded concurrency.
-
-    Args:
-        budget: Stop after spending this much. None = unlimited.
-    """
+    """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
     completed = set[str]()
 
-    # Resume: load existing results
     if output_path.exists():
         print(f"Resuming: {output_path} exists")
         with open(output_path) as f:
@@ -180,45 +233,50 @@ async def interpret_all(
                 completed.add(data["component_key"])
         print(f"Resuming: {len(completed)} already completed")
 
-    components_mean_ci_desc = sorted(components, key=lambda c: c.mean_ci, reverse=True)
-    remaining = [c for c in components_mean_ci_desc if c.component_key not in completed]
+    components_sorted = sorted(components, key=lambda c: c.mean_ci, reverse=True)
+    remaining = [c for c in components_sorted if c.component_key not in completed]
     budget_str = f"${budget:.2f} budget" if budget else "unlimited budget"
-    print(f"Interpreting {len(remaining)} components ({max_concurrent} concurrent, {budget_str})")
+    print(f"Interpreting {len(remaining)} components ({budget_str})")
     start_idx = len(results)
 
-    semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
     stop_event = asyncio.Event()
 
+    # Scale jitter window to target ~1000 req/s initial rate
+    initial_jitter_window = len(remaining) / 1000.0
+
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
-    cost_tracker = CostTracker()
 
-    async def process_one(component: ComponentData, index: int, client: OpenRouter) -> None:
-        # Check if we should stop before acquiring semaphore
+    async def process_one(
+        component: ComponentData,
+        index: int,
+        client: OpenRouter,
+        cost_tracker: CostTracker,
+    ) -> None:
         if stop_event.is_set():
             return
 
-        async with semaphore:
-            # Check again after acquiring (budget may have been exceeded while waiting)
+        # Stagger initial requests to avoid thundering herd
+        await asyncio.sleep(random.random() * initial_jitter_window)
+
+        res = await interpret_component(client, interpreter_model, component, arch, tokenizer)
+        if res is None:
+            logger.error(f"Failed to interpret {component.component_key}")
+            return
+        result, in_tok, out_tok = res
+
+        async with output_lock:
             if stop_event.is_set():
                 return
 
-            res = await interpret_component(client, interpreter_model, component, arch, tokenizer)
-            if res is None:
-                logger.error(f"Failed to interpret component {component.component_key}")
-                return
-            result, in_tok, out_tok = res
-
-        async with output_lock:
             results.append(result)
             with open(output_path, "a") as f:
                 f.write(json.dumps(asdict(result)) + "\n")
             cost_tracker.add(in_tok, out_tok)
 
-            # Check budget and stop if exceeded
             current_cost = cost_tracker.cost_usd()
-            if budget is not None and current_cost >= budget and not stop_event.is_set():
+            if budget is not None and current_cost >= budget:
                 tqdm_asyncio.write(f"Budget exhausted: ${current_cost:.2f} >= ${budget:.2f}")
                 stop_event.set()
 
@@ -228,15 +286,18 @@ async def interpret_all(
                 )
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
-        await cost_tracker.init_pricing(client, interpreter_model)
-        print(
-            f"Pricing: ${cost_tracker.input_price_per_token * 1e6:.2f}/M input, "
-            f"${cost_tracker.output_price_per_token * 1e6:.2f}/M output"
+        input_price, output_price = await get_model_pricing(client, interpreter_model)
+        cost_tracker = CostTracker(
+            input_price_per_token=input_price, output_price_per_token=output_price
         )
+        print(f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output")
 
         await tqdm_asyncio.gather(
-            *[process_one(c, index, client) for index, c in enumerate(remaining, start=start_idx)],
-            desc="Interpreting components",
+            *[
+                process_one(c, i, client, cost_tracker)
+                for i, c in enumerate(remaining, start=start_idx)
+            ],
+            desc="Interpreting",
         )
 
     print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
@@ -244,14 +305,13 @@ async def interpret_all(
 
 
 def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
-    """Load architecture info from run info."""
     run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info)
     n_blocks = get_model_n_blocks(model.target_model)
     config = run_info.config
     task_config = config.task_config
     assert isinstance(task_config, LMTaskConfig)
-    assert config.tokenizer_name is not None, "tokenizer_name is required"
+    assert config.tokenizer_name is not None
     return ArchitectureInfo(
         n_blocks=n_blocks,
         c=model.C,
@@ -265,40 +325,17 @@ def run_interpret(
     wandb_path: str,
     openrouter_api_key: str,
     interpreter_model: str,
-    max_concurrent: int,
     activation_contexts_dir: Path,
     autointerp_dir: Path,
     budget: float | None = None,
 ) -> list[InterpretationResult]:
-    """Main entrypoint: load harvest, interpret all components, save results."""
     arch = get_architecture_info(wandb_path)
-
-    components, _ = HarvestResult.load_components(activation_contexts_dir)
-
+    components = HarvestResult.load_components(activation_contexts_dir)
     output_path = autointerp_dir / "results.jsonl"
 
     results = asyncio.run(
-        interpret_all(
-            components,
-            arch,
-            openrouter_api_key,
-            interpreter_model,
-            max_concurrent,
-            output_path,
-            budget,
-        )
+        interpret_all(components, arch, openrouter_api_key, interpreter_model, output_path, budget)
     )
 
     print(f"Completed {len(results)} interpretations -> {output_path}")
-    return results
-
-
-def load_interpretations(out_dir: Path) -> list[InterpretationResult]:
-    """Load interpretation results from disk."""
-    output_path = out_dir / "results.jsonl"
-    assert output_path.exists(), f"No interpretations found at {output_path}"
-    results: list[InterpretationResult] = []
-    with open(output_path) as f:
-        for line in f:
-            results.append(InterpretationResult(**json.loads(line)))
     return results

@@ -9,7 +9,7 @@ Usage (SLURM submission):
 
 import os
 
-from spd.autointerp.interpret import OpenRouterModelName
+from spd.autointerp.interpret import OpenRouterModelName, run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.schemas import get_activation_contexts_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
@@ -17,19 +17,16 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    model: OpenRouterModelName = OpenRouterModelName.GEMINI_2_5_FLASH,
-    max_concurrent: int = 20,
-    budget_usd: float | None = None,
+    budget_usd: float | None,
+    model: OpenRouterModelName,
 ) -> None:
     """Interpret harvested components.
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
         model: OpenRouter model to use for interpretation.
-        max_concurrent: Maximum concurrent API requests.
         budget_usd: Stop after spending this much (USD). None = unlimited.
     """
-    from spd.autointerp.interpret import run_interpret
 
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
@@ -48,7 +45,6 @@ def main(
         wandb_path,
         openrouter_api_key,
         model,
-        max_concurrent,
         activation_contexts_dir,
         autointerp_dir,
         budget_usd,

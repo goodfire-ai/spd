@@ -383,13 +383,9 @@ class HarvestResult:
         self.token_stats.save(correlations_dir / "token_stats.pt")
 
     @staticmethod
-    def load_components(activation_contexts_dir: Path) -> tuple[list[ComponentData], HarvestConfig]:
+    def load_components(activation_contexts_dir: Path) -> list[ComponentData]:
         """Load components from disk."""
         assert activation_contexts_dir.exists(), f"No harvest found at {activation_contexts_dir}"
-
-        config_path = activation_contexts_dir / "config.json"
-        config_data = json.loads(config_path.read_text())
-        config = HarvestConfig(**config_data)
 
         components_path = activation_contexts_dir / "components.jsonl"
         components = []
@@ -403,7 +399,7 @@ class HarvestResult:
                 data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
                 components.append(ComponentData(**data))
 
-        return components, config
+        return components
 
 
 def _build_harvest_result(

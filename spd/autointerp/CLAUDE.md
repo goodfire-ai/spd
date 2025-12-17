@@ -20,11 +20,10 @@ python -m spd.autointerp.scripts.run_autointerp harvest <wandb_path> \
     --context_length 512
 
 # Interpret - get Claude labels
-python -m spd.autointerp.scripts.run_autointerp interpret <wandb_path> \
-    --max_concurrent 50
+python -m spd.autointerp.scripts.run_autointerp interpret <wandb_path>
 ```
 
-Requires `ANTHROPIC_API_KEY` env var for interpret phase.
+Requires `OPENROUTER_API_KEY` env var for interpret phase.
 
 ## Data Storage
 
@@ -59,8 +58,8 @@ Key optimizations:
 
 ### Interpret (`interpret.py`)
 
-- Uses Anthropic SDK with structured outputs beta for guaranteed JSON schema
-- Async with bounded concurrency (`asyncio.Semaphore`)
+- Uses OpenRouter API with structured JSON outputs
+- Maximum parallelism with exponential backoff on rate limits
 - Resume support: Skips already-completed components on restart
 - Progress bar via `tqdm_asyncio`
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from spd.autointerp.interpret import OpenRouterModelName
 from spd.log import logger
-from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
+from spd.settings import REPO_ROOT
 
 
 def _generate_job_id() -> str:
@@ -36,20 +36,18 @@ def _submit_slurm_job(script_content: str, script_path: Path) -> str:
     return job_id
 
 
-def interpret(
+def launch_interpret_job(
     wandb_path: str,
-    model: OpenRouterModelName = OpenRouterModelName.GEMINI_2_5_FLASH,
-    max_concurrent: int = 20,
-    budget_usd: float | None = None,
-    partition: str = DEFAULT_PARTITION_NAME,
-    time: str = "12:00:00",
+    model: OpenRouterModelName,
+    budget_usd: float | None,
+    partition: str,
+    time: str,
 ) -> None:
     """Submit interpret job to SLURM (CPU-only, IO-bound).
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
         model: OpenRouter model to use for interpretation.
-        max_concurrent: Maximum concurrent API requests.
         budget_usd: Stop after spending this much (USD). None = unlimited.
         partition: SLURM partition name.
         time: Job time limit.
@@ -68,7 +66,6 @@ def interpret(
         "python -m spd.autointerp.scripts.run_interpret",
         f'"{wandb_path}"',
         f"--model {model.value}",
-        f"--max_concurrent {max_concurrent}",
     ]
     if budget_usd is not None:
         cmd_parts.append(f"--budget_usd {budget_usd}")
@@ -91,7 +88,6 @@ set -euo pipefail
 echo "=== Interpret ==="
 echo "WANDB_PATH: {wandb_path}"
 echo "MODEL: {model.value}"
-echo "MAX_CONCURRENT: {max_concurrent}"
 echo "BUDGET: {budget_str}"
 echo "SLURM_JOB_ID: $SLURM_JOB_ID"
 echo "================="
@@ -127,7 +123,6 @@ echo "Interpret complete!"
             "Job ID": slurm_job_id,
             "WandB path": wandb_path,
             "Model": model.value,
-            "Max concurrent": max_concurrent,
             "Budget USD": budget_usd,
             "Log": f"~/slurm_logs/slurm-{slurm_job_id}.out",
             "Script": str(final_script_path),
