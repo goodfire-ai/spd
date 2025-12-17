@@ -1,4 +1,5 @@
 <script lang="ts">
+    import type { Loadable } from "../lib";
     import type { SubcomponentActivationContexts, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
     import {
@@ -29,20 +30,16 @@
     let currentPage = $state(0);
     let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
 
-    let componentCache = $state<Record<string, SubcomponentActivationContexts>>({});
-    let loadingComponent = $state(false);
+    let componentCache = $state<Record<string, Loadable<SubcomponentActivationContexts>>>({});
 
     // Correlations state
-    let correlations = $state<ComponentCorrelations | null>(null);
-    let correlationsLoading = $state(false);
+    let correlations = $state<Loadable<ComponentCorrelations>>(null);
 
     // Token stats state (from batch job)
-    let tokenStats = $state<TokenStats | null>(null);
-    let tokenStatsLoading = $state(false);
+    let tokenStats = $state<Loadable<TokenStats>>(null);
 
     // Interpretation state
-    let interpretation = $state<Interpretation | null>(null);
-    let interpretationLoading = $state(false);
+    let interpretation = $state<Loadable<Interpretation>>(null);
 
     // Layer metadata is already sorted by mean_ci desc from backend
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
@@ -55,7 +52,8 @@
 
     let currentComponent = $derived.by(() => {
         const cacheKey = getCacheKey(selectedLayer, currentMetadata.subcomponent_idx);
-        return componentCache[cacheKey];
+        $inspect(componentCache[cacheKey]);
+        return componentCache[cacheKey] ?? null;
     });
 
     function handlePageInput(event: Event) {
@@ -119,19 +117,19 @@
         const cacheKey = getCacheKey(layer, meta.subcomponent_idx);
 
         // skip if already cached
-        if (componentCache[cacheKey]) return;
+        if (componentCache[cacheKey]?.status === "loaded") return;
 
         let cancelled = false;
-        loadingComponent = true;
+        componentCache[cacheKey] = { status: "loading" };
 
         const load = async () => {
             try {
                 const detail = await api.getComponentDetail(layer, meta.subcomponent_idx);
 
                 if (cancelled) return;
-                componentCache[cacheKey] = detail;
-            } finally {
-                if (!cancelled) loadingComponent = false;
+                componentCache[cacheKey] = { status: "loaded", data: detail };
+            } catch (error) {
+                if (!cancelled) componentCache[cacheKey] = { status: "error", error };
             }
         };
 
@@ -148,14 +146,17 @@
         const cIdx = currentMetadata?.subcomponent_idx;
         if (cIdx === undefined) return;
 
-        correlations = null;
-        correlationsLoading = true;
+        correlations = { status: "loading" };
         getComponentCorrelations(layer, cIdx, 1000)
             .then((data) => {
-                correlations = data;
+                if (data != null) {
+                    correlations = { status: "loaded", data };
+                } else {
+                    correlations = { status: "error", error: "No correlations found" };
+                }
             })
-            .finally(() => {
-                correlationsLoading = false;
+            .catch((error) => {
+                correlations = { status: "error", error };
             });
     });
 
@@ -165,14 +166,17 @@
         const cIdx = currentMetadata?.subcomponent_idx;
         if (cIdx === undefined) return;
 
-        tokenStats = null;
-        tokenStatsLoading = true;
+        tokenStats = { status: "loading" };
         getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
-                tokenStats = data;
+                if (data != null) {
+                    tokenStats = { status: "loaded", data };
+                } else {
+                    tokenStats = { status: "error", error: "No token stats found" };
+                }
             })
-            .finally(() => {
-                tokenStatsLoading = false;
+            .catch((error) => {
+                tokenStats = { status: "error", error };
             });
     });
 
@@ -182,37 +186,40 @@
         const cIdx = currentMetadata?.subcomponent_idx;
         if (cIdx === undefined) return;
 
-        interpretation = null;
-        interpretationLoading = true;
+        interpretation = { status: "loading" };
         getComponentInterpretation(layer, cIdx)
             .then((data) => {
-                interpretation = data;
+                if (data != null) {
+                    interpretation = { status: "loaded", data };
+                } else {
+                    interpretation = { status: "error", error: "No interpretation found" };
+                }
             })
-            .finally(() => {
-                interpretationLoading = false;
+            .catch((error) => {
+                interpretation = { status: "error", error };
             });
     });
 
     // === Input token stats (what tokens activate this component) ===
     let inputTopRecall = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.input.top_recall.map(([token, value]) => ({ token, value }));
+        if (tokenStats?.status !== "loaded") return [];
+        return tokenStats.data.input.top_recall.map(([token, value]) => ({ token, value }));
     });
 
     let inputTopPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.input.top_pmi.map(([token, value]) => ({ token, value }));
+        if (tokenStats?.status !== "loaded") return [];
+        return tokenStats.data.input.top_pmi.map(([token, value]) => ({ token, value }));
     });
 
     // === Output token stats (what tokens this component predicts) ===
     let outputTopPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.output.top_pmi.map(([token, value]) => ({ token, value }));
+        if (tokenStats?.status !== "loaded") return [];
+        return tokenStats.data.output.top_pmi.map(([token, value]) => ({ token, value }));
     });
 
     let outputBottomPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.output.bottom_pmi.map(([token, value]) => ({ token, value }));
+        if (tokenStats?.status !== "loaded") return [];
+        return tokenStats.data.output.bottom_pmi.map(([token, value]) => ({ token, value }));
     });
 
     // Format mean CI for display
@@ -263,21 +270,25 @@
         </div>
     </div>
 
-    {#if loadingComponent}
+    {#if currentComponent?.status === "loading"}
         <div class="loading">Loading component data...</div>
-    {:else if currentComponent && currentMetadata}
+    {:else if currentComponent?.status === "error"}
+        <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
+    {:else if currentComponent === null}
+        <StatusText>Something went wrong loading component data.</StatusText>
+    {:else}
         <div class="component-section">
             <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
                 <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
             </SectionHeader>
 
-            <InterpretationBadge {interpretation} loading={interpretationLoading} />
+            <InterpretationBadge {interpretation} />
 
             <div class="token-stats-row">
                 <TokenStatsSection
                     sectionTitle="Input Tokens"
                     sectionSubtitle="(what activates this component)"
-                    loading={tokenStatsLoading}
+                    loading={tokenStats?.status === "loading"}
                     lists={[
                         {
                             title: "Top PMI",
@@ -290,7 +301,7 @@
                 <TokenStatsSection
                     sectionTitle="Output Tokens"
                     sectionSubtitle="(what this component predicts)"
-                    loading={tokenStatsLoading}
+                    loading={tokenStats?.status === "loading"}
                     lists={[
                         {
                             title: "Top PMI",
@@ -311,21 +322,25 @@
             <!-- Component correlations -->
             <div class="correlations-section">
                 <SectionHeader title="Correlated Components" />
-                {#if correlations}
-                    <ComponentCorrelationMetrics {correlations} pageSize={40} />
-                {:else if correlationsLoading}
+                {#if correlations?.status === "loaded"}
+                    <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
+                {:else if correlations?.status === "loading"}
                     <StatusText>Loading...</StatusText>
+                {:else if correlations?.status === "error"}
+                    <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
                 {:else}
                     <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
                 {/if}
             </div>
 
-            <ActivationContextsPagedTable
-                exampleTokens={currentComponent.example_tokens}
-                exampleCi={currentComponent.example_ci}
-                exampleActivePos={currentComponent.example_active_pos}
-                activatingTokens={inputTopRecall.map(({ token }) => token)}
-            />
+            {#if currentComponent?.status === "loaded"}
+                <ActivationContextsPagedTable
+                    exampleTokens={currentComponent.data.example_tokens}
+                    exampleCi={currentComponent.data.example_ci}
+                    exampleActivePos={currentComponent.data.example_active_pos}
+                    activatingTokens={inputTopRecall.map(({ token }) => token)}
+                />
+            {/if}
         </div>
     {/if}
 </div>

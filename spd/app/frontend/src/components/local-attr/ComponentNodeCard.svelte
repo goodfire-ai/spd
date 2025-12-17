@@ -193,10 +193,7 @@
         {/if}
     </SectionHeader>
 
-    <InterpretationBadge
-        interpretation={interpretation?.status === "loaded" ? interpretation.data : null}
-        loading={interpretation?.status === "loading"}
-    />
+    <InterpretationBadge {interpretation} />
 
     <ComponentProbeInput {layer} componentIdx={cIdx} />
 

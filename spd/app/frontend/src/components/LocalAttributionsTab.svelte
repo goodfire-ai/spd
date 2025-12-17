@@ -37,7 +37,7 @@
     let { activationContextsSummary }: Props = $props();
 
     // Server state
-    let loadedRun = $state<mainApi.LoadedRun | null>(null);
+    let loadedRun = $state<mainApi.RunState | null>(null);
     let serverError = $state<string | null>(null);
 
     // Available prompts (for picker)

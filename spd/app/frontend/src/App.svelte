@@ -1,57 +1,56 @@
 <script lang="ts">
-    // import { RenderScan } from "svelte-render-scan";
-    import type { LoadedRun } from "./lib/api";
+    import type { RunState } from "./lib/api";
     import * as api from "./lib/api";
     import * as attrApi from "./lib/localAttributionsApi";
     import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
     import { CANONICAL_RUNS, formatRunIdForDisplay } from "./lib/registry";
 
+    import { onMount } from "svelte";
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./components/ui/DisplaySettingsDropdown.svelte";
-    import { onMount } from "svelte";
-
-    let loadingTrainRun = $state(false);
+    import type { Loadable } from "./lib";
 
     /** can be a wandb run path, or id. we sanitize this on sumbit */
     let trainWandbRunEntry = $state<string | null>(CANONICAL_RUNS[0].wandbRunId);
     let contextLength = $state<number | null>(512);
 
-    let loadedRun = $state<LoadedRun | null>(null);
-    let backendError = $state<string | null>(null);
-    let backendUser = $state<string | null>(null);
+    let runState = $state<Loadable<RunState | null>>(null);
+    let backendUser = $state<Loadable<string>>(null);
 
     // Lifted activation contexts state - shared between tabs
     let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
 
     async function loadStatus() {
-        if (loadingTrainRun) return;
+        if (runState?.status === "loading") return;
         try {
             const newLoadedRun = await api.getStatus();
-            loadingTrainRun = false;
 
             // if we have a run, but the backend says null, then we're out of sync (backend likely restarted)
             // in this case, we keep the local state so the user can still see what they were looking at
-            if (loadedRun && !newLoadedRun) {
-                backendError = "Backend state lost (restarted). Showing cached view.";
+            if (runState?.status === "loaded" && !newLoadedRun) {
+                runState = { status: "error", error: "Backend state lost (restarted). Showing cached view." };
                 return;
             }
 
             // otherwise, we update the status
-            loadedRun = newLoadedRun;
-            backendError = null;
+            runState = { status: "loaded", data: newLoadedRun };
 
-            if (!loadedRun) return;
-            trainWandbRunEntry = loadedRun.wandb_path;
-            contextLength = loadedRun.context_length;
+            if (runState?.data === null) {
+                // there is a valid state, but it's "no loaded run"
+                return;
+            }
+
+            trainWandbRunEntry = runState.data.wandb_path;
+            contextLength = runState.data.context_length;
 
             // Load activation contexts summary
             loadActivationContextsSummary();
         } catch (error) {
             console.error("error loading status", error);
             // if the backend is down, we keep the local state
-            backendError = "Backend unreachable. Showing cached view.";
+            runState = { status: "error", error: "Backend unreachable. Showing cached view." };
         }
     }
 
@@ -70,20 +69,16 @@
         event.preventDefault();
         const input = trainWandbRunEntry?.trim();
         if (!input || !contextLength) return;
-        try {
-            loadingTrainRun = true;
-            loadedRun = null;
-            await api.loadRun(input, contextLength);
-        } finally {
-            // Set loading false before calling loadStatus, otherwise the guard returns early
-            loadingTrainRun = false;
-        }
+        runState = { status: "loading" };
+        // load a run into backend state
+        await api.loadRun(input, contextLength);
+        // fetch the new state
         await loadStatus();
     }
 
     onMount(() => {
         loadStatus();
-        api.getWhoami().then((user) => (backendUser = user));
+        api.getWhoami().then((user) => (backendUser = { status: "loaded", data: user }));
     });
 
     let activeTab = $state<"prompts" | "components" | "dataset-search" | null>(null);
@@ -96,7 +91,6 @@
     }
 </script>
 
-<!-- <RenderScan /> -->
 <div class="app-layout">
     <header class="top-bar">
         <span class="backend-user">user: {backendUser ?? "..."}</span>
@@ -109,7 +103,7 @@
                     list="run-options"
                     placeholder="e.g. goodfire/spd/runs/33n6xjjt"
                     bind:value={trainWandbRunEntry}
-                    disabled={loadingTrainRun}
+                    disabled={runState?.status === "loading"}
                 />
                 <div
                     class="registry-wrapper"
@@ -142,12 +136,16 @@
                 type="number"
                 id="context-length"
                 bind:value={contextLength}
-                disabled={loadingTrainRun}
+                disabled={runState?.status === "loading"}
                 min="1"
                 max="2048"
             />
-            <button class="load-button" type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
-                {loadingTrainRun ? "..." : "Load"}
+            <button
+                class="load-button"
+                type="submit"
+                disabled={runState?.status === "loading" || !trainWandbRunEntry?.trim()}
+            >
+                {runState?.status === "loading" ? "Loading..." : "Load"}
             </button>
         </form>
     </header>
@@ -161,7 +159,7 @@
             >
                 Dataset Search
             </button>
-            {#if loadedRun}
+            {#if runState}
                 <button
                     class="tab-button"
                     class:active={activeTab === "prompts"}
@@ -179,7 +177,7 @@
             {/if}
         </div>
         <div class="tab-bar-right">
-            {#if loadedRun}
+            {#if runState?.status === "loaded" && runState.data !== null}
                 <div
                     class="config-wrapper"
                     role="group"
@@ -189,7 +187,7 @@
                     <button type="button" class="config-button">Config</button>
                     {#if showConfig}
                         <div class="config-dropdown">
-                            <pre>{loadedRun.config_yaml}</pre>
+                            <pre>{runState.data.config_yaml}</pre>
                         </div>
                     {/if}
                 </div>
@@ -199,16 +197,16 @@
     </nav>
 
     <main class="main-content">
-        {#if backendError}
+        {#if runState?.status === "error"}
             <div class="warning-banner">
-                {backendError}
+                {runState.error}
             </div>
         {/if}
         <!-- Dataset Search tab - always available, doesn't require loaded run -->
         <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
             <DatasetSearchTab />
         </div>
-        {#if loadedRun}
+        {#if runState?.status === "loaded"}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>
                 <LocalAttributionsTab {activationContextsSummary} />
@@ -216,7 +214,7 @@
             <div class="tab-content" class:hidden={activeTab !== "components"}>
                 <ActivationContextsTab {activationContextsSummary} />
             </div>
-        {:else if loadingTrainRun}
+        {:else if runState?.status === "loading"}
             <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
                 <p>Loading run...</p>
             </div>

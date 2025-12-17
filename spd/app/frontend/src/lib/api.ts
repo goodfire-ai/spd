@@ -1,7 +1,7 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:8000";
 
-export type LoadedRun = {
+export type RunState = {
     id: number;
     wandb_path: string;
     config_yaml: string;
@@ -12,7 +12,7 @@ export type LoadedRun = {
     backend_user: string;
 };
 
-export async function getStatus(): Promise<LoadedRun | null> {
+export async function getStatus(): Promise<RunState | null> {
     const response = await fetch(`${API_URL}/api/status`);
     const data = await response.json();
     return data;

@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { ActivationContextsSummary } from "../lib/localAttributionsTypes";
-    import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
+    // import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
     interface Props {
         activationContextsSummary: ActivationContextsSummary | null;
@@ -17,7 +17,9 @@
             <code>python -m spd.autointerp.scripts.run_autointerp harvest &lt;wandb_path&gt;</code>
         </div>
     {:else}
-        <ActivationContextsViewer harvestMetadata={{ layers: activationContextsSummary }} />
+        broken 😭
+
+        <!-- <ActivationContextsViewer harvestMetadata={{ layers: activationContextsSummary }} /> -->
     {/if}
 </div>
 

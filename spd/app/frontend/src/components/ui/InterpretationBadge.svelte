@@ -1,24 +1,26 @@
 <script lang="ts">
+    import type { Loadable } from "../../lib";
     import type { Interpretation } from "../../lib/localAttributionsApi";
 
     interface Props {
-        interpretation: Interpretation | null;
-        loading?: boolean;
+        interpretation: Loadable<Interpretation>;
     }
 
-    let { interpretation, loading = false }: Props = $props();
+    let { interpretation }: Props = $props();
 </script>
 
-{#if interpretation}
-    <div class="interpretation-badge" title={interpretation.reasoning}>
-        <span class="interpretation-label">{interpretation.label}</span>
-        <span class="confidence confidence-{interpretation.confidence}">{interpretation.confidence}</span>
-    </div>
-{:else if loading}
-    <div class="interpretation-badge loading">
+<div class="interpretation-badge">
+    {#if interpretation?.status === "loaded"}
+        <span class="interpretation-label">{interpretation.data.label}</span>
+        <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
+    {:else if interpretation?.status === "loading"}
         <span class="interpretation-label">Loading interpretation...</span>
-    </div>
-{/if}
+    {:else if interpretation?.status === "error"}
+        <span class="interpretation-label">{interpretation.error}</span>
+    {:else}
+        <span class="interpretation-label">Something went wrong</span>
+    {/if}
+</div>
 
 <style>
     .interpretation-badge {
