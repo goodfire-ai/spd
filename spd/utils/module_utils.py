@@ -1,9 +1,8 @@
-from __future__ import annotations
-
 import fnmatch
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal, Protocol
 
 import torch
 import torch.nn as nn
@@ -12,13 +11,16 @@ from torch import Tensor
 from torch.nn.init import calculate_gain
 
 
+class ModulePatternInfo(Protocol):
+    """Protocol for objects with module_pattern and C attributes."""
+
+    module_pattern: str
+    C: int
+
+
 @dataclass
 class ModulePathInfo:
-    """Expanded module path with its number of components.
-
-    Created by expanding ModulePatternInfoConfig patterns against actual module names
-    in the target model. Used internally after pattern expansion.
-    """
+    """Path to a module (e.g. "h.1.attn.k_proj") and its associated number of components."""
 
     module_path: str
     C: int
@@ -75,40 +77,30 @@ def replace_std_values_in_layernorm(
         module.std = std
 
 
-def expand_module_patterns(model: nn.Module, module_info: list[Any]) -> list[ModulePathInfo]:
-    """Expand module patterns to concrete module paths with their C values.
-
-    For modules matching multiple patterns, the most specific pattern wins
-    (fewest wildcards). Equal specificity is an error.
-    """
-    # module -> (wildcard_count, pattern, C)
-    module_to_info: dict[str, tuple[int, str, int]] = {}
+def expand_module_patterns(
+    model: nn.Module, module_info: Sequence[ModulePatternInfo]
+) -> list[ModulePathInfo]:
+    """Expand module patterns to concrete module paths with their C values."""
+    module_to_info: dict[str, tuple[str, int]] = {}  # module_path -> (pattern, C)
 
     for info in module_info:
         pattern = info.module_pattern
         c = info.C
-        wildcard_count = pattern.count("*")
         matched_any = False
 
         for name, _ in model.named_modules():
             if fnmatch.fnmatch(name, pattern):
                 matched_any = True
 
-                if name not in module_to_info:
-                    module_to_info[name] = (wildcard_count, pattern, c)
-                else:
-                    current_wc, current_pattern, _ = module_to_info[name]
-                    if wildcard_count == current_wc:
-                        raise ValueError(
-                            f"Module '{name}' matches patterns '{current_pattern}' and '{pattern}' "
-                            f"with equal specificity ({wildcard_count} wildcards). "
-                            "Use more specific patterns to resolve the conflict."
-                        )
-                    # More specific (fewer wildcards) wins
-                    if wildcard_count < current_wc:
-                        module_to_info[name] = (wildcard_count, pattern, c)
+                if name in module_to_info:
+                    existing_pattern, _ = module_to_info[name]
+                    raise ValueError(
+                        f"Module '{name}' matches multiple patterns: "
+                        f"'{existing_pattern}' and '{pattern}'"
+                    )
+                module_to_info[name] = (pattern, c)
 
         if not matched_any:
             raise ValueError(f"Pattern '{pattern}' in module_info did not match any modules")
 
-    return [ModulePathInfo(module_path=name, C=c) for name, (_, _, c) in module_to_info.items()]
+    return [ModulePathInfo(module_path=name, C=c) for name, (_, c) in module_to_info.items()]

@@ -94,7 +94,6 @@ class ComponentModel(LoadableModule):
         self.target_model = target_model
         self.pretrained_model_output_attr = pretrained_model_output_attr
 
-        # Build module_to_c mapping from ModulePathInfo list
         self.module_to_c = {info.module_path: info.C for info in module_path_info}
         self.target_module_paths = list(self.module_to_c.keys())
 
@@ -236,10 +235,10 @@ class ComponentModel(LoadableModule):
         for target_module_path, target_module_c in module_to_c.items():
             target_module = target_model.get_submodule(target_module_path)
             ci_fns[target_module_path] = ComponentModel._create_ci_fn(
-                target_module,
-                target_module_c,
-                ci_fn_type,
-                ci_fn_hidden_dims,
+                target_module=target_module,
+                component_C=target_module_c,
+                ci_fn_type=ci_fn_type,
+                ci_fn_hidden_dims=ci_fn_hidden_dims,
             )
         return ci_fns
 
@@ -463,7 +462,6 @@ class ComponentModel(LoadableModule):
                 identity_module_info=config.identity_module_info,
             )
 
-        # Expand module patterns to concrete module paths
         module_path_info = expand_module_patterns(target_model, config.all_module_info)
 
         comp_model = ComponentModel(

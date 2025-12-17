@@ -14,6 +14,14 @@ import pytest
 from spd.scripts.run import _create_training_jobs, _get_experiments
 
 
+def get_c_for_pattern(config: Any, pattern: str) -> int:
+    """Get C value for a specific module pattern."""
+    for info in config.module_info:
+        if info.module_pattern == pattern:
+            return info.C
+    raise ValueError(f"Pattern {pattern} not found")
+
+
 class TestSPDRun:
     """Test spd-run command execution."""
 
@@ -87,20 +95,13 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
-        def get_c_for_pattern(config: Any, pattern: str) -> int:
-            """Get C value for a specific module pattern."""
-            for info in config.module_info:
-                if info.module_pattern == pattern:
-                    return info.C
-            raise ValueError(f"Pattern {pattern} not found")
-
         def there_is_one_with(lr: float, linear1_c: int, linear2_c: int) -> bool:
             matching = [
-                c
-                for c in configs
-                if c.lr == lr
-                and get_c_for_pattern(c, "linear1") == linear1_c
-                and get_c_for_pattern(c, "linear2") == linear2_c
+                cfg
+                for cfg in configs
+                if cfg.lr == lr
+                and get_c_for_pattern(cfg, "linear1") == linear1_c
+                and get_c_for_pattern(cfg, "linear2") == linear2_c
             ]
             return len(matching) == 1
 
@@ -143,13 +144,6 @@ class TestSPDRun:
         # Separate jobs by experiment
         tms_5_2_jobs = [j for j in training_jobs if "tms_5-2" in j.experiment]
         tms_40_10_jobs = [j for j in training_jobs if "tms_40-10" in j.experiment]
-
-        def get_c_for_pattern(config: Any, pattern: str) -> int:
-            """Get C value for a specific module pattern."""
-            for info in config.module_info:
-                if info.module_pattern == pattern:
-                    return info.C
-            raise ValueError(f"Pattern {pattern} not found")
 
         # tms_5-2: 2 jobs (C=10, C=20 for linear1)
         # tms_40-10: 2 jobs (C=100, C=200 for linear1)

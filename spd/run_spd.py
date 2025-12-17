@@ -148,7 +148,6 @@ def optimize(
 
     target_model.requires_grad_(False)
 
-    # Expand module patterns to concrete module paths
     module_path_info = expand_module_patterns(target_model, config.all_module_info)
 
     model = ComponentModel(

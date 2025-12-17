@@ -536,78 +536,31 @@ class Config(BaseConfig):
 
     @classmethod
     def _migrate_to_module_info(cls, config_dict: dict[str, Any]) -> None:
-        """Migrate old config format to new ModulePatternInfoConfig format.
-
-        Modifies config_dict in place.
-
-        Handles migration from:
-        - Old format: target_module_patterns as list of strings + global C
-        To:
-        - New format: module_info as list of {module_pattern, C} dicts
-        """
-        # Check if already in new format
+        """Migrate old config format (C + target_module_patterns) to new module_info format."""
         if "module_info" in config_dict:
-            # Already in new format, just remove any deprecated keys
             config_dict.pop("C", None)
             config_dict.pop("target_module_patterns", None)
             config_dict.pop("identity_module_patterns", None)
             return
 
+        if "C" not in config_dict:
+            return
+
+        logger.warning("Found 'C', mapping old structure to new module_info structure")
+        global_c = config_dict["C"]
         target_patterns = config_dict.get("target_module_patterns", [])
-        identity_patterns = config_dict.get("identity_module_patterns")
-        global_c = config_dict.get("C")
 
-        if not target_patterns:
-            raise ValueError(
-                "module_info is required. "
-                "Example: module_info: [{module_pattern: 'layer.*', C: 20}]"
-            )
+        config_dict["module_info"] = [{"module_pattern": p, "C": global_c} for p in target_patterns]
 
-        # Old format requires global C
-        if global_c is None:
-            raise ValueError(
-                "When using deprecated target_module_patterns, "
-                "you must specify a global 'C' value. "
-                "Please update to new format: module_info: [{module_pattern: 'pattern', C: 20}]"
-            )
+        if config_dict.get("identity_module_patterns") is not None:
+            config_dict["identity_module_info"] = [
+                {"module_pattern": p, "C": global_c}
+                for p in config_dict["identity_module_patterns"]
+            ]
+            config_dict.pop("identity_module_patterns", None)
 
-        # Convert target_module_patterns to module_info
-        module_info: list[dict[str, Any]] = []
-        for pattern in target_patterns:
-            if not isinstance(pattern, str):
-                raise ValueError(
-                    f"Unrecognized target_module_patterns format: {target_patterns}. "
-                    "Use module_info: [{module_pattern: '...', C: ...}]"
-                )
-            module_info.append({"module_pattern": pattern, "C": global_c})
-
-        logger.warning(
-            f"Converted deprecated target_module_patterns with global C={global_c}. "
-            "Please update to: module_info: [{module_pattern: '...', C: ...}]"
-        )
-        config_dict["module_info"] = module_info
-
-        # Convert identity_module_patterns if present
-        if identity_patterns:
-            identity_module_info: list[dict[str, Any]] = []
-            for pattern in identity_patterns:
-                if not isinstance(pattern, str):
-                    raise ValueError(
-                        f"Unrecognized identity_module_patterns format: {identity_patterns}. "
-                        "Use identity_module_info: [{module_pattern: '...', C: ...}]"
-                    )
-                identity_module_info.append({"module_pattern": pattern, "C": global_c})
-
-            config_dict["identity_module_info"] = identity_module_info
-            logger.warning(
-                "Converted deprecated identity_module_patterns format. "
-                "Please update to: identity_module_info: [{module_pattern: '...', C: ...}]"
-            )
-
-        # Clean up deprecated keys
-        config_dict.pop("C", None)
+        del config_dict["C"]
         config_dict.pop("target_module_patterns", None)
-        config_dict.pop("identity_module_patterns", None)
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
