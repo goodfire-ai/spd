@@ -20,11 +20,19 @@ class LMTaskConfig(BaseConfig):
     )
     dataset_name: str = Field(
         default="lennart-finke/SimpleStories",
-        description="HuggingFace dataset identifier to use for the LM task",
+        description="HuggingFace dataset identifier to use for training",
+    )
+    eval_dataset_name: str | None = Field(
+        default=None,
+        description="HuggingFace dataset identifier for evaluation. If None, uses dataset_name.",
     )
     column_name: str = Field(
         default="story",
         description="Dataset column that contains the text to train on",
+    )
+    eval_column_name: str | None = Field(
+        default=None,
+        description="Dataset column for evaluation. If None, uses column_name.",
     )
     train_data_split: str = Field(
         default="train",
@@ -45,5 +53,9 @@ class LMTaskConfig(BaseConfig):
     )
     streaming: bool = Field(
         default=False,
-        description="Whether to use a streaming dataset",
+        description="Whether to use a streaming dataset for training",
+    )
+    eval_streaming: bool | None = Field(
+        default=None,
+        description="Whether to use streaming for eval dataset. If None, uses streaming.",
     )
