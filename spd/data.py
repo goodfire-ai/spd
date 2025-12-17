@@ -28,11 +28,18 @@ class DatasetConfig(BaseConfig):
     shuffle_each_epoch: bool = True
 
 
-def _keep_single_column(dataset: Dataset, col_name: str) -> Dataset:
+def _keep_single_column(
+    dataset: Dataset | IterableDataset, col_name: str
+) -> Dataset | IterableDataset:
     """
     Acts on a HuggingFace dataset to delete all columns apart from a single column name - useful
     when we want to tokenize and mix together different strings.
     """
+    # For IterableDataset, we can't access features or remove columns upfront
+    # The columns will be removed during the map() call with remove_columns parameter
+    if isinstance(dataset, IterableDataset):
+        return dataset
+
     for key in dataset.features:
         if key != col_name:
             dataset = dataset.remove_columns(key)
@@ -40,14 +47,14 @@ def _keep_single_column(dataset: Dataset, col_name: str) -> Dataset:
 
 
 def tokenize_and_concatenate(
-    dataset: Dataset,
+    dataset: Dataset | IterableDataset,
     tokenizer: PreTrainedTokenizer,
     column_name: str,
     max_length: int = 1024,
     add_bos_token: bool = False,
     num_proc: int = 10,
     to_lower: bool = False,
-) -> Dataset:
+) -> Dataset | IterableDataset:
     """Helper function to tokenizer and concatenate a dataset of text. This converts the text to
     tokens, concatenates them (separated by EOS tokens) and then reshapes them into a 2D array of
     shape (____, sequence_length), dropping the last batch. Tokenizers are much faster if
@@ -227,7 +234,7 @@ def create_data_loader(
     else:
         to_lower = "SimpleStories" in dataset_config.name
         torch_dataset = tokenize_and_concatenate(
-            dataset,  # pyright: ignore[reportArgumentType]
+            dataset,
             tokenizer,
             max_length=dataset_config.n_ctx,
             column_name=dataset_config.column_name,
