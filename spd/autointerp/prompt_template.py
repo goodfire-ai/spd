@@ -6,11 +6,8 @@ from dataclasses import dataclass
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.utils import build_token_lookup
-from spd.autointerp.schemas import (
-    ArchitectureInfo,
-    ComponentData,
-    ComponentTokenPMI,
-)
+from spd.autointerp.schemas import ArchitectureInfo
+from spd.harvest.schemas import ComponentData, ComponentTokenPMI
 
 
 @dataclass
@@ -187,7 +184,7 @@ Please directly output the JSON object, without any other text or comments. Than
 
 
 if __name__ == "__main__":
-    from spd.autointerp.schemas import ActivationExample
+    from spd.harvest.schemas import ActivationExample
 
     component = ComponentData(
         component_key="h.2.mlp.c_fc",

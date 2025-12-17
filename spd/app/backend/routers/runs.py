@@ -14,9 +14,9 @@ from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import build_token_lookup, log_errors
-from spd.autointerp.loaders import HarvestData
 from spd.data import DatasetConfig, create_data_loader
 from spd.experiments.lm.configs import LMTaskConfig
+from spd.harvest.loaders import HarvestData
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device

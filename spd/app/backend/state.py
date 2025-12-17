@@ -14,15 +14,16 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from spd.app.backend.db import LocalAttrDB
 from spd.app.backend.db.database import Run
 from spd.app.backend.schemas import ModelActivationContexts
-from spd.autointerp.harvest import ComponentCorrelations, ComponentTokenStats
-from spd.autointerp.loaders import (
+from spd.autointerp.schemas import InterpretationResult
+from spd.configs import Config
+from spd.harvest.harvest import ComponentCorrelations, ComponentTokenStats
+from spd.harvest.loaders import (
     load_activation_contexts,
     load_correlations,
     load_interpretations,
     load_token_stats,
 )
-from spd.autointerp.schemas import ComponentData, InterpretationResult
-from spd.configs import Config
+from spd.harvest.schemas import ComponentData
 from spd.models.component_model import ComponentModel
 
 _NOT_LOADED = object()

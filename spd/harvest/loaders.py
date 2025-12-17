@@ -6,12 +6,12 @@ These loaders provide a clean interface for the app to read harvest data.
 import json
 from dataclasses import dataclass
 
-from spd.autointerp.harvest import ComponentCorrelations, ComponentTokenStats
-from spd.autointerp.schemas import (
+from spd.autointerp.schemas import InterpretationResult
+from spd.harvest.harvest import ComponentCorrelations, ComponentTokenStats
+from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,
-    InterpretationResult,
     get_activation_contexts_dir,
     get_autointerp_dir,
     get_correlations_dir,

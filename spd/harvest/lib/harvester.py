@@ -8,8 +8,8 @@ import tqdm
 from jaxtyping import Float, Int
 from torch import Tensor
 
-from spd.autointerp.lib.reservior_sampler import ReservoirSampler, ReservoirState
-from spd.autointerp.schemas import ActivationExample, ComponentData, ComponentTokenPMI
+from spd.harvest.lib.reservior_sampler import ReservoirSampler, ReservoirState
+from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
 
 # Sentinel for padding token windows at sequence boundaries.
 WINDOW_PAD_SENTINEL = -1

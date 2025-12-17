@@ -24,8 +24,8 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.autointerp.lib.harvester import Harvester, HarvesterState
-from spd.autointerp.schemas import (
+from spd.harvest.lib.harvester import Harvester, HarvesterState
+from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,

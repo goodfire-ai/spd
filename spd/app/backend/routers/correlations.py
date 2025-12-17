@@ -1,6 +1,6 @@
 """Component correlation and interpretation endpoints.
 
-These endpoints serve data produced by the harvest pipeline (spd.autointerp.harvest),
+These endpoints serve data produced by the harvest pipeline (spd.harvest),
 which computes component co-occurrence statistics, token associations, and interpretations.
 """
 
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
-from spd.autointerp.harvest import CorrelatedComponentWithCounts
+from spd.harvest.harvest import CorrelatedComponentWithCounts
 from spd.log import logger
 
 
