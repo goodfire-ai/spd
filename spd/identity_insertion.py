@@ -10,15 +10,13 @@ the model, namely, allowing us to decompose the identity operation.
 from __future__ import annotations
 
 import fnmatch
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import torch.nn as nn
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
+from spd.configs import ModulePatternInfoConfig
 from spd.models.components import Identity
-
-if TYPE_CHECKING:
-    from spd.configs import ModulePatternInfoConfig
 
 
 def pre_id_hook(
