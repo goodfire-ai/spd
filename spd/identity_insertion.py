@@ -9,6 +9,7 @@ the model, namely, allowing us to decompose the identity operation.
 
 from __future__ import annotations
 
+import fnmatch
 from typing import TYPE_CHECKING, Any
 
 import torch.nn as nn
@@ -46,8 +47,6 @@ def insert_identity_operations_(
         identity_module_info: List of ModulePatternInfoConfig. The C values are ignored here
             (used later when creating components), only patterns are used for matching.
     """
-    import fnmatch
-
     # Extract just the patterns (ignore C values for insertion)
     identity_module_paths: list[str] = []
     matched_patterns: set[str] = set()
