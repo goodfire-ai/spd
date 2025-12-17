@@ -7,16 +7,58 @@
  */
 
 import type { Loadable } from ".";
+import * as api from "./api";
+import type { RunState as RunData } from "./api";
 import * as attrApi from "./localAttributionsApi";
 import type { Interpretation } from "./localAttributionsApi";
 import type { ComponentDetail } from "./localAttributionsTypes";
 
 class RunState {
+    /** The currently loaded run */
+    run = $state<Loadable<RunData>>(null);
+
     /** Interpretation labels keyed by component key (layer:cIdx) */
     interpretations = $state<Record<string, Interpretation>>({});
 
     /** Lazy-loaded component details keyed by component key (layer:cIdx) */
     componentDetails = $state<Record<string, Loadable<ComponentDetail>>>({});
+
+    /** Load a run by wandb path */
+    async loadRun(wandbPath: string, contextLength: number) {
+        this.clear();
+        this.run = { status: "loading" };
+        try {
+            await api.loadRun(wandbPath, contextLength);
+            const status = await api.getStatus();
+            if (status) {
+                this.run = { status: "loaded", data: status };
+            } else {
+                this.run = { status: "error", error: "Failed to load run" };
+            }
+        } catch (error) {
+            this.run = { status: "error", error };
+        }
+    }
+
+    /** Check backend status and sync run state */
+    async syncStatus() {
+        try {
+            const status = await api.getStatus();
+            if (this.run?.status === "loaded" && this.run.data && !status) {
+                this.run = { status: "error", error: "Backend state lost (restarted)" };
+                return;
+            }
+            if (status) {
+                this.run = { status: "loaded", data: status };
+            } else {
+                this.run = null;
+            }
+        } catch (error) {
+            if (this.run?.status === "loaded") {
+                this.run = { status: "error", error: "Backend unreachable" };
+            }
+        }
+    }
 
     /** Load all interpretations from the server */
     async loadInterpretations() {
@@ -53,10 +95,16 @@ class RunState {
         return this.componentDetails[cacheKey] ?? null;
     }
 
-    /** Clear all run-scoped state (call when run changes or unloads) */
+    /** Clear all run-scoped cached state (call when run changes) */
     clear() {
         this.interpretations = {};
         this.componentDetails = {};
+    }
+
+    /** Fully reset the store (including run) */
+    reset() {
+        this.run = null;
+        this.clear();
     }
 }
 

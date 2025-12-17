@@ -1,20 +1,18 @@
 <script lang="ts">
-    import type { RunState } from "./lib/api";
     import * as api from "./lib/api";
     import * as attrApi from "./lib/localAttributionsApi";
     import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
+    import { runState } from "./lib/runState.svelte";
+    import type { Loadable } from "./lib";
 
     import { onMount } from "svelte";
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import ClusterPathInput from "./components/ClusterPathInput.svelte";
-    import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import RunSelector from "./components/RunSelector.svelte";
     import DisplaySettingsDropdown from "./components/ui/DisplaySettingsDropdown.svelte";
-    import type { Loadable } from "./lib";
 
-    let runState = $state<Loadable<RunState | null>>(null);
     let backendUser = $state<Loadable<string>>(null);
 
     // When true, show the run selector even if a run is loaded
@@ -23,32 +21,16 @@
     // Lifted activation contexts state - shared between tabs
     let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
 
-    async function loadStatus() {
-        try {
-            const newLoadedRun = await api.getStatus();
-
-            // if we had a run loaded, but the backend says null, then we're out of sync (backend likely restarted)
-            if (runState?.status === "loaded" && runState.data !== null && newLoadedRun === null) {
-                runState = { status: "error", error: "Backend state lost (restarted). Showing cached view." };
-                return;
-            }
-
-            runState = { status: "loaded", data: newLoadedRun };
-
-            if (newLoadedRun) {
-                showRunSelector = false;
-                loadActivationContextsSummary();
-            }
-        } catch (error) {
-            console.error("error loading status", error);
-            runState = { status: "error", error: "Backend unreachable. Showing cached view." };
+    // When run loads successfully, hide selector and load activation contexts
+    $effect(() => {
+        if (runState.run?.status === "loaded" && runState.run.data) {
+            showRunSelector = false;
+            loadActivationContextsSummary();
         }
-    }
+    });
 
-    async function loadRun(wandbPath: string, contextLength: number) {
-        runState = { status: "loading" };
-        await api.loadRun(wandbPath, contextLength);
-        await loadStatus();
+    async function handleLoadRun(wandbPath: string, contextLength: number) {
+        await runState.loadRun(wandbPath, contextLength);
     }
 
     async function loadActivationContextsSummary() {
@@ -60,7 +42,7 @@
     }
 
     onMount(() => {
-        loadStatus();
+        runState.syncStatus();
         api.getWhoami().then((user) => (backendUser = { status: "loaded", data: user }));
     });
 
@@ -70,25 +52,25 @@
 
 {#if showRunSelector}
     <RunSelector
-        onSelect={loadRun}
-        isLoading={runState?.status === "loading"}
+        onSelect={handleLoadRun}
+        isLoading={runState.run?.status === "loading"}
         username={backendUser?.status === "loaded" ? backendUser.data : null}
     />
 {:else}
     <div class="app-layout">
         <header class="top-bar">
-            {#if runState?.status === "loaded" && runState.data}
+            {#if runState.run?.status === "loaded" && runState.run.data}
                 <div
                     class="run-menu"
                     onmouseenter={() => (showRunMenu = true)}
                     onmouseleave={() => (showRunMenu = false)}
                 >
                     <button type="button" class="run-menu-trigger">
-                        <span class="run-path">{runState.data.wandb_path}</span>
+                        <span class="run-path">{runState.run.data.wandb_path}</span>
                     </button>
                     {#if showRunMenu}
                         <div class="run-menu-dropdown">
-                            <pre class="config-yaml">{runState.data.config_yaml}</pre>
+                            <pre class="config-yaml">{runState.run.data.config_yaml}</pre>
                             <button type="button" class="change-run-button" onclick={handleChangeRun}>Change Run</button
                             >
                         </div>
@@ -105,7 +87,7 @@
                 >
                     Dataset Search
                 </button>
-                {#if runState?.status === "loaded" && runState.data}
+                {#if runState.run?.status === "loaded" && runState.run.data}
                     <button
                         type="button"
                         class="tab-button"
@@ -122,25 +104,29 @@
                     >
                         Components
                     </button>
-                    <ClusterPathInput runState={runState.data} />
                 {/if}
             </nav>
 
             <div class="top-bar-spacer"></div>
+            {#if runState.run?.status === "loaded" && runState.run.data}
+                <div class="cluster-path-input-container">
+                    <ClusterPathInput />
+                </div>
+            {/if}
             <DisplaySettingsDropdown />
         </header>
 
         <main class="main-content">
-            {#if runState?.status === "error"}
+            {#if runState.run?.status === "error"}
                 <div class="warning-banner">
-                    {runState.error}
+                    {runState.run.error}
                 </div>
             {/if}
             <!-- Dataset Search tab - always available, doesn't require loaded run -->
             <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
                 <DatasetSearchTab />
             </div>
-            {#if runState?.status === "loaded"}
+            {#if runState.run?.status === "loaded"}
                 <!-- Use hidden class instead of conditional rendering to preserve state -->
                 <div class="tab-content" class:hidden={activeTab !== "prompts"}>
                     <LocalAttributionsTab {activationContextsSummary} />
@@ -148,7 +134,7 @@
                 <div class="tab-content" class:hidden={activeTab !== "components"}>
                     <ActivationContextsTab {activationContextsSummary} />
                 </div>
-            {:else if runState?.status === "loading"}
+            {:else if runState.run?.status === "loading"}
                 <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
                     <p>Loading run...</p>
                 </div>
@@ -289,6 +275,14 @@
 
     .top-bar-spacer {
         flex: 1;
+    }
+
+    .cluster-path-input-container {
+        flex: 1;
+        padding: 0 var(--space-3);
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
     }
 
     .main-content {

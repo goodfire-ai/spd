@@ -9,13 +9,12 @@ Usage:
 """
 
 import traceback
-from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import fire
 import torch
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -70,13 +69,14 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-@app.middleware("http")
-async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]):
-    """Log all incoming requests and their responses."""
-    logger.info(f"[REQUEST] {request.method} {request.url.path}?{request.url.query}")
-    response = await call_next(request)
-    logger.info(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}")
-    return response
+# comment out if wanted
+# @app.middleware("http")
+# async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]):
+#     """Log all incoming requests and their responses."""
+#     logger.info(f"[REQUEST] {request.method} {request.url.path}?{request.url.query}")
+#     response = await call_next(request)
+#     logger.info(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}")
+#     return response
 
 
 @app.exception_handler(RequestValidationError)

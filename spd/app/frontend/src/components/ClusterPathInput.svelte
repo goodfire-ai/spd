@@ -1,20 +1,17 @@
 <script lang="ts">
-    import type { LoadedRun } from "../lib/api";
     import { loadClusterMapping } from "../lib/api";
     import { clusterMapping } from "../lib/clusterMapping.svelte";
+    import { runState } from "../lib/runState.svelte";
     import { CANONICAL_RUNS } from "../lib/registry";
-
-    type Props = {
-        loadedRun: LoadedRun | null;
-    };
-
-    let { loadedRun }: Props = $props();
 
     let inputPath = $state("");
     let loading = $state(false);
     let error = $state<string | null>(null);
     let showDropdown = $state(false);
     let showLoadedTooltip = $state(false);
+
+    // Get the loaded run data
+    const loadedRun = $derived(runState.run?.status === "loaded" ? runState.run.data : null);
 
     // Get cluster mappings for the current run from the registry
     const availableClusterMappings = $derived.by(() => {
@@ -25,7 +22,7 @@
 
     // Lookup notes for the currently loaded cluster (if it's from the registry)
     const loadedClusterNotes = $derived.by(() => {
-        if (!clusterMapping.filePath) return null;
+        if (!loadedRun) return null;
         return availableClusterMappings.find((m) => m.path === clusterMapping.filePath)?.notes ?? null;
     });
 
@@ -69,82 +66,80 @@
     }
 </script>
 
-{#if loadedRun}
-    <div class="cluster-input-wrapper">
-        {#if clusterMapping.filePath}
-            <div
-                class="cluster-loaded"
-                role="group"
-                onmouseenter={() => (showLoadedTooltip = true)}
-                onmouseleave={() => (showLoadedTooltip = false)}
-            >
-                <span class="cluster-label">Clusters:</span>
-                <span class="cluster-path">
-                    {clusterMapping.filePath.split("_").pop()?.replace(".json", "")}
-                </span>
-                <button type="button" class="clear-button" onclick={handleClear} title="Clear cluster mapping">
-                    x
-                </button>
-                {#if showLoadedTooltip}
-                    <div class="cluster-tooltip">
-                        {#if loadedClusterNotes}
-                            <div class="tooltip-notes">{loadedClusterNotes}</div>
+<div class="cluster-input-wrapper">
+    {#if clusterMapping.filePath}
+        <div
+            class="cluster-loaded"
+            role="group"
+            onmouseenter={() => (showLoadedTooltip = true)}
+            onmouseleave={() => (showLoadedTooltip = false)}
+        >
+            <span class="cluster-label">Clusters:</span>
+            <span class="cluster-path">
+                {clusterMapping.filePath.split("_").pop()?.replace(".json", "")}
+            </span>
+            <button type="button" class="clear-button" onclick={handleClear} title="Clear cluster mapping">
+                x
+            </button>
+            {#if showLoadedTooltip}
+                <div class="cluster-tooltip">
+                    {#if loadedClusterNotes}
+                        <div class="tooltip-notes">{loadedClusterNotes}</div>
+                    {/if}
+                    <div class="tooltip-path">{clusterMapping.filePath}</div>
+                </div>
+            {/if}
+        </div>
+    {:else}
+        <div class="cluster-form">
+            <div class="input-with-dropdown">
+                <input
+                    type="text"
+                    placeholder="path/to/cluster_mapping_<id>.json"
+                    bind:value={inputPath}
+                    onkeydown={handleKeydown}
+                    disabled={loading}
+                    class:has-dropdown={availableClusterMappings.length > 0}
+                />
+                {#if availableClusterMappings.length > 0}
+                    <div
+                        class="dropdown-wrapper"
+                        role="group"
+                        onmouseenter={() => (showDropdown = true)}
+                        onmouseleave={() => (showDropdown = false)}
+                    >
+                        <button type="button" class="dropdown-button" title="Select from predefined mappings">
+                            ▼
+                        </button>
+                        {#if showDropdown}
+                            <div class="cluster-dropdown">
+                                {#each availableClusterMappings as mapping (mapping.path)}
+                                    <button
+                                        type="button"
+                                        class="cluster-entry"
+                                        onclick={() => selectClusterMapping(mapping.path)}
+                                        title={mapping.path}
+                                    >
+                                        <span class="entry-id">
+                                            {mapping.path.split("_").pop()?.replace(".json", "")}
+                                        </span>
+                                        <span class="entry-notes">{mapping.notes}</span>
+                                    </button>
+                                {/each}
+                            </div>
                         {/if}
-                        <div class="tooltip-path">{clusterMapping.filePath}</div>
                     </div>
                 {/if}
             </div>
-        {:else}
-            <div class="cluster-form">
-                <div class="input-with-dropdown">
-                    <input
-                        type="text"
-                        placeholder="path/to/cluster_mapping_<id>.json"
-                        bind:value={inputPath}
-                        onkeydown={handleKeydown}
-                        disabled={loading}
-                        class:has-dropdown={availableClusterMappings.length > 0}
-                    />
-                    {#if availableClusterMappings.length > 0}
-                        <div
-                            class="dropdown-wrapper"
-                            role="group"
-                            onmouseenter={() => (showDropdown = true)}
-                            onmouseleave={() => (showDropdown = false)}
-                        >
-                            <button type="button" class="dropdown-button" title="Select from predefined mappings">
-                                ▼
-                            </button>
-                            {#if showDropdown}
-                                <div class="cluster-dropdown">
-                                    {#each availableClusterMappings as mapping (mapping.path)}
-                                        <button
-                                            type="button"
-                                            class="cluster-entry"
-                                            onclick={() => selectClusterMapping(mapping.path)}
-                                            title={mapping.path}
-                                        >
-                                            <span class="entry-id">
-                                                {mapping.path.split("_").pop()?.replace(".json", "")}
-                                            </span>
-                                            <span class="entry-notes">{mapping.notes}</span>
-                                        </button>
-                                    {/each}
-                                </div>
-                            {/if}
-                        </div>
-                    {/if}
-                </div>
-                <button type="button" onclick={handleLoad} disabled={loading || !inputPath.trim()}>
-                    {loading ? "..." : "Load"}
-                </button>
-            </div>
-            {#if error}
-                <span class="error-text" title={error}>Error</span>
-            {/if}
+            <button type="button" onclick={handleLoad} disabled={loading || !inputPath.trim()}>
+                {loading ? "..." : "Load"}
+            </button>
+        </div>
+        {#if error}
+            <span class="error-text" title={error}>Error</span>
         {/if}
-    </div>
-{/if}
+    {/if}
+</div>
 
 <style>
     .cluster-input-wrapper {

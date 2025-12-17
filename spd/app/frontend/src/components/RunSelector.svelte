@@ -25,12 +25,20 @@
 </script>
 
 <div class="selector-container">
-    <div class="selector-content">
-        {#if username}
-            <p class="greeting">Hello, {username}</p>
-        {/if}
-        <h1 class="title">SPD Explorer</h1>
-        <p class="subtitle">Select a run to explore component decompositions</p>
+    {#if isLoading}
+        <div class="loading-overlay">
+            <div class="spinner"></div>
+            <p class="loading-text">Loading run...</p>
+        </div>
+    {/if}
+    <div class="selector-content" class:dimmed={isLoading}>
+        <h1 class="title">
+            {#if username}
+                Hello, {username}
+            {:else}
+                SPD Explorer
+            {/if}
+        </h1>
 
         <div class="context-length-section">
             <label for="context-length">Context Length:</label>
@@ -46,15 +54,14 @@
 
         <div class="runs-grid">
             {#each CANONICAL_RUNS as entry (entry.wandbRunId)}
-                <button
-                    class="run-card"
-                    onclick={() => handleRegistrySelect(entry)}
-                    disabled={isLoading}
-                >
+                <button class="run-card" onclick={() => handleRegistrySelect(entry)} disabled={isLoading}>
                     <span class="run-model">{entry.modelName}</span>
                     <span class="run-id">{formatRunIdForDisplay(entry.wandbRunId)}</span>
                     {#if entry.notes}
                         <span class="run-notes">{entry.notes}</span>
+                    {/if}
+                    {#if entry.clusterMappings}
+                        <span class="run-cluster-mappings">{entry.clusterMappings.length} clustering runs</span>
                     {/if}
                 </button>
             {/each}
@@ -80,6 +87,7 @@
 
 <style>
     .selector-container {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -88,17 +96,49 @@
         padding: var(--space-4);
     }
 
+    .loading-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-3);
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 100;
+    }
+
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--border-default);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .loading-text {
+        color: var(--text-primary);
+        font-family: var(--font-sans);
+        font-size: var(--text-sm);
+        margin: 0;
+    }
+
     .selector-content {
         max-width: 720px;
         width: 100%;
+        transition: opacity 0.2s;
     }
 
-    .greeting {
-        font-size: var(--text-sm);
-        color: var(--text-muted);
-        margin: 0 0 var(--space-4) 0;
-        text-align: center;
-        font-family: var(--font-sans);
+    .selector-content.dimmed {
+        opacity: 0.3;
+        pointer-events: none;
     }
 
     .title {
@@ -106,14 +146,6 @@
         font-weight: 600;
         color: var(--text-primary);
         margin: 0 0 var(--space-2) 0;
-        text-align: center;
-        font-family: var(--font-sans);
-    }
-
-    .subtitle {
-        font-size: var(--text-base);
-        color: var(--text-muted);
-        margin: 0 0 var(--space-6) 0;
         text-align: center;
         font-family: var(--font-sans);
     }
@@ -162,7 +194,9 @@
         border-radius: var(--radius-md);
         cursor: pointer;
         text-align: left;
-        transition: border-color 0.15s, background 0.15s;
+        transition:
+            border-color 0.15s,
+            background 0.15s;
     }
 
     .run-card:hover:not(:disabled) {
@@ -189,6 +223,12 @@
     }
 
     .run-notes {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        font-family: var(--font-sans);
+    }
+
+    .run-cluster-mappings {
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-family: var(--font-sans);

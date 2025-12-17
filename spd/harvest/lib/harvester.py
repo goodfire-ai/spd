@@ -8,7 +8,7 @@ import tqdm
 from jaxtyping import Float, Int
 from torch import Tensor
 
-from spd.harvest.lib.reservior_sampler import ReservoirSampler, ReservoirState
+from spd.harvest.lib.reservoir_sampler import ReservoirSampler, ReservoirState
 from spd.harvest.lib.sampling import sample_at_most_n_per_group, top_k_pmi
 from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
 
