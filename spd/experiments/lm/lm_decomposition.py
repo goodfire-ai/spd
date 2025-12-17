@@ -155,23 +155,26 @@ def main(
         dist_state=dist_state,
     )
 
-    # Use separate eval dataset if configured, otherwise use same as training
-    tc = config.task_config
+    # Eval dataset config - use eval-specific settings if provided, otherwise fall back to training
     eval_dataset_name = (
-        tc.eval_dataset_name if tc.eval_dataset_name is not None else tc.dataset_name
+        config.task_config.eval_dataset_name
+        if config.task_config.eval_dataset_name is not None
+        else config.task_config.dataset_name
     )
-    eval_column_name = tc.eval_column_name if tc.eval_column_name is not None else tc.column_name
-    eval_streaming = tc.eval_streaming
-
+    eval_column_name = (
+        config.task_config.eval_column_name
+        if config.task_config.eval_column_name is not None
+        else config.task_config.column_name
+    )
     eval_data_config = DatasetConfig(
         name=eval_dataset_name,
         hf_tokenizer_path=config.tokenizer_name,
-        split=tc.eval_data_split,
-        n_ctx=tc.max_seq_len,
-        is_tokenized=tc.is_tokenized,
-        streaming=eval_streaming,
+        split=config.task_config.eval_data_split,
+        n_ctx=config.task_config.max_seq_len,
+        is_tokenized=config.task_config.is_tokenized,
+        streaming=config.task_config.eval_streaming,
         column_name=eval_column_name,
-        shuffle_each_epoch=tc.shuffle_each_epoch,
+        shuffle_each_epoch=config.task_config.shuffle_each_epoch,
         seed=None,
     )
 
