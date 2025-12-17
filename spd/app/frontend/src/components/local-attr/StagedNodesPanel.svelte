@@ -8,6 +8,7 @@
         Edge,
     } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
+    import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
@@ -77,11 +78,16 @@
                 {@const token = getTokenAtPosition(node.seqIdx)}
                 {@const isOutput = node.layer === "output"}
                 {@const isWte = node.layer === "wte"}
+                {@const isComponent = !isWte && !isOutput}
+                {@const clusterId = isComponent ? clusterMapping.getClusterId(node.layer, node.cIdx) : undefined}
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">
                             <strong>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</strong>
                             <span class="token-preview">"{token}"</span>
+                            {#if clusterId !== undefined}
+                                <span class="cluster-id">Cluster: {clusterId ?? "null"}</span>
+                            {/if}
                         </div>
                         <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>
                     </div>
@@ -196,5 +202,13 @@
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         color: var(--text-secondary);
+    }
+
+    .cluster-id {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+        font-weight: 600;
+        margin-left: var(--space-2);
     }
 </style>

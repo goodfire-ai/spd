@@ -1,5 +1,6 @@
 <script lang="ts">
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
+    import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import type { NormalizeType } from "../../lib/localAttributionsApi";
     import {
         isInterventableNode,
@@ -9,7 +10,15 @@
         type NodePosition,
         type TokenInfo,
     } from "../../lib/localAttributionsTypes";
-    import { calcTooltipPos, computeComponentOffsets, lerp, sortComponentsByImportance } from "./graphUtils";
+    import {
+        calcTooltipPos,
+        computeComponentOffsets,
+        computeClusterSpans,
+        lerp,
+        sortComponentsByImportance,
+        sortComponentsByCluster,
+        type ClusterSpan,
+    } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
     import type { StoredGraph } from "./types";
@@ -23,6 +32,8 @@
     const LABEL_WIDTH = 100;
     const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
     const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
+    const CLUSTER_BAR_HEIGHT = 3;
+    const CLUSTER_BAR_GAP = 2;
 
     // Logits display constants
     const MAX_PREDICTIONS = 5;
@@ -157,9 +168,35 @@
 
     // Hover state for composer
     let hoveredNode = $state<{ layer: string; seqIdx: number; cIdx: number } | null>(null);
+    let hoveredBarClusterId = $state<number | null>(null);
     let isHoveringTooltip = $state(false);
     let tooltipPos = $state({ x: 0, y: 0 });
     let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    // Get cluster ID of hovered node or bar (for cluster-wide rotation effect)
+    const hoveredClusterId = $derived.by(() => {
+        if (hoveredBarClusterId !== null) return hoveredBarClusterId;
+        if (!hoveredNode) return undefined;
+        return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+    });
+
+    // Check if a node is in the same cluster as the hovered node (for cluster rotation effect)
+    function isNodeInSameCluster(nodeKey: string): boolean {
+        // Only trigger if hovered node has a numeric cluster ID (not singleton/no mapping)
+        if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
+        const [layer, , cIdxStr] = nodeKey.split(":");
+        const cIdx = parseInt(cIdxStr);
+        const nodeClusterId = clusterMapping.getClusterId(layer, cIdx);
+        return nodeClusterId === hoveredClusterId;
+    }
+
+    // Check if a node matches the hovered component (same layer:cIdx across any seqIdx)
+    function nodeMatchesHoveredComponent(nodeKey: string): boolean {
+        if (!hoveredNode) return false;
+        const [layer, , cIdxStr] = nodeKey.split(":");
+        const cIdx = parseInt(cIdxStr);
+        return layer === hoveredNode.layer && cIdx === hoveredNode.cIdx;
+    }
 
     // Drag-to-select state
     let isDragging = $state(false);
@@ -295,8 +332,9 @@
             layerYPositions[layer] = rowYPositions[getRowKey(layer)];
         }
 
-        // Position nodes
+        // Position nodes and compute cluster spans
         const nodePositions: Record<string, NodePosition> = {};
+        const allClusterSpans: ClusterSpan[] = [];
         for (const layer of allLayers) {
             const info = parseLayer(layer);
             const isQkv = QKV_SUBTYPES.includes(info.subtype);
@@ -318,19 +356,44 @@
                     }
                 }
 
-                const sorted = sortComponentsByImportance(
-                    layerNodes,
-                    layer,
-                    seqIdx,
-                    graph.data.nodeCiVals,
-                    graph.data.outputProbs,
-                );
+                // Output nodes always sort by probability; internal nodes sort by cluster if mapping loaded, else by CI
+                const sorted =
+                    layer === "output" || !clusterMapping.mapping
+                        ? sortComponentsByImportance(
+                              layerNodes,
+                              layer,
+                              seqIdx,
+                              graph.data.nodeCiVals,
+                              graph.data.outputProbs,
+                          )
+                        : sortComponentsByCluster(
+                              layerNodes,
+                              layer,
+                              seqIdx,
+                              graph.data.nodeCiVals,
+                              clusterMapping.getClusterId.bind(clusterMapping),
+                          );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
                 for (const cIdx of layerNodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
                         x: baseX + offsets[cIdx] + COMPONENT_SIZE / 2,
                         y: baseY + COMPONENT_SIZE / 2,
                     };
+                }
+
+                // Compute cluster spans for this layer/seqIdx (skip output layer)
+                if (layer !== "output" && clusterMapping.mapping) {
+                    const spans = computeClusterSpans(
+                        sorted,
+                        layer,
+                        seqIdx,
+                        baseX,
+                        baseY,
+                        COMPONENT_SIZE,
+                        offsets,
+                        clusterMapping.getClusterId.bind(clusterMapping),
+                    );
+                    allClusterSpans.push(...spans);
                 }
             }
         }
@@ -350,6 +413,7 @@
             nodesPerLayerSeq,
             allLayers,
             rows,
+            clusterSpans: allClusterSpans,
         };
     });
 
@@ -631,6 +695,25 @@
                         {/each}
                     </g>
 
+                    <!-- Cluster bars (below nodes) -->
+                    <g class="cluster-bars-layer">
+                        {#each layout.clusterSpans as span (`${span.layer}:${span.seqIdx}:${span.clusterId}`)}
+                            {@const isHighlighted = hoveredClusterId === span.clusterId}
+                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                            <rect
+                                class="cluster-bar"
+                                class:highlighted={isHighlighted}
+                                x={span.xStart}
+                                y={span.y + CLUSTER_BAR_GAP}
+                                width={span.xEnd - span.xStart}
+                                height={CLUSTER_BAR_HEIGHT}
+                                rx="1"
+                                onmouseenter={() => (hoveredBarClusterId = span.clusterId)}
+                                onmouseleave={() => (hoveredBarClusterId = null)}
+                            />
+                        {/each}
+                    </g>
+
                     <!-- Nodes -->
                     <g class="nodes-layer">
                         {#each allNodes as nodeKey (nodeKey)}
@@ -638,6 +721,13 @@
                             {@const [layer, seqIdx, cIdx] = nodeKey.split(":")}
                             {@const interventable = isInterventableNode(nodeKey)}
                             {@const selected = interventable && isNodeSelected(nodeKey)}
+                            {@const inSameCluster = isNodeInSameCluster(nodeKey)}
+                            {@const isHoveredComponent = nodeMatchesHoveredComponent(nodeKey)}
+                            {@const isDimmed =
+                                (hoveredNode !== null || hoveredBarClusterId !== null) &&
+                                !isHoveredComponent &&
+                                !inSameCluster &&
+                                !selected}
                             {#if pos}
                                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -658,6 +748,8 @@
                                     />
                                     <rect
                                         class="node"
+                                        class:cluster-hovered={inSameCluster}
+                                        class:dimmed={isDimmed}
                                         x={pos.x - COMPONENT_SIZE / 2}
                                         y={pos.y - COMPONENT_SIZE / 2}
                                         width={COMPONENT_SIZE}
@@ -1068,9 +1160,20 @@
     }
 
     .node-group .node {
+        transform-box: fill-box;
+        transform-origin: center;
         transition:
             opacity 0.1s,
-            fill 0.1s;
+            fill 0.1s,
+            transform 0.15s ease-out;
+    }
+
+    .node-group .node.cluster-hovered {
+        transform: rotate(45deg);
+    }
+
+    .node-group .node.dimmed {
+        transform: scale(0.5);
     }
 
     .node-group:hover .node {
@@ -1084,6 +1187,21 @@
 
     .node-group.non-interventable:hover .node {
         filter: none;
+    }
+
+    .cluster-bar {
+        fill: var(--text-secondary);
+        opacity: 0.5;
+        cursor: pointer;
+        transition:
+            opacity 0.15s ease-out,
+            fill 0.15s ease-out;
+    }
+
+    .cluster-bar:hover,
+    .cluster-bar.highlighted {
+        fill: var(--text-primary);
+        opacity: 0.8;
     }
 
     /* History Panel */

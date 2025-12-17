@@ -9,6 +9,11 @@ export type RegistryEntry = {
     modelName: string;
     /** Optional notes about the run */
     notes?: string;
+    /** Optional cluster mappings for the run */
+    clusterMappings?: {
+        path: string;
+        notes: string;
+    }[];
 };
 
 const DEFAULT_ENTITY_PROJECT = "goodfire/spd";
@@ -35,6 +40,16 @@ export const CANONICAL_RUNS: RegistryEntry[] = [
     {
         wandbRunId: "goodfire/spd/5cr21lbs",
         modelName: "ss_llama_simple_mlp-1L",
+        clusterMappings: [
+            {
+                path: "/mnt/polished-lake/spd/ensemble/e-04370c84/cluster_mapping_e-04370c84.json",
+                notes: "All layers, 200 iterations",
+            },
+            {
+                path: "/mnt/polished-lake/spd/ensemble/e-5f228e5f/cluster_mapping_e-5f228e5f.json",
+                notes: "Just down_proj, 80 iterations",
+            },
+        ],
     },
     {
         wandbRunId: "goodfire/spd/itmexlj0",

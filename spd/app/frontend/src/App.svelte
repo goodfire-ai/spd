@@ -7,6 +7,7 @@
     import { CANONICAL_RUNS, formatRunIdForDisplay } from "./lib/registry";
 
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
+    import ClusterPathInput from "./components/ClusterPathInput.svelte";
     import CorrelationJobStatus from "./components/CorrelationJobStatus.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
@@ -212,6 +213,7 @@
             {/if}
         </div>
         <div class="tab-bar-right">
+            <ClusterPathInput {loadedRun} />
             {#if loadedRun}
                 <CorrelationJobStatus
                     status={correlationJobStatus}
