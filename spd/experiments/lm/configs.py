@@ -55,7 +55,7 @@ class LMTaskConfig(BaseConfig):
         default=False,
         description="Whether to use a streaming dataset for training",
     )
-    eval_streaming: bool | None = Field(
-        default=None,
-        description="Whether to use streaming for eval dataset. If None, uses streaming.",
+    eval_streaming: bool = Field(
+        default=False,
+        description="Whether to use streaming for eval dataset.",
     )

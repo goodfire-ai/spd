@@ -161,7 +161,7 @@ def main(
         tc.eval_dataset_name if tc.eval_dataset_name is not None else tc.dataset_name
     )
     eval_column_name = tc.eval_column_name if tc.eval_column_name is not None else tc.column_name
-    eval_streaming = tc.eval_streaming if tc.eval_streaming is not None else tc.streaming
+    eval_streaming = tc.eval_streaming
 
     eval_data_config = DatasetConfig(
         name=eval_dataset_name,
