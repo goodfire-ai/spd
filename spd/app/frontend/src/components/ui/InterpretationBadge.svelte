@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { Loadable } from "../../lib";
-    import { requestComponentInterpretation, type Interpretation } from "../../lib/localAttributionsApi";
+    import { requestComponentInterpretation, type Interpretation } from "../../lib/api";
 
     interface Props {
         interpretation: Loadable<Interpretation>;

@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { EdgeAttribution } from "../../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
-    import type { Interpretation } from "../../lib/localAttributionsApi";
+    import type { Interpretation } from "../../lib/api";
     import { runState } from "../../lib/runState.svelte";
     import { lerp } from "../local-attr/graphUtils";
 

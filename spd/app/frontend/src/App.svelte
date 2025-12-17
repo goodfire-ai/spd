@@ -1,6 +1,5 @@
 <script lang="ts">
     import * as api from "./lib/api";
-    import * as attrApi from "./lib/localAttributionsApi";
     import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
     import { runState } from "./lib/runState.svelte";
     import type { Loadable } from "./lib";
@@ -34,7 +33,7 @@
     }
 
     async function loadActivationContextsSummary() {
-        activationContextsSummary = await attrApi.getActivationContextsSummary();
+        activationContextsSummary = await api.getActivationContextsSummary();
     }
 
     function handleChangeRun() {

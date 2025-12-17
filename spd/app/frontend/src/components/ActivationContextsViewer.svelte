@@ -1,13 +1,7 @@
 <script lang="ts">
     import type { Loadable } from "../lib";
-    import type { SubcomponentActivationContexts, HarvestMetadata } from "../lib/api";
+    import type { SubcomponentActivationContexts, HarvestMetadata, Interpretation } from "../lib/api";
     import * as api from "../lib/api";
-    import {
-        getComponentCorrelations,
-        getComponentInterpretation,
-        getComponentTokenStats,
-        type Interpretation,
-    } from "../lib/localAttributionsApi";
     import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
@@ -34,6 +28,7 @@
     let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
 
     let componentCache = $state<Record<string, Loadable<SubcomponentActivationContexts>>>({});
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive, just for deduplication
     const requestedKeys = new Set<string>();
 
     // Correlations state
@@ -150,7 +145,7 @@
         if (cIdx === undefined) return;
 
         correlations = { status: "loading" };
-        getComponentCorrelations(layer, cIdx, 1000)
+        api.getComponentCorrelations(layer, cIdx, 1000)
             .then((data) => {
                 if (data != null) {
                     correlations = { status: "loaded", data };
@@ -170,7 +165,7 @@
         if (cIdx === undefined) return;
 
         tokenStats = { status: "loading" };
-        getComponentTokenStats(layer, cIdx, 1000)
+        api.getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
                 if (data != null) {
                     tokenStats = { status: "loaded", data };
@@ -190,7 +185,7 @@
         if (cIdx === undefined) return;
 
         interpretation = { status: "loading" };
-        getComponentInterpretation(layer, cIdx)
+        api.getComponentInterpretation(layer, cIdx)
             .then((data) => {
                 if (data != null) {
                     interpretation = { status: "loaded", data };

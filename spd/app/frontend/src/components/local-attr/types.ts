@@ -1,6 +1,6 @@
 import type { GraphData } from "../../lib/localAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
-import type { NormalizeType } from "../../lib/localAttributionsApi";
+import type { NormalizeType } from "../../lib/api";
 
 export type ViewSettings = {
     topK: number;

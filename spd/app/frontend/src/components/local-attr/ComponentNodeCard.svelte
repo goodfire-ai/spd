@@ -4,7 +4,7 @@
         getComponentCorrelations,
         getComponentTokenStats,
         type Interpretation,
-    } from "../../lib/localAttributionsApi";
+    } from "../../lib/api";
     import type {
         ComponentCorrelations,
         ComponentDetail,

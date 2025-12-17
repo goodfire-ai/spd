@@ -8,9 +8,7 @@
 
 import type { Loadable } from ".";
 import * as api from "./api";
-import type { RunState as RunData } from "./api";
-import * as attrApi from "./localAttributionsApi";
-import type { Interpretation } from "./localAttributionsApi";
+import type { RunState as RunData, Interpretation } from "./api";
 import type { ComponentDetail } from "./localAttributionsTypes";
 
 class RunState {
@@ -53,7 +51,7 @@ class RunState {
             } else {
                 this.run = null;
             }
-        } catch (error) {
+        } catch {
             if (this.run?.status === "loaded") {
                 this.run = { status: "error", error: "Backend unreachable" };
             }
@@ -62,7 +60,7 @@ class RunState {
 
     /** Load all interpretations from the server */
     async loadInterpretations() {
-        this.interpretations = await attrApi.getAllInterpretations();
+        this.interpretations = await api.getAllInterpretations();
     }
 
     /** Add a newly generated interpretation to the cache */
@@ -82,7 +80,7 @@ class RunState {
 
         this.componentDetails[cacheKey] = { status: "loading" };
         try {
-            const detail = await attrApi.getComponentDetail(layer, cIdx);
+            const detail = await api.getComponentDetail(layer, cIdx);
             this.componentDetails[cacheKey] = { status: "loaded", data: detail };
         } catch (error) {
             this.componentDetails[cacheKey] = { status: "error", error };

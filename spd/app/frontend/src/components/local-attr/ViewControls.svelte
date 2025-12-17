@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { NormalizeType } from "../../lib/localAttributionsApi";
+    import type { NormalizeType } from "../../lib/api";
     import type { Loadable } from "../../lib/index";
 
     type Props = {

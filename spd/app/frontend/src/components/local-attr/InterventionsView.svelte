@@ -3,7 +3,7 @@
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
-    import type { NormalizeType } from "../../lib/localAttributionsApi";
+    import type { NormalizeType } from "../../lib/api";
     import {
         isInterventableNode,
         type ActivationContextsSummary,

@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { PromptPreview, PinnedNode, TokenizeResult } from "../../lib/localAttributionsTypes";
-    import { tokenizeText } from "../../lib/localAttributionsApi";
+    import { tokenizeText } from "../../lib/api";
 
     type Props = {
         prompts: PromptPreview[];

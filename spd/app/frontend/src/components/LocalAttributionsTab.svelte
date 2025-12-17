@@ -1,6 +1,5 @@
 <script lang="ts">
-    import * as mainApi from "../lib/api";
-    import * as attrApi from "../lib/localAttributionsApi";
+    import * as api from "../lib/api";
     import {
         filterInterventableNodes,
         type ActivationContextsSummary,
@@ -36,7 +35,7 @@
     let { activationContextsSummary }: Props = $props();
 
     // Server state
-    let loadedRun = $state<mainApi.RunState | null>(null);
+    let loadedRun = $state<api.RunState | null>(null);
     let serverError = $state<string | null>(null);
 
     // Available prompts (for picker)
@@ -159,21 +158,21 @@
     });
 
     async function loadServerStatus() {
-        loadedRun = await mainApi.getStatus();
+        loadedRun = await api.getStatus();
         serverError = null;
     }
 
     async function loadPromptsList() {
-        prompts = await attrApi.listPrompts();
+        prompts = await api.listPrompts();
     }
 
     async function loadAllTokens() {
-        allTokens = await attrApi.getAllTokens();
+        allTokens = await api.getAllTokens();
     }
 
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
         // Fetch stored graphs for this prompt
-        const storedGraphs = await attrApi.getGraphs(
+        const storedGraphs = await api.getGraphs(
             promptId,
             defaultViewSettings.normalizeEdges,
             defaultViewSettings.ciThreshold,
@@ -184,7 +183,7 @@
                 const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
 
                 // Load intervention runs for this graph
-                const runs = await mainApi.getInterventionRuns(data.id);
+                const runs = await api.getInterventionRuns(data.id);
 
                 // Initialize composer state for this graph
                 getComposerState(data.id, Object.keys(data.nodeCiVals));
@@ -221,7 +220,7 @@
     async function handleAddCustomPrompt(text: string) {
         isAddingCustomPrompt = true;
         try {
-            const prompt = await attrApi.createCustomPrompt(text);
+            const prompt = await api.createCustomPrompt(text);
             await addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, true);
         } finally {
             isAddingCustomPrompt = false;
@@ -302,7 +301,7 @@
             const text = activeCard.tokens.join("");
             const selectedNodes = Array.from(composerState.selection);
 
-            const run = await mainApi.runAndSaveIntervention({
+            const run = await api.runAndSaveIntervention({
                 graph_id: activeGraph.id,
                 text,
                 selected_nodes: selectedNodes,
@@ -344,7 +343,7 @@
     async function handleDeleteRun(runId: number) {
         if (!activeCard || !activeGraph) return;
 
-        await mainApi.deleteInterventionRun(runId);
+        await api.deleteInterventionRun(runId);
 
         // Remove from persisted state
         promptCards = promptCards.map((card) => {
@@ -369,7 +368,7 @@
     async function handleForkRun(runId: number, tokenReplacements: [number, number][]) {
         if (!activeCard || !activeGraph) throw new Error("No active card or graph");
 
-        const forkedRun = await mainApi.forkInterventionRun(runId, tokenReplacements);
+        const forkedRun = await api.forkInterventionRun(runId, tokenReplacements);
 
         // Add forked run to the parent run's forked_runs list
         promptCards = promptCards.map((card) => {
@@ -399,7 +398,7 @@
     async function handleDeleteFork(forkId: number) {
         if (!activeCard || !activeGraph) return;
 
-        await mainApi.deleteForkedInterventionRun(forkId);
+        await api.deleteForkedInterventionRun(forkId);
 
         // Remove the forked run from state
         promptCards = promptCards.map((card) => {
@@ -460,7 +459,7 @@
             }
 
             // Build params with optional CE/KL settings
-            const params: attrApi.ComputeGraphOptimizedParams = {
+            const params: api.ComputeGraphOptimizedParams = {
                 promptId: activeCard.id,
                 normalize: defaultViewSettings.normalizeEdges,
                 impMinCoeff: optConfig.impMinCoeff,
@@ -477,7 +476,7 @@
                 params.klLossCoeff = optConfig.klLossCoeff;
             }
 
-            data = await attrApi.computeGraphOptimizedStreaming(params, (progress) => {
+            data = await api.computeGraphOptimizedStreaming(params, (progress) => {
                 if (!loadingState) return;
                 if (progress.stage === "graph") {
                     loadingState.currentStage = 1;
@@ -487,12 +486,12 @@
                 }
             });
         } else {
-            const params: attrApi.ComputeGraphParams = {
+            const params: api.ComputeGraphParams = {
                 promptId: activeCard.id,
                 normalize: defaultViewSettings.normalizeEdges,
                 ciThreshold: defaultViewSettings.ciThreshold,
             };
-            data = await attrApi.computeGraphStreaming(params, (progress) => {
+            data = await api.computeGraphStreaming(params, (progress) => {
                 if (!loadingState) return;
                 loadingState.stages[0].progress = progress.current / progress.total;
             });
@@ -531,7 +530,7 @@
         const { normalizeEdges, ciThreshold } = activeGraph.viewSettings;
         refetchingGraphId = activeGraph.id;
         try {
-            const storedGraphs = await attrApi.getGraphs(activeCard.id, normalizeEdges, ciThreshold);
+            const storedGraphs = await api.getGraphs(activeCard.id, normalizeEdges, ciThreshold);
             const matchingData = storedGraphs.find((g) => g.id === activeGraph.id);
 
             if (!matchingData) {
@@ -576,7 +575,7 @@
         });
     }
 
-    async function handleNormalizeChange(value: attrApi.NormalizeType) {
+    async function handleNormalizeChange(value: api.NormalizeType) {
         updateActiveGraphViewSettings({ normalizeEdges: value });
         await refetchActiveGraphData();
     }
@@ -606,7 +605,7 @@
         generateCount = 0;
 
         try {
-            await attrApi.generatePrompts({ nPrompts }, (progress: number, count: number) => {
+            await api.generatePrompts({ nPrompts }, (progress: number, count: number) => {
                 generateProgress = progress;
                 generateCount = count;
             });

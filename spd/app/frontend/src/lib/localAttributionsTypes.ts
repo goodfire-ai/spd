@@ -126,12 +126,6 @@ export type TokenStats = {
     output: TokenPRLiftPMI; // What tokens this component predicts
 };
 
-export type SearchResult = {
-    query: { components: string[]; mode: string };
-    count: number;
-    results: PromptPreview[];
-};
-
 export type TokenizeResult = {
     token_ids: number[];
     tokens: string[];
