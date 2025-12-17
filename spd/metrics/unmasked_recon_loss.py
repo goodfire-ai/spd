@@ -21,8 +21,8 @@ def _unmasked_recon_loss_update(
     all_ones_mask_infos = make_mask_infos(
         # (C,) will broadcast to (B, S, C)
         {
-            k: torch.ones(model.module_to_c[k], device=batch.device)
-            for k in model.target_module_paths
+            module_path: torch.ones(model.module_to_c[module_path], device=batch.device)
+            for module_path in model.target_module_paths
         }
     )
     out = model(batch, mask_infos=all_ones_mask_infos)

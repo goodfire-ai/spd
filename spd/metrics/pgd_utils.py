@@ -63,7 +63,7 @@ def pgd_masked_recon_loss_update(
     )
 
     for _ in range(pgd_config.n_steps):
-        assert all(t.grad is None for t in adv_sources.values())
+        assert all(adv.grad is None for adv in adv_sources.values())
         with torch.enable_grad():
             sum_loss, n_examples = fwd_pass()
             loss = sum_loss / n_examples
@@ -143,7 +143,7 @@ def calc_multibatch_pgd_masked_recon_loss(
     )
 
     for _ in range(pgd_config.n_steps):
-        assert all(t.grad is None for t in adv_sources.values())
+        assert all(adv.grad is None for adv in adv_sources.values())
         _, _, adv_sources_grads = fwd_bwd_fn(data_iter=create_data_iter())
 
         with torch.no_grad():
@@ -166,7 +166,6 @@ def _forward_with_adv_sources(
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
 ):
-    # Expand each module's adv_sources to batch dimensions
     expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
 
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
