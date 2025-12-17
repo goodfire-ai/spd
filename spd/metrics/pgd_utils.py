@@ -116,7 +116,7 @@ def calc_multibatch_pgd_masked_recon_loss(
     Returns:
         Final reconstruction loss after PGD optimization
     """
-    singleton_batch_dims = list(1 for _ in batch_dims)
+    singleton_batch_dims = [1 for _ in batch_dims]
 
     # Create per-module adv_sources tensors (supports different C per module)
     adv_sources: dict[str, Float[Tensor, "*ones mask_c"]] = {}
