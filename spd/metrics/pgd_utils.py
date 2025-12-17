@@ -63,6 +63,7 @@ def pgd_masked_recon_loss_update(
     )
 
     for _ in range(pgd_config.n_steps):
+        assert all(t.grad is None for t in adv_sources.values())
         with torch.enable_grad():
             sum_loss, n_examples = fwd_pass()
             loss = sum_loss / n_examples
@@ -142,6 +143,7 @@ def calc_multibatch_pgd_masked_recon_loss(
     )
 
     for _ in range(pgd_config.n_steps):
+        assert all(t.grad is None for t in adv_sources.values())
         _, _, adv_sources_grads = fwd_bwd_fn(data_iter=create_data_iter())
 
         with torch.no_grad():
