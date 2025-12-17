@@ -107,7 +107,6 @@ task_config:
   train_data_split: "train"
   # Eval on smaller pile-10k (non-streaming)
   eval_dataset_name: "NeelNanda/pile-10k"
-  eval_column_name: "text"
   eval_streaming: false
   eval_data_split: "train"  # pile-10k only has train split
 

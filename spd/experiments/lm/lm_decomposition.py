@@ -160,7 +160,6 @@ def main(
     eval_dataset_name = (
         tc.eval_dataset_name if tc.eval_dataset_name is not None else tc.dataset_name
     )
-    eval_column_name = tc.eval_column_name if tc.eval_column_name is not None else tc.column_name
     eval_streaming = tc.eval_streaming
 
     eval_data_config = DatasetConfig(
@@ -170,7 +169,7 @@ def main(
         n_ctx=tc.max_seq_len,
         is_tokenized=tc.is_tokenized,
         streaming=eval_streaming,
-        column_name=eval_column_name,
+        column_name=tc.column_name,
         shuffle_each_epoch=tc.shuffle_each_epoch,
         seed=None,
     )

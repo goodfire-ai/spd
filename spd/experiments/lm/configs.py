@@ -28,11 +28,7 @@ class LMTaskConfig(BaseConfig):
     )
     column_name: str = Field(
         default="story",
-        description="Dataset column that contains the text to train on",
-    )
-    eval_column_name: str | None = Field(
-        default=None,
-        description="Dataset column for evaluation. If None, uses column_name.",
+        description="Dataset column that contains the text/tokens",
     )
     train_data_split: str = Field(
         default="train",
