@@ -23,45 +23,25 @@
     let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
 
     async function loadStatus() {
-        if (runState?.status === "loading") return;
         try {
             const newLoadedRun = await api.getStatus();
 
-            // if we have a run, but the backend says null, then we're out of sync (backend likely restarted)
-            // in this case, we keep the local state so the user can still see what they were looking at
-            if (runState?.status === "loaded" && !newLoadedRun) {
+            // if we had a run loaded, but the backend says null, then we're out of sync (backend likely restarted)
+            if (runState?.status === "loaded" && runState.data !== null && newLoadedRun === null) {
                 runState = { status: "error", error: "Backend state lost (restarted). Showing cached view." };
                 return;
             }
 
-            // otherwise, we update the status
             runState = { status: "loaded", data: newLoadedRun };
 
-            if (runState?.data === null) {
-                // there is a valid state, but it's "no loaded run"
-                return;
+            if (newLoadedRun) {
+                trainWandbRunEntry = newLoadedRun.wandb_path;
+                contextLength = newLoadedRun.context_length;
+                loadActivationContextsSummary();
             }
-
-            trainWandbRunEntry = runState.data.wandb_path;
-            contextLength = runState.data.context_length;
-
-            // Load activation contexts summary
-            loadActivationContextsSummary();
         } catch (error) {
             console.error("error loading status", error);
-            // if the backend is down, we keep the local state
             runState = { status: "error", error: "Backend unreachable. Showing cached view." };
-        }
-    }
-
-    async function loadActivationContextsSummary() {
-        try {
-            activationContextsSummary = await attrApi.getActivationContextsSummary();
-        } catch (e) {
-            const status = (e as { status?: number }).status;
-            if (status === 404) {
-                activationContextsSummary = null;
-            } else throw e;
         }
     }
 
@@ -70,10 +50,12 @@
         const input = trainWandbRunEntry?.trim();
         if (!input || !contextLength) return;
         runState = { status: "loading" };
-        // load a run into backend state
         await api.loadRun(input, contextLength);
-        // fetch the new state
         await loadStatus();
+    }
+
+    async function loadActivationContextsSummary() {
+        activationContextsSummary = await attrApi.getActivationContextsSummary();
     }
 
     onMount(() => {

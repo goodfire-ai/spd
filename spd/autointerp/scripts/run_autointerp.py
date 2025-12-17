@@ -10,12 +10,12 @@ Usage (direct execution):
     # Interpret (CPU)
     python -m spd.autointerp.scripts.run_autointerp interpret <wandb_path>
 
-Usage (SLURM submission via spd-autointerp):
+Usage (SLURM submission):
     # Submit harvest job to SLURM
-    spd-autointerp harvest <wandb_path> --n_batches 1000
+    spd-harvest <wandb_path> --n_batches 1000
 
     # Submit interpret job to SLURM
-    spd-autointerp interpret <wandb_path>
+    spd-interpret <wandb_path>
 """
 
 import os
@@ -81,8 +81,16 @@ def interpret_cmd(
     wandb_path: str,
     model: OpenRouterModelName = OpenRouterModelName.GEMINI_2_5_FLASH,
     max_concurrent: int = 20,
+    budget: float | None = None,
 ) -> None:
-    """Interpret harvested components."""
+    """Interpret harvested components.
+
+    Args:
+        wandb_path: WandB run path for the target decomposition run.
+        model: OpenRouter model to use for interpretation.
+        max_concurrent: Maximum concurrent API requests.
+        budget: Stop after spending this much (USD). None = unlimited.
+    """
 
     from spd.autointerp.interpret import run_interpret
 
@@ -106,6 +114,7 @@ def interpret_cmd(
         max_concurrent,
         activation_contexts_dir,
         autointerp_dir,
+        budget,
     )
 
 

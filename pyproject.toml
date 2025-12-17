@@ -49,7 +49,8 @@ dev = [
 [project.scripts]
 spd-run = "spd.scripts.run_cli:cli"
 spd-local = "spd.scripts.run_local:cli"
-spd-autointerp = "spd.autointerp.scripts.run_slurm_cli:cli"
+spd-harvest = "spd.autointerp.scripts.run_slurm_cli:harvest_cli"
+spd-interpret = "spd.autointerp.scripts.run_slurm_cli:interpret_cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]

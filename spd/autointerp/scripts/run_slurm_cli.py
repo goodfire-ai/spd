@@ -1,6 +1,6 @@
-"""CLI entry point for autointerp SLURM launcher.
+"""CLI entry points for autointerp SLURM launchers.
 
-Thin wrapper for fast --help. Heavy imports deferred to run_slurm.py.
+Thin wrappers for fast --help. Heavy imports deferred to run_slurm.py.
 """
 
 import fire
@@ -24,10 +24,10 @@ def harvest(
 
     Examples:
         # Single GPU harvest
-        spd-autointerp harvest wandb:spd/runs/abc123 --n_batches 1000
+        spd-harvest wandb:spd/runs/abc123 --n_batches 1000
 
         # Multi-GPU parallel harvest
-        spd-autointerp harvest wandb:spd/runs/abc123 --n_batches 8000 --n_gpus 8
+        spd-harvest wandb:spd/runs/abc123 --n_batches 8000 --n_gpus 8
     """
     from spd.autointerp.scripts.run_slurm import harvest as harvest_impl
 
@@ -49,6 +49,7 @@ def interpret(
     wandb_path: str,
     model: str = "google/gemini-2.5-flash",
     max_concurrent: int = 20,
+    budget: float | None = None,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
 ) -> None:
@@ -56,10 +57,13 @@ def interpret(
 
     Examples:
         # Default model
-        spd-autointerp interpret wandb:spd/runs/abc123
+        spd-interpret wandb:spd/runs/abc123
+
+        # With $100 budget
+        spd-interpret wandb:spd/runs/abc123 --budget 100
 
         # Custom concurrency
-        spd-autointerp interpret wandb:spd/runs/abc123 --max_concurrent 50
+        spd-interpret wandb:spd/runs/abc123 --max_concurrent 50
     """
     from spd.autointerp.interpret import OpenRouterModelName
     from spd.autointerp.scripts.run_slurm import interpret as interpret_impl
@@ -68,10 +72,15 @@ def interpret(
         wandb_path=wandb_path,
         model=OpenRouterModelName(model),
         max_concurrent=max_concurrent,
+        budget=budget,
         partition=partition,
         time=time,
     )
 
 
-def cli() -> None:
-    fire.Fire({"harvest": harvest, "interpret": interpret})
+def harvest_cli() -> None:
+    fire.Fire(harvest)
+
+
+def interpret_cli() -> None:
+    fire.Fire(interpret)

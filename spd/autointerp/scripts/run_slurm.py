@@ -147,6 +147,7 @@ def interpret(
     wandb_path: str,
     model: OpenRouterModelName = OpenRouterModelName.GEMINI_2_5_FLASH,
     max_concurrent: int = 20,
+    budget: float | None = None,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
 ) -> None:
@@ -156,6 +157,7 @@ def interpret(
         wandb_path: WandB run path for the target decomposition run.
         model: OpenRouter model to use for interpretation.
         max_concurrent: Maximum concurrent API requests.
+        budget: Stop after spending this much (USD). None = unlimited.
         partition: SLURM partition name.
         time: Job time limit.
     """
@@ -168,11 +170,18 @@ def interpret(
 
     job_name = f"autointerp-interpret-{job_id}"
 
-    interpret_cmd = f"""\
-python -m spd.autointerp.scripts.run_autointerp interpret \\
-    "{wandb_path}" \\
-    --model {model.value} \\
-    --max_concurrent {max_concurrent}"""
+    # Build command with optional cost limit
+    cmd_parts = [
+        "python -m spd.autointerp.scripts.run_autointerp interpret",
+        f'"{wandb_path}"',
+        f"--model {model.value}",
+        f"--max_concurrent {max_concurrent}",
+    ]
+    if budget is not None:
+        cmd_parts.append(f"--budget {budget}")
+    interpret_cmd = " \\\n    ".join(cmd_parts)
+
+    budget_str = f"\\${budget:.2f}" if budget else "unlimited"
 
     script_content = f"""\
 #!/bin/bash
@@ -190,6 +199,7 @@ echo "=== Autointerp Interpret ==="
 echo "WANDB_PATH: {wandb_path}"
 echo "MODEL: {model.value}"
 echo "MAX_CONCURRENT: {max_concurrent}"
+echo "BUDGET: {budget_str}"
 echo "SLURM_JOB_ID: $SLURM_JOB_ID"
 echo "============================="
 
@@ -225,6 +235,7 @@ echo "Interpret complete!"
             "WandB path": wandb_path,
             "Model": model.value,
             "Max concurrent": max_concurrent,
+            "Budget": budget_str,
             "Log": f"~/slurm_logs/slurm-{slurm_job_id}.out",
             "Script": str(final_script_path),
         }

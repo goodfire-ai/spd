@@ -161,8 +161,13 @@ async def interpret_all(
     interpreter_model: str,
     max_concurrent: int,
     output_path: Path,
+    budget: float | None = None,
 ) -> list[InterpretationResult]:
-    """Interpret all components with bounded concurrency."""
+    """Interpret all components with bounded concurrency.
+
+    Args:
+        budget: Stop after spending this much. None = unlimited.
+    """
     results: list[InterpretationResult] = []
     completed = set[str]()
 
@@ -178,18 +183,28 @@ async def interpret_all(
 
     components_mean_ci_desc = sorted(components, key=lambda c: c.mean_ci, reverse=True)
     remaining = [c for c in components_mean_ci_desc if c.component_key not in completed]
-    print(f"Interpreting {len(remaining)} components ({max_concurrent} concurrent)")
+    budget_str = f"${budget:.2f} budget" if budget else "unlimited budget"
+    print(f"Interpreting {len(remaining)} components ({max_concurrent} concurrent, {budget_str})")
     start_idx = len(results)
 
     semaphore = asyncio.Semaphore(max_concurrent)
     output_lock = asyncio.Lock()
+    stop_event = asyncio.Event()
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
     cost_tracker = CostTracker(model=interpreter_model)
 
     async def process_one(component: ComponentData, index: int) -> None:
+        # Check if we should stop before acquiring semaphore
+        if stop_event.is_set():
+            return
+
         async with semaphore:
+            # Check again after acquiring (budget may have been exceeded while waiting)
+            if stop_event.is_set():
+                return
+
             res = await interpret_component(client, interpreter_model, component, arch, tokenizer)
             if res is None:
                 logger.error(f"Failed to interpret component {component.component_key}")
@@ -202,9 +217,15 @@ async def interpret_all(
                 f.write(json.dumps(asdict(result)) + "\n")
             cost_tracker.add(in_tok, out_tok)
 
+            # Check budget and stop if exceeded
+            current_cost = cost_tracker.cost_usd()
+            if budget is not None and current_cost >= budget and not stop_event.is_set():
+                tqdm_asyncio.write(f"Budget exhausted: ${current_cost:.2f} >= ${budget:.2f}")
+                stop_event.set()
+
             if index % 100 == 0:
                 tqdm_asyncio.write(
-                    f"[{index}] ${cost_tracker.cost_usd():.2f} ({cost_tracker.input_tokens:,} in, {cost_tracker.output_tokens:,} out)"
+                    f"[{index}] ${current_cost:.2f} ({cost_tracker.input_tokens:,} in, {cost_tracker.output_tokens:,} out)"
                 )
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
@@ -213,6 +234,7 @@ async def interpret_all(
             desc="Interpreting components",
         )
 
+    print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
     return results
 
 
@@ -247,6 +269,7 @@ def run_interpret(
     max_concurrent: int,
     activation_contexts_dir: Path,
     autointerp_dir: Path,
+    budget: float | None = None,
 ) -> list[InterpretationResult]:
     """Main entrypoint: load harvest, interpret all components, save results."""
     arch = get_architecture_info(wandb_path)
@@ -263,6 +286,7 @@ def run_interpret(
             interpreter_model,
             max_concurrent,
             output_path,
+            budget,
         )
     )
 
