@@ -23,7 +23,7 @@ from spd.app.backend.routers import graphs as graphs_router
 from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
-from spd.app.backend.state import RunState, StateManager
+from spd.app.backend.state import HarvestCache, RunState, StateManager
 from spd.configs import Config
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel
@@ -157,8 +157,7 @@ def app_with_state():
             config=config,
             token_strings=token_strings,
             train_loader=train_loader,
-            # TODO: Re-enable token uplift after performance optimization
-            # token_base_rates={},
+            harvest=HarvestCache(run_id="test_run"),
         )
 
         manager = StateManager.get()

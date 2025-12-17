@@ -1,14 +1,21 @@
 """CLI for autointerp pipeline.
 
-Usage:
+Usage (direct execution):
     # Harvest (single GPU)
     python -m spd.autointerp.scripts.run_autointerp harvest <wandb_path> --n_batches 1000
 
     # Harvest (parallel across 8 GPUs)
-    python -m spd.autointerp.scripts.run_autointerp harvest <wandb_path> --n_batches 8000 -d 8
+    python -m spd.autointerp.scripts.run_autointerp harvest <wandb_path> --n_batches 8000 --n_gpus 8
 
     # Interpret (CPU)
     python -m spd.autointerp.scripts.run_autointerp interpret <wandb_path>
+
+Usage (SLURM submission via spd-autointerp):
+    # Submit harvest job to SLURM
+    spd-autointerp harvest <wandb_path> --n_batches 1000
+
+    # Submit interpret job to SLURM
+    spd-autointerp interpret <wandb_path>
 """
 
 import os
