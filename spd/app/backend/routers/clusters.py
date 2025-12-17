@@ -4,21 +4,31 @@ import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import ValidationError
 
 from spd.app.backend.state import StateManager
 from spd.app.backend.utils import log_errors
+from spd.base_config import BaseConfig
 
 router = APIRouter(prefix="/api/clusters", tags=["clusters"])
 
 
-class ClusterMapping(BaseModel):
+class ClusterMapping(BaseConfig):
     """Cluster mapping from component keys (layer:component_idx) to cluster IDs.
 
     Singleton clusters (components not grouped with others) have null values.
     """
 
     mapping: dict[str, int | None]
+
+
+class ClusterMappingFile(BaseConfig):
+    """Schema for the on-disk cluster mapping JSON file."""
+
+    ensemble_id: str
+    notes: str
+    spd_run: str
+    clusters: dict[str, int | None]
 
 
 @router.post("/load")
@@ -44,28 +54,30 @@ def load_cluster_mapping(file_path: str) -> ClusterMapping:
         raise HTTPException(status_code=400, detail=f"Not a file: {file_path}")
 
     try:
-        with open(path) as f:
+        with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
-
-    assert isinstance(data, dict), f"Expected dict, got {type(data)}"
-    assert "spd_run" in data, "Missing 'spd_run' field in cluster mapping file"
-    assert "clusters" in data, "Missing 'clusters' field in cluster mapping file"
-
-    if data["spd_run"] != run_state.run.wandb_path:
+    except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=400,
-            detail=f"Run ID mismatch: cluster file is for '{data['spd_run']}', "
+            detail=f"Invalid JSON in cluster mapping file: {file_path} ({exc})",
+        ) from exc
+
+    try:
+        parsed = ClusterMappingFile.model_validate(data)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Invalid cluster mapping file schema",
+                "errors": exc.errors(),
+            },
+        ) from exc
+
+    if parsed.spd_run != run_state.run.wandb_path:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Run ID mismatch: cluster file is for '{parsed.spd_run}', "
             f"but loaded run is '{run_state.run.wandb_path}'",
         )
 
-    clusters = data["clusters"]
-    assert isinstance(clusters, dict), f"Expected 'clusters' to be dict, got {type(clusters)}"
-    for key, value in clusters.items():
-        assert isinstance(key, str), f"Key must be string, got {type(key)}"
-        assert value is None or isinstance(value, int), (
-            f"Value must be int or null, got {type(value)}"
-        )
-
-    return ClusterMapping(mapping=clusters)
+    return ClusterMapping(mapping=parsed.clusters)
