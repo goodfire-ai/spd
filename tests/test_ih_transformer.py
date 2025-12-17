@@ -5,7 +5,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
-    ModulePatternInfo,
+    ModulePatternInfoConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -49,11 +49,11 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         ci_fn_type="vector_mlp",
         ci_fn_hidden_dims=[128],
         module_info=[
-            ModulePatternInfo(module_pattern="blocks.*.attn.q_proj", C=10),
-            ModulePatternInfo(module_pattern="blocks.*.attn.k_proj", C=10),
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.q_proj", C=10),
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.k_proj", C=10),
         ],
         identity_module_info=[
-            ModulePatternInfo(module_pattern="blocks.*.attn.q_proj", C=10),
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.q_proj", C=10),
         ],
         # Loss Coefficients
         loss_metric_configs=[

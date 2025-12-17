@@ -16,7 +16,7 @@ from torch.nn.init import calculate_gain
 class ModulePathInfo:
     """Expanded module path with its number of components.
 
-    Created by expanding ModulePatternInfo patterns against actual module names
+    Created by expanding ModulePatternInfoConfig patterns against actual module names
     in the target model. Used internally after pattern expansion.
     """
 
@@ -83,7 +83,7 @@ def expand_module_patterns(model: nn.Module, module_info: list[Any]) -> list[Mod
 
     Args:
         model: The target model
-        module_info: List of ModulePatternInfo specifying patterns and C values
+        module_info: List of ModulePatternInfoConfig specifying patterns and C values
 
     Returns:
         List of ModulePathInfo with expanded concrete module paths
@@ -96,8 +96,8 @@ def expand_module_patterns(model: nn.Module, module_info: list[Any]) -> list[Mod
         More specific pattern (fewer wildcards) wins over less specific:
 
         >>> module_info = [
-        ...     ModulePatternInfo(module_pattern="h.*.mlp.*", C=100),
-        ...     ModulePatternInfo(module_pattern="h.*.mlp.c_fc", C=50),
+        ...     ModulePatternInfoConfig(module_pattern="h.*.mlp.*", C=100),
+        ...     ModulePatternInfoConfig(module_pattern="h.*.mlp.c_fc", C=50),
         ... ]
         >>> expand_module_patterns(model, module_info)
         [ModulePathInfo(module_path='h.0.mlp.c_fc', C=50), ...]

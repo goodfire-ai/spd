@@ -7,7 +7,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
-    ModulePatternInfo,
+    ModulePatternInfoConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
@@ -47,12 +47,12 @@ def test_tms_decomposition_happy_path() -> None:
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[8],
         module_info=[
-            ModulePatternInfo(module_pattern="linear1", C=10),
-            ModulePatternInfo(module_pattern="linear2", C=10),
-            ModulePatternInfo(module_pattern="hidden_layers.0", C=10),
+            ModulePatternInfoConfig(module_pattern="linear1", C=10),
+            ModulePatternInfoConfig(module_pattern="linear2", C=10),
+            ModulePatternInfoConfig(module_pattern="hidden_layers.0", C=10),
         ],
         identity_module_info=[
-            ModulePatternInfo(module_pattern="linear1", C=10),
+            ModulePatternInfoConfig(module_pattern="linear1", C=10),
         ],
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(

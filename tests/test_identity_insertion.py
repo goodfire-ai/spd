@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.testing import assert_close
 
-from spd.configs import ModulePatternInfo
+from spd.configs import ModulePatternInfoConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.models.components import Identity
 
@@ -48,8 +48,8 @@ def test_inserts_identity_layers():
     insert_identity_operations_(
         target_model=model,
         identity_module_info=[
-            ModulePatternInfo(module_pattern="layer1", C=1),
-            ModulePatternInfo(module_pattern="layer2", C=1),
+            ModulePatternInfoConfig(module_pattern="layer1", C=1),
+            ModulePatternInfoConfig(module_pattern="layer2", C=1),
         ],
     )
 
@@ -74,8 +74,8 @@ def test_adds_hooks():
     insert_identity_operations_(
         target_model=model,
         identity_module_info=[
-            ModulePatternInfo(module_pattern="layer1", C=1),
-            ModulePatternInfo(module_pattern="layer2", C=1),
+            ModulePatternInfoConfig(module_pattern="layer1", C=1),
+            ModulePatternInfoConfig(module_pattern="layer2", C=1),
         ],
     )
 
@@ -93,7 +93,7 @@ def test_preserves_output():
     original_output = model(input_ids)
 
     insert_identity_operations_(
-        model, identity_module_info=[ModulePatternInfo(module_pattern="layer1", C=1)]
+        model, identity_module_info=[ModulePatternInfoConfig(module_pattern="layer1", C=1)]
     )
 
     new_output = model(input_ids)
@@ -127,8 +127,8 @@ def test_uses_correct_dims():
     insert_identity_operations_(
         target_model=model,
         identity_module_info=[
-            ModulePatternInfo(module_pattern="layer1", C=1),
-            ModulePatternInfo(module_pattern="layer2", C=1),
+            ModulePatternInfoConfig(module_pattern="layer1", C=1),
+            ModulePatternInfoConfig(module_pattern="layer2", C=1),
         ],
     )
 
@@ -163,7 +163,7 @@ def test_embedding_raises_error():
     with pytest.raises(ValueError, match="Embedding modules not supported"):
         insert_identity_operations_(
             target_model=model,
-            identity_module_info=[ModulePatternInfo(module_pattern="embedding", C=1)],
+            identity_module_info=[ModulePatternInfoConfig(module_pattern="embedding", C=1)],
         )
 
 
@@ -173,5 +173,5 @@ def test_unmatched_pattern_raises_error():
     with pytest.raises(ValueError, match="did not match any modules"):
         insert_identity_operations_(
             target_model=model,
-            identity_module_info=[ModulePatternInfo(module_pattern="does.not.exist*", C=1)],
+            identity_module_info=[ModulePatternInfoConfig(module_pattern="does.not.exist*", C=1)],
         )

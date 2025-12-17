@@ -8,7 +8,7 @@ from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
-from spd.configs import Config, ImportanceMinimalityLossConfig, ModulePatternInfo
+from spd.configs import Config, ImportanceMinimalityLossConfig, ModulePatternInfoConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
@@ -130,13 +130,13 @@ def test_from_run_info():
             pretrained_model_path=base_model_path,
             pretrained_model_name=None,
             module_info=[
-                ModulePatternInfo(module_pattern="linear1", C=4),
-                ModulePatternInfo(module_pattern="linear2", C=4),
-                ModulePatternInfo(module_pattern="embedding", C=4),
-                ModulePatternInfo(module_pattern="conv1d1", C=4),
-                ModulePatternInfo(module_pattern="conv1d2", C=4),
+                ModulePatternInfoConfig(module_pattern="linear1", C=4),
+                ModulePatternInfoConfig(module_pattern="linear2", C=4),
+                ModulePatternInfoConfig(module_pattern="embedding", C=4),
+                ModulePatternInfoConfig(module_pattern="conv1d1", C=4),
+                ModulePatternInfoConfig(module_pattern="conv1d2", C=4),
             ],
-            identity_module_info=[ModulePatternInfo(module_pattern="linear1", C=4)],
+            identity_module_info=[ModulePatternInfoConfig(module_pattern="linear1", C=4)],
             ci_fn_type="mlp",
             ci_fn_hidden_dims=[4],
             batch_size=1,
@@ -426,7 +426,7 @@ def test_replacing_identity():
     # with another prepended identity layer
     insert_identity_operations_(
         target_model=model,
-        identity_module_info=[ModulePatternInfo(module_pattern="linear", C=C)],
+        identity_module_info=[ModulePatternInfoConfig(module_pattern="linear", C=C)],
     )
 
     # wrapped in a component model that decomposes the prepended identity layer

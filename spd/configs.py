@@ -22,7 +22,7 @@ from spd.models.components import CiFnType
 from spd.spd_types import ModelPath, Probability
 
 
-class ModulePatternInfo(BaseConfig):
+class ModulePatternInfoConfig(BaseConfig):
     """Configuration for a module pattern with its number of components.
 
     Used in config files to specify which modules to decompose and how many
@@ -278,29 +278,29 @@ class Config(BaseConfig):
         default="leaky_hard",
         description="Type of sigmoid to use for causal importance calculation",
     )
-    module_info: list[ModulePatternInfo] = Field(
+    module_info: list[ModulePatternInfoConfig] = Field(
         ...,
         description="List of module patterns with C values specifying which modules to decompose. "
         "Example: [{module_pattern: 'h.*.mlp.c_fc', C: 10}, {module_pattern: 'h.*.attn.*', C: 20}]",
     )
-    identity_module_info: list[ModulePatternInfo] | None = Field(
+    identity_module_info: list[ModulePatternInfoConfig] | None = Field(
         default=None,
         description="List of identity module patterns with C values. "
         "Identity operations will be inserted at these modules.",
     )
 
     @property
-    def all_module_info(self) -> list[ModulePatternInfo]:
+    def all_module_info(self) -> list[ModulePatternInfoConfig]:
         """Combine target and identity patterns with their C values.
 
-        Returns list of ModulePatternInfo with .pre_identity suffix added to identity patterns.
+        Returns list of ModulePatternInfoConfig with .pre_identity suffix added to identity patterns.
         """
         result = list(self.module_info)
 
         if self.identity_module_info is not None:
             for info in self.identity_module_info:
                 result.append(
-                    ModulePatternInfo(
+                    ModulePatternInfoConfig(
                         module_pattern=f"{info.module_pattern}.pre_identity", C=info.C
                     )
                 )
@@ -536,7 +536,7 @@ class Config(BaseConfig):
 
     @classmethod
     def _migrate_to_module_info(cls, config_dict: dict[str, Any]) -> None:
-        """Migrate old config formats to new ModulePatternInfo format.
+        """Migrate old config formats to new ModulePatternInfoConfig format.
 
         Modifies config_dict in place.
 

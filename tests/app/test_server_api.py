@@ -24,7 +24,7 @@ from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import RunState, StateManager
-from spd.configs import Config, ModulePatternInfo
+from spd.configs import Config, ModulePatternInfoConfig
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel
 from spd.utils.module_utils import expand_module_patterns
@@ -104,7 +104,7 @@ def app_with_state():
             ci_fn_hidden_dims=[16],
             sampling="continuous",
             sigmoid_type="leaky_hard",
-            module_info=[ModulePatternInfo(module_pattern=p, C=C) for p in module_patterns],
+            module_info=[ModulePatternInfoConfig(module_pattern=p, C=C) for p in module_patterns],
             pretrained_model_class="simple_stories_train.models.gpt2_simple.GPT2Simple",
             pretrained_model_output_attr="idx_0",
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",

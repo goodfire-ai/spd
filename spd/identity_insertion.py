@@ -17,7 +17,7 @@ from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from spd.models.components import Identity
 
 if TYPE_CHECKING:
-    from spd.configs import ModulePatternInfo
+    from spd.configs import ModulePatternInfoConfig
 
 
 def pre_id_hook(
@@ -37,13 +37,13 @@ def pre_id_hook(
 
 
 def insert_identity_operations_(
-    target_model: nn.Module, identity_module_info: list[ModulePatternInfo]
+    target_model: nn.Module, identity_module_info: list[ModulePatternInfoConfig]
 ) -> None:
     """Insert identity layers before specified modules.
 
     Args:
         target_model: The model to modify
-        identity_module_info: List of ModulePatternInfo. The C values are ignored here
+        identity_module_info: List of ModulePatternInfoConfig. The C values are ignored here
             (used later when creating components), only patterns are used for matching.
     """
     import fnmatch

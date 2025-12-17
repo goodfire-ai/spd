@@ -2,7 +2,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
-    ModulePatternInfo,
+    ModulePatternInfoConfig,
     StochasticReconLossConfig,
 )
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
@@ -51,11 +51,11 @@ def test_resid_mlp_decomposition_happy_path() -> None:
             FaithfulnessLossConfig(coeff=1.0),
         ],
         module_info=[
-            ModulePatternInfo(module_pattern="layers.*.mlp_in", C=10),
-            ModulePatternInfo(module_pattern="layers.*.mlp_out", C=10),
+            ModulePatternInfoConfig(module_pattern="layers.*.mlp_in", C=10),
+            ModulePatternInfoConfig(module_pattern="layers.*.mlp_out", C=10),
         ],
         identity_module_info=[
-            ModulePatternInfo(module_pattern="layers.*.mlp_in", C=10),
+            ModulePatternInfoConfig(module_pattern="layers.*.mlp_in", C=10),
         ],
         output_loss_type="mse",
         # Training
