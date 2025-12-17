@@ -1,20 +1,18 @@
 <script lang="ts">
-    import type { Loadable } from "../../lib/index";
     import type {
         ActivationContextsSummary,
-        ComponentDetail,
         ComponentSummary,
         OutputProbEntry,
         PinnedNode,
         Edge,
     } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
+    import { runState } from "../../lib/runState.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
     type Props = {
         stagedNodes: PinnedNode[];
-        componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
         activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         tokens: string[];
@@ -25,7 +23,6 @@
 
     let {
         stagedNodes,
-        componentDetailsCache,
         activationContextsSummary,
         outputProbs,
         tokens,
@@ -102,9 +99,11 @@
                             seqIdx={node.seqIdx}
                             {summary}
                             {detail}
+                            {interpretationsCache}
                             {edgesBySource}
                             {edgesByTarget}
                             onPinComponent={toggleComponentPinned}
+                            {onInterpretationGenerated}
                         />
                     {/if}
                 </div>

@@ -1,16 +1,15 @@
 <script lang="ts">
-    import type { Loadable } from "../lib";
     import * as mainApi from "../lib/api";
     import * as attrApi from "../lib/localAttributionsApi";
     import {
         filterInterventableNodes,
         type ActivationContextsSummary,
-        type ComponentDetail,
         type GraphData,
         type PinnedNode,
         type PromptPreview,
         type TokenInfo,
     } from "../lib/localAttributionsTypes";
+    import { runState } from "../lib/runState.svelte";
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
     import InterventionsView from "./local-attr/InterventionsView.svelte";
     import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
@@ -106,31 +105,16 @@
     let hideUnpinnedEdges = $state(false);
     let hideNodeCard = $state(false);
 
-    // Component details cache (shared across graphs)
-    let componentDetailsCache = $state<Record<string, Loadable<ComponentDetail>>>({});
 
     // Pinned nodes for attributions graph
     let pinnedNodes = $state<PinnedNode[]>([]);
-
-    async function loadComponentDetail(layer: string, cIdx: number) {
-        const cacheKey = `${layer}:${cIdx}`;
-        if (componentDetailsCache[cacheKey]?.status === "loading") return;
-
-        componentDetailsCache[cacheKey] = { status: "loading" };
-        try {
-            const detail = await attrApi.getComponentDetail(layer, cIdx);
-            componentDetailsCache[cacheKey] = { status: "loaded", data: detail };
-        } catch (error) {
-            componentDetailsCache[cacheKey] = { status: "error", error };
-        }
-    }
 
     function handlePinnedNodesChange(nodes: PinnedNode[]) {
         pinnedNodes = nodes;
         // Load component details for any newly pinned nodes
         for (const node of nodes) {
             if (node.layer !== "wte" && node.layer !== "output") {
-                loadComponentDetail(node.layer, node.cIdx);
+                runState.loadComponentDetail(node.layer, node.cIdx);
             }
         }
     }
@@ -161,12 +145,14 @@
             previousRunId = currentRunId;
             loadPromptsList();
             loadAllTokens();
+            runState.loadInterpretations();
             promptCards = [];
             activeCardPromptId = null;
         } else if (currentRunId === null && previousRunId !== null) {
             previousRunId = null;
             prompts = [];
             allTokens = [];
+            runState.clear();
             promptCards = [];
             activeCardPromptId = null;
         }
@@ -755,16 +741,13 @@
                                             {hideNodeCard}
                                             {activationContextsSummary}
                                             stagedNodes={pinnedNodes}
-                                            {componentDetailsCache}
                                             onStagedNodesChange={handlePinnedNodesChange}
-                                            onLoadComponentDetail={loadComponentDetail}
                                             onEdgeCountChange={(count) => (filteredEdgeCount = count)}
                                         />
                                     {/key}
                                 </div>
                                 <StagedNodesPanel
                                     stagedNodes={pinnedNodes}
-                                    {componentDetailsCache}
                                     {activationContextsSummary}
                                     outputProbs={activeGraph.data.outputProbs}
                                     tokens={activeCard.tokens}
@@ -797,9 +780,7 @@
                                     onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     {activationContextsSummary}
-                                    {componentDetailsCache}
                                     {runningIntervention}
-                                    onLoadComponentDetail={loadComponentDetail}
                                     onSelectionChange={handleComposerSelectionChange}
                                     onRunIntervention={handleRunIntervention}
                                     onSelectRun={handleSelectRun}

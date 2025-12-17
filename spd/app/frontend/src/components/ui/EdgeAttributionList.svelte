@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { EdgeAttribution } from "../../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
+    import { runState } from "../../lib/runState.svelte";
     import { lerp } from "../local-attr/graphUtils";
 
     type Props = {
@@ -11,6 +12,17 @@
     };
 
     let { items, onNodeClick, pageSize, direction }: Props = $props();
+
+    // Extract component key (layer:cIdx) from node key (layer:seq:cIdx)
+    function getComponentKey(nodeKey: string): string {
+        const parts = nodeKey.split(":");
+        return `${parts[0]}:${parts[2]}`; // layer:cIdx
+    }
+
+    function getInterpretationLabel(nodeKey: string): string | null {
+        const componentKey = getComponentKey(nodeKey);
+        return runState.getInterpretation(componentKey)?.label ?? null;
+    }
 
     let currentPage = $state(0);
     const totalPages = $derived(Math.ceil(items.length / pageSize));
@@ -43,12 +55,18 @@
         {#each paginatedItems as { nodeKey, value, normalizedMagnitude } (nodeKey)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
+            {@const label = getInterpretationLabel(nodeKey)}
             <button
                 class="edge-pill"
                 style="background: {bgColor};"
                 onclick={() => onNodeClick(nodeKey)}
+                title={nodeKey}
             >
-                <span class="node-key" style="color: {textColor};">{formatNodeKeyForDisplay(nodeKey)}</span>
+                {#if label}
+                    <span class="interp-label" style="color: {textColor};">{label}</span>
+                {:else}
+                    <span class="node-key" style="color: {textColor};">{formatNodeKeyForDisplay(nodeKey)}</span>
+                {/if}
                 <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
             </button>
         {/each}
@@ -114,11 +132,16 @@
         font-size: inherit;
     }
 
-    .edge-pill.clickable {
-        cursor: pointer;
-    }
-
     .value {
         opacity: 0.8;
+    }
+
+    .interp-label {
+        font-family: var(--font-sans);
+        font-weight: 500;
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 </style>

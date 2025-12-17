@@ -26,32 +26,34 @@ class OpenRouterModelName(StrEnum):
     GEMINI_2_5_FLASH = "google/gemini-2.5-flash"
 
 
-# Pricing per million tokens (as of Dec 2024)
-MODEL_PRICING_IO_PER_MILLION: dict[str, tuple[float, float]] = {
-    # OpenRouterModelName.HAIKU_4_5_20251001: (1.00, 5.00),
-    OpenRouterModelName.GEMINI_2_5_FLASH: (0.3, 2.5)
-}
-
-
 class CostTracker:
-    def __init__(self, model: str) -> None:
-        i, o = MODEL_PRICING_IO_PER_MILLION[model]
-        self.input_price = i
-        self.output_price = o
+    """Tracks API cost by accumulating tokens and fetching pricing from OpenRouter."""
 
+    def __init__(self) -> None:
         self.input_tokens = 0
         self.output_tokens = 0
-        self.completed = 0
+        self.input_price_per_token: float = 0
+        self.output_price_per_token: float = 0
+
+    async def init_pricing(self, client: OpenRouter, model_id: str) -> None:
+        """Fetch pricing for the model from OpenRouter API."""
+        response = await client.models.list_async()
+        for model in response.data:
+            if model.id == model_id:
+                self.input_price_per_token = float(model.pricing.prompt)
+                self.output_price_per_token = float(model.pricing.completion)
+                return
+        raise ValueError(f"Model {model_id} not found in OpenRouter models")
 
     def add(self, input_tokens: int, output_tokens: int) -> None:
         self.input_tokens += input_tokens
         self.output_tokens += output_tokens
-        self.completed += 1
 
     def cost_usd(self) -> float:
-        input_cost = (self.input_tokens / 1_000_000) * self.input_price
-        output_cost = (self.output_tokens / 1_000_000) * self.output_price
-        return input_cost + output_cost
+        return (
+            self.input_tokens * self.input_price_per_token
+            + self.output_tokens * self.output_price_per_token
+        )
 
 
 INTERPRETATION_SCHEMA: dict[str, Any] = {
@@ -190,9 +192,9 @@ async def interpret_all(
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
-    cost_tracker = CostTracker(model=interpreter_model)
+    cost_tracker = CostTracker()
 
-    async def process_one(component: ComponentData, index: int) -> None:
+    async def process_one(component: ComponentData, index: int, client: OpenRouter) -> None:
         # Check if we should stop before acquiring semaphore
         if stop_event.is_set():
             return
@@ -226,8 +228,14 @@ async def interpret_all(
                 )
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
+        await cost_tracker.init_pricing(client, interpreter_model)
+        print(
+            f"Pricing: ${cost_tracker.input_price_per_token * 1e6:.2f}/M input, "
+            f"${cost_tracker.output_price_per_token * 1e6:.2f}/M output"
+        )
+
         await tqdm_asyncio.gather(
-            *[process_one(c, index) for index, c in enumerate(remaining, start=start_idx)],
+            *[process_one(c, index, client) for index, c in enumerate(remaining, start=start_idx)],
             desc="Interpreting components",
         )
 

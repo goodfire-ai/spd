@@ -1,6 +1,6 @@
 <script lang="ts">
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
-    import type { NormalizeType } from "../../lib/localAttributionsApi";
+    import type { Interpretation, NormalizeType } from "../../lib/localAttributionsApi";
     import {
         isInterventableNode,
         type ActivationContextsSummary,
@@ -55,6 +55,7 @@
         // Other props
         activationContextsSummary: ActivationContextsSummary | null;
         componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
+        interpretationsCache: Record<string, Interpretation>;
         runningIntervention: boolean;
         onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onSelectionChange: (selection: Set<string>) => void;
@@ -63,6 +64,7 @@
         onDeleteRun: (runId: number) => void;
         onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRun>;
         onDeleteFork: (forkId: number) => void;
+        onInterpretationGenerated?: (componentKey: string, interp: Interpretation) => void;
     };
 
     let {
@@ -88,6 +90,7 @@
         onHideNodeCardChange,
         activationContextsSummary,
         componentDetailsCache,
+        interpretationsCache,
         runningIntervention,
         onLoadComponentDetail,
         onSelectionChange,
@@ -96,6 +99,7 @@
         onDeleteRun,
         onForkRun,
         onDeleteFork,
+        onInterpretationGenerated,
     }: Props = $props();
 
     // Fork modal state
@@ -399,7 +403,7 @@
         hoverTimeout = setTimeout(() => {
             if (!isHoveringTooltip) hoveredNode = null;
             hoverTimeout = null;
-        }, 50);
+        }, 100);
     }
 
     function handleNodeClick(nodeKey: string) {
@@ -891,6 +895,7 @@
             {hideNodeCard}
             {activationContextsSummary}
             {componentDetailsCache}
+            {interpretationsCache}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
             {tokens}
@@ -901,6 +906,7 @@
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
+            {onInterpretationGenerated}
         />
     {/if}
 

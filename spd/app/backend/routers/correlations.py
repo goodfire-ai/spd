@@ -74,6 +74,29 @@ class InterpretationResponse(BaseModel):
     reasoning: str
 
 
+@router.get("/interpretations")
+@log_errors
+def get_all_interpretations(
+    loaded: DepLoadedRun,
+) -> dict[str, InterpretationResponse]:
+    """Get all interpretation labels.
+
+    Returns a dict keyed by component_key (layer:cIdx).
+    """
+    interpretations = loaded.harvest.interpretations
+    if interpretations is None:
+        return {}
+
+    return {
+        key: InterpretationResponse(
+            label=result.label,
+            confidence=result.confidence,
+            reasoning=result.reasoning,
+        )
+        for key, result in interpretations.items()
+    }
+
+
 @router.get("/interpretations/{layer}/{component_idx}")
 @log_errors
 def get_component_interpretation(
@@ -93,6 +116,105 @@ def get_component_interpretation(
     result = interpretations.get(component_key)
     if result is None:
         return None
+
+    return InterpretationResponse(
+        label=result.label,
+        confidence=result.confidence,
+        reasoning=result.reasoning,
+    )
+
+
+@router.post("/interpretations/{layer}/{component_idx}")
+@log_errors
+async def request_component_interpretation(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+) -> InterpretationResponse:
+    """Generate an interpretation for a component on-demand.
+
+    Requires OPENROUTER_API_KEY environment variable.
+    Returns the generated interpretation.
+    """
+    import json
+    import os
+    from dataclasses import asdict
+
+    from openrouter import OpenRouter
+
+    from spd.autointerp.interpret import (
+        OpenRouterModelName,
+        get_architecture_info,
+        interpret_component,
+    )
+    from spd.harvest.schemas import get_autointerp_dir
+
+    component_key = f"{layer}:{component_idx}"
+
+    # Check if we already have an interpretation
+    interpretations = loaded.harvest.interpretations
+    if interpretations is not None and component_key in interpretations:
+        result = interpretations[component_key]
+        return InterpretationResponse(
+            label=result.label,
+            confidence=result.confidence,
+            reasoning=result.reasoning,
+        )
+
+    # Get component data from harvest
+    activation_contexts = loaded.harvest.activation_contexts
+    if activation_contexts is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Activation contexts not available for this run. Run harvest first.",
+        )
+
+    component_data = activation_contexts.get(component_key)
+    if component_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Component {component_key} not found in activation contexts",
+        )
+
+    # Get API key
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="OPENROUTER_API_KEY environment variable not set",
+        )
+
+    # Get architecture info and tokenizer
+    arch = get_architecture_info(loaded.run.wandb_path)
+
+    # Interpret the component
+    model_name = OpenRouterModelName.GEMINI_2_5_FLASH
+
+    async with OpenRouter(api_key=api_key) as client:
+        res = await interpret_component(client, model_name, component_data, arch, loaded.tokenizer)
+
+    if res is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate interpretation",
+        )
+
+    result, _, _ = res
+
+    # Save to file
+    autointerp_dir = get_autointerp_dir(loaded.harvest.run_id)
+    autointerp_dir.mkdir(parents=True, exist_ok=True)
+    output_path = autointerp_dir / "results.jsonl"
+    with open(output_path, "a") as f:
+        f.write(json.dumps(asdict(result)) + "\n")
+
+    # Update the cache
+    if loaded.harvest._interpretations is None:
+        loaded.harvest._interpretations = {}
+    assert isinstance(loaded.harvest._interpretations, dict)
+    loaded.harvest._interpretations[component_key] = result
+
+    logger.info(f"Generated interpretation for {component_key}: {result.label}")
 
     return InterpretationResponse(
         label=result.label,

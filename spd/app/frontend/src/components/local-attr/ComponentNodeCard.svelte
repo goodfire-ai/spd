@@ -2,7 +2,6 @@
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import {
         getComponentCorrelations,
-        getComponentInterpretation,
         getComponentTokenStats,
         type Interpretation,
     } from "../../lib/localAttributionsApi";
@@ -14,6 +13,7 @@
         EdgeAttribution,
         TokenStats,
     } from "../../lib/localAttributionsTypes";
+    import { runState } from "../../lib/runState.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
@@ -37,6 +37,11 @@
 
     let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, onPinComponent, detail }: Props = $props();
 
+    function handleInterpretationGenerated(interp: Interpretation) {
+        const key = `${layer}:${cIdx}`;
+        runState.addInterpretation(key, interp);
+    }
+
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
         if (!onPinComponent) return;
@@ -51,49 +56,49 @@
     // Token stats state (from batch job)
     let tokenStats = $state<Loadable<TokenStats>>(null);
 
-    // Interpretation state
-    let interpretation = $state<Loadable<Interpretation>>(null);
+    // Interpretation from global store (keyed by layer:cIdx)
+    const interpretation: Loadable<Interpretation> = $derived.by(() => {
+        const cached = runState.getInterpretation(`${layer}:${cIdx}`);
+        if (cached) {
+            return { status: "loaded", data: cached };
+        }
+        return null; // No interpretation available
+    });
 
     // Fetch correlations when component changes
     $effect(() => {
+        let cancelled = false;
         correlations = { status: "loading" };
         getComponentCorrelations(layer, cIdx, 1000)
             .then((data) => {
+                if (cancelled) return;
                 correlations = data ? { status: "loaded", data } : null;
             })
             .catch((error) => {
+                if (cancelled) return;
                 correlations = { status: "error", error };
             });
+        return () => {
+            cancelled = true;
+        };
     });
 
     // Fetch token stats when component changes
     $effect(() => {
+        let cancelled = false;
         tokenStats = { status: "loading" };
         getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
+                if (cancelled) return;
                 tokenStats = data ? { status: "loaded", data } : null;
             })
             .catch((error) => {
+                if (cancelled) return;
                 tokenStats = { status: "error", error };
             });
-    });
-
-    // Fetch interpretation when component changes
-    $effect(() => {
-        interpretation = { status: "loading" };
-        getComponentInterpretation(layer, cIdx)
-            .then((data) => {
-                // null isn't exactly an error here. It just means there's no harvested interpretation,
-                // but just use the error state for now to display a message
-                if (data != null) {
-                    interpretation = { status: "loaded", data };
-                } else {
-                    interpretation = { status: "error", error: "No interpretation found" };
-                }
-            })
-            .catch((error) => {
-                interpretation = { status: "error", error };
-            });
+        return () => {
+            cancelled = true;
+        };
     });
 
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
@@ -218,7 +223,12 @@
         {/if}
     </SectionHeader>
 
-    <InterpretationBadge {interpretation} />
+    <InterpretationBadge
+        {interpretation}
+        {layer}
+        {cIdx}
+        onInterpretationGenerated={handleInterpretationGenerated}
+    />
 
     <ComponentProbeInput {layer} componentIdx={cIdx} />
 
@@ -238,7 +248,7 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="positive"
-                                />
+                                                                    />
                             </div>
                         {/if}
                         {#if incomingNegative.length > 0}
@@ -249,7 +259,7 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="negative"
-                                />
+                                                                    />
                             </div>
                         {/if}
                     </div>
@@ -265,7 +275,7 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="positive"
-                                />
+                                                                    />
                             </div>
                         {/if}
                         {#if outgoingNegative.length > 0}
@@ -276,7 +286,7 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="negative"
-                                />
+                                                                    />
                             </div>
                         {/if}
                     </div>

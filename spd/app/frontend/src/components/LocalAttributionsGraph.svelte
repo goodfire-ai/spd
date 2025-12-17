@@ -8,13 +8,12 @@
         HoveredEdge,
         LayerInfo,
         NodePosition,
-        ComponentDetail,
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
     import { lerp, calcTooltipPos, sortComponentsByImportance, computeComponentOffsets } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
-    import type { Loadable } from "../lib";
+    import { runState } from "../lib/runState.svelte";
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -35,9 +34,7 @@
         hideNodeCard: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
-        componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
-        onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onEdgeCountChange?: (count: number) => void;
     };
 
@@ -50,9 +47,7 @@
         hideNodeCard,
         activationContextsSummary,
         stagedNodes,
-        componentDetailsCache,
         onStagedNodesChange,
-        onLoadComponentDetail,
         onEdgeCountChange,
     }: Props = $props();
 
@@ -432,7 +427,7 @@
 
         // Lazy load component details if needed
         if (layer !== "output" && activationContextsSummary) {
-            onLoadComponentDetail(layer, cIdx);
+            runState.loadComponentDetail(layer, cIdx);
         }
     }
 
@@ -446,7 +441,7 @@
                 hoveredNode = null;
             }
             hoverTimeout = null;
-        }, 50);
+        }, 100);
     }
 
     function handleNodeClick(layer: string, seqIdx: number, cIdx: number) {
@@ -638,7 +633,6 @@
             {tooltipPos}
             {hideNodeCard}
             {activationContextsSummary}
-            {componentDetailsCache}
             outputProbs={data.outputProbs}
             nodeCiVals={data.nodeCiVals}
             tokens={data.tokens}

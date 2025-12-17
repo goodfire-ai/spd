@@ -1,13 +1,12 @@
 <script lang="ts">
-    import type { Loadable } from "../../lib/index";
     import type {
         ActivationContextsSummary,
-        ComponentDetail,
         ComponentSummary,
         OutputProbEntry,
         Edge,
     } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
+    import { runState } from "../../lib/runState.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
@@ -22,7 +21,6 @@
         tooltipPos: { x: number; y: number };
         hideNodeCard?: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
-        componentDetailsCache: Record<string, Loadable<ComponentDetail>>;
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
         tokens: string[];
@@ -38,7 +36,6 @@
         tooltipPos,
         hideNodeCard = false,
         activationContextsSummary,
-        componentDetailsCache,
         outputProbs,
         nodeCiVals,
         tokens,
@@ -106,7 +103,7 @@
             cIdx={hoveredNode.cIdx}
             seqIdx={hoveredNode.seqIdx}
             summary={findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
-            detail={componentDetailsCache[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
+            detail={runState.getComponentDetail(hoveredNode.layer, hoveredNode.cIdx)}
             {edgesBySource}
             {edgesByTarget}
             {onPinComponent}
