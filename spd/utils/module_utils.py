@@ -1,12 +1,28 @@
+from __future__ import annotations
+
 import fnmatch
 import math
-from typing import Literal
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import torch
 import torch.nn as nn
 from simple_stories_train.models.gpt2_simple import LayerNorm as SSLayerNorm
 from torch import Tensor
 from torch.nn.init import calculate_gain
+
+
+@dataclass
+class ModulePathInfo:
+    """Expanded module path with its number of components.
+
+    Created by expanding ModulePatternInfo patterns against actual module names
+    in the target model. Used internally after pattern expansion.
+    """
+
+    module_path: str
+    C: int
+
 
 # This is equivalent to `torch.nn.init._NonlinearityType`, but for some reason this is not always
 # importable. see https://github.com/goodfire-ai/spd/actions/runs/16927877557/job/47967138342
@@ -59,20 +75,18 @@ def replace_std_values_in_layernorm(
         module.std = std
 
 
-def get_target_module_paths_with_c(
-    model: nn.Module, target_module_patterns: list[tuple[str, int]]
-) -> dict[str, int]:
-    """Find modules matching patterns and return mapping of module_path -> C value.
+def expand_module_patterns(model: nn.Module, module_info: list[Any]) -> list[ModulePathInfo]:
+    """Expand module patterns to concrete module paths with their C values.
 
     For modules matching multiple patterns, the most specific pattern wins
     (pattern with fewest wildcards). Equal specificity is an error.
 
     Args:
         model: The target model
-        target_module_patterns: List of (pattern, C_value) tuples
+        module_info: List of ModulePatternInfo specifying patterns and C values
 
     Returns:
-        Dictionary mapping module paths to their C values
+        List of ModulePathInfo with expanded concrete module paths
 
     Raises:
         ValueError: If any pattern doesn't match any modules, or if two patterns
@@ -81,16 +95,21 @@ def get_target_module_paths_with_c(
     Example:
         More specific pattern (fewer wildcards) wins over less specific:
 
-        >>> patterns = [("h.*.mlp.*", 100), ("h.*.mlp.c_fc", 50)]
-        >>> get_target_module_paths_with_c(model, patterns)
-        {'h.0.mlp.c_fc': 50, 'h.0.mlp.down_proj': 100, ...}
+        >>> module_info = [
+        ...     ModulePatternInfo(module_pattern="h.*.mlp.*", C=100),
+        ...     ModulePatternInfo(module_pattern="h.*.mlp.c_fc", C=50),
+        ... ]
+        >>> expand_module_patterns(model, module_info)
+        [ModulePathInfo(module_path='h.0.mlp.c_fc', C=50), ...]
 
         Here h.0.mlp.c_fc gets C=50 (1 wildcard) instead of C=100 (2 wildcards).
     """
     # module -> (wildcard_count, pattern, C)
     module_to_info: dict[str, tuple[int, str, int]] = {}
 
-    for pattern, c in target_module_patterns:
+    for info in module_info:
+        pattern = info.module_pattern
+        c = info.C
         wildcard_count = pattern.count("*")
         matched_any = False
 
@@ -113,9 +132,6 @@ def get_target_module_paths_with_c(
                         module_to_info[name] = (wildcard_count, pattern, c)
 
         if not matched_any:
-            raise ValueError(
-                f"Pattern '{pattern}' in target_module_patterns did not match any modules"
-            )
+            raise ValueError(f"Pattern '{pattern}' in module_info did not match any modules")
 
-    # Return just module name -> C mapping
-    return {name: c for name, (_, _, c) in module_to_info.items()}
+    return [ModulePathInfo(module_path=name, C=c) for name, (_, _, c) in module_to_info.items()]

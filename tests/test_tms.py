@@ -7,6 +7,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    ModulePatternInfo,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
@@ -45,8 +46,14 @@ def test_tms_decomposition_happy_path() -> None:
         n_mask_samples=1,
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[8],
-        target_module_patterns=[("linear1", 10), ("linear2", 10), ("hidden_layers.0", 10)],
-        identity_module_patterns=[("linear1", 10)],
+        module_info=[
+            ModulePatternInfo(module_pattern="linear1", C=10),
+            ModulePatternInfo(module_pattern="linear2", C=10),
+            ModulePatternInfo(module_pattern="hidden_layers.0", C=10),
+        ],
+        identity_module_info=[
+            ModulePatternInfo(module_pattern="linear1", C=10),
+        ],
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
                 coeff=3e-3,
@@ -96,10 +103,8 @@ def test_tms_decomposition_happy_path() -> None:
     target_model = TMSModel(config=tms_model_config).to(device)
     target_model.eval()
 
-    if config.identity_module_patterns_with_c is not None:
-        insert_identity_operations_(
-            target_model, identity_patterns=config.identity_module_patterns_with_c
-        )
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     assert isinstance(config.task_config, TMSTaskConfig)
     # Create dataset

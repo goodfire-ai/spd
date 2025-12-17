@@ -10,9 +10,11 @@ n_mask_samples: 1
 ci_fn_type: "mlp"
 ci_fn_hidden_dims: [128]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  - ["layers.*.mlp_in", 500]
-  - ["layers.*.mlp_out", 500]
+module_info:
+  - module_pattern: "layers.*.mlp_in"
+    C: 500
+  - module_pattern: "layers.*.mlp_out"
+    C: 500
 use_delta_component: true
 
 # --- Loss config ---

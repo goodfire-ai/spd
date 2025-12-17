@@ -5,6 +5,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    ModulePatternInfo,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -47,8 +48,13 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         n_mask_samples=1,
         ci_fn_type="vector_mlp",
         ci_fn_hidden_dims=[128],
-        target_module_patterns=[("blocks.*.attn.q_proj", 10), ("blocks.*.attn.k_proj", 10)],
-        identity_module_patterns=[("blocks.*.attn.q_proj", 10)],
+        module_info=[
+            ModulePatternInfo(module_pattern="blocks.*.attn.q_proj", C=10),
+            ModulePatternInfo(module_pattern="blocks.*.attn.k_proj", C=10),
+        ],
+        identity_module_info=[
+            ModulePatternInfo(module_pattern="blocks.*.attn.q_proj", C=10),
+        ],
         # Loss Coefficients
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
@@ -100,10 +106,8 @@ def test_ih_transformer_decomposition_happy_path() -> None:
     target_model.eval()
     target_model.requires_grad_(False)
 
-    if config.identity_module_patterns_with_c is not None:
-        insert_identity_operations_(
-            target_model, identity_patterns=config.identity_module_patterns_with_c
-        )
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     dataset = InductionDataset(
         seq_len=ih_transformer_config.seq_len,

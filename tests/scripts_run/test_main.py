@@ -62,11 +62,14 @@ class TestSPDRun:
 
     def test_create_training_jobs_sweep(self):
         """when given sweep params, _create_training_jobs should generate the correct number of
-        jobs with params swept correctly"""
+        jobs with params swept correctly.
 
+        Note: C sweeping was removed in favor of per-module C values via module_info.
+        This test uses seed/steps/lr as representative sweepable parameters.
+        """
         sweep_params = {
             "global": {"lr": {"values": [1, 2]}},
-            "tms_5-2": {"C": {"values": [10, 20]}, "steps": {"values": [100, 200]}},
+            "tms_5-2": {"seed": {"values": [10, 20]}, "steps": {"values": [100, 200]}},
         }
 
         training_jobs = _create_training_jobs(
@@ -77,46 +80,39 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
-        def get_c_value(config: Any) -> int:
-            """Get C value from config (handles migrated format where C is in patterns)."""
-            # After migration, C is embedded in all_module_patterns as tuples of (pattern, c)
-            c_values = {c for _, c in config.all_module_patterns}
-            assert len(c_values) == 1, f"Expected uniform C, got {c_values}"
-            return next(iter(c_values))
-
         def there_is_one_with(props: dict[str, Any]):
             matching = []
             for config in configs:
                 matches = True
                 for k, v in props.items():
-                    if k == "C":
-                        if get_c_value(config) != v:
-                            matches = False
-                            break
-                    elif config.__dict__[k] != v:
+                    if config.__dict__[k] != v:
                         matches = False
                         break
                 if matches:
                     matching.append(config)
             return len(matching) == 1
 
+        # 2 lr values * 2 seed values * 2 steps values = 8 jobs
         assert len(configs) == 8
 
-        assert there_is_one_with({"lr": 1, "C": 10, "steps": 100})
-        assert there_is_one_with({"lr": 1, "C": 20, "steps": 100})
-        assert there_is_one_with({"lr": 1, "C": 10, "steps": 200})
-        assert there_is_one_with({"lr": 1, "C": 20, "steps": 200})
-        assert there_is_one_with({"lr": 2, "C": 10, "steps": 100})
-        assert there_is_one_with({"lr": 2, "C": 20, "steps": 100})
-        assert there_is_one_with({"lr": 2, "C": 10, "steps": 200})
-        assert there_is_one_with({"lr": 2, "C": 20, "steps": 200})
+        assert there_is_one_with({"lr": 1, "seed": 10, "steps": 100})
+        assert there_is_one_with({"lr": 1, "seed": 20, "steps": 100})
+        assert there_is_one_with({"lr": 1, "seed": 10, "steps": 200})
+        assert there_is_one_with({"lr": 1, "seed": 20, "steps": 200})
+        assert there_is_one_with({"lr": 2, "seed": 10, "steps": 100})
+        assert there_is_one_with({"lr": 2, "seed": 20, "steps": 100})
+        assert there_is_one_with({"lr": 2, "seed": 10, "steps": 200})
+        assert there_is_one_with({"lr": 2, "seed": 20, "steps": 200})
 
     def test_create_training_jobs_sweep_multi_experiment(self):
         """when given sweep params, _create_training_jobs should generate the correct number of
-        jobs with params swept correctly across multiple experiments"""
+        jobs with params swept correctly across multiple experiments.
 
+        Note: C sweeping was removed in favor of per-module C values via module_info.
+        This test uses seed/steps as representative sweepable parameters.
+        """
         sweep_params = {
-            "tms_5-2": {"C": {"values": [10]}},
+            "tms_5-2": {"seed": {"values": [10]}},
             "tms_40-10": {"steps": {"values": [100, 200]}},
         }
 
@@ -128,30 +124,23 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
-        def get_c_value(config: Any) -> int:
-            """Get C value from config (handles migrated format where C is in patterns)."""
-            c_values = {c for _, c in config.all_module_patterns}
-            assert len(c_values) == 1, f"Expected uniform C, got {c_values}"
-            return next(iter(c_values))
-
         def there_is_one_with(props: dict[str, Any]):
             matching = []
             for config in configs:
                 matches = True
                 for k, v in props.items():
-                    if k == "C":
-                        if get_c_value(config) != v:
-                            matches = False
-                            break
-                    elif config.__dict__[k] != v:
+                    if config.__dict__[k] != v:
                         matches = False
                         break
                 if matches:
                     matching.append(config)
             return len(matching) == 1
 
+        # tms_5-2: 1 job (seed=10)
+        # tms_40-10: 2 jobs (steps=100, steps=200)
+        # Total: 3 jobs
         assert len(configs) == 3
 
-        assert there_is_one_with({"C": 10})
+        assert there_is_one_with({"seed": 10})
         assert there_is_one_with({"steps": 100})
         assert there_is_one_with({"steps": 200})

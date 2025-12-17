@@ -10,9 +10,10 @@ n_mask_samples: 1
 ci_fn_type: "vector_mlp"
 ci_fn_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  - ["transformer.h.1.attn.c_attn", 768]
-identity_module_patterns: null
+module_info:
+  - module_pattern: "transformer.h.1.attn.c_attn"
+    C: 768
+identity_module_info: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:

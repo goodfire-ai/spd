@@ -10,9 +10,11 @@ n_mask_samples: 1
 ci_fn_type: "mlp"
 ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  - ["linear1", 20]
-  - ["linear2", 20]
+module_info:
+  - module_pattern: "linear1"
+    C: 20
+  - module_pattern: "linear2"
+    C: 20
 use_delta_component: true
 
 loss_metric_configs:

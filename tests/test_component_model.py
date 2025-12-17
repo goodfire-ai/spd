@@ -8,7 +8,7 @@ from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
-from spd.configs import Config, ImportanceMinimalityLossConfig
+from spd.configs import Config, ImportanceMinimalityLossConfig, ModulePatternInfo
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
@@ -27,6 +27,7 @@ from spd.models.components import (
     make_mask_infos,
 )
 from spd.spd_types import ModelPath
+from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 from spd.utils.run_utils import save_file
 
 
@@ -76,12 +77,12 @@ def test_correct_parameters_require_grad():
 
     component_model = ComponentModel(
         target_model=target_model,
-        target_module_patterns=[
-            ("linear1", 4),
-            ("linear2", 4),
-            ("embedding", 4),
-            ("conv1d1", 4),
-            ("conv1d2", 4),
+        module_path_info=[
+            ModulePathInfo(module_path="linear1", C=4),
+            ModulePathInfo(module_path="linear2", C=4),
+            ModulePathInfo(module_path="embedding", C=4),
+            ModulePathInfo(module_path="conv1d1", C=4),
+            ModulePathInfo(module_path="conv1d2", C=4),
         ],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
@@ -128,14 +129,14 @@ def test_from_run_info():
             pretrained_model_class="tests.test_component_model.SimpleTestModel",
             pretrained_model_path=base_model_path,
             pretrained_model_name=None,
-            target_module_patterns=[
-                ("linear1", 4),
-                ("linear2", 4),
-                ("embedding", 4),
-                ("conv1d1", 4),
-                ("conv1d2", 4),
+            module_info=[
+                ModulePatternInfo(module_pattern="linear1", C=4),
+                ModulePatternInfo(module_pattern="linear2", C=4),
+                ModulePatternInfo(module_pattern="embedding", C=4),
+                ModulePatternInfo(module_pattern="conv1d1", C=4),
+                ModulePatternInfo(module_pattern="conv1d2", C=4),
             ],
-            identity_module_patterns=[("linear1", 4)],
+            identity_module_info=[ModulePatternInfo(module_pattern="linear1", C=4)],
             ci_fn_type="mlp",
             ci_fn_hidden_dims=[4],
             batch_size=1,
@@ -157,15 +158,16 @@ def test_from_run_info():
             ),
         )
 
-        if config.identity_module_patterns_with_c is not None:
+        if config.identity_module_info is not None:
             insert_identity_operations_(
                 target_model,
-                identity_patterns=config.identity_module_patterns_with_c,
+                identity_module_info=config.identity_module_info,
             )
 
+        module_path_info = expand_module_patterns(target_model, config.all_module_info)
         cm = ComponentModel(
             target_model=target_model,
-            target_module_patterns=config.all_module_patterns,
+            module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
@@ -272,7 +274,7 @@ def test_full_weight_delta_matches_target_behaviour():
     C = 4
     cm = ComponentModel(
         target_model=target_model,
-        target_module_patterns=[(p, C) for p in target_module_paths],
+        module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
         pretrained_model_output_attr=None,
@@ -304,7 +306,7 @@ def test_input_cache_captures_pre_weight_input():
 
     cm = ComponentModel(
         target_model=target_model,
-        target_module_patterns=[(p, 2) for p in target_module_paths],
+        module_path_info=[ModulePathInfo(module_path=p, C=2) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
@@ -339,7 +341,7 @@ def test_weight_deltas():
     target_module_paths = ["embed", "mlp", "out"]
     cm = ComponentModel(
         target_model=target_model,
-        target_module_patterns=[(p, 3) for p in target_module_paths],
+        module_path_info=[ModulePathInfo(module_path=p, C=3) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
@@ -374,7 +376,7 @@ def test_replacement_effects_fwd_pass():
 
     cm = ComponentModel(
         target_model=model,
-        target_module_patterns=[("linear", C)],
+        module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
@@ -422,12 +424,15 @@ def test_replacing_identity():
     model.requires_grad_(False)
 
     # with another prepended identity layer
-    insert_identity_operations_(target_model=model, identity_patterns=[("linear", C)])
+    insert_identity_operations_(
+        target_model=model,
+        identity_module_info=[ModulePatternInfo(module_pattern="linear", C=C)],
+    )
 
     # wrapped in a component model that decomposes the prepended identity layer
     cm = ComponentModel(
         target_model=model,
-        target_module_patterns=[("linear.pre_identity", C)],
+        module_path_info=[ModulePathInfo(module_path="linear.pre_identity", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,
@@ -477,7 +482,7 @@ def test_routing():
     # wrapped in a component model that decomposes the layer
     cm = ComponentModel(
         target_model=model,
-        target_module_patterns=[("linear", C)],
+        module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         pretrained_model_output_attr=None,

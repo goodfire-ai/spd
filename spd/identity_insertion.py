@@ -7,12 +7,17 @@ This allows downstream functionality to act as if the identity operation is just
 the model, namely, allowing us to decompose the identity operation.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import torch.nn as nn
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
 from spd.models.components import Identity
+
+if TYPE_CHECKING:
+    from spd.configs import ModulePatternInfo
 
 
 def pre_id_hook(
@@ -32,13 +37,13 @@ def pre_id_hook(
 
 
 def insert_identity_operations_(
-    target_model: nn.Module, identity_patterns: list[tuple[str, int]]
+    target_model: nn.Module, identity_module_info: list[ModulePatternInfo]
 ) -> None:
     """Insert identity layers before specified modules.
 
     Args:
         target_model: The model to modify
-        identity_patterns: List of (pattern, C) tuples. The C values are ignored here
+        identity_module_info: List of ModulePatternInfo. The C values are ignored here
             (used later when creating components), only patterns are used for matching.
     """
     import fnmatch
@@ -46,13 +51,13 @@ def insert_identity_operations_(
     # Extract just the patterns (ignore C values for insertion)
     identity_module_paths: list[str] = []
     matched_patterns: set[str] = set()
-    for pattern, _ in identity_patterns:
+    for info in identity_module_info:
         for name, _ in target_model.named_modules():
-            if fnmatch.fnmatch(name, pattern):
-                matched_patterns.add(pattern)
+            if fnmatch.fnmatch(name, info.module_pattern):
+                matched_patterns.add(info.module_pattern)
                 identity_module_paths.append(name)
 
-    unmatched = {p for p, _ in identity_patterns} - matched_patterns
+    unmatched = {info.module_pattern for info in identity_module_info} - matched_patterns
     if unmatched:
         raise ValueError(f"Identity patterns did not match any modules: {sorted(unmatched)}")
 

@@ -14,11 +14,15 @@ task_config:
   task_name: induction_head
 
 n_mask_samples: 1
-target_module_patterns:
-  - ["blocks.*.attn.q_proj", 100]
-  - ["blocks.*.attn.k_proj", 100]
-  - ["blocks.*.attn.v_proj", 100]
-  - ["blocks.*.attn.out_proj", 100]
+module_info:
+  - module_pattern: "blocks.*.attn.q_proj"
+    C: 100
+  - module_pattern: "blocks.*.attn.k_proj"
+    C: 100
+  - module_pattern: "blocks.*.attn.v_proj"
+    C: 100
+  - module_pattern: "blocks.*.attn.out_proj"
+    C: 100
 
 faithfulness_coeff: 100
 ci_recon_coeff: 1

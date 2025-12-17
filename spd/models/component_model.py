@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -27,7 +29,7 @@ from spd.models.components import (
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import ModelPath
 from spd.utils.general_utils import resolve_class, runtime_cast
-from spd.utils.module_utils import get_target_module_paths_with_c
+from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 
 
 @dataclass
@@ -58,7 +60,7 @@ class ComponentModel(LoadableModule):
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
     `LlamaForCausalLM`, `AutoModelForCausalLM`) as long as its sub-module names
-    match the patterns you pass in `target_module_patterns`.
+    are provided in the `module_path_info` list.
 
     Forward passes support optional component replacement and/or caching:
     - No args: Standard forward pass of the target model
@@ -75,7 +77,7 @@ class ComponentModel(LoadableModule):
     def __init__(
         self,
         target_model: nn.Module,
-        target_module_patterns: list[tuple[str, int]],
+        module_path_info: list[ModulePathInfo],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
@@ -92,8 +94,8 @@ class ComponentModel(LoadableModule):
         self.target_model = target_model
         self.pretrained_model_output_attr = pretrained_model_output_attr
 
-        # Get module paths with their C values
-        self.module_to_c = get_target_module_paths_with_c(target_model, target_module_patterns)
+        # Build module_to_c mapping from ModulePathInfo list
+        self.module_to_c = {info.module_path: info.C for info in module_path_info}
         self.target_module_paths = list(self.module_to_c.keys())
 
         self.components = ComponentModel._create_components(
@@ -433,7 +435,7 @@ class ComponentModel(LoadableModule):
 
     @classmethod
     @override
-    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel":
+    def from_run_info(cls, run_info: RunInfo[Config]) -> ComponentModel:
         """Load a trained ComponentModel checkpoint from a run info object."""
         config = run_info.config
 
@@ -455,15 +457,18 @@ class ComponentModel(LoadableModule):
         target_model.eval()
         target_model.requires_grad_(False)
 
-        if config.identity_module_patterns_with_c is not None:
+        if config.identity_module_info is not None:
             insert_identity_operations_(
                 target_model,
-                identity_patterns=config.identity_module_patterns_with_c,
+                identity_module_info=config.identity_module_info,
             )
+
+        # Expand module patterns to concrete module paths
+        module_path_info = expand_module_patterns(target_model, config.all_module_info)
 
         comp_model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=config.all_module_patterns,
+            module_path_info=module_path_info,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
@@ -481,7 +486,7 @@ class ComponentModel(LoadableModule):
 
     @classmethod
     @override
-    def from_pretrained(cls, path: ModelPath) -> "ComponentModel":
+    def from_pretrained(cls, path: ModelPath) -> ComponentModel:
         """Load a trained ComponentModel checkpoint from a local or wandb path."""
         run_info = SPDRunInfo.from_path(path)
         return cls.from_run_info(run_info)

@@ -11,9 +11,11 @@ ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
   - 256
 sigmoid_type: leaky_hard
-target_module_patterns:
-  - ["layers.*.mlp_in", 400]
-  - ["layers.*.mlp_out", 400]
+module_info:
+  - module_pattern: "layers.*.mlp_in"
+    C: 400
+  - module_pattern: "layers.*.mlp_out"
+    C: 400
 use_delta_component: true
 
 # --- Loss config ---

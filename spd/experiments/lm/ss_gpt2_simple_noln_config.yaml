@@ -9,13 +9,18 @@ n_mask_samples: 1
 ci_fn_type: "vector_mlp"
 ci_fn_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  - ["h.*.mlp.c_fc", 2000]
-  - ["h.*.mlp.c_proj", 2000]
-  - ["h.*.attn.k_proj", 2000]
-  - ["h.*.attn.v_proj", 2000]
-  - ["h.*.attn.c_proj", 2000]
-identity_module_patterns: null
+module_info:
+  - module_pattern: "h.*.mlp.c_fc"
+    C: 2000
+  - module_pattern: "h.*.mlp.c_proj"
+    C: 2000
+  - module_pattern: "h.*.attn.k_proj"
+    C: 2000
+  - module_pattern: "h.*.attn.v_proj"
+    C: 2000
+  - module_pattern: "h.*.attn.c_proj"
+    C: 2000
+identity_module_info: null
 sampling: "continuous"
 use_delta_component: true
 

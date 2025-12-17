@@ -6,6 +6,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    ModulePatternInfo,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
@@ -33,11 +34,13 @@ def test_gpt_2_decomposition_happy_path() -> None:
         n_mask_samples=1,
         ci_fn_type="vector_mlp",
         ci_fn_hidden_dims=[128],
-        target_module_patterns=[
-            ("transformer.h.2.attn.c_attn", 10),
-            ("transformer.h.3.mlp.c_fc", 10),
+        module_info=[
+            ModulePatternInfo(module_pattern="transformer.h.2.attn.c_attn", C=10),
+            ModulePatternInfo(module_pattern="transformer.h.3.mlp.c_fc", C=10),
         ],
-        identity_module_patterns=[("transformer.h.1.attn.c_attn", 10)],
+        identity_module_info=[
+            ModulePatternInfo(module_pattern="transformer.h.1.attn.c_attn", C=10),
+        ],
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
                 coeff=1e-2,
@@ -99,10 +102,8 @@ def test_gpt_2_decomposition_happy_path() -> None:
     target_model = hf_model_class.from_pretrained(config.pretrained_model_name)
     target_model.eval()
 
-    if config.identity_module_patterns_with_c is not None:
-        insert_identity_operations_(
-            target_model, identity_patterns=config.identity_module_patterns_with_c
-        )
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,

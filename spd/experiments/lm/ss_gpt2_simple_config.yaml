@@ -9,14 +9,20 @@ n_mask_samples: 1
 ci_fn_type: "shared_mlp"
 ci_fn_hidden_dims: [1000]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  - ["h.*.mlp.c_fc", 1200]
-  - ["h.*.mlp.down_proj", 1200]
-  - ["h.*.attn.q_proj", 1200]
-  - ["h.*.attn.k_proj", 1200]
-  - ["h.*.attn.v_proj", 1200]
-  - ["h.*.attn.o_proj", 1200]
-identity_module_patterns: null
+module_info:
+  - module_pattern: "h.*.mlp.c_fc"
+    C: 1200
+  - module_pattern: "h.*.mlp.down_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.q_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.k_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.v_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.o_proj"
+    C: 1200
+identity_module_info: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:

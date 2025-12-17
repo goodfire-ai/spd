@@ -24,9 +24,10 @@ from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import RunState, StateManager
-from spd.configs import Config
+from spd.configs import Config, ModulePatternInfo
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel
+from spd.utils.module_utils import expand_module_patterns
 
 DEVICE = "cpu"
 
@@ -87,14 +88,15 @@ def app_with_state():
         target_model.eval()
         target_model.requires_grad_(False)
 
-        target_module_patterns: list[tuple[str, int]] = [
-            ("h.*.mlp.c_fc", 8),
-            ("h.*.mlp.down_proj", 8),
-            ("h.*.attn.q_proj", 8),
-            ("h.*.attn.k_proj", 8),
-            ("h.*.attn.v_proj", 8),
-            ("h.*.attn.o_proj", 8),
+        module_patterns = [
+            "h.*.mlp.c_fc",
+            "h.*.mlp.down_proj",
+            "h.*.attn.q_proj",
+            "h.*.attn.k_proj",
+            "h.*.attn.v_proj",
+            "h.*.attn.o_proj",
         ]
+        C = 8
 
         config = Config(
             n_mask_samples=1,
@@ -102,7 +104,7 @@ def app_with_state():
             ci_fn_hidden_dims=[16],
             sampling="continuous",
             sigmoid_type="leaky_hard",
-            target_module_patterns=target_module_patterns,
+            module_info=[ModulePatternInfo(module_pattern=p, C=C) for p in module_patterns],
             pretrained_model_class="simple_stories_train.models.gpt2_simple.GPT2Simple",
             pretrained_model_output_attr="idx_0",
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
@@ -125,9 +127,10 @@ def app_with_state():
                 eval_data_split="test[:20]",
             ),
         )
+        module_path_info = expand_module_patterns(target_model, config.module_info)
         model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=target_module_patterns,
+            module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
