@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, PositiveInt
+from pydantic import Field, PositiveInt, model_validator
 
 from spd.base_config import BaseConfig
 
@@ -22,18 +22,29 @@ class LMTaskConfig(BaseConfig):
         default="lennart-finke/SimpleStories",
         description="HuggingFace dataset identifier to use for training",
     )
-    eval_dataset_name: str | None = Field(
-        default=None,
-        description="HuggingFace dataset identifier for evaluation. If None, uses dataset_name.",
+    eval_dataset_name: str = Field(
+        default="",
+        description="HuggingFace dataset identifier for evaluation. Defaults to dataset_name.",
     )
     column_name: str = Field(
         default="story",
         description="Dataset column that contains the text/tokens",
     )
-    eval_column_name: str | None = Field(
-        default=None,
-        description="Dataset column for evaluation. If None, uses column_name.",
+    eval_column_name: str = Field(
+        default="",
+        description="Dataset column for evaluation. Defaults to column_name.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_eval_defaults(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Set eval fields to their training counterparts if not specified."""
+        if data.get("eval_dataset_name") in (None, ""):
+            data["eval_dataset_name"] = data.get("dataset_name", "lennart-finke/SimpleStories")
+        if data.get("eval_column_name") in (None, ""):
+            data["eval_column_name"] = data.get("column_name", "story")
+        return data
+
     train_data_split: str = Field(
         default="train",
         description="Name of the dataset split used for training",
