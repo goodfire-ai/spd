@@ -5,6 +5,7 @@ from typing import cast
 
 import torch
 import tqdm
+from einops import einsum, rearrange, reduce
 from jaxtyping import Float, Int
 from torch import Tensor
 
@@ -54,6 +55,9 @@ class HarvesterState:
             assert s.components_per_layer == first.components_per_layer
             assert s.vocab_size == first.vocab_size
             assert s.ci_threshold == first.ci_threshold
+            assert s.max_examples_per_component == first.max_examples_per_component
+            assert s.context_tokens_per_side == first.context_tokens_per_side
+            assert len(s.reservoir_states) == len(first.reservoir_states)
 
         # Sum tensor accumulators
         firing_counts = torch.stack([s.firing_counts for s in states]).sum(dim=0)
@@ -146,46 +150,57 @@ class Harvester:
     def process_batch(
         self,
         batch: Int[Tensor, "B S"],
-        ci_flat: Float[Tensor, "B S n_comp"],
+        ci: Float[Tensor, "B S n_comp"],
         output_probs: Float[Tensor, "B S V"],
     ) -> None:
         """Accumulate stats from a single batch."""
-        B, S, n_components = ci_flat.shape
-        self.total_tokens_processed += B * S
+        self.total_tokens_processed += batch.numel()
 
-        is_firing = (ci_flat > self.ci_threshold).float()
-        is_firing_flat = is_firing.view(B * S, n_components)
-        batch_flat = batch.view(B * S)
-        output_probs_flat = output_probs.view(B * S, self.vocab_size)
+        firing = (ci > self.ci_threshold).float()
 
-        self._accumulate_firing_stats(ci_flat, is_firing)
-        self._accumulate_cooccurrence_stats(is_firing_flat)
-        self._accumulate_input_token_stats(batch_flat, is_firing_flat, n_components)
-        self._accumulate_output_token_stats(output_probs_flat, is_firing_flat)
-        self._collect_activation_examples(batch, ci_flat)
+        firing_flat = rearrange(firing, "b s c -> (b s) c")
+        batch_flat = rearrange(batch, "b s -> (b s)")
+        output_probs_flat = rearrange(output_probs, "b s v -> (b s) v")
+
+        self._accumulate_firing_stats(ci, firing)
+        self._accumulate_cooccurrence_stats(firing_flat)
+        self._accumulate_input_token_stats(batch_flat, firing_flat)
+        self._accumulate_output_token_stats(output_probs_flat, firing_flat)
+        self._collect_activation_examples(batch, ci)
 
     def _accumulate_firing_stats(
         self,
-        ci_flat: Float[Tensor, "B S n_comp"],
-        is_firing: Float[Tensor, "B S n_comp"],
+        ci: Float[Tensor, "B S n_comp"],
+        firing: Float[Tensor, "B S n_comp"],
     ) -> None:
-        self.firing_counts += is_firing.sum(dim=(0, 1))
-        self.ci_sums += ci_flat.sum(dim=(0, 1))
+        self.firing_counts += reduce(firing, "b s c -> c", "sum")
+        self.ci_sums += reduce(ci, "b s c -> c", "sum")
 
-    def _accumulate_cooccurrence_stats(
-        self,
-        is_firing_flat: Float[Tensor, "BS n_comp"],
-    ) -> None:
+    def _accumulate_cooccurrence_stats(self, firing_flat: Float[Tensor, "pos n_comp"]) -> None:
         """Accumulate component-component co-occurrence counts."""
-        self.count_ij += is_firing_flat.T @ is_firing_flat
+        self.count_ij += einsum(firing_flat, firing_flat, "pos c1, pos c2 -> c1 c2")
 
     def _accumulate_input_token_stats(
-        self, batch_flat: Tensor, is_firing_flat: Tensor, n_components: int
+        self,
+        batch_flat: Int[Tensor, " pos"],
+        firing_flat: Float[Tensor, "pos n_comp"],
     ) -> None:
+        """Accumulate which input tokens caused each component to fire.
+
+        Uses scatter_add_ to efficiently accumulate counts into a sparse [n_comp, vocab] matrix.
+        For each position, we add the firing indicator (0 or 1) to the count for that token.
+
+        Equivalent to: for each pos, for each component c:
+            input_token_counts[c, batch_flat[pos]] += firing_flat[pos, c]
+        """
+        n_components = firing_flat.shape[1]
+        # Broadcast token_ids to [n_comp, pos] so scatter_add_ can index into vocab dim
         token_indices = batch_flat.unsqueeze(0).expand(n_components, -1)
+        # input_token_counts[c, token_indices[c, pos]] += firing_flat.T[c, pos]
         self.input_token_counts.scatter_add_(
-            dim=1, index=token_indices, src=is_firing_flat.T.long()
+            dim=1, index=token_indices, src=rearrange(firing_flat, "pos c -> c pos").long()
         )
+        # Count total occurrences of each token (denominator for precision)
         self.input_token_totals.scatter_add_(
             dim=0,
             index=batch_flat,
@@ -193,10 +208,20 @@ class Harvester:
         )
 
     def _accumulate_output_token_stats(
-        self, output_probs_flat: Tensor, is_firing_flat: Tensor
+        self,
+        output_probs_flat: Float[Tensor, "pos vocab"],
+        firing_flat: Float[Tensor, "pos n_comp"],
     ) -> None:
-        self.output_token_prob_mass += is_firing_flat.T @ output_probs_flat
-        self.output_token_prob_totals += output_probs_flat.sum(dim=0)
+        """Accumulate which output tokens each component predicts.
+
+        Unlike input tokens (hard counts), we accumulate probability mass.
+        When component c fires, we add the full output probability distribution,
+        weighted by the firing indicator.
+        """
+        # Sum of P(token | pos) for positions where component c fired
+        self.output_token_prob_mass += einsum(firing_flat, output_probs_flat, "pos c, pos v -> c v")
+        # Sum of P(token | pos) across all positions (for normalization)
+        self.output_token_prob_totals += reduce(output_probs_flat, "pos v -> v", "sum")
 
     def _collect_activation_examples(
         self,
@@ -204,8 +229,8 @@ class Harvester:
         ci: Float[Tensor, "B S n_comp"],
     ) -> None:
         """Reservoir sample activation examples from high-CI firings."""
-        is_firing = ci > self.ci_threshold
-        batch_idx, seq_idx, component_idx = torch.where(is_firing)
+        firing = ci > self.ci_threshold
+        batch_idx, seq_idx, component_idx = torch.where(firing)
         if len(batch_idx) == 0:
             return
 
@@ -217,7 +242,9 @@ class Harvester:
         seq_idx = seq_idx[keep_mask]
         component_idx = component_idx[keep_mask]
 
-        # Pad for context window extraction
+        # Pad sequences so we can extract windows at boundaries without going out of bounds.
+        # E.g. if context_tokens_per_side=3, a firing at seq_idx=0 needs tokens at [-3, -2, -1, 0, 1, 2, 3]
+        # Padding with sentinel allows uniform window extraction; sentinels are filtered in display.
         batch_padded = torch.nn.functional.pad(
             batch,
             (self.context_tokens_per_side, self.context_tokens_per_side),
@@ -227,16 +254,18 @@ class Harvester:
             ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
         )
 
-        # Extract token windows around each firing
+        # Build indices to extract [n_firings, window_size] windows via advanced indexing.
+        # For each firing, we want tokens at [seq_idx - k, ..., seq_idx, ..., seq_idx + k]
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
         )
-        seq_idx_padded = seq_idx + self.context_tokens_per_side
-        window_seq_indices = seq_idx_padded.unsqueeze(1) + offsets
+        seq_idx_padded = seq_idx + self.context_tokens_per_side  # Adjust for padding
+        window_seq_indices = seq_idx_padded.unsqueeze(1) + offsets  # [n_firings, window_size]
         batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
         component_idx_expanded = component_idx.unsqueeze(1).expand(-1, window_size)
 
+        # Advanced indexing: token_windows[i, j] = batch_padded[batch_idx[i], window_seq_indices[i, j]]
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
 
@@ -322,12 +351,11 @@ class Harvester:
                 if component_firing_count == 0:
                     continue
 
-                # Build activation examples from reservoir
+                # Build activation examples from reservoir (uniform random sample)
                 sampler = self.activation_example_samplers[flat_idx]
-                sorted_samples = sorted(sampler.samples, key=lambda x: x[0], reverse=True)
                 activation_examples = [
                     ActivationExample(token_ids=token_ids, ci_values=ci_values)
-                    for token_ids, ci_values in sorted_samples
+                    for token_ids, ci_values in sampler.samples
                 ]
 
                 input_token_pmi = _compute_token_pmi(

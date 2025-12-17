@@ -2,7 +2,6 @@
 
 import json
 
-from spd.harvest.harvest import ComponentCorrelations, ComponentTokenStats
 from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
@@ -10,6 +9,7 @@ from spd.harvest.schemas import (
     get_activation_contexts_dir,
     get_correlations_dir,
 )
+from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 
 
 def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | None:
@@ -33,19 +33,19 @@ def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | No
     return components
 
 
-def load_correlations(wandb_run_id: str) -> ComponentCorrelations | None:
+def load_correlations(wandb_run_id: str) -> CorrelationStorage | None:
     """Load component correlations from harvest output."""
     corr_dir = get_correlations_dir(wandb_run_id)
     path = corr_dir / "component_correlations.pt"
     if not path.exists():
         return None
-    return ComponentCorrelations.load(path)
+    return CorrelationStorage.load(path)
 
 
-def load_token_stats(wandb_run_id: str) -> ComponentTokenStats | None:
+def load_token_stats(wandb_run_id: str) -> TokenStatsStorage | None:
     """Load token statistics from harvest output."""
     corr_dir = get_correlations_dir(wandb_run_id)
     path = corr_dir / "token_stats.pt"
     if not path.exists():
         return None
-    return ComponentTokenStats.load(path)
+    return TokenStatsStorage.load(path)

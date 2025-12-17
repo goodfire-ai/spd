@@ -15,9 +15,9 @@ from spd.app.backend.db.database import Run
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
-from spd.harvest.harvest import ComponentCorrelations, ComponentTokenStats
 from spd.harvest.loaders import load_activation_contexts, load_correlations, load_token_stats
 from spd.harvest.schemas import ComponentData
+from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.models.component_model import ComponentModel
 
 _NOT_LOADED = object()
@@ -38,19 +38,19 @@ class HarvestCache:
         self._activation_contexts = _NOT_LOADED
 
     @property
-    def correlations(self) -> ComponentCorrelations | None:
+    def correlations(self) -> CorrelationStorage | None:
         if self._correlations is _NOT_LOADED:
             self._correlations = load_correlations(self.run_id)
-        assert isinstance(self._correlations, ComponentCorrelations | None), (
+        assert isinstance(self._correlations, CorrelationStorage | None), (
             "inconsistent state, correlations not loaded"
         )
         return self._correlations
 
     @property
-    def token_stats(self) -> ComponentTokenStats | None:
+    def token_stats(self) -> TokenStatsStorage | None:
         if self._token_stats is _NOT_LOADED:
             self._token_stats = load_token_stats(self.run_id)
-        assert isinstance(self._token_stats, ComponentTokenStats | None), (
+        assert isinstance(self._token_stats, TokenStatsStorage | None), (
             "inconsistent state, token stats not loaded"
         )
         return self._token_stats

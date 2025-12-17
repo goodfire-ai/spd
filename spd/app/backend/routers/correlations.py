@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
-from spd.harvest.harvest import CorrelatedComponentWithCounts
+from spd.harvest import analysis
 from spd.log import logger
 
 
@@ -248,8 +248,12 @@ def get_component_token_stats(
 
     component_key = f"{layer}:{component_idx}"
 
-    input_stats = token_stats.get_input_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
-    output_stats = token_stats.get_output_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
+    input_stats = analysis.get_input_token_stats(
+        token_stats, component_key, loaded.tokenizer, top_k
+    )
+    output_stats = analysis.get_output_token_stats(
+        token_stats, component_key, loaded.tokenizer, top_k
+    )
 
     if input_stats is None or output_stats is None:
         return None
@@ -296,13 +300,12 @@ def get_component_correlations(
 
     component_key = f"{layer}:{component_idx}"
 
-    if not correlations.has_component(component_key):
+    if not analysis.has_component(correlations, component_key):
         raise HTTPException(
             status_code=404, detail=f"Component {component_key} not found in correlations"
         )
 
-    # annoying thing we have to do because we have separate model objects and pydantic DTOs
-    def to_schema(c: CorrelatedComponentWithCounts) -> CorrelatedComponent:
+    def to_schema(c: analysis.CorrelatedComponent) -> CorrelatedComponent:
         return CorrelatedComponent(
             component_key=c.component_key,
             score=c.score,
@@ -315,24 +318,30 @@ def get_component_correlations(
     response = ComponentCorrelationsResponse(
         precision=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "precision", top_k)
+            for c in analysis.get_correlated_components(
+                correlations, component_key, "precision", top_k
+            )
         ],
         recall=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "recall", top_k)
+            for c in analysis.get_correlated_components(
+                correlations, component_key, "recall", top_k
+            )
         ],
         jaccard=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "jaccard", top_k)
+            for c in analysis.get_correlated_components(
+                correlations, component_key, "jaccard", top_k
+            )
         ],
         pmi=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "pmi", top_k)
+            for c in analysis.get_correlated_components(correlations, component_key, "pmi", top_k)
         ],
         bottom_pmi=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(
-                component_key, "pmi", top_k, largest=False
+            for c in analysis.get_correlated_components(
+                correlations, component_key, "pmi", top_k, largest=False
             )
         ],
     )
