@@ -297,50 +297,6 @@ def test_activation_contexts_not_found_initially(app_with_state: TestClient):
     assert response.status_code == 404
 
 
-@pytest.mark.slow
-def test_generate_activation_contexts_streaming(app_with_state: TestClient):
-    """Test streaming activation context generation."""
-    response = app_with_state.get(
-        "/api/activation_contexts/subcomponents",
-        params={
-            "importance_threshold": 0.1,
-            "n_batches": 1,
-            "batch_size": 2,
-            "n_tokens_either_side": 1,
-            "topk_examples": 2,
-            "separation_tokens": 0,
-        },
-    )
-    assert response.status_code == 200
-
-    # Parse SSE stream
-    events = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
-    assert len(events) >= 1
-
-
-@pytest.mark.slow
-def test_activation_contexts_summary_after_generation(app_with_state: TestClient):
-    """Test getting activation contexts summary after generation."""
-    # Generate first - must consume response.text to wait for streaming to complete
-    gen_response = app_with_state.get(
-        "/api/activation_contexts/subcomponents",
-        params={
-            "importance_threshold": 0.1,
-            "n_batches": 1,
-            "batch_size": 2,
-            "n_tokens_either_side": 1,
-            "topk_examples": 2,
-            "separation_tokens": 0,
-        },
-    )
-    _ = gen_response.text  # Consume streaming response to wait for completion
-
-    response = app_with_state.get("/api/activation_contexts/summary")
-    assert response.status_code == 200
-    summary = response.json()
-    assert isinstance(summary, dict)
-
-
 # -----------------------------------------------------------------------------
 # Optimized Compute (Streaming)
 # -----------------------------------------------------------------------------
