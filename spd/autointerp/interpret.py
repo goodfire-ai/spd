@@ -243,7 +243,6 @@ async def interpret_all(
     return results
 
 
-
 def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
     """Load architecture info from run info."""
     run_info = SPDRunInfo.from_path(wandb_path)

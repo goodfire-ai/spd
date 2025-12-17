@@ -84,4 +84,3 @@ class ReservoirSampler(Generic[T]):  # noqa: UP046 - PEP 695 syntax breaks pickl
         sampler.samples = list(state.samples)
         sampler.n_seen = state.n_seen
         return sampler
-

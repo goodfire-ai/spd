@@ -8,14 +8,11 @@ These tests bypass slow operations (W&B model loading, large data loaders) by:
 
 import json
 from pathlib import Path
-from typing import override
 from unittest import mock
 
 import pytest
-import torch
 from fastapi.testclient import TestClient
 from simple_stories_train.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
-from torch.utils.data import DataLoader, Dataset
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.db import LocalAttrDB
@@ -29,20 +26,6 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel
 
 DEVICE = "cpu"
-
-
-class FakeTokenDataset(Dataset[dict[str, torch.Tensor]]):
-    """Simple dataset that returns dicts with 'input_ids' key like HuggingFace datasets."""
-
-    def __init__(self, data: torch.Tensor):
-        self.data = data
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @override
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        return {"input_ids": self.data[idx]}
 
 
 @pytest.fixture
@@ -140,11 +123,6 @@ def app_with_state():
             model=model, device=DEVICE, sampling=config.sampling
         )
 
-        # Use tokens 1-100 (not 0) to avoid collision with pad_token_id=0
-        fake_data = torch.randint(1, 100, (10, 3))  # 10 samples of 3 tokens
-        train_dataset = FakeTokenDataset(fake_data)
-        train_loader = DataLoader(train_dataset, batch_size=1, shuffle=False)
-
         # The model has vocab_size=4019, so create entries for all token IDs
         token_strings = {i: f"tok_{i}" for i in range(model_config.vocab_size)}
 
@@ -156,7 +134,6 @@ def app_with_state():
             sources_by_target=sources_by_target,
             config=config,
             token_strings=token_strings,
-            train_loader=train_loader,
             harvest=HarvestCache(run_id="test_run"),
         )
 
