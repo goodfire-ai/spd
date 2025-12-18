@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -93,7 +91,6 @@ class ComponentModel(LoadableModule):
 
         self.target_model = target_model
         self.pretrained_model_output_attr = pretrained_model_output_attr
-
         self.module_to_c = {info.module_path: info.C for info in module_path_info}
         self.target_module_paths = list(self.module_to_c.keys())
 
@@ -434,7 +431,7 @@ class ComponentModel(LoadableModule):
 
     @classmethod
     @override
-    def from_run_info(cls, run_info: RunInfo[Config]) -> ComponentModel:
+    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel":
         """Load a trained ComponentModel checkpoint from a run info object."""
         config = run_info.config
 
@@ -484,7 +481,7 @@ class ComponentModel(LoadableModule):
 
     @classmethod
     @override
-    def from_pretrained(cls, path: ModelPath) -> ComponentModel:
+    def from_pretrained(cls, path: ModelPath) -> "ComponentModel":
         """Load a trained ComponentModel checkpoint from a local or wandb path."""
         run_info = SPDRunInfo.from_path(path)
         return cls.from_run_info(run_info)

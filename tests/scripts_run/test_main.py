@@ -60,17 +60,13 @@ class TestSPDRun:
         assert sweep_params is not None
 
     def test_create_training_jobs_sweep(self):
-        """Test that sweep params generate correct cartesian product of jobs.
+        """when given sweep params, _create_training_jobs should generate the correct number of
+        jobs with params swept correctly"""
 
-        Verifies:
-        - Global params apply to all experiments
-        - Experiment-specific params override/extend global
-        - Cartesian product generates correct number of jobs
-        - C values can be swept via module_info
-        """
         sweep_params = {
-            "global": {"lr": {"values": [1e-3, 1e-4]}},
+            "global": {"lr": {"values": [1, 2]}},
             "tms_5-2": {
+                "steps": {"values": [100, 200]},
                 "module_info": {
                     "values": [
                         [
@@ -94,27 +90,33 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
-        def there_is_one_with(lr: float, c: int) -> bool:
+        def there_is_one_with(lr: int, steps: int, c: int) -> bool:
             matching = [
                 cfg
                 for cfg in configs
-                if cfg.lr == lr and c == cfg.module_info[0].C and c == cfg.module_info[1].C
+                if cfg.lr == lr
+                and cfg.steps == steps
+                and c == cfg.module_info[0].C
+                and c == cfg.module_info[1].C
             ]
             return len(matching) == 1
 
-        # 2 lr values * 2 module_info configs = 4 jobs
-        assert len(configs) == 4
+        # 2 lr * 2 steps * 2 module_info = 8 jobs
+        assert len(configs) == 8
 
-        assert there_is_one_with(lr=1e-3, c=10)
-        assert there_is_one_with(lr=1e-3, c=20)
-        assert there_is_one_with(lr=1e-4, c=10)
-        assert there_is_one_with(lr=1e-4, c=20)
+        assert there_is_one_with(lr=1, steps=100, c=10)
+        assert there_is_one_with(lr=1, steps=100, c=20)
+        assert there_is_one_with(lr=1, steps=200, c=10)
+        assert there_is_one_with(lr=1, steps=200, c=20)
+        assert there_is_one_with(lr=2, steps=100, c=10)
+        assert there_is_one_with(lr=2, steps=100, c=20)
+        assert there_is_one_with(lr=2, steps=200, c=10)
+        assert there_is_one_with(lr=2, steps=200, c=20)
 
     def test_create_training_jobs_sweep_multi_experiment(self):
-        """Test that sweep params work correctly across multiple experiments.
+        """when given sweep params, _create_training_jobs should generate the correct number of
+        jobs with params swept correctly across multiple experiments"""
 
-        Verifies experiment-specific C sweeps via module_info apply to their respective experiments.
-        """
         sweep_params = {
             "tms_5-2": {
                 "module_info": {
@@ -123,27 +125,10 @@ class TestSPDRun:
                             {"module_pattern": "linear1", "C": 10},
                             {"module_pattern": "linear2", "C": 10},
                         ],
-                        [
-                            {"module_pattern": "linear1", "C": 20},
-                            {"module_pattern": "linear2", "C": 20},
-                        ],
                     ]
                 },
             },
-            "tms_40-10": {
-                "module_info": {
-                    "values": [
-                        [
-                            {"module_pattern": "linear1", "C": 100},
-                            {"module_pattern": "linear2", "C": 100},
-                        ],
-                        [
-                            {"module_pattern": "linear1", "C": 200},
-                            {"module_pattern": "linear2", "C": 200},
-                        ],
-                    ]
-                },
-            },
+            "tms_40-10": {"steps": {"values": [100, 200]}},
         }
 
         training_jobs = _create_training_jobs(
@@ -152,20 +137,22 @@ class TestSPDRun:
             sweep_params=sweep_params,
         )
 
-        # Separate jobs by experiment
-        tms_5_2_jobs = [j for j in training_jobs if "tms_5-2" in j.experiment]
-        tms_40_10_jobs = [j for j in training_jobs if "tms_40-10" in j.experiment]
+        configs = [j.config for j in training_jobs]
 
-        # tms_5-2: 2 jobs (C=10, C=20)
-        # tms_40-10: 2 jobs (C=100, C=200)
-        assert len(tms_5_2_jobs) == 2
-        assert len(tms_40_10_jobs) == 2
-        assert len(training_jobs) == 4
+        def there_is_one_with(c: int | None = None, steps: int | None = None) -> bool:
+            matching = []
+            for cfg in configs:
+                match = True
+                if c is not None and c != cfg.module_info[0].C:
+                    match = False
+                if steps is not None and cfg.steps != steps:
+                    match = False
+                if match:
+                    matching.append(cfg)
+            return len(matching) == 1
 
-        # Verify tms_5-2 C values
-        tms_5_2_cs = {j.config.module_info[0].C for j in tms_5_2_jobs}
-        assert tms_5_2_cs == {10, 20}
+        assert len(configs) == 3
 
-        # Verify tms_40-10 C values
-        tms_40_10_cs = {j.config.module_info[0].C for j in tms_40_10_jobs}
-        assert tms_40_10_cs == {100, 200}
+        assert there_is_one_with(c=10)
+        assert there_is_one_with(steps=100)
+        assert there_is_one_with(steps=200)
