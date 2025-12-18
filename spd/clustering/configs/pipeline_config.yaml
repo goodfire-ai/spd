@@ -1,9 +1,9 @@
-clustering_run_config_path: "spd/clustering/configs/crc/example.yaml"
-n_runs: 2
+clustering_run_config_path: "spd/clustering/configs/crc/ss_llama_simple_mlp.json"
+n_runs: 10
 distances_methods: ["perm_invariant_hamming"]
 base_output_dir: "/mnt/polished-lake/spd/clustering"
 slurm_job_name_prefix: "spd"
-slurm_partition: "h100-reserved"
-wandb_project: "spd-cluster"
+slurm_partition: "h200-reserved"
+wandb_project: "spd"
 wandb_entity: "goodfire"
 create_git_snapshot: true
