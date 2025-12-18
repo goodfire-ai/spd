@@ -1,0 +1,16 @@
+# Benchmark sweep params - overrides ss_llama_simple_mlp to create minimal benchmark
+global:
+  steps:
+    values: [5000]
+  batch_size:
+    values: [128]
+  eval_freq:
+    values: [99999999]
+  slow_eval_freq:
+    values: [99999999]
+  eval_metric_configs:
+    values: [[]]
+  train_log_freq:
+    values: [50]
+  wandb_run_name_prefix:
+    values: ["benchmark"]
