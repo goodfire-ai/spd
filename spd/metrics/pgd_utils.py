@@ -119,7 +119,6 @@ def calc_multibatch_pgd_masked_recon_loss(
     """
     singleton_batch_dims = [1 for _ in batch_dims]
 
-    # Create per-module adv_sources tensors (supports different C per module)
     adv_sources: dict[str, Float[Tensor, "*ones mask_c"]] = {}
     for module_name in model.target_module_paths:
         module_c = model.module_to_c[module_name]
@@ -167,7 +166,6 @@ def _forward_with_adv_sources(
     batch_dims: tuple[int, ...],
 ):
     expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
-
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
     match weight_deltas:
         case None:
