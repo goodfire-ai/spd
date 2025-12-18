@@ -557,10 +557,10 @@ class Config(BaseConfig):
                 {"module_pattern": p, "C": global_c}
                 for p in config_dict["identity_module_patterns"]
             ]
-            config_dict.pop("identity_module_patterns", None)
 
         del config_dict["C"]
         config_dict.pop("target_module_patterns", None)
+        config_dict.pop("identity_module_patterns", None)
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
