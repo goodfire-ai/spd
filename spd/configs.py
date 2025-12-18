@@ -556,7 +556,8 @@ class Config(BaseConfig):
                 {"module_pattern": p, "C": global_c}
                 for p in config_dict["identity_module_patterns"]
             ]
-            del config_dict["identity_module_patterns"]
+        # Always delete the old key if present (even if None)
+        config_dict.pop("identity_module_patterns", None)
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
