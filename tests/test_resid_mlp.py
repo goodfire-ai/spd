@@ -1,16 +1,13 @@
-from spd.configs import (
-    Config,
-    FaithfulnessLossConfig,
-    ImportanceMinimalityLossConfig,
-    StochasticReconLossConfig,
-)
+from spd.configs import Config
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.identity_insertion import insert_identity_operations_
+from spd.registry import get_experiment_config_file_contents
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import set_seed
+from spd.utils.run_utils import apply_nested_updates
 
 
 def test_resid_mlp_decomposition_happy_path() -> None:
@@ -18,7 +15,25 @@ def test_resid_mlp_decomposition_happy_path() -> None:
     set_seed(0)
     device = "cpu"
 
-    # Create a 2-layer ResidMLP config
+    base_config_dict = get_experiment_config_file_contents("resid_mlp2")
+    test_overrides = {
+        "wandb_project": None,
+        "C": 10,
+        "steps": 3,
+        "batch_size": 4,
+        "eval_batch_size": 4,
+        "train_log_freq": 50,
+        "n_examples_until_dead": 999,
+        "eval_metric_configs.IdentityCIError.identity_ci": [
+            {"layer_pattern": "layers.*.mlp_in", "n_features": 5}
+        ],
+        "eval_metric_configs.IdentityCIError.dense_ci": [
+            {"layer_pattern": "layers.*.mlp_out", "k": 3}
+        ],
+    }
+    config_dict = apply_nested_updates(base_config_dict, test_overrides)
+    config = Config(**config_dict)
+
     resid_mlp_model_config = ResidMLPModelConfig(
         n_features=5,
         d_embed=4,
@@ -29,63 +44,6 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         out_bias=True,
     )
 
-    # Create config similar to the 2-layer config in resid_mlp2_config.yaml
-    config = Config(
-        # WandB
-        wandb_project=None,  # Disable wandb for testing
-        wandb_run_name=None,
-        wandb_run_name_prefix="",
-        # General
-        seed=0,
-        C=10,  # Smaller C for faster testing
-        n_mask_samples=1,
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[8],
-        loss_metric_configs=[
-            ImportanceMinimalityLossConfig(
-                coeff=3e-3,
-                pnorm=0.9,
-                eps=1e-12,
-            ),
-            StochasticReconLossConfig(coeff=1.0),
-            FaithfulnessLossConfig(coeff=1.0),
-        ],
-        target_module_patterns=["layers.*.mlp_in", "layers.*.mlp_out"],
-        identity_module_patterns=["layers.*.mlp_in"],
-        output_loss_type="mse",
-        # Training
-        lr=1e-3,
-        batch_size=4,
-        steps=3,  # Run more steps to see improvement
-        lr_schedule="cosine",
-        lr_exponential_halflife=None,
-        lr_warmup_pct=0.01,
-        n_eval_steps=1,
-        eval_freq=10,
-        eval_batch_size=4,
-        slow_eval_freq=10,
-        slow_eval_on_first_step=True,
-        # Logging & Saving
-        train_log_freq=50,  # Print at step 0, 50, and 100
-        save_freq=None,
-        ci_alive_threshold=0.1,
-        n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        # Pretrained model info
-        pretrained_model_class="spd.experiments.resid_mlp.models.ResidMLP",
-        pretrained_model_path=None,
-        pretrained_model_name=None,
-        pretrained_model_output_attr=None,
-        tokenizer_name=None,
-        # Task Specific
-        task_config=ResidMLPTaskConfig(
-            task_name="resid_mlp",
-            feature_probability=0.01,
-            data_generation_type="at_least_zero_active",
-        ),
-    )
-
-    # Create a pretrained model
-
     target_model = ResidMLP(config=resid_mlp_model_config).to(device)
     target_model.requires_grad_(False)
 
@@ -93,12 +51,11 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     assert isinstance(config.task_config, ResidMLPTaskConfig)
-    # Create dataset
     dataset = ResidMLPDataset(
         n_features=resid_mlp_model_config.n_features,
         feature_probability=config.task_config.feature_probability,
         device=device,
-        calc_labels=False,  # Our labels will be the output of the target model
+        calc_labels=False,
         label_type=None,
         act_fn_name=None,
         label_fn_seed=None,
@@ -114,7 +71,6 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         dataset, batch_size=config.eval_batch_size, shuffle=False
     )
 
-    # Run optimize function
     optimize(
         target_model=target_model,
         config=config,
@@ -125,5 +81,4 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         out_dir=None,
     )
 
-    # Basic assertion to ensure the test ran
     assert True, "Test completed successfully"

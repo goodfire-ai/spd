@@ -1,29 +1,42 @@
 import pytest
+import yaml
 
-from spd.configs import (
-    CI_L0Config,
-    Config,
-    FaithfulnessLossConfig,
-    ImportanceMinimalityLossConfig,
-    StochasticHiddenActsReconLossConfig,
-    StochasticReconLayerwiseLossConfig,
-    StochasticReconLossConfig,
-)
-from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
+from spd.configs import Config
+from spd.experiments.ih.configs import InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
 from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
+from spd.settings import REPO_ROOT
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
+from spd.utils.run_utils import apply_nested_updates
 
 
 @pytest.mark.slow
 def test_ih_transformer_decomposition_happy_path() -> None:
-    """Test that SPD decomposition works on a 2-layer, 1 head attention-only Transformer model"""
+    """Test that SPD decomposition works on a 2-layer, 1 head attention-only Transformer model.
+
+    TODO: Use a real pretrained_model_path in the config instead of randomly initializing one.
+    """
     set_seed(0)
     device = "cpu"
 
-    # Create a 2-layer InductionTransformer config
+    config_path = REPO_ROOT / "spd/experiments/ih/ih_config.yaml"
+    base_config_dict = yaml.safe_load(config_path.read_text())
+    test_overrides = {
+        "wandb_project": None,
+        "C": 10,
+        "steps": 2,
+        "batch_size": 4,
+        "eval_batch_size": 1,
+        "train_log_freq": 50,
+        "n_examples_until_dead": 999,
+        "pretrained_model_path": None,
+        "n_eval_steps": 1,
+    }
+    config_dict = apply_nested_updates(base_config_dict, test_overrides)
+    config = Config(**config_dict)
+
     ih_transformer_config = InductionModelConfig(
         vocab_size=128,
         d_model=16,
@@ -35,67 +48,6 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         use_layer_norm=False,
         ff_fanout=4,
     )
-
-    # Create config similar to the induction_head transformer config in ih_config.yaml
-    config = Config(
-        # WandB
-        wandb_project=None,  # Disable wandb for testing
-        wandb_run_name=None,
-        wandb_run_name_prefix="",
-        # General
-        seed=0,
-        C=10,  # Smaller C for faster testing
-        n_mask_samples=1,
-        ci_fn_type="vector_mlp",
-        ci_fn_hidden_dims=[128],
-        target_module_patterns=["blocks.*.attn.q_proj", "blocks.*.attn.k_proj"],
-        identity_module_patterns=["blocks.*.attn.q_proj"],
-        # Loss Coefficients
-        loss_metric_configs=[
-            ImportanceMinimalityLossConfig(
-                coeff=1e-2,
-                pnorm=0.9,
-                eps=1e-12,
-            ),
-            StochasticReconLayerwiseLossConfig(coeff=1.0),
-            StochasticReconLossConfig(coeff=1.0),
-            FaithfulnessLossConfig(coeff=200),
-        ],
-        output_loss_type="kl",
-        # Training
-        lr=1e-3,
-        batch_size=4,
-        steps=2,
-        lr_schedule="cosine",
-        lr_exponential_halflife=None,
-        lr_warmup_pct=0.01,
-        n_eval_steps=1,
-        # Logging & Saving
-        train_log_freq=50,  # Print at step 0, 50, and 100
-        eval_freq=500,
-        eval_batch_size=1,
-        slow_eval_freq=500,
-        slow_eval_on_first_step=True,
-        save_freq=None,
-        ci_alive_threshold=0.1,
-        n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
-        eval_metric_configs=[
-            CI_L0Config(groups=None),
-            StochasticHiddenActsReconLossConfig(),
-        ],
-        # Pretrained model info
-        pretrained_model_class="spd.experiments.ih.model.InductionTransformer",
-        pretrained_model_path=None,
-        pretrained_model_name=None,
-        pretrained_model_output_attr=None,
-        tokenizer_name=None,
-        # Task Specific
-        task_config=IHTaskConfig(
-            task_name="induction_head",
-        ),
-    )
-
-    # Create a pretrained model
 
     target_model = InductionTransformer(ih_transformer_config).to(device)
     target_model.eval()
@@ -118,7 +70,6 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         dataset, batch_size=config.microbatch_size, shuffle=False
     )
 
-    # Run optimize function
     optimize(
         target_model=target_model,
         config=config,
@@ -129,5 +80,4 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         out_dir=None,
     )
 
-    # Basic assertion to ensure the test ran
     assert True, "Test completed successfully"

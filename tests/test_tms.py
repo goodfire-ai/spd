@@ -3,20 +3,16 @@ from typing import cast
 import torch
 from torch import nn
 
-from spd.configs import (
-    Config,
-    FaithfulnessLossConfig,
-    ImportanceMinimalityLossConfig,
-    StochasticReconLayerwiseLossConfig,
-    StochasticReconLossConfig,
-)
+from spd.configs import Config
 from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.experiments.tms.train_tms import get_model_and_dataloader, train
 from spd.identity_insertion import insert_identity_operations_
+from spd.registry import get_experiment_config_file_contents
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.general_utils import set_seed
+from spd.utils.run_utils import apply_nested_updates
 
 
 def test_tms_decomposition_happy_path() -> None:
@@ -24,7 +20,22 @@ def test_tms_decomposition_happy_path() -> None:
     set_seed(0)
     device = "cpu"
 
-    # Create a TMS model config similar to the one in tms_config.yaml
+    base_config_dict = get_experiment_config_file_contents("tms_5-2")
+    test_overrides = {
+        "wandb_project": None,
+        "C": 10,
+        "steps": 3,
+        "batch_size": 4,
+        "eval_batch_size": 4,
+        "train_log_freq": 2,
+        "n_examples_until_dead": 999,
+        "faithfulness_warmup_steps": 2,
+        "target_module_patterns": ["linear1", "linear2", "hidden_layers.0"],
+        "identity_module_patterns": ["linear1"],
+    }
+    config_dict = apply_nested_updates(base_config_dict, test_overrides)
+    config = Config(**config_dict)
+
     tms_model_config = TMSModelConfig(
         n_features=5,
         n_hidden=2,
@@ -34,66 +45,6 @@ def test_tms_decomposition_happy_path() -> None:
         device=device,
     )
 
-    # Create config similar to tms_config.yaml
-    config = Config(
-        # WandB
-        wandb_project=None,  # Disable wandb for testing
-        wandb_run_name=None,
-        wandb_run_name_prefix="",
-        # General
-        seed=0,
-        C=10,  # Smaller C for faster testing
-        n_mask_samples=1,
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[8],
-        target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
-        identity_module_patterns=["linear1"],
-        loss_metric_configs=[
-            ImportanceMinimalityLossConfig(
-                coeff=3e-3,
-                pnorm=2.0,
-                eps=1e-12,
-            ),
-            StochasticReconLayerwiseLossConfig(coeff=1.0),
-            StochasticReconLossConfig(coeff=1.0),
-            FaithfulnessLossConfig(coeff=1.0),
-        ],
-        output_loss_type="mse",
-        # Training
-        lr=1e-3,
-        batch_size=4,
-        steps=3,  # Run only a few steps for the test
-        lr_schedule="cosine",
-        lr_exponential_halflife=None,
-        lr_warmup_pct=0.0,
-        n_eval_steps=1,
-        # Faithfulness Warmup
-        faithfulness_warmup_steps=2,
-        faithfulness_warmup_lr=0.001,
-        faithfulness_warmup_weight_decay=0.0,
-        # Logging & Saving
-        train_log_freq=2,
-        save_freq=None,
-        ci_alive_threshold=0.1,
-        n_examples_until_dead=8,  # print_freq * batch_size = 2 * 4
-        eval_batch_size=4,
-        eval_freq=10,
-        slow_eval_freq=10,
-        # Pretrained model info
-        pretrained_model_class="spd.experiments.tms.models.TMSModel",
-        pretrained_model_path=None,
-        pretrained_model_name=None,
-        pretrained_model_output_attr=None,
-        tokenizer_name=None,
-        # Task Specific
-        task_config=TMSTaskConfig(
-            task_name="tms",
-            feature_probability=0.05,
-            data_generation_type="at_least_zero_active",
-        ),
-    )
-
-    # Create a pretrained model
     target_model = TMSModel(config=tms_model_config).to(device)
     target_model.eval()
 
@@ -101,7 +52,6 @@ def test_tms_decomposition_happy_path() -> None:
         insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
 
     assert isinstance(config.task_config, TMSTaskConfig)
-    # Create dataset
     dataset = SparseFeatureDataset(
         n_features=target_model.config.n_features,
         feature_probability=config.task_config.feature_probability,
@@ -122,7 +72,6 @@ def test_tms_decomposition_happy_path() -> None:
     if target_model.config.tied_weights:
         tied_weights = [("linear1", "linear2")]
 
-    # Run optimize function
     optimize(
         target_model=target_model,
         config=config,
@@ -134,10 +83,6 @@ def test_tms_decomposition_happy_path() -> None:
         tied_weights=tied_weights,
     )
 
-    # The test passes if optimize runs without errors
-    print("TMS SPD optimization completed successfully")
-
-    # Basic assertion to ensure the test ran
     assert True, "Test completed successfully"
 
 
@@ -166,7 +111,6 @@ def test_train_tms_happy_path():
 
     model, dataloader = get_model_and_dataloader(config, device)
 
-    # Run training
     train(
         model,
         dataloader,
@@ -178,8 +122,6 @@ def test_train_tms_happy_path():
         log_wandb=False,
     )
 
-    # The test passes if training runs without errors
-    print("TMS training completed successfully")
     assert True, "Test completed successfully"
 
 
