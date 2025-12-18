@@ -537,26 +537,30 @@ class Config(BaseConfig):
     @classmethod
     def _migrate_to_module_info(cls, config_dict: dict[str, Any]) -> None:
         """Migrate old config format (C + target_module_patterns) to new module_info format."""
-        cond = "C" in config_dict or "target_module_patterns" in config_dict
-        if not cond:
+        # If new format already exists, just clean up any stale old keys
+        if "module_info" in config_dict:
+            config_dict.pop("C", None)
+            config_dict.pop("target_module_patterns", None)
+            config_dict.pop("identity_module_patterns", None)
             return
 
-        logger.warning(
-            "Found old config keys for C definition, mapping old structure to new module_info structure"
-        )
+        if "C" not in config_dict:
+            return
+
+        logger.warning("Found 'C', mapping old structure to new module_info structure")
         global_c = config_dict["C"]
-        config_dict["module_info"] = [
-            {"module_pattern": p, "C": global_c} for p in config_dict["target_module_patterns"]
-        ]
-        del config_dict["C"]
-        del config_dict["target_module_patterns"]
+        target_patterns = config_dict.get("target_module_patterns", [])
+
+        config_dict["module_info"] = [{"module_pattern": p, "C": global_c} for p in target_patterns]
 
         if config_dict.get("identity_module_patterns") is not None:
             config_dict["identity_module_info"] = [
                 {"module_pattern": p, "C": global_c}
                 for p in config_dict["identity_module_patterns"]
             ]
-        # Always delete the old key if present (even if None)
+
+        del config_dict["C"]
+        config_dict.pop("target_module_patterns", None)
         config_dict.pop("identity_module_patterns", None)
 
     @model_validator(mode="after")
