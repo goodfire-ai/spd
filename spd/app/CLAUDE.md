@@ -321,6 +321,12 @@ HarvestCache:  # Lazy-loads from /mnt/polished-lake/spd/data/harvest/<run_id>/
 
 ---
 
+## Svelte 5 Conventions
+
+- Use `SvelteSet`/`SvelteMap` from `svelte/reactivity` instead of `Set`/`Map` - they're reactive without `$state()` wrapping
+
+---
+
 ## Performance Notes
 
 - **Edge limit**: `GLOBAL_EDGE_LIMIT = 5000` in graph visualization
