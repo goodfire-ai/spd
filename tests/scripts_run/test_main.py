@@ -60,7 +60,14 @@ class TestSPDRun:
         assert sweep_params is not None
 
     def test_create_training_jobs_sweep(self):
-        """Test that sweep params generate correct cartesian product of jobs."""
+        """Test that sweep params generate correct cartesian product of jobs.
+
+        Verifies:
+        - Global params apply to all experiments
+        - Experiment-specific params override/extend global
+        - Cartesian product generates correct number of jobs
+        - C values can be swept via module_info
+        """
         sweep_params = {
             "global": {"lr": {"values": [1e-3, 1e-4]}},
             "tms_5-2": {
@@ -86,13 +93,28 @@ class TestSPDRun:
         )
 
         configs = [j.config for j in training_jobs]
-        # 2 lr values * 2 module_info values = 4 jobs
+
+        def there_is_one_with(lr: float, c: int) -> bool:
+            matching = [
+                cfg
+                for cfg in configs
+                if cfg.lr == lr and c == cfg.module_info[0].C and c == cfg.module_info[1].C
+            ]
+            return len(matching) == 1
+
+        # 2 lr values * 2 module_info configs = 4 jobs
         assert len(configs) == 4
-        assert {c.lr for c in configs} == {1e-3, 1e-4}
-        assert {c.module_info[0].C for c in configs} == {10, 20}
+
+        assert there_is_one_with(lr=1e-3, c=10)
+        assert there_is_one_with(lr=1e-3, c=20)
+        assert there_is_one_with(lr=1e-4, c=10)
+        assert there_is_one_with(lr=1e-4, c=20)
 
     def test_create_training_jobs_sweep_multi_experiment(self):
-        """Test that sweep params work correctly across multiple experiments."""
+        """Test that sweep params work correctly across multiple experiments.
+
+        Verifies experiment-specific C sweeps via module_info apply to their respective experiments.
+        """
         sweep_params = {
             "tms_5-2": {
                 "module_info": {
@@ -130,10 +152,20 @@ class TestSPDRun:
             sweep_params=sweep_params,
         )
 
+        # Separate jobs by experiment
         tms_5_2_jobs = [j for j in training_jobs if "tms_5-2" in j.experiment]
         tms_40_10_jobs = [j for j in training_jobs if "tms_40-10" in j.experiment]
 
+        # tms_5-2: 2 jobs (C=10, C=20)
+        # tms_40-10: 2 jobs (C=100, C=200)
         assert len(tms_5_2_jobs) == 2
         assert len(tms_40_10_jobs) == 2
-        assert {j.config.module_info[0].C for j in tms_5_2_jobs} == {10, 20}
-        assert {j.config.module_info[0].C for j in tms_40_10_jobs} == {100, 200}
+        assert len(training_jobs) == 4
+
+        # Verify tms_5-2 C values
+        tms_5_2_cs = {j.config.module_info[0].C for j in tms_5_2_jobs}
+        assert tms_5_2_cs == {10, 20}
+
+        # Verify tms_40-10 C values
+        tms_40_10_cs = {j.config.module_info[0].C for j in tms_40_10_jobs}
+        assert tms_40_10_cs == {100, 200}
