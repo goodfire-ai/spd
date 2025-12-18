@@ -28,9 +28,12 @@ def sample_at_most_n_per_group(
 
     device = group_ids.device
 
-    # Sort by (group_id, random) to group elements with random ordering within
+    # Assign a random number to each element, shuffle via sorting by random key, then stably sort
+    # the shuffled indices by group id. This produces a random order within each group while
+    # keeping all items of the same group contiguous. "sort_idx" is the final index mapping.
     rand = torch.rand(len(group_ids), device=device, generator=generator)
-    sort_idx = torch.argsort(group_ids.float() * 1e9 + rand)
+    rand_order = torch.argsort(rand)
+    sort_idx = rand_order[torch.argsort(group_ids[rand_order], stable=True)]
     sorted_groups = group_ids[sort_idx]
 
     # Compute rank within each group using cummax trick:
