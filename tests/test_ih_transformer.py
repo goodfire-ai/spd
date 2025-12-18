@@ -14,12 +14,15 @@ from spd.utils.run_utils import apply_nested_updates
 
 @pytest.mark.slow
 def test_ih_transformer_decomposition_happy_path() -> None:
-    """Test that SPD decomposition works on a 2-layer, 1 head attention-only Transformer model"""
+    """Test that SPD decomposition works on a 2-layer, 1 head attention-only Transformer model.
+
+    TODO: Use a real pretrained_model_path in the config instead of randomly initializing one.
+    """
     set_seed(0)
     device = "cpu"
 
     config_path = REPO_ROOT / "spd/experiments/ih/ih_config.yaml"
-    base_config = yaml.safe_load(config_path.read_text())
+    base_config_dict = yaml.safe_load(config_path.read_text())
     test_overrides = {
         "wandb_project": None,
         "C": 10,
@@ -27,12 +30,12 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         "batch_size": 4,
         "eval_batch_size": 1,
         "train_log_freq": 50,
-        "n_examples_until_dead": 200,  # train_log_freq * batch_size
+        "n_examples_until_dead": 999,
         "pretrained_model_path": None,
         "n_eval_steps": 1,
     }
-    config_dict = apply_nested_updates(base_config, test_overrides)
-    config = Config.model_validate(config_dict)
+    config_dict = apply_nested_updates(base_config_dict, test_overrides)
+    config = Config(**config_dict)
 
     ih_transformer_config = InductionModelConfig(
         vocab_size=128,

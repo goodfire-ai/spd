@@ -15,7 +15,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
     set_seed(0)
     device = "cpu"
 
-    base_config = get_experiment_config_file_contents("resid_mlp2")
+    base_config_dict = get_experiment_config_file_contents("resid_mlp2")
     test_overrides = {
         "wandb_project": None,
         "C": 10,
@@ -23,7 +23,7 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         "batch_size": 4,
         "eval_batch_size": 4,
         "train_log_freq": 50,
-        "n_examples_until_dead": 200,  # train_log_freq * batch_size
+        "n_examples_until_dead": 999,
         "eval_metric_configs.IdentityCIError.identity_ci": [
             {"layer_pattern": "layers.*.mlp_in", "n_features": 5}
         ],
@@ -31,8 +31,8 @@ def test_resid_mlp_decomposition_happy_path() -> None:
             {"layer_pattern": "layers.*.mlp_out", "k": 3}
         ],
     }
-    config_dict = apply_nested_updates(base_config, test_overrides)
-    config = Config.model_validate(config_dict)
+    config_dict = apply_nested_updates(base_config_dict, test_overrides)
+    config = Config(**config_dict)
 
     resid_mlp_model_config = ResidMLPModelConfig(
         n_features=5,

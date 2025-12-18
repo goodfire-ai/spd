@@ -21,7 +21,7 @@ def test_tms_decomposition_happy_path() -> None:
     device = "cpu"
 
     # Load default config from tms_5-2 and apply test overrides
-    base_config = get_experiment_config_file_contents("tms_5-2")
+    base_config_dict = get_experiment_config_file_contents("tms_5-2")
     test_overrides = {
         "wandb_project": None,
         "C": 10,
@@ -29,13 +29,13 @@ def test_tms_decomposition_happy_path() -> None:
         "batch_size": 4,
         "eval_batch_size": 4,
         "train_log_freq": 2,
-        "n_examples_until_dead": 8,  # train_log_freq * batch_size
+        "n_examples_until_dead": 999,
         "faithfulness_warmup_steps": 2,
         "target_module_patterns": ["linear1", "linear2", "hidden_layers.0"],
         "identity_module_patterns": ["linear1"],
     }
-    config_dict = apply_nested_updates(base_config, test_overrides)
-    config = Config.model_validate(config_dict)
+    config_dict = apply_nested_updates(base_config_dict, test_overrides)
+    config = Config(**config_dict)
 
     tms_model_config = TMSModelConfig(
         n_features=5,
