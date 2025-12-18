@@ -551,12 +551,11 @@ class Config(BaseConfig):
         del config_dict["C"]
         del config_dict["target_module_patterns"]
 
-        if "identity_module_patterns" in config_dict:
+        identity_patterns = config_dict.pop("identity_module_patterns", None)
+        if identity_patterns is not None:
             config_dict["identity_module_info"] = [
-                {"module_pattern": p, "C": global_c}
-                for p in config_dict["identity_module_patterns"]
+                {"module_pattern": p, "C": global_c} for p in identity_patterns
             ]
-            del config_dict["identity_module_patterns"]
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
