@@ -1,60 +1,27 @@
-# Autointerp Pipeline
+# Autointerp Module
 
-Automated interpretation of SPD components using Claude API.
-
-## Overview
-
-Two-phase pipeline:
-1. **Harvest** (GPU): Single pass over training data collecting correlations, token stats, and activation examples
-2. **Interpret** (CPU): Send each component's data to Claude for labeling
-
-Both phases run on cluster. Interpret is IO-bound (API calls), doesn't need GPU.
+LLM-based automated interpretation of SPD components. Consumes pre-harvested data from `spd/harvest/` (see `spd/harvest/CLAUDE.md`).
 
 ## Usage
 
 ```bash
-# Harvest - collect component statistics
-python -m spd.harvest.scripts.run_harvest <wandb_path> \
-    --n_batches 1000 \
-    --batch_size 256 \
-    --context_length 512
-
-# Interpret - get LLM labels
+# Run interpretation (requires harvest data to exist first)
 python -m spd.autointerp.scripts.run_interpret <wandb_path> --model google/gemini-3-flash-preview
+
+# Or via SLURM
+spd-interpret <wandb_path>
 ```
 
-Requires `OPENROUTER_API_KEY` env var for interpret phase.
+Requires `OPENROUTER_API_KEY` env var.
 
 ## Data Storage
 
-Data is stored outside the repo at `/mnt/polished-lake/spd/data/`:
-
 ```
-/mnt/polished-lake/spd/data/
-├── harvest/<run_id>/
-│   ├── activation_contexts/
-│   │   ├── config.json
-│   │   └── components.jsonl      # One ComponentData per line
-│   └── correlations/
-│       ├── component_correlations.pt
-│       └── token_stats.pt
-└── autointerp/<run_id>/
-    └── results.jsonl             # One InterpretationResult per line (append-only for resume)
+/mnt/polished-lake/spd/data/autointerp/<run_id>/
+└── results.jsonl    # One InterpretationResult per line (append-only for resume)
 ```
 
 ## Architecture
-
-### Harvest (`harvest.py`)
-
-`Harvester` class accumulates in a single pass:
-- **Correlations**: Co-occurrence counts between components (for precision/recall/PMI)
-- **Token stats**: Input token associations (hard counts) and output token associations (probability mass)
-- **Activation examples**: Reservoir sampling for uniform coverage across dataset
-
-Key optimizations:
-- Reservoir sampling: O(1) per add, O(k) memory, uniform random sampling from stream
-- Subsampling: Caps firings per batch at 10k (plenty for k=20 examples per component)
-- All accumulation on GPU, only moves to CPU for final `build_results()`
 
 ### Interpret (`interpret.py`)
 
@@ -65,20 +32,16 @@ Key optimizations:
 
 ### Prompt Template (`prompt_template.py`)
 
-Jinja2 template providing Claude with:
+Jinja2 template providing the LLM with:
 - Architecture context (model class, layer position, dataset)
 - Activation examples with CI values
-- Token statistics (precision/recall/PMI for input and output tokens)
+- Token statistics (PMI for input and output tokens)
 - Co-occurring components
 
 ## Key Types (`schemas.py`)
 
 ```python
-ComponentData        # All harvested info for one component
-ActivationExample    # Token window + CI values around a firing
-TokenStats           # Top-k tokens by precision/recall/PMI
-ComponentCorrelations # Top-k correlated components
-InterpretationResult # Claude's label + confidence + reasoning
+InterpretationResult  # LLM's label + confidence + reasoning
 ```
 
 ## Status
