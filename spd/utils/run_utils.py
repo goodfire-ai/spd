@@ -18,7 +18,6 @@ from spd.settings import DEFAULT_PROJECT_NAME, SPD_CACHE_DIR
 _DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
     "loss_metric_configs": "classname",
     "eval_metric_configs": "classname",
-    "module_info": "module_pattern",
 }
 
 

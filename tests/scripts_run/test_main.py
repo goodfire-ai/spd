@@ -6,20 +6,11 @@ For local execution tests, see tests/scripts_simple/.
 
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnusedParameter=false
 
-from typing import Any
 from unittest.mock import patch
 
 import pytest
 
 from spd.scripts.run import _create_training_jobs, _get_experiments
-
-
-def get_c_for_pattern(config: Any, pattern: str) -> int:
-    """Get C value for a specific module pattern."""
-    for info in config.module_info:
-        if info.module_pattern == pattern:
-            return info.C
-    raise ValueError(f"Pattern {pattern} not found")
 
 
 class TestSPDRun:
@@ -69,21 +60,22 @@ class TestSPDRun:
         assert sweep_params is not None
 
     def test_create_training_jobs_sweep(self):
-        """Test that sweep params generate correct cartesian product of jobs.
-
-        Verifies:
-        - Global params apply to all experiments
-        - Experiment-specific params override/extend global
-        - Cartesian product generates correct number of jobs
-        - C values can be swept per module via module_info
-        """
+        """Test that sweep params generate correct cartesian product of jobs."""
         sweep_params = {
             "global": {"lr": {"values": [1e-3, 1e-4]}},
             "tms_5-2": {
-                "module_info": [
-                    {"module_pattern": "linear1", "C": {"values": [10, 20]}},
-                    {"module_pattern": "linear2", "C": {"values": [10, 20]}},
-                ],
+                "module_info": {
+                    "values": [
+                        [
+                            {"module_pattern": "linear1", "C": 10},
+                            {"module_pattern": "linear2", "C": 10},
+                        ],
+                        [
+                            {"module_pattern": "linear1", "C": 20},
+                            {"module_pattern": "linear2", "C": 20},
+                        ],
+                    ]
+                },
             },
         }
 
@@ -94,44 +86,41 @@ class TestSPDRun:
         )
 
         configs = [j.config for j in training_jobs]
-
-        def there_is_one_with(lr: float, linear1_c: int, linear2_c: int) -> bool:
-            matching = [
-                cfg
-                for cfg in configs
-                if cfg.lr == lr
-                and get_c_for_pattern(cfg, "linear1") == linear1_c
-                and get_c_for_pattern(cfg, "linear2") == linear2_c
-            ]
-            return len(matching) == 1
-
-        # 2 lr values * 2 linear1 C values * 2 linear2 C values = 8 jobs
-        assert len(configs) == 8
-
-        assert there_is_one_with(lr=1e-3, linear1_c=10, linear2_c=10)
-        assert there_is_one_with(lr=1e-3, linear1_c=10, linear2_c=20)
-        assert there_is_one_with(lr=1e-3, linear1_c=20, linear2_c=10)
-        assert there_is_one_with(lr=1e-3, linear1_c=20, linear2_c=20)
-        assert there_is_one_with(lr=1e-4, linear1_c=10, linear2_c=10)
-        assert there_is_one_with(lr=1e-4, linear1_c=10, linear2_c=20)
-        assert there_is_one_with(lr=1e-4, linear1_c=20, linear2_c=10)
-        assert there_is_one_with(lr=1e-4, linear1_c=20, linear2_c=20)
+        # 2 lr values * 2 module_info values = 4 jobs
+        assert len(configs) == 4
+        assert {c.lr for c in configs} == {1e-3, 1e-4}
+        assert {c.module_info[0].C for c in configs} == {10, 20}
 
     def test_create_training_jobs_sweep_multi_experiment(self):
-        """Test that sweep params work correctly across multiple experiments.
-
-        Verifies experiment-specific C sweeps via module_info apply to their respective experiments.
-        """
+        """Test that sweep params work correctly across multiple experiments."""
         sweep_params = {
             "tms_5-2": {
-                "module_info": [
-                    {"module_pattern": "linear1", "C": {"values": [10, 20]}},
-                ],
+                "module_info": {
+                    "values": [
+                        [
+                            {"module_pattern": "linear1", "C": 10},
+                            {"module_pattern": "linear2", "C": 10},
+                        ],
+                        [
+                            {"module_pattern": "linear1", "C": 20},
+                            {"module_pattern": "linear2", "C": 20},
+                        ],
+                    ]
+                },
             },
             "tms_40-10": {
-                "module_info": [
-                    {"module_pattern": "linear1", "C": {"values": [100, 200]}},
-                ],
+                "module_info": {
+                    "values": [
+                        [
+                            {"module_pattern": "linear1", "C": 100},
+                            {"module_pattern": "linear2", "C": 100},
+                        ],
+                        [
+                            {"module_pattern": "linear1", "C": 200},
+                            {"module_pattern": "linear2", "C": 200},
+                        ],
+                    ]
+                },
             },
         }
 
@@ -141,20 +130,10 @@ class TestSPDRun:
             sweep_params=sweep_params,
         )
 
-        # Separate jobs by experiment
         tms_5_2_jobs = [j for j in training_jobs if "tms_5-2" in j.experiment]
         tms_40_10_jobs = [j for j in training_jobs if "tms_40-10" in j.experiment]
 
-        # tms_5-2: 2 jobs (C=10, C=20 for linear1)
-        # tms_40-10: 2 jobs (C=100, C=200 for linear1)
         assert len(tms_5_2_jobs) == 2
         assert len(tms_40_10_jobs) == 2
-        assert len(training_jobs) == 4
-
-        # Verify tms_5-2 C values
-        tms_5_2_cs = {get_c_for_pattern(j.config, "linear1") for j in tms_5_2_jobs}
-        assert tms_5_2_cs == {10, 20}
-
-        # Verify tms_40-10 C values
-        tms_40_10_cs = {get_c_for_pattern(j.config, "linear1") for j in tms_40_10_jobs}
-        assert tms_40_10_cs == {100, 200}
+        assert {j.config.module_info[0].C for j in tms_5_2_jobs} == {10, 20}
+        assert {j.config.module_info[0].C for j in tms_40_10_jobs} == {100, 200}
