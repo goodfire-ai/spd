@@ -7,8 +7,6 @@ This allows downstream functionality to act as if the identity operation is just
 the model, namely, allowing us to decompose the identity operation.
 """
 
-from __future__ import annotations
-
 import fnmatch
 from typing import Any
 
