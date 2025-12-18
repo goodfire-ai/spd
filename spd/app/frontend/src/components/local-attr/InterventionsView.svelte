@@ -1352,8 +1352,7 @@
     }
 
     .pred-prob.targ {
-        color: var(--text-muted);
-        opacity: 0.8;
+        color: var(--text-secondary);
     }
 
     /* Forked runs */
