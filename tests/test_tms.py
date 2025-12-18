@@ -20,7 +20,6 @@ def test_tms_decomposition_happy_path() -> None:
     set_seed(0)
     device = "cpu"
 
-    # Load default config from tms_5-2 and apply test overrides
     base_config_dict = get_experiment_config_file_contents("tms_5-2")
     test_overrides = {
         "wandb_project": None,
