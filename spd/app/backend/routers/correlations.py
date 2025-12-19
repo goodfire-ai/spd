@@ -191,7 +191,14 @@ async def request_component_interpretation(
     model_name = OpenRouterModelName.GEMINI_2_5_FLASH
 
     async with OpenRouter(api_key=api_key) as client:
-        res = await interpret_component(client, model_name, component_data, arch, loaded.tokenizer)
+        res = await interpret_component(
+            client=client,
+            model=model_name,
+            component=component_data,
+            arch=arch,
+            tokenizer=loaded.tokenizer,
+            max_examples=50,
+        )
 
     if res is None:
         raise HTTPException(

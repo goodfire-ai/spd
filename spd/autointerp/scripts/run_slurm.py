@@ -41,6 +41,7 @@ def launch_interpret_job(
     model: OpenRouterModelName,
     partition: str,
     time: str,
+    max_examples_per_component: int,
 ) -> None:
     """Submit interpret job to SLURM (CPU-only, IO-bound).
 
@@ -49,6 +50,7 @@ def launch_interpret_job(
         model: OpenRouter model to use for interpretation.
         partition: SLURM partition name.
         time: Job time limit.
+        max_examples_per_component: Maximum number of activation examples per component.
     """
     job_id = _generate_job_id()
     slurm_logs_dir = Path.home() / "slurm_logs"
@@ -63,6 +65,7 @@ def launch_interpret_job(
         "python -m spd.autointerp.scripts.run_interpret",
         f'"{wandb_path}"',
         f"--model {model.value}",
+        f"--max_examples_per_component {max_examples_per_component}",
     ]
     interpret_cmd = " \\\n    ".join(cmd_parts)
 

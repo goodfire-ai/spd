@@ -68,14 +68,18 @@ DATASET_DESCRIPTIONS: dict[str, str] = {
 
 
 def format_prompt_template(
-    component: ComponentData, arch: ArchitectureInfo, tokenizer: PreTrainedTokenizerBase
+    component: ComponentData,
+    arch: ArchitectureInfo,
+    tokenizer: PreTrainedTokenizerBase,
+    max_examples: int,
 ) -> str:
     lookup = build_token_lookup(tokenizer, tokenizer.name_or_path)
 
     PADDING_SENTINEL = -1
 
     examples_str = ""
-    for example_idx, example in enumerate(component.activation_examples):
+    examples = component.activation_examples[:max_examples]
+    for example_idx, example in enumerate(examples):
         # Filter out padding sentinel (-1) for decoding
         valid_token_ids: list[int] = []
         for tid in example.token_ids:
@@ -223,4 +227,4 @@ if __name__ == "__main__":
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
-    print(format_prompt_template(component, arch, tokenizer))  # pyright: ignore[reportArgumentType]
+    print(format_prompt_template(component, arch, tokenizer, max_examples=50))  # pyright: ignore[reportArgumentType]

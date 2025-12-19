@@ -5,10 +5,12 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 
+import httpx
 from openrouter import OpenRouter
 from openrouter.components import JSONSchemaConfig, MessageTypedDict, ResponseFormatJSONSchema
 from openrouter.errors import (
     BadGatewayResponseError,
+    ChatError,
     EdgeNetworkTimeoutResponseError,
     ProviderOverloadedResponseError,
     RequestTimeoutResponseError,
@@ -33,6 +35,7 @@ MAX_RETRIES = 8
 BASE_DELAY_S = 0.5
 MAX_DELAY_S = 60.0
 JITTER_FACTOR = 0.5
+MAX_CONCURRENT_REQUESTS = 50
 
 RETRYABLE_ERRORS = (
     TooManyRequestsResponseError,
@@ -41,6 +44,8 @@ RETRYABLE_ERRORS = (
     BadGatewayResponseError,
     RequestTimeoutResponseError,
     EdgeNetworkTimeoutResponseError,
+    ChatError,
+    httpx.TransportError,  # Low-level network errors (ReadError, ConnectError, etc.)
 )
 
 
@@ -151,9 +156,12 @@ async def interpret_component(
     component: ComponentData,
     arch: ArchitectureInfo,
     tokenizer: PreTrainedTokenizerBase,
+    max_examples: int,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
-    prompt = format_prompt_template(component, arch, tokenizer)
+    prompt = format_prompt_template(
+        component=component, arch=arch, tokenizer=tokenizer, max_examples=max_examples
+    )
 
     if FAKING_RESPONSES:
         return (
@@ -218,6 +226,7 @@ async def interpret_all(
     openrouter_api_key: str,
     interpreter_model: str,
     output_path: Path,
+    max_examples_per_component: int,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
@@ -238,9 +247,7 @@ async def interpret_all(
     start_idx = len(results)
 
     output_lock = asyncio.Lock()
-
-    # Scale jitter window to target ~1000 req/s initial rate
-    initial_jitter_window = len(remaining) / 1000.0
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
@@ -251,26 +258,35 @@ async def interpret_all(
         client: OpenRouter,
         cost_tracker: CostTracker,
     ) -> None:
-        # Stagger initial requests to avoid thundering herd
-        await asyncio.sleep(random.random() * initial_jitter_window)
-
-        res = await interpret_component(client, interpreter_model, component, arch, tokenizer)
-        if res is None:
-            logger.error(f"Failed to interpret {component.component_key}")
-            return
-        result, in_tok, out_tok = res
-
-        async with output_lock:
-            results.append(result)
-            with open(output_path, "a") as f:
-                f.write(json.dumps(asdict(result)) + "\n")
-            cost_tracker.add(in_tok, out_tok)
-
-            if index % 100 == 0:
-                current_cost = cost_tracker.cost_usd()
-                tqdm_asyncio.write(
-                    f"[{index}] ${current_cost:.2f} ({cost_tracker.input_tokens:,} in, {cost_tracker.output_tokens:,} out)"
+        async with semaphore:
+            try:
+                res = await interpret_component(
+                    client=client,
+                    model=interpreter_model,
+                    component=component,
+                    arch=arch,
+                    tokenizer=tokenizer,
+                    max_examples=max_examples_per_component,
                 )
+                if res is None:
+                    logger.error(f"Failed to interpret {component.component_key}")
+                    return
+                result, in_tok, out_tok = res
+
+                async with output_lock:
+                    results.append(result)
+                    with open(output_path, "a") as f:
+                        f.write(json.dumps(asdict(result)) + "\n")
+                    cost_tracker.add(in_tok, out_tok)
+
+                    if index % 100 == 0:
+                        current_cost = cost_tracker.cost_usd()
+                        tqdm_asyncio.write(
+                            f"[{index}] ${current_cost:.2f} ({cost_tracker.input_tokens:,} in, {cost_tracker.output_tokens:,} out)"
+                        )
+            except Exception as e:
+                logger.error(f"Fatal error on {component.component_key}: {type(e).__name__}: {e}")
+                raise
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
         input_price, output_price = await get_model_pricing(client, interpreter_model)
@@ -314,13 +330,21 @@ def run_interpret(
     interpreter_model: str,
     activation_contexts_dir: Path,
     autointerp_dir: Path,
+    max_examples_per_component: int,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
     output_path = autointerp_dir / "results.jsonl"
 
     results = asyncio.run(
-        interpret_all(components, arch, openrouter_api_key, interpreter_model, output_path)
+        interpret_all(
+            components,
+            arch,
+            openrouter_api_key,
+            interpreter_model,
+            output_path,
+            max_examples_per_component,
+        )
     )
 
     print(f"Completed {len(results)} interpretations -> {output_path}")
