@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
     import { displaySettings } from "../../lib/displaySettings.svelte";
+    import { runState } from "../../lib/runState.svelte";
     import SetOverlapVis from "./SetOverlapVis.svelte";
     import { lerp } from "../local-attr/graphUtils";
 
@@ -11,6 +12,10 @@
     };
 
     let { items, onComponentClick, pageSize = 40 }: Props = $props();
+
+    function getInterpretationLabel(componentKey: string): string | null {
+        return runState.getInterpretation(componentKey)?.label ?? null;
+    }
 
     let currentPage = $state(0);
     let hoveredKey = $state<string | null>(null);
@@ -40,6 +45,7 @@
     <div class="components">
         {#each paginatedItems as { component_key, score, count_i, count_j, count_ij, n_tokens } (component_key)}
             {@const borderColor = getBorderColor(score)}
+            {@const label = getInterpretationLabel(component_key)}
             <button
                 class="component-pill"
                 class:clickable={!!onComponentClick}
@@ -47,9 +53,14 @@
                 onclick={() => onComponentClick?.(component_key)}
                 onmouseenter={() => (hoveredKey = component_key)}
                 onmouseleave={() => (hoveredKey = null)}
+                title={component_key}
             >
                 <div class="pill-content">
-                    <span class="component-text">{component_key}</span>
+                    {#if label}
+                        <span class="interp-label">{label}</span>
+                    {:else}
+                        <span class="component-text">{component_key}</span>
+                    {/if}
                     <span class="component-text">({score.toFixed(2)})</span>
                 </div>
                 {#if displaySettings.showSetOverlapVis && n_tokens > 0}
@@ -137,5 +148,14 @@
 
     .component-pill.clickable {
         cursor: pointer;
+    }
+
+    .interp-label {
+        font-family: var(--font-sans);
+        font-weight: 500;
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 </style>

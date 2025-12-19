@@ -1,12 +1,12 @@
 <script lang="ts">
     import type {
         ActivationContextsSummary,
-        ComponentDetail,
         ComponentSummary,
         OutputProbEntry,
         Edge,
     } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
+    import { runState } from "../../lib/runState.svelte";
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
@@ -22,8 +22,6 @@
         tooltipPos: { x: number; y: number };
         hideNodeCard?: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
-        componentDetailsCache: Record<string, ComponentDetail>;
-        componentDetailsLoading: Record<string, boolean>;
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
         tokens: string[];
@@ -39,8 +37,6 @@
         tooltipPos,
         hideNodeCard = false,
         activationContextsSummary,
-        componentDetailsCache,
-        componentDetailsLoading,
         outputProbs,
         nodeCiVals,
         tokens,
@@ -85,7 +81,6 @@
     });
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
     class="node-tooltip"
     style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"
@@ -111,34 +106,16 @@
     {:else if isOutput}
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
     {:else if !hideNodeCard}
-        {@const cacheKey = `${hoveredNode.layer}:${hoveredNode.cIdx}`}
-        {@const detail = componentDetailsCache[cacheKey] ?? null}
-        {@const summary = findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
-        {#if detail}
-            <ComponentNodeCard
-                layer={hoveredNode.layer}
-                cIdx={hoveredNode.cIdx}
-                seqIdx={hoveredNode.seqIdx}
-                {summary}
-                {detail}
-                {edgesBySource}
-                {edgesByTarget}
-                {onPinComponent}
-            />
-        {:else}
-            {@const isLoading = componentDetailsLoading[cacheKey] ?? false}
-            <ComponentNodeCard
-                layer={hoveredNode.layer}
-                cIdx={hoveredNode.cIdx}
-                seqIdx={hoveredNode.seqIdx}
-                {summary}
-                detail={null}
-                {isLoading}
-                {edgesBySource}
-                {edgesByTarget}
-                {onPinComponent}
-            />
-        {/if}
+        <ComponentNodeCard
+            layer={hoveredNode.layer}
+            cIdx={hoveredNode.cIdx}
+            seqIdx={hoveredNode.seqIdx}
+            summary={findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
+            detail={runState.getComponentDetail(hoveredNode.layer, hoveredNode.cIdx)}
+            {edgesBySource}
+            {edgesByTarget}
+            {onPinComponent}
+        />
     {/if}
 </div>
 

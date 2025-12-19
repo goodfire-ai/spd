@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { ComponentProbeResult } from "../lib/localAttributionsTypes";
     import { getTokenHighlightBg } from "../lib/colors";
-    import { probeComponent } from "../lib/localAttributionsApi";
+    import { probeComponent } from "../lib/api";
 
     interface Props {
         layer: string;

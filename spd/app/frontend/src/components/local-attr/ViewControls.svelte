@@ -1,5 +1,6 @@
 <script lang="ts">
-    import type { NormalizeType } from "../../lib/localAttributionsApi";
+    import type { NormalizeType } from "../../lib/api";
+    import type { Loadable } from "../../lib/index";
 
     type Props = {
         topK: number;
@@ -7,8 +8,7 @@
         layerGap: number;
         filteredEdgeCount: number | null;
         normalizeEdges: NormalizeType;
-        ciThreshold: number;
-        ciThresholdLoading: boolean;
+        ciThreshold: Loadable<number>;
         hideUnpinnedEdges?: boolean;
         hideNodeCard?: boolean;
         onTopKChange: (value: number) => void;
@@ -27,7 +27,6 @@
         filteredEdgeCount,
         normalizeEdges,
         ciThreshold,
-        ciThresholdLoading,
         hideUnpinnedEdges,
         hideNodeCard,
         onTopKChange,
@@ -43,15 +42,12 @@
     let localTopK = $state(topK);
     let localComponentGap = $state(componentGap);
     let localLayerGap = $state(layerGap);
-    let localCiThreshold = $state(ciThreshold.toString());
+    let localCiThreshold = $derived.by(() => (ciThreshold?.status === "loaded" ? ciThreshold.data.toString() : ""));
 
     // Sync local state when props change externally
     $effect(() => void (localTopK = topK));
     $effect(() => void (localComponentGap = componentGap));
     $effect(() => void (localLayerGap = layerGap));
-    $effect(() => {
-        if (!ciThresholdLoading) localCiThreshold = ciThreshold.toString();
-    });
 
     function applyIfChanged<T>(local: T, prop: T, apply: (v: T) => void) {
         if (local !== prop) apply(local);
@@ -79,19 +75,20 @@
             step={100}
         />
     </label>
-    <label class:loading={ciThresholdLoading}>
+    <label class:loading={ciThreshold?.status === "loading"}>
         <span>Node CI Threshold</span>
         <input
             type="number"
             bind:value={localCiThreshold}
             onblur={() => {
                 const v = parseFloat(localCiThreshold);
-                if (!isNaN(v) && v !== ciThreshold) onCiThresholdChange(v);
+                const currentValue = ciThreshold?.status === "loaded" ? ciThreshold.data : null;
+                if (!isNaN(v) && v !== currentValue) onCiThresholdChange(v);
             }}
             onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             min={0}
             step={0.1}
-            disabled={ciThresholdLoading}
+            disabled={ciThreshold?.status === "loading"}
         />
     </label>
     <label>

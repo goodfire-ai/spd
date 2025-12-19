@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = "==3.13.*"
 resolution-markers = [
     "sys_platform == 'linux'",
@@ -1229,6 +1229,20 @@ wheels = [
 ]
 
 [[package]]
+name = "openrouter"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpcore" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c3/ce/69d3d7a79b2a9a28377cbf2a502a0d41da41bf99f40a17dd5dbdc61d5aea/openrouter-0.1.1.tar.gz", hash = "sha256:f224545a562a060e154120808b05525e95247193ad54a349c4928b9eb8cabe33", size = 114369, upload-time = "2025-12-04T15:50:35.683Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8f/f8/e86cc449d1ca5ced4e6a483b07932444c04a0146b4ed287956496ff5b61e/openrouter-0.1.1-py3-none-any.whl", hash = "sha256:37480230413a246f15af7056f479b2c1a9ca79c88086660bc56c3f69b37847d4", size = 240934, upload-time = "2025-12-04T15:50:36.646Z" },
+]
+
+[[package]]
 name = "packaging"
 version = "25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1909,10 +1923,12 @@ dependencies = [
     { name = "einops" },
     { name = "fastapi" },
     { name = "fire" },
+    { name = "httpx" },
     { name = "ipykernel" },
     { name = "jaxtyping" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "openrouter" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "simple-stories-train" },
@@ -1945,10 +1961,12 @@ requires-dist = [
     { name = "einops" },
     { name = "fastapi" },
     { name = "fire" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "ipykernel" },
     { name = "jaxtyping" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "openrouter", specifier = ">=0.1.1" },
     { name = "pydantic", specifier = "<2.12" },
     { name = "python-dotenv" },
     { name = "simple-stories-train", git = "https://github.com/goodfire-ai/simple_stories_train.git?rev=dev" },

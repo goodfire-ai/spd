@@ -1,21 +1,28 @@
 <script lang="ts">
+    import { displaySettings } from "../../lib/displaySettings.svelte";
+    import {
+        getComponentCorrelations,
+        getComponentTokenStats,
+        type Interpretation,
+    } from "../../lib/api";
     import type {
+        ComponentCorrelations,
         ComponentDetail,
         ComponentSummary,
-        ComponentCorrelations,
-        TokenStats,
         Edge,
         EdgeAttribution,
+        TokenStats,
     } from "../../lib/localAttributionsTypes";
-    import { getComponentCorrelations, getComponentTokenStats } from "../../lib/localAttributionsApi";
-    import { displaySettings } from "../../lib/displaySettings.svelte";
+    import { runState } from "../../lib/runState.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
     import EdgeAttributionList from "../ui/EdgeAttributionList.svelte";
-    import TokenStatsSection from "../ui/TokenStatsSection.svelte";
+    import InterpretationBadge from "../ui/InterpretationBadge.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
+    import TokenStatsSection from "../ui/TokenStatsSection.svelte";
+    import type { Loadable } from "../../lib/index";
 
     type Props = {
         layer: string;
@@ -24,11 +31,16 @@
         summary: ComponentSummary | null;
         edgesBySource: Map<string, Edge[]>;
         edgesByTarget: Map<string, Edge[]>;
+        detail: Loadable<ComponentDetail>;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
-    } & ({ detail: ComponentDetail; isLoading?: never } | { detail: null; isLoading: boolean });
+    };
 
-    let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, detail, isLoading, onPinComponent }: Props =
-        $props();
+    let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, onPinComponent, detail }: Props = $props();
+
+    function handleInterpretationGenerated(interp: Interpretation) {
+        const key = `${layer}:${cIdx}`;
+        runState.addInterpretation(key, interp);
+    }
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -39,67 +51,111 @@
     }
 
     // Correlations state
-    let correlations = $state<ComponentCorrelations | null>(null);
-    let correlationsLoading = $state(false);
+    let correlations = $state<Loadable<ComponentCorrelations>>(null);
 
     // Token stats state (from batch job)
-    let tokenStats = $state<TokenStats | null>(null);
-    let tokenStatsLoading = $state(false);
+    let tokenStats = $state<Loadable<TokenStats>>(null);
+
+    // Interpretation from global store (keyed by layer:cIdx)
+    const interpretation: Loadable<Interpretation> = $derived.by(() => {
+        const cached = runState.getInterpretation(`${layer}:${cIdx}`);
+        if (cached) {
+            return { status: "loaded", data: cached };
+        }
+        return null; // No interpretation available
+    });
 
     // Fetch correlations when component changes
     $effect(() => {
-        correlations = null;
-        correlationsLoading = true;
+        let cancelled = false;
+        correlations = { status: "loading" };
         getComponentCorrelations(layer, cIdx, 1000)
             .then((data) => {
-                correlations = data;
+                if (cancelled) return;
+                correlations = data ? { status: "loaded", data } : null;
             })
-            .finally(() => {
-                correlationsLoading = false;
+            .catch((error) => {
+                if (cancelled) return;
+                correlations = { status: "error", error };
             });
+        return () => {
+            cancelled = true;
+        };
     });
 
     // Fetch token stats when component changes
     $effect(() => {
-        tokenStats = null;
-        tokenStatsLoading = true;
+        let cancelled = false;
+        tokenStats = { status: "loading" };
         getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
-                tokenStats = data;
+                if (cancelled) return;
+                tokenStats = data ? { status: "loaded", data } : null;
             })
-            .finally(() => {
-                tokenStatsLoading = false;
+            .catch((error) => {
+                if (cancelled) return;
+                tokenStats = { status: "error", error };
             });
+        return () => {
+            cancelled = true;
+        };
     });
 
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
 
-    // === Input token stats (what tokens activate this component) ===
-    const inputTopPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.input.top_pmi.slice(0, N_TOKENS_TO_DISPLAY_INPUT).map(([token, value]) => ({ token, value }));
+    type TokenValue = { token: string; value: number };
+    type TokenList = { title: string; mathNotation?: string; items: TokenValue[] };
+
+    // Transform tokenStats into Loadable<TokenList[]> for input tokens section
+    const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                    items: tokenStats.data.input.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
     });
 
-    // === Output token stats (what tokens this component predicts) ===
-    const outputTopPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.output.top_pmi
-            .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
-            .map(([token, value]) => ({ token, value }));
-    });
-
-    const outputBottomPmi = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.output.bottom_pmi
-            .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
-            .map(([token, value]) => ({ token, value }));
+    // Transform tokenStats into Loadable<TokenList[]> for output tokens section
+    const outputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "positive association with predictions",
+                    items: tokenStats.data.output.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+                {
+                    title: "Bottom PMI",
+                    mathNotation: "negative association with predictions",
+                    items: tokenStats.data.output.bottom_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
     });
 
     // Activating tokens from token stats (for highlighting)
     const activatingTokens = $derived.by(() => {
-        if (!tokenStats) return [];
-        return tokenStats.input.top_recall.map(([token]) => token);
+        if (tokenStats == null || tokenStats.status !== "loaded") return [];
+        return tokenStats.data.input.top_recall.map(([token]) => token);
     });
 
     // Format mean CI for display
@@ -166,6 +222,8 @@
             <span class="mean-ci">Mean CI: {formatMeanCi(summary.mean_ci)}</span>
         {/if}
     </SectionHeader>
+
+    <InterpretationBadge {interpretation} {layer} {cIdx} onInterpretationGenerated={handleInterpretationGenerated} />
 
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
@@ -234,63 +292,55 @@
         <TokenStatsSection
             sectionTitle="Input Tokens"
             sectionSubtitle="(what activates this component)"
-            loading={tokenStatsLoading}
-            lists={[
-                {
-                    title: "Top PMI",
-                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
-                    items: inputTopPmi,
-                },
-            ]}
+            lists={inputTokenLists}
         />
 
         <TokenStatsSection
             sectionTitle="Output Tokens"
             sectionSubtitle="(what this component predicts)"
-            loading={tokenStatsLoading}
-            lists={[
-                {
-                    title: "Top PMI",
-                    mathNotation: "positive association with predictions",
-                    items: outputTopPmi,
-                },
-                {
-                    title: "Bottom PMI",
-                    mathNotation: "negative association with predictions",
-                    items: outputBottomPmi,
-                },
-            ]}
+            lists={outputTokenLists}
         />
     </div>
-
-    <ComponentProbeInput {layer} componentIdx={cIdx} />
 
     <!-- Component correlations -->
     <div class="correlations-section">
         <SectionHeader title="Correlated Components" />
-        {#if correlations}
-            <ComponentCorrelationMetrics {correlations} pageSize={16} onComponentClick={handleCorrelationClick} />
-        {:else if correlationsLoading}
+        {#if correlations?.status === "loading"}
             <StatusText>Loading...</StatusText>
+        {:else if correlations?.status === "loaded"}
+            <ComponentCorrelationMetrics
+                correlations={correlations.data}
+                pageSize={16}
+                onComponentClick={handleCorrelationClick}
+            />
+        {:else if correlations?.status === "error"}
+            <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
         {:else}
-            <StatusText>No correlations available.</StatusText>
+            <StatusText>Something went wrong loading correlations.</StatusText>
         {/if}
     </div>
 
-    {#if detail}
-        {#if detail.example_tokens.length > 0}
-            <!-- Full mode: paged table with filtering -->
-            <SectionHeader title="Activating Examples ({detail.example_tokens.length})" />
-            <ActivationContextsPagedTable
-                exampleTokens={detail.example_tokens}
-                exampleCi={detail.example_ci}
-                exampleActivePos={detail.example_active_pos}
-                {activatingTokens}
-            />
+    <ComponentProbeInput {layer} componentIdx={cIdx} />
+
+    <div class="activating-examples-section">
+        <SectionHeader title="Activating Examples" />
+        {#if detail?.status === "loading"}
+            <StatusText>Loading details...</StatusText>
+        {:else if detail?.status === "loaded"}
+            {#if detail?.data.example_tokens.length > 0}
+                <!-- Full mode: paged table with filtering -->
+                <ActivationContextsPagedTable
+                    exampleTokens={detail?.data.example_tokens}
+                    exampleCi={detail?.data.example_ci}
+                    {activatingTokens}
+                />
+            {/if}
+        {:else if detail?.status === "error"}
+            <StatusText>Error loading details: {String(detail?.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading details.</StatusText>
         {/if}
-    {:else if isLoading}
-        <StatusText>Loading details...</StatusText>
-    {/if}
+    </div>
 </div>
 
 <style>

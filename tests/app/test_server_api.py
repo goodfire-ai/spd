@@ -8,14 +8,11 @@ These tests bypass slow operations (W&B model loading, large data loaders) by:
 
 import json
 from pathlib import Path
-from typing import override
 from unittest import mock
 
 import pytest
-import torch
 from fastapi.testclient import TestClient
 from simple_stories_train.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
-from torch.utils.data import DataLoader, Dataset
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.db import LocalAttrDB
@@ -23,26 +20,12 @@ from spd.app.backend.routers import graphs as graphs_router
 from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
-from spd.app.backend.state import RunState, StateManager
+from spd.app.backend.state import HarvestCache, RunState, StateManager
 from spd.configs import Config
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel
 
 DEVICE = "cpu"
-
-
-class FakeTokenDataset(Dataset[dict[str, torch.Tensor]]):
-    """Simple dataset that returns dicts with 'input_ids' key like HuggingFace datasets."""
-
-    def __init__(self, data: torch.Tensor):
-        self.data = data
-
-    def __len__(self) -> int:
-        return len(self.data)
-
-    @override
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        return {"input_ids": self.data[idx]}
 
 
 @pytest.fixture
@@ -140,11 +123,6 @@ def app_with_state():
             model=model, device=DEVICE, sampling=config.sampling
         )
 
-        # Use tokens 1-100 (not 0) to avoid collision with pad_token_id=0
-        fake_data = torch.randint(1, 100, (10, 3))  # 10 samples of 3 tokens
-        train_dataset = FakeTokenDataset(fake_data)
-        train_loader = DataLoader(train_dataset, batch_size=1, shuffle=False)
-
         # The model has vocab_size=4019, so create entries for all token IDs
         token_strings = {i: f"tok_{i}" for i in range(model_config.vocab_size)}
 
@@ -156,9 +134,7 @@ def app_with_state():
             sources_by_target=sources_by_target,
             config=config,
             token_strings=token_strings,
-            train_loader=train_loader,
-            # TODO: Re-enable token uplift after performance optimization
-            # token_base_rates={},
+            harvest=HarvestCache(run_id="test_run"),
         )
 
         manager = StateManager.get()
@@ -319,50 +295,6 @@ def test_activation_contexts_not_found_initially(app_with_state: TestClient):
     """Test that activation contexts return 404 when not generated."""
     response = app_with_state.get("/api/activation_contexts/summary")
     assert response.status_code == 404
-
-
-@pytest.mark.slow
-def test_generate_activation_contexts_streaming(app_with_state: TestClient):
-    """Test streaming activation context generation."""
-    response = app_with_state.get(
-        "/api/activation_contexts/subcomponents",
-        params={
-            "importance_threshold": 0.1,
-            "n_batches": 1,
-            "batch_size": 2,
-            "n_tokens_either_side": 1,
-            "topk_examples": 2,
-            "separation_tokens": 0,
-        },
-    )
-    assert response.status_code == 200
-
-    # Parse SSE stream
-    events = [line for line in response.text.strip().split("\n") if line.startswith("data:")]
-    assert len(events) >= 1
-
-
-@pytest.mark.slow
-def test_activation_contexts_summary_after_generation(app_with_state: TestClient):
-    """Test getting activation contexts summary after generation."""
-    # Generate first - must consume response.text to wait for streaming to complete
-    gen_response = app_with_state.get(
-        "/api/activation_contexts/subcomponents",
-        params={
-            "importance_threshold": 0.1,
-            "n_batches": 1,
-            "batch_size": 2,
-            "n_tokens_either_side": 1,
-            "topk_examples": 2,
-            "separation_tokens": 0,
-        },
-    )
-    _ = gen_response.text  # Consume streaming response to wait for completion
-
-    response = app_with_state.get("/api/activation_contexts/summary")
-    assert response.status_code == 200
-    summary = response.json()
-    assert isinstance(summary, dict)
 
 
 # -----------------------------------------------------------------------------

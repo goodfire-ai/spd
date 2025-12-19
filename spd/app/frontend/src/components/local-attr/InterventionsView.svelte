@@ -1,29 +1,22 @@
 <script lang="ts">
-    import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
+    import { SvelteSet } from "svelte/reactivity";
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
-    import type { NormalizeType } from "../../lib/localAttributionsApi";
+    import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
+    import type { Loadable } from "../../lib/index";
+    import type { NormalizeType } from "../../lib/api";
     import {
         isInterventableNode,
         type ActivationContextsSummary,
-        type ComponentDetail,
         type LayerInfo,
         type NodePosition,
         type TokenInfo,
     } from "../../lib/localAttributionsTypes";
-    import {
-        calcTooltipPos,
-        computeComponentOffsets,
-        computeClusterSpans,
-        lerp,
-        sortComponentsByImportance,
-        sortComponentsByCluster,
-        type ClusterSpan,
-    } from "./graphUtils";
+    import { runState } from "../../lib/runState.svelte";
+    import { calcTooltipPos, computeClusterSpans, computeComponentOffsets, lerp, sortComponentsByCluster, sortComponentsByImportance, type ClusterSpan } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
     import type { StoredGraph } from "./types";
     import ViewControls from "./ViewControls.svelte";
-    import { SvelteSet } from "svelte/reactivity";
 
     // Layout constants
     const COMPONENT_SIZE = 6;
@@ -52,8 +45,7 @@
         componentGap: number;
         layerGap: number;
         normalizeEdges: NormalizeType;
-        ciThreshold: number;
-        ciThresholdLoading: boolean;
+        ciThreshold: Loadable<number>;
         hideUnpinnedEdges: boolean;
         hideNodeCard: boolean;
         onTopKChange: (value: number) => void;
@@ -65,10 +57,7 @@
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
         activationContextsSummary: ActivationContextsSummary | null;
-        componentDetailsCache: Record<string, ComponentDetail>;
-        componentDetailsLoading: Record<string, boolean>;
         runningIntervention: boolean;
-        onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onSelectionChange: (selection: Set<string>) => void;
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
@@ -89,7 +78,6 @@
         layerGap,
         normalizeEdges,
         ciThreshold,
-        ciThresholdLoading,
         hideUnpinnedEdges,
         hideNodeCard,
         onTopKChange,
@@ -100,10 +88,7 @@
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
         activationContextsSummary,
-        componentDetailsCache,
-        componentDetailsLoading,
         runningIntervention,
-        onLoadComponentDetail,
         onSelectionChange,
         onRunIntervention,
         onSelectRun,
@@ -457,7 +442,7 @@
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
 
         if (layer !== "output" && activationContextsSummary) {
-            onLoadComponentDetail(layer, cIdx);
+            runState.loadComponentDetail(layer, cIdx);
         }
     }
 
@@ -466,7 +451,7 @@
         hoverTimeout = setTimeout(() => {
             if (!isHoveringTooltip) hoveredNode = null;
             hoverTimeout = null;
-        }, 50);
+        }, 100);
     }
 
     function handleNodeClick(nodeKey: string) {
@@ -617,7 +602,6 @@
             {filteredEdgeCount}
             {normalizeEdges}
             {ciThreshold}
-            {ciThresholdLoading}
             {hideUnpinnedEdges}
             {hideNodeCard}
             {onTopKChange}
@@ -668,7 +652,6 @@
 
             <!-- Scrollable graph area -->
             <div class="graph-container">
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <svg
                     bind:this={svgElement}
                     width={layout.width}
@@ -729,8 +712,6 @@
                                 !inSameCluster &&
                                 !selected}
                             {#if pos}
-                                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                                <!-- svelte-ignore a11y_no_static_element_interactions -->
                                 <g
                                     class="node-group"
                                     class:selected
@@ -986,8 +967,6 @@
             {tooltipPos}
             {hideNodeCard}
             {activationContextsSummary}
-            {componentDetailsCache}
-            {componentDetailsLoading}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
             {tokens}
@@ -1011,7 +990,6 @@
             aria-modal="true"
             tabindex="-1"
         >
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="fork-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
                 <div class="modal-header">
                     <h3>Fork Run</h3>
@@ -1374,8 +1352,7 @@
     }
 
     .pred-prob.targ {
-        color: var(--text-muted);
-        opacity: 0.8;
+        color: var(--text-secondary);
     }
 
     /* Forked runs */

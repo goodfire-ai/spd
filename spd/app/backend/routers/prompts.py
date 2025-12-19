@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from spd.app.backend.compute import compute_ci_only, extract_active_from_ci
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.utils import log_errors
+from spd.data import DatasetConfig, create_data_loader
+from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
@@ -73,6 +75,9 @@ def list_prompts(manager: DepStateManager, loaded: DepLoadedRun) -> list[PromptP
     return results
 
 
+BATCH_SIZE = 32
+
+
 @router.post("/generate")
 @log_errors
 def generate_prompts(
@@ -86,7 +91,27 @@ def generate_prompts(
     (for the inverted index used by search).
     """
     db = manager.db
-    train_loader = loaded.train_loader
+    spd_config = loaded.config
+
+    task_config = spd_config.task_config
+    assert isinstance(task_config, LMTaskConfig)
+    train_data_config = DatasetConfig(
+        name=task_config.dataset_name,
+        hf_tokenizer_path=spd_config.tokenizer_name,
+        split=task_config.train_data_split,
+        n_ctx=loaded.context_length,
+        is_tokenized=task_config.is_tokenized,
+        streaming=task_config.streaming,
+        column_name=task_config.column_name,
+        shuffle_each_epoch=task_config.shuffle_each_epoch,
+    )
+    logger.info(f"[API] Creating train loader for run {loaded.run.wandb_path}")
+    train_loader, _ = create_data_loader(
+        dataset_config=train_data_config,
+        batch_size=BATCH_SIZE,
+        buffer_size=task_config.buffer_size,
+        global_seed=spd_config.seed,
+    )
 
     def generate() -> Generator[str]:
         added_count = 0

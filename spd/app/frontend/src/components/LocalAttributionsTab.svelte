@@ -1,15 +1,14 @@
 <script lang="ts">
-    import * as mainApi from "../lib/api";
-    import * as attrApi from "../lib/localAttributionsApi";
+    import * as api from "../lib/api";
     import {
         filterInterventableNodes,
         type ActivationContextsSummary,
-        type ComponentDetail,
         type GraphData,
         type PinnedNode,
         type PromptPreview,
         type TokenInfo,
     } from "../lib/localAttributionsTypes";
+    import { runState } from "../lib/runState.svelte";
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
     import InterventionsView from "./local-attr/InterventionsView.svelte";
     import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
@@ -31,13 +30,12 @@
     // Props - activation contexts state is lifted to App.svelte
     type Props = {
         activationContextsSummary: ActivationContextsSummary | null;
-        activationContextsMissing: boolean;
     };
 
-    let { activationContextsSummary, activationContextsMissing }: Props = $props();
+    let { activationContextsSummary }: Props = $props();
 
     // Server state
-    let loadedRun = $state<mainApi.LoadedRun | null>(null);
+    let loadedRun = $state<api.RunState | null>(null);
     let serverError = $state<string | null>(null);
 
     // Available prompts (for picker)
@@ -106,32 +104,16 @@
     let hideUnpinnedEdges = $state(false);
     let hideNodeCard = $state(false);
 
-    // Component details cache (shared across graphs)
-    let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
-    let componentDetailsLoading = $state<Record<string, boolean>>({});
 
     // Pinned nodes for attributions graph
     let pinnedNodes = $state<PinnedNode[]>([]);
-
-    async function loadComponentDetail(layer: string, cIdx: number) {
-        const cacheKey = `${layer}:${cIdx}`;
-        if (componentDetailsCache[cacheKey] || componentDetailsLoading[cacheKey]) return;
-
-        componentDetailsLoading[cacheKey] = true;
-        try {
-            const detail = await attrApi.getComponentDetail(layer, cIdx);
-            componentDetailsCache[cacheKey] = detail;
-        } finally {
-            componentDetailsLoading[cacheKey] = false;
-        }
-    }
 
     function handlePinnedNodesChange(nodes: PinnedNode[]) {
         pinnedNodes = nodes;
         // Load component details for any newly pinned nodes
         for (const node of nodes) {
             if (node.layer !== "wte" && node.layer !== "output") {
-                loadComponentDetail(node.layer, node.cIdx);
+                runState.loadComponentDetail(node.layer, node.cIdx);
             }
         }
     }
@@ -162,33 +144,35 @@
             previousRunId = currentRunId;
             loadPromptsList();
             loadAllTokens();
+            runState.loadInterpretations();
             promptCards = [];
             activeCardPromptId = null;
         } else if (currentRunId === null && previousRunId !== null) {
             previousRunId = null;
             prompts = [];
             allTokens = [];
+            runState.clear();
             promptCards = [];
             activeCardPromptId = null;
         }
     });
 
     async function loadServerStatus() {
-        loadedRun = await mainApi.getStatus();
+        loadedRun = await api.getStatus();
         serverError = null;
     }
 
     async function loadPromptsList() {
-        prompts = await attrApi.listPrompts();
+        prompts = await api.listPrompts();
     }
 
     async function loadAllTokens() {
-        allTokens = await attrApi.getAllTokens();
+        allTokens = await api.getAllTokens();
     }
 
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
         // Fetch stored graphs for this prompt
-        const storedGraphs = await attrApi.getGraphs(
+        const storedGraphs = await api.getGraphs(
             promptId,
             defaultViewSettings.normalizeEdges,
             defaultViewSettings.ciThreshold,
@@ -199,7 +183,7 @@
                 const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
 
                 // Load intervention runs for this graph
-                const runs = await mainApi.getInterventionRuns(data.id);
+                const runs = await api.getInterventionRuns(data.id);
 
                 // Initialize composer state for this graph
                 getComposerState(data.id, Object.keys(data.nodeCiVals));
@@ -236,7 +220,7 @@
     async function handleAddCustomPrompt(text: string) {
         isAddingCustomPrompt = true;
         try {
-            const prompt = await attrApi.createCustomPrompt(text);
+            const prompt = await api.createCustomPrompt(text);
             await addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, true);
         } finally {
             isAddingCustomPrompt = false;
@@ -317,7 +301,7 @@
             const text = activeCard.tokens.join("");
             const selectedNodes = Array.from(composerState.selection);
 
-            const run = await mainApi.runAndSaveIntervention({
+            const run = await api.runAndSaveIntervention({
                 graph_id: activeGraph.id,
                 text,
                 selected_nodes: selectedNodes,
@@ -359,7 +343,7 @@
     async function handleDeleteRun(runId: number) {
         if (!activeCard || !activeGraph) return;
 
-        await mainApi.deleteInterventionRun(runId);
+        await api.deleteInterventionRun(runId);
 
         // Remove from persisted state
         promptCards = promptCards.map((card) => {
@@ -384,7 +368,7 @@
     async function handleForkRun(runId: number, tokenReplacements: [number, number][]) {
         if (!activeCard || !activeGraph) throw new Error("No active card or graph");
 
-        const forkedRun = await mainApi.forkInterventionRun(runId, tokenReplacements);
+        const forkedRun = await api.forkInterventionRun(runId, tokenReplacements);
 
         // Add forked run to the parent run's forked_runs list
         promptCards = promptCards.map((card) => {
@@ -414,7 +398,7 @@
     async function handleDeleteFork(forkId: number) {
         if (!activeCard || !activeGraph) return;
 
-        await mainApi.deleteForkedInterventionRun(forkId);
+        await api.deleteForkedInterventionRun(forkId);
 
         // Remove the forked run from state
         promptCards = promptCards.map((card) => {
@@ -475,7 +459,7 @@
             }
 
             // Build params with optional CE/KL settings
-            const params: attrApi.ComputeGraphOptimizedParams = {
+            const params: api.ComputeGraphOptimizedParams = {
                 promptId: activeCard.id,
                 normalize: defaultViewSettings.normalizeEdges,
                 impMinCoeff: optConfig.impMinCoeff,
@@ -492,7 +476,7 @@
                 params.klLossCoeff = optConfig.klLossCoeff;
             }
 
-            data = await attrApi.computeGraphOptimizedStreaming(params, (progress) => {
+            data = await api.computeGraphOptimizedStreaming(params, (progress) => {
                 if (!loadingState) return;
                 if (progress.stage === "graph") {
                     loadingState.currentStage = 1;
@@ -502,12 +486,12 @@
                 }
             });
         } else {
-            const params: attrApi.ComputeGraphParams = {
+            const params: api.ComputeGraphParams = {
                 promptId: activeCard.id,
                 normalize: defaultViewSettings.normalizeEdges,
                 ciThreshold: defaultViewSettings.ciThreshold,
             };
-            data = await attrApi.computeGraphStreaming(params, (progress) => {
+            data = await api.computeGraphStreaming(params, (progress) => {
                 if (!loadingState) return;
                 loadingState.stages[0].progress = progress.current / progress.total;
             });
@@ -546,7 +530,7 @@
         const { normalizeEdges, ciThreshold } = activeGraph.viewSettings;
         refetchingGraphId = activeGraph.id;
         try {
-            const storedGraphs = await attrApi.getGraphs(activeCard.id, normalizeEdges, ciThreshold);
+            const storedGraphs = await api.getGraphs(activeCard.id, normalizeEdges, ciThreshold);
             const matchingData = storedGraphs.find((g) => g.id === activeGraph.id);
 
             if (!matchingData) {
@@ -591,7 +575,7 @@
         });
     }
 
-    async function handleNormalizeChange(value: attrApi.NormalizeType) {
+    async function handleNormalizeChange(value: api.NormalizeType) {
         updateActiveGraphViewSettings({ normalizeEdges: value });
         await refetchActiveGraphData();
     }
@@ -621,7 +605,7 @@
         generateCount = 0;
 
         try {
-            await attrApi.generatePrompts({ nPrompts }, (progress: number, count: number) => {
+            await api.generatePrompts({ nPrompts }, (progress: number, count: number) => {
                 generateProgress = progress;
                 generateCount = count;
             });
@@ -642,7 +626,7 @@
         </div>
     {:else}
         <div class="main-content">
-            {#if activationContextsMissing}
+            {#if activationContextsSummary === null}
                 <div class="warning-banner">Activation contexts not generated. Component hover info unavailable.</div>
             {/if}
 
@@ -723,8 +707,9 @@
                                         layerGap={activeGraph.viewSettings.layerGap}
                                         {filteredEdgeCount}
                                         normalizeEdges={activeGraph.viewSettings.normalizeEdges}
-                                        ciThreshold={activeGraph.viewSettings.ciThreshold}
-                                        ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                        ciThreshold={refetchingGraphId === activeGraph.id
+                                            ? { status: "loading" }
+                                            : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
                                         {hideUnpinnedEdges}
                                         {hideNodeCard}
                                         onTopKChange={handleTopKChange}
@@ -755,18 +740,13 @@
                                             {hideNodeCard}
                                             {activationContextsSummary}
                                             stagedNodes={pinnedNodes}
-                                            {componentDetailsCache}
-                                            {componentDetailsLoading}
                                             onStagedNodesChange={handlePinnedNodesChange}
-                                            onLoadComponentDetail={loadComponentDetail}
                                             onEdgeCountChange={(count) => (filteredEdgeCount = count)}
                                         />
                                     {/key}
                                 </div>
                                 <StagedNodesPanel
                                     stagedNodes={pinnedNodes}
-                                    {componentDetailsCache}
-                                    {componentDetailsLoading}
                                     {activationContextsSummary}
                                     outputProbs={activeGraph.data.outputProbs}
                                     tokens={activeCard.tokens}
@@ -775,7 +755,6 @@
                                     onStagedNodesChange={handlePinnedNodesChange}
                                 />
                             {:else if activeComposerState}
-                                <!-- Interventions view -->
                                 <InterventionsView
                                     graph={activeGraph}
                                     composerSelection={activeComposerState.selection}
@@ -787,8 +766,9 @@
                                     componentGap={activeGraph.viewSettings.componentGap}
                                     layerGap={activeGraph.viewSettings.layerGap}
                                     normalizeEdges={activeGraph.viewSettings.normalizeEdges}
-                                    ciThreshold={activeGraph.viewSettings.ciThreshold}
-                                    ciThresholdLoading={refetchingGraphId === activeGraph.id}
+                                    ciThreshold={refetchingGraphId === activeGraph.id
+                                        ? { status: "loading" }
+                                        : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
                                     {hideUnpinnedEdges}
                                     {hideNodeCard}
                                     onTopKChange={handleTopKChange}
@@ -799,10 +779,7 @@
                                     onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     {activationContextsSummary}
-                                    {componentDetailsCache}
-                                    {componentDetailsLoading}
                                     {runningIntervention}
-                                    onLoadComponentDetail={loadComponentDetail}
                                     onSelectionChange={handleComposerSelectionChange}
                                     onRunIntervention={handleRunIntervention}
                                     onSelectRun={handleSelectRun}
@@ -888,7 +865,6 @@
     .graph-view-tabs {
         display: flex;
         gap: var(--space-1);
-        /* border-top: 1px solid var(--border-subtle); */
     }
 
     .graph-view-tab {

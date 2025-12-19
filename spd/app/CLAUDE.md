@@ -32,27 +32,26 @@ This launches both backend (FastAPI/uvicorn) and frontend (Vite) dev servers.
 ```
 backend/
 ├── server.py              # FastAPI app, CORS, routers
-├── state.py               # Singleton StateManager (loaded model, tokenizer, etc.)
+├── state.py               # Singleton StateManager + HarvestCache (lazy-loaded harvest data)
 ├── compute.py             # Core attribution computation
 ├── schemas.py             # Pydantic API models
 ├── dependencies.py        # FastAPI dependency injection
 ├── utils.py               # Logging/timing utilities
 ├── db/database.py         # SQLite interface
-├── lib/
-│   ├── activation_contexts.py         # Component firing pattern analysis
-│   ├── component_correlations.py      # Co-occurrence metrics
-│   └── component_correlations_slurm.py # SLURM job management for batch correlation harvest
 ├── optim_cis/
 │   └── run_optim_cis.py   # Sparse CI optimization
 └── routers/
     ├── runs.py            # Load W&B runs
     ├── graphs.py          # Compute attribution graphs
     ├── prompts.py         # Prompt management
-    ├── activation_contexts.py
+    ├── activation_contexts.py  # Serves pre-harvested activation contexts
     ├── intervention.py    # Selective component activation
-    ├── correlations.py    # Component correlation endpoints + SLURM job management
+    ├── correlations.py    # Component correlations + token stats + interpretations
+    ├── clusters.py        # Component clustering
     └── dataset_search.py  # SimpleStories dataset search
 ```
+
+Note: Activation contexts, correlations, and token stats are now loaded from pre-harvested data (see `spd/harvest/`). The app no longer computes these on-the-fly.
 
 ### Frontend Structure
 
@@ -60,31 +59,43 @@ backend/
 frontend/src/
 ├── App.svelte
 ├── lib/
-│   ├── api.ts                    # Main API client
-│   ├── localAttributionsApi.ts   # Attribution-specific API
+│   ├── api/                      # Modular API client (one file per router)
+│   │   ├── index.ts              # Re-exports all API modules
+│   │   ├── runs.ts               # Run loading
+│   │   ├── graphs.ts             # Attribution graph computation
+│   │   ├── prompts.ts            # Prompt management
+│   │   ├── activationContexts.ts # Activation contexts
+│   │   ├── correlations.ts       # Correlations + interpretations
+│   │   ├── intervention.ts       # Selective activation
+│   │   ├── dataset.ts            # Dataset search
+│   │   └── clusters.ts           # Component clustering
+│   ├── index.ts                  # Shared utilities (Loadable<T> pattern)
 │   ├── localAttributionsTypes.ts # TypeScript types
 │   ├── interventionTypes.ts
 │   ├── colors.ts                 # Color utilities
 │   ├── registry.ts               # Component registry
-│   └── displaySettings.svelte.ts # Display settings state (Svelte 5 runes)
+│   ├── runState.svelte.ts        # Global run-scoped state (Svelte 5 runes)
+│   ├── displaySettings.svelte.ts # Display settings state (Svelte 5 runes)
+│   └── clusterMapping.svelte.ts  # Cluster mapping state
 └── components/
-    ├── LocalAttributionsTab.svelte       # Main container
-    ├── LocalAttributionsGraph.svelte     # SVG graph visualization
-    ├── ActivationContextsTab.svelte      # Component firing patterns tab
-    ├── ActivationContextsViewer.svelte   # Activation contexts display
+    ├── RunSelector.svelte            # Run selection screen
+    ├── LocalAttributionsTab.svelte   # Main analysis container
+    ├── LocalAttributionsGraph.svelte # SVG graph visualization
+    ├── ActivationContextsTab.svelte  # Component firing patterns tab
+    ├── ActivationContextsViewer.svelte
     ├── ActivationContextsPagedTable.svelte
-    ├── DatasetSearchTab.svelte           # SimpleStories search UI
+    ├── DatasetSearchTab.svelte       # SimpleStories search UI
     ├── DatasetSearchResults.svelte
-    ├── CorrelationJobStatus.svelte       # SLURM job status display
-    ├── ComponentProbeInput.svelte        # Component probe UI
-    ├── TokenHighlights.svelte            # Token highlighting
+    ├── ClusterPathInput.svelte       # Cluster path selector
+    ├── ComponentProbeInput.svelte    # Component probe UI
+    ├── TokenHighlights.svelte        # Token highlighting
     ├── local-attr/
     │   ├── InterventionsView.svelte      # Selective activation UI
     │   ├── StagedNodesPanel.svelte       # Pinned nodes list
     │   ├── NodeTooltip.svelte            # Hover card
     │   ├── ComponentNodeCard.svelte      # Component details
+    │   ├── ComponentCorrelationPills.svelte
     │   ├── OutputNodeCard.svelte         # Output node details
-    │   ├── ComponentCorrelationPills.svelte # Correlation display
     │   ├── PromptPicker.svelte
     │   ├── PromptCardHeader.svelte
     │   ├── PromptCardTabs.svelte
@@ -97,6 +108,8 @@ frontend/src/
         ├── ComponentCorrelationMetrics.svelte
         ├── ComponentPillList.svelte
         ├── DisplaySettingsDropdown.svelte
+        ├── EdgeAttributionList.svelte
+        ├── InterpretationBadge.svelte    # LLM interpretation labels
         ├── SectionHeader.svelte
         ├── SetOverlapVis.svelte
         ├── StatusText.svelte
@@ -233,21 +246,20 @@ POST /api/intervention {text, nodes: ["h.0.attn.q_proj:3:5", ...]}
   ← InterventionResponse with top-k predictions
 ```
 
-### Component Correlations (SLURM batch job)
+### Component Correlations & Interpretations
 
 ```
-POST /api/correlations/jobs/submit
-  → Submit SLURM job to harvest correlations
-  ← job_id
-
-GET /api/correlations/jobs/status
-  ← pending | running | completed | failed
-
 GET /api/correlations/components/{layer}/{component_idx}
+  → Load from HarvestCache (pre-harvested data)
   ← ComponentCorrelationsResponse (precision, recall, jaccard, pmi)
 
 GET /api/correlations/token_stats/{layer}/{component_idx}
+  → Load from HarvestCache
   ← TokenStatsResponse (input/output token associations)
+
+GET /api/correlations/interpretation/{layer}/{component_idx}
+  → Load from HarvestCache (autointerp results)
+  ← InterpretationResponse (label, confidence, reasoning)
 ```
 
 ### Dataset Search
@@ -267,17 +279,14 @@ GET /api/dataset/results?page=1&page_size=20
 
 Located at `.data/app/local_attr.db`. Delete this file if schema changes cause issues.
 
-| Table                                    | Key                                       | Purpose                                            |
-| ---------------------------------------- | ----------------------------------------- | -------------------------------------------------- |
-| `runs`                                   | `wandb_path`                              | W&B run references                                 |
-| `activation_contexts_meta`               | `(run_id, context_length)`                | Metadata for activation contexts                   |
-| `component_activation_contexts`          | `(run_id, context_length, component_key)` | Per-component firing patterns (normalized)         |
-| `prompts`                                | `(run_id, context_length)`                | Token sequences                                    |
-| `original_component_seq_max_activations` | `(prompt_id, component_key)`              | Inverted index: component → prompts where it fires |
-| `graphs`                                 | `(prompt_id, optimization_params)`        | Attribution edges + output probs + node CI values  |
-| `intervention_runs`                      | `graph_id`                                | Saved intervention results                         |
+| Table              | Key                                | Purpose                                           |
+| ------------------ | ---------------------------------- | ------------------------------------------------- |
+| `runs`             | `wandb_path`                       | W&B run references                                |
+| `prompts`          | `(run_id, context_length)`         | Token sequences                                   |
+| `graphs`           | `(prompt_id, optimization_params)` | Attribution edges + output probs + node CI values |
+| `intervention_runs`| `graph_id`                         | Saved intervention results                        |
 
-Correlations are stored separately in `.data/app/correlations/` as parquet files (produced by SLURM batch job).
+Note: Activation contexts, correlations, token stats, and interpretations are loaded from pre-harvested data at `/mnt/polished-lake/spd/data/` (see `spd/harvest/` and `spd/autointerp/`).
 
 ---
 
@@ -292,9 +301,15 @@ StateManager.get() → AppState:
       - model: ComponentModel
       - tokenizer: PreTrainedTokenizerBase
       - sources_by_target: dict[target_layer → source_layers]
-      - config, train_loader, context_length
-      - activation_contexts_cache: ModelActivationContexts | None
+      - config, context_length, token_strings
+      - harvest: HarvestCache  # Lazy-loaded pre-harvested data
   - dataset_search_state: DatasetSearchState | None  # Cached search results
+
+HarvestCache:  # Lazy-loads from /mnt/polished-lake/spd/data/harvest/<run_id>/
+  - correlations: CorrelationStorage | None
+  - token_stats: TokenStatsStorage | None
+  - activation_contexts: dict[str, ComponentData] | None
+  - interpretations: dict[str, InterpretationResult] | None
 ```
 
 ### Frontend (`LocalAttributionsTab.svelte`)
@@ -306,40 +321,14 @@ StateManager.get() → AppState:
 
 ---
 
+## Svelte 5 Conventions
+
+- Use `SvelteSet`/`SvelteMap` from `svelte/reactivity` instead of `Set`/`Map` - they're reactive without `$state()` wrapping
+
+---
+
 ## Performance Notes
 
 - **Edge limit**: `GLOBAL_EDGE_LIMIT = 5000` in graph visualization
 - **SSE streaming**: Long computations stream progress updates
 - **Lazy loading**: Component details fetched on hover/pin
-
----
-
-## Software Engineering Principles
-
-- If you have an invariant in your head, assert it. Are you afraid to assert? sounds like your program might already be broken. Assert, assert, assert. Never soft fail
-- never write: `if everythingIsOk: continueHappyPath()`.x instead do `assert everythingIsOk`
-- You should have a VERY good reason to handle an error gracefully. If your program isn't working like it should then it shouldn't be running, you should be fixing it
-- Write your invariants into types as much as possible.
-  - if you either have a and b, or neither, don't make them both independently optional, put them in an optional tuple
-- Don't use bare dictionaries for structures whose values aren't homogenous
-  - good: { <id>: <val>}
-  - bad: {"tokens": …, "loss": …}
-- Keep I/O as high up as possible, make as many functions as possible pure.
-- Default args are a good idea far less often than they're typically used
-- You should have a very good reason for having a default value for an argument, especially if it's caller also defaults to the same thing
-- Keep defaults high in the call stack.
-- Delete unused code. If an argument is always x, strongly consider removing as an argument and just inlining
-- Differentiate no data from empty collections. Often it's important to differentiate `None` from `[]`
-- Do not write try catch blocks unless it absolutely makes sense
-- Comments hide sloppy code. If you feel the need to write a comment, consider that you should instead
-  - name your functions more clearly
-  - name your variables more clearly
-  - separate a chunk of logic into a function
-  - seperate an inlined computation into a meaningfully named variable
-
-Some other notes:
-
-- Please don’t write narrativised comments or code. Instead, write comments that describe the code as is, not the diff you're making. These are examples of narrativising comments:
-  - `# the function now uses y instead of x`
-  - `# changed to be faster`
-  - `# we now traverse in reverse`

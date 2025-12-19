@@ -8,7 +8,6 @@
         HoveredEdge,
         LayerInfo,
         NodePosition,
-        ComponentDetail,
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
@@ -23,6 +22,7 @@
         type ClusterSpan,
     } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
+    import { runState } from "../lib/runState.svelte";
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -45,10 +45,7 @@
         hideNodeCard: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
-        componentDetailsCache: Record<string, ComponentDetail>;
-        componentDetailsLoading: Record<string, boolean>;
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
-        onLoadComponentDetail: (layer: string, cIdx: number) => void;
         onEdgeCountChange?: (count: number) => void;
     };
 
@@ -61,10 +58,7 @@
         hideNodeCard,
         activationContextsSummary,
         stagedNodes,
-        componentDetailsCache,
-        componentDetailsLoading,
         onStagedNodesChange,
-        onLoadComponentDetail,
         onEdgeCountChange,
     }: Props = $props();
 
@@ -496,7 +490,7 @@
 
         // Lazy load component details if needed
         if (layer !== "output" && activationContextsSummary) {
-            onLoadComponentDetail(layer, cIdx);
+            runState.loadComponentDetail(layer, cIdx);
         }
     }
 
@@ -510,23 +504,21 @@
                 hoveredNode = null;
             }
             hoverTimeout = null;
-        }, 50);
+        }, 100);
     }
 
     function handleNodeClick(layer: string, seqIdx: number, cIdx: number) {
+        toggleComponentPinned(layer, cIdx, seqIdx);
+        hoveredNode = null;
+    }
+
+    function toggleComponentPinned(layer: string, cIdx: number, seqIdx: number) {
         const idx = stagedNodes.findIndex((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
         if (idx >= 0) {
             onStagedNodesChange(stagedNodes.filter((_, i) => i !== idx));
         } else {
             onStagedNodesChange([...stagedNodes, { layer, seqIdx, cIdx }]);
         }
-        hoveredNode = null;
-    }
-
-    function pinComponent(layer: string, cIdx: number, seqIdx: number) {
-        const alreadyPinned = stagedNodes.some((p) => p.layer === layer && p.cIdx === cIdx && p.seqIdx === seqIdx);
-        if (alreadyPinned) return;
-        onStagedNodesChange([...stagedNodes, { layer, cIdx, seqIdx }]);
     }
 
     function handleEdgeMouseEnter(event: MouseEvent) {
@@ -599,7 +591,6 @@
     </div>
 
     <div class="graph-container">
-        <!-- svelte-ignore a11y_no_static_element_interactions, a11y_mouse_events_have_key_events -->
         <svg {width} {height} onmouseover={handleEdgeMouseEnter} onmouseout={handleEdgeMouseLeave}>
             <!-- Edges (bulk rendered for performance, uses @html for large SVG performance) -->
             <g class="edges-layer">
@@ -642,8 +633,6 @@
                         !inSameCluster &&
                         !isPinned}
                     {@const style = nodeStyles[key]}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <g
                         class="node-group"
                         onmouseenter={(e) => handleNodeMouseEnter(e, layer, seqIdx, cIdx)}
@@ -733,8 +722,6 @@
             {tooltipPos}
             {hideNodeCard}
             {activationContextsSummary}
-            {componentDetailsCache}
-            {componentDetailsLoading}
             outputProbs={data.outputProbs}
             nodeCiVals={data.nodeCiVals}
             tokens={data.tokens}
@@ -745,7 +732,7 @@
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
-            onPinComponent={pinComponent}
+            onPinComponent={toggleComponentPinned}
         />
     {/if}
 </div>

@@ -5,12 +5,11 @@
         // Columnar data
         exampleTokens: string[][]; // [n_examples, window_size]
         exampleCi: number[][]; // [n_examples, window_size]
-        exampleActivePos: number[]; // [n_examples]
         // Unique activating tokens (from pr_tokens, already sorted by recall)
         activatingTokens: string[];
     }
 
-    let { exampleTokens, exampleCi, exampleActivePos, activatingTokens }: Props = $props();
+    let { exampleTokens, exampleCi, activatingTokens }: Props = $props();
 
     let currentPage = $state(0);
     let pageSize = $state(20);
@@ -114,11 +113,7 @@
         <div class="examples-inner">
             {#each paginatedIndices as idx (idx)}
                 <div class="example-item">
-                    <TokenHighlights
-                        tokenStrings={exampleTokens[idx]}
-                        tokenCi={exampleCi[idx]}
-                        activePosition={exampleActivePos[idx]}
-                    />
+                    <TokenHighlights tokenStrings={exampleTokens[idx]} tokenCi={exampleCi[idx]} />
                 </div>
             {/each}
         </div>

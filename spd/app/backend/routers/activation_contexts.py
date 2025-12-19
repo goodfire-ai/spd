@@ -1,34 +1,19 @@
-"""Activation contexts endpoints."""
+"""Activation contexts endpoints.
 
-import json
-import queue
-import threading
-from collections.abc import Generator
-from typing import Annotated, Any
+These endpoints serve activation context data from the harvest pipeline output.
+"""
+
+from collections import defaultdict
 
 import torch
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from torch.utils.data import DataLoader
 
 from spd.app.backend.compute import compute_ci_only
-from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
-from spd.app.backend.lib.activation_contexts import get_activations_data
-from spd.app.backend.schemas import (
-    ActivationContextsGenerationConfig,
-    SubcomponentActivationContexts,
-    SubcomponentMetadata,
-)
+from spd.app.backend.dependencies import DepLoadedRun
+from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
-from spd.log import logger
 from spd.utils.distributed_utils import get_device
-
-
-class HarvestMetadata(BaseModel):
-    """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
-
-    layers: dict[str, list[SubcomponentMetadata]]
 
 
 class ComponentProbeRequest(BaseModel):
@@ -46,74 +31,37 @@ class ComponentProbeResponse(BaseModel):
     ci_values: list[float]
 
 
-class CorrelatedComponent(BaseModel):
-    """A component correlated with a query component."""
-
-    component_key: str
-    score: float
-
-
-class ComponentCorrelationsResponse(BaseModel):
-    """Correlation data for a component across different metrics."""
-
-    precision: list[CorrelatedComponent]
-    recall: list[CorrelatedComponent]
-    jaccard: list[CorrelatedComponent]
-    pmi: list[CorrelatedComponent]
-
-
-class TokenPRLiftPMI(BaseModel):
-    """Token precision, recall, lift, and PMI lists."""
-
-    top_recall: list[tuple[str, float]]  # [(token, value), ...] sorted desc
-    top_precision: list[tuple[str, float]]  # [(token, value), ...] sorted desc
-    top_lift: list[tuple[str, float]]  # [(token, lift), ...] sorted desc
-    top_pmi: list[tuple[str, float]]  # [(token, pmi), ...] highest positive association
-    bottom_pmi: list[tuple[str, float]] | None  # [(token, pmi), ...] highest negative association
-
-
-class TokenStatsResponse(BaseModel):
-    """Token stats for a component (from batch job).
-
-    Contains both input token stats (what tokens activate this component)
-    and output token stats (what tokens this component predicts).
-    """
-
-    input: TokenPRLiftPMI  # Stats for input tokens
-    output: TokenPRLiftPMI  # Stats for output (predicted) tokens
-
-
 router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts"])
 
 
 @router.get("/summary")
 @log_errors
 def get_activation_contexts_summary(
-    manager: DepStateManager,
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    summary = manager.db.get_component_activation_contexts_summary(
-        loaded.run.id, loaded.context_length
-    )
-    if summary is None:
-        logger.error(
-            f"No activation contexts found for {loaded.run.wandb_path} at context length {loaded.context_length}"
-        )
+    contexts = loaded.harvest.activation_contexts
+    if contexts is None:
         raise HTTPException(
-            status_code=404, detail="No activation contexts found. Generate them first."
+            status_code=404,
+            detail="No activation contexts found. Run harvest first.",
         )
-    return summary
 
+    # Group by layer
+    summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
+    for comp in contexts.values():
+        summary[comp.layer].append(
+            SubcomponentMetadata(
+                subcomponent_idx=comp.component_idx,
+                mean_ci=comp.mean_ci,
+            )
+        )
 
-@router.get("/config")
-@log_errors
-def get_activation_contexts_config(
-    manager: DepStateManager,
-    loaded: DepLoadedRun,
-) -> ActivationContextsGenerationConfig | None:
-    """Return the config used to generate the stored activation contexts."""
-    return manager.db.get_component_activation_contexts_config(loaded.run.id, loaded.context_length)
+    # Sort by mean CI descending within each layer
+    for layer in summary:
+        summary[layer].sort(key=lambda x: x.mean_ci, reverse=True)
+
+    return dict(summary)
 
 
 @router.get("/{layer}/{component_idx}")
@@ -121,118 +69,40 @@ def get_activation_contexts_config(
 def get_activation_context_detail(
     layer: str,
     component_idx: int,
-    manager: DepStateManager,
     loaded: DepLoadedRun,
 ) -> SubcomponentActivationContexts:
     """Return full activation context data for a single component."""
-    detail = manager.db.get_component_activation_context_detail(
-        loaded.run.id, loaded.context_length, layer, component_idx
+    contexts = loaded.harvest.activation_contexts
+    if contexts is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No activation contexts found. Run harvest first.",
+        )
+
+    component_key = f"{layer}:{component_idx}"
+    comp = contexts.get(component_key)
+    if comp is None:
+        raise HTTPException(status_code=404, detail=f"Component {component_key} not found")
+
+    # Convert token IDs to strings
+    PADDING_SENTINEL = -1
+    token_strings = loaded.token_strings
+
+    def token_str(tid: int) -> str:
+        if tid == PADDING_SENTINEL:
+            return "<pad>"
+        assert tid in token_strings, f"Token ID {tid} not in vocab"
+        return token_strings[tid]
+
+    example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in comp.activation_examples]
+    example_ci = [ex.ci_values for ex in comp.activation_examples]
+
+    return SubcomponentActivationContexts(
+        subcomponent_idx=comp.component_idx,
+        mean_ci=comp.mean_ci,
+        example_tokens=example_tokens,
+        example_ci=example_ci,
     )
-    if detail is None:
-        raise HTTPException(status_code=404, detail=f"Component {layer}:{component_idx} not found")
-    return detail
-
-
-@router.get("/subcomponents")
-@log_errors
-def generate_activation_contexts(
-    importance_threshold: Annotated[float, Query(ge=0, le=1)],
-    n_batches: Annotated[int, Query(ge=1)],
-    batch_size: Annotated[int, Query(ge=1)],
-    n_tokens_either_side: Annotated[int, Query(ge=0)],
-    topk_examples: Annotated[int, Query(ge=1)],
-    separation_tokens: Annotated[int, Query(ge=0)],
-    manager: DepStateManager,
-    loaded: DepLoadedRun,
-) -> StreamingResponse:
-    """Generate activation contexts from training data.
-
-    This streams progress updates and saves the result to DB when complete.
-    """
-    assert separation_tokens <= n_tokens_either_side, (
-        "separation_tokens must be less than or equal to n_tokens_either_side"
-    )
-    db = manager.db
-
-    # Create a data loader with user-specified batch size using the existing dataset
-    train_loader = DataLoader(
-        loaded.train_loader.dataset,
-        batch_size=batch_size,
-        shuffle=False,  # Dataset already shuffled, don't double-shuffle
-    )
-
-    config = ActivationContextsGenerationConfig(
-        importance_threshold=importance_threshold,
-        n_batches=n_batches,
-        batch_size=batch_size,
-        n_tokens_either_side=n_tokens_either_side,
-        topk_examples=topk_examples,
-        separation_tokens=separation_tokens,
-    )
-
-    progress_queue: queue.Queue[dict[str, Any]] = queue.Queue()
-
-    def on_progress(progress: float) -> None:
-        progress_queue.put({"type": "progress", "progress": progress})
-
-    def compute_thread() -> None:
-        try:
-            act_contexts = get_activations_data(
-                config=loaded.config,
-                cm=loaded.model,
-                tokenizer=loaded.tokenizer,
-                train_loader=train_loader,
-                token_strings=loaded.token_strings,
-                importance_threshold=importance_threshold,
-                n_batches=n_batches,
-                n_tokens_either_side=n_tokens_either_side,
-                topk_examples=topk_examples,
-                separation_tokens=separation_tokens,
-                onprogress=on_progress,
-            )
-            logger.info("Saving activation contexts to database...")
-            db.set_component_activation_contexts(
-                loaded.run.id, loaded.context_length, act_contexts, config
-            )
-            logger.info("Saved activation contexts to database")
-
-            metadata = HarvestMetadata(
-                layers={
-                    layer_name: [
-                        SubcomponentMetadata(
-                            subcomponent_idx=subcomp.subcomponent_idx,
-                            mean_ci=subcomp.mean_ci,
-                        )
-                        for subcomp in subcomponents
-                    ]
-                    for layer_name, subcomponents in act_contexts.layers.items()
-                },
-            )
-            progress_queue.put({"type": "complete", "result": metadata.model_dump()})
-        except Exception as e:
-            progress_queue.put({"type": "error", "error": str(e)})
-
-    def generate() -> Generator[str]:
-        thread = threading.Thread(target=compute_thread)
-        thread.start()
-
-        while True:
-            try:
-                msg = progress_queue.get(timeout=0.1)
-            except queue.Empty:
-                if not thread.is_alive():
-                    break
-                continue
-
-            if msg["type"] == "progress":
-                yield f"data: {json.dumps(msg)}\n\n"
-            elif msg["type"] == "error" or msg["type"] == "complete":
-                yield f"data: {json.dumps(msg)}\n\n"
-                break
-
-        thread.join()
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/probe")

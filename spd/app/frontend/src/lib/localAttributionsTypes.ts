@@ -92,8 +92,6 @@ export type ComponentDetail = {
     mean_ci: number;
     example_tokens: string[][];
     example_ci: number[][];
-    example_active_pos: number[];
-    example_active_ci: number[];
 };
 
 export type CorrelatedComponent = {
@@ -126,12 +124,6 @@ export type TokenPRLiftPMI = {
 export type TokenStats = {
     input: TokenPRLiftPMI; // What tokens activate this component
     output: TokenPRLiftPMI; // What tokens this component predicts
-};
-
-export type SearchResult = {
-    query: { components: string[]; mode: string };
-    count: number;
-    results: PromptPreview[];
 };
 
 export type TokenizeResult = {

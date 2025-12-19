@@ -28,6 +28,8 @@ class ClusterMappingFile(BaseConfig):
     ensemble_id: str
     notes: str
     spd_run: str
+    n_iterations: int
+    run_idx: int
     clusters: dict[str, int | None]
 
 

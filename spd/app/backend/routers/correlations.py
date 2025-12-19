@@ -1,39 +1,19 @@
-"""Component correlation endpoints.
+"""Component correlation and interpretation endpoints.
 
-These endpoints serve data produced by the SLURM batch job (harvest_correlations.py),
-which computes component co-occurrence statistics and token associations.
-Also includes job management endpoints for submitting and monitoring harvest jobs.
+These endpoints serve data produced by the harvest pipeline (spd.harvest),
+which computes component co-occurrence statistics, token associations, and interpretations.
 """
 
 import time
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
-from spd.app.backend.lib.component_correlations import (
-    ComponentCorrelations,
-    ComponentTokenStats,
-    get_correlations_path,
-    get_token_stats_path,
-)
-from spd.app.backend.lib.component_correlations import (
-    CorrelatedComponentWithCounts as CorrelatedComponentDC,
-)
-from spd.app.backend.lib.component_correlations_slurm import (
-    CompletedStatus,
-    FailedStatus,
-    PendingStatus,
-    RunningStatus,
-    get_last_log_line,
-    read_job_state,
-    status_file_exists,
-    submit_correlation_job,
-)
-from spd.app.backend.utils import log_errors, timer
+from spd.app.backend.utils import log_errors
+from spd.harvest import analysis
 from spd.log import logger
-from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 class CorrelatedComponent(BaseModel):
@@ -82,148 +62,172 @@ router = APIRouter(prefix="/api/correlations", tags=["correlations"])
 
 
 # =============================================================================
-# Job Management Schemas & Endpoints (must be before wildcard routes)
+# Interpretation Endpoint
 # =============================================================================
 
 
-class HarvestParamsResponse(BaseModel):
-    n_batches: int
-    batch_size: int
-    context_length: int
-    ci_threshold: float
+class InterpretationResponse(BaseModel):
+    """Interpretation label for a component."""
+
+    label: str
+    confidence: str
+    reasoning: str
 
 
-class PendingStatusResponse(BaseModel):
-    status: Literal["pending"]
-    job_id: str
-    submitted_at: str
-    params: HarvestParamsResponse
-    last_log_line: str | None
-
-
-class RunningStatusResponse(BaseModel):
-    status: Literal["running"]
-    job_id: str
-    submitted_at: str
-    params: HarvestParamsResponse
-    last_log_line: str | None
-
-
-class CompletedStatusResponse(BaseModel):
-    status: Literal["completed"]
-    job_id: str
-    submitted_at: str
-    params: HarvestParamsResponse
-    n_tokens: int
-    n_components: int
-
-
-class FailedStatusResponse(BaseModel):
-    status: Literal["failed"]
-    job_id: str
-    submitted_at: str
-    params: HarvestParamsResponse
-    error: str
-
-
-CorrelationJobStatusResponse = Annotated[
-    PendingStatusResponse | RunningStatusResponse | CompletedStatusResponse | FailedStatusResponse,
-    "Discriminated union on 'status' field",
-]
-
-
-class SubmitJobRequest(BaseModel):
-    n_batches: int
-    batch_size: int
-    context_length: int
-    ci_threshold: float
-
-
-class SubmitJobResponse(BaseModel):
-    job_id: str
-    status: Literal["pending"]
-
-
-@router.get("/jobs/status")
+@router.get("/interpretations")
 @log_errors
-def get_job_status(loaded: DepLoadedRun) -> CorrelationJobStatusResponse:
-    """Get the correlation job status for the currently loaded run.
+def get_all_interpretations(
+    loaded: DepLoadedRun,
+) -> dict[str, InterpretationResponse]:
+    """Get all interpretation labels.
 
-    Returns 404 if no job has been submitted yet.
+    Returns a dict keyed by component_key (layer:cIdx).
     """
-    _, _, run_id = parse_wandb_run_path(loaded.run.wandb_path)
+    interpretations = loaded.harvest.interpretations
+    if interpretations is None:
+        return {}
 
-    if not status_file_exists(run_id):
-        raise HTTPException(status_code=404, detail="No correlation job for this run")
-
-    state = read_job_state(run_id)
-    params = HarvestParamsResponse(
-        n_batches=state.params.n_batches,
-        batch_size=state.params.batch_size,
-        context_length=state.params.context_length,
-        ci_threshold=state.params.ci_threshold,
-    )
-
-    match state.job_status:
-        case CompletedStatus(n_tokens=n_tokens, n_components=n_components):
-            return CompletedStatusResponse(
-                status="completed",
-                job_id=state.job_id,
-                submitted_at=state.submitted_at,
-                params=params,
-                n_tokens=n_tokens,
-                n_components=n_components,
-            )
-        case FailedStatus(error=error):
-            return FailedStatusResponse(
-                status="failed",
-                job_id=state.job_id,
-                submitted_at=state.submitted_at,
-                params=params,
-                error=error,
-            )
-        case PendingStatus():
-            return PendingStatusResponse(
-                status="pending",
-                job_id=state.job_id,
-                submitted_at=state.submitted_at,
-                params=params,
-                last_log_line=get_last_log_line(run_id, state.job_id),
-            )
-        case RunningStatus():
-            return RunningStatusResponse(
-                status="running",
-                job_id=state.job_id,
-                submitted_at=state.submitted_at,
-                params=params,
-                last_log_line=get_last_log_line(run_id, state.job_id),
-            )
+    return {
+        key: InterpretationResponse(
+            label=result.label,
+            confidence=result.confidence,
+            reasoning=result.reasoning,
+        )
+        for key, result in interpretations.items()
+    }
 
 
-@router.post("/jobs/submit")
+@router.get("/interpretations/{layer}/{component_idx}")
 @log_errors
-def submit_job(loaded: DepLoadedRun, request: SubmitJobRequest) -> SubmitJobResponse:
-    """Submit a SLURM job to harvest correlations for the currently loaded run."""
-    wandb_path = loaded.run.wandb_path
-    _, _, run_id = parse_wandb_run_path(wandb_path)
+def get_component_interpretation(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+) -> InterpretationResponse | None:
+    """Get interpretation label for a component.
 
-    if status_file_exists(run_id):
-        state = read_job_state(run_id)
-        if state.job_status.status in ("pending", "running"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Job already {state.job_status.status} (job_id: {state.job_id})",
-            )
+    Returns None if no interpretation exists for this component.
+    """
+    interpretations = loaded.harvest.interpretations
+    if interpretations is None:
+        return None
 
-    job_id = submit_correlation_job(
-        wandb_path,
-        run_id,
-        n_batches=request.n_batches,
-        batch_size=request.batch_size,
-        context_length=request.context_length,
-        ci_threshold=request.ci_threshold,
+    component_key = f"{layer}:{component_idx}"
+    result = interpretations.get(component_key)
+    if result is None:
+        return None
+
+    return InterpretationResponse(
+        label=result.label,
+        confidence=result.confidence,
+        reasoning=result.reasoning,
     )
-    return SubmitJobResponse(job_id=job_id, status="pending")
+
+
+@router.post("/interpretations/{layer}/{component_idx}")
+@log_errors
+async def request_component_interpretation(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+) -> InterpretationResponse:
+    """Generate an interpretation for a component on-demand.
+
+    Requires OPENROUTER_API_KEY environment variable.
+    Returns the generated interpretation.
+    """
+    import json
+    import os
+    from dataclasses import asdict
+
+    from openrouter import OpenRouter
+
+    from spd.autointerp.interpret import (
+        OpenRouterModelName,
+        get_architecture_info,
+        interpret_component,
+    )
+    from spd.autointerp.schemas import get_autointerp_dir
+
+    component_key = f"{layer}:{component_idx}"
+
+    # Check if we already have an interpretation
+    interpretations = loaded.harvest.interpretations
+    if interpretations is not None and component_key in interpretations:
+        result = interpretations[component_key]
+        return InterpretationResponse(
+            label=result.label,
+            confidence=result.confidence,
+            reasoning=result.reasoning,
+        )
+
+    # Get component data from harvest
+    activation_contexts = loaded.harvest.activation_contexts
+    if activation_contexts is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Activation contexts not available for this run. Run harvest first.",
+        )
+
+    component_data = activation_contexts.get(component_key)
+    if component_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Component {component_key} not found in activation contexts",
+        )
+
+    # Get API key
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="OPENROUTER_API_KEY environment variable not set",
+        )
+
+    # Get architecture info and tokenizer
+    arch = get_architecture_info(loaded.run.wandb_path)
+
+    # Interpret the component
+    model_name = OpenRouterModelName.GEMINI_2_5_FLASH
+
+    async with OpenRouter(api_key=api_key) as client:
+        res = await interpret_component(
+            client=client,
+            model=model_name,
+            component=component_data,
+            arch=arch,
+            tokenizer=loaded.tokenizer,
+            max_examples=50,
+        )
+
+    if res is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate interpretation",
+        )
+
+    result, _, _ = res
+
+    # Save to file
+    autointerp_dir = get_autointerp_dir(loaded.harvest.run_id)
+    autointerp_dir.mkdir(parents=True, exist_ok=True)
+    output_path = autointerp_dir / "results.jsonl"
+    with open(output_path, "a") as f:
+        f.write(json.dumps(asdict(result)) + "\n")
+
+    # Update the cache
+    if loaded.harvest._interpretations is None:
+        loaded.harvest._interpretations = {}
+    assert isinstance(loaded.harvest._interpretations, dict)
+    loaded.harvest._interpretations[component_key] = result
+
+    logger.info(f"Generated interpretation for {component_key}: {result.label}")
+
+    return InterpretationResponse(
+        label=result.label,
+        confidence=result.confidence,
+        reasoning=result.reasoning,
+    )
 
 
 # =============================================================================
@@ -245,24 +249,18 @@ def get_component_token_stats(
     and output tokens (what this component predicts).
     Returns None if token stats haven't been harvested for this run.
     """
-    run_id = loaded.run.wandb_path.split("/")[-1]
-
-    path = get_token_stats_path(run_id)
-    if not path.exists():
+    token_stats = loaded.harvest.token_stats
+    if token_stats is None:
         return None
-
-    with timer(f"Loading token stats for {run_id}"):
-        token_stats = ComponentTokenStats.load(path)
 
     component_key = f"{layer}:{component_idx}"
 
-    with timer(f"Getting input token stats for {component_key}"):
-        input_stats = token_stats.get_input_tok_stats(component_key, loaded.tokenizer, top_k=top_k)
-
-    with timer(f"Getting output token stats for {component_key}"):
-        output_stats = token_stats.get_output_tok_stats(
-            component_key, loaded.tokenizer, top_k=top_k
-        )
+    input_stats = analysis.get_input_token_stats(
+        token_stats, component_key, loaded.tokenizer, top_k
+    )
+    output_stats = analysis.get_output_token_stats(
+        token_stats, component_key, loaded.tokenizer, top_k
+    )
 
     if input_stats is None or output_stats is None:
         return None
@@ -303,24 +301,18 @@ def get_component_correlations(
     """
     start = time.perf_counter()
 
-    run_id = loaded.run.wandb_path.split("/")[-1]
-
-    path = get_correlations_path(run_id)
-    if not path.exists():
+    correlations = loaded.harvest.correlations
+    if correlations is None:
         return None
-
-    with timer(f"Loading correlations for {run_id}"):
-        correlations = ComponentCorrelations.load(path)
 
     component_key = f"{layer}:{component_idx}"
 
-    if component_key not in correlations.component_keys:
+    if not analysis.has_component(correlations, component_key):
         raise HTTPException(
             status_code=404, detail=f"Component {component_key} not found in correlations"
         )
 
-    # annoying thing we have to do because we have separate model objects and pydantic DTOs
-    def to_schema(c: CorrelatedComponentDC) -> CorrelatedComponent:
+    def to_schema(c: analysis.CorrelatedComponent) -> CorrelatedComponent:
         return CorrelatedComponent(
             component_key=c.component_key,
             score=c.score,
@@ -333,24 +325,30 @@ def get_component_correlations(
     response = ComponentCorrelationsResponse(
         precision=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "precision", top_k)
+            for c in analysis.get_correlated_components(
+                correlations, component_key, "precision", top_k
+            )
         ],
         recall=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "recall", top_k)
+            for c in analysis.get_correlated_components(
+                correlations, component_key, "recall", top_k
+            )
         ],
         jaccard=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "jaccard", top_k)
+            for c in analysis.get_correlated_components(
+                correlations, component_key, "jaccard", top_k
+            )
         ],
         pmi=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(component_key, "pmi", top_k)
+            for c in analysis.get_correlated_components(correlations, component_key, "pmi", top_k)
         ],
         bottom_pmi=[
             to_schema(c)
-            for c in correlations.get_correlated_with_counts(
-                component_key, "pmi", top_k, largest=False
+            for c in analysis.get_correlated_components(
+                correlations, component_key, "pmi", top_k, largest=False
             )
         ],
     )

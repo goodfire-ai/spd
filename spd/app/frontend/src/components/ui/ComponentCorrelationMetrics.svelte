@@ -59,8 +59,8 @@
 
 <style>
     .correlations-grid {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: var(--space-4);
     }
 </style>

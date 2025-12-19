@@ -1,4 +1,5 @@
 <script lang="ts">
+    import type { Loadable } from "../../lib";
     import TokenPillList from "./TokenPillList.svelte";
     import StatusText from "./StatusText.svelte";
 
@@ -16,13 +17,14 @@
     type Props = {
         sectionTitle: string;
         sectionSubtitle?: string;
-        lists: TokenList[];
-        loading: boolean;
+        lists: Loadable<TokenList[]>;
     };
 
-    let { sectionTitle, sectionSubtitle, lists, loading }: Props = $props();
+    let { sectionTitle, sectionSubtitle, lists }: Props = $props();
 
-    const hasData = $derived(lists.some((list) => list.items.length > 0));
+    const hasData = $derived(
+        lists?.status === "loaded" && lists.data.some((list) => list.items.length > 0),
+    );
 </script>
 
 <div class="token-stats-section">
@@ -32,9 +34,13 @@
             <span class="math-notation">{sectionSubtitle}</span>
         {/if}
     </p>
-    {#if hasData}
+    {#if lists?.status === "loading"}
+        <StatusText variant="muted">Loading...</StatusText>
+    {:else if lists?.status === "error"}
+        <StatusText variant="muted">Error: {String(lists.error)}</StatusText>
+    {:else if hasData && lists?.status === "loaded"}
         <div class="token-stats">
-            {#each lists as list (list.title + (list.mathNotation ?? ""))}
+            {#each lists.data as list (list.title + (list.mathNotation ?? ""))}
                 {#if list.items.length > 0}
                     <div class="token-list">
                         <h5>
@@ -48,8 +54,6 @@
                 {/if}
             {/each}
         </div>
-    {:else if loading}
-        <StatusText variant="muted">Loading...</StatusText>
     {:else}
         <StatusText variant="muted">No data available.</StatusText>
     {/if}

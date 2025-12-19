@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { PromptPreview, PinnedNode, TokenizeResult } from "../../lib/localAttributionsTypes";
-    import { tokenizeText } from "../../lib/localAttributionsApi";
+    import { tokenizeText } from "../../lib/api";
 
     type Props = {
         prompts: PromptPreview[];
@@ -80,7 +80,6 @@
 </script>
 
 {#if show}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="prompt-picker-backdrop" onclick={onClose} onkeydown={(e) => e.key === "Escape" && onClose()}></div>
     <div class="prompt-picker">
         <div class="picker-header">
