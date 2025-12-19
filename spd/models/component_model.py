@@ -27,7 +27,7 @@ from spd.models.components import (
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import ModelPath
 from spd.utils.general_utils import resolve_class, runtime_cast
-from spd.utils.module_utils import get_target_module_paths
+from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 
 
 @dataclass
@@ -58,7 +58,7 @@ class ComponentModel(LoadableModule):
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
     `LlamaForCausalLM`, `AutoModelForCausalLM`) as long as its sub-module names
-    match the patterns you pass in `target_module_patterns`.
+    are provided in the `module_path_info` list.
 
     Forward passes support optional component replacement and/or caching:
     - No args: Standard forward pass of the target model
@@ -75,8 +75,7 @@ class ComponentModel(LoadableModule):
     def __init__(
         self,
         target_model: nn.Module,
-        target_module_patterns: list[str],
-        C: int,
+        module_path_info: list[ModulePathInfo],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
@@ -91,14 +90,13 @@ class ComponentModel(LoadableModule):
             )
 
         self.target_model = target_model
-        self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-        self.target_module_paths = get_target_module_paths(target_model, target_module_patterns)
+        self.module_to_c = {info.module_path: info.C for info in module_path_info}
+        self.target_module_paths = list(self.module_to_c.keys())
 
         self.components = ComponentModel._create_components(
             target_model=target_model,
-            target_module_paths=self.target_module_paths,
-            C=C,
+            module_to_c=self.module_to_c,
         )
         self._components = nn.ModuleDict(
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
@@ -106,8 +104,7 @@ class ComponentModel(LoadableModule):
 
         self.ci_fns = ComponentModel._create_ci_fns(
             target_model=target_model,
-            target_module_paths=self.target_module_paths,
-            C=C,
+            module_to_c=self.module_to_c,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
         )
@@ -180,19 +177,20 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_components(
         target_model: nn.Module,
-        target_module_paths: list[str],
-        C: int,
+        module_to_c: dict[str, int],
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
-        for target_module_path in target_module_paths:
+        for target_module_path, target_module_c in module_to_c.items():
             target_module = target_model.get_submodule(target_module_path)
-            components[target_module_path] = ComponentModel._create_component(target_module, C)
+            components[target_module_path] = ComponentModel._create_component(
+                target_module, target_module_c
+            )
         return components
 
     @staticmethod
     def _create_ci_fn(
         target_module: nn.Module,
-        component_C: int,
+        C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
@@ -201,7 +199,7 @@ class ComponentModel(LoadableModule):
             assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
 
         if ci_fn_type == "mlp":
-            return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
+            return MLPCiFn(C=C, hidden_dims=ci_fn_hidden_dims)
 
         match target_module:
             case nn.Linear():
@@ -215,30 +213,25 @@ class ComponentModel(LoadableModule):
 
         match ci_fn_type:
             case "vector_mlp":
-                return VectorMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
-                )
+                return VectorMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
             case "shared_mlp":
-                return VectorSharedMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
-                )
+                return VectorSharedMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
 
     @staticmethod
     def _create_ci_fns(
         target_model: nn.Module,
-        target_module_paths: list[str],
-        C: int,
+        module_to_c: dict[str, int],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
-        for target_module_path in target_module_paths:
+        for target_module_path, target_module_c in module_to_c.items():
             target_module = target_model.get_submodule(target_module_path)
             ci_fns[target_module_path] = ComponentModel._create_ci_fn(
-                target_module,
-                C,
-                ci_fn_type,
-                ci_fn_hidden_dims,
+                target_module=target_module,
+                C=target_module_c,
+                ci_fn_type=ci_fn_type,
+                ci_fn_hidden_dims=ci_fn_hidden_dims,
             )
         return ci_fns
 
@@ -456,15 +449,17 @@ class ComponentModel(LoadableModule):
         target_model.eval()
         target_model.requires_grad_(False)
 
-        if config.identity_module_patterns is not None:
+        if config.identity_module_info is not None:
             insert_identity_operations_(
-                target_model, identity_patterns=config.identity_module_patterns
+                target_model,
+                identity_module_info=config.identity_module_info,
             )
+
+        module_path_info = expand_module_patterns(target_model, config.all_module_info)
 
         comp_model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=config.all_module_patterns,
-            C=config.C,
+            module_path_info=module_path_info,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,

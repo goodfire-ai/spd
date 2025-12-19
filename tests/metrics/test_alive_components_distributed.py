@@ -28,8 +28,7 @@ def _test_min_reduction():
     assert dist_state is not None
 
     metric = AliveComponentsTracker(
-        target_module_paths=["layer1"],
-        C=3,
+        module_to_c={"layer1": 3},
         device="cpu",
         n_examples_until_dead=100,
         ci_alive_threshold=0.1,
@@ -63,8 +62,7 @@ def _test_different_firing_patterns():
     assert dist_state is not None
 
     metric = AliveComponentsTracker(
-        target_module_paths=["layer1"],
-        C=3,
+        module_to_c={"layer1": 3},
         device="cpu",
         n_examples_until_dead=50,
         ci_alive_threshold=0.1,
@@ -110,8 +108,7 @@ def _test_dead_components():
     assert dist_state is not None
 
     metric = AliveComponentsTracker(
-        target_module_paths=["layer1"],
-        C=3,
+        module_to_c={"layer1": 3},
         device="cpu",
         n_examples_until_dead=5,
         ci_alive_threshold=0.1,
@@ -147,8 +144,7 @@ def _test_multiple_modules():
     assert dist_state is not None
 
     metric = AliveComponentsTracker(
-        target_module_paths=["layer1", "layer2"],
-        C=2,
+        module_to_c={"layer1": 2, "layer2": 2},
         device="cpu",
         n_examples_until_dead=50,
         ci_alive_threshold=0.1,

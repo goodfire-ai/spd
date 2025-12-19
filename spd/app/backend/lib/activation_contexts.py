@@ -68,11 +68,10 @@ def get_activations_data(
     component_predicted_tokens = defaultdict[str, defaultdict[int, dict[int, int]]](
         lambda: defaultdict(lambda: defaultdict(int))
     )
-    # - the sum of causal importances
-    C = cm.C
-    component_sum_cis = defaultdict[str, Float[Tensor, " C"]](
-        lambda: torch.zeros(C, device=device, dtype=torch.float)
-    )
+    component_sum_cis: dict[str, Float[Tensor, " C"]] = {
+        module_name: torch.zeros(cm.module_to_c[module_name], device=device, dtype=torch.float)
+        for module_name in cm.target_module_paths
+    }
 
     # also track total occurrences of each token across all batches
     total_token_counts = defaultdict[int, int](int)
@@ -116,7 +115,8 @@ def get_activations_data(
 
         for module_idx, (module_name, ci_val) in enumerate(ci_vals.items()):
             pbar.update(1)
-            assert ci_val.shape == (B, S, C), "Expected (B,S,C) per module"
+            module_C = cm.module_to_c[module_name]
+            assert ci_val.shape == (B, S, module_C), f"Expected (B,S,{module_C}) for {module_name}"
 
             component_sum_cis[module_name] += ci_val.sum(dim=(0, 1))
 
@@ -142,8 +142,8 @@ def get_activations_data(
             ci_padded = torch.nn.functional.pad(
                 ci_val, (0, 0, n_tokens_either_side, n_tokens_either_side), value=0.0
             )
-            assert ci_padded.shape == (B, S + 2 * n_tokens_either_side, C), (
-                "Expected (B,S+2*n_tokens_either_side,C) per module"
+            assert ci_padded.shape == (B, S + 2 * n_tokens_either_side, module_C), (
+                f"Expected (B,S+2*n_tokens_either_side,{module_C}) for {module_name}"
             )
 
             # Adjust sequence indices for padding

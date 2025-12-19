@@ -25,7 +25,8 @@ class ComponentActivationDensity(Metric):
 
         self.n_examples: Int[Tensor, ""] = torch.tensor(0.0, device=device)
         self.component_activation_counts: dict[str, Tensor] = {
-            module_name: torch.zeros(model.C, device=device) for module_name in model.components
+            module_name: torch.zeros(model.module_to_c[module_name], device=device)
+            for module_name in model.components
         }
 
     @override

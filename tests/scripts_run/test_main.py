@@ -6,7 +6,6 @@ For local execution tests, see tests/scripts_simple/.
 
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnusedParameter=false
 
-from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -66,7 +65,21 @@ class TestSPDRun:
 
         sweep_params = {
             "global": {"lr": {"values": [1, 2]}},
-            "tms_5-2": {"C": {"values": [10, 20]}, "steps": {"values": [100, 200]}},
+            "tms_5-2": {
+                "steps": {"values": [100, 200]},
+                "module_info": {
+                    "values": [
+                        [
+                            {"module_pattern": "linear1", "C": 10},
+                            {"module_pattern": "linear2", "C": 10},
+                        ],
+                        [
+                            {"module_pattern": "linear1", "C": 20},
+                            {"module_pattern": "linear2", "C": 20},
+                        ],
+                    ]
+                },
+            },
         }
 
         training_jobs = _create_training_jobs(
@@ -77,30 +90,44 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
-        def there_is_one_with(props: dict[str, Any]):
-            matching = []
-            for config in configs:
-                if all(config.__dict__[k] == v for k, v in props.items()):
-                    matching.append(config)
+        def there_is_one_with(lr: int, steps: int, c: int) -> bool:
+            matching = [
+                cfg
+                for cfg in configs
+                if cfg.lr == lr
+                and cfg.steps == steps
+                and c == cfg.module_info[0].C
+                and c == cfg.module_info[1].C
+            ]
             return len(matching) == 1
 
+        # 2 lr * 2 steps * 2 module_info = 8 jobs
         assert len(configs) == 8
 
-        assert there_is_one_with({"lr": 1, "C": 10, "steps": 100})
-        assert there_is_one_with({"lr": 1, "C": 20, "steps": 100})
-        assert there_is_one_with({"lr": 1, "C": 10, "steps": 200})
-        assert there_is_one_with({"lr": 1, "C": 20, "steps": 200})
-        assert there_is_one_with({"lr": 2, "C": 10, "steps": 100})
-        assert there_is_one_with({"lr": 2, "C": 20, "steps": 100})
-        assert there_is_one_with({"lr": 2, "C": 10, "steps": 200})
-        assert there_is_one_with({"lr": 2, "C": 20, "steps": 200})
+        assert there_is_one_with(lr=1, steps=100, c=10)
+        assert there_is_one_with(lr=1, steps=100, c=20)
+        assert there_is_one_with(lr=1, steps=200, c=10)
+        assert there_is_one_with(lr=1, steps=200, c=20)
+        assert there_is_one_with(lr=2, steps=100, c=10)
+        assert there_is_one_with(lr=2, steps=100, c=20)
+        assert there_is_one_with(lr=2, steps=200, c=10)
+        assert there_is_one_with(lr=2, steps=200, c=20)
 
     def test_create_training_jobs_sweep_multi_experiment(self):
         """when given sweep params, _create_training_jobs should generate the correct number of
         jobs with params swept correctly across multiple experiments"""
 
         sweep_params = {
-            "tms_5-2": {"C": {"values": [10]}},
+            "tms_5-2": {
+                "module_info": {
+                    "values": [
+                        [
+                            {"module_pattern": "linear1", "C": 10},
+                            {"module_pattern": "linear2", "C": 10},
+                        ],
+                    ]
+                },
+            },
             "tms_40-10": {"steps": {"values": [100, 200]}},
         }
 
@@ -112,15 +139,20 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
-        def there_is_one_with(props: dict[str, Any]):
+        def there_is_one_with(c: int | None = None, steps: int | None = None) -> bool:
             matching = []
-            for config in configs:
-                if all(config.__dict__[k] == v for k, v in props.items()):
-                    matching.append(config)
+            for cfg in configs:
+                match = True
+                if c is not None and c != cfg.module_info[0].C:
+                    match = False
+                if steps is not None and cfg.steps != steps:
+                    match = False
+                if match:
+                    matching.append(cfg)
             return len(matching) == 1
 
         assert len(configs) == 3
 
-        assert there_is_one_with({"C": 10})
-        assert there_is_one_with({"steps": 100})
-        assert there_is_one_with({"steps": 200})
+        assert there_is_one_with(c=10)
+        assert there_is_one_with(steps=100)
+        assert there_is_one_with(steps=200)

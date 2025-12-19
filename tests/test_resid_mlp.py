@@ -2,6 +2,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    ModulePatternInfoConfig,
     StochasticReconLossConfig,
 )
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
@@ -37,7 +38,6 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[8],
@@ -50,8 +50,13 @@ def test_resid_mlp_decomposition_happy_path() -> None:
             StochasticReconLossConfig(coeff=1.0),
             FaithfulnessLossConfig(coeff=1.0),
         ],
-        target_module_patterns=["layers.*.mlp_in", "layers.*.mlp_out"],
-        identity_module_patterns=["layers.*.mlp_in"],
+        module_info=[
+            ModulePatternInfoConfig(module_pattern="layers.*.mlp_in", C=10),
+            ModulePatternInfoConfig(module_pattern="layers.*.mlp_out", C=10),
+        ],
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="layers.*.mlp_in", C=10),
+        ],
         output_loss_type="mse",
         # Training
         lr=1e-3,
@@ -89,8 +94,8 @@ def test_resid_mlp_decomposition_happy_path() -> None:
     target_model = ResidMLP(config=resid_mlp_model_config).to(device)
     target_model.requires_grad_(False)
 
-    if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     assert isinstance(config.task_config, ResidMLPTaskConfig)
     # Create dataset

@@ -1,12 +1,30 @@
 import fnmatch
 import math
-from typing import Literal
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Literal, Protocol
 
 import torch
 import torch.nn as nn
 from simple_stories_train.models.gpt2_simple import LayerNorm as SSLayerNorm
 from torch import Tensor
 from torch.nn.init import calculate_gain
+
+
+class ModulePatternInfo(Protocol):
+    """Protocol for objects with module_pattern and C attributes."""
+
+    module_pattern: str
+    C: int
+
+
+@dataclass
+class ModulePathInfo:
+    """Path to a module (e.g. "h.1.attn.k_proj") and its associated number of components."""
+
+    module_path: str
+    C: int
+
 
 # This is equivalent to `torch.nn.init._NonlinearityType`, but for some reason this is not always
 # importable. see https://github.com/goodfire-ai/spd/actions/runs/16927877557/job/47967138342
@@ -59,25 +77,30 @@ def replace_std_values_in_layernorm(
         module.std = std
 
 
-def get_target_module_paths(model: nn.Module, target_module_patterns: list[str]) -> list[str]:
-    """Find the target_module_patterns that match real modules in the target model.
+def expand_module_patterns(
+    model: nn.Module, module_info: Sequence[ModulePatternInfo]
+) -> list[ModulePathInfo]:
+    """Expand module patterns to concrete module paths with their C values."""
+    module_to_info: dict[str, tuple[str, int]] = {}  # module_path -> (pattern, C)
 
-    e.g. `["layers.*.mlp_in"]` ->  `["layers.1.mlp_in", "layers.2.mlp_in"]`.
-    """
+    for info in module_info:
+        pattern = info.module_pattern
+        c = info.C
+        matched_any = False
 
-    names_out: list[str] = []
-    matched_patterns: set[str] = set()
-    for name, _ in model.named_modules():
-        for pattern in target_module_patterns:
+        for name, _ in model.named_modules():
             if fnmatch.fnmatch(name, pattern):
-                matched_patterns.add(pattern)
-                names_out.append(name)
+                matched_any = True
 
-    unmatched_patterns = set(target_module_patterns) - matched_patterns
-    if unmatched_patterns:
-        raise ValueError(
-            f"The following patterns in target_module_patterns did not match any modules: "
-            f"{sorted(unmatched_patterns)}"
-        )
+                if name in module_to_info:
+                    existing_pattern, _ = module_to_info[name]
+                    raise ValueError(
+                        f"Module '{name}' matches multiple patterns: "
+                        f"'{existing_pattern}' and '{pattern}'"
+                    )
+                module_to_info[name] = (pattern, c)
 
-    return names_out
+        if not matched_any:
+            raise ValueError(f"Pattern '{pattern}' in module_info did not match any modules")
+
+    return [ModulePathInfo(module_path=name, C=c) for name, (_, c) in module_to_info.items()]
