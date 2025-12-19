@@ -14,7 +14,6 @@ from spd.configs import Config, SamplingType
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
-    CiFnType,
     Components,
     ComponentsMaskInfo,
     EmbeddingComponents,
@@ -25,7 +24,7 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
-from spd.spd_types import ModelPath
+from spd.spd_types import CiFnType, ModelPath
 from spd.utils.general_utils import resolve_class, runtime_cast
 from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 

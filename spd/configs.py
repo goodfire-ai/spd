@@ -18,8 +18,7 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
-from spd.models.components import CiFnType
-from spd.spd_types import ModelPath, Probability
+from spd.spd_types import CiFnType, ModelPath, Probability
 
 
 class ModulePatternInfoConfig(BaseConfig):

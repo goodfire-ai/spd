@@ -48,3 +48,5 @@ RootPath = Annotated[
 Probability = Annotated[float, Field(strict=True, ge=0, le=1)]
 
 TaskName = Literal["tms", "resid_mlp", "lm", "ih"]
+
+CiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]

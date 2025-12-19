@@ -2,7 +2,7 @@ import fnmatch
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal
 
 import torch
 import torch.nn as nn
@@ -10,12 +10,7 @@ from simple_stories_train.models.gpt2_simple import LayerNorm as SSLayerNorm
 from torch import Tensor
 from torch.nn.init import calculate_gain
 
-
-class ModulePatternInfo(Protocol):
-    """Protocol for objects with module_pattern and C attributes."""
-
-    module_pattern: str
-    C: int
+from spd.configs import ModulePatternInfoConfig
 
 
 @dataclass
@@ -78,7 +73,7 @@ def replace_std_values_in_layernorm(
 
 
 def expand_module_patterns(
-    model: nn.Module, module_info: Sequence[ModulePatternInfo]
+    model: nn.Module, module_info: Sequence[ModulePatternInfoConfig]
 ) -> list[ModulePathInfo]:
     """Expand module patterns to concrete module paths with their C values."""
     module_to_info: dict[str, tuple[str, int]] = {}  # module_path -> (pattern, C)
