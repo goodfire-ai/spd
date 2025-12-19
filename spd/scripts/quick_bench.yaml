@@ -1,0 +1,15 @@
+global:
+  steps:
+    values: [100]
+  batch_size:
+    values: [8]
+  eval_freq:
+    values: [99999999]
+  slow_eval_freq:
+    values: [99999999]
+  eval_metric_configs:
+    values: [[]]
+  train_log_freq:
+    values: [10]
+  wandb_run_name_prefix:
+    values: ["quick-bench"]
