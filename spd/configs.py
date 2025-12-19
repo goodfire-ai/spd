@@ -26,7 +26,7 @@ class ModulePatternInfoConfig(BaseConfig):
     """Configuration for a module pattern with its number of components.
 
     Used in config files to specify which modules to decompose and how many
-    components (C) to use for each pattern.
+    components (C) to use for each module matching the pattern.
     """
 
     module_pattern: str = Field(..., description="fnmatch-style pattern to match module names")
@@ -506,7 +506,6 @@ class Config(BaseConfig):
         # We don't bother mapping the old ``eval_metrics`` to the new ``eval_metric_configs``.
         config_dict.pop("eval_metrics", None)
 
-        # Handle migration to new module_info format
         cls._migrate_to_module_info(config_dict)
 
         for key in list(config_dict.keys()):

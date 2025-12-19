@@ -47,6 +47,8 @@ def insert_identity_operations_(
     identity_module_paths: list[str] = []
     matched_patterns: set[str] = set()
     for info in identity_module_info:
+        if info.module_pattern in matched_patterns:
+            raise ValueError(f"Duplicate pattern '{info.module_pattern}' in identity_module_info")
         for name, _ in target_model.named_modules():
             if fnmatch.fnmatch(name, info.module_pattern):
                 matched_patterns.add(info.module_pattern)
