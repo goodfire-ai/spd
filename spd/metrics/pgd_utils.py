@@ -34,7 +34,6 @@ def pgd_masked_recon_loss_update(
 
     routing_masks = router.get_masks(module_names=model.target_module_paths, mask_shape=batch_dims)
 
-    # Create per-module adv_sources tensors (supports different C per module)
     adv_sources: dict[str, Float[Tensor, "*batch_dims mask_c"]] = {}
     for module_name in model.target_module_paths:
         module_c = model.module_to_c[module_name]

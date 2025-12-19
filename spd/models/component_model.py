@@ -190,7 +190,7 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_ci_fn(
         target_module: nn.Module,
-        component_C: int,
+        C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
@@ -199,7 +199,7 @@ class ComponentModel(LoadableModule):
             assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
 
         if ci_fn_type == "mlp":
-            return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
+            return MLPCiFn(C=C, hidden_dims=ci_fn_hidden_dims)
 
         match target_module:
             case nn.Linear():
@@ -213,13 +213,9 @@ class ComponentModel(LoadableModule):
 
         match ci_fn_type:
             case "vector_mlp":
-                return VectorMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
-                )
+                return VectorMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
             case "shared_mlp":
-                return VectorSharedMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
-                )
+                return VectorSharedMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
 
     @staticmethod
     def _create_ci_fns(
@@ -233,7 +229,7 @@ class ComponentModel(LoadableModule):
             target_module = target_model.get_submodule(target_module_path)
             ci_fns[target_module_path] = ComponentModel._create_ci_fn(
                 target_module=target_module,
-                component_C=target_module_c,
+                C=target_module_c,
                 ci_fn_type=ci_fn_type,
                 ci_fn_hidden_dims=ci_fn_hidden_dims,
             )
