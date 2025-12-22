@@ -275,15 +275,19 @@ async def interpret_all(
 
                 async with output_lock:
                     results.append(result)
-                    with open(output_path, "a") as f:
-                        f.write(json.dumps(asdict(result)) + "\n")
                     cost_tracker.add(in_tok, out_tok)
+                    line = json.dumps(asdict(result)) + "\n"
+                    log_progress = index % 100 == 0
+                    progress_msg = (
+                        f"[{index}] ${cost_tracker.cost_usd():.2f} ({cost_tracker.input_tokens:,} in, {cost_tracker.output_tokens:,} out)"
+                        if log_progress
+                        else ""
+                    )
+                with open(output_path, "a") as f:
+                    f.write(line)
 
-                    if index % 100 == 0:
-                        current_cost = cost_tracker.cost_usd()
-                        tqdm_asyncio.write(
-                            f"[{index}] ${current_cost:.2f} ({cost_tracker.input_tokens:,} in, {cost_tracker.output_tokens:,} out)"
-                        )
+                if log_progress:
+                    tqdm_asyncio.write(progress_msg)
             except Exception as e:
                 logger.error(f"Fatal error on {component.component_key}: {type(e).__name__}: {e}")
                 raise
