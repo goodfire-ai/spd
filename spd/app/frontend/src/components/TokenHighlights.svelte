@@ -1,75 +1,56 @@
 <script lang="ts">
+    import { getTokenHighlightBg } from "../lib/colors";
+
     interface Props {
         tokenStrings: string[];
-        tokenCiValues: number[];
-        activePosition?: number;
-        precision?: number;
+        tokenCi: number[]; // CI values (0-1 floats)
     }
 
-    let { tokenStrings, tokenCiValues, activePosition = -1, precision = 3 }: Props = $props();
-
-    const getHighlightColor = (importance: number): string => {
-        return `rgba(0, 200, 0, ${importance * 0.5})`;
-    };
-
-    function fmtTokenString(s: string): string {
-        // handle wordpieces chunked tokenization
-        if (s.startsWith("##")) {
-            return s.slice(2);
-        } else {
-            return ` ${s}`;
-        }
-    }
+    let { tokenStrings, tokenCi }: Props = $props();
 </script>
 
-<span class="token-highlights">
-    {#each tokenStrings as tokenString, idx (idx)}
-        <span
+<span class="token-highlights"
+    >{#each tokenStrings as tok, i (i)}<span
             class="token-highlight"
-            class:active-token={idx === activePosition}
-            style={`background-color:${getHighlightColor(tokenCiValues[idx])};`}
-            data-ci={`CI: ${tokenCiValues[idx].toFixed(precision)}`}>{fmtTokenString(tokenString)}</span
-        >
-    {/each}
-</span>
+            style="background-color:{getTokenHighlightBg(tokenCi[i])}"
+            data-ci="CI: {tokenCi[i].toFixed(3)}">{tok}</span
+        >{/each}</span
+>
 
 <style>
     .token-highlights {
         display: inline;
         white-space: pre-wrap;
+        font-family: var(--font-mono);
     }
 
     .token-highlight {
         display: inline;
-        padding: 2px 4px;
-        border-radius: 3px;
+        padding: 1px 0;
+        margin-right: 1px;
+        border-right: 1px solid var(--border-subtle);
         position: relative;
+        white-space: pre;
     }
 
     .token-highlight::after {
         content: attr(data-ci);
         position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 12px;
+        top: calc(100% + 4px);
+        left: 0;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        color: var(--text-primary);
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
         white-space: nowrap;
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0s;
-        margin-bottom: 4px;
         z-index: 1000;
     }
 
     .token-highlight:hover::after {
         opacity: 1;
-    }
-
-    .token-highlight.active-token {
-        border: 2px solid rgba(255, 100, 0, 0.6);
     }
 </style>

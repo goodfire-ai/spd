@@ -32,6 +32,8 @@ dependencies = [
     "muutils",
     "fastapi",
     "uvicorn",
+    "openrouter>=0.1.1",
+    "httpx>=0.28.0",
 ]
 
 [dependency-groups]
@@ -42,11 +44,15 @@ dev = [
     "ruff",
     "basedpyright<1.32.0", # pyright and wandb issues, see https://github.com/goodfire-ai/spd/pull/232
     "pre-commit",
+    "sqlite-web>=0.6.5",
 ]
 
 [project.scripts]
-spd-run = "spd.scripts.run:cli"
+spd-run = "spd.scripts.run_cli:cli"
+spd-local = "spd.scripts.run_local:cli"
 spd-cluster = "spd.clustering.scripts.run_pipeline:cli"
+spd-harvest = "spd.harvest.scripts.run_slurm_cli:cli"
+spd-autointerp = "spd.autointerp.scripts.run_slurm_cli:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]

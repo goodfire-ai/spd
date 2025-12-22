@@ -1,10 +1,11 @@
-"""Minimal utilities for running shell-safe commands locally."""
+"""Minimal utilities for running shell-safe commands locally and on SLURM."""
 
 import subprocess
 import tempfile
 from pathlib import Path
 
 from spd.log import logger
+from spd.settings import REPO_ROOT
 
 
 def run_script_array_local(
@@ -111,3 +112,190 @@ def run_script_array_local(
                     resource_file.unlink()
 
     return resources if track_resources else None
+
+
+# =============================================================================
+# SLURM utilities for simple command-based jobs (e.g., clustering pipeline)
+# =============================================================================
+
+
+def create_slurm_array_script(
+    script_path: Path,
+    job_name: str,
+    commands: list[str],
+    snapshot_branch: str | None,
+    max_concurrent_tasks: int,
+    n_gpus_per_job: int,
+    partition: str,
+) -> None:
+    """Create a SLURM job array script from a list of commands.
+
+    Args:
+        script_path: Path to write the script to.
+        job_name: Name for the SLURM job.
+        commands: List of shell-safe command strings.
+        snapshot_branch: Git branch to checkout (None to skip git checkout).
+        max_concurrent_tasks: Maximum concurrent array tasks.
+        n_gpus_per_job: Number of GPUs per job.
+        partition: SLURM partition to use.
+    """
+    n_jobs = len(commands)
+    array_range = f"1-{n_jobs}%{max_concurrent_tasks}"
+
+    # Build case statement (SLURM arrays are 1-indexed)
+    case_lines = []
+    for i, cmd in enumerate(commands):
+        case_lines.append(f"    {i + 1})")
+        case_lines.append(f"        {cmd}")
+        case_lines.append("        ;;")
+    case_block = "\n".join(case_lines)
+
+    # Git checkout section
+    if snapshot_branch:
+        git_section = f"""
+# Clone the repository to the job-specific directory
+git clone {REPO_ROOT} "$WORK_DIR"
+
+# Change to the cloned repository directory
+cd "$WORK_DIR"
+
+# Copy the .env file from the original repository for WandB authentication
+cp {REPO_ROOT}/.env .env
+
+# Checkout the snapshot branch to ensure consistent code
+git checkout "{snapshot_branch}"
+
+# Ensure that dependencies are using the snapshot branch
+deactivate 2>/dev/null || true
+unset VIRTUAL_ENV
+uv sync --no-dev --link-mode copy -q
+source .venv/bin/activate
+"""
+    else:
+        git_section = f"""
+cd {REPO_ROOT}
+source .venv/bin/activate
+"""
+
+    script_content = f"""\
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:{n_gpus_per_job}
+#SBATCH --partition={partition}
+#SBATCH --time=72:00:00
+#SBATCH --job-name={job_name}
+#SBATCH --output=$HOME/slurm_logs/slurm-%A_%a.out
+#SBATCH --array={array_range}
+
+# Create job-specific working directory
+WORK_DIR="$HOME/slurm_workspaces/{job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
+mkdir -p "$WORK_DIR"
+
+# Clean up the workspace when the script exits
+trap 'rm -rf "$WORK_DIR"' EXIT
+{git_section}
+echo "Running task $SLURM_ARRAY_TASK_ID..."
+
+# Execute the appropriate command based on array task ID
+case $SLURM_ARRAY_TASK_ID in
+{case_block}
+esac
+"""
+
+    script_path.write_text(script_content)
+
+
+def create_slurm_script(
+    script_path: Path,
+    job_name: str,
+    command: str,
+    snapshot_branch: str | None,
+    n_gpus: int,
+    partition: str,
+    dependency_job_id: str | None = None,
+) -> None:
+    """Create a single SLURM job script.
+
+    Args:
+        script_path: Path to write the script to.
+        job_name: Name for the SLURM job.
+        command: Shell-safe command string to run.
+        snapshot_branch: Git branch to checkout (None to skip git checkout).
+        n_gpus: Number of GPUs.
+        partition: SLURM partition to use.
+        dependency_job_id: If provided, this job will wait for the specified job to complete.
+    """
+    dependency_line = ""
+    if dependency_job_id:
+        dependency_line = f"#SBATCH --dependency=afterok:{dependency_job_id}"
+
+    # Git checkout section
+    if snapshot_branch:
+        git_section = f"""
+# Clone the repository to the job-specific directory
+git clone {REPO_ROOT} "$WORK_DIR"
+
+# Change to the cloned repository directory
+cd "$WORK_DIR"
+
+# Copy the .env file from the original repository for WandB authentication
+cp {REPO_ROOT}/.env .env
+
+# Checkout the snapshot branch to ensure consistent code
+git checkout "{snapshot_branch}"
+
+# Ensure that dependencies are using the snapshot branch
+deactivate 2>/dev/null || true
+unset VIRTUAL_ENV
+uv sync --no-dev --link-mode copy -q
+source .venv/bin/activate
+"""
+    else:
+        git_section = f"""
+cd {REPO_ROOT}
+source .venv/bin/activate
+"""
+
+    script_content = f"""\
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:{n_gpus}
+#SBATCH --partition={partition}
+#SBATCH --time=72:00:00
+#SBATCH --job-name={job_name}
+#SBATCH --output=$HOME/slurm_logs/slurm-%j.out
+{dependency_line}
+
+# Create job-specific working directory
+WORK_DIR="$HOME/slurm_workspaces/{job_name}-$SLURM_JOB_ID"
+mkdir -p "$WORK_DIR"
+
+# Clean up the workspace when the script exits
+trap 'rm -rf "$WORK_DIR"' EXIT
+{git_section}
+echo "Running job..."
+{command}
+"""
+
+    script_path.write_text(script_content)
+
+
+def submit_slurm_script(script_path: Path) -> str:
+    """Submit a SLURM script and return the job ID.
+
+    Args:
+        script_path: Path to the SLURM batch script.
+
+    Returns:
+        Job ID from submitted job.
+    """
+    result = subprocess.run(
+        ["sbatch", str(script_path)], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to submit SLURM job: {result.stderr}")
+    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
+    job_id = result.stdout.strip().split()[-1]
+    return job_id

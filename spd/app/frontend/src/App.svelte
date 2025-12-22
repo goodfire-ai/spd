@@ -1,223 +1,326 @@
 <script lang="ts">
-    import type { Status } from "./lib/api";
     import * as api from "./lib/api";
+    import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
+    import { runState } from "./lib/runState.svelte";
+    import type { Loadable } from "./lib";
 
+    import { onMount } from "svelte";
     import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
-    import { parseWandbRunPath } from "./lib";
+    import ClusterPathInput from "./components/ClusterPathInput.svelte";
+    import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
+    import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
+    import RunSelector from "./components/RunSelector.svelte";
+    import DisplaySettingsDropdown from "./components/ui/DisplaySettingsDropdown.svelte";
 
-    let loadingTrainRun = $state<boolean>(false);
+    let backendUser = $state<Loadable<string>>(null);
 
-    /** can be a wandb run path, or id. we sanitize this on sumbit */
-    let trainWandbRunEntry = $state<string | null>(null);
+    // When true, show the run selector even if a run is loaded
+    let showRunSelector = $state(true);
 
-    let status = $state<Status>({ train_run: null });
+    // Lifted activation contexts state - shared between tabs
+    let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
 
-    async function loadStatus() {
-        if (loadingTrainRun) return;
-        console.log("getting status");
-        try {
-            status = await api.getStatus();
-            loadingTrainRun = false;
-            if (!status.train_run) return;
-            trainWandbRunEntry = status.train_run.wandb_path;
-        } catch (error) {
-            console.error("error loading status", error);
-        }
-    }
-
-    async function loadRun(event: Event) {
-        event.preventDefault();
-        const input = trainWandbRunEntry?.trim();
-        if (!input) return;
-        try {
-            loadingTrainRun = true;
-            status = { train_run: null };
-            const wandbRunPath = parseWandbRunPath(input);
-            console.log("loading run", wandbRunPath);
-            trainWandbRunEntry = wandbRunPath;
-            await api.loadRun(wandbRunPath);
-            await loadStatus();
-        } catch (error) {
-            console.error("error loading run", error);
-        } finally {
-            loadingTrainRun = false;
-        }
-    }
-
-    //   when the page loads, and every 5 seconds thereafter, load the status
+    // When run loads successfully, hide selector and load activation contexts
     $effect(() => {
-        loadStatus();
-        const interval = setInterval(loadStatus, 5000);
-        // return cleanup function to stop the polling
-        return () => clearInterval(interval);
+        if (runState.run?.status === "loaded" && runState.run.data) {
+            showRunSelector = false;
+            loadActivationContextsSummary();
+        }
     });
 
-    let activeTab = $state<"activation-contexts" | null>(null);
+    async function handleLoadRun(wandbPath: string, contextLength: number) {
+        await runState.loadRun(wandbPath, contextLength);
+    }
+
+    async function loadActivationContextsSummary() {
+        activationContextsSummary = await api.getActivationContextsSummary();
+    }
+
+    function handleChangeRun() {
+        showRunSelector = true;
+    }
+
+    onMount(() => {
+        runState.syncStatus();
+        api.getWhoami().then((user) => (backendUser = { status: "loaded", data: user }));
+    });
+
+    let activeTab = $state<"prompts" | "components" | "dataset-search" | null>(null);
+    let showRunMenu = $state(false);
 </script>
 
-<div class="app-layout">
-    <aside class="sidebar">
-        <div class="section-heading">W&B Run ID</div>
-        <form onsubmit={loadRun} class="input-group">
-            <input
-                type="text"
-                id="wandb-run-id"
-                list="run-options"
-                bind:value={trainWandbRunEntry}
-                disabled={loadingTrainRun}
-                placeholder="Select or enter run ID"
-            />
-            <button type="submit" disabled={loadingTrainRun || !trainWandbRunEntry?.trim()}>
-                {loadingTrainRun ? "Loading..." : "Load Run"}
-            </button>
-        </form>
-        <div class="tab-navigation">
-            {#if status.train_run}
-                <button
-                    class="tab-button"
-                    class:active={activeTab === "activation-contexts"}
-                    onclick={() => {
-                        console.log("clicking activation contexts tab");
-                        activeTab = "activation-contexts";
-                    }}
+{#if showRunSelector}
+    <RunSelector
+        onSelect={handleLoadRun}
+        isLoading={runState.run?.status === "loading"}
+        username={backendUser?.status === "loaded" ? backendUser.data : null}
+    />
+{:else}
+    <div class="app-layout">
+        <header class="top-bar">
+            {#if runState.run?.status === "loaded" && runState.run.data}
+                <div
+                    class="run-menu"
+                    onmouseenter={() => (showRunMenu = true)}
+                    onmouseleave={() => (showRunMenu = false)}
                 >
-                    Activation Contexts
-                </button>
+                    <button type="button" class="run-menu-trigger">
+                        <span class="run-path">{runState.run.data.wandb_path}</span>
+                    </button>
+                    {#if showRunMenu}
+                        <div class="run-menu-dropdown">
+                            <pre class="config-yaml">{runState.run.data.config_yaml}</pre>
+                            <button type="button" class="change-run-button" onclick={handleChangeRun}>Change Run</button
+                            >
+                        </div>
+                    {/if}
+                </div>
             {/if}
-        </div>
-        {#if status.train_run}
-            <div class="config">
-                <div class="section-heading">Config</div>
-                <pre>{status.train_run?.config_yaml}</pre>
-            </div>
-        {/if}
-    </aside>
 
-    <div class="main-content">
-        {#if status.train_run && activeTab === "activation-contexts"}
-            <ActivationContextsTab />
-        {/if}
+            <nav class="nav-group">
+                <button
+                    type="button"
+                    class="tab-button"
+                    class:active={activeTab === "dataset-search"}
+                    onclick={() => (activeTab = "dataset-search")}
+                >
+                    Dataset Search
+                </button>
+                {#if runState.run?.status === "loaded" && runState.run.data}
+                    <button
+                        type="button"
+                        class="tab-button"
+                        class:active={activeTab === "prompts"}
+                        onclick={() => (activeTab = "prompts")}
+                    >
+                        Prompts
+                    </button>
+                    <button
+                        type="button"
+                        class="tab-button"
+                        class:active={activeTab === "components"}
+                        onclick={() => (activeTab = "components")}
+                    >
+                        Components
+                    </button>
+                {/if}
+            </nav>
+
+            <div class="top-bar-spacer"></div>
+            {#if runState.run?.status === "loaded" && runState.run.data}
+                <div class="cluster-path-input-container">
+                    <ClusterPathInput />
+                </div>
+            {/if}
+            <DisplaySettingsDropdown />
+        </header>
+
+        <main class="main-content">
+            {#if runState.run?.status === "error"}
+                <div class="warning-banner">
+                    {runState.run.error}
+                </div>
+            {/if}
+            <!-- Dataset Search tab - always available, doesn't require loaded run -->
+            <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
+                <DatasetSearchTab />
+            </div>
+            {#if runState.run?.status === "loaded"}
+                <!-- Use hidden class instead of conditional rendering to preserve state -->
+                <div class="tab-content" class:hidden={activeTab !== "prompts"}>
+                    <LocalAttributionsTab {activationContextsSummary} />
+                </div>
+                <div class="tab-content" class:hidden={activeTab !== "components"}>
+                    <ActivationContextsTab {activationContextsSummary} />
+                </div>
+            {:else if runState.run?.status === "loading"}
+                <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
+                    <p>Loading run...</p>
+                </div>
+            {:else}
+                <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
+                    <p>Enter a W&B Path above to get started</p>
+                </div>
+            {/if}
+        </main>
     </div>
-</div>
+{/if}
 
 <style>
     .app-layout {
         display: flex;
+        flex-direction: column;
         min-height: 100vh;
+        background: var(--bg-base);
     }
 
-    .sidebar {
-        background: #f8f9fa;
-        border-right: 1px solid #dee2e6;
-        padding: 1.5rem;
+    .top-bar {
         display: flex;
-        gap: 0.5rem;
+        align-items: stretch;
+        background: var(--bg-surface);
+        border-bottom: 1px solid var(--border-default);
+        flex-shrink: 0;
+        min-height: 44px;
+    }
+
+    /* Run menu - hoverable dropdown */
+    .run-menu {
+        position: relative;
+        display: flex;
+        align-items: stretch;
+    }
+
+    .run-menu-trigger {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: 0 var(--space-3);
+        margin: 0;
+        background: none;
+        border: none;
+        border-right: 1px solid var(--border-default);
+        border-radius: 0;
+        cursor: pointer;
+        font: inherit;
+        font-size: var(--text-sm);
+        transition: background 0.15s;
+    }
+
+    .run-menu-trigger:hover .run-path {
+        background: var(--bg-inset);
+    }
+
+    .run-path {
+        font-family: var(--font-mono);
+        color: var(--text-primary);
+    }
+
+    .run-menu-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        z-index: 1000;
+        display: flex;
         flex-direction: column;
-        position: sticky;
-        top: 0;
-        height: 100vh;
-        overflow-y: auto;
+        gap: var(--space-2);
+        padding: var(--space-3);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .config-yaml {
+        max-width: 420px;
+        max-height: 50vh;
+        overflow: auto;
+        margin: 0;
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-primary);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    .change-run-button {
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-inset);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
+        font-weight: 500;
+        cursor: pointer;
+        text-align: center;
+    }
+
+    .change-run-button:hover {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+    }
+
+    /* Navigation tabs */
+    .nav-group {
+        display: flex;
+    }
+
+    .tab-button {
+        padding: var(--space-2) var(--space-4);
+        margin: 0;
+        background: none;
+        border: none;
+        border-right: 1px solid var(--border-default);
+        border-radius: 0;
+        font: inherit;
+        font-weight: 500;
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+        cursor: pointer;
+        transition:
+            color 0.15s,
+            background 0.15s;
+    }
+
+    .tab-button:hover {
+        color: var(--text-primary);
+        background: var(--bg-inset);
+    }
+
+    .tab-button.active {
+        color: var(--text-primary);
+        background: var(--bg-inset);
+    }
+
+    .top-bar-spacer {
+        flex: 1;
+    }
+
+    .cluster-path-input-container {
+        flex: 1;
+        padding: 0 var(--space-3);
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
     }
 
     .main-content {
         flex: 1;
         min-width: 0;
-        padding: 1rem;
+        min-height: 0;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
     }
 
-    .tab-navigation {
+    .tab-content {
+        flex: 1;
+        min-height: 0;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
     }
 
-    .tab-button {
-        padding: 0.75rem 0.5rem;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: #495057;
-        transition: all 0.15s ease;
-        text-align: left;
+    .tab-content.hidden {
+        display: none;
+    }
+
+    .warning-banner {
+        background: var(--bg-surface);
+        color: var(--accent-primary);
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--accent-primary-dim);
+        border-radius: var(--radius-md);
+        margin: var(--space-3);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        flex-shrink: 0;
+    }
+
+    .empty-state {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-    }
-    .tab-button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .tab-button:hover {
-        color: #007bff;
-        background: #f8f9fa;
-        border-color: #007bff;
-    }
-
-    .tab-button.active {
-        color: white;
-        background: #007bff;
-        border-color: #007bff;
-        box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
-    }
-
-    .section-heading {
-        font-weight: 600;
-        color: #333;
-        font-size: 0.9rem;
-    }
-
-    .input-group {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .input-group input[type="text"] {
+        justify-content: center;
         flex: 1;
-        padding: 0.5rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 1rem;
-    }
-
-    .input-group input[type="text"]:focus {
-        outline: none;
-        border-color: #4a90e2;
-        box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.1);
-    }
-
-    .input-group button {
-        padding: 0.5rem 0.5rem;
-        background-color: #4a90e2;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-size: 1rem;
-        cursor: pointer;
-        white-space: nowrap;
-    }
-
-    .input-group button:hover:not(:disabled) {
-        background-color: #357abd;
-    }
-
-    .input-group button:disabled {
-        background-color: #ccc;
-        cursor: not-allowed;
-    }
-
-    .config {
-        margin-top: 0.5rem;
-    }
-
-    .config pre {
-        margin: 0;
-        font-size: 0.8rem;
+        color: var(--text-muted);
+        font-family: var(--font-sans);
     }
 </style>

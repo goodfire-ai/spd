@@ -13,7 +13,7 @@ import wandb
 import yaml
 
 from spd.log import logger
-from spd.settings import SPD_CACHE_DIR
+from spd.settings import DEFAULT_PROJECT_NAME, SPD_CACHE_DIR
 from spd.utils.git_utils import (
     create_git_snapshot,
     repo_current_branch,
@@ -56,8 +56,8 @@ def get_output_dir(use_wandb_id: bool = True) -> Path:
     # Check if wandb is active and has a run
     if use_wandb_id:
         assert wandb.run is not None, "WandB run is not active"
-        # Get project name from wandb.run, fallback to "spd" if not available
-        project = getattr(wandb.run, "project", "spd")
+        # Get project name from wandb.run, fallback to DEFAULT_PROJECT_NAME if not available
+        project = getattr(wandb.run, "project", DEFAULT_PROJECT_NAME)
         run_id = f"{project}-{wandb.run.id}"
     else:
         run_id = get_local_run_id()
@@ -84,31 +84,6 @@ def _save_torch(data: Any, path: Path | str, **kwargs: Any) -> None:
 def _save_text(data: str, path: Path | str, encoding: str = "utf-8") -> None:
     with open(path, "w", encoding=encoding) as f:
         f.write(data)
-
-
-def check_run_exists(wandb_string: str) -> Path | None:
-    """Check if a run exists in the shared filesystem based on WandB string.
-
-    Args:
-        wandb_string: WandB string in format "wandb:project/runs/run_id"
-
-    Returns:
-        Path to the run directory if it exists, None otherwise
-    """
-    if not wandb_string.startswith("wandb:"):
-        return None
-
-    # Parse the wandb string
-    parts = wandb_string.replace("wandb:", "").split("/")
-    if len(parts) != 3 or parts[1] != "runs":
-        return None
-
-    project = parts[0]
-    run_id = parts[2]
-
-    # Check if directory exists with format project-runid
-    run_dir = SPD_CACHE_DIR / "runs" / f"{project}-{run_id}"
-    return run_dir if run_dir.exists() else None
 
 
 def save_file(data: dict[str, Any] | Any, path: Path | str, **kwargs: Any) -> None:
@@ -391,6 +366,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconSubsetLoss": "PGDReconSub",
     "PGDReconLayerwiseLoss": "PGDReconLayer",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
+    "UnmaskedReconLoss": "UnmaskedRecon",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
     "CIHistograms": "CIHist",
@@ -401,6 +377,8 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PermutedCIPlots": "PermCIPlots",
     "UVPlots": "UVPlots",
     "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
+    "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
+    "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
 }
 
 

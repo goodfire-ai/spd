@@ -93,8 +93,6 @@ def _load_lm_batch(
         batch_size=batch_size,
         buffer_size=cfg.task_config.buffer_size,
         global_seed=seed,  # Use run-specific seed
-        ddp_rank=0,
-        ddp_world_size=1,
     )
 
     # Get first batch

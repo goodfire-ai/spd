@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from torch.testing import assert_close
 
+from spd.configs import ModulePatternInfoConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.models.components import Identity
 
@@ -44,7 +45,13 @@ def test_inserts_identity_layers():
     model = SimpleModel(d_model=32).to(DEVICE)
     model.eval()
 
-    insert_identity_operations_(target_model=model, identity_patterns=["layer1", "layer2"])
+    insert_identity_operations_(
+        target_model=model,
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="layer1", C=1),
+            ModulePatternInfoConfig(module_pattern="layer2", C=1),
+        ],
+    )
 
     assert hasattr(model.layer1, "pre_identity")
     assert hasattr(model.layer2, "pre_identity")
@@ -64,7 +71,13 @@ def test_adds_hooks():
     assert len(model.layer1._forward_hooks) == 0
     assert len(model.layer2._forward_hooks) == 0
 
-    insert_identity_operations_(target_model=model, identity_patterns=["layer1", "layer2"])
+    insert_identity_operations_(
+        target_model=model,
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="layer1", C=1),
+            ModulePatternInfoConfig(module_pattern="layer2", C=1),
+        ],
+    )
 
     assert len(model.layer1._forward_pre_hooks) == 1
     assert len(model.layer2._forward_pre_hooks) == 1
@@ -79,7 +92,9 @@ def test_preserves_output():
 
     original_output = model(input_ids)
 
-    insert_identity_operations_(model, identity_patterns=["layer1"])
+    insert_identity_operations_(
+        model, identity_module_info=[ModulePatternInfoConfig(module_pattern="layer1", C=1)]
+    )
 
     new_output = model(input_ids)
 
@@ -109,7 +124,13 @@ def test_uses_correct_dims():
     model.eval()
 
     # Insert identity only before layer1 (which takes 64-dim input)
-    insert_identity_operations_(target_model=model, identity_patterns=["layer1", "layer2"])
+    insert_identity_operations_(
+        target_model=model,
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="layer1", C=1),
+            ModulePatternInfoConfig(module_pattern="layer2", C=1),
+        ],
+    )
 
     # Check that identity has correct dimension
     assert isinstance(model.layer1.pre_identity, Identity)
@@ -127,7 +148,7 @@ def test_empty_patterns():
     model = SimpleModel().to(DEVICE)
 
     # No patterns should result in no modifications
-    insert_identity_operations_(target_model=model, identity_patterns=[])
+    insert_identity_operations_(target_model=model, identity_module_info=[])
 
     # No identity layers should be added
     assert not hasattr(model.embedding, "pre_identity")
@@ -140,11 +161,17 @@ def test_embedding_raises_error():
     model = SimpleModel(d_model=32).to("cpu")
 
     with pytest.raises(ValueError, match="Embedding modules not supported"):
-        insert_identity_operations_(target_model=model, identity_patterns=["embedding"])
+        insert_identity_operations_(
+            target_model=model,
+            identity_module_info=[ModulePatternInfoConfig(module_pattern="embedding", C=1)],
+        )
 
 
 def test_unmatched_pattern_raises_error():
     model = SimpleModel(d_model=32).to("cpu")
 
     with pytest.raises(ValueError, match="did not match any modules"):
-        insert_identity_operations_(target_model=model, identity_patterns=["does.not.exist*"])
+        insert_identity_operations_(
+            target_model=model,
+            identity_module_info=[ModulePatternInfoConfig(module_pattern="does.not.exist*", C=1)],
+        )

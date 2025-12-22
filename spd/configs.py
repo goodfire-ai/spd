@@ -18,8 +18,20 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
-from spd.models.components import CiFnType
-from spd.spd_types import ModelPath, Probability
+from spd.spd_types import CiFnType, ModelPath, Probability
+
+
+class ModulePatternInfoConfig(BaseConfig):
+    """Configuration for a module pattern with its number of components.
+
+    Used in config files to specify which modules to decompose and how many
+    components (C) to use for each module matching the pattern.
+    """
+
+    module_pattern: str = Field(..., description="fnmatch-style pattern to match module names")
+    C: PositiveInt = Field(
+        ..., description="Number of components for modules matching this pattern"
+    )
 
 
 #### Metrics that can be used as losses in training or eval ####
@@ -43,8 +55,23 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     eps: float = 1e-12
 
 
+class UniformKSubsetRoutingConfig(BaseConfig):
+    type: Literal["uniform_k_subset"] = "uniform_k_subset"
+
+
+class StaticProbabilityRoutingConfig(BaseConfig):
+    type: Literal["static_probability"] = "static_probability"
+    p: Probability
+
+
+SubsetRoutingType = UniformKSubsetRoutingConfig | StaticProbabilityRoutingConfig
+
+
 class CIMaskedReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["CIMaskedReconSubsetLoss"] = "CIMaskedReconSubsetLoss"
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
 
 
 class CIMaskedReconLayerwiseLossConfig(LossMetricConfig):
@@ -61,10 +88,17 @@ class StochasticReconLossConfig(LossMetricConfig):
 
 class StochasticReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconSubsetLoss"] = "StochasticReconSubsetLoss"
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
 
 
 class StochasticReconLayerwiseLossConfig(LossMetricConfig):
     classname: Literal["StochasticReconLayerwiseLoss"] = "StochasticReconLayerwiseLoss"
+
+
+class UnmaskedReconLossConfig(LossMetricConfig):
+    classname: Literal["UnmaskedReconLoss"] = "UnmaskedReconLoss"
 
 
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
@@ -85,10 +119,31 @@ class PGDReconLossConfig(PGDConfig):
 
 class PGDReconSubsetLossConfig(PGDConfig):
     classname: Literal["PGDReconSubsetLoss"] = "PGDReconSubsetLoss"
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
 
 
 class PGDReconLayerwiseLossConfig(PGDConfig):
     classname: Literal["PGDReconLayerwiseLoss"] = "PGDReconLayerwiseLoss"
+
+
+class PGDMultiBatchConfig(LossMetricConfig):
+    init: PGDInitStrategy
+    step_size: float
+    n_steps: int
+    gradient_accumulation_steps: int
+
+
+class PGDMultiBatchReconLossConfig(PGDMultiBatchConfig):
+    classname: Literal["PGDMultiBatchReconLoss"] = "PGDMultiBatchReconLoss"
+
+
+class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
+    classname: Literal["PGDMultiBatchReconSubsetLoss"] = "PGDMultiBatchReconSubsetLoss"
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
@@ -149,25 +204,22 @@ class UVPlotsConfig(BaseConfig):
     dense_patterns: list[str] | None
 
 
-LossMetricConfigType = (
-    FaithfulnessLossConfig
-    | ImportanceMinimalityLossConfig
-    # Recon losses:
-    # CI masked recon
+ReconLossConfigType = (
+    UnmaskedReconLossConfig
     | CIMaskedReconLossConfig
     | CIMaskedReconSubsetLossConfig
     | CIMaskedReconLayerwiseLossConfig
-    # Stochastic
     | StochasticReconLossConfig
     | StochasticReconSubsetLossConfig
     | StochasticReconLayerwiseLossConfig
-    # PGD
     | PGDReconLossConfig
     | PGDReconSubsetLossConfig
     | PGDReconLayerwiseLossConfig
-    # Hidden acts
     | StochasticHiddenActsReconLossConfig
 )
+
+LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
+
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
     | CIHistogramsConfig
@@ -178,6 +230,8 @@ EvalOnlyMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
+    | PGDMultiBatchReconLossConfig
+    | PGDMultiBatchReconSubsetLossConfig
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
@@ -203,10 +257,6 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
-    C: PositiveInt = Field(
-        ...,
-        description="The number of subcomponents per layer",
-    )
     n_mask_samples: PositiveInt = Field(
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
@@ -227,22 +277,34 @@ class Config(BaseConfig):
         default="leaky_hard",
         description="Type of sigmoid to use for causal importance calculation",
     )
-    target_module_patterns: list[str] = Field(
+    module_info: list[ModulePatternInfoConfig] = Field(
         ...,
-        description="List of fnmatch-style patterns that select modules to decompose",
+        description="List of module patterns with C values specifying which modules to decompose. "
+        "Example: [{module_pattern: 'h.*.mlp.c_fc', C: 10}, {module_pattern: 'h.*.attn.*', C: 20}]",
     )
-    identity_module_patterns: list[str] | None = Field(
+    identity_module_info: list[ModulePatternInfoConfig] | None = Field(
         default=None,
-        description="List of fnmatch-style patterns that select modules in which an identity "
-        "matrix should be inserted and decomposed beforehand",
+        description="List of identity module patterns with C values. "
+        "Identity operations will be inserted at these modules.",
     )
 
     @property
-    def all_module_patterns(self):
-        if self.identity_module_patterns is None:
-            return self.target_module_patterns
-        identity_final_patterns = [f"{p}.pre_identity" for p in self.identity_module_patterns]
-        return self.target_module_patterns + identity_final_patterns
+    def all_module_info(self) -> list[ModulePatternInfoConfig]:
+        """Combine target and identity patterns with their C values.
+
+        Returns list of ModulePatternInfoConfig with .pre_identity suffix added to identity patterns.
+        """
+        result = list(self.module_info)
+
+        if self.identity_module_info is not None:
+            for info in self.identity_module_info:
+                result.append(
+                    ModulePatternInfoConfig(
+                        module_pattern=f"{info.module_pattern}.pre_identity", C=info.C
+                    )
+                )
+
+        return result
 
     use_delta_component: bool = Field(
         default=True,
@@ -277,6 +339,14 @@ class Config(BaseConfig):
     gradient_accumulation_steps: PositiveInt = Field(
         default=1,
         description="Number of steps to accumulate gradients over before updating parameters",
+    )
+    grad_clip_norm_components: PositiveFloat | None = Field(
+        default=None,
+        description="If set, apply grad norm clipping to the parameters of the components",
+    )
+    grad_clip_norm_ci_fns: PositiveFloat | None = Field(
+        default=None,
+        description="If set, apply grad norm clipping to the parameters of the CI functions",
     )
 
     # --- Faithfulness Warmup ---
@@ -419,6 +489,7 @@ class Config(BaseConfig):
         "dist_backend",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
+        "grad_clip_norm": "grad_clip_norm_components",
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
         "recon_coeff": "ci_recon_coeff",
@@ -433,6 +504,8 @@ class Config(BaseConfig):
 
         # We don't bother mapping the old ``eval_metrics`` to the new ``eval_metric_configs``.
         config_dict.pop("eval_metrics", None)
+
+        cls._migrate_to_module_info(config_dict)
 
         for key in list(config_dict.keys()):
             val = config_dict[key]
@@ -458,6 +531,29 @@ class Config(BaseConfig):
         if "slow_eval_freq" not in config_dict:
             config_dict["slow_eval_freq"] = config_dict["eval_freq"]
         return config_dict
+
+    @classmethod
+    def _migrate_to_module_info(cls, config_dict: dict[str, Any]) -> None:
+        """Migrate old config format (C + target_module_patterns) to new module_info format."""
+        cond = "C" in config_dict or "target_module_patterns" in config_dict
+        if not cond:
+            return
+
+        logger.warning(
+            "Found old config keys for C definition, mapping old structure to new module_info structure"
+        )
+        global_c = config_dict["C"]
+        config_dict["module_info"] = [
+            {"module_pattern": p, "C": global_c} for p in config_dict["target_module_patterns"]
+        ]
+        del config_dict["C"]
+        del config_dict["target_module_patterns"]
+
+        identity_patterns = config_dict.pop("identity_module_patterns", None)
+        if identity_patterns is not None:
+            config_dict["identity_module_info"] = [
+                {"module_pattern": p, "C": global_c} for p in identity_patterns
+            ]
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:

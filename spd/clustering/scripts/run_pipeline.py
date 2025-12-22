@@ -33,14 +33,14 @@ from spd.clustering.consts import DistancesMethod
 from spd.clustering.storage import StorageBase
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
-from spd.utils.command_utils import run_script_array_local
-from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
-from spd.utils.slurm_utils import (
+from spd.utils.command_utils import (
     create_slurm_array_script,
     create_slurm_script,
+    run_script_array_local,
     submit_slurm_script,
 )
+from spd.utils.general_utils import replace_pydantic_model
+from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
 
 os.environ["WANDB_QUIET"] = "true"
 
