@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from simple_stories_train.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 
 from spd.app.backend.compute import get_sources_by_target
-from spd.app.backend.db import LocalAttrDB
+from spd.app.backend.database import LocalAttrDB
 from spd.app.backend.routers import graphs as graphs_router
 from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router

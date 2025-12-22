@@ -37,7 +37,7 @@ backend/
 ├── schemas.py             # Pydantic API models
 ├── dependencies.py        # FastAPI dependency injection
 ├── utils.py               # Logging/timing utilities
-├── db/database.py         # SQLite interface
+├── database.py            # SQLite interface
 ├── optim_cis.py           # Sparse CI optimization
 └── routers/
     ├── runs.py            # Load W&B runs

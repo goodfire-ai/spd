@@ -21,7 +21,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from spd.app.backend.db import LocalAttrDB
+from spd.app.backend.database import LocalAttrDB
 from spd.app.backend.routers import (
     activation_contexts_router,
     clusters_router,

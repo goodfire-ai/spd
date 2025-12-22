@@ -15,7 +15,7 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 
-from spd.app.backend.db import LocalAttrDB
+from spd.app.backend.database import LocalAttrDB
 from spd.app.backend.state import RunState, StateManager
 from spd.log import logger
 

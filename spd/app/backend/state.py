@@ -10,8 +10,7 @@ from typing import Any
 
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.db import LocalAttrDB
-from spd.app.backend.db.database import Run
+from spd.app.backend.database import LocalAttrDB, Run
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config

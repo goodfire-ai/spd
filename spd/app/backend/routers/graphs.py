@@ -18,10 +18,7 @@ from spd.app.backend.compute import (
     compute_local_attributions,
     compute_local_attributions_optimized,
 )
-from spd.app.backend.db.database import (
-    OptimizationParams,
-    StoredGraph,
-)
+from spd.app.backend.database import OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
 from spd.app.backend.schemas import OutputProbability
