@@ -8,7 +8,6 @@ from pathlib import Path
 
 import torch
 from jaxtyping import Int
-from muutils.dbg import dbg_auto
 from torch import Tensor
 
 from spd.clustering.activations import (
@@ -73,7 +72,6 @@ COMPONENT_ACTS: dict[str, Tensor] = component_activations(
     device=DEVICE,
 )
 
-_ = dbg_auto(COMPONENT_ACTS)
 # %%
 # Process activations
 # ============================================================

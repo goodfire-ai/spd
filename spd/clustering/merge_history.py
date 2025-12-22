@@ -8,7 +8,6 @@ from typing import Any, override
 import numpy as np
 import torch
 from jaxtyping import Float, Int
-from muutils.dbg import dbg_tensor
 
 from spd.clustering.consts import (
     ComponentLabels,
@@ -421,10 +420,6 @@ class MergeHistoryEnsemble:
                     dtype=np.int16,
                 )
 
-        # TODO: Consider logging overlap_stats to WandB if run is available
-        # For now, keep using dbg_tensor for overlap_stats analysis
-        dbg_tensor(overlap_stats)
-
         # TODO: double check this
         # Convert any Path objects to strings for JSON serialization
         history_metadatas: list[dict[str, Any] | None] = []
@@ -438,8 +433,6 @@ class MergeHistoryEnsemble:
                 history_metadatas.append(meta_copy)
             else:
                 history_metadatas.append(None)
-
-        dbg_tensor(merges_array)
 
         return (
             # TODO: dataclass this

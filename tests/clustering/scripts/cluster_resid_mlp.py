@@ -4,7 +4,6 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import torch
-from muutils.dbg import dbg_auto
 from torch import Tensor
 
 from spd.clustering.activations import (
@@ -67,13 +66,6 @@ DATASET: ResidMLPDataset = ResidMLPDataset(
     data_generation_type=SPD_CONFIG.task_config.data_generation_type,  # pyright: ignore[reportAttributeAccessIssue]
 )
 
-dbg_auto(
-    dict(
-        n_features=DATASET.n_features,
-        feature_probability=DATASET.feature_probability,
-        data_generation_type=DATASET.data_generation_type,
-    )
-)
 DATALOADER = DatasetGeneratedDataLoader(DATASET, batch_size=N_SAMPLES, shuffle=False)
 
 # %%
@@ -88,8 +80,6 @@ COMPONENT_ACTS: dict[str, Tensor] = component_activations(
     device=DEVICE,
     batch=BATCH,
 )
-
-dbg_auto(COMPONENT_ACTS)
 
 # %%
 

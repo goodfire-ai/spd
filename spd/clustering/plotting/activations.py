@@ -10,7 +10,6 @@ import torch
 import wandb
 import wandb.sdk.wandb_run
 from jaxtyping import Float, Int
-from muutils.dbg import dbg_tensor
 from torch import Tensor
 
 from spd.clustering.activations import ProcessedActivations, compute_coactivatons
@@ -50,9 +49,7 @@ def plot_activations(
 
     act_dict: dict[str, ActivationsTensor] = processed_activations.activations_raw
     act_concat: ActivationsTensor = processed_activations.activations
-    dbg_tensor(act_concat)
     coact: ClusterCoactivationShaped = compute_coactivatons(act_concat)
-    dbg_tensor(coact)
     labels: ComponentLabels = ComponentLabels(processed_activations.labels)
     n_samples: int = act_concat.shape[0]
 

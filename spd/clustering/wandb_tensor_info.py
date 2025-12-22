@@ -1,4 +1,4 @@
-"""Minimal WandB tensor logging utilities using muutils."""
+"""Minimal WandB tensor logging utilities."""
 
 import warnings
 from typing import Any
@@ -7,9 +7,46 @@ import matplotlib.pyplot as plt
 import numpy as np
 import wandb
 import wandb.sdk.wandb_run
-from muutils.dbg import dbg_tensor
-from muutils.tensor_info import array_info
 from torch import Tensor
+
+
+def _array_info(arr: Tensor | np.ndarray) -> dict[str, Any]:
+    """Get basic statistics about an array or tensor."""
+    arr_np = arr.detach().cpu().numpy() if isinstance(arr, Tensor) else arr
+
+    if arr_np.size == 0:
+        return {
+            "status": "empty",
+            "size": 0,
+            "shape": arr_np.shape,
+            "dtype": str(arr.dtype) if isinstance(arr, Tensor) else str(arr_np.dtype),
+            "has_nans": False,
+            "nan_percent": None,
+            "mean": None,
+            "median": None,
+            "std": None,
+            "min": None,
+            "max": None,
+        }
+
+    has_nans = bool(np.isnan(arr_np).any())
+    nan_count = int(np.isnan(arr_np).sum())
+    nan_percent = 100.0 * nan_count / arr_np.size if arr_np.size > 0 else 0.0
+
+    # Compute stats ignoring NaNs
+    return {
+        "status": "ok",
+        "size": arr_np.size,
+        "shape": arr_np.shape,
+        "dtype": str(arr.dtype) if isinstance(arr, Tensor) else str(arr_np.dtype),
+        "has_nans": has_nans,
+        "nan_percent": nan_percent,
+        "mean": float(np.nanmean(arr_np)),
+        "median": float(np.nanmedian(arr_np)),
+        "std": float(np.nanstd(arr_np)),
+        "min": float(np.nanmin(arr_np)),
+        "max": float(np.nanmax(arr_np)),
+    }
 
 
 def wandb_log_tensor(
@@ -39,7 +76,6 @@ def wandb_log_tensor(
             _log_one(run, data, name, step, single=single)
     except Exception as e:
         warnings.warn(f"Failed to log tensor {name}: {e}")  # noqa: B028
-        dbg_tensor(data)
         raise e
 
 
@@ -136,7 +172,7 @@ def _log_one(
     # use_log_counts: bool = True,
 ) -> None:
     """Log a single tensor."""
-    info: dict[str, Any] = array_info(tensor_)
+    info: dict[str, Any] = _array_info(tensor_)
 
     if single:
         # For single-use logging, log a single histogram as a figure
@@ -158,9 +194,7 @@ def _log_one(
 
         # Add nan_percent if present
         nan_percent: float | None = info["nan_percent"]
-        # TODO: this is a hack for when the tensor is empty
         if nan_percent is None:
-            dbg_tensor(tensor_)
             nan_percent = float("nan")
         if nan_percent > 0:
             stats_to_log[f"tensor_metrics/{name}/nan_percent"] = nan_percent

@@ -1,8 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from multiprocessing import Pool
+from typing import TypeVar
 
 import numpy as np
 from jaxtyping import Float, Int
-from muutils.parallel import run_maybe_parallel
 
 from spd.clustering.consts import (
     DistancesArray,
@@ -12,6 +13,17 @@ from spd.clustering.consts import (
 )
 from spd.clustering.math.matching_dist import matching_dist_np, matching_dist_vec_np
 from spd.clustering.math.perm_invariant_hamming import perm_invariant_hamming_matrix
+
+_T = TypeVar("_T")
+_R = TypeVar("_R")
+
+
+def _run_parallel(func: Callable[[_T], _R], iterable: Iterable[_T]) -> list[_R]:
+    """Run a function in parallel over an iterable using multiprocessing."""
+    items = list(iterable)
+    with Pool() as pool:
+        return pool.map(func, items)
+
 
 DISTANCES_METHODS: dict[DistancesMethod, Callable[[MergesAtIterArray], DistancesArray]] = {
     "perm_invariant_hamming": perm_invariant_hamming_matrix,
@@ -31,29 +43,15 @@ def compute_distances(
     match method:
         case "perm_invariant_hamming":
             merges_array_list = [normalized_merge_array[:, i, :] for i in range(n_iters)]
-
-            distances_list = run_maybe_parallel(
-                func=perm_invariant_hamming_matrix,
-                iterable=merges_array_list,
-                parallel=True,
-            )
-
+            distances_list = _run_parallel(perm_invariant_hamming_matrix, merges_array_list)
             return np.stack(distances_list, axis=0)
         case "matching_dist":
             merges_array_list = [normalized_merge_array[:, i, :] for i in range(n_iters)]
-            distances_list = run_maybe_parallel(
-                func=matching_dist_np,
-                iterable=merges_array_list,
-                parallel=True,
-            )
+            distances_list = _run_parallel(matching_dist_np, merges_array_list)
             return np.stack(distances_list, axis=0)
         case "matching_dist_vec":
             merges_array_list = [normalized_merge_array[:, i, :] for i in range(n_iters)]
-            distances_list = run_maybe_parallel(
-                func=matching_dist_vec_np,
-                iterable=merges_array_list,
-                parallel=True,
-            )
+            distances_list = _run_parallel(matching_dist_vec_np, merges_array_list)
             return np.stack(distances_list, axis=0)
         case _:
             raise ValueError(f"Unknown distance method: {method}")

@@ -29,7 +29,6 @@ dependencies = [
     "datasets>=2.21.0",
     "simple_stories_train @ git+https://github.com/goodfire-ai/simple_stories_train.git@dev",
     "scipy>=1.14.1",
-    "muutils",
     "fastapi",
     "uvicorn",
     "openrouter>=0.1.1",
