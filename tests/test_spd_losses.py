@@ -17,6 +17,7 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import ComponentModel
+from spd.utils.module_utils import ModulePathInfo
 
 
 class TinyLinearModel(nn.Module):
@@ -38,8 +39,7 @@ def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel
 
     comp_model = ComponentModel(
         target_model=target,
-        target_module_patterns=["fc"],
-        C=1,
+        module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
         pretrained_model_output_attr=None,

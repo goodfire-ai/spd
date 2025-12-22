@@ -7,6 +7,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    ModulePatternInfoConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
@@ -42,12 +43,17 @@ def test_tms_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[8],
-        target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
-        identity_module_patterns=["linear1"],
+        module_info=[
+            ModulePatternInfoConfig(module_pattern="linear1", C=10),
+            ModulePatternInfoConfig(module_pattern="linear2", C=10),
+            ModulePatternInfoConfig(module_pattern="hidden_layers.0", C=10),
+        ],
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="linear1", C=10),
+        ],
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
                 coeff=3e-3,
@@ -97,8 +103,8 @@ def test_tms_decomposition_happy_path() -> None:
     target_model = TMSModel(config=tms_model_config).to(device)
     target_model.eval()
 
-    if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     assert isinstance(config.task_config, TMSTaskConfig)
     # Create dataset

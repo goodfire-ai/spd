@@ -221,7 +221,7 @@ if __name__ == "__main__":
         model_class="GPT-2",
         n_blocks=12,
         dataset_name="SimpleStories/SimpleStories",
-        c=256,
+        c_per_layer={"h.2.mlp.c_fc": 256},
         tokenizer_name="openai-community/gpt2",
     )
     from transformers import AutoTokenizer

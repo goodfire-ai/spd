@@ -631,17 +631,18 @@ def compute_intervention_forward(
 
     seq_len = tokens.shape[1]
     device = tokens.device
-    C = model.C
 
     # Build component masks: all zeros, then set 1s for active nodes
     component_masks: dict[str, Float[Tensor, "1 seq C"]] = {}
-    for layer_name in model.target_module_paths:
+    for layer_name, C in model.module_to_c.items():
         component_masks[layer_name] = torch.zeros(1, seq_len, C, device=device)
 
     for layer, seq_pos, c_idx in active_nodes:
         assert layer in component_masks, f"Layer {layer} not in model"
         assert 0 <= seq_pos < seq_len, f"seq_pos {seq_pos} out of bounds [0, {seq_len})"
-        assert 0 <= c_idx < C, f"component_idx {c_idx} out of bounds [0, {C})"
+        assert 0 <= c_idx < model.module_to_c[layer], (
+            f"component_idx {c_idx} out of bounds [0, {model.module_to_c[layer]})"
+        )
         component_masks[layer][0, seq_pos, c_idx] = 1.0
 
     mask_infos = make_mask_infos(component_masks, routing_masks="all")

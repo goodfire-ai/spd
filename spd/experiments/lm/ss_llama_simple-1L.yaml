@@ -2,22 +2,28 @@ wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
-C: 650
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
 - 550
 sampling: continuous
 sigmoid_type: leaky_hard
-target_module_patterns:
-- h.*.mlp.gate_proj
-- h.*.mlp.up_proj
-- h.*.mlp.down_proj
-- h.*.attn.q_proj
-- h.*.attn.k_proj
-- h.*.attn.v_proj
-- h.*.attn.o_proj
-identity_module_patterns: null
+module_info:
+  - module_pattern: "h.*.mlp.gate_proj"
+    C: 650
+  - module_pattern: "h.*.mlp.up_proj"
+    C: 650
+  - module_pattern: "h.*.mlp.down_proj"
+    C: 650
+  - module_pattern: "h.*.attn.q_proj"
+    C: 650
+  - module_pattern: "h.*.attn.k_proj"
+    C: 650
+  - module_pattern: "h.*.attn.v_proj"
+    C: 650
+  - module_pattern: "h.*.attn.o_proj"
+    C: 650
+identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
 - coeff: 0.001

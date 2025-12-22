@@ -48,7 +48,7 @@ from spd.utils.general_utils import (
     get_lr_with_warmup,
 )
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
-from spd.utils.module_utils import replace_std_values_in_layernorm
+from spd.utils.module_utils import expand_module_patterns, replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 from spd.utils.wandb_utils import try_wandb
 
@@ -140,15 +140,19 @@ def optimize(
     if is_main_process():
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
-    if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+    if config.identity_module_info is not None:
+        insert_identity_operations_(
+            target_model,
+            identity_module_info=config.identity_module_info,
+        )
 
     target_model.requires_grad_(False)
 
+    module_path_info = expand_module_patterns(target_model, config.all_module_info)
+
     model = ComponentModel(
         target_model=target_model,
-        target_module_patterns=config.all_module_patterns,
-        C=config.C,
+        module_path_info=module_path_info,
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
@@ -230,8 +234,7 @@ def optimize(
         else sample_batch.shape  # else it's a batch of token ids
     )
     alive_tracker = AliveComponentsTracker(
-        target_module_paths=model.target_module_paths,
-        C=config.C,
+        module_to_c=model.module_to_c,
         device=device,
         n_examples_until_dead=config.n_examples_until_dead,
         ci_alive_threshold=config.ci_alive_threshold,

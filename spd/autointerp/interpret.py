@@ -317,7 +317,7 @@ def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
     assert config.tokenizer_name is not None
     return ArchitectureInfo(
         n_blocks=n_blocks,
-        c=model.C,
+        c_per_layer=model.module_to_c,
         model_class=config.pretrained_model_class,
         dataset_name=task_config.dataset_name,
         tokenizer_name=config.tokenizer_name,

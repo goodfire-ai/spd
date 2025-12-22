@@ -21,9 +21,10 @@ from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
-from spd.configs import Config
+from spd.configs import Config, ModulePatternInfoConfig
 from spd.experiments.lm.configs import LMTaskConfig
 from spd.models.component_model import ComponentModel
+from spd.utils.module_utils import expand_module_patterns
 
 DEVICE = "cpu"
 
@@ -78,15 +79,17 @@ def app_with_state():
             "h.*.attn.v_proj",
             "h.*.attn.o_proj",
         ]
+        C = 8
 
         config = Config(
-            C=8,
             n_mask_samples=1,
             ci_fn_type="shared_mlp",
             ci_fn_hidden_dims=[16],
             sampling="continuous",
             sigmoid_type="leaky_hard",
-            target_module_patterns=target_module_patterns,
+            module_info=[
+                ModulePatternInfoConfig(module_pattern=p, C=C) for p in target_module_patterns
+            ],
             pretrained_model_class="simple_stories_train.models.gpt2_simple.GPT2Simple",
             pretrained_model_output_attr="idx_0",
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
@@ -109,10 +112,10 @@ def app_with_state():
                 eval_data_split="test[:20]",
             ),
         )
+        module_path_info = expand_module_patterns(target_model, config.module_info)
         model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=target_module_patterns,
-            C=config.C,
+            module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             pretrained_model_output_attr=config.pretrained_model_output_attr,

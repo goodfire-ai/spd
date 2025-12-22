@@ -105,7 +105,7 @@ def _build_harvest_result(
     component_keys = [
         f"{layer}:{c}"
         for layer in harvester.layer_names
-        for c in range(harvester.components_per_layer)
+        for c in range(harvester.c_per_layer[layer])
     ]
 
     correlations = CorrelationStorage(
@@ -160,7 +160,7 @@ def harvest(
 
     harvester = Harvester(
         layer_names=layer_names,
-        components_per_layer=model.C,
+        c_per_layer=model.module_to_c,
         vocab_size=vocab_size,
         ci_threshold=config.ci_threshold,
         max_examples_per_component=config.activation_examples_per_component,
@@ -185,7 +185,8 @@ def harvest(
             ci: Float[Tensor, "B S n_comp"] = torch.cat(
                 [ci_dict[layer] for layer in layer_names], dim=2
             )
-            assert ci.shape[2] == len(layer_names) * model.C
+            expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
+            assert ci.shape[2] == expected_n_comp
 
             harvester.process_batch(batch, ci, probs)
 
@@ -227,7 +228,7 @@ def _harvest_worker(
 
     harvester = Harvester(
         layer_names=layer_names,
-        components_per_layer=model.C,
+        c_per_layer=model.module_to_c,
         vocab_size=vocab_size,
         ci_threshold=ci_threshold,
         max_examples_per_component=activation_examples_per_component,
@@ -256,7 +257,8 @@ def _harvest_worker(
             ci: Float[Tensor, "B S n_comp"] = torch.cat(
                 [ci_dict[layer] for layer in layer_names], dim=2
             )
-            assert ci.shape[2] == len(layer_names) * model.C
+            expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
+            assert ci.shape[2] == expected_n_comp
             harvester.process_batch(batch, ci, probs)
 
         batches_processed += 1

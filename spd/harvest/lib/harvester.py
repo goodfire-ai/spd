@@ -25,7 +25,7 @@ class HarvesterState:
     """Serializable state of a Harvester for parallel merging."""
 
     layer_names: list[str]
-    components_per_layer: int
+    c_per_layer: dict[str, int]  # Maps layer name -> number of components
     vocab_size: int
     ci_threshold: float
     max_examples_per_component: int
@@ -52,7 +52,7 @@ class HarvesterState:
 
         for s in states[1:]:
             assert s.layer_names == first.layer_names
-            assert s.components_per_layer == first.components_per_layer
+            assert s.c_per_layer == first.c_per_layer
             assert s.vocab_size == first.vocab_size
             assert s.ci_threshold == first.ci_threshold
             assert s.max_examples_per_component == first.max_examples_per_component
@@ -80,7 +80,7 @@ class HarvesterState:
 
         return HarvesterState(
             layer_names=first.layer_names,
-            components_per_layer=first.components_per_layer,
+            c_per_layer=first.c_per_layer,
             vocab_size=first.vocab_size,
             ci_threshold=first.ci_threshold,
             max_examples_per_component=first.max_examples_per_component,
@@ -103,7 +103,7 @@ class Harvester:
     def __init__(
         self,
         layer_names: list[str],
-        components_per_layer: int,
+        c_per_layer: dict[str, int],
         vocab_size: int,
         ci_threshold: float,
         max_examples_per_component: int,
@@ -111,14 +111,22 @@ class Harvester:
         device: torch.device,
     ):
         self.layer_names = layer_names
-        self.components_per_layer = components_per_layer
+        self.c_per_layer = c_per_layer
         self.vocab_size = vocab_size
         self.ci_threshold = ci_threshold
         self.max_examples_per_component = max_examples_per_component
         self.context_tokens_per_side = context_tokens_per_side
         self.device = device
 
-        n_components = len(layer_names) * components_per_layer
+        # Precompute layer offsets for flat indexing
+        # layer_offsets[layer_name] gives the starting flat index for that layer's components
+        self.layer_offsets: dict[str, int] = {}
+        offset = 0
+        for layer in layer_names:
+            self.layer_offsets[layer] = offset
+            offset += c_per_layer[layer]
+
+        n_components = sum(c_per_layer[layer] for layer in layer_names)
 
         # Correlation accumulators
         self.firing_counts = torch.zeros(n_components, device=device)
@@ -282,7 +290,7 @@ class Harvester:
         """Extract serializable state for parallel merging."""
         return HarvesterState(
             layer_names=self.layer_names,
-            components_per_layer=self.components_per_layer,
+            c_per_layer=self.c_per_layer,
             vocab_size=self.vocab_size,
             ci_threshold=self.ci_threshold,
             max_examples_per_component=self.max_examples_per_component,
@@ -303,7 +311,7 @@ class Harvester:
         """Reconstruct Harvester from state."""
         harvester = Harvester(
             layer_names=state.layer_names,
-            components_per_layer=state.components_per_layer,
+            c_per_layer=state.c_per_layer,
             vocab_size=state.vocab_size,
             ci_threshold=state.ci_threshold,
             max_examples_per_component=state.max_examples_per_component,
@@ -335,16 +343,17 @@ class Harvester:
 
         self._log_base_rate_summary(firing_counts, input_token_totals)
 
-        n_total = len(self.layer_names) * self.components_per_layer
+        n_total = sum(self.c_per_layer[layer] for layer in self.layer_names)
         print(
             f"  Computing stats for {n_total} components across {len(self.layer_names)} layers..."
         )
         components = []
-        for layer_idx, layer_name in tqdm.tqdm(
-            enumerate(self.layer_names), total=len(self.layer_names), desc="Building components"
-        ):
-            for component_idx in range(self.components_per_layer):
-                flat_idx = layer_idx * self.components_per_layer + component_idx
+        for layer_name in tqdm.tqdm(self.layer_names, desc="Building components"):
+            layer_offset = self.layer_offsets[layer_name]
+            layer_c = self.c_per_layer[layer_name]
+
+            for component_idx in range(layer_c):
+                flat_idx = layer_offset + component_idx
                 mean_ci = float(mean_ci_per_component[flat_idx])
 
                 component_firing_count = float(firing_counts[flat_idx])

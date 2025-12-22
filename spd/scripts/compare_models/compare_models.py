@@ -243,7 +243,8 @@ class ModelComparator:
         device = get_obj_device(model)
         n_tokens = 0
         component_activation_counts: dict[str, Float[Tensor, " C"]] = {
-            module_name: torch.zeros(model.C, device=device) for module_name in model.components
+            module_name: torch.zeros(model.module_to_c[module_name], device=device)
+            for module_name in model.components
         }
 
         model.eval()
