@@ -25,7 +25,8 @@ class ComponentActivationDensity(Metric):
 
         self.n_examples: Int[Tensor, ""] = torch.tensor(0.0, device=device)
         self.component_activation_counts: dict[str, Tensor] = {
-            module_name: torch.zeros(model.C, device=device) for module_name in model.components
+            module_name: torch.zeros(model.module_to_c[module_name], device=device)
+            for module_name in model.components
         }
 
     @override
@@ -36,9 +37,7 @@ class ComponentActivationDensity(Metric):
         for module_name, ci_vals in ci.lower_leaky.items():
             active_components = ci_vals > self.ci_alive_threshold
             n_activations_per_component = reduce(active_components, "... C -> C", "sum")
-            self.component_activation_counts[module_name] += (
-                n_activations_per_component * n_examples_this_batch
-            )
+            self.component_activation_counts[module_name] += n_activations_per_component
 
     @override
     def compute(self) -> dict[str, Image.Image]:

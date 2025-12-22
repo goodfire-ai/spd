@@ -5,12 +5,13 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 4000
 n_mask_samples: 1
 ci_fn_type: "vector_mlp"
 ci_fn_hidden_dims: [12]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["transformer.h.1.mlp.c_fc"]
+module_info:
+  - module_pattern: "transformer.h.1.mlp.c_fc"
+    C: 4000
 sampling: "continuous"
 use_delta_component: true
 

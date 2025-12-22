@@ -2,23 +2,18 @@ from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 from typing import Any, Literal, NamedTuple, overload, override
 
 import torch
-import wandb
-import yaml
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
-from wandb.apis.public import Run
 
 from spd.configs import Config, SamplingType
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
-    CiFnType,
     Components,
     ComponentsMaskInfo,
     EmbeddingComponents,
@@ -29,50 +24,18 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
-from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.general_utils import fetch_latest_local_checkpoint, resolve_class, runtime_cast
-from spd.utils.module_utils import get_target_module_paths
-from spd.utils.run_utils import check_run_exists
-from spd.utils.wandb_utils import (
-    download_wandb_file,
-    fetch_latest_wandb_checkpoint,
-    fetch_wandb_run_dir,
-)
+from spd.spd_types import CiFnType, ModelPath
+from spd.utils.general_utils import resolve_class, runtime_cast
+from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 
 
 @dataclass
 class SPDRunInfo(RunInfo[Config]):
     """Run info from training a ComponentModel (i.e. from an SPD run)."""
 
-    @override
-    @classmethod
-    def from_path(cls, path: ModelPath) -> "SPDRunInfo":
-        """Load the run info from a wandb run or a local path to a checkpoint."""
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            # Check if run exists in shared filesystem first
-            run_dir = check_run_exists(path)
-            if run_dir:
-                # Use local files from shared filesystem
-                comp_model_path = fetch_latest_local_checkpoint(run_dir, prefix="model")
-                config_path = run_dir / "final_config.yaml"
-            else:
-                # Download from wandb
-                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                comp_model_path, config_path = ComponentModel._download_wandb_files(wandb_path)
-        else:
-            comp_model_path = Path(path)
-            config_path = Path(path).parent / "final_config.yaml"
-
-        with open(config_path) as f:
-            raw_config = yaml.safe_load(f)
-            # Remove loss_metric_configs and grad_clip_norm
-            raw_config.pop("loss_metric_configs", None)
-            raw_config.pop("grad_clip_norm", None)
-            raw_config.pop("grad_clip_norm_components", None)
-            raw_config.pop("grad_clip_norm_ci_fns", None)
-            config = Config(**raw_config)
-
-        return cls(checkpoint_path=comp_model_path, config=config)
+    config_class = Config
+    config_filename = "final_config.yaml"
+    checkpoint_prefix = "model"
 
 
 class OutputWithCache(NamedTuple):
@@ -94,12 +57,13 @@ class ComponentModel(LoadableModule):
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
     `LlamaForCausalLM`, `AutoModelForCausalLM`) as long as its sub-module names
-    match the patterns you pass in `target_module_patterns`.
+    are provided in the `module_path_info` list.
 
-    Forward passes support optional component replacement and/or input caching:
+    Forward passes support optional component replacement and/or caching:
     - No args: Standard forward pass of the target model
     - With mask_infos: Components replace the specified modules via forward hooks
     - With cache_type="input": Input activations are cached for the specified modules
+    - With cache_type="component_acts": Component activations are cached for the specified modules
     - Both can be used simultaneously for component forward pass with input caching
 
     We register components and causal importance functions (ci_fns) as modules in this class in order to have them update
@@ -110,8 +74,7 @@ class ComponentModel(LoadableModule):
     def __init__(
         self,
         target_model: nn.Module,
-        target_module_patterns: list[str],
-        C: int,
+        module_path_info: list[ModulePathInfo],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
@@ -126,14 +89,13 @@ class ComponentModel(LoadableModule):
             )
 
         self.target_model = target_model
-        self.C = C
         self.pretrained_model_output_attr = pretrained_model_output_attr
-        self.target_module_paths = get_target_module_paths(target_model, target_module_patterns)
+        self.module_to_c = {info.module_path: info.C for info in module_path_info}
+        self.target_module_paths = list(self.module_to_c.keys())
 
         self.components = ComponentModel._create_components(
             target_model=target_model,
-            target_module_paths=self.target_module_paths,
-            C=C,
+            module_to_c=self.module_to_c,
         )
         self._components = nn.ModuleDict(
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
@@ -141,8 +103,7 @@ class ComponentModel(LoadableModule):
 
         self.ci_fns = ComponentModel._create_ci_fns(
             target_model=target_model,
-            target_module_paths=self.target_module_paths,
-            C=C,
+            module_to_c=self.module_to_c,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
         )
@@ -215,19 +176,20 @@ class ComponentModel(LoadableModule):
     @staticmethod
     def _create_components(
         target_model: nn.Module,
-        target_module_paths: list[str],
-        C: int,
+        module_to_c: dict[str, int],
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
-        for target_module_path in target_module_paths:
+        for target_module_path, target_module_c in module_to_c.items():
             target_module = target_model.get_submodule(target_module_path)
-            components[target_module_path] = ComponentModel._create_component(target_module, C)
+            components[target_module_path] = ComponentModel._create_component(
+                target_module, target_module_c
+            )
         return components
 
     @staticmethod
     def _create_ci_fn(
         target_module: nn.Module,
-        component_C: int,
+        C: int,
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
@@ -236,7 +198,7 @@ class ComponentModel(LoadableModule):
             assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
 
         if ci_fn_type == "mlp":
-            return MLPCiFn(C=component_C, hidden_dims=ci_fn_hidden_dims)
+            return MLPCiFn(C=C, hidden_dims=ci_fn_hidden_dims)
 
         match target_module:
             case nn.Linear():
@@ -250,30 +212,25 @@ class ComponentModel(LoadableModule):
 
         match ci_fn_type:
             case "vector_mlp":
-                return VectorMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
-                )
+                return VectorMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
             case "shared_mlp":
-                return VectorSharedMLPCiFn(
-                    C=component_C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims
-                )
+                return VectorSharedMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
 
     @staticmethod
     def _create_ci_fns(
         target_model: nn.Module,
-        target_module_paths: list[str],
-        C: int,
+        module_to_c: dict[str, int],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
-        for target_module_path in target_module_paths:
+        for target_module_path, target_module_c in module_to_c.items():
             target_module = target_model.get_submodule(target_module_path)
             ci_fns[target_module_path] = ComponentModel._create_ci_fn(
-                target_module,
-                C,
-                ci_fn_type,
-                ci_fn_hidden_dims,
+                target_module=target_module,
+                C=target_module_c,
+                ci_fn_type=ci_fn_type,
+                ci_fn_hidden_dims=ci_fn_hidden_dims,
             )
         return ci_fns
 
@@ -313,7 +270,7 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input"],
+        cache_type: Literal["component_acts", "input"],
         **kwargs: Any,
     ) -> OutputWithCache: ...
 
@@ -336,31 +293,30 @@ class ComponentModel(LoadableModule):
         self,
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["input", "none"] = "none",
+        cache_type: Literal["component_acts", "input", "none"] = "none",
         **kwargs: Any,
     ) -> Tensor | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
 
         This method handles the following 4 cases:
         1. mask_infos is None and cache_type is "none": Regular forward pass.
-        2. mask_infos is None and cache_type is "input": Forward pass with input caching on
-            all modules in self.target_module_paths.
-        3. mask_infos is not None and cache_type is "input": Forward pass with component replacement
-            and input caching on the modules provided in mask_infos.
+        2. mask_infos is None and cache_type is "input" or "component_acts": Forward pass with
+            caching on all modules in self.target_module_paths.
+        3. mask_infos is not None and cache_type is "input" or "component_acts": Forward pass with
+            component replacement and caching on the modules provided in mask_infos.
         4. mask_infos is not None and cache_type is "none": Forward pass with component replacement
             on the modules provided in mask_infos and no caching.
-
-        We use the same _components_and_cache_hook for cases 2, 3, and 4, and don't use any hooks
-        for case 1.
 
         Args:
             mask_infos: Dictionary mapping module names to ComponentsMaskInfo.
                 If provided, those modules will be replaced with their components.
-            cache_type: If "input", cache the inputs to the modules provided in mask_infos. If
-                mask_infos is None, cache the inputs to all modules in self.target_module_paths.
+            cache_type: If "input" or "component_acts", cache the inputs or component acts to the
+                modules provided in mask_infos. If "none", no caching is done. If mask_infos is None,
+                cache the inputs or component acts to all modules in self.target_module_paths.
 
         Returns:
-            OutputWithCache object if cache_type is "input", otherwise the model output tensor.
+            OutputWithCache object if cache_type is "input" or "component_acts", otherwise the
+            model output tensor.
         """
         if mask_infos is None and cache_type == "none":
             # No hooks needed. Do a regular forward pass of the target model.
@@ -389,7 +345,7 @@ class ComponentModel(LoadableModule):
 
         out = self._extract_output(raw_out)
         match cache_type:
-            case "input":
+            case "input" | "component_acts":
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
@@ -403,7 +359,7 @@ class ComponentModel(LoadableModule):
         module_name: str,
         components: Components | None,
         mask_info: ComponentsMaskInfo | None,
-        cache_type: Literal["input", "none"],
+        cache_type: Literal["component_acts", "input", "none"],
         cache: dict[str, Tensor],
     ) -> Any | None:
         """Unified hook function that handles both component replacement and caching.
@@ -416,7 +372,7 @@ class ComponentModel(LoadableModule):
             module_name: Name of the module in the target model
             components: Component replacement (if using components)
             mask_info: Mask information (if using components)
-            cache_type: Whether to cache the input
+            cache_type: Whether to cache the component acts, input, or none
             cache: Cache dictionary to populate (if cache_type is not None)
 
         Returns:
@@ -427,7 +383,6 @@ class ComponentModel(LoadableModule):
         assert len(kwargs) == 0, "Expected no keyword arguments"
         x = args[0]
         assert isinstance(x, Tensor), "Expected input tensor"
-        assert cache_type in ["input", "none"], "Expected cache_type to be 'input' or 'none'"
 
         if cache_type == "input":
             cache[module_name] = x
@@ -437,11 +392,16 @@ class ComponentModel(LoadableModule):
                 f"Only supports single-tensor outputs, got {type(output)}"
             )
 
+            component_acts_cache = {} if cache_type == "component_acts" else None
             components_out = components(
                 x,
                 mask=mask_info.component_mask,
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
+                component_acts_cache=component_acts_cache,
             )
+            if component_acts_cache is not None:
+                for k, v in component_acts_cache.items():
+                    cache[f"{module_name}_{k}"] = v
 
             if mask_info.routing_mask == "all":
                 return components_out
@@ -464,25 +424,6 @@ class ComponentModel(LoadableModule):
         finally:
             for handle in handles:
                 handle.remove()
-
-    @staticmethod
-    def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
-        """Download the relevant files from a wandb run.
-
-        Returns:
-            Tuple of (model_path, config_path)
-        """
-        api = wandb.Api()
-        run: Run = api.run(wandb_project_run_id)
-
-        checkpoint = fetch_latest_wandb_checkpoint(run, prefix="model")
-
-        run_dir = fetch_wandb_run_dir(run.id)
-
-        final_config_path = download_wandb_file(run, run_dir, "final_config.yaml")
-        checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
-
-        return checkpoint_path, final_config_path
 
     @classmethod
     @override
@@ -508,15 +449,17 @@ class ComponentModel(LoadableModule):
         target_model.eval()
         target_model.requires_grad_(False)
 
-        if config.identity_module_patterns is not None:
+        if config.identity_module_info is not None:
             insert_identity_operations_(
-                target_model, identity_patterns=config.identity_module_patterns
+                target_model,
+                identity_module_info=config.identity_module_info,
             )
+
+        module_path_info = expand_module_patterns(target_model, config.all_module_info)
 
         comp_model = ComponentModel(
             target_model=target_model,
-            target_module_patterns=config.all_module_patterns,
-            C=config.C,
+            module_path_info=module_path_info,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
@@ -600,9 +543,9 @@ class ComponentModel(LoadableModule):
             pre_sigmoid=pre_sigmoid,
         )
 
-    def calc_weight_deltas(self) -> dict[str, Float[Tensor, " d_out d_in"]]:
+    def calc_weight_deltas(self) -> dict[str, Float[Tensor, "d_out d_in"]]:
         """Calculate the weight differences between the target and component weights (V@U) for each layer."""
-        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] = {}
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] = {}
         for comp_name, components in self.components.items():
             weight_deltas[comp_name] = self.target_weight(comp_name) - components.weight
         return weight_deltas

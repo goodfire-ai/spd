@@ -97,7 +97,7 @@ class ModelComparator:
             "tms": self._create_tms_data_loader,
             "resid_mlp": self._create_resid_mlp_data_loader,
             "lm": self._create_lm_data_loader,
-            "induction_head": self._create_ih_data_loader,
+            "ih": self._create_ih_data_loader,
         }
 
         if task_name not in data_loader_fns:
@@ -197,8 +197,6 @@ class ModelComparator:
             batch_size=self.config.eval_batch_size,
             buffer_size=task_config.buffer_size,
             global_seed=self.current_config.seed + 1,
-            ddp_rank=0,
-            ddp_world_size=1,
         )
         return iter(loader)
 
@@ -245,7 +243,8 @@ class ModelComparator:
         device = get_obj_device(model)
         n_tokens = 0
         component_activation_counts: dict[str, Float[Tensor, " C"]] = {
-            module_name: torch.zeros(model.C, device=device) for module_name in model.components
+            module_name: torch.zeros(model.module_to_c[module_name], device=device)
+            for module_name in model.components
         }
 
         model.eval()
@@ -301,6 +300,7 @@ class ModelComparator:
             # Filter out components that aren't active enough in the current model
             alive_mask = activation_densities[layer_name] > self.config.density_threshold
             C_curr_alive = int(alive_mask.sum().item())
+            logger.info(f"Number of active components in {layer_name}: {C_curr_alive}")
             if C_curr_alive == 0:
                 logger.warning(
                     f"No components are active enough in {layer_name} for density threshold {self.config.density_threshold}. Skipping."

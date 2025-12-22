@@ -5,6 +5,7 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.configs import UniformKSubsetRoutingConfig
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
@@ -16,6 +17,7 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import ComponentModel
+from spd.utils.module_utils import ModulePathInfo
 
 
 class TinyLinearModel(nn.Module):
@@ -28,7 +30,7 @@ class TinyLinearModel(nn.Module):
         return self.fc(x)
 
 
-def _make_component_model(weight: Float[Tensor, " d_out d_in"]) -> ComponentModel:
+def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel:
     d_out, d_in = weight.shape
     target = TinyLinearModel(d_in=d_in, d_out=d_out)
     with torch.no_grad():
@@ -37,8 +39,7 @@ def _make_component_model(weight: Float[Tensor, " d_out d_in"]) -> ComponentMode
 
     comp_model = ComponentModel(
         target_model=target,
-        target_module_patterns=["fc"],
-        C=1,
+        module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
         pretrained_model_output_attr=None,
@@ -383,6 +384,7 @@ class TestCIMaskedReconSubsetLoss:
             batch=batch,
             target_out=target_out,
             ci=ci,
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         # Subset routing should produce a valid loss
@@ -400,7 +402,12 @@ class TestCIMaskedReconSubsetLoss:
         # Run multiple times
         losses = [
             ci_masked_recon_subset_loss(
-                model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+                model=model,
+                output_loss_type="mse",
+                batch=batch,
+                target_out=target_out,
+                ci=ci,
+                routing=UniformKSubsetRoutingConfig(),
             )
             for _ in range(3)
         ]
@@ -585,6 +592,7 @@ class TestStochasticReconSubsetLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         assert result >= 0.0
@@ -608,6 +616,7 @@ class TestStochasticReconSubsetLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            routing=UniformKSubsetRoutingConfig(),
         )
 
         assert result >= 0.0
@@ -632,6 +641,7 @@ class TestStochasticReconSubsetLoss:
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=weight_deltas,
+                routing=UniformKSubsetRoutingConfig(),
             )
             for _ in range(3)
         ]

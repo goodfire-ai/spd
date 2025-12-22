@@ -14,6 +14,7 @@ from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
+    DistributedState,
     call_on_rank0_then_broadcast,
     ensure_cached_and_call,
     get_device,
@@ -44,6 +45,7 @@ def main(
         config = Config(**json.loads(config_json.removeprefix("json:")))
 
     dist_state = init_distributed()
+    logger.info(f"Distributed state: {dist_state}")
 
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
@@ -59,10 +61,11 @@ def main(
                 tags.append(evals_id)
             if sweep_id:
                 tags.append(sweep_id)
-            slurm_job_id = os.getenv("SLURM_JOB_ID", None)
-            if slurm_job_id is not None:
-                logger.info(f"Running on slurm job id: {slurm_job_id}")
-                tags.append(f"slurm-id_{slurm_job_id}")
+            slurm_array_job_id = os.getenv("SLURM_ARRAY_JOB_ID", None)
+            if slurm_array_job_id is not None:
+                logger.info(f"Running on slurm array job id: {slurm_array_job_id}")
+                tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
+
             config = init_wandb(config, config.wandb_project, tags=tags)
             assert wandb.run
             if config.wandb_run_name:
@@ -75,8 +78,6 @@ def main(
             out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
         logger.info(f"Output directory: {out_dir}")
         logger.info(config)
-        if dist_state.world_size > 1:
-            logger.info(f"Running distributed training with {dist_state.world_size} processes")
     else:
         out_dir = None
 
@@ -135,20 +136,23 @@ def main(
         seed=None,
     )
 
-    # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
-    # them across processes.
-    assert config.microbatch_size % dist_state.world_size == 0 and config.microbatch_size > 0, (
-        f"Microbatch size {config.microbatch_size} is not divisible by world size {dist_state.world_size}. "
-    )
-    train_rank_microbatch_size = config.microbatch_size // dist_state.world_size
+    match dist_state:
+        case DistributedState(world_size=world_size):
+            # Keep per-process batch size constant to maintain scale of all metrics so we can simply average
+            # them across processes.
+            assert config.microbatch_size % world_size == 0 and config.microbatch_size > 0, (
+                f"Microbatch size {config.microbatch_size} is not divisible by world size {world_size}. "
+            )
+            train_rank_microbatch_size = config.microbatch_size // world_size
+        case None:
+            train_rank_microbatch_size = config.microbatch_size
 
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,
         batch_size=train_rank_microbatch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
-        ddp_rank=dist_state.rank,
-        ddp_world_size=dist_state.world_size,
+        dist_state=dist_state,
     )
 
     eval_data_config = DatasetConfig(
@@ -163,18 +167,21 @@ def main(
         seed=None,
     )
 
-    assert config.eval_batch_size % dist_state.world_size == 0 and config.eval_batch_size > 0, (
-        f"Eval batch size {config.eval_batch_size} is not divisible by world size {dist_state.world_size}. "
-    )
-    eval_rank_batch_size = config.eval_batch_size // dist_state.world_size
+    match dist_state:
+        case DistributedState(world_size=world_size):
+            assert config.eval_batch_size % world_size == 0 and config.eval_batch_size > 0, (
+                f"Eval batch size {config.eval_batch_size} is not divisible by world size {world_size}. "
+            )
+            eval_rank_batch_size = config.eval_batch_size // world_size
+        case None:
+            eval_rank_batch_size = config.eval_batch_size
 
     eval_loader, _ = create_data_loader(
         dataset_config=eval_data_config,
         batch_size=eval_rank_batch_size,
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed + 1,
-        ddp_rank=dist_state.rank,
-        ddp_world_size=dist_state.world_size,
+        dist_state=dist_state,
     )
 
     if is_main_process():

@@ -3,7 +3,7 @@ from typing import Any, ClassVar, override
 import einops
 import torch
 import torch.nn.functional as F
-from jaxtyping import Int
+from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
@@ -11,6 +11,7 @@ from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
+from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
@@ -67,10 +68,11 @@ class CEandKLLosses(Metric):
         batch: Tensor,
         target_out: Tensor,
         ci: CIOutputs,
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
         ce_losses = self._calc_ce_and_kl_losses(
-            batch=batch, target_out=target_out, ci=ci.lower_leaky
+            batch=batch, target_out=target_out, ci=ci.lower_leaky, weight_deltas=weight_deltas
         )
 
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
@@ -90,7 +92,11 @@ class CEandKLLosses(Metric):
         return losses
 
     def _calc_ce_and_kl_losses(
-        self, batch: Tensor, target_out: Tensor, ci: dict[str, Tensor]
+        self,
+        batch: Tensor,
+        target_out: Tensor,
+        ci: dict[str, Tensor],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     ) -> dict[str, float]:
         assert batch.ndim == 2, "Batch must be 2D (batch, seq_len)"
         masked_batch = batch.clone()
@@ -115,8 +121,8 @@ class CEandKLLosses(Metric):
         mask_infos = calc_stochastic_component_mask_info(
             causal_importances=ci,
             component_mask_sampling=self.sampling,
-            routing="all",
-            weight_deltas=None,
+            router=AllLayersRouter(),
+            weight_deltas=weight_deltas,
         )
         stoch_masked_logits = self.model(batch, mask_infos=mask_infos)
         stoch_masked_ce_loss = ce_vs_labels(stoch_masked_logits)

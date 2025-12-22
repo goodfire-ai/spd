@@ -8,6 +8,7 @@ from torch.distributed import ReduceOp
 from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
@@ -21,7 +22,7 @@ def _stochastic_recon_layerwise_loss_update(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     device = get_obj_device(ci)
@@ -33,7 +34,7 @@ def _stochastic_recon_layerwise_loss_update(
             causal_importances=ci,
             component_mask_sampling=sampling,
             weight_deltas=weight_deltas,
-            routing="all",
+            router=AllLayersRouter(),
         )
         for _ in range(n_mask_samples)
     ]
@@ -62,7 +63,7 @@ def stochastic_recon_layerwise_loss(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _stochastic_recon_layerwise_loss_update(
         model=model,
@@ -106,7 +107,7 @@ class StochasticReconLayerwiseLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
-        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _stochastic_recon_layerwise_loss_update(

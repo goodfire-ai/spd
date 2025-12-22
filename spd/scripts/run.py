@@ -1,83 +1,230 @@
-"""Unified SPD runner for experiments with optional parameter sweeps.
+"""SPD launcher for experiments with sweeps and SLURM orchestration.
 
-This script provides a single entry point for running SPD experiments, supporting both
-fixed configurations and parameter sweeps. All runs are tracked in W&B with workspace
-views created for each experiment.
+Provides a full-featured entry point for launching SPD experiments on the cluster, supporting
+parameter sweeps, multi-node training, git snapshots, and W&B workspace views/reports.
 
-For full CLI usage and examples, see the bottom of this file (or run `spd-run --help`).
+For simpler local execution without SLURM, use simple.py instead.
+
+The actual cli entry point is in run_cli.py. this is to speed up --help.
 """
 
-import argparse
 import copy
-import json
-import shlex
-import tempfile
-from hashlib import sha256
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import yaml
 
 from spd.configs import Config
-from spd.log import LogFormat, logger
+from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
-from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT
-from spd.utils.command_utils import run_script_array_local
-from spd.utils.run_utils import (
-    ExecutionStamp,
-    apply_nested_updates,
-    generate_grid_combinations,
-    generate_run_name,
+from spd.settings import REPO_ROOT
+from spd.utils.compute_utils import (
+    GPUS_PER_NODE,
+    TrainingJob,
+    create_slurm_array_script,
+    submit_slurm_array,
 )
-from spd.utils.slurm_utils import create_slurm_array_script, submit_slurm_script
-from spd.utils.wandb_utils import wandb_setup
+from spd.utils.git_utils import create_git_snapshot
+from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
+from spd.utils.wandb_utils import ReportCfg, create_view_and_report
 
 
-def resolve_sweep_params_path(sweep_params_file: str) -> Path:
-    """Resolve the full path to the sweep parameters file."""
-    if "/" not in sweep_params_file:
-        # Look in scripts directory by default
-        return REPO_ROOT / "spd/scripts" / sweep_params_file
-    else:
-        return REPO_ROOT / sweep_params_file
+def launch_slurm_run(
+    experiments: str | None,
+    sweep: str | bool,
+    n_agents: int | None,
+    create_report: bool,
+    report_title: str | None,
+    job_suffix: str | None,
+    cpu: bool,
+    partition: str,
+    dp: int | None,
+    project: str,
+) -> None:
+    """Run SPD experiments on SLURM cluster with optional sweeps.
 
-
-def load_sweep_params(experiment_name: str, sweep_params_path: Path) -> dict[str, Any]:
-    """Load sweep parameters for an experiment.
-
-    Supports YAML file with global parameters and experiment-specific overrides:
-
-    ```yaml
-    global:
-      seed:
-        values: [0, 1, 2]
-      loss:
-        faithfulness_weight:
-          values: [0.1, 0.5]
-
-    tms_5-2:
-      seed:
-        values: [100, 200]  # Overrides global seed
-      n_components:
-        values: [5, 10]     # Adds experiment-specific parameter
-
-    resid_mlp1:
-      loss:
-        faithfulness_weight:
-          values: [1.0, 2.0]  # Overrides nested global parameter
-    ```
-
-    Experiment-specific parameters override global parameters at any nesting level.
+    Args:
+        experiments: Comma-separated experiment names (default: all experiments)
+        sweep: Enable parameter sweep. Pass True for default params or a YAML path.
+        n_agents: Number of concurrent SLURM tasks (required for sweeps)
+        create_report: Create a W&B report in addition to workspace view
+        report_title: Title for the W&B report (requires create_report=True)
+        job_suffix: Suffix for SLURM job names
+        cpu: Run on CPU instead of GPU
+        partition: SLURM partition name (default: h200-reserved)
+        dp: Number of GPUs for data parallelism. For multi-node, dp > 8 (must be divisible by 8).
+        project: W&B project name
     """
-    with open(sweep_params_path) as f:
-        all_params = yaml.safe_load(f)
+
+    run_id = _generate_run_id()
+    logger.info(f"Run ID: {run_id}")
+
+    experiments_list = _get_experiments(experiments)
+    logger.info(f"Experiments: {', '.join(experiments_list)}")
+
+    n_gpus = _validate_and_get_n_gpus(cpu=cpu, dp=dp)
+    logger.info(f"Running on {_format_compute_info(n_gpus)}")
+
+    sweep_params = _get_sweep_params(sweep)
+    if sweep_params is not None:
+        assert n_agents is not None, "n_agents must be provided when sweep is enabled"
+
+    training_jobs = _create_training_jobs(
+        experiments=experiments_list,
+        project=project,
+        sweep_params=sweep_params,
+    )
+
+    snapshot_branch, commit_hash = create_git_snapshot(run_id=run_id)
+    logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
+
+    _wandb_setup(
+        create_report=create_report,
+        report_title=report_title,
+        project=project,
+        run_id=run_id,
+        experiments_list=experiments_list,
+        snapshot_branch=snapshot_branch,
+        commit_hash=commit_hash,
+    )
+
+    slurm_job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
+
+    slurm_logs_dir = Path.home() / "slurm_logs"
+    slurm_logs_dir.mkdir(exist_ok=True)
+
+    array_script_content = create_slurm_array_script(
+        slurm_job_name=slurm_job_name,
+        run_id=run_id,
+        training_jobs=training_jobs,
+        sweep_params=sweep_params,
+        slurm_logs_dir=slurm_logs_dir,
+        snapshot_branch=snapshot_branch,
+        n_gpus=n_gpus,
+        partition=partition,
+        max_concurrent_tasks=n_agents,
+    )
+
+    # Save script to permanent location for debugging
+    sbatch_scripts_dir = Path.home() / "sbatch_scripts"
+    sbatch_scripts_dir.mkdir(exist_ok=True)
+
+    array_script_path = sbatch_scripts_dir / f"run_array_{run_id}.sh"
+    with open(array_script_path, "w") as f:
+        f.write(array_script_content)
+    array_script_path.chmod(0o755)
+    array_job_id = submit_slurm_array(array_script_path)
+
+    # Rename script to include job ID for easier correlation with logs
+    final_script_path = sbatch_scripts_dir / f"{array_job_id}.sh"
+    array_script_path.rename(final_script_path)
+
+    # Quality of life: create empty log files for each job so you can tail
+    # them before waiting for the job to start
+    for i in range(len(training_jobs)):
+        (slurm_logs_dir / f"slurm-{array_job_id}_{i + 1}.out").touch()
+
+    logger.section("Job submitted successfully!")
+    logger.values(
+        {
+            "Array Job ID": array_job_id,
+            "Total training jobs": len(training_jobs),
+            "Max concurrent tasks": n_agents,
+            "View logs in": f"~/slurm_logs/slurm-{array_job_id}_*.out",
+            "Script": str(final_script_path),
+        }
+    )
+
+
+def _generate_run_id() -> str:
+    """Generate a unique run ID based on timestamp."""
+    return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+
+def _create_training_jobs(
+    experiments: list[str],
+    project: str,
+    sweep_params: dict[str, Any] | None,
+) -> list[TrainingJob]:
+    """Build a Run containing jobs for all experiments.
+
+    NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
+    we add a prefix to prevent Fire parsing with ast.literal_eval
+    (https://github.com/google/python-fire/issues/332)
+    """
+
+    training_jobs: list[TrainingJob] = []
+
+    logger.info("Task breakdown by experiment:")
+    task_breakdown: dict[str, str] = {}
+
+    for experiment in experiments:
+        exp_config = EXPERIMENT_REGISTRY[experiment]
+
+        # Load base config
+        base_config = Config.from_file(exp_config.config_path)
+
+        if sweep_params is None:
+            # Fixed configuration run - still use JSON to ensure project override works
+            base_config_dict = base_config.model_dump(mode="json")
+            base_config_dict["wandb_project"] = project
+            config_with_overrides = Config(**base_config_dict)
+
+            training_jobs.append(
+                TrainingJob(
+                    experiment=experiment,
+                    script_path=exp_config.decomp_script,
+                    config=config_with_overrides,
+                )
+            )
+            task_breakdown[experiment] = "1 job"
+
+        else:
+            # Parameter sweep run
+            exp_sweep_params = _get_experiment_sweep_params(experiment, sweep_params)
+
+            combinations = generate_grid_combinations(exp_sweep_params)
+
+            for i, param_combo in enumerate(combinations):
+                # Apply parameter overrides
+                base_config_dict = base_config.model_dump(mode="json")
+                config_dict_with_overrides = apply_nested_updates(base_config_dict, param_combo)
+                config_dict_with_overrides["wandb_project"] = project
+                wandb_run_name = f"{experiment}-{generate_run_name(param_combo)}"
+                config_dict_with_overrides["wandb_run_name"] = wandb_run_name
+                config_with_overrides = Config(**config_dict_with_overrides)
+
+                training_jobs.append(
+                    TrainingJob(
+                        experiment=experiment,
+                        script_path=exp_config.decomp_script,
+                        config=config_with_overrides,
+                    )
+                )
+
+                # Print first combination as example
+                if i == 0:
+                    logger.info(f"  {experiment}: {len(combinations)} jobs")
+                    logger.info(f"    Example param overrides: {param_combo}")
+
+    if task_breakdown:
+        logger.values(task_breakdown)
+
+    return training_jobs
+
+
+def _get_experiment_sweep_params(
+    experiment_name: str, sweep_params: dict[str, Any]
+) -> dict[str, Any]:
+    assert experiment_name != "global"
 
     # Start with global parameters if they exist
-    params = copy.deepcopy(all_params["global"]) if "global" in all_params else {}
+    params = copy.deepcopy(sweep_params["global"]) if "global" in sweep_params else {}
 
     # Merge experiment-specific parameters if they exist
-    if experiment_name in all_params and experiment_name != "global":
-        experiment_params = all_params[experiment_name]
+    if experiment_name in sweep_params:
+        experiment_params = sweep_params[experiment_name]
         _merge_sweep_params(params, experiment_params)
 
     if not params:
@@ -100,128 +247,8 @@ def _merge_sweep_params(base: dict[str, Any], override: dict[str, Any]) -> None:
             base[key] = value
 
 
-def _choose_master_port(run_id_local: str, idx: int) -> int:
-    """Choose a unique port per command.
-
-    Uses a stable hash of (run_id, idx) mapped into a high, unprivileged port range so that we can
-    run multiple DDP processes on the same machine.
-    """
-    base: int = 20000
-    span: int = 20000  # ports in [20000, 40000)
-    h: int = int(sha256(f"{run_id_local}:{idx}".encode()).hexdigest(), 16)
-    return base + (h % span)
-
-
-def _build_mpi_prefix(run_id: str, idx: int, dp: int) -> str:
-    """Build an MPI prefix for a command."""
-    port: int = _choose_master_port(run_id, idx)
-    return f"MASTER_PORT={port} mpirun -x MASTER_PORT -np {dp} "
-
-
-def generate_commands(
-    experiments_list: list[str],
-    run_id: str,
-    sweep_params_file: str | None = None,
-    project: str = "spd",
-    dp: int = 1,
-) -> list[str]:
-    """Generate commands for all experiment runs and print task counts.
-
-    NOTE: When we convert parameter settings into JSON strings to pass to our decomposition scripts,
-    we add a prefix to prevent Fire parsing with ast.literal_eval
-    (https://github.com/google/python-fire/issues/332)
-    """
-    commands: list[str] = []
-
-    logger.info("Task breakdown by experiment:")
-    task_breakdown: dict[str, str] = {}
-
-    sweep_params_path: Path | None = (
-        resolve_sweep_params_path(sweep_params_file) if sweep_params_file else None
-    )
-
-    cmd_idx: int = 0
-
-    for experiment in experiments_list:
-        exp_config = EXPERIMENT_REGISTRY[experiment]
-
-        base_config = Config.from_file(exp_config.config_path)
-
-        if sweep_params_path is None:
-            # Fixed configuration run - still use JSON to ensure project override works
-            base_config_dict = base_config.model_dump(mode="json")
-            base_config_dict["wandb_project"] = project
-            config_with_overrides = Config(**base_config_dict)
-
-            config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
-
-            mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
-
-            command = (
-                f"NCCL_DEBUG=WARN "
-                f"{mpi_prefix}"
-                f"python {exp_config.decomp_script} "
-                f"--config_json '{config_json}' "
-                f"--sweep_id {run_id} "
-                f"--evals_id {experiment}"
-            )
-
-            commands.append(command)
-            task_breakdown[experiment] = "1 task"
-            cmd_idx += 1
-
-        else:
-            # Parameter sweep run
-            sweep_params = load_sweep_params(experiment, sweep_params_path)
-            combinations = generate_grid_combinations(sweep_params)
-
-            for i, param_combo in enumerate(combinations):
-                # Apply parameter overrides
-                base_config_dict = base_config.model_dump(mode="json")
-                config_dict_with_overrides = apply_nested_updates(base_config_dict, param_combo)
-                config_dict_with_overrides["wandb_project"] = project
-                wandb_run_name = f"{experiment}-{generate_run_name(param_combo)}"
-                config_dict_with_overrides["wandb_run_name"] = wandb_run_name
-                config_with_overrides = Config(**config_dict_with_overrides)
-
-                config_json = f"json:{json.dumps(config_with_overrides.model_dump(mode='json'))}"
-                sweep_params_json = f"json:{json.dumps(sweep_params)}"
-
-                mpi_prefix = _build_mpi_prefix(run_id, cmd_idx, dp) if dp > 1 else ""
-                command = (
-                    f"NCCL_DEBUG=WARN "
-                    f"{mpi_prefix}"
-                    f"python {exp_config.decomp_script} "
-                    f"--config_json '{config_json}' "
-                    f"--sweep_id {run_id} "
-                    f"--evals_id {experiment} "
-                    f"--sweep_params_json '{sweep_params_json}'"
-                )
-
-                if dp > 1:
-                    port = _choose_master_port(run_id, cmd_idx)
-                    cmd = (
-                        f'MASTER_PORT={port} mpirun -x "MASTER_PORT" -np {dp} {shlex.join(command)}'
-                    )
-                else:
-                    cmd = shlex.join(command)
-
-                commands.append(cmd)
-                cmd_idx += 1
-
-                # Print first combination as example
-                if i == 0:
-                    logger.info(f"  {experiment}: {len(combinations)} tasks")
-                    logger.info(f"    Example param overrides: {param_combo}")
-
-    if task_breakdown:
-        logger.values(task_breakdown)
-
-    return commands
-
-
-def get_experiments(
-    experiments: str | None = None,
+def _get_experiments(
+    experiments_list_str: str | None = None,
 ) -> list[str]:
     """Get and validate the list of experiments to run based on the input string.
 
@@ -231,370 +258,100 @@ def get_experiments(
     Returns:
         List of experiment names to run.
     """
+
     # Determine experiment list
-    experiments_list: list[str]
-    if experiments is None:
-        experiments_list = list(EXPERIMENT_REGISTRY.keys())
+    if experiments_list_str is None:
+        experiments = list(EXPERIMENT_REGISTRY.keys())
     else:
-        experiments_list = [exp.strip() for exp in experiments.split(",")]
+        experiments = [exp.strip() for exp in experiments_list_str.split(",")]
 
     # Validate experiment names
-    invalid_experiments: list[str] = [
-        exp for exp in experiments_list if exp not in EXPERIMENT_REGISTRY
-    ]
+    invalid_experiments = [exp for exp in experiments if exp not in EXPERIMENT_REGISTRY]
     if invalid_experiments:
-        available: str = ", ".join(EXPERIMENT_REGISTRY.keys())
-        raise ValueError(
-            f"Invalid experiments: {invalid_experiments}. Available experiments: {available}"
-        )
+        raise ValueError(f"Invalid experiments: {invalid_experiments}")
 
-    return experiments_list
+    return experiments
 
 
-def _validate_dp(dp: int, experiments_list: list[str], local: bool, cpu: bool) -> None:
-    if dp < 1 or dp > 8:
-        raise ValueError(f"dp must be between 1 and 8, got {dp}")
+def _validate_and_get_n_gpus(cpu: bool, dp: int | None) -> int | None:
+    """Validate dp argument and return the number of GPUs to use.
 
-    if dp > 1 and local:
-        raise ValueError("DDP (dp > 1) is not supported in local mode")
-
-    if dp > 1:
-        non_lm_experiments = [
-            exp for exp in experiments_list if EXPERIMENT_REGISTRY[exp].task_name != "lm"
-        ]
-        if non_lm_experiments:
-            raise ValueError(
-                f"DDP (dp > 1) is only supported for lm experiments. "
-                f"Non-lm experiments found: {non_lm_experiments}"
-            )
-
-    if dp > 1 and cpu:
-        raise ValueError("Can't have both dp > 1 and cpu")
-
-
-def main(
-    experiments: str | None = None,
-    sweep: str | bool = False,
-    n_agents: int | None = None,
-    create_report: bool = True,
-    job_suffix: str | None = None,
-    cpu: bool = False,
-    partition: str = DEFAULT_PARTITION_NAME,
-    dp: int = 1,
-    project: str = "spd",
-    local: bool = False,
-    log_format: LogFormat = "default",
-    create_snapshot: bool = True,
-    use_wandb: bool = True,
-    report_title: str | None = None,
-) -> None:
-    """SPD runner for experiments with optional parameter sweeps.
-
-    Args:
-        experiments: Comma-separated list of experiment names. If None, runs all experiments.
-        sweep: Enable parameter sweep. If True, uses default sweep_params.yaml.
-            If a string, uses that as the sweep parameters file path.
-        n_agents: Maximum number of concurrent SLURM tasks. If None and sweep is enabled,
-            raise an error (unless running with --local). If None and sweep is not enabled,
-            use the number of experiments. Not used for local execution.
-        create_report: Create W&B report for aggregated view (default: True)
-        job_suffix: Optional suffix for SLURM job names
-        cpu: Use CPU instead of GPU (default: False)
-        partition: SLURM partition to use (default: "h200-reserved")
-        dp: Number of GPUs for data parallelism (1-8). Only supported for lm experiments.
-            Cannot be used with local mode (default: 1)
-        project: W&B project name (default: "spd"). Will be created if it doesn't exist.
-        local: Run locally instead of submitting to SLURM (default: False)
-        log_format: Logging format for the script output.
-            Options are "terse" (no timestamps/level) or "default".
-        create_snapshot: Create a git snapshot branch for the run.
-            if False, uses the current branch, as determined by `repo_current_branch`
-            (default: True).
-        use_wandb: Use W&B for logging and tracking (default: True).
-            If set to false, `create_report` must also be false.
-        report_title: Title for the W&B report (default: None). Will be generated if not provided.
-
+    Returns None for CPU-only runs, otherwise returns the validated number of GPUs.
     """
-    # setup
-    # ==========================================================================================
+    if cpu:
+        assert dp is None, "dp should not be specified when running on cpu"
+        return None
 
-    logger.set_format("console", log_format)
+    if dp is None:
+        return None
 
-    # Determine run id
-    execution_stamp: ExecutionStamp = ExecutionStamp.create(
-        run_type="spd",
-        create_snapshot=create_snapshot,
+    assert dp >= 2, "if given, dp must be at least 2. pass dp=None to use a single GPU."
+    assert dp <= GPUS_PER_NODE or dp % GPUS_PER_NODE == 0, (
+        f"dp must be <= {GPUS_PER_NODE} (single node) or divisible by {GPUS_PER_NODE} (multi-node), "
+        f"got {dp}"
     )
-    run_id: str = execution_stamp.run_id
-    logger.info(f"Run ID: {run_id}")
+    return dp
 
-    # Determine the sweep parameters file
-    sweep_params_file: str | None = None
-    if sweep:
-        sweep_params_file = "sweep_params.yaml" if isinstance(sweep, bool) else sweep
 
-    # get the experiments to run -- run all of them if not specified
-    experiments_list: list[str] = get_experiments(experiments)
-    logger.info(f"Experiments: {', '.join(experiments_list)}")
+def _format_compute_info(n_gpus: int | None) -> str:
+    """Format compute configuration for logging."""
+    if n_gpus is None:
+        return "single GPU"
+    if n_gpus <= GPUS_PER_NODE:
+        return f"{n_gpus} GPUs (single node)"
+    n_nodes = n_gpus // GPUS_PER_NODE
+    return f"{n_gpus} GPUs ({n_nodes} nodes x {GPUS_PER_NODE} GPUs)"
 
-    _validate_dp(dp, experiments_list=experiments_list, local=local, cpu=cpu)
 
-    # Agent count
-    if n_agents is None:
-        if sweep_params_file is None:
-            n_agents = len(experiments_list)
-        else:
-            assert local, (
-                "n-agents must be provided if sweep is enabled (unless running with --local)"
-            )
+def _get_sweep_params(sweep: str | bool) -> dict[str, Any] | None:
+    if sweep is False:
+        return None
+    sweep_params_file = "sweep_params.yaml" if sweep is True else sweep
+    sweep_params_path = _resolve_sweep_params_path(sweep_params_file)
+    with open(sweep_params_path) as f:
+        sweep_params = yaml.safe_load(f)
+    return sweep_params
 
-    # wandb and snapshot setup
-    # ==========================================================================================
 
-    if not local or use_wandb:
-        # set up wandb
-        if use_wandb:
-            wandb_setup(
-                project=project,
-                run_id=run_id,
-                experiments_list=experiments_list,
-                create_report=create_report,
-                # if `create_report == False`, the rest of the arguments don't matter
-                report_title=report_title,
-                snapshot_branch=execution_stamp.snapshot_branch,
-                commit_hash=execution_stamp.commit_hash,
-                include_run_comparer=sweep_params_file is not None,
-            )
-        else:
-            assert not create_report, (
-                f"can't create report if use_wandb is false: {create_report = }"
-            )
-            logger.warning(
-                "W&B logging is disabled. No workspace views or reports will be created. "
-                "Set `use_wandb=True` to enable."
-            )
-
-    # generate and run commands
-    # ==========================================================================================
-    commands: list[str] = generate_commands(
-        experiments_list=experiments_list,
-        run_id=run_id,
-        sweep_params_file=sweep_params_file,
-        project=project,
-        dp=dp,
-    )
-
-    if local:
-        run_script_array_local(commands)
+def _resolve_sweep_params_path(sweep_params_file: str) -> Path:
+    """Resolve the full path to the sweep parameters file."""
+    if "/" not in sweep_params_file:
+        # Look in scripts directory by default
+        return REPO_ROOT / "spd/scripts" / sweep_params_file
     else:
-        # Submit to SLURM
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            array_script = temp_path / f"run_array_{run_id}.sh"
-            if job_suffix is None:
-                expected_time_str = get_max_expected_runtime(experiments_list)
-                job_name = f"spd-{expected_time_str}"
-            else:
-                job_name = f"spd-{job_suffix}"
+        return REPO_ROOT / sweep_params_file
 
-            n_gpus_per_job = dp if not cpu else 0
-            create_slurm_array_script(
-                script_path=array_script,
-                job_name=job_name,
-                commands=commands,
-                snapshot_branch=execution_stamp.snapshot_branch,
-                max_concurrent_tasks=n_agents,
-                n_gpus_per_job=n_gpus_per_job,
-                partition=partition,
+
+def _wandb_setup(
+    create_report: bool,
+    report_title: str | None,
+    project: str,
+    run_id: str,
+    experiments_list: list[str],
+    snapshot_branch: str,
+    commit_hash: str,
+) -> None:
+    """Set up W&B workspace view and optionally a report."""
+
+    match create_report, report_title:
+        case True, None:
+            report_cfg = ReportCfg(
+                report_title=report_title,
+                branch=snapshot_branch,
+                commit_hash=commit_hash,
             )
-
-            array_job_id = submit_slurm_script(array_script)
-
-            logger.section("Job submitted successfully!")
-            logger.values(
-                {
-                    "Array Job ID": array_job_id,
-                    "Total tasks": len(commands),
-                    "Max concurrent tasks": n_agents,
-                    "View logs in": f"~/slurm_logs/slurm-{array_job_id}_*.out",
-                }
+        case True, title:
+            report_cfg = ReportCfg(
+                report_title=title,
+                branch=snapshot_branch,
+                commit_hash=commit_hash,
             )
+        case False, _:
+            report_cfg = None
 
-
-_SPD_RUN_EXAMPLES: Final[str] = """
-Examples:
-    # Run subset of experiments locally
-    spd-run --experiments tms_5-2,resid_mlp1 --local
-
-    # Run parameter sweep locally
-    spd-run --experiments tms_5-2 --sweep --local
-
-    # Run subset of experiments (no sweep)
-    spd-run --experiments tms_5-2,resid_mlp1
-
-    # Run parameter sweep on a subset of experiments with default sweep_params.yaml
-    spd-run --experiments tms_5-2,resid_mlp2 --sweep
-
-    # Run parameter sweep on an experiment with custom sweep params at spd/scripts/my_sweep.yaml
-    spd-run --experiments tms_5-2 --sweep my_sweep.yaml
-
-    # Run all experiments (no sweep)
-    spd-run
-
-    # Use custom W&B project
-    spd-run --experiments tms_5-2 --project my-spd-project
-
-    # Run all experiments on CPU
-    spd-run --experiments tms_5-2 --cpu
-
-    # Run with data parallelism over 4 GPUs (only supported for lm experiments)
-    spd-run --experiments ss_llama_simple --dp 4
-"""
-
-
-def cli():
-    """Command line interface."""
-    parser = argparse.ArgumentParser(
-        prog="spd-run",
-        description="SPD runner for experiments with optional parameter sweeps.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=_SPD_RUN_EXAMPLES,
+    create_view_and_report(
+        project=project,
+        run_id=run_id,
+        experiments=experiments_list,
+        report_cfg=report_cfg,
     )
-
-    # main arguments
-    parser.add_argument(
-        "-e",
-        "--experiments",
-        type=str,
-        default=None,
-        help=(
-            "Comma-separated list of experiment names. If not specified, runs all experiments. "
-            f"Available: {list(EXPERIMENT_REGISTRY.keys())}"
-        ),
-    )
-    parser.add_argument(
-        "--local",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Run locally instead of submitting to SLURM",
-    )
-
-    # Sweep arguments
-    parser.add_argument(
-        "--sweep",
-        nargs="?",
-        const=True,
-        default=False,
-        help="Enable parameter sweep. If `--sweep` passed with argument, uses default sweep_params.yaml. "
-        "Otherwise, specify a single path to custom sweep parameters file.",
-    )
-
-    parser.add_argument(
-        "-n",
-        "--n-agents",
-        type=int,
-        default=None,
-        help="Maximum number of concurrent SLURM tasks. Required for sweeps unless running locally. "
-        "For non-sweep runs, defaults to the number of experiments.",
-    )
-
-    # Report and project settings
-    parser.add_argument(
-        "--create-report",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Create W&B report for aggregated view",
-    )
-
-    parser.add_argument(
-        "--project",
-        type=str,
-        default="spd",
-        help="W&B project name (default: spd). Will be created if it doesn't exist.",
-    )
-
-    parser.add_argument(
-        "--report-title",
-        type=str,
-        default=None,
-        help="Title for the W&B report. Generated automatically if not provided.",
-    )
-
-    # Execution settings
-    parser.add_argument(
-        "--cpu",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Use CPU instead of GPU",
-    )
-
-    parser.add_argument(
-        "--dp",
-        "--data-parallelism",
-        type=int,
-        default=1,
-        help="Number of GPUs for data parallelism (1-8). Only supported for lm experiments. "
-        "Cannot be used with local mode (default: 1)",
-    )
-
-    parser.add_argument(
-        "--job-suffix",
-        type=str,
-        default=None,
-        help="Optional suffix for SLURM job names",
-    )
-
-    # Git and logging settings
-    parser.add_argument(
-        "--create-snapshot",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Create a git snapshot branch for the run",
-    )
-
-    parser.add_argument(
-        "--use-wandb",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Use W&B for logging and tracking",
-    )
-
-    parser.add_argument(
-        "--log-format",
-        type=str,
-        choices=LogFormat.__args__,
-        default="default",
-        help="Logging format for script output. 'terse' removes timestamps/level (default: 'default')",
-    )
-
-    parser.add_argument(
-        "-p",
-        "--partition",
-        type=str,
-        default=DEFAULT_PARTITION_NAME,
-        help=f"SLURM partition to use (default: {DEFAULT_PARTITION_NAME})",
-    )
-
-    args: argparse.Namespace = parser.parse_args()
-
-    # Call main with parsed arguments
-    main(
-        experiments=args.experiments,
-        sweep=args.sweep,
-        n_agents=args.n_agents,
-        create_report=args.create_report,
-        job_suffix=args.job_suffix,
-        cpu=args.cpu,
-        partition=args.partition,
-        dp=args.dp,
-        project=args.project,
-        local=args.local,
-        log_format=args.log_format,
-        create_snapshot=args.create_snapshot,
-        use_wandb=args.use_wandb,
-        report_title=args.report_title,
-    )
-
-
-if __name__ == "__main__":
-    cli()
