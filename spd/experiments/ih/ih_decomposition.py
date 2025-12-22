@@ -43,7 +43,7 @@ def main(
     logger.info(f"Using device: {device}")
 
     if config.wandb_project:
-        tags = ["induction_head"]
+        tags = ["ih"]
         if evals_id:
             tags.append(evals_id)
         if sweep_id:

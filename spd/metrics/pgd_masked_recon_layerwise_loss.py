@@ -9,6 +9,7 @@ from spd.configs import PGDConfig
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.routing import LayerRouter
 from spd.utils.distributed_utils import all_reduce
 
 
@@ -26,16 +27,14 @@ def _pgd_recon_layerwise_loss_update(
     sum_loss = torch.tensor(0.0, device=device)
     n_examples = torch.tensor(0, device=device)
     for layer in model.target_module_paths:
-        layer_ci = {layer: ci[layer]}
-        layer_weight_deltas = {layer: weight_deltas[layer]} if weight_deltas is not None else None
         sum_loss_layer, n_examples_layer = pgd_masked_recon_loss_update(
             model=model,
             batch=batch,
-            ci=layer_ci,
-            weight_deltas=layer_weight_deltas,
+            ci=ci,
+            weight_deltas=weight_deltas,
             target_out=target_out,
             output_loss_type=output_loss_type,
-            routing="all",
+            router=LayerRouter(device=device, layer_name=layer),
             pgd_config=pgd_config,
         )
         sum_loss += sum_loss_layer

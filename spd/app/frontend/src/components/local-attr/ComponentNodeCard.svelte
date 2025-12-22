@@ -1,0 +1,414 @@
+<script lang="ts">
+    import { displaySettings } from "../../lib/displaySettings.svelte";
+    import {
+        getComponentCorrelations,
+        getComponentTokenStats,
+        type Interpretation,
+    } from "../../lib/api";
+    import type {
+        ComponentCorrelations,
+        ComponentDetail,
+        ComponentSummary,
+        Edge,
+        EdgeAttribution,
+        TokenStats,
+    } from "../../lib/localAttributionsTypes";
+    import { runState } from "../../lib/runState.svelte";
+    import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
+    import ComponentProbeInput from "../ComponentProbeInput.svelte";
+    import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
+    import EdgeAttributionList from "../ui/EdgeAttributionList.svelte";
+    import InterpretationBadge from "../ui/InterpretationBadge.svelte";
+    import SectionHeader from "../ui/SectionHeader.svelte";
+    import StatusText from "../ui/StatusText.svelte";
+    import TokenStatsSection from "../ui/TokenStatsSection.svelte";
+    import type { Loadable } from "../../lib/index";
+
+    type Props = {
+        layer: string;
+        cIdx: number;
+        seqIdx: number;
+        summary: ComponentSummary | null;
+        edgesBySource: Map<string, Edge[]>;
+        edgesByTarget: Map<string, Edge[]>;
+        detail: Loadable<ComponentDetail>;
+        onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
+    };
+
+    let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, onPinComponent, detail }: Props = $props();
+
+    function handleInterpretationGenerated(interp: Interpretation) {
+        const key = `${layer}:${cIdx}`;
+        runState.addInterpretation(key, interp);
+    }
+
+    // Handle clicking a correlated component - parse key and pin it at same seqIdx
+    function handleCorrelationClick(componentKey: string) {
+        if (!onPinComponent) return;
+        // componentKey format: "layer:cIdx" e.g. "h.0.attn.q_proj:5"
+        const [clickedLayer, clickedCIdx] = componentKey.split(":");
+        onPinComponent(clickedLayer, parseInt(clickedCIdx), seqIdx);
+    }
+
+    // Correlations state
+    let correlations = $state<Loadable<ComponentCorrelations>>(null);
+
+    // Token stats state (from batch job)
+    let tokenStats = $state<Loadable<TokenStats>>(null);
+
+    // Interpretation from global store (keyed by layer:cIdx)
+    const interpretation: Loadable<Interpretation> = $derived.by(() => {
+        const cached = runState.getInterpretation(`${layer}:${cIdx}`);
+        if (cached) {
+            return { status: "loaded", data: cached };
+        }
+        return null; // No interpretation available
+    });
+
+    // Fetch correlations when component changes
+    $effect(() => {
+        let cancelled = false;
+        correlations = { status: "loading" };
+        getComponentCorrelations(layer, cIdx, 1000)
+            .then((data) => {
+                if (cancelled) return;
+                correlations = data ? { status: "loaded", data } : null;
+            })
+            .catch((error) => {
+                if (cancelled) return;
+                correlations = { status: "error", error };
+            });
+        return () => {
+            cancelled = true;
+        };
+    });
+
+    // Fetch token stats when component changes
+    $effect(() => {
+        let cancelled = false;
+        tokenStats = { status: "loading" };
+        getComponentTokenStats(layer, cIdx, 1000)
+            .then((data) => {
+                if (cancelled) return;
+                tokenStats = data ? { status: "loaded", data } : null;
+            })
+            .catch((error) => {
+                if (cancelled) return;
+                tokenStats = { status: "error", error };
+            });
+        return () => {
+            cancelled = true;
+        };
+    });
+
+    const N_TOKENS_TO_DISPLAY_INPUT = 50;
+    const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
+
+    type TokenValue = { token: string; value: number };
+    type TokenList = { title: string; mathNotation?: string; items: TokenValue[] };
+
+    // Transform tokenStats into Loadable<TokenList[]> for input tokens section
+    const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                    items: tokenStats.data.input.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
+    });
+
+    // Transform tokenStats into Loadable<TokenList[]> for output tokens section
+    const outputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "positive association with predictions",
+                    items: tokenStats.data.output.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+                {
+                    title: "Bottom PMI",
+                    mathNotation: "negative association with predictions",
+                    items: tokenStats.data.output.bottom_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
+    });
+
+    // Activating tokens from token stats (for highlighting)
+    const activatingTokens = $derived.by(() => {
+        if (tokenStats == null || tokenStats.status !== "loaded") return [];
+        return tokenStats.data.input.top_recall.map(([token]) => token);
+    });
+
+    // Format mean CI for display
+    function formatMeanCi(ci: number): string {
+        return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
+    }
+
+    // === Edge attribution lists ===
+    const currentNodeKey = $derived(`${layer}:${seqIdx}:${cIdx}`);
+    const N_EDGES_TO_DISPLAY = 20;
+
+    function getTopEdgeAttributions(
+        edges: Edge[],
+        isPositive: boolean,
+        getNodeKey: (e: Edge) => string,
+    ): EdgeAttribution[] {
+        const filtered = edges.filter((e) => (isPositive ? e.val > 0 : e.val < 0));
+        const sorted = filtered
+            .sort((a, b) => (isPositive ? b.val - a.val : a.val - b.val))
+            .slice(0, N_EDGES_TO_DISPLAY);
+        const maxAbsVal = Math.abs(sorted[0]?.val || 1);
+        return sorted.map((e) => ({
+            nodeKey: getNodeKey(e),
+            value: e.val,
+            normalizedMagnitude: Math.abs(e.val) / maxAbsVal,
+        }));
+    }
+
+    const incomingPositive = $derived(
+        getTopEdgeAttributions(edgesByTarget.get(currentNodeKey) ?? [], true, (e) => e.src),
+    );
+
+    const incomingNegative = $derived(
+        getTopEdgeAttributions(edgesByTarget.get(currentNodeKey) ?? [], false, (e) => e.src),
+    );
+
+    const outgoingPositive = $derived(
+        getTopEdgeAttributions(edgesBySource.get(currentNodeKey) ?? [], true, (e) => e.tgt),
+    );
+
+    const outgoingNegative = $derived(
+        getTopEdgeAttributions(edgesBySource.get(currentNodeKey) ?? [], false, (e) => e.tgt),
+    );
+
+    const hasAnyEdges = $derived(
+        incomingPositive.length > 0 ||
+            incomingNegative.length > 0 ||
+            outgoingPositive.length > 0 ||
+            outgoingNegative.length > 0,
+    );
+
+    // Handle clicking an edge node - parse key and pin it
+    function handleEdgeNodeClick(nodeKey: string) {
+        if (!onPinComponent) return;
+        // nodeKey format: "layer:seq:cIdx"
+        const [clickedLayer, clickedSeqIdx, clickedCIdx] = nodeKey.split(":");
+        onPinComponent(clickedLayer, parseInt(clickedCIdx), parseInt(clickedSeqIdx));
+    }
+</script>
+
+<div class="component-node-card">
+    <SectionHeader title="Position {seqIdx}" level="h4">
+        {#if summary}
+            <span class="mean-ci">Mean CI: {formatMeanCi(summary.mean_ci)}</span>
+        {/if}
+    </SectionHeader>
+
+    <InterpretationBadge {interpretation} {layer} {cIdx} onInterpretationGenerated={handleInterpretationGenerated} />
+
+    <!-- Edge attributions (local, for this datapoint) -->
+    {#if displaySettings.showEdgeAttributions && hasAnyEdges}
+        <div class="edge-attributions-section">
+            <SectionHeader title="Edge Attributions" />
+            <div class="edge-lists-grid">
+                {#if incomingPositive.length > 0 || incomingNegative.length > 0}
+                    <div class="edge-list-group">
+                        <h5>Incoming</h5>
+                        {#if incomingPositive.length > 0}
+                            <div class="edge-list">
+                                <span class="edge-list-title">Positive</span>
+                                <EdgeAttributionList
+                                    items={incomingPositive}
+                                    pageSize={10}
+                                    onNodeClick={handleEdgeNodeClick}
+                                    direction="positive"
+                                />
+                            </div>
+                        {/if}
+                        {#if incomingNegative.length > 0}
+                            <div class="edge-list">
+                                <span class="edge-list-title">Negative</span>
+                                <EdgeAttributionList
+                                    items={incomingNegative}
+                                    pageSize={10}
+                                    onNodeClick={handleEdgeNodeClick}
+                                    direction="negative"
+                                />
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+                {#if outgoingPositive.length > 0 || outgoingNegative.length > 0}
+                    <div class="edge-list-group">
+                        <h5>Outgoing</h5>
+                        {#if outgoingPositive.length > 0}
+                            <div class="edge-list">
+                                <span class="edge-list-title">Positive</span>
+                                <EdgeAttributionList
+                                    items={outgoingPositive}
+                                    pageSize={10}
+                                    onNodeClick={handleEdgeNodeClick}
+                                    direction="positive"
+                                />
+                            </div>
+                        {/if}
+                        {#if outgoingNegative.length > 0}
+                            <div class="edge-list">
+                                <span class="edge-list-title">Negative</span>
+                                <EdgeAttributionList
+                                    items={outgoingNegative}
+                                    pageSize={10}
+                                    onNodeClick={handleEdgeNodeClick}
+                                    direction="negative"
+                                />
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+            </div>
+        </div>
+    {/if}
+
+    <div class="token-stats-row">
+        <TokenStatsSection
+            sectionTitle="Input Tokens"
+            sectionSubtitle="(what activates this component)"
+            lists={inputTokenLists}
+        />
+
+        <TokenStatsSection
+            sectionTitle="Output Tokens"
+            sectionSubtitle="(what this component predicts)"
+            lists={outputTokenLists}
+        />
+    </div>
+
+    <!-- Component correlations -->
+    <div class="correlations-section">
+        <SectionHeader title="Correlated Components" />
+        {#if correlations?.status === "loading"}
+            <StatusText>Loading...</StatusText>
+        {:else if correlations?.status === "loaded"}
+            <ComponentCorrelationMetrics
+                correlations={correlations.data}
+                pageSize={16}
+                onComponentClick={handleCorrelationClick}
+            />
+        {:else if correlations?.status === "error"}
+            <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading correlations.</StatusText>
+        {/if}
+    </div>
+
+    <ComponentProbeInput {layer} componentIdx={cIdx} />
+
+    <div class="activating-examples-section">
+        <SectionHeader title="Activating Examples" />
+        {#if detail?.status === "loading"}
+            <StatusText>Loading details...</StatusText>
+        {:else if detail?.status === "loaded"}
+            {#if detail?.data.example_tokens.length > 0}
+                <!-- Full mode: paged table with filtering -->
+                <ActivationContextsPagedTable
+                    exampleTokens={detail?.data.example_tokens}
+                    exampleCi={detail?.data.example_ci}
+                    {activatingTokens}
+                />
+            {/if}
+        {:else if detail?.status === "error"}
+            <StatusText>Error loading details: {String(detail?.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading details.</StatusText>
+        {/if}
+    </div>
+</div>
+
+<style>
+    .component-node-card {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+        font-family: var(--font-sans);
+        color: var(--text-primary);
+    }
+
+    .mean-ci {
+        font-weight: 400;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        margin-left: var(--space-2);
+    }
+
+    .token-stats-row {
+        display: flex;
+        gap: var(--space-4);
+    }
+
+    .token-stats-row > :global(*) {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .correlations-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .edge-attributions-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .edge-lists-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-4);
+    }
+
+    .edge-list-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .edge-list-group h5 {
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
+        font-weight: 600;
+    }
+
+    .edge-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+    }
+
+    .edge-list-title {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        font-style: italic;
+    }
+</style>

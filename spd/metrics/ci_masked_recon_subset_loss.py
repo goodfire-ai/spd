@@ -5,10 +5,11 @@ from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
-from spd.utils.component_utils import sample_uniform_k_subset_routing_masks
+from spd.routing import Router, get_subset_router
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
@@ -19,11 +20,11 @@ def _ci_masked_recon_subset_loss_update(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
+    router: Router,
 ) -> tuple[Float[Tensor, ""], int]:
-    subset_routing_masks = sample_uniform_k_subset_routing_masks(
+    subset_routing_masks = router.get_masks(
+        module_names=model.target_module_paths,
         mask_shape=next(iter(ci.values())).shape[:-1],
-        module_names=list(ci.keys()),
-        device=batch.device,
     )
     mask_infos = make_mask_infos(
         component_masks=ci,
@@ -48,6 +49,7 @@ def ci_masked_recon_subset_loss(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
+    routing: SubsetRoutingType,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
         model=model,
@@ -55,6 +57,7 @@ def ci_masked_recon_subset_loss(
         batch=batch,
         target_out=target_out,
         ci=ci,
+        router=get_subset_router(routing, batch.device),
     )
     return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
 
@@ -65,10 +68,16 @@ class CIMaskedReconSubsetLoss(Metric):
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
-        self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl"]
+        self,
+        model: ComponentModel,
+        device: str,
+        output_loss_type: Literal["mse", "kl"],
+        routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.router = get_subset_router(routing, device)
+
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -87,6 +96,7 @@ class CIMaskedReconSubsetLoss(Metric):
             batch=batch,
             target_out=target_out,
             ci=ci.lower_leaky,
+            router=self.router,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

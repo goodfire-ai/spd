@@ -5,22 +5,26 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1200
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
 ci_fn_hidden_dims: [1000]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  [
-    "h.*.mlp.gate_proj",
-    "h.*.mlp.up_proj",
-    "h.*.mlp.down_proj",
-    "h.*.attn.q_proj",
-    "h.*.attn.k_proj",
-    "h.*.attn.v_proj",
-    "h.*.attn.o_proj",
-  ]
-identity_module_patterns: null
+module_info:
+  - module_pattern: "h.*.mlp.gate_proj"
+    C: 1200
+  - module_pattern: "h.*.mlp.up_proj"
+    C: 1200
+  - module_pattern: "h.*.mlp.down_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.q_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.k_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.v_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.o_proj"
+    C: 1200
+identity_module_info: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
@@ -33,6 +37,8 @@ loss_metric_configs:
     p_anneal_end_frac: 1.0
 
   - classname: "StochasticReconSubsetLoss"
+    routing:
+      type: uniform_k_subset
     coeff: 1.0
 
 output_loss_type: kl
@@ -77,6 +83,8 @@ eval_metric_configs:
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
   - classname: "PGDReconSubsetLoss"
+    routing:
+      type: uniform_k_subset
     init: "random"
     step_size: 0.01
     n_steps: 20

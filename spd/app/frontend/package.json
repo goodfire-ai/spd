@@ -6,7 +6,7 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build",
-        "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+        "check": "svelte-check --tsconfig ./tsconfig.json",
         "lint": "eslint .",
         "format": "prettier --write ."
     },
@@ -23,6 +23,7 @@
         "prettier-plugin-svelte": "^3.4.0",
         "svelte": "^5.39.6",
         "svelte-check": "^4.3.2",
+        "svelte-render-scan": "^1.1.0",
         "typescript": "~5.9.3",
         "typescript-eslint": "^8.46.2",
         "vite": "^7.1.7"

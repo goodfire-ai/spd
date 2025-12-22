@@ -11,16 +11,18 @@ lr: 1e-3
 n_eval_steps: 200
 
 task_config:
-  task_name: induction_head
+  task_name: ih
 
-C: 100
 n_mask_samples: 1
-target_module_patterns: [
-  "blocks.*.attn.q_proj",
-  "blocks.*.attn.k_proj",
-  "blocks.*.attn.v_proj",
-  "blocks.*.attn.out_proj",
-]
+module_info:
+  - module_pattern: "blocks.*.attn.q_proj"
+    C: 100
+  - module_pattern: "blocks.*.attn.k_proj"
+    C: 100
+  - module_pattern: "blocks.*.attn.v_proj"
+    C: 100
+  - module_pattern: "blocks.*.attn.out_proj"
+    C: 100
 
 faithfulness_coeff: 100
 ci_recon_coeff: 1

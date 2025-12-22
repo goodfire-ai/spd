@@ -8,6 +8,7 @@ from torch.distributed import ReduceOp
 from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
@@ -20,7 +21,7 @@ def _stochastic_hidden_acts_recon_loss_update(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     assert pre_weight_acts, "Empty pre_weight_acts"
@@ -33,7 +34,7 @@ def _stochastic_hidden_acts_recon_loss_update(
             causal_importances=ci,
             component_mask_sampling=sampling,
             weight_deltas=weight_deltas,
-            routing="all",
+            router=AllLayersRouter(),
         )
         for _ in range(n_mask_samples)
     ]
@@ -65,7 +66,7 @@ def stochastic_hidden_acts_recon_loss(
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]] | None,
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
 ) -> Float[Tensor, ""]:
     sum_mse, n_examples = _stochastic_hidden_acts_recon_loss_update(
         model,
@@ -106,7 +107,7 @@ class StochasticHiddenActsReconLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
         ci: CIOutputs,
-        weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
         sum_mse, n_examples = _stochastic_hidden_acts_recon_loss_update(
