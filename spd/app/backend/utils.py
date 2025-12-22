@@ -1,8 +1,10 @@
 """Shared utilities for the SPD backend."""
 
 import functools
+import time
 import traceback
 from collections.abc import Callable
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi import HTTPException
@@ -61,3 +63,11 @@ def build_token_lookup(
                 raise ValueError(f"Unsupported tokenizer name: {tokenizer_name}")
 
     return lookup
+
+
+@contextmanager
+def timer(name: str):
+    start = time.perf_counter()
+    yield
+    end = time.perf_counter()
+    logger.info(f"{name} took {end - start:.1f}ms")

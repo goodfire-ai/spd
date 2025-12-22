@@ -26,7 +26,7 @@ class TestCIHistograms:
     def mock_model(self):
         """Create a mock ComponentModel."""
         model = Mock(spec=ComponentModel)
-        model.C = 10  # Number of components
+        model.module_to_c = {"layer1": 8, "layer2": 8}
         model.components = {"layer1": Mock(), "layer2": Mock()}
         return model
 

@@ -165,6 +165,32 @@
             }
         },
         {
+            "name": "ss_llama_simple_mlp",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_simple_mlp.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "ss_llama_simple_mlp-1L",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_simple_mlp-1L.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
             "name": "ss_gpt2",
             "type": "debugpy",
             "request": "launch",

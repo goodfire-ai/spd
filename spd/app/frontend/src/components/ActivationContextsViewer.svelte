@@ -1,7 +1,15 @@
 <script lang="ts">
-    import type { ComponentDetail, HarvestMetadata } from "../lib/api";
+    import type { Loadable } from "../lib";
+    import type { SubcomponentActivationContexts, HarvestMetadata, Interpretation } from "../lib/api";
     import * as api from "../lib/api";
+    import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
+    import ComponentProbeInput from "./ComponentProbeInput.svelte";
+    import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
+    import InterpretationBadge from "./ui/InterpretationBadge.svelte";
+    import SectionHeader from "./ui/SectionHeader.svelte";
+    import StatusText from "./ui/StatusText.svelte";
+    import TokenStatsSection from "./ui/TokenStatsSection.svelte";
 
     interface Props {
         harvestMetadata: HarvestMetadata;
@@ -9,16 +17,30 @@
 
     let { harvestMetadata }: Props = $props();
 
-    const N_TOKENS_TO_DISPLAY = 20;
+    const N_TOKENS_TO_DISPLAY_INPUT = 80;
+    const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
 
-    let availableLayers = $derived(Object.keys(harvestMetadata.layers));
+    type TokenValue = { token: string; value: number };
+    type TokenList = { title: string; mathNotation?: string; items: TokenValue[] };
+
+    let availableLayers = $derived(Object.keys(harvestMetadata.layers).sort());
     let currentPage = $state(0);
     let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
-    let metricMode = $state<"recall" | "precision">("recall");
 
-    let componentCache = $state<Record<string, ComponentDetail>>({});
-    let loadingComponent = $state(false);
+    let componentCache = $state<Record<string, Loadable<SubcomponentActivationContexts>>>({});
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive, just for deduplication
+    const requestedKeys = new Set<string>();
 
+    // Correlations state
+    let correlations = $state<Loadable<ComponentCorrelations>>(null);
+
+    // Token stats state (from batch job)
+    let tokenStats = $state<Loadable<TokenStats>>(null);
+
+    // Interpretation state
+    let interpretation = $state<Loadable<Interpretation>>(null);
+
+    // Layer metadata is already sorted by mean_ci desc from backend
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
     let currentMetadata = $derived<api.SubcomponentMetadata>(currentLayerMetadata[currentPage]);
@@ -29,7 +51,7 @@
 
     let currentComponent = $derived.by(() => {
         const cacheKey = getCacheKey(selectedLayer, currentMetadata.subcomponent_idx);
-        return componentCache[cacheKey];
+        return componentCache[cacheKey] ?? null;
     });
 
     function handlePageInput(event: Event) {
@@ -39,6 +61,34 @@
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
         }
+    }
+
+    // Search for a specific subcomponent index
+    let searchValue = $state("");
+    let searchError = $state<string | null>(null);
+
+    function handleSearchInput(event: Event) {
+        const target = event.target as HTMLInputElement;
+        searchValue = target.value;
+        searchError = null;
+
+        if (searchValue === "") return;
+
+        const targetIdx = parseInt(searchValue);
+        if (isNaN(targetIdx)) {
+            searchError = "Invalid number";
+            return;
+        }
+
+        // Find the page index that contains this subcomponent index
+        const pageIndex = currentLayerMetadata.findIndex((m) => m.subcomponent_idx === targetIdx);
+
+        if (pageIndex === -1) {
+            searchError = `Not found`;
+            return;
+        }
+
+        currentPage = pageIndex;
     }
 
     function previousPage() {
@@ -57,7 +107,6 @@
 
     // Lazy-load component data when page or layer changes
     $effect(() => {
-        // establish dependencies by reading them
         const meta = currentMetadata;
         const layer = selectedLayer;
 
@@ -65,144 +114,263 @@
 
         const cacheKey = getCacheKey(layer, meta.subcomponent_idx);
 
-        // skip if already cached
-        if (componentCache[cacheKey]) return;
+        if (requestedKeys.has(cacheKey)) return;
+        requestedKeys.add(cacheKey);
 
         let cancelled = false;
-        loadingComponent = true;
+        componentCache[cacheKey] = { status: "loading" };
 
         const load = async () => {
             try {
                 const detail = await api.getComponentDetail(layer, meta.subcomponent_idx);
 
                 if (cancelled) return;
-                componentCache[cacheKey] = detail;
+                componentCache[cacheKey] = { status: "loaded", data: detail };
             } catch (error) {
-                if (!cancelled) console.error("Failed to load component:", error);
-            } finally {
-                if (!cancelled) loadingComponent = false;
+                if (!cancelled) componentCache[cacheKey] = { status: "error", error };
             }
         };
 
         load();
 
-        // cleanup if deps change before the async work finishes
         return () => {
             cancelled = true;
         };
     });
 
-    // Build sorted token densities from columnar data
-    let densities = $derived.by(() => {
-        const n = currentComponent.pr_tokens.length;
-        const indices = Array.from({ length: n }, (_, i) => i);
-        indices.sort((a, b) => {
-            const valA = metricMode === "recall" ? currentComponent.pr_recalls[a] : currentComponent.pr_precisions[a];
-            const valB = metricMode === "recall" ? currentComponent.pr_recalls[b] : currentComponent.pr_precisions[b];
-            return valB - valA;
-        });
-        return indices.slice(0, N_TOKENS_TO_DISPLAY).map((i) => ({
-            token: currentComponent.pr_tokens[i],
-            recall: currentComponent.pr_recalls[i],
-            precision: currentComponent.pr_precisions[i],
-        }));
+    // Fetch correlations when component changes
+    $effect(() => {
+        const layer = selectedLayer;
+        const cIdx = currentMetadata?.subcomponent_idx;
+        if (cIdx === undefined) return;
+
+        correlations = { status: "loading" };
+        api.getComponentCorrelations(layer, cIdx, 1000)
+            .then((data) => {
+                if (data != null) {
+                    correlations = { status: "loaded", data };
+                } else {
+                    correlations = { status: "error", error: "No correlations found" };
+                }
+            })
+            .catch((error) => {
+                correlations = { status: "error", error };
+            });
     });
+
+    // Fetch token stats when component changes (from batch job)
+    $effect(() => {
+        const layer = selectedLayer;
+        const cIdx = currentMetadata?.subcomponent_idx;
+        if (cIdx === undefined) return;
+
+        tokenStats = { status: "loading" };
+        api.getComponentTokenStats(layer, cIdx, 1000)
+            .then((data) => {
+                if (data != null) {
+                    tokenStats = { status: "loaded", data };
+                } else {
+                    tokenStats = { status: "error", error: "No token stats found" };
+                }
+            })
+            .catch((error) => {
+                tokenStats = { status: "error", error };
+            });
+    });
+
+    // Fetch interpretation when component changes
+    $effect(() => {
+        const layer = selectedLayer;
+        const cIdx = currentMetadata?.subcomponent_idx;
+        if (cIdx === undefined) return;
+
+        interpretation = { status: "loading" };
+        api.getComponentInterpretation(layer, cIdx)
+            .then((data) => {
+                if (data != null) {
+                    interpretation = { status: "loaded", data };
+                } else {
+                    interpretation = { status: "error", error: "No interpretation found" };
+                }
+            })
+            .catch((error) => {
+                interpretation = { status: "error", error };
+            });
+    });
+
+    // Transform tokenStats into Loadable<TokenList[]> for input tokens section
+    const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                    items: tokenStats.data.input.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
+    });
+
+    // Transform tokenStats into Loadable<TokenList[]> for output tokens section
+    const outputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "positive association with predictions",
+                    items: tokenStats.data.output.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+                {
+                    title: "Bottom PMI",
+                    mathNotation: "negative association with predictions",
+                    items: tokenStats.data.output.bottom_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
+    });
+
+    // Activating tokens from token stats (for highlighting in table)
+    let inputTopRecall = $derived.by(() => {
+        if (tokenStats?.status !== "loaded") return [];
+        return tokenStats.data.input.top_recall.map(([token, value]) => ({ token, value }));
+    });
+
+    // Format mean CI for display
+    function formatMeanCi(ci: number): string {
+        return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
+    }
 </script>
 
-<div class="layer-select-section">
-    <label for="layer-select">Layer:</label>
-    <select id="layer-select" bind:value={selectedLayer}>
-        {#each availableLayers as layer (layer)}
-            <option value={layer}>{layer}</option>
-        {/each}
-    </select>
-</div>
+<div class="viewer-content">
+    <div class="controls-row">
+        <div class="layer-select">
+            <label for="layer-select">Layer:</label>
+            <select id="layer-select" bind:value={selectedLayer}>
+                {#each availableLayers as layer (layer)}
+                    <option value={layer}>{layer}</option>
+                {/each}
+            </select>
+        </div>
 
-<div class="pagination-controls">
-    <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input
-        type="number"
-        min="1"
-        max={totalPages}
-        value={currentPage + 1}
-        oninput={handlePageInput}
-        class="page-input"
-    />
-    <span>of {totalPages}</span>
-    <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
-</div>
+        <div class="pagination">
+            <label for="page-input">Subcomponent:</label>
+            <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
+            <input
+                type="number"
+                min="1"
+                max={totalPages}
+                value={currentPage + 1}
+                oninput={handlePageInput}
+                class="page-input"
+            />
+            <span>of {totalPages}</span>
+            <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+        </div>
 
-{#if loadingComponent}
-    <div class="loading">Loading component data...</div>
-{:else if currentComponent && currentMetadata}
-    <div class="subcomponent-section-header">
-        <h4>
-            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
-                ? currentMetadata.mean_ci.toExponential(2)
-                : currentMetadata.mean_ci.toFixed(3)})
-        </h4>
-        {#if densities != null}
-            <div class="token-densities">
-                <div class="token-densities-header">
-                    <h5>
-                        Tokens
-                        {currentComponent.pr_tokens.length > N_TOKENS_TO_DISPLAY
-                            ? `(top ${N_TOKENS_TO_DISPLAY} of ${currentComponent.pr_tokens.length})`
-                            : ""}
-                    </h5>
-                    <div class="metric-toggle">
-                        <div class="toggle-buttons">
-                            <button class:active={metricMode === "recall"} onclick={() => (metricMode = "recall")}>
-                                Recall
-                                <span class="math-notation">P(token | firing)</span>
-                            </button>
-                            <button
-                                class:active={metricMode === "precision"}
-                                onclick={() => (metricMode = "precision")}
-                            >
-                                Precision
-                                <span class="math-notation">P(firing | token)</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="densities-grid">
-                    {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
-                        {@const value = metricMode === "recall" ? recall : precision}
-                        <div class="density-item">
-                            <span class="token">{token}</span>
-                            <div class="density-bar-container">
-                                <div class="density-bar" style="width: {value * 100}%"></div>
-                            </div>
-                            <span class="density-value">{(value * 100).toFixed(1)}%</span>
-                        </div>
-                    {/each}
-                </div>
-            </div>
-        {/if}
-
-        <ActivationContextsPagedTable
-            exampleTokens={currentComponent.example_tokens}
-            exampleCi={currentComponent.example_ci}
-            exampleActivePos={currentComponent.example_active_pos}
-            activatingTokens={currentComponent.pr_tokens}
-        />
+        <div class="search-box">
+            <label for="search-input">Go to index:</label>
+            <input
+                id="search-input"
+                type="number"
+                placeholder="e.g. 42"
+                value={searchValue}
+                oninput={handleSearchInput}
+                class="search-input"
+            />
+            {#if searchError}
+                <span class="search-error">{searchError}</span>
+            {/if}
+        </div>
     </div>
-{/if}
+
+    <div class="component-section">
+        <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
+            <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
+        </SectionHeader>
+
+        <InterpretationBadge {interpretation} />
+
+        <div class="token-stats-row">
+            <TokenStatsSection
+                sectionTitle="Input Tokens"
+                sectionSubtitle="(what activates this component)"
+                lists={inputTokenLists}
+            />
+
+            <TokenStatsSection
+                sectionTitle="Output Tokens"
+                sectionSubtitle="(what this component predicts)"
+                lists={outputTokenLists}
+            />
+        </div>
+
+        <!-- Component correlations -->
+        <div class="correlations-section">
+            <SectionHeader title="Correlated Components" />
+            {#if correlations?.status === "loaded"}
+                <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
+            {:else if correlations?.status === "loading"}
+                <StatusText>Loading...</StatusText>
+            {:else if correlations?.status === "error"}
+                <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
+            {:else}
+                <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
+            {/if}
+        </div>
+
+        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
+
+        {#if currentComponent?.status === "loading"}
+            <div class="loading">Loading component data...</div>
+        {:else if currentComponent?.status === "loaded"}
+            <ActivationContextsPagedTable
+                exampleTokens={currentComponent.data.example_tokens}
+                exampleCi={currentComponent.data.example_ci}
+                activatingTokens={inputTopRecall.map(({ token }) => token)}
+            />
+        {:else if currentComponent?.status === "error"}
+            <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading component data.</StatusText>
+        {/if}
+    </div>
+</div>
 
 <style>
-    .layer-select-section {
+    .viewer-content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+    }
+
+    .controls-row {
         display: flex;
         align-items: center;
-        gap: var(--space-2);
-        padding: var(--space-2);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
+        gap: var(--space-4);
         flex-wrap: wrap;
     }
 
-    .layer-select-section label {
+    .layer-select {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .viewer-content label {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
@@ -211,14 +379,13 @@
 
     #layer-select {
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
         padding: var(--space-1) var(--space-2);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         background: var(--bg-elevated);
         color: var(--text-primary);
         cursor: pointer;
-        min-width: 200px;
+        min-width: 180px;
     }
 
     #layer-select:focus {
@@ -226,69 +393,71 @@
         border-color: var(--accent-primary-dim);
     }
 
-    .toggle-buttons {
-        display: flex;
-        gap: 0;
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .toggle-buttons button {
-        padding: var(--space-1) var(--space-2);
-        border: none;
-        border-radius: 0;
-        background: var(--bg-elevated);
-        color: var(--text-secondary);
-        border-right: 1px solid var(--border-default);
-    }
-
-    .toggle-buttons button:last-child {
-        border-right: none;
-    }
-
-    .toggle-buttons button:hover:not(.active) {
-        background: var(--bg-inset);
-        color: var(--text-primary);
-    }
-
-    .toggle-buttons button.active {
-        background: var(--accent-primary);
-        color: white;
-        font-weight: 500;
-    }
-
-    .pagination-controls {
+    .pagination {
         display: flex;
         align-items: center;
         gap: var(--space-2);
-        padding: var(--space-2);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
     }
 
-    .pagination-controls button {
+    .pagination button {
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);
         color: var(--text-secondary);
     }
 
-    .pagination-controls button:hover:not(:disabled) {
-        background: var(--bg-inset);
+    .pagination button:hover:not(:disabled) {
+        background: var(--bg-surface);
         color: var(--text-primary);
         border-color: var(--border-strong);
     }
 
-    .pagination-controls button:disabled {
+    .pagination button:disabled {
         opacity: 0.5;
     }
 
-    .pagination-controls span {
+    .pagination span {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .search-box {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .search-input {
+        width: 70px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        appearance: textfield;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .search-input::-webkit-inner-spin-button,
+    .search-input::-webkit-outer-spin-button {
+        appearance: none;
+        margin: 0;
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
+
+    .search-error {
+        font-size: var(--text-xs);
+        color: var(--semantic-error);
         white-space: nowrap;
     }
 
@@ -296,7 +465,6 @@
         width: 50px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-sm);
         text-align: center;
         font-size: var(--text-sm);
         font-family: var(--font-mono);
@@ -316,94 +484,36 @@
         margin: 0;
     }
 
-    .subcomponent-section-header {
+    .component-section {
         display: flex;
         flex-direction: column;
-        gap: var(--space-2);
-    }
-
-    .subcomponent-section-header h4 {
-        margin: 0;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
-        font-weight: 600;
-    }
-
-    .token-densities {
-        padding: var(--space-3);
-        background: var(--bg-surface);
+        gap: var(--space-3);
+        padding: var(--space-4);
+        background: var(--bg-inset);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
     }
 
-    .token-densities-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: var(--space-2);
-        gap: var(--space-2);
-        flex-wrap: wrap;
-    }
-
-    .token-densities h5 {
-        margin: 0;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
-        font-weight: 600;
-    }
-
-    .math-notation {
+    .mean-ci {
+        font-weight: 400;
+        color: var(--text-muted);
         font-family: var(--font-mono);
-        font-style: normal;
-        font-size: var(--text-xs);
-        margin-left: var(--space-1);
-        opacity: 0.7;
+        margin-left: var(--space-2);
     }
 
-    .densities-grid {
+    .token-stats-row {
+        display: flex;
+        gap: var(--space-4);
+    }
+
+    .token-stats-row > :global(*) {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .correlations-section {
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
-    }
-
-    .density-item {
-        display: grid;
-        grid-template-columns: 100px 1fr 60px;
-        align-items: center;
-        gap: var(--space-2);
-        font-size: var(--text-sm);
-    }
-
-    .token {
-        font-family: var(--font-mono);
-        font-weight: 600;
-        color: var(--text-primary);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: pre;
-    }
-
-    .density-bar-container {
-        height: 4px;
-        background: var(--border-default);
-        border-radius: 2px;
-        overflow: hidden;
-    }
-
-    .density-bar {
-        height: 100%;
-        background: var(--status-info);
-        border-radius: 2px;
-        transition: width 0.15s ease-out;
-    }
-
-    .density-value {
-        text-align: right;
-        font-family: var(--font-mono);
-        color: var(--text-muted);
-        font-weight: 500;
     }
 
     .loading {

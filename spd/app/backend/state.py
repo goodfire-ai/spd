@@ -8,14 +8,69 @@ Contains:
 from dataclasses import dataclass, field
 from typing import Any
 
-from torch.utils.data import DataLoader
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.db import LocalAttrDB
-from spd.app.backend.db.database import Run
-from spd.app.backend.schemas import ModelActivationContexts
+from spd.app.backend.database import LocalAttrDB, Run
+from spd.autointerp.loaders import load_interpretations
+from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
+from spd.harvest.loaders import load_activation_contexts, load_correlations, load_token_stats
+from spd.harvest.schemas import ComponentData
+from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.models.component_model import ComponentModel
+
+_NOT_LOADED = object()
+
+
+class HarvestCache:
+    """Lazily-loaded harvest data for a run.
+
+    All fields are loaded on first access and cached for the lifetime of the run.
+    Uses a sentinel pattern to distinguish "not loaded" from "loaded but None".
+    """
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        self._correlations = _NOT_LOADED
+        self._token_stats = _NOT_LOADED
+        self._interpretations = _NOT_LOADED
+        self._activation_contexts = _NOT_LOADED
+
+    @property
+    def correlations(self) -> CorrelationStorage | None:
+        if self._correlations is _NOT_LOADED:
+            self._correlations = load_correlations(self.run_id)
+        assert isinstance(self._correlations, CorrelationStorage | None), (
+            "inconsistent state, correlations not loaded"
+        )
+        return self._correlations
+
+    @property
+    def token_stats(self) -> TokenStatsStorage | None:
+        if self._token_stats is _NOT_LOADED:
+            self._token_stats = load_token_stats(self.run_id)
+        assert isinstance(self._token_stats, TokenStatsStorage | None), (
+            "inconsistent state, token stats not loaded"
+        )
+        return self._token_stats
+
+    @property
+    def interpretations(self) -> dict[str, InterpretationResult] | None:
+        if self._interpretations is _NOT_LOADED:
+            self._interpretations = load_interpretations(self.run_id)
+        assert isinstance(self._interpretations, dict | None), (
+            "inconsistent state, interpretations not loaded"
+        )
+        return self._interpretations
+
+    @property
+    def activation_contexts(self) -> dict[str, ComponentData] | None:
+        if self._activation_contexts is _NOT_LOADED:
+            self._activation_contexts = load_activation_contexts(self.run_id)
+        assert isinstance(self._activation_contexts, dict | None), (
+            "inconsistent state, activation contexts not loaded"
+        )
+        return self._activation_contexts
 
 
 @dataclass
@@ -28,9 +83,16 @@ class RunState:
     sources_by_target: dict[str, list[str]]
     config: Config
     token_strings: dict[int, str]
-    train_loader: DataLoader[Any]
     context_length: int
-    activation_contexts_cache: ModelActivationContexts | None = None
+    harvest: HarvestCache
+
+
+@dataclass
+class DatasetSearchState:
+    """State for dataset search results (memory-only, no persistence)."""
+
+    results: list[dict[str, Any]]
+    metadata: dict[str, Any]
 
 
 @dataclass
@@ -39,6 +101,7 @@ class AppState:
 
     db: LocalAttrDB
     run_state: RunState | None = field(default=None)
+    dataset_search_state: DatasetSearchState | None = field(default=None)
 
 
 class StateManager:

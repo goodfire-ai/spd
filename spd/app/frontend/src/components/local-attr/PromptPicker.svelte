@@ -1,15 +1,17 @@
 <script lang="ts">
-    import type { PromptPreview, PinnedNode } from "../../lib/localAttributionsTypes";
+    import type { PromptPreview, PinnedNode, TokenizeResult } from "../../lib/localAttributionsTypes";
+    import { tokenizeText } from "../../lib/api";
 
     type Props = {
         prompts: PromptPreview[];
         filteredPrompts: PromptPreview[];
-        pinnedNodes: PinnedNode[];
-        filterByPinned: boolean;
+        stagedNodes: PinnedNode[];
+        filterByStaged: boolean;
         filterLoading: boolean;
         generatingGraphs: boolean;
         generateProgress: number;
         generateCount: number;
+        isAddingCustomPrompt: boolean;
         show: boolean;
         onSelectPrompt: (prompt: PromptPreview) => void;
         onAddCustom: (text: string) => Promise<void>;
@@ -21,12 +23,13 @@
     let {
         prompts,
         filteredPrompts,
-        pinnedNodes,
-        filterByPinned,
+        stagedNodes,
+        filterByStaged,
         filterLoading,
         generatingGraphs,
         generateProgress,
         generateCount,
+        isAddingCustomPrompt,
         show,
         onSelectPrompt,
         onAddCustom,
@@ -36,20 +39,38 @@
     }: Props = $props();
 
     let customText = $state("");
+    let tokenizeResult = $state<TokenizeResult | null>(null);
     let tokenizeLoading = $state(false);
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const displayedPrompts = $derived(filterByPinned ? filteredPrompts : prompts);
-
-    async function handleAddCustom() {
-        if (!customText.trim() || tokenizeLoading) return;
+    async function runTokenize(text: string) {
+        if (!text.trim()) {
+            tokenizeResult = null;
+            return;
+        }
         tokenizeLoading = true;
         try {
-            await onAddCustom(customText);
-            customText = "";
-            onClose();
+            tokenizeResult = await tokenizeText(text);
         } finally {
             tokenizeLoading = false;
         }
+    }
+
+    function onCustomInput(e: Event) {
+        const target = e.target as HTMLInputElement;
+        customText = target.value;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => runTokenize(customText), 150);
+    }
+
+    const displayedPrompts = $derived(filterByStaged ? filteredPrompts : prompts);
+
+    async function handleAddCustom() {
+        if (!customText.trim() || isAddingCustomPrompt) return;
+        await onAddCustom(customText);
+        customText = "";
+        tokenizeResult = null;
+        onClose();
     }
 
     function handleSelectPrompt(p: PromptPreview) {
@@ -59,31 +80,47 @@
 </script>
 
 {#if show}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="prompt-picker-backdrop" onclick={onClose} onkeydown={(e) => e.key === "Escape" && onClose()}></div>
     <div class="prompt-picker">
         <div class="picker-header">
-            <input
-                type="text"
-                bind:value={customText}
-                placeholder="Enter custom text..."
-                onkeydown={(e) => e.key === "Enter" && handleAddCustom()}
-                class="picker-input"
-            />
-            <button onclick={handleAddCustom} disabled={!customText.trim() || tokenizeLoading} class="btn-tokenize">
-                {tokenizeLoading ? "..." : "Add"}
-            </button>
+            <div class="custom-input-section">
+                <div class="input-row">
+                    <input
+                        type="text"
+                        value={customText}
+                        oninput={onCustomInput}
+                        placeholder="Enter custom text..."
+                        onkeydown={(e) => e.key === "Enter" && handleAddCustom()}
+                        class="picker-input"
+                    />
+                    <button
+                        onclick={handleAddCustom}
+                        disabled={!customText.trim() || isAddingCustomPrompt}
+                        class="btn-tokenize"
+                    >
+                        {isAddingCustomPrompt ? "..." : "Add"}
+                    </button>
+                </div>
+                {#if tokenizeLoading}
+                    <div class="token-preview-loading">...</div>
+                {:else if tokenizeResult && tokenizeResult.tokens.length > 0}
+                    <div class="token-preview">
+                        {#each tokenizeResult.tokens as tok, i (i)}<span class="token">{tok}</span>{/each}
+                        <span class="token-count">({tokenizeResult.tokens.length})</span>
+                    </div>
+                {/if}
+            </div>
         </div>
 
         <div class="picker-filter">
             <label class="filter-checkbox">
                 <input
                     type="checkbox"
-                    checked={filterByPinned}
+                    checked={filterByStaged}
                     onchange={onFilterToggle}
-                    disabled={pinnedNodes.length === 0}
+                    disabled={stagedNodes.length === 0}
                 />
-                Filter by pinned ({pinnedNodes.length})
+                Filter by staged ({stagedNodes.length})
             </label>
             {#if filterLoading}
                 <span class="filter-loading">...</span>
@@ -99,7 +136,7 @@
             {/each}
             {#if displayedPrompts.length === 0}
                 <div class="picker-empty">
-                    {filterByPinned ? "No matching prompts" : "No prompts yet"}
+                    {filterByStaged ? "No matching prompts" : "No prompts yet"}
                 </div>
             {/if}
         </div>
@@ -140,10 +177,19 @@
     }
 
     .picker-header {
-        display: flex;
-        gap: var(--space-2);
         padding: var(--space-3);
         border-bottom: 1px solid var(--border-default);
+    }
+
+    .custom-input-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .input-row {
+        display: flex;
+        gap: var(--space-2);
     }
 
     .picker-input {
@@ -154,6 +200,36 @@
         color: var(--text-primary);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
+    }
+
+    .token-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1px;
+        align-items: center;
+    }
+
+    .token-preview-loading {
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+    }
+
+    .token {
+        padding: 2px 3px;
+        background: var(--bg-inset);
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--status-info-bright);
+        white-space: pre;
+        border: 1px solid var(--status-info);
+    }
+
+    .token-count {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        margin-left: var(--space-1);
     }
 
     .picker-input:focus {

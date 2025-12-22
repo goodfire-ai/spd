@@ -15,13 +15,18 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException
 
-from spd.app.backend.db import LocalAttrDB
+from spd.app.backend.database import LocalAttrDB
 from spd.app.backend.state import RunState, StateManager
+from spd.log import logger
 
 
 def get_state_manager() -> StateManager:
     """Get the StateManager singleton."""
-    return StateManager.get()
+    try:
+        return StateManager.get()
+    except Exception as e:
+        logger.error(f"[DEPENDENCY] Failed to get StateManager: {e}")
+        raise
 
 
 def get_db() -> LocalAttrDB:
@@ -42,3 +47,4 @@ def get_loaded_run() -> RunState:
 # Type aliases for dependency injection (avoids B008 linter warnings)
 DepStateManager = Annotated[StateManager, Depends(get_state_manager)]
 DepLoadedRun = Annotated[RunState, Depends(get_loaded_run)]
+DepDB = Annotated[LocalAttrDB, Depends(get_db)]

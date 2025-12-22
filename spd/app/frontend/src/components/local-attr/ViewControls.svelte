@@ -1,49 +1,144 @@
 <script lang="ts">
+    import type { NormalizeType } from "../../lib/api";
+    import type { Loadable } from "../../lib/index";
+
     type Props = {
         topK: number;
-        nodeLayout: "importance" | "shuffled" | "jittered";
+        componentGap: number;
+        layerGap: number;
         filteredEdgeCount: number | null;
+        normalizeEdges: NormalizeType;
+        ciThreshold: Loadable<number>;
+        hideUnpinnedEdges?: boolean;
+        hideNodeCard?: boolean;
         onTopKChange: (value: number) => void;
-        onLayoutChange: (value: "importance" | "shuffled" | "jittered") => void;
+        onComponentGapChange: (value: number) => void;
+        onLayerGapChange: (value: number) => void;
+        onNormalizeChange: (value: NormalizeType) => void;
+        onCiThresholdChange: (value: number) => void;
+        onHideUnpinnedEdgesChange?: (value: boolean) => void;
+        onHideNodeCardChange?: (value: boolean) => void;
     };
 
-    let { topK, nodeLayout, filteredEdgeCount, onTopKChange, onLayoutChange }: Props = $props();
+    let {
+        topK,
+        componentGap,
+        layerGap,
+        filteredEdgeCount,
+        normalizeEdges,
+        ciThreshold,
+        hideUnpinnedEdges,
+        hideNodeCard,
+        onTopKChange,
+        onComponentGapChange,
+        onLayerGapChange,
+        onNormalizeChange,
+        onCiThresholdChange,
+        onHideUnpinnedEdgesChange,
+        onHideNodeCardChange,
+    }: Props = $props();
+
+    // Local state for inputs (immediate UI feedback, apply on blur)
+    let localTopK = $state(topK);
+    let localComponentGap = $state(componentGap);
+    let localLayerGap = $state(layerGap);
+    let localCiThreshold = $derived.by(() => (ciThreshold?.status === "loaded" ? ciThreshold.data.toString() : ""));
+
+    // Sync local state when props change externally
+    $effect(() => void (localTopK = topK));
+    $effect(() => void (localComponentGap = componentGap));
+    $effect(() => void (localLayerGap = layerGap));
+
+    function applyIfChanged<T>(local: T, prop: T, apply: (v: T) => void) {
+        if (local !== prop) apply(local);
+    }
 </script>
 
 <div class="controls-bar">
-    <span class="controls-label">View</span>
     <label>
-        <span>Top K</span>
+        <span>Edge Norm</span>
+        <select value={normalizeEdges} onchange={(e) => onNormalizeChange(e.currentTarget.value as NormalizeType)}>
+            <option value="none">None</option>
+            <option value="target">L2 by Target Node</option>
+            <option value="layer">L2 by Target Layer</option>
+        </select>
+    </label>
+    <label>
+        <span>Top K Edges</span>
         <input
             type="number"
-            value={topK}
-            oninput={(e) => onTopKChange(parseInt(e.currentTarget.value) || 800)}
-            min={10}
-            max={10000}
+            bind:value={localTopK}
+            onblur={() => applyIfChanged(localTopK, topK, onTopKChange)}
+            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            min={0}
+            max={10_000}
             step={100}
         />
     </label>
-    <label>
-        <span>Layout</span>
-        <select
-            value={nodeLayout}
-            onchange={(e) => onLayoutChange(e.currentTarget.value as "importance" | "shuffled" | "jittered")}
-        >
-            <option value="importance">Importance</option>
-            <option value="shuffled">Shuffled</option>
-            <option value="jittered">Jittered</option>
-        </select>
+    <label class:loading={ciThreshold?.status === "loading"}>
+        <span>Node CI Threshold</span>
+        <input
+            type="number"
+            bind:value={localCiThreshold}
+            onblur={() => {
+                const v = parseFloat(localCiThreshold);
+                const currentValue = ciThreshold?.status === "loaded" ? ciThreshold.data : null;
+                if (!isNaN(v) && v !== currentValue) onCiThresholdChange(v);
+            }}
+            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            min={0}
+            step={0.1}
+            disabled={ciThreshold?.status === "loading"}
+        />
     </label>
+    <label>
+        <span>Node Gap</span>
+        <input
+            type="number"
+            bind:value={localComponentGap}
+            onblur={() => applyIfChanged(localComponentGap, componentGap, onComponentGapChange)}
+            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            min={0}
+            max={20}
+            step={1}
+        />
+    </label>
+    <label>
+        <span>Layer Gap</span>
+        <input
+            type="number"
+            bind:value={localLayerGap}
+            onblur={() => applyIfChanged(localLayerGap, layerGap, onLayerGapChange)}
+            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            min={10}
+            max={100}
+            step={5}
+        />
+    </label>
+    {#if onHideUnpinnedEdgesChange}
+        <label class="checkbox">
+            <input
+                type="checkbox"
+                checked={hideUnpinnedEdges}
+                onchange={(e) => onHideUnpinnedEdgesChange(e.currentTarget.checked)}
+            />
+            <span>Hide unpinned edges</span>
+        </label>
+    {/if}
+    {#if onHideNodeCardChange}
+        <label class="checkbox">
+            <input
+                type="checkbox"
+                checked={hideNodeCard}
+                onchange={(e) => onHideNodeCardChange(e.currentTarget.checked)}
+            />
+            <span>Hide node card</span>
+        </label>
+    {/if}
 
     {#if filteredEdgeCount !== null}
         <div class="legend">
             <span class="edge-count">Showing {filteredEdgeCount} edges</span>
-            <span class="legend-item">
-                <span class="edge-pos"></span> Positive
-            </span>
-            <span class="legend-item">
-                <span class="edge-neg"></span> Negative
-            </span>
         </div>
     {/if}
 </div>
@@ -55,15 +150,7 @@
         gap: var(--space-4);
         padding: var(--space-2) var(--space-3);
         background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-    }
-
-    .controls-label {
-        font-size: var(--text-xs);
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        color: var(--text-muted);
-        font-family: var(--font-sans);
+        border-bottom: 1px solid var(--border-default);
     }
 
     label {
@@ -82,8 +169,16 @@
         color: var(--text-muted);
     }
 
+    label.loading {
+        opacity: 0.6;
+    }
+
+    label.loading input {
+        cursor: wait;
+    }
+
     input[type="number"] {
-        width: 60px;
+        width: 75px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
         background: var(--bg-elevated);
@@ -112,6 +207,15 @@
         border-color: var(--accent-primary-dim);
     }
 
+    .checkbox {
+        cursor: pointer;
+    }
+
+    .checkbox input[type="checkbox"] {
+        cursor: pointer;
+        accent-color: var(--accent-primary);
+    }
+
     .legend {
         display: flex;
         align-items: center;
@@ -120,29 +224,6 @@
         font-size: var(--text-sm);
         color: var(--text-secondary);
         font-family: var(--font-mono);
-    }
-
-    .legend-item {
-        display: flex;
-        align-items: center;
-        gap: var(--space-1);
-        font-size: var(--text-xs);
-        letter-spacing: 0.05em;
-    }
-
-    .edge-pos,
-    .edge-neg {
-        display: inline-block;
-        width: 16px;
-        height: 2px;
-    }
-
-    .edge-pos {
-        background: var(--status-info);
-    }
-
-    .edge-neg {
-        background: var(--status-negative);
     }
 
     .edge-count {

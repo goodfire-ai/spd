@@ -3,9 +3,9 @@
 
     type Props = {
         cards: PromptCard[];
-        activeCardId: string | null;
-        onSelectCard: (cardId: string) => void;
-        onCloseCard: (cardId: string) => void;
+        activeCardId: number | null;
+        onSelectCard: (cardId: number) => void;
+        onCloseCard: (cardId: number) => void;
         onAddClick: () => void;
     };
 
@@ -27,7 +27,7 @@
             <button class="card-tab-close" onclick={() => onCloseCard(card.id)}>×</button>
         </div>
     {/each}
-    <button class="btn-add-tab" onclick={onAddClick}>+{cards.length > 0 ? "" : " First Prompt"}</button>
+    <button class="btn-add-tab" onclick={onAddClick}>+{cards.length > 0 ? "" : " Add Prompt"}</button>
 </div>
 
 <style>

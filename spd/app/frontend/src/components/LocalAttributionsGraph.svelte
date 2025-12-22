@@ -8,55 +8,95 @@
         HoveredEdge,
         LayerInfo,
         NodePosition,
-        ComponentDetail,
     } from "../lib/localAttributionsTypes";
-    import * as api from "../lib/localAttributionsApi";
+    import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
-    import ComponentDetailCard from "./local-attr/ComponentDetailCard.svelte";
-    import PinnedComponentsPanel from "./local-attr/PinnedComponentsPanel.svelte";
+    import { clusterMapping } from "../lib/clusterMapping.svelte";
+    import {
+        lerp,
+        calcTooltipPos,
+        sortComponentsByImportance,
+        sortComponentsByCluster,
+        computeComponentOffsets,
+        computeClusterSpans,
+        type ClusterSpan,
+    } from "./local-attr/graphUtils";
+    import NodeTooltip from "./local-attr/NodeTooltip.svelte";
+    import { runState } from "../lib/runState.svelte";
 
     // Constants
     const COMPONENT_SIZE = 8;
-    const COMPONENT_GAP = 4;
-    const HIT_AREA_PADDING = 4; // Extra padding around nodes for easier hover
-    const LAYER_GAP = 30;
+    const HIT_AREA_PADDING = 4;
     const MARGIN = { top: 60, right: 40, bottom: 20, left: 20 };
     const LABEL_WIDTH = 100;
+    const CLUSTER_BAR_HEIGHT = 3;
+    const CLUSTER_BAR_GAP = 2;
 
-    // Row order for layout (qkv share a row)
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "output"];
+    // Row order for layout (qkv share a row, lm_head before output)
+    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
     const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
 
     type Props = {
         data: GraphData;
         topK: number;
-        nodeLayout: "importance" | "shuffled" | "jittered";
+        componentGap: number;
+        layerGap: number;
+        hideUnpinnedEdges: boolean;
+        hideNodeCard: boolean;
         activationContextsSummary: ActivationContextsSummary | null;
-        pinnedNodes: PinnedNode[];
-        onPinnedNodesChange: (nodes: PinnedNode[]) => void;
+        stagedNodes: PinnedNode[];
+        onStagedNodesChange: (nodes: PinnedNode[]) => void;
         onEdgeCountChange?: (count: number) => void;
     };
 
     let {
         data,
         topK,
-        nodeLayout,
+        componentGap,
+        layerGap,
+        hideUnpinnedEdges,
+        hideNodeCard,
         activationContextsSummary,
-        pinnedNodes,
-        onPinnedNodesChange,
+        stagedNodes,
+        onStagedNodesChange,
         onEdgeCountChange,
     }: Props = $props();
 
     // UI state
     let hoveredNode = $state<HoveredNode | null>(null);
     let hoveredEdge = $state<HoveredEdge | null>(null);
+    let hoveredBarClusterId = $state<number | null>(null);
     let isHoveringTooltip = $state(false);
     let tooltipPos = $state({ x: 0, y: 0 });
     let edgeTooltipPos = $state({ x: 0, y: 0 });
 
-    // Component details cache (lazy-loaded)
-    let componentDetailsCache = $state<Record<string, ComponentDetail>>({});
-    let componentDetailsLoading = $state<Record<string, boolean>>({});
+    // Alt/Option key temporarily toggles hide unpinned edges
+    let altHeld = $state(false);
+    const effectiveHideUnpinned = $derived(altHeld ? !hideUnpinnedEdges : hideUnpinnedEdges);
+
+    $effect(() => {
+        function onKeyDown(e: KeyboardEvent) {
+            if (e.key === "Alt") {
+                altHeld = true;
+            }
+        }
+        function onKeyUp(e: KeyboardEvent) {
+            if (e.key === "Alt") {
+                altHeld = false;
+            }
+        }
+        function onBlur() {
+            altHeld = false;
+        }
+        window.addEventListener("keydown", onKeyDown);
+        window.addEventListener("keyup", onKeyUp);
+        window.addEventListener("blur", onBlur);
+        return () => {
+            window.removeEventListener("keydown", onKeyDown);
+            window.removeEventListener("keyup", onKeyUp);
+            window.removeEventListener("blur", onBlur);
+        };
+    });
 
     // Refs
     let graphContainer: HTMLDivElement;
@@ -65,6 +105,9 @@
     function parseLayer(name: string): LayerInfo {
         if (name === "wte") {
             return { name, block: -1, type: "embed", subtype: "wte" };
+        }
+        if (name === "lm_head") {
+            return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
         }
         if (name === "output") {
             return { name, block: Infinity, type: "output", subtype: "output" };
@@ -82,80 +125,46 @@
         return layer;
     }
 
-    // Compute importance maps from edges
-    const { componentImportanceLocal, maxImportanceLocal, maxAbsAttr } = $derived.by(() => {
-        const componentImportanceLocal: Record<string, number> = {};
-        let maxAbsAttr = 1;
-
-        for (const edge of data.edges) {
-            const valSq = edge.val * edge.val;
-            const absVal = Math.abs(edge.val);
-            if (absVal > maxAbsAttr) maxAbsAttr = absVal;
-
-            componentImportanceLocal[edge.src] = (componentImportanceLocal[edge.src] || 0) + valSq;
-            componentImportanceLocal[edge.tgt] = (componentImportanceLocal[edge.tgt] || 0) + valSq;
+    // Use pre-computed values from backend, derive max CI
+    const maxAbsAttr = $derived(data.maxAbsAttr || 1);
+    const maxCi = $derived.by(() => {
+        let max = 0;
+        for (const ci of Object.values(data.nodeCiVals)) {
+            if (ci > max) max = ci;
         }
-
-        let maxImportanceLocal = 1;
-        for (const imp of Object.values(componentImportanceLocal)) {
-            if (imp > maxImportanceLocal) maxImportanceLocal = imp;
-        }
-
-        return { componentImportanceLocal, maxImportanceLocal, maxAbsAttr };
+        return max || 1; // Avoid division by zero
     });
 
-    // Filter edges by topK and build active nodes set
-    const { filteredEdges, activeNodes } = $derived.by(() => {
+    // All nodes from nodeCiVals (for layout and rendering)
+    const allNodes = $derived(new SvelteSet(Object.keys(data.nodeCiVals)));
+
+    // Pre-compute pinned node keys for efficient lookup
+    const pinnedNodeKeys = $derived(new Set(stagedNodes.map((p) => `${p.layer}:${p.seqIdx}:${p.cIdx}`)));
+
+    // For hover, we match by component (layer:cIdx), ignoring seqIdx
+    const hoveredComponentKey = $derived(hoveredNode ? `${hoveredNode.layer}:${hoveredNode.cIdx}` : null);
+
+    // Get cluster ID of hovered node or bar (for cluster-wide rotation effect)
+    const hoveredClusterId = $derived.by(() => {
+        if (hoveredBarClusterId !== null) return hoveredBarClusterId;
+        if (!hoveredNode) return undefined;
+        return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+    });
+
+    // Filter edges by topK (for rendering)
+    const filteredEdges = $derived.by(() => {
         const edgesCopy = [...data.edges];
-
         const sortedEdges = edgesCopy.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
-
-        const filteredEdges = sortedEdges.slice(0, topK);
-
-        const activeNodes = new SvelteSet<string>();
-        for (const edge of filteredEdges) {
-            activeNodes.add(edge.src);
-            activeNodes.add(edge.tgt);
-        }
-
-        // For output nodes: include all tokens with prob >= min prob of kept tokens
-        const outputNodesWithEdges = new SvelteSet<string>();
-        for (const nodeKey of activeNodes) {
-            if (nodeKey.startsWith("output:")) {
-                outputNodesWithEdges.add(nodeKey);
-            }
-        }
-
-        if (outputNodesWithEdges.size > 0) {
-            let minProb = Infinity;
-            for (const nodeKey of outputNodesWithEdges) {
-                const [, seqIdx, cIdx] = nodeKey.split(":");
-                const probKey = `${seqIdx}:${cIdx}`;
-                const entry = data.outputProbs[probKey];
-                if (entry && entry.prob < minProb) {
-                    minProb = entry.prob;
-                }
-            }
-
-            const outputProbsPlain = $state.snapshot(data.outputProbs);
-            for (const [probKey, entry] of Object.entries(outputProbsPlain)) {
-                if (entry.prob >= minProb) {
-                    const [seqIdx, cIdx] = probKey.split(":");
-                    activeNodes.add(`output:${seqIdx}:${cIdx}`);
-                }
-            }
-        }
-
-        return { filteredEdges, activeNodes };
+        return sortedEdges.slice(0, topK);
     });
 
     // Build layout
-    const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height } = $derived.by(() => {
+    const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height, clusterSpans } = $derived.by(() => {
         const nodesPerLayerSeq: Record<string, number[]> = {};
         const allLayers = new SvelteSet<string>();
         const allRows = new SvelteSet<string>();
 
-        for (const nodeKey of activeNodes) {
+        for (const nodeKey of allNodes) {
             const [layer, seqIdx, cIdx] = nodeKey.split(":");
             allLayers.add(layer);
             allRows.add(getRowKey(layer));
@@ -167,6 +176,7 @@
         // Sort rows for Y positioning
         const parseRow = (r: string) => {
             if (r === "wte") return { block: -1, subtype: "wte" };
+            if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
             if (r === "output") return { block: Infinity, subtype: "output" };
             const mQkv = r.match(/h\.(\d+)\.qkv/);
             if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
@@ -189,7 +199,7 @@
         let currentY = MARGIN.top;
         for (const row of rows.slice().reverse()) {
             rowYPositions[row] = currentY;
-            currentY += COMPONENT_SIZE + LAYER_GAP;
+            currentY += COMPONENT_SIZE + layerGap;
         }
 
         // Map each layer to its row's Y position
@@ -232,21 +242,21 @@
         const MIN_COL_WIDTH = 30;
         const COL_PADDING = 16;
         const seqWidths = maxComponentsPerSeq.map((n) =>
-            Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + COMPONENT_GAP) + COL_PADDING * 2),
+            Math.max(MIN_COL_WIDTH, n * (COMPONENT_SIZE + componentGap) + COL_PADDING * 2),
         );
         const seqXStarts = [MARGIN.left];
         for (let i = 0; i < seqWidths.length - 1; i++) {
             seqXStarts.push(seqXStarts[i] + seqWidths[i]);
         }
 
-        // Position nodes
+        // Position nodes and compute cluster spans
         const nodePositions: Record<string, NodePosition> = {};
-        const QKV_GROUP_GAP = COMPONENT_SIZE + COMPONENT_GAP;
+        const allClusterSpans: ClusterSpan[] = [];
+        const QKV_GROUP_GAP = COMPONENT_SIZE + componentGap;
 
         for (const layer of allLayers) {
             const info = parseLayer(layer);
             const isQkv = QKV_SUBTYPES.includes(info.subtype);
-            const isOutput = layer === "output";
 
             for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
                 const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -262,19 +272,44 @@
                         const prevLayer = `h.${info.block}.attn.${QKV_SUBTYPES[i]}`;
                         const prevLayerNodes = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`];
                         const prevCount = prevLayerNodes?.length ?? 0;
-                        baseX += prevCount * (COMPONENT_SIZE + COMPONENT_GAP);
+                        baseX += prevCount * (COMPONENT_SIZE + componentGap);
                         baseX += QKV_GROUP_GAP;
                     }
                 }
 
-                const cellWidth = seqWidths[seqIdx] - COL_PADDING * 2;
-                const offsets = getComponentOffsets(nodes, layer, seqIdx, isOutput, cellWidth);
+                // Output nodes always sort by probability; internal nodes sort by cluster if mapping loaded, else by CI
+                const sorted =
+                    layer === "output" || !clusterMapping.mapping
+                        ? sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs)
+                        : sortComponentsByCluster(
+                              nodes,
+                              layer,
+                              seqIdx,
+                              data.nodeCiVals,
+                              clusterMapping.getClusterId.bind(clusterMapping),
+                          );
+                const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
                 for (const cIdx of nodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
                         x: baseX + offsets[cIdx] + COMPONENT_SIZE / 2,
                         y: baseY + COMPONENT_SIZE / 2,
                     };
+                }
+
+                // Compute cluster spans for this layer/seqIdx (skip output layer)
+                if (layer !== "output" && clusterMapping.mapping) {
+                    const spans = computeClusterSpans(
+                        sorted,
+                        layer,
+                        seqIdx,
+                        baseX,
+                        baseY,
+                        COMPONENT_SIZE,
+                        offsets,
+                        clusterMapping.getClusterId.bind(clusterMapping),
+                    );
+                    allClusterSpans.push(...spans);
                 }
             }
         }
@@ -284,106 +319,86 @@
         const maxY = Math.max(...Object.values(layerYPositions), 0) + COMPONENT_SIZE;
         const heightVal = maxY + MARGIN.bottom;
 
-        return { nodePositions, layerYPositions, seqWidths, seqXStarts, width: widthVal, height: heightVal };
+        return {
+            nodePositions,
+            layerYPositions,
+            seqWidths,
+            seqXStarts,
+            width: widthVal,
+            height: heightVal,
+            clusterSpans: allClusterSpans,
+        };
     });
 
-    // Get component offsets based on layout strategy
-    function getComponentOffsets(
-        components: number[],
-        layer: string,
-        seqIdx: number,
-        isOutput: boolean,
-        cellWidth: number,
-    ): Record<number, number> {
-        const n = components.length;
-        const offsets: Record<number, number> = {};
+    const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
-        if (nodeLayout === "importance") {
-            const sorted = [...components].sort((a, b) => {
-                if (isOutput) {
-                    const entryA = data.outputProbs[`${seqIdx}:${a}`];
-                    const entryB = data.outputProbs[`${seqIdx}:${b}`];
-                    return (entryB?.prob ?? 0) - (entryA?.prob ?? 0);
-                }
-                const impA = componentImportanceLocal[`${layer}:${seqIdx}:${a}`] ?? 0;
-                const impB = componentImportanceLocal[`${layer}:${seqIdx}:${b}`] ?? 0;
-                return impB - impA;
-            });
-            for (let i = 0; i < n; i++) {
-                offsets[sorted[i]] = i * (COMPONENT_SIZE + COMPONENT_GAP);
+    // Check if a node key matches the currently hovered component (same layer:cIdx, any seqIdx)
+    function nodeMatchesHoveredComponent(nodeKey: string): boolean {
+        if (!hoveredComponentKey) return false;
+        const [layer, , cIdx] = nodeKey.split(":");
+        return `${layer}:${cIdx}` === hoveredComponentKey;
+    }
+
+    // Check if a node is in the same cluster as the hovered node (for cluster rotation effect)
+    function isNodeInSameCluster(nodeKey: string): boolean {
+        // Only trigger if hovered node has a numeric cluster ID (not singleton/no mapping)
+        if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
+        const [layer, , cIdxStr] = nodeKey.split(":");
+        const cIdx = parseInt(cIdxStr);
+        const nodeClusterId = clusterMapping.getClusterId(layer, cIdx);
+        return nodeClusterId === hoveredClusterId;
+    }
+
+    type EdgeState = "normal" | "highlighted" | "hidden";
+
+    // Hover acts as a "promotion": hidden → normal → highlighted
+    function getEdgeState(src: string, tgt: string): EdgeState {
+        const hasPinned = pinnedNodeKeys.size > 0;
+        const connectedToPinned = pinnedNodeKeys.has(src) || pinnedNodeKeys.has(tgt);
+        const connectedToHoveredNode = nodeMatchesHoveredComponent(src) || nodeMatchesHoveredComponent(tgt);
+        const isThisEdgeHovered = hoveredEdge?.src === src && hoveredEdge?.tgt === tgt;
+
+        // No pinned nodes - just node hover behavior
+        if (!hasPinned) {
+            return connectedToHoveredNode ? "highlighted" : "normal";
+        }
+
+        // Has pinned nodes
+        if (effectiveHideUnpinned) {
+            if (!connectedToPinned) {
+                // Show (not highlighted) edges connected to hovered component
+                if (connectedToHoveredNode) return "normal";
+                return "hidden";
             }
-            return offsets;
-        }
-
-        if (nodeLayout === "shuffled") {
-            const seed = hashString(`${layer}:${seqIdx}`);
-            const shuffled = seededShuffle([...components], seed);
-            for (let i = 0; i < n; i++) {
-                offsets[shuffled[i]] = i * (COMPONENT_SIZE + COMPONENT_GAP);
+            // Highlight edges connected to pinned on edge/node hover
+            if (isThisEdgeHovered || connectedToHoveredNode) return "highlighted";
+            return "normal";
+        } else {
+            // Show all edges, connected ones highlighted by default
+            // Edge hover: only that edge highlighted, others normal
+            if (hoveredEdge) {
+                return isThisEdgeHovered ? "highlighted" : "normal";
             }
-            return offsets;
+            // Node hover: highlight connected to hovered component OR pinned nodes
+            if (hoveredNode) {
+                return connectedToHoveredNode || connectedToPinned ? "highlighted" : "normal";
+            }
+            // No hover: connected to pinned are highlighted
+            return connectedToPinned ? "highlighted" : "normal";
         }
-
-        // jittered
-        const seed = hashString(`${layer}:${seqIdx}`);
-        const shuffled = seededShuffle([...components], seed);
-
-        let jitterSeed = seed;
-        const jitterRandom = () => {
-            jitterSeed |= 0;
-            jitterSeed = (jitterSeed + 0x6d2b79f5) | 0;
-            let t = Math.imul(jitterSeed ^ (jitterSeed >>> 15), 1 | jitterSeed);
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-
-        const totalSpace = cellWidth - n * COMPONENT_SIZE;
-        const gap = totalSpace / (n + 1);
-        const maxJitter = gap / 2;
-
-        for (let i = 0; i < n; i++) {
-            const baseOffset = gap + i * (COMPONENT_SIZE + gap);
-            const jitter = (jitterRandom() - 0.5) * 2 * maxJitter;
-            const jitteredOffset = Math.max(0, Math.min(cellWidth - COMPONENT_SIZE, baseOffset + jitter));
-            offsets[shuffled[i]] = jitteredOffset;
-        }
-        return offsets;
-    }
-
-    function hashString(str: string): number {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = (hash << 5) - hash + char;
-            hash = hash & hash;
-        }
-        return Math.abs(hash);
-    }
-
-    function seededShuffle<T>(arr: T[], seed: number): T[] {
-        const random = () => {
-            seed |= 0;
-            seed = (seed + 0x6d2b79f5) | 0;
-            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
-
-        for (let i = arr.length - 1; i > 0; i--) {
-            const j = Math.floor(random() * (i + 1));
-            [arr[i], arr[j]] = [arr[j], arr[i]];
-        }
-        return arr;
-    }
-
-    function lerp(min: number, max: number, t: number): number {
-        return min + (max - min) * t;
     }
 
     // Build SVG edges string (for {@html} - performance optimization)
+    // Render order: visible paths first (smaller on top), then hit areas (larger on top)
+    // Only render hit areas for edges connected to pinned nodes
     const edgesSvgString = $derived.by(() => {
-        let svg = "";
-        for (const edge of filteredEdges) {
+        let visibleSvg = "";
+        let hitAreaSvg = "";
+
+        // filteredEdges is already sorted by abs(val) descending
+        // Render visible paths in reverse order (smallest first, so largest renders on top)
+        for (let i = filteredEdges.length - 1; i >= 0; i--) {
+            const edge = filteredEdges[i];
             const p1 = nodePositions[edge.src];
             const p2 = nodePositions[edge.tgt];
             if (p1 && p2) {
@@ -395,51 +410,38 @@
                 const cp1y = p1.y - curveOffset;
                 const cp2y = p2.y + curveOffset;
                 const d = `M ${p1.x},${p1.y} C ${p1.x},${cp1y} ${p2.x},${cp2y} ${p2.x},${p2.y}`;
-                svg += `<path class="edge" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="${color}" stroke-width="${w}" opacity="${op}" fill="none"/>`;
+                visibleSvg += `<path class="edge edge-visible" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="${color}" stroke-width="${w}" opacity="${op}" fill="none" pointer-events="none"/>`;
             }
         }
-        return svg;
-    });
 
-    // Pinned node keys (stable - only changes when user clicks to pin/unpin)
-    const pinnedKeys = $derived.by(() => {
-        const keys = new SvelteSet<string>();
-        for (const pinned of pinnedNodes) {
-            for (const nodeKey of Object.keys(nodePositions)) {
-                const [layer, , cIdx] = nodeKey.split(":");
-                if (layer === pinned.layer && +cIdx === pinned.cIdx) {
-                    keys.add(nodeKey);
-                }
+        // Only render hit areas for edges connected to pinned nodes
+        // Render in reverse order so largest edges' hit areas are on top
+        for (let i = filteredEdges.length - 1; i >= 0; i--) {
+            const edge = filteredEdges[i];
+            if (!pinnedNodeKeys.has(edge.src) && !pinnedNodeKeys.has(edge.tgt)) continue;
+
+            const p1 = nodePositions[edge.src];
+            const p2 = nodePositions[edge.tgt];
+            if (p1 && p2) {
+                const dy = Math.abs(p2.y - p1.y);
+                const curveOffset = Math.max(20, dy * 0.4);
+                const cp1y = p1.y - curveOffset;
+                const cp2y = p2.y + curveOffset;
+                const d = `M ${p1.x},${p1.y} C ${p1.x},${cp1y} ${p2.x},${cp2y} ${p2.x},${p2.y}`;
+                hitAreaSvg += `<path class="edge edge-hit-area" data-src="${edge.src}" data-tgt="${edge.tgt}" data-val="${edge.val}" d="${d}" stroke="transparent" stroke-width="${EDGE_HIT_AREA_WIDTH}" fill="none"/>`;
             }
         }
-        return keys;
+
+        return visibleSvg + hitAreaSvg;
     });
 
-    // Hovered node keys (changes frequently but kept separate to minimize re-renders)
-    const hoveredKeys = $derived.by(() => {
-        if (!hoveredNode || isNodePinned(hoveredNode.layer, hoveredNode.cIdx)) {
-            return new SvelteSet<string>();
-        }
-        const keys = new SvelteSet<string>();
-        for (const nodeKey of Object.keys(nodePositions)) {
-            const [layer, , cIdx] = nodeKey.split(":");
-            if (layer === hoveredNode.layer && +cIdx === hoveredNode.cIdx) {
-                keys.add(nodeKey);
-            }
-        }
-        return keys;
-    });
-
-    // Helper to check if a key is highlighted (avoids creating new Set on every hover)
-    function isKeyHighlighted(key: string): boolean {
-        return pinnedKeys.has(key) || hoveredKeys.has(key);
+    function isNodePinned(layer: string, seqIdx: number, cIdx: number): boolean {
+        return pinnedNodeKeys.has(`${layer}:${seqIdx}:${cIdx}`);
     }
 
-    // Combined set for edge highlighting effect only
-    const highlightedKeys = $derived(new SvelteSet([...pinnedKeys, ...hoveredKeys]));
-
-    function isNodePinned(layer: string, cIdx: number): boolean {
-        return pinnedNodes.some((p) => p.layer === layer && p.cIdx === cIdx);
+    // Check if a node key should be highlighted (pinned or hovered component)
+    function isNodeHighlighted(nodeKey: string): boolean {
+        return pinnedNodeKeys.has(nodeKey) || nodeMatchesHoveredComponent(nodeKey);
     }
 
     // Pre-compute node styles (fill, opacity) - only recomputes when data/layout changes, not on hover
@@ -461,8 +463,9 @@
                     opacity = 0.4 + probEntry.prob * 0.6;
                 }
             } else {
-                const importance = componentImportanceLocal[`${layer}:${seqIdx}:${cIdx}`] || 0;
-                const intensity = Math.min(1, importance / maxImportanceLocal);
+                // Component nodes: opacity based on CI (brighter = higher CI)
+                const ci = data.nodeCiVals[`${layer}:${seqIdx}:${cIdx}`] || 0;
+                const intensity = Math.min(1, ci / maxCi);
                 opacity = 0.2 + intensity * 0.8;
             }
 
@@ -486,10 +489,8 @@
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
 
         // Lazy load component details if needed
-        if (layer !== "output" && !activationContextsSummary) {
-            // No summary available
-        } else if (layer !== "output") {
-            loadComponentDetailIfNeeded(layer, cIdx);
+        if (layer !== "output" && activationContextsSummary) {
+            runState.loadComponentDetail(layer, cIdx);
         }
     }
 
@@ -503,22 +504,26 @@
                 hoveredNode = null;
             }
             hoverTimeout = null;
-        }, 50);
+        }, 100);
     }
 
-    function handleNodeClick(layer: string, cIdx: number) {
-        const idx = pinnedNodes.findIndex((p) => p.layer === layer && p.cIdx === cIdx);
-        if (idx >= 0) {
-            onPinnedNodesChange(pinnedNodes.filter((_, i) => i !== idx));
-        } else {
-            onPinnedNodesChange([...pinnedNodes, { layer, cIdx }]);
-        }
+    function handleNodeClick(layer: string, seqIdx: number, cIdx: number) {
+        toggleComponentPinned(layer, cIdx, seqIdx);
         hoveredNode = null;
+    }
+
+    function toggleComponentPinned(layer: string, cIdx: number, seqIdx: number) {
+        const idx = stagedNodes.findIndex((p) => p.layer === layer && p.seqIdx === seqIdx && p.cIdx === cIdx);
+        if (idx >= 0) {
+            onStagedNodesChange(stagedNodes.filter((_, i) => i !== idx));
+        } else {
+            onStagedNodesChange([...stagedNodes, { layer, seqIdx, cIdx }]);
+        }
     }
 
     function handleEdgeMouseEnter(event: MouseEvent) {
         const target = event.target as SVGElement;
-        if (target.classList.contains("edge")) {
+        if (target.classList.contains("edge-hit-area")) {
             const src = target.getAttribute("data-src") || "";
             const tgt = target.getAttribute("data-tgt") || "";
             const val = parseFloat(target.getAttribute("data-val") || "0");
@@ -529,74 +534,24 @@
 
     function handleEdgeMouseLeave(event: MouseEvent) {
         const target = event.target as SVGElement;
-        if (target.classList.contains("edge")) {
+        if (target.classList.contains("edge-hit-area")) {
             hoveredEdge = null;
         }
     }
 
-    function calcTooltipPos(mouseX: number, mouseY: number) {
-        const padding = 15;
-        let left = mouseX + padding;
-        let top = mouseY + padding;
-        if (typeof window !== "undefined") {
-            if (left + 500 > window.innerWidth) left = mouseX - 500 - padding;
-            if (top + 400 > window.innerHeight) top = mouseY - 400 - padding;
-        }
-        return { x: Math.max(0, left), y: Math.max(0, top) };
-    }
-
-    async function loadComponentDetailIfNeeded(layer: string, cIdx: number) {
-        const cacheKey = `${layer}:${cIdx}`;
-        if (componentDetailsCache[cacheKey] || componentDetailsLoading[cacheKey]) return;
-
-        componentDetailsLoading[cacheKey] = true;
-        try {
-            const detail = await api.getComponentDetail(layer, cIdx);
-            componentDetailsCache[cacheKey] = detail;
-        } catch (e) {
-            console.error(`Failed to load component detail for ${cacheKey}:`, e);
-        } finally {
-            componentDetailsLoading[cacheKey] = false;
-        }
-    }
-
-    // Track previously highlighted edges to minimize DOM updates
-    let prevHighlightedEdges = new SvelteSet<Element>();
-
-    // Update edge highlighting via $effect (DOM manipulation for performance)
-    // Only updates edges that actually changed state
+    // Update edge classes based on state (DOM manipulation for performance with @html edges)
     $effect(() => {
-        if (!graphContainer) {
-            return;
-        }
+        if (!graphContainer) return;
 
-        const currentHighlighted = new SvelteSet<Element>();
-        const edges = graphContainer.querySelectorAll(".edge");
-
-        // Build set of currently highlighted edges
+        const edges = graphContainer.querySelectorAll(".edge-visible");
         edges.forEach((el) => {
             const src = el.getAttribute("data-src") || "";
             const tgt = el.getAttribute("data-tgt") || "";
-            if (highlightedKeys.has(src) || highlightedKeys.has(tgt)) {
-                currentHighlighted.add(el);
-            }
+            const state = getEdgeState(src, tgt);
+
+            el.classList.toggle("highlighted", state === "highlighted");
+            el.classList.toggle("hidden", state === "hidden");
         });
-
-        // Remove highlight from edges no longer highlighted
-        for (const el of prevHighlightedEdges) {
-            if (!currentHighlighted.has(el)) {
-                el.classList.remove("highlighted");
-            }
-        }
-
-        // Add highlight to newly highlighted edges
-        for (const el of currentHighlighted) {
-            if (!prevHighlightedEdges.has(el)) {
-                el.classList.add("highlighted");
-            }
-        }
-
-        prevHighlightedEdges = currentHighlighted;
     });
 
     // Notify parent of edge count changes
@@ -616,7 +571,9 @@
                     ? `${info.block}.q/k/v`
                     : layer === "wte" || layer === "output"
                       ? layer
-                      : `${info.block}.${info.subtype}`}
+                      : layer === "lm_head"
+                        ? "W_U"
+                        : `${info.block}.${info.subtype}`}
                 <text
                     x={LABEL_WIDTH - 10}
                     y={yCenter}
@@ -634,12 +591,30 @@
     </div>
 
     <div class="graph-container">
-        <!-- svelte-ignore a11y_no_static_element_interactions, a11y_mouse_events_have_key_events -->
         <svg {width} {height} onmouseover={handleEdgeMouseEnter} onmouseout={handleEdgeMouseLeave}>
             <!-- Edges (bulk rendered for performance, uses @html for large SVG performance) -->
             <g class="edges-layer">
                 <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                 {@html edgesSvgString}
+            </g>
+
+            <!-- Cluster bars (below nodes) -->
+            <g class="cluster-bars-layer">
+                {#each clusterSpans as span (`${span.layer}:${span.seqIdx}:${span.clusterId}`)}
+                    {@const isHighlighted = hoveredClusterId === span.clusterId}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <rect
+                        class="cluster-bar"
+                        class:highlighted={isHighlighted}
+                        x={span.xStart}
+                        y={span.y + CLUSTER_BAR_GAP}
+                        width={span.xEnd - span.xStart}
+                        height={CLUSTER_BAR_HEIGHT}
+                        rx="1"
+                        onmouseenter={() => (hoveredBarClusterId = span.clusterId)}
+                        onmouseleave={() => (hoveredBarClusterId = null)}
+                    />
+                {/each}
             </g>
 
             <!-- Nodes (reactive for interactivity) -->
@@ -648,15 +623,21 @@
                     {@const [layer, seqIdxStr, cIdxStr] = key.split(":")}
                     {@const seqIdx = parseInt(seqIdxStr)}
                     {@const cIdx = parseInt(cIdxStr)}
-                    {@const isHighlighted = isKeyHighlighted(key)}
+                    {@const isHighlighted = isNodeHighlighted(key)}
+                    {@const isPinned = pinnedNodeKeys.has(key)}
+                    {@const inSameCluster = isNodeInSameCluster(key)}
+                    {@const isHoveredComponent = nodeMatchesHoveredComponent(key)}
+                    {@const isDimmed =
+                        (hoveredNode !== null || hoveredBarClusterId !== null) &&
+                        !isHoveredComponent &&
+                        !inSameCluster &&
+                        !isPinned}
                     {@const style = nodeStyles[key]}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <g
                         class="node-group"
                         onmouseenter={(e) => handleNodeMouseEnter(e, layer, seqIdx, cIdx)}
                         onmouseleave={handleNodeMouseLeave}
-                        onclick={() => handleNodeClick(layer, cIdx)}
+                        onclick={() => handleNodeClick(layer, seqIdx, cIdx)}
                     >
                         <!-- Invisible hit area for easier hovering -->
                         <rect
@@ -670,6 +651,8 @@
                         <rect
                             class="node"
                             class:highlighted={isHighlighted}
+                            class:cluster-hovered={inSameCluster}
+                            class:dimmed={isDimmed}
                             x={pos.x - COMPONENT_SIZE / 2}
                             y={pos.y - COMPONENT_SIZE / 2}
                             width={COMPONENT_SIZE}
@@ -717,11 +700,11 @@
         <div class="edge-tooltip" style="left: {edgeTooltipPos.x}px; top: {edgeTooltipPos.y}px;">
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Src</span>
-                <code>{hoveredEdge.src}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.src)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Tgt</span>
-                <code>{hoveredEdge.tgt}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>
@@ -733,44 +716,30 @@
     {/if}
 
     <!-- Node tooltip -->
-    {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.cIdx)}
-        {@const summary = activationContextsSummary?.[hoveredNode.layer]?.find(
-            (s) => s.subcomponent_idx === hoveredNode?.cIdx,
-        )}
-        {@const detail = componentDetailsCache[`${hoveredNode.layer}:${hoveredNode.cIdx}`]}
-        {@const isLoading = componentDetailsLoading[`${hoveredNode.layer}:${hoveredNode.cIdx}`] ?? false}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-            class="node-tooltip"
-            style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"
-            onmouseenter={() => (isHoveringTooltip = true)}
-            onmouseleave={() => {
+    {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)}
+        <NodeTooltip
+            {hoveredNode}
+            {tooltipPos}
+            {hideNodeCard}
+            {activationContextsSummary}
+            outputProbs={data.outputProbs}
+            nodeCiVals={data.nodeCiVals}
+            tokens={data.tokens}
+            edgesBySource={data.edgesBySource}
+            edgesByTarget={data.edgesByTarget}
+            onMouseEnter={() => (isHoveringTooltip = true)}
+            onMouseLeave={() => {
                 isHoveringTooltip = false;
                 handleNodeMouseLeave();
             }}
-        >
-            <h3>{hoveredNode.layer}:{hoveredNode.cIdx}</h3>
-
-            <ComponentDetailCard
-                layer={hoveredNode.layer}
-                cIdx={hoveredNode.cIdx}
-                seqIdx={hoveredNode.seqIdx}
-                {detail}
-                {isLoading}
-                outputProbs={data.outputProbs}
-                {summary}
-                compact
-            />
-        </div>
+            onPinComponent={toggleComponentPinned}
+        />
     {/if}
 </div>
-
-<PinnedComponentsPanel {pinnedNodes} {componentDetailsCache} outputProbs={data.outputProbs} {onPinnedNodesChange} />
 
 <style>
     .graph-wrapper {
         display: flex;
-        border: 1px solid var(--border-default);
         background: var(--bg-surface);
         overflow: hidden;
     }
@@ -803,15 +772,13 @@
         display: block;
     }
 
-    :global(.edge) {
-        transition:
-            opacity 0.1s,
-            stroke-width 0.1s;
-    }
-
     :global(.edge.highlighted) {
         opacity: 1 !important;
         stroke-width: 3 !important;
+    }
+
+    :global(.edge.hidden) {
+        display: none;
     }
 
     .node-group {
@@ -819,10 +786,17 @@
     }
 
     .node {
-        transition:
-            stroke-width 0.1s,
-            filter 0.1s;
-        pointer-events: none; /* Let the group handle events */
+        transform-box: fill-box;
+        transform-origin: center;
+        transition: transform 0.15s ease-out;
+    }
+
+    .node.cluster-hovered {
+        transform: rotate(45deg);
+    }
+
+    .node.dimmed {
+        transform: scale(0.5);
     }
 
     .node.highlighted {
@@ -832,8 +806,22 @@
         opacity: 1 !important;
     }
 
-    .edge-tooltip,
-    .node-tooltip {
+    .cluster-bar {
+        fill: var(--text-secondary);
+        opacity: 0.5;
+        cursor: pointer;
+        transition:
+            opacity 0.15s ease-out,
+            fill 0.15s ease-out;
+    }
+
+    .cluster-bar:hover,
+    .cluster-bar.highlighted {
+        fill: var(--text-primary);
+        opacity: 0.8;
+    }
+
+    .edge-tooltip {
         position: fixed;
         padding: var(--space-3);
         background: var(--bg-elevated);
@@ -841,9 +829,6 @@
         z-index: 1000;
         pointer-events: auto;
         font-family: var(--font-mono);
-    }
-
-    .edge-tooltip {
         font-size: var(--text-sm);
     }
 
@@ -855,7 +840,6 @@
 
     .edge-tooltip-label {
         color: var(--text-muted);
-
         font-size: var(--text-xs);
         letter-spacing: 0.05em;
         min-width: 4em;
@@ -864,22 +848,5 @@
     .edge-tooltip code {
         color: var(--text-primary);
         font-size: var(--text-sm);
-    }
-
-    .node-tooltip {
-        max-width: 400px;
-        max-height: 500px;
-        overflow-y: auto;
-    }
-
-    .node-tooltip h3 {
-        margin: 0 0 var(--space-2) 0;
-        font-size: var(--text-base);
-        font-family: var(--font-mono);
-        color: var(--accent-primary);
-        font-weight: 600;
-        letter-spacing: 0.02em;
-        border-bottom: 1px solid var(--border-subtle);
-        padding-bottom: var(--space-2);
     }
 </style>

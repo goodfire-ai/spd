@@ -1,25 +1,40 @@
 """Run management endpoints."""
 
+import getpass
 from urllib.parse import unquote
 
 import torch
 import yaml
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
-from spd.app.backend.schemas import LoadedRun
-from spd.app.backend.state import RunState
+from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import build_token_lookup, log_errors
-from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
+
+# =============================================================================
+# Schemas
+# =============================================================================
+
+
+class LoadedRun(BaseModel):
+    """Info about the currently loaded run."""
+
+    id: int
+    wandb_path: str
+    config_yaml: str
+    has_prompts: bool
+    prompt_count: int
+    context_length: int
+    backend_user: str
+
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
@@ -42,18 +57,11 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     """
     db = manager.db
 
-    try:
-        entity, project, run_id = parse_wandb_run_path(unquote(wandb_path))
-    except ValueError as e:
-        return JSONResponse({"error parsing wandb path": str(e)}, status_code=400)
-
+    entity, project, run_id = parse_wandb_run_path(unquote(wandb_path))
     clean_wandb_path = f"{entity}/{project}/{run_id}"
 
     logger.info(f"[API] Loading {clean_wandb_path}")
-    try:
-        run_info = SPDRunInfo.from_path(clean_wandb_path)
-    except Exception as e:
-        return JSONResponse({"error": f"Failed to load run from W&B: {e}"}, status_code=400)
+    run_info = SPDRunInfo.from_path(clean_wandb_path)
 
     run = db.get_run_by_wandb_path(clean_wandb_path)
     if run is None:
@@ -64,9 +72,15 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     else:
         logger.info(f"[API] Found existing run in DB: {run.id}")
 
-    # If already loaded, skip model load
-    if manager.run_state is not None and manager.run_state.run.id == run.id:
-        logger.info(f"[API] Run {run.id} already loaded, skipping")
+    # If already loaded with same context_length, skip model load
+    if (
+        manager.run_state is not None
+        and manager.run_state.run.id == run.id
+        and manager.run_state.context_length == context_length
+    ):
+        logger.info(
+            f"[API] Run {run.id} already loaded with context_length={context_length}, skipping"
+        )
         return {"status": "already_loaded", "run_id": run.id, "wandb_path": run.wandb_path}
 
     # Unload previous run if any
@@ -85,33 +99,18 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     # Load tokenizer
     spd_config = run_info.config
     assert spd_config.tokenizer_name is not None
+    logger.info(f"[API] Loading tokenizer for run {run.id}: {spd_config.tokenizer_name}")
     loaded_tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
     assert isinstance(loaded_tokenizer, PreTrainedTokenizerFast)
 
     # Build sources_by_target mapping
+    logger.info(f"[API] Building sources_by_target mapping for run {run.id}")
     sources_by_target = get_sources_by_target(model, DEVICE, spd_config.sampling)
 
     # Build token lookup for activation contexts
+    logger.info(f"[API] Building token lookup for run {run.id}")
     token_strings = build_token_lookup(loaded_tokenizer, spd_config.tokenizer_name)
 
-    task_config = spd_config.task_config
-    assert isinstance(task_config, LMTaskConfig)
-    train_data_config = DatasetConfig(
-        name=task_config.dataset_name,
-        hf_tokenizer_path=spd_config.tokenizer_name,
-        split=task_config.train_data_split,
-        n_ctx=context_length,
-        is_tokenized=task_config.is_tokenized,
-        streaming=task_config.streaming,
-        column_name=task_config.column_name,
-        shuffle_each_epoch=task_config.shuffle_each_epoch,
-    )
-    train_loader, _ = create_data_loader(
-        dataset_config=train_data_config,
-        batch_size=32,
-        buffer_size=task_config.buffer_size,
-        global_seed=spd_config.seed,
-    )
     manager.run_state = RunState(
         run=run,
         model=model,
@@ -119,8 +118,8 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         sources_by_target=sources_by_target,
         config=spd_config,
         token_strings=token_strings,
-        train_loader=train_loader,
         context_length=context_length,
+        harvest=HarvestCache(run_id=run_id),
     )
 
     logger.info(f"[API] Run {run.id} loaded on {DEVICE}")
@@ -147,10 +146,10 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         id=run.id,
         wandb_path=run.wandb_path,
         config_yaml=config_yaml,
-        has_activation_contexts=manager.db.has_activation_contexts(run.id),
         has_prompts=prompt_count > 0,
         prompt_count=prompt_count,
         context_length=context_length,
+        backend_user=getpass.getuser(),
     )
 
 
@@ -159,3 +158,10 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
 def health_check() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@router.get("/whoami")
+@log_errors
+def whoami() -> dict[str, str]:
+    """Return the current backend user."""
+    return {"user": getpass.getuser()}

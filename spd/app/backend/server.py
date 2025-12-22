@@ -8,19 +8,27 @@ Usage:
     python -m spd.app.backend.server --port 8000
 """
 
+import traceback
 from contextlib import asynccontextmanager
 
 import fire
 import torch
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from spd.app.backend.db import LocalAttrDB
+from spd.app.backend.database import LocalAttrDB
 from spd.app.backend.routers import (
     activation_contexts_router,
+    clusters_router,
+    correlations_router,
+    dataset_search_router,
     graphs_router,
+    intervention_router,
     prompts_router,
     runs_router,
 )
@@ -54,17 +62,90 @@ app = FastAPI(title="SPD App API", lifespan=lifespan, debug=True)
 # Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# comment out if wanted
+# @app.middleware("http")
+# async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]):
+#     """Log all incoming requests and their responses."""
+#     logger.info(f"[REQUEST] {request.method} {request.url.path}?{request.url.query}")
+#     response = await call_next(request)
+#     logger.info(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}")
+#     return response
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Log validation errors (400s) with full details."""
+    logger.error(f"[VALIDATION ERROR] {request.method} {request.url.path}")
+    logger.error(f"[VALIDATION ERROR] Errors: {exc.errors()}")
+    if exc.body is not None:
+        logger.error(f"[VALIDATION ERROR] Request body: {exc.body}")
+
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": exc.errors(),
+            "type": "RequestValidationError",
+            "path": request.url.path,
+            "method": request.method,
+            "body": str(exc.body) if exc.body is not None else None,
+        },
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Log HTTP exceptions with context."""
+    logger.error(f"[HTTP {exc.status_code}] {request.method} {request.url.path}")
+    logger.error(f"[HTTP {exc.status_code}] Detail: {exc.detail}")
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "type": "HTTPException",
+            "path": request.url.path,
+            "method": request.method,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Log full exception details for debugging."""
+    tb = traceback.format_exc()
+    logger.error(f"[ERROR] {request.method} {request.url.path}")
+    logger.error(f"[ERROR] Exception: {type(exc).__name__}: {exc}")
+    logger.error(f"[ERROR] Traceback:\n{tb}")
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": str(exc),
+            "type": type(exc).__name__,
+            "path": request.url.path,
+            "method": request.method,
+        },
+    )
+
 
 # Routers
 app.include_router(runs_router)
 app.include_router(prompts_router)
 app.include_router(graphs_router)
 app.include_router(activation_contexts_router)
+app.include_router(correlations_router)
+app.include_router(clusters_router)
+app.include_router(intervention_router)
+app.include_router(dataset_search_router)
 
 
 def cli(port: int = 8000) -> None:

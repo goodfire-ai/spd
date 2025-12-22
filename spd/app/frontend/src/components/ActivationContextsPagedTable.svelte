@@ -5,19 +5,17 @@
         // Columnar data
         exampleTokens: string[][]; // [n_examples, window_size]
         exampleCi: number[][]; // [n_examples, window_size]
-        exampleActivePos: number[]; // [n_examples]
         // Unique activating tokens (from pr_tokens, already sorted by recall)
         activatingTokens: string[];
     }
 
-    let { exampleTokens, exampleCi, exampleActivePos, activatingTokens }: Props = $props();
+    let { exampleTokens, exampleCi, activatingTokens }: Props = $props();
 
     let currentPage = $state(0);
     let pageSize = $state(20);
     let tokenFilter = $state<string | null>(null);
 
-    // Number of examples (guard against null during transitions)
-    let nExamples = $derived(exampleTokens?.length ?? 0);
+    let nExamples = $derived(exampleTokens.length);
 
     // Update currentPage when page input changes
     function handlePageInput(event: Event) {
@@ -27,8 +25,7 @@
         if (!isNaN(valueNum) && valueNum >= 1 && valueNum <= totalPages) {
             currentPage = valueNum - 1;
         } else {
-            alert("something went wrong");
-            currentPage = 0;
+            throw new Error(`Invalid page number: ${value} (must be 1-${totalPages})`);
         }
     }
 
@@ -103,7 +100,7 @@
             </select>
         </div>
         <div class="filter-control">
-            <label for="token-filter">Filter by token:</label>
+            <label for="token-filter">Filter by includes token:</label>
             <select id="token-filter" bind:value={tokenFilter}>
                 <option value="">All tokens</option>
                 {#each activatingTokens as token (token)}
@@ -113,15 +110,13 @@
         </div>
     </div>
     <div class="examples">
-        {#each paginatedIndices as idx (idx)}
-            <div class="example-item">
-                <TokenHighlights
-                    tokenStrings={exampleTokens[idx]}
-                    tokenCi={exampleCi[idx]}
-                    activePosition={exampleActivePos[idx]}
-                />
-            </div>
-        {/each}
+        <div class="examples-inner">
+            {#each paginatedIndices as idx (idx)}
+                <div class="example-item">
+                    <TokenHighlights tokenStrings={exampleTokens[idx]} tokenCi={exampleCi[idx]} />
+                </div>
+            {/each}
+        </div>
     </div>
 </div>
 
@@ -136,10 +131,16 @@
         padding: var(--space-2);
         background: var(--bg-inset);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
+        overflow-x: auto;
+        overflow-y: clip;
+    }
+
+    .examples-inner {
         display: flex;
         flex-direction: column;
-        gap: var(--space-2);
+        gap: var(--space-1);
+        width: max-content;
+        min-width: 100%;
     }
 
     .controls {
@@ -149,7 +150,6 @@
         padding: var(--space-2);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
-        border-radius: var(--radius-md);
         flex-wrap: wrap;
     }
 
@@ -247,12 +247,6 @@
         font-size: var(--text-sm);
         line-height: 1.8;
         color: var(--text-primary);
-        padding: var(--space-2);
-        overflow: visible;
-        border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .example-item:last-child {
-        border-bottom: none;
+        white-space: nowrap;
     }
 </style>
