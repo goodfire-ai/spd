@@ -85,10 +85,6 @@ clean:
 	rm -rf build/ dist/ .ruff_cache/ .pytest_cache/ .coverage
 
 
-.PHONY: clustering-dev
-clustering-dev:
-	uv run spd-cluster --local --config spd/clustering/configs/pipeline-dev-simplestories.yaml
-
 .PHONY: app
 app:
 	@uv run python spd/app/run_app.py

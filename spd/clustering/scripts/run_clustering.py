@@ -1,7 +1,8 @@
 """Perform a single clustering run.
 
-This can be run as a standalone script, or called via `spd-cluster` (i.e. clustering/scripts/run_pipeline.py).
-If called via spd-cluster, the ensemble-key is passed in to identify the run within the pipeline ensemble.
+This can be run as a standalone script, or called via `spd-clustering`
+(i.e. clustering/scripts/run_pipeline.py). If called via spd-clustering, the ensemble-key is passed
+in to identify the run within the pipeline ensemble.
 
 Output structure:
     <ExecutionStamp.out_dir>/  # from execution stamp (run_type="cluster")

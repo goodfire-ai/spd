@@ -40,7 +40,7 @@ def test_clustering_with_resid_mlp1_config():
     # Run the clustering main script with the test config
     result = subprocess.run(
         [
-            "spd-cluster",
+            "spd-clustering",
             "--config",
             str(config_path),
             "--local",  # don't assume we have slurm in the test env
@@ -85,7 +85,7 @@ def test_clustering_with_simplestories_config():
     # Run the clustering main script with the test config
     result = subprocess.run(
         [
-            "spd-cluster",
+            "spd-clustering",
             "--config",
             str(config_path),
             "--dataset-streaming",  # see https://github.com/goodfire-ai/spd/pull/199

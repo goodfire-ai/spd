@@ -385,9 +385,9 @@ def main(
 
 
 def cli():
-    """CLI for spd-cluster command."""
+    """CLI for spd-clustering command."""
     parser = argparse.ArgumentParser(
-        prog="spd-cluster",
+        prog="spd-clustering",
         description="Submit clustering runs to SLURM. Arguments specified here will override the "
         "corresponding value in the config file.",
     )
