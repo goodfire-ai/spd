@@ -4,7 +4,7 @@ Usage (direct execution):
     python -m spd.autointerp.scripts.run_interpret <wandb_path>
 
 Usage (SLURM submission):
-    spd-interpret <wandb_path>
+    spd-autointerp <wandb_path>
 """
 
 import os

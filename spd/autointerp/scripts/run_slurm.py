@@ -3,8 +3,8 @@
 Submits interpret jobs to SLURM cluster programmatically.
 
 Usage:
-    spd-interpret <wandb_path>
-    spd-interpret <wandb_path> --budget_usd 100
+    spd-autointerp <wandb_path>
+    spd-autointerp <wandb_path> --budget_usd 100
 """
 
 import subprocess

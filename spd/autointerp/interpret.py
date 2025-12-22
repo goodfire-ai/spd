@@ -338,12 +338,12 @@ def run_interpret(
 
     results = asyncio.run(
         interpret_all(
-            components,
-            arch,
-            openrouter_api_key,
-            interpreter_model,
-            output_path,
-            max_examples_per_component,
+            components=components,
+            arch=arch,
+            openrouter_api_key=openrouter_api_key,
+            interpreter_model=interpreter_model,
+            output_path=output_path,
+            max_examples_per_component=max_examples_per_component,
         )
     )
 

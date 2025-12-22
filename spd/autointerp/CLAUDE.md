@@ -9,7 +9,7 @@ LLM-based automated interpretation of SPD components. Consumes pre-harvested dat
 python -m spd.autointerp.scripts.run_interpret <wandb_path> --model google/gemini-3-flash-preview
 
 # Or via SLURM
-spd-interpret <wandb_path>
+spd-autointerp <wandb_path>
 ```
 
 Requires `OPENROUTER_API_KEY` env var.

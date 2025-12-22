@@ -175,12 +175,12 @@ spd-harvest <wandb_path>              # Submit SLURM job to harvest statistics
 
 See `spd/harvest/CLAUDE.md` for details.
 
-### Automated Component Interpretation (`spd-interpret`)
+### Automated Component Interpretation (`spd-autointerp`)
 
 Generate LLM interpretations for harvested components:
 
 ```bash
-spd-interpret <wandb_path>            # Submit SLURM job to interpret components
+spd-autointerp <wandb_path>            # Submit SLURM job to interpret components
 ```
 
 Requires `OPENROUTER_API_KEY` env var. See `spd/autointerp/CLAUDE.md` for details.
