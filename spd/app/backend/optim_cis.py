@@ -26,15 +26,15 @@ from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_
 class OptimCELossConfig:
     """Cross-entropy loss config for CI optimization. These losses apply to the final token only."""
 
-    coeff: float = 1.0
-    label_token: int = 0
+    coeff: float
+    label_token: int
 
 
 @dataclass
 class OptimKLLossConfig:
     """KL divergence loss config for CI optimization. These losses apply to the final token only."""
 
-    coeff: float = 1.0
+    coeff: float
 
 
 @dataclass

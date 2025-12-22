@@ -23,11 +23,7 @@ from spd.app.backend.db.database import (
     StoredGraph,
 )
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
-from spd.app.backend.optim_cis.run_optim_cis import (
-    OptimCELossConfig,
-    OptimCIConfig,
-    OptimKLLossConfig,
-)
+from spd.app.backend.optim_cis import OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
 from spd.app.backend.schemas import OutputProbability
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig

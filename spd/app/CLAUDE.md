@@ -38,8 +38,7 @@ backend/
 ├── dependencies.py        # FastAPI dependency injection
 ├── utils.py               # Logging/timing utilities
 ├── db/database.py         # SQLite interface
-├── optim_cis/
-│   └── run_optim_cis.py   # Sparse CI optimization
+├── optim_cis.py           # Sparse CI optimization
 └── routers/
     ├── runs.py            # Load W&B runs
     ├── graphs.py          # Compute attribution graphs
@@ -199,7 +198,7 @@ CI determines which components are "alive":
 - Thresholded: `ci >= ci_threshold` → active
 - For output layer: `prob >= output_prob_threshold`
 
-### CI Optimization (`optim_cis/run_optim_cis.py`)
+### CI Optimization (`optim_cis.py`)
 
 Finds sparse CI mask that:
 

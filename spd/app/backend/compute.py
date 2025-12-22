@@ -15,11 +15,7 @@ from torch import Tensor, nn
 from tqdm.auto import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.optim_cis.run_optim_cis import (
-    OptimCIConfig,
-    compute_label_prob,
-    optimize_ci_values,
-)
+from spd.app.backend.optim_cis import OptimCIConfig, compute_label_prob, optimize_ci_values
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
