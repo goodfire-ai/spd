@@ -9,6 +9,7 @@ import pytest
 
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.registry import EXPERIMENT_REGISTRY
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def from_run_info(canonical_run: str) -> ComponentModel:
@@ -43,3 +44,70 @@ def test_loading_from_wandb(exp_name: str, canonical_run: str) -> None:
     except Exception as e:
         e.add_note(f"Error with from_pretrained for {exp_name} from {canonical_run}")
         raise e
+
+
+@pytest.mark.parametrize(
+    "input_path, expected",
+    [
+        ("myentity/myproject/abcd1234", ("myentity", "myproject", "abcd1234")),
+        ("goodfire/spd/runs/xy7z9abc", ("goodfire", "spd", "xy7z9abc")),
+        ("wandb:myentity/myproject/abcd1234", ("myentity", "myproject", "abcd1234")),
+        ("wandb:myentity/myproject/runs/abcd1234", ("myentity", "myproject", "abcd1234")),
+        (
+            "https://wandb.ai/myentity/myproject/runs/abcd1234",
+            ("myentity", "myproject", "abcd1234"),
+        ),
+        (
+            "https://wandb.ai/myentity/myproject/runs/abcd1234?workspace=user",
+            ("myentity", "myproject", "abcd1234"),
+        ),
+        ("  myentity/myproject/abcd1234  ", ("myentity", "myproject", "abcd1234")),  # whitespace
+        ("my-entity/my_project/abcd1234", ("my-entity", "my_project", "abcd1234")),  # special chars
+    ],
+    ids=[
+        "compact",
+        "compact-with-runs",
+        "prefix-compact",
+        "prefix-with-runs",
+        "url",
+        "url-with-query",
+        "whitespace",
+        "special-chars",
+    ],
+)
+def test_parse_wandb_run_path_valid(input_path: str, expected: tuple[str, str, str]):
+    assert parse_wandb_run_path(input_path) == expected
+
+
+@pytest.mark.parametrize(
+    "input_path",
+    [
+        "myentity/myproject",
+        "myentity/myproject/abc1234",
+        "myentity/myproject/abcd12345",
+        "myentity/myproject/ABCD1234",
+        "myentity/myproject/abcd-123",
+        "abcd1234",
+        "",
+        "not a valid path at all",
+        "http://wandb.ai/myentity/myproject/runs/abcd1234",
+        "https://example.com/myentity/myproject/runs/abcd1234",
+        "https://wandb.ai/myentity/myproject/abcd1234",
+    ],
+    ids=[
+        "missing-runid",
+        "runid-too-short",
+        "runid-too-long",
+        "runid-uppercase",
+        "runid-invalid-chars",
+        "only-runid",
+        "empty",
+        "random-text",
+        "http-not-https",
+        "wrong-domain",
+        "url-missing-runs",
+    ],
+)
+def test_parse_wandb_run_path_invalid(input_path: str):
+    with pytest.raises(ValueError, match="Invalid W&B run reference"):
+        parse_wandb_run_path(input_path)

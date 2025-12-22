@@ -1,56 +1,95 @@
 <script lang="ts">
-    import type { ComponentDetail, HarvestMetadata } from "../lib/api";
+    import type { Loadable } from "../lib";
+    import type { SubcomponentActivationContexts, HarvestMetadata, Interpretation } from "../lib/api";
     import * as api from "../lib/api";
+    import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
+    import ComponentProbeInput from "./ComponentProbeInput.svelte";
+    import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
+    import InterpretationBadge from "./ui/InterpretationBadge.svelte";
+    import SectionHeader from "./ui/SectionHeader.svelte";
+    import StatusText from "./ui/StatusText.svelte";
+    import TokenStatsSection from "./ui/TokenStatsSection.svelte";
 
     interface Props {
         harvestMetadata: HarvestMetadata;
     }
 
     let { harvestMetadata }: Props = $props();
-    if (Object.keys(harvestMetadata.layers).length === 0) {
-        throw new Error("No layers data");
-    }
-    const LIMIT = 20;
 
+    const N_TOKENS_TO_DISPLAY_INPUT = 80;
+    const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
+
+    type TokenValue = { token: string; value: number };
+    type TokenList = { title: string; mathNotation?: string; items: TokenValue[] };
+
+    let availableLayers = $derived(Object.keys(harvestMetadata.layers).sort());
     let currentPage = $state(0);
-    let selectedLayer = $derived(Object.keys(harvestMetadata.layers)[0]);
-    let metricMode = $state<"recall" | "precision">("recall");
+    let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
 
-    // Display page (1-indexed)
-    let displayPage = $derived(currentPage + 1);
+    let componentCache = $state<Record<string, Loadable<SubcomponentActivationContexts>>>({});
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive, just for deduplication
+    const requestedKeys = new Set<string>();
 
-    // Update currentPage when page input changes
+    // Correlations state
+    let correlations = $state<Loadable<ComponentCorrelations>>(null);
+
+    // Token stats state (from batch job)
+    let tokenStats = $state<Loadable<TokenStats>>(null);
+
+    // Interpretation state
+    let interpretation = $state<Loadable<Interpretation>>(null);
+
+    // Layer metadata is already sorted by mean_ci desc from backend
+    let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
+    let totalPages = $derived(currentLayerMetadata.length);
+    let currentMetadata = $derived<api.SubcomponentMetadata>(currentLayerMetadata[currentPage]);
+
+    function getCacheKey(layer: string, componentIdx: number) {
+        return `${layer}:${componentIdx}`;
+    }
+
+    let currentComponent = $derived.by(() => {
+        const cacheKey = getCacheKey(selectedLayer, currentMetadata.subcomponent_idx);
+        return componentCache[cacheKey] ?? null;
+    });
+
     function handlePageInput(event: Event) {
         const target = event.target as HTMLInputElement;
+        if (target.value === "") return;
         const value = parseInt(target.value);
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
         }
-        // If invalid, the derived displayPage will show the correct value
     }
 
-    // Component data cache: key is `${layer}:${componentIdx}`
-    let componentCache = $state<Record<string, ComponentDetail>>({});
-    let loadingComponent = $state(false);
+    // Search for a specific subcomponent index
+    let searchValue = $state("");
+    let searchError = $state<string | null>(null);
 
-    // Derive available layers from the data
-    let availableComponentLayers = $derived(Object.keys(harvestMetadata.layers));
+    function handleSearchInput(event: Event) {
+        const target = event.target as HTMLInputElement;
+        searchValue = target.value;
+        searchError = null;
 
-    // Derive current metadata from selections
-    let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
-    let totalPages = $derived(currentLayerMetadata.length);
+        if (searchValue === "") return;
 
-    // current page isn't reset to 0 instantly when layer changes, so we must handle the case when,
-    // for a brief moment, the current page is out of bounds.
-    let currentMetadata = $derived<api.SubcomponentMetadata | null>(currentLayerMetadata.at(currentPage) ?? null);
+        const targetIdx = parseInt(searchValue);
+        if (isNaN(targetIdx)) {
+            searchError = "Invalid number";
+            return;
+        }
 
-    // Get current component data from cache
-    let currentItem = $derived.by(() => {
-        if (!currentMetadata) return null;
-        const cacheKey = `${selectedLayer}:${currentMetadata.subcomponent_idx}`;
-        return componentCache[cacheKey] ?? null;
-    });
+        // Find the page index that contains this subcomponent index
+        const pageIndex = currentLayerMetadata.findIndex((m) => m.subcomponent_idx === targetIdx);
+
+        if (pageIndex === -1) {
+            searchError = `Not found`;
+            return;
+        }
+
+        currentPage = pageIndex;
+    }
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -62,318 +101,426 @@
 
     // Reset page when layer changes
     $effect(() => {
-        if (selectedLayer) currentPage = 0;
+        selectedLayer; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        currentPage = 0;
     });
 
     // Lazy-load component data when page or layer changes
     $effect(() => {
-        // establish dependencies by reading them
         const meta = currentMetadata;
         const layer = selectedLayer;
 
         if (!meta) return;
 
-        const cacheKey = `${layer}:${meta.subcomponent_idx}`;
+        const cacheKey = getCacheKey(layer, meta.subcomponent_idx);
 
-        // skip if already cached
-        if (componentCache[cacheKey]) return;
+        if (requestedKeys.has(cacheKey)) return;
+        requestedKeys.add(cacheKey);
 
         let cancelled = false;
-        loadingComponent = true;
+        componentCache[cacheKey] = { status: "loading" };
 
         const load = async () => {
             try {
-                const detail = await api.getComponentDetail(harvestMetadata.harvest_id, layer, meta.subcomponent_idx);
+                const detail = await api.getComponentDetail(layer, meta.subcomponent_idx);
 
                 if (cancelled) return;
-                componentCache[cacheKey] = detail; // writes to $state
+                componentCache[cacheKey] = { status: "loaded", data: detail };
             } catch (error) {
-                if (!cancelled) console.error("Failed to load component:", error);
-            } finally {
-                if (!cancelled) loadingComponent = false;
+                if (!cancelled) componentCache[cacheKey] = { status: "error", error };
             }
         };
 
         load();
 
-        // cleanup if deps change before the async work finishes
         return () => {
             cancelled = true;
         };
     });
 
-    let densities = $derived(
-        currentItem?.token_prs
-            ?.slice()
-            .sort((a, b) => b[metricMode] - a[metricMode])
-            .slice(0, LIMIT),
-    );
+    // Fetch correlations when component changes
+    $effect(() => {
+        const layer = selectedLayer;
+        const cIdx = currentMetadata?.subcomponent_idx;
+        if (cIdx === undefined) return;
+
+        correlations = { status: "loading" };
+        api.getComponentCorrelations(layer, cIdx, 1000)
+            .then((data) => {
+                if (data != null) {
+                    correlations = { status: "loaded", data };
+                } else {
+                    correlations = { status: "error", error: "No correlations found" };
+                }
+            })
+            .catch((error) => {
+                correlations = { status: "error", error };
+            });
+    });
+
+    // Fetch token stats when component changes (from batch job)
+    $effect(() => {
+        const layer = selectedLayer;
+        const cIdx = currentMetadata?.subcomponent_idx;
+        if (cIdx === undefined) return;
+
+        tokenStats = { status: "loading" };
+        api.getComponentTokenStats(layer, cIdx, 1000)
+            .then((data) => {
+                if (data != null) {
+                    tokenStats = { status: "loaded", data };
+                } else {
+                    tokenStats = { status: "error", error: "No token stats found" };
+                }
+            })
+            .catch((error) => {
+                tokenStats = { status: "error", error };
+            });
+    });
+
+    // Fetch interpretation when component changes
+    $effect(() => {
+        const layer = selectedLayer;
+        const cIdx = currentMetadata?.subcomponent_idx;
+        if (cIdx === undefined) return;
+
+        interpretation = { status: "loading" };
+        api.getComponentInterpretation(layer, cIdx)
+            .then((data) => {
+                if (data != null) {
+                    interpretation = { status: "loaded", data };
+                } else {
+                    interpretation = { status: "error", error: "No interpretation found" };
+                }
+            })
+            .catch((error) => {
+                interpretation = { status: "error", error };
+            });
+    });
+
+    // Transform tokenStats into Loadable<TokenList[]> for input tokens section
+    const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                    items: tokenStats.data.input.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
+    });
+
+    // Transform tokenStats into Loadable<TokenList[]> for output tokens section
+    const outputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        if (tokenStats == null) return null;
+        if (tokenStats.status === "loading") return { status: "loading" };
+        if (tokenStats.status === "error") return tokenStats;
+        return {
+            status: "loaded",
+            data: [
+                {
+                    title: "Top PMI",
+                    mathNotation: "positive association with predictions",
+                    items: tokenStats.data.output.top_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+                {
+                    title: "Bottom PMI",
+                    mathNotation: "negative association with predictions",
+                    items: tokenStats.data.output.bottom_pmi
+                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                        .map(([token, value]) => ({ token, value })),
+                },
+            ],
+        };
+    });
+
+    // Activating tokens from token stats (for highlighting in table)
+    let inputTopRecall = $derived.by(() => {
+        if (tokenStats?.status !== "loaded") return [];
+        return tokenStats.data.input.top_recall.map(([token, value]) => ({ token, value }));
+    });
+
+    // Format mean CI for display
+    function formatMeanCi(ci: number): string {
+        return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
+    }
 </script>
 
-<div class="layer-select-section">
-    <label for="layer-select">Layer:</label>
-    <select id="layer-select" bind:value={selectedLayer}>
-        {#each availableComponentLayers as layer (layer)}
-            <option value={layer}>{layer}</option>
-        {/each}
-    </select>
-</div>
+<div class="viewer-content">
+    <div class="controls-row">
+        <div class="layer-select">
+            <label for="layer-select">Layer:</label>
+            <select id="layer-select" bind:value={selectedLayer}>
+                {#each availableLayers as layer (layer)}
+                    <option value={layer}>{layer}</option>
+                {/each}
+            </select>
+        </div>
 
-<div class="pagination-controls">
-    <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-    <input type="number" min="1" max={totalPages} value={displayPage} oninput={handlePageInput} class="page-input" />
-    <span>of {totalPages}</span>
-    <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
-</div>
+        <div class="pagination">
+            <label for="page-input">Subcomponent:</label>
+            <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
+            <input
+                type="number"
+                min="1"
+                max={totalPages}
+                value={currentPage + 1}
+                oninput={handlePageInput}
+                class="page-input"
+            />
+            <span>of {totalPages}</span>
+            <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+        </div>
 
-{#if loadingComponent}
-    <div class="loading">Loading component data...</div>
-{:else if currentItem && currentMetadata}
-    <div class="subcomponent-section-header">
-        <h4>
-            Subcomponent {currentMetadata.subcomponent_idx} (Mean CI: {currentMetadata.mean_ci < 0.001
-                ? currentMetadata.mean_ci.toExponential(2)
-                : currentMetadata.mean_ci.toFixed(3)})
-        </h4>
-        {#if densities != null}
-            <div class="token-densities">
-                <div class="token-densities-header">
-                    <h5>
-                        Tokens
-                        {currentItem.token_prs.length > LIMIT
-                            ? `(top ${LIMIT} of ${currentItem.token_prs.length})`
-                            : ""}
-                    </h5>
-                    <div class="metric-toggle">
-                        <div class="toggle-buttons">
-                            <button class:active={metricMode === "recall"} onclick={() => (metricMode = "recall")}>
-                                Recall
-                                <span class="math-notation">P(token | firing)</span>
-                            </button>
-                            <button
-                                class:active={metricMode === "precision"}
-                                onclick={() => (metricMode = "precision")}
-                            >
-                                Precision
-                                <span class="math-notation">P(firing | token)</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="densities-grid">
-                    {#each densities as { token, recall, precision } (`${token}-${recall}-${precision}`)}
-                        {@const value = metricMode === "recall" ? recall : precision}
-                        <div class="density-item">
-                            <span class="token">{token}</span>
-                            <div class="density-bar-container">
-                                <div class="density-bar" style="width: {value * 100}%"></div>
-                            </div>
-                            <span class="density-value">{(value * 100).toFixed(1)}%</span>
-                        </div>
-                    {/each}
-                </div>
-            </div>
-        {/if}
-
-        <ActivationContextsPagedTable examples={currentItem.examples} />
+        <div class="search-box">
+            <label for="search-input">Go to index:</label>
+            <input
+                id="search-input"
+                type="number"
+                placeholder="e.g. 42"
+                value={searchValue}
+                oninput={handleSearchInput}
+                class="search-input"
+            />
+            {#if searchError}
+                <span class="search-error">{searchError}</span>
+            {/if}
+        </div>
     </div>
-{/if}
+
+    <div class="component-section">
+        <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
+            <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
+        </SectionHeader>
+
+        <InterpretationBadge {interpretation} />
+
+        <div class="token-stats-row">
+            <TokenStatsSection
+                sectionTitle="Input Tokens"
+                sectionSubtitle="(what activates this component)"
+                lists={inputTokenLists}
+            />
+
+            <TokenStatsSection
+                sectionTitle="Output Tokens"
+                sectionSubtitle="(what this component predicts)"
+                lists={outputTokenLists}
+            />
+        </div>
+
+        <!-- Component correlations -->
+        <div class="correlations-section">
+            <SectionHeader title="Correlated Components" />
+            {#if correlations?.status === "loaded"}
+                <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
+            {:else if correlations?.status === "loading"}
+                <StatusText>Loading...</StatusText>
+            {:else if correlations?.status === "error"}
+                <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
+            {:else}
+                <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
+            {/if}
+        </div>
+
+        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
+
+        {#if currentComponent?.status === "loading"}
+            <div class="loading">Loading component data...</div>
+        {:else if currentComponent?.status === "loaded"}
+            <ActivationContextsPagedTable
+                exampleTokens={currentComponent.data.example_tokens}
+                exampleCi={currentComponent.data.example_ci}
+                activatingTokens={inputTopRecall.map(({ token }) => token)}
+            />
+        {:else if currentComponent?.status === "error"}
+            <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading component data.</StatusText>
+        {/if}
+    </div>
+</div>
 
 <style>
-    .layer-select-section {
+    .viewer-content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+    }
+
+    .controls-row {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
+        gap: var(--space-4);
         flex-wrap: wrap;
     }
 
-    .layer-select-section label {
-        font-size: 0.9rem;
-        color: #495057;
+    .layer-select {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .viewer-content label {
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
         font-weight: 500;
     }
 
     #layer-select {
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        padding: 0.5rem;
-        font-size: 0.9rem;
-        background: white;
+        border: 1px solid var(--border-default);
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
         cursor: pointer;
-        min-width: 200px;
+        min-width: 180px;
     }
 
-    .toggle-buttons {
-        display: flex;
-        gap: 0;
-        border: 1px solid #dee2e6;
-        border-radius: 6px;
-        overflow: hidden;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    #layer-select:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
     }
 
-    .toggle-buttons button {
-        padding: 0.5rem 0.5rem;
-        border: none;
-        background: white;
-        cursor: pointer;
-        font-size: 0.9rem;
-        transition: all 0.2s;
-        border-right: 1px solid #dee2e6;
-    }
-
-    .toggle-buttons button:last-child {
-        border-right: none;
-    }
-
-    .toggle-buttons button:hover {
-        background: #f8f9fa;
-    }
-
-    .toggle-buttons button.active {
-        background: #0d6efd;
-        color: white;
-        font-weight: 500;
-    }
-
-    .pagination-controls {
+    .pagination {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem;
-        background: #f8f9fa;
-        border-radius: 6px;
-        border: 1px solid #dee2e6;
+        gap: var(--space-2);
     }
 
-    .pagination-controls button {
-        padding: 0.25rem 0.75rem;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-        background: white;
-        cursor: pointer;
-        font-size: 0.9rem;
+    .pagination button {
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
     }
 
-    .pagination-controls button:disabled {
+    .pagination button:hover:not(:disabled) {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        border-color: var(--border-strong);
+    }
+
+    .pagination button:disabled {
         opacity: 0.5;
-        cursor: not-allowed;
     }
 
-    .pagination-controls span {
-        font-size: 0.9rem;
-        color: #495057;
+    .pagination span {
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .search-box {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .search-input {
+        width: 70px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        appearance: textfield;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .search-input::-webkit-inner-spin-button,
+    .search-input::-webkit-outer-spin-button {
+        appearance: none;
+        margin: 0;
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
+
+    .search-error {
+        font-size: var(--text-xs);
+        color: var(--semantic-error);
         white-space: nowrap;
     }
 
     .page-input {
-        width: 60px;
-        padding: 0.25rem 0.5rem;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
+        width: 50px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
         text-align: center;
-        font-size: 0.9rem;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
         appearance: textfield;
+    }
+
+    .page-input:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
     }
 
     .page-input::-webkit-inner-spin-button,
     .page-input::-webkit-outer-spin-button {
-        -webkit-appearance: none;
+        appearance: none;
         margin: 0;
     }
 
-    .subcomponent-section-header {
+    .component-section {
         display: flex;
         flex-direction: column;
-        gap: 0.4rem;
+        gap: var(--space-3);
+        padding: var(--space-4);
+        background: var(--bg-inset);
+        border: 1px solid var(--border-default);
     }
 
-    .subcomponent-section-header h4 {
-        margin: 0;
-        font-size: 1rem;
-        color: #495057;
+    .mean-ci {
+        font-weight: 400;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        margin-left: var(--space-2);
     }
 
-    .token-densities {
-        padding: 0.5rem;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #dee2e6;
-    }
-
-    .token-densities-header {
+    .token-stats-row {
         display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.5rem;
-        gap: 0.5rem;
-        flex-wrap: wrap;
+        gap: var(--space-4);
     }
 
-    .token-densities h5 {
-        margin: 0;
-        font-size: 1rem;
-        color: #495057;
+    .token-stats-row > :global(*) {
+        flex: 1;
+        min-width: 0;
     }
 
-    .math-notation {
-        font-family: "Georgia", "Times New Roman", serif;
-        font-style: italic;
-        font-size: 0.85em;
-        margin-left: 0.25rem;
-        opacity: 0.8;
-    }
-
-    .densities-grid {
+    .correlations-section {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .density-item {
-        display: grid;
-        grid-template-columns: 100px 1fr 60px;
-        align-items: center;
-        gap: 0.5rem;
-        font-size: 0.875rem;
-    }
-
-    .token {
-        font-family: monospace;
-        font-weight: 600;
-        color: #212529;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .density-bar-container {
-        height: 20px;
-        background: #e9ecef;
-        border-radius: 4px;
-        overflow: hidden;
-    }
-
-    .density-bar {
-        height: 100%;
-        background: #4dabf7;
-        transition: width 0.3s ease;
-    }
-
-    .density-value {
-        text-align: right;
-        color: #495057;
-        font-weight: 500;
+        gap: var(--space-2);
     }
 
     .loading {
-        padding: 2rem;
+        padding: var(--space-4);
         text-align: center;
-        color: #6c757d;
-        font-size: 1rem;
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-muted);
     }
 </style>

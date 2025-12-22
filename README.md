@@ -36,13 +36,17 @@ wandb).
 
 ### Run SPD
 
-The unified `spd-run` command provides a single entry point for running SPD experiments, supporting
-fixed configurations, parameter sweeps, and evaluation runs. All runs are tracked in W&B with
-workspace views created for each experiment.
+**Simple local execution** - Use `spd-simple` to run a single experiment locally:
 
-For full CLI usage and more examples, run `spd-run --help` or see `scripts/run.py`.
+```bash
+spd-simple tms_5-2           # Run on single GPU (default)
+spd-simple tms_5-2 --cpu     # Run on CPU
+spd-simple tms_5-2 --dp 4    # Run on 4 GPUs (single node DDP)
+```
 
-Below we show a small subset of the functionality provided in the CLI:
+**SLURM cluster execution** - Use `spd-run` for full-featured cluster orchestration with git
+snapshots, W&B views, and sweeps:
+
 ```bash
 spd-run --experiments tms_5-2                    # Run a specific experiment
 spd-run --experiments tms_5-2,resid_mlp1         # Run multiple experiments
@@ -52,7 +56,7 @@ spd-run                                          # Run all experiments
 For running hyperparameter sweeps:
 
 ```bash
-spd-run --experiments <experiment_name> --sweep --n-agents <n-agents> [--cpu]
+spd-run --experiments <experiment_name> --sweep --n_agents <n-agents> [--cpu]
 ```
 
 **Sweep parameters:**

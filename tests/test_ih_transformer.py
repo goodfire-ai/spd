@@ -5,6 +5,7 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    ModulePatternInfoConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -44,12 +45,16 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="vector_mlp",
         ci_fn_hidden_dims=[128],
-        target_module_patterns=["blocks.*.attn.q_proj", "blocks.*.attn.k_proj"],
-        identity_module_patterns=["blocks.*.attn.q_proj"],
+        module_info=[
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.q_proj", C=10),
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.k_proj", C=10),
+        ],
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.q_proj", C=10),
+        ],
         # Loss Coefficients
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
@@ -91,7 +96,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         tokenizer_name=None,
         # Task Specific
         task_config=IHTaskConfig(
-            task_name="induction_head",
+            task_name="ih",
         ),
     )
 
@@ -101,8 +106,8 @@ def test_ih_transformer_decomposition_happy_path() -> None:
     target_model.eval()
     target_model.requires_grad_(False)
 
-    if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     dataset = InductionDataset(
         seq_len=ih_transformer_config.seq_len,

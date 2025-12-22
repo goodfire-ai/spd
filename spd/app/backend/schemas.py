@@ -1,42 +1,38 @@
+"""Shared schema types used across multiple backend modules.
+
+These types are kept here to avoid circular imports between routers,
+database, state, and lib modules. Router-specific schemas should be
+defined in their respective router files.
+"""
+
 from pydantic import BaseModel
 
-
-class ActivationContext(BaseModel):
-    token_strings: list[str]
-    token_ci_values: list[float]
-    active_position: int
-    ci_value: float
+# =============================================================================
+# Shared Types (used by database.py, state.py, lib/activation_contexts.py)
+# =============================================================================
 
 
-class TokenPR(BaseModel):
-    """Token Precision and Recall for a given subcomponent"""
+class OutputProbability(BaseModel):
+    """Output probability for a specific token at a specific position."""
 
+    prob: float
     token: str
-    """Token string"""
-    recall: float
-    """Recall: P(token | subcomponent firing)"""
-    precision: float
-    """Precision: P(subcomponent firing | token)"""
 
 
-class SubcomponentActivationContexts(BaseModel):
-    subcomponent_idx: int
-    examples: list[ActivationContext]
-    token_prs: list[TokenPR]
-    mean_ci: float
+# =============================================================================
+# Configuration Models
+# =============================================================================
 
 
-class ModelActivationContexts(BaseModel):
-    layers: dict[str, list[SubcomponentActivationContexts]]
+class ActivationContextsGenerationConfig(BaseModel):
+    """Configuration for generating activation contexts."""
 
-
-class TrainRun(BaseModel):
-    wandb_path: str
-    config_yaml: str
-
-
-class Status(BaseModel):
-    train_run: TrainRun | None
+    importance_threshold: float = 0.01
+    n_batches: int = 100
+    batch_size: int = 32
+    n_tokens_either_side: int = 5
+    topk_examples: int = 20
+    separation_tokens: int = 0
 
 
 class SubcomponentMetadata(BaseModel):
@@ -46,8 +42,16 @@ class SubcomponentMetadata(BaseModel):
     mean_ci: float
 
 
-class HarvestMetadata(BaseModel):
-    """Lightweight metadata returned after harvest, containing only indices and mean_ci values"""
+class SubcomponentActivationContexts(BaseModel):
+    """Activation context data for a single subcomponent, using columnar layout for efficiency.
 
-    harvest_id: str
-    layers: dict[str, list[SubcomponentMetadata]]
+    Note: Token P/R/lift stats are now computed by the batch job and served via the
+    /token_stats endpoint, not stored here.
+    """
+
+    subcomponent_idx: int
+    mean_ci: float
+
+    # Examples - columnar arrays (n_examples ~ topk, window_size ~ 2*n_tokens_either_side+1)
+    example_tokens: list[list[str]]  # [n_examples][window_size]
+    example_ci: list[list[float]]  # [n_examples][window_size]

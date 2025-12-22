@@ -24,6 +24,8 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
+    PGDMultiBatchReconLossConfig,
+    PGDMultiBatchReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
@@ -32,8 +34,10 @@ from spd.configs import (
     StochasticReconLossConfig,
     StochasticReconSubsetCEAndKLConfig,
     StochasticReconSubsetLossConfig,
+    UnmaskedReconLossConfig,
     UVPlotsConfig,
 )
+from spd.metrics import UnmaskedReconLoss
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
 from spd.metrics.ci_histograms import CIHistograms
@@ -50,6 +54,7 @@ from spd.metrics.permuted_ci_plots import PermutedCIPlots
 from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
 from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
 from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
+from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
 from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
@@ -57,8 +62,9 @@ from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetC
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
-from spd.utils.general_utils import extract_batch_data
+from spd.utils.general_utils import dict_safe_update_, extract_batch_data
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
 DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
@@ -149,7 +155,10 @@ def init_metric(
             )
         case CIMaskedReconSubsetLossConfig():
             metric = CIMaskedReconSubsetLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+                routing=cfg.routing,
             )
         case CIMaskedReconLayerwiseLossConfig():
             metric = CIMaskedReconLayerwiseLoss(
@@ -205,6 +214,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
                 output_loss_type=run_config.output_loss_type,
+                routing=cfg.routing,
             )
         case PGDReconLossConfig():
             metric = PGDReconLoss(
@@ -221,6 +231,7 @@ def init_metric(
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg,
+                routing=cfg.routing,
             )
         case PGDReconLayerwiseLossConfig():
             metric = PGDReconLayerwiseLoss(
@@ -255,6 +266,17 @@ def init_metric(
                 identity_patterns=cfg.identity_patterns,
                 dense_patterns=cfg.dense_patterns,
             )
+        case UnmaskedReconLossConfig():
+            metric = UnmaskedReconLoss(
+                model=model,
+                device=device,
+                output_loss_type=run_config.output_loss_type,
+            )
+
+        case _:
+            # We shouldn't handle **all** cases because PGDMultiBatch metrics should be handled by
+            # the evaluate_multibatch_pgd function below.
+            raise ValueError(f"Unsupported metric config for eval: {cfg}")
     return metric
 
 
@@ -309,6 +331,46 @@ def evaluate(
             metric_name=type(metric).__name__,
             computed_raw=computed_raw,
         )
-        outputs.update(computed)
+        dict_safe_update_(outputs, computed)
 
     return outputs
+
+
+def evaluate_multibatch_pgd(
+    multibatch_pgd_eval_configs: list[
+        PGDMultiBatchReconLossConfig | PGDMultiBatchReconSubsetLossConfig
+    ],
+    model: ComponentModel,
+    create_data_iter: CreateDataIter,
+    config: Config,
+    batch_dims: tuple[int, ...],
+    device: str,
+) -> dict[str, float]:
+    """Calculate multibatch PGD metrics."""
+    weight_deltas = model.calc_weight_deltas() if config.use_delta_component else None
+
+    metrics: dict[str, float] = {}
+    for multibatch_pgd_config in multibatch_pgd_eval_configs:
+        match multibatch_pgd_config:
+            case PGDMultiBatchReconLossConfig():
+                router = AllLayersRouter()
+            case PGDMultiBatchReconSubsetLossConfig():
+                router = get_subset_router(multibatch_pgd_config.routing, device)
+
+        assert multibatch_pgd_config.classname not in metrics, (
+            f"Metric {multibatch_pgd_config.classname} already exists"
+        )
+
+        metrics[multibatch_pgd_config.classname] = calc_multibatch_pgd_masked_recon_loss(
+            pgd_config=multibatch_pgd_config,
+            model=model,
+            weight_deltas=weight_deltas,
+            create_data_iter=create_data_iter,
+            output_loss_type=config.output_loss_type,
+            router=router,
+            sampling=config.sampling,
+            use_delta_component=config.use_delta_component,
+            batch_dims=batch_dims,
+            device=device,
+        ).item()
+    return metrics

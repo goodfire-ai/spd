@@ -8,6 +8,7 @@ Starts backend and frontend with:
 """
 
 import atexit
+import concurrent.futures
 import contextlib
 import os
 import signal
@@ -118,21 +119,26 @@ class AppRunner:
         self.frontend_process: subprocess.Popen[str] | None = None
         self.cleanup_called = False
 
-    def wait_to_serve(self, port: int) -> None:
+    def wait_to_serve(self, port: int, name: str, pid: int | None = None) -> None:
         start = time.time()
         while time.time() < (start + STARTUP_TIMEOUT_SECONDS):
             try:
-                response = requests.get(f"http://localhost:{port}", timeout=1.0)
+                response = requests.get(f"http://localhost:{port}/api/health", timeout=1.0)
                 if response.status_code == 200:
+                    # Print success message immediately when ready
+                    if pid is not None:
+                        print(
+                            f"  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} {name} started (pid {pid}, port {port})"
+                        )
                     return
             except requests.RequestException:
                 pass
             time.sleep(0.5)
-        print(f"{AnsiEsc.RED}✗{AnsiEsc.RESET} Healthcheck failed", file=sys.stderr)
+        print(f"{AnsiEsc.RED}✗{AnsiEsc.RESET} {name} healthcheck failed", file=sys.stderr)
         sys.exit(1)
 
-    def start_backend(self, port: int, logfile: TextIO) -> None:
-        print(f"  {AnsiEsc.DIM}▸ Starting backend...{AnsiEsc.RESET}", end="", flush=True)
+    def spawn_backend(self, port: int, logfile: TextIO) -> subprocess.Popen[str]:
+        """Spawn backend process without waiting for it to be ready."""
         project_root = APP_DIR.parent.parent
         cmd = [
             "uv",
@@ -145,33 +151,19 @@ class AppRunner:
         ]
         proc = _spawn(cmd, cwd=project_root, env=None, logfile=logfile)
         self.backend_process = proc  # Immediately visible to signal handler
-        time.sleep(0.5)
-        print(
-            f"\r  {AnsiEsc.DIM}▸ Waiting for backend to serve...{AnsiEsc.RESET}", end="", flush=True
-        )
-        self.wait_to_serve(port)
-        print(
-            f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Backend started (pid {proc.pid}, port {port})        "
-        )
+        return proc
 
-    def start_frontend(self, port: int, backend_port: int, logfile: TextIO) -> None:
-        print(f"  {AnsiEsc.DIM}▸ Starting frontend...{AnsiEsc.RESET}", end="", flush=True)
+    def spawn_frontend(
+        self, port: int, backend_port: int, logfile: TextIO
+    ) -> subprocess.Popen[str]:
+        """Spawn frontend process without waiting for it to be ready."""
         env = os.environ.copy()
         env["VITE_API_URL"] = f"http://localhost:{backend_port}"
         # strictPort = fail-fast if port is taken (so our "did it die?" check works)
         cmd = ["npm", "run", "dev", "--", "--port", str(port), "--strictPort"]
         proc = _spawn(cmd, cwd=APP_DIR / "frontend", env=env, logfile=logfile)
         self.frontend_process = proc  # Immediately visible to signal handler
-        time.sleep(0.5)
-        print(
-            f"\r  {AnsiEsc.DIM}▸ Waiting for frontend to serve...{AnsiEsc.RESET}",
-            end="",
-            flush=True,
-        )
-        self.wait_to_serve(port)
-        print(
-            f"\r  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} Frontend started (pid {proc.pid}, port {port})        "
-        )
+        return proc
 
     def cleanup(self) -> None:
         """Cleanup all running processes (process groups)."""
@@ -199,6 +191,9 @@ class AppRunner:
                     proc.wait(timeout=0.3)
 
     def monitor_child_liveness(self) -> None:
+        log_lines_to_show = 5
+        prev_lines: list[str] = []
+
         while True:
             if self.backend_process and self.backend_process.poll() is not None:
                 print(
@@ -214,6 +209,37 @@ class AppRunner:
                 )
                 print(f"{AnsiEsc.DIM}Check {LOGFILE} for details{AnsiEsc.RESET}", file=sys.stderr)
                 sys.exit(1)
+
+            # Show last N lines of logs in a box
+            try:
+                with open(LOGFILE) as f:
+                    all_lines = f.readlines()
+                tail = all_lines[-log_lines_to_show:]
+
+                if tail != prev_lines:
+                    # Clear previous log display (box has +2 lines for borders)
+                    if prev_lines:
+                        lines_to_clear = len(prev_lines) + 2
+                        print(f"\033[{lines_to_clear}A\033[J", end="")
+
+                    # Print box with tail
+                    local_logfile = LOGFILE.relative_to(os.getcwd())
+                    print(
+                        f"{AnsiEsc.DIM}┌─ logs ({local_logfile}) {'─' * (60 - len(str(local_logfile)))}{AnsiEsc.RESET}"
+                    )
+                    for line in tail:
+                        clipped_line = (
+                            line.rstrip()[:100] + "..."
+                            if len(line.rstrip()) > 100
+                            else line.rstrip()
+                        )
+                        print(f"{AnsiEsc.DIM}│ {clipped_line}{AnsiEsc.RESET}")
+                    print(f"{AnsiEsc.DIM}└{'─' * 80}{AnsiEsc.RESET}")
+
+                    prev_lines = tail
+            except FileNotFoundError:
+                pass
+
             time.sleep(1.0)
 
     def run(self) -> None:
@@ -232,8 +258,24 @@ class AppRunner:
 
         # Open logfile for streaming child output
         with open(LOGFILE, "a", buffering=1, encoding="utf-8") as logfile:
-            self.start_backend(backend_port, logfile)
-            self.start_frontend(frontend_port, backend_port, logfile)
+            # Spawn both processes in parallel
+            print(f"  {AnsiEsc.DIM}▸ Spawning backend and frontend...{AnsiEsc.RESET}")
+            backend_proc = self.spawn_backend(backend_port, logfile)
+            frontend_proc = self.spawn_frontend(frontend_port, backend_port, logfile)
+
+            # Wait for both to be ready in parallel
+            print(f"  {AnsiEsc.DIM}▸ Waiting for servers to be ready...{AnsiEsc.RESET}")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                backend_future = executor.submit(
+                    self.wait_to_serve, backend_port, "Backend", backend_proc.pid
+                )
+                frontend_future = executor.submit(
+                    self.wait_to_serve, frontend_port, "Frontend", frontend_proc.pid
+                )
+                # Wait for both to complete (will raise if either fails)
+                concurrent.futures.wait([backend_future, frontend_future])
+                backend_future.result()
+                frontend_future.result()
 
             print(f"{AnsiEsc.DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{AnsiEsc.RESET}\n")
 
@@ -243,7 +285,6 @@ class AppRunner:
             print(
                 f"{AnsiEsc.BOLD}Frontend  {AnsiEsc.GREEN}{AnsiEsc.BOLD}{AnsiEsc.UNDERLINE}http://localhost:{frontend_port}/{AnsiEsc.RESET}\n"
             )
-            print(f"{AnsiEsc.DIM}  Press Ctrl+C to stop{AnsiEsc.RESET}")
 
             # Monitor child liveness
             self.monitor_child_liveness()
