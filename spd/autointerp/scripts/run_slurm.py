@@ -39,16 +39,19 @@ def launch_interpret_job(
     interpret_cmd = " \\\n    ".join(cmd_parts)
 
     # Build full command with echoes
-    full_command = f"""\
-echo "=== Interpret ==="
-echo "WANDB_PATH: {wandb_path}"
-echo "MODEL: {model.value}"
-echo "SLURM_JOB_ID: $SLURM_JOB_ID"
-echo "================="
-
-{interpret_cmd}
-
-echo "Interpret complete!\""""
+    full_command = "\n".join(
+        [
+            'echo "=== Interpret ==="',
+            f'echo "WANDB_PATH: {wandb_path}"',
+            f'echo "MODEL: {model.value}"',
+            'echo "SLURM_JOB_ID: $SLURM_JOB_ID"',
+            'echo "================="',
+            "",
+            interpret_cmd,
+            "",
+            'echo "Interpret complete!"',
+        ]
+    )
 
     config = SlurmConfig(
         job_name=job_name,

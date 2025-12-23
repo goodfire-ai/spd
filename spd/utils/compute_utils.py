@@ -148,14 +148,7 @@ def create_slurm_array_script(
     commands: list[str] = []
     for i, training_job in enumerate(training_jobs):
         cmd = get_command(run_id, training_job, i, n_gpus, sweep_params)
-        # For multi-node DDP, get_command returns Command with env_vars
-        # We need to prepend env var exports to the command
-        if cmd.env_vars:
-            env_exports = " ".join(f"{k}={v}" for k, v in cmd.env_vars.items())
-            full_cmd = f"export {env_exports} && {cmd.command}"
-        else:
-            full_cmd = cmd.command
-        commands.append(full_cmd)
+        commands.append(cmd.command)
 
     # Compute SLURM resource allocation for multi-node DDP
     if n_gpus is None or n_gpus == 1:
@@ -178,4 +171,5 @@ def create_slurm_array_script(
         max_concurrent_tasks=max_concurrent_tasks,
     )
 
-    return generate_array_script(config, commands)
+    # CUDA_FLAGS are always set for training jobs
+    return generate_array_script(config, commands, env=CUDA_FLAGS)

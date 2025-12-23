@@ -12,6 +12,7 @@ For SPD-specific training jobs with multi-node DDP, see compute_utils.py which
 uses this module internally.
 """
 
+import os
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -75,32 +76,38 @@ class SubmitResult:
     log_pattern: str
 
 
-def generate_script(config: SlurmConfig, command: str) -> str:
+def generate_script(config: SlurmConfig, command: str, env: dict[str, str] | None = None) -> str:
     """Generate a single SLURM job script.
 
     Args:
         config: SLURM job configuration
         command: The shell command to run
+        env: Optional environment variables to export at the start of the script
 
     Returns:
         Complete SLURM script content as a string
     """
     header = _generate_sbatch_header(config, is_array=False)
     setup = _generate_setup_section(config, is_array=False)
+    env_exports = _generate_env_exports(env)
 
     return f"""\
 #!/bin/bash
 {header}
 
 set -euo pipefail
-
+{env_exports}
 {setup}
 
 {command}
 """
 
 
-def generate_array_script(config: SlurmArrayConfig, commands: list[str]) -> str:
+def generate_array_script(
+    config: SlurmArrayConfig,
+    commands: list[str],
+    env: dict[str, str] | None = None,
+) -> str:
     """Generate a SLURM job array script.
 
     Each command in the list becomes one array task. Commands are executed via
@@ -109,6 +116,7 @@ def generate_array_script(config: SlurmArrayConfig, commands: list[str]) -> str:
     Args:
         config: SLURM array job configuration
         commands: List of shell commands, one per array task
+        env: Optional environment variables to export at the start of the script
 
     Returns:
         Complete SLURM array script content as a string
@@ -129,6 +137,7 @@ def generate_array_script(config: SlurmArrayConfig, commands: list[str]) -> str:
 
     header = _generate_sbatch_header(config, is_array=True, array_range=array_range)
     setup = _generate_setup_section(config, is_array=True)
+    env_exports = _generate_env_exports(env)
     case_block = _generate_case_block(commands)
 
     return f"""\
@@ -136,7 +145,7 @@ def generate_array_script(config: SlurmArrayConfig, commands: list[str]) -> str:
 {header}
 
 set -euo pipefail
-
+{env_exports}
 {setup}
 
 # Execute the appropriate command based on array task ID
@@ -155,7 +164,7 @@ def submit_slurm_job(
     """Write script to disk, submit to SLURM, and set up logging.
 
     This function:
-    1. Writes script to SBATCH_SCRIPTS_DIR with a temporary name
+    1. Writes script to SBATCH_SCRIPTS_DIR with a unique temporary name
     2. Submits via sbatch
     3. Renames script to include the SLURM job ID
     4. Creates empty log file(s) for tailing
@@ -172,9 +181,16 @@ def submit_slurm_job(
     SBATCH_SCRIPTS_DIR.mkdir(exist_ok=True)
     SLURM_LOGS_DIR.mkdir(exist_ok=True)
 
-    # Write script to temporary location
-    temp_script_path = SBATCH_SCRIPTS_DIR / f"{script_name_prefix}_temp.sh"
-    temp_script_path.write_text(script_content)
+    # Write script to a unique temporary file (safe for concurrent submissions)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        dir=SBATCH_SCRIPTS_DIR,
+        prefix=f"{script_name_prefix}_",
+        suffix=".sh",
+        delete=False,
+    ) as f:
+        f.write(script_content)
+        temp_script_path = Path(f.name)
     temp_script_path.chmod(0o755)
 
     # Submit via sbatch
@@ -189,10 +205,10 @@ def submit_slurm_job(
         assert n_array_tasks is not None, "n_array_tasks required for array jobs"
         for i in range(1, n_array_tasks + 1):
             (SLURM_LOGS_DIR / f"slurm-{job_id}_{i}.out").touch()
-        log_pattern = f"~/slurm_logs/slurm-{job_id}_*.out"
+        log_pattern = str(SLURM_LOGS_DIR / f"slurm-{job_id}_*.out")
     else:
         (SLURM_LOGS_DIR / f"slurm-{job_id}.out").touch()
-        log_pattern = f"~/slurm_logs/slurm-{job_id}.out"
+        log_pattern = str(SLURM_LOGS_DIR / f"slurm-{job_id}.out")
 
     return SubmitResult(
         job_id=job_id,
@@ -229,7 +245,10 @@ def run_locally(
     if track_resources:
         wrapped_commands: list[str] = []
         for cmd in commands:
-            resource_file = Path(tempfile.mktemp(suffix=".resources"))  # pyright: ignore[reportDeprecated]
+            # Create a unique temp file for resource tracking output
+            fd, resource_file_path = tempfile.mkstemp(suffix=".resources")
+            os.close(fd)  # Close fd, we just need the path for /usr/bin/time -o
+            resource_file = Path(resource_file_path)
             resource_files.append(resource_file)
             # Use /usr/bin/time to track comprehensive resource usage
             # K=avg total mem, M=max resident, P=CPU%, S=system time, U=user time, e=wall time
@@ -388,13 +407,13 @@ mkdir -p "$WORK_DIR"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Clone the repository to the job-specific directory
-git clone {REPO_ROOT} "$WORK_DIR"
+git clone "{REPO_ROOT}" "$WORK_DIR"
 
 # Change to the cloned repository directory
 cd "$WORK_DIR"
 
 # Copy the .env file from the original repository for WandB authentication
-cp {REPO_ROOT}/.env .env
+cp "{REPO_ROOT}/.env" .env
 
 # Checkout the snapshot branch to ensure consistent code
 git checkout "{config.snapshot_branch}"
@@ -407,8 +426,20 @@ source .venv/bin/activate"""
     else:
         # Simple setup without git clone
         return f"""\
-cd {REPO_ROOT}
+cd "{REPO_ROOT}"
 source .venv/bin/activate"""
+
+
+def _generate_env_exports(env: dict[str, str] | None) -> str:
+    """Generate export statements for environment variables.
+
+    Returns empty string if env is None or empty, otherwise returns
+    export statements with a leading newline for proper formatting.
+    """
+    if not env:
+        return ""
+    exports = "\n".join(f"export {k}={v}" for k, v in env.items())
+    return f"\n{exports}"
 
 
 def _generate_case_block(commands: list[str]) -> str:

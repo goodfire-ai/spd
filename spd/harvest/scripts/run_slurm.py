@@ -58,17 +58,20 @@ def harvest(
     harvest_cmd = " \\\n    ".join(cmd_parts)
 
     # Build full command with echoes
-    full_command = f"""\
-echo "=== Harvest ==="
-echo "WANDB_PATH: {wandb_path}"
-echo "N_BATCHES: {n_batches}"
-echo "N_GPUS: {actual_n_gpus}"
-echo "SLURM_JOB_ID: $SLURM_JOB_ID"
-echo "==============="
-
-{harvest_cmd}
-
-echo "Harvest complete!\""""
+    full_command = "\n".join(
+        [
+            'echo "=== Harvest ==="',
+            f'echo "WANDB_PATH: {wandb_path}"',
+            f'echo "N_BATCHES: {n_batches}"',
+            f'echo "N_GPUS: {actual_n_gpus}"',
+            'echo "SLURM_JOB_ID: $SLURM_JOB_ID"',
+            'echo "==============="',
+            "",
+            harvest_cmd,
+            "",
+            'echo "Harvest complete!"',
+        ]
+    )
 
     config = SlurmConfig(
         job_name=job_name,
