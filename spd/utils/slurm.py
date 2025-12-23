@@ -297,8 +297,8 @@ git clone "{REPO_ROOT}" "$WORK_DIR"
 # Change to the cloned repository directory
 cd "$WORK_DIR"
 
-# Copy the .env file from the original repository for WandB authentication
-cp "{REPO_ROOT}/.env" .env
+# Copy the .env file from the original repository for WandB authentication (if it exists)
+[ -f "{REPO_ROOT}/.env" ] && cp "{REPO_ROOT}/.env" .env
 
 # Checkout the snapshot branch to ensure consistent code
 git checkout "{config.snapshot_branch}"
