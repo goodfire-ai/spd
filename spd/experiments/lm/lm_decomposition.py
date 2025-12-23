@@ -156,13 +156,13 @@ def main(
     )
 
     eval_data_config = DatasetConfig(
-        name=config.task_config.dataset_name,
+        name=config.task_config.eval_dataset_name,
         hf_tokenizer_path=config.tokenizer_name,
         split=config.task_config.eval_data_split,
         n_ctx=config.task_config.max_seq_len,
         is_tokenized=config.task_config.is_tokenized,
-        streaming=config.task_config.streaming,
-        column_name=config.task_config.column_name,
+        streaming=config.task_config.eval_streaming,
+        column_name=config.task_config.eval_column_name,
         shuffle_each_epoch=config.task_config.shuffle_each_epoch,
         seed=None,
     )
