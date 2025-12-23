@@ -166,7 +166,6 @@ def create_slurm_array_script(
         partition=partition,
         n_gpus=gpus_per_node,
         n_nodes=n_nodes,
-        n_tasks=n_nodes,  # For multi-node DDP, ntasks = n_nodes
         snapshot_branch=snapshot_branch,
         max_concurrent_tasks=max_concurrent_tasks,
     )

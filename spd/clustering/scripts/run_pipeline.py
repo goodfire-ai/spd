@@ -33,13 +33,17 @@ from spd.clustering.storage import StorageBase
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
 from spd.utils.general_utils import replace_pydantic_model
-from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
+from spd.utils.run_utils import (
+    _NO_ARG_PARSSED_SENTINEL,
+    ExecutionStamp,
+    read_noneable_str,
+    run_locally,
+)
 from spd.utils.slurm import (
     SlurmArrayConfig,
     SlurmConfig,
     generate_array_script,
     generate_script,
-    run_locally,
     submit_slurm_job,
 )
 
