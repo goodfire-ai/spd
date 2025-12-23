@@ -465,10 +465,6 @@ RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
 }
 
 
-# TODO: This doesnt work in pytest but would in general be nice to enforce. hmm.
-# _CREATED_RUN_ID: bool = False
-
-
 class ExecutionStamp(NamedTuple):
     run_id: str
     snapshot_branch: str
@@ -481,14 +477,8 @@ class ExecutionStamp(NamedTuple):
 
         Format: `{type_abbr}-{random_hex}`
         """
-        # global _CREATED_RUN_ID
-        # if _CREATED_RUN_ID:
-        #     raise RuntimeError(
-        #         "Run ID has already been generated for this process! You can only call this once."
-        #     )
         type_abbr: str = RUN_TYPE_ABBREVIATIONS[run_type]
         random_hex: str = secrets.token_hex(4)
-        # _CREATED_RUN_ID = True
         return f"{type_abbr}-{random_hex}"
 
     @classmethod
