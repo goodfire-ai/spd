@@ -1,0 +1,439 @@
+"""Unified SLURM job submission utilities.
+
+This module provides a single source of truth for generating and submitting SLURM jobs.
+It handles:
+- SBATCH header generation
+- Workspace creation with cleanup
+- Git snapshot checkout (optional)
+- Virtual environment activation
+- Job submission with script renaming and log file creation
+
+For SPD-specific training jobs with multi-node DDP, see compute_utils.py which
+uses this module internally.
+"""
+
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+from spd.log import logger
+from spd.settings import REPO_ROOT, SBATCH_SCRIPTS_DIR, SLURM_LOGS_DIR
+
+
+@dataclass
+class SlurmConfig:
+    """Configuration for a SLURM job.
+
+    Attributes:
+        job_name: Name for the SLURM job (appears in squeue)
+        partition: SLURM partition to submit to
+        n_gpus: Number of GPUs per node (0 for CPU-only jobs)
+        n_nodes: Number of nodes (default 1)
+        n_tasks: Number of tasks (defaults to n_nodes if not set, for multi-node DDP)
+        time: Time limit in HH:MM:SS format
+        cpus_per_task: CPUs per task (for CPU-bound jobs like autointerp)
+        snapshot_branch: Git branch to checkout. If None, just cd to REPO_ROOT without cloning.
+        dependency_job_id: If set, job waits for this job to complete (afterok dependency)
+    """
+
+    job_name: str
+    partition: str
+    n_gpus: int = 1
+    n_nodes: int = 1
+    n_tasks: int | None = None
+    time: str = "72:00:00"
+    cpus_per_task: int | None = None
+    snapshot_branch: str | None = None
+    dependency_job_id: str | None = None
+
+
+@dataclass
+class SlurmArrayConfig(SlurmConfig):
+    """Configuration for a SLURM job array.
+
+    Attributes:
+        max_concurrent_tasks: Maximum number of array tasks to run concurrently.
+                              If None, no limit (all tasks can run at once).
+    """
+
+    max_concurrent_tasks: int | None = None
+
+
+@dataclass
+class SubmitResult:
+    """Result of submitting a SLURM job.
+
+    Attributes:
+        job_id: The SLURM job ID (string, e.g., "12345")
+        script_path: Path where the script was saved (renamed to include job ID)
+        log_pattern: Human-readable log path pattern for display
+    """
+
+    job_id: str
+    script_path: Path
+    log_pattern: str
+
+
+def generate_script(config: SlurmConfig, command: str) -> str:
+    """Generate a single SLURM job script.
+
+    Args:
+        config: SLURM job configuration
+        command: The shell command to run
+
+    Returns:
+        Complete SLURM script content as a string
+    """
+    header = _generate_sbatch_header(config, is_array=False)
+    setup = _generate_setup_section(config, is_array=False)
+
+    return f"""\
+#!/bin/bash
+{header}
+
+set -euo pipefail
+
+{setup}
+
+{command}
+"""
+
+
+def generate_array_script(config: SlurmArrayConfig, commands: list[str]) -> str:
+    """Generate a SLURM job array script.
+
+    Each command in the list becomes one array task. Commands are executed via
+    a case statement based on SLURM_ARRAY_TASK_ID.
+
+    Args:
+        config: SLURM array job configuration
+        commands: List of shell commands, one per array task
+
+    Returns:
+        Complete SLURM array script content as a string
+
+    Raises:
+        ValueError: If commands list is empty
+    """
+    if not commands:
+        raise ValueError("Cannot generate array script with empty commands list")
+
+    n_jobs = len(commands)
+
+    # Build array range (SLURM arrays are 1-indexed)
+    if config.max_concurrent_tasks is not None:
+        array_range = f"1-{n_jobs}%{config.max_concurrent_tasks}"
+    else:
+        array_range = f"1-{n_jobs}"
+
+    header = _generate_sbatch_header(config, is_array=True, array_range=array_range)
+    setup = _generate_setup_section(config, is_array=True)
+    case_block = _generate_case_block(commands)
+
+    return f"""\
+#!/bin/bash
+{header}
+
+set -euo pipefail
+
+{setup}
+
+# Execute the appropriate command based on array task ID
+case $SLURM_ARRAY_TASK_ID in
+{case_block}
+esac
+"""
+
+
+def submit_slurm_job(
+    script_content: str,
+    script_name_prefix: str,
+    is_array: bool = False,
+    n_array_tasks: int | None = None,
+) -> SubmitResult:
+    """Write script to disk, submit to SLURM, and set up logging.
+
+    This function:
+    1. Writes script to SBATCH_SCRIPTS_DIR with a temporary name
+    2. Submits via sbatch
+    3. Renames script to include the SLURM job ID
+    4. Creates empty log file(s) for tailing
+
+    Args:
+        script_content: The SLURM script content
+        script_name_prefix: Prefix for script filename (e.g., "harvest", "clustering")
+        is_array: Whether this is an array job (affects log file creation)
+        n_array_tasks: Number of array tasks (required if is_array=True)
+
+    Returns:
+        SubmitResult with job ID, script path, and log pattern
+    """
+    SBATCH_SCRIPTS_DIR.mkdir(exist_ok=True)
+    SLURM_LOGS_DIR.mkdir(exist_ok=True)
+
+    # Write script to temporary location
+    temp_script_path = SBATCH_SCRIPTS_DIR / f"{script_name_prefix}_temp.sh"
+    temp_script_path.write_text(script_content)
+    temp_script_path.chmod(0o755)
+
+    # Submit via sbatch
+    job_id = _submit_script(temp_script_path)
+
+    # Rename script to include job ID
+    final_script_path = SBATCH_SCRIPTS_DIR / f"{script_name_prefix}_{job_id}.sh"
+    temp_script_path.rename(final_script_path)
+
+    # Create empty log file(s) for tailing
+    if is_array:
+        assert n_array_tasks is not None, "n_array_tasks required for array jobs"
+        for i in range(1, n_array_tasks + 1):
+            (SLURM_LOGS_DIR / f"slurm-{job_id}_{i}.out").touch()
+        log_pattern = f"~/slurm_logs/slurm-{job_id}_*.out"
+    else:
+        (SLURM_LOGS_DIR / f"slurm-{job_id}.out").touch()
+        log_pattern = f"~/slurm_logs/slurm-{job_id}.out"
+
+    return SubmitResult(
+        job_id=job_id,
+        script_path=final_script_path,
+        log_pattern=log_pattern,
+    )
+
+
+def run_locally(
+    commands: list[str],
+    parallel: bool = False,
+    track_resources: bool = False,
+) -> dict[str, dict[str, float]] | None:
+    """Run commands locally instead of via SLURM.
+
+    Useful for testing and for --local mode in clustering pipeline.
+
+    Args:
+        commands: List of shell commands to run
+        parallel: If True, run all commands in parallel. If False, run sequentially.
+        track_resources: If True, track and return resource usage via /usr/bin/time
+
+    Returns:
+        If track_resources is True, dict mapping commands to resource metrics.
+        Metrics include: K (avg memory KB), M (max memory KB), P (CPU %),
+        S (system CPU sec), U (user CPU sec), e (wall time sec).
+        Otherwise None.
+    """
+    n_commands = len(commands)
+    resources: dict[str, dict[str, float]] = {}
+    resource_files: list[Path] = []
+
+    # Wrap commands with /usr/bin/time if resource tracking is requested
+    if track_resources:
+        wrapped_commands: list[str] = []
+        for cmd in commands:
+            resource_file = Path(tempfile.mktemp(suffix=".resources"))  # pyright: ignore[reportDeprecated]
+            resource_files.append(resource_file)
+            # Use /usr/bin/time to track comprehensive resource usage
+            # K=avg total mem, M=max resident, P=CPU%, S=system time, U=user time, e=wall time
+            wrapped_cmd = (
+                f'/usr/bin/time -f "K:%K M:%M P:%P S:%S U:%U e:%e" -o {resource_file} {cmd}'
+            )
+            wrapped_commands.append(wrapped_cmd)
+        commands_to_run = wrapped_commands
+    else:
+        commands_to_run = commands
+
+    try:
+        if not parallel:
+            logger.section(f"LOCAL EXECUTION: Running {n_commands} tasks serially")
+            for i, cmd in enumerate(commands_to_run, 1):
+                logger.info(f"[{i}/{n_commands}] Running: {commands[i - 1]}")
+                subprocess.run(cmd, shell=True, check=True)
+            logger.section("LOCAL EXECUTION COMPLETE")
+        else:
+            logger.section(f"LOCAL EXECUTION: Starting {n_commands} tasks in parallel")
+            procs: list[subprocess.Popen[bytes]] = []
+
+            for i, cmd in enumerate(commands_to_run, 1):
+                logger.info(f"[{i}/{n_commands}] Starting: {commands[i - 1]}")
+                proc = subprocess.Popen(cmd, shell=True)
+                procs.append(proc)
+
+            logger.section("WAITING FOR ALL TASKS TO COMPLETE")
+            for proc, cmd in zip(procs, commands, strict=True):  # noqa: B007
+                proc.wait()
+                if proc.returncode != 0:
+                    logger.error(f"Process {proc.pid} failed with exit code {proc.returncode}")
+            logger.section("LOCAL EXECUTION COMPLETE")
+
+        # Read resource usage results
+        if track_resources:
+            for cmd, resource_file in zip(commands, resource_files, strict=True):
+                if resource_file.exists():
+                    # Parse format: "K:123 M:456 P:78% S:1.23 U:4.56 e:7.89"
+                    output = resource_file.read_text().strip()
+                    metrics: dict[str, float] = {}
+
+                    for part in output.split():
+                        if ":" in part:
+                            key, value = part.split(":", 1)
+                            # Remove % sign from CPU percentage
+                            value = value.rstrip("%")
+                            try:
+                                metrics[key] = float(value)
+                            except ValueError:
+                                logger.warning(f"Could not parse {key}:{value} for command: {cmd}")
+
+                    resources[cmd] = metrics
+                else:
+                    logger.warning(f"Resource file not found for: {cmd}")
+
+            # Log comprehensive resource usage table
+            logger.section("RESOURCE USAGE RESULTS")
+            for cmd, metrics in resources.items():
+                logger.info(f"Command: {cmd}")
+                logger.info(
+                    f"  Time: {metrics.get('e', 0):.2f}s wall, "
+                    f"{metrics.get('U', 0):.2f}s user, "
+                    f"{metrics.get('S', 0):.2f}s system"
+                )
+                logger.info(
+                    f"  Memory: {metrics.get('M', 0) / 1024:.1f} MB peak, "
+                    f"{metrics.get('K', 0) / 1024:.1f} MB avg"
+                )
+                logger.info(f"  CPU: {metrics.get('P', 0):.1f}%")
+
+    finally:
+        # Clean up temp files
+        if track_resources:
+            for resource_file in resource_files:
+                if resource_file.exists():
+                    resource_file.unlink()
+
+    return resources if track_resources else None
+
+
+# =============================================================================
+# Internal helpers
+# =============================================================================
+
+
+def _generate_sbatch_header(
+    config: SlurmConfig,
+    is_array: bool = False,
+    array_range: str | None = None,
+) -> str:
+    """Generate the #SBATCH directive block.
+
+    Handles:
+    - --job-name, --partition, --nodes, --gres, --time, --output
+    - --ntasks (for multi-node DDP)
+    - --cpus-per-task (for CPU-bound jobs)
+    - --array (for array jobs)
+    - --dependency (if dependency_job_id is set)
+    """
+    n_tasks = config.n_tasks if config.n_tasks is not None else config.n_nodes
+
+    # Use %A_%a for array jobs, %j for single jobs
+    log_pattern = "%A_%a" if is_array else "%j"
+
+    lines = [
+        f"#SBATCH --job-name={config.job_name}",
+        f"#SBATCH --partition={config.partition}",
+        f"#SBATCH --nodes={config.n_nodes}",
+        f"#SBATCH --ntasks={n_tasks}",
+        f"#SBATCH --gres=gpu:{config.n_gpus}",
+        f"#SBATCH --time={config.time}",
+        f"#SBATCH --output={SLURM_LOGS_DIR}/slurm-{log_pattern}.out",
+    ]
+
+    if config.cpus_per_task is not None:
+        lines.append(f"#SBATCH --cpus-per-task={config.cpus_per_task}")
+
+    if is_array and array_range:
+        lines.append(f"#SBATCH --array={array_range}")
+
+    if config.dependency_job_id:
+        lines.append(f"#SBATCH --dependency=afterok:{config.dependency_job_id}")
+
+    return "\n".join(lines)
+
+
+def _generate_setup_section(config: SlurmConfig, is_array: bool) -> str:
+    """Generate workspace creation and git/venv setup.
+
+    If snapshot_branch is set:
+    - Create workspace dir with trap for cleanup
+    - Clone repo to workspace
+    - Copy .env file
+    - Checkout snapshot branch
+    - uv sync and activate venv
+
+    If snapshot_branch is None:
+    - Just cd to REPO_ROOT
+    - Activate existing venv
+    """
+    # Workspace directory naming
+    if is_array:
+        workspace_suffix = "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
+    else:
+        workspace_suffix = "$SLURM_JOB_ID"
+
+    if config.snapshot_branch is not None:
+        # Full git snapshot setup
+        return f"""\
+# Create job-specific working directory
+WORK_DIR="$HOME/slurm_workspaces/{config.job_name}-{workspace_suffix}"
+mkdir -p "$WORK_DIR"
+
+# Clean up the workspace when the script exits
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+# Clone the repository to the job-specific directory
+git clone {REPO_ROOT} "$WORK_DIR"
+
+# Change to the cloned repository directory
+cd "$WORK_DIR"
+
+# Copy the .env file from the original repository for WandB authentication
+cp {REPO_ROOT}/.env .env
+
+# Checkout the snapshot branch to ensure consistent code
+git checkout "{config.snapshot_branch}"
+
+# Ensure that dependencies are using the snapshot branch
+deactivate 2>/dev/null || true
+unset VIRTUAL_ENV
+uv sync --no-dev --link-mode copy -q
+source .venv/bin/activate"""
+    else:
+        # Simple setup without git clone
+        return f"""\
+cd {REPO_ROOT}
+source .venv/bin/activate"""
+
+
+def _generate_case_block(commands: list[str]) -> str:
+    """Generate bash case statement for array jobs.
+
+    SLURM arrays are 1-indexed, so command[0] goes in case 1).
+    """
+    lines = []
+    for i, cmd in enumerate(commands):
+        lines.append(f"    {i + 1})")
+        lines.append(f"        {cmd}")
+        lines.append("        ;;")
+    return "\n".join(lines)
+
+
+def _submit_script(script_path: Path) -> str:
+    """Submit script via sbatch and return job ID.
+
+    Raises RuntimeError if sbatch fails.
+    """
+    result = subprocess.run(
+        ["sbatch", str(script_path)], capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to submit SLURM job: {result.stderr}")
+    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
+    job_id = result.stdout.strip().split()[-1]
+    return job_id

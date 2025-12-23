@@ -7,16 +7,9 @@ Usage:
     spd-autointerp <wandb_path> --budget_usd 100
 """
 
-from datetime import datetime
-
 from spd.autointerp.interpret import OpenRouterModelName
 from spd.log import logger
-from spd.settings import REPO_ROOT, SBATCH_SCRIPTS_DIR, SLURM_LOGS_DIR
-from spd.utils.command_utils import submit_slurm_script
-
-
-def _generate_job_id() -> str:
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+from spd.utils.slurm import SlurmConfig, generate_script, submit_slurm_job
 
 
 def launch_interpret_job(
@@ -35,11 +28,7 @@ def launch_interpret_job(
         time: Job time limit.
         max_examples_per_component: Maximum number of activation examples per component.
     """
-    job_id = _generate_job_id()
-    SLURM_LOGS_DIR.mkdir(exist_ok=True)
-    SBATCH_SCRIPTS_DIR.mkdir(exist_ok=True)
-
-    job_name = f"interpret-{job_id}"
+    job_name = "interpret"
 
     cmd_parts = [
         "python -m spd.autointerp.scripts.run_interpret",
@@ -49,58 +38,35 @@ def launch_interpret_job(
     ]
     interpret_cmd = " \\\n    ".join(cmd_parts)
 
-    script_content = f"""\
-#!/bin/bash
-#SBATCH --job-name={job_name}
-#SBATCH --partition={partition}
-#SBATCH --nodes=1
-#SBATCH --gres=gpu:0
-#SBATCH --cpus-per-task=4
-#SBATCH --time={time}
-#SBATCH --output={SLURM_LOGS_DIR}/slurm-%j.out
-
-set -euo pipefail
-
+    # Build full command with echoes
+    full_command = f"""\
 echo "=== Interpret ==="
 echo "WANDB_PATH: {wandb_path}"
 echo "MODEL: {model.value}"
 echo "SLURM_JOB_ID: $SLURM_JOB_ID"
 echo "================="
 
-cd {REPO_ROOT}
-source .venv/bin/activate
-
-# OPENROUTER_API_KEY should be in .env or environment
-if [ -f .env ]; then
-    set -a
-    source .env
-    set +a
-fi
-
 {interpret_cmd}
 
-echo "Interpret complete!"
-"""
+echo "Interpret complete!\""""
 
-    script_path = SBATCH_SCRIPTS_DIR / f"interpret_{job_id}.sh"
-    script_path.write_text(script_content)
-    script_path.chmod(0o755)
-    slurm_job_id = submit_slurm_script(script_path)
-
-    # Rename to include SLURM job ID
-    final_script_path = SBATCH_SCRIPTS_DIR / f"interpret_{slurm_job_id}.sh"
-    script_path.rename(final_script_path)
-
-    # Create empty log file for tailing
-    (SLURM_LOGS_DIR / f"slurm-{slurm_job_id}.out").touch()
+    config = SlurmConfig(
+        job_name=job_name,
+        partition=partition,
+        n_gpus=0,  # CPU-only job
+        time=time,
+        snapshot_branch=None,  # Autointerp doesn't use git snapshots
+    )
+    script_content = generate_script(config, full_command)
+    result = submit_slurm_job(script_content, "interpret")
 
     logger.section("Interpret job submitted!")
     logger.values(
         {
-            "Job ID": slurm_job_id,
+            "Job ID": result.job_id,
             "WandB path": wandb_path,
             "Model": model.value,
-            "Log": f"~/slurm_logs/slurm-{slurm_job_id}.out",
-            "Script": str(final_script_path),
+            "Log": result.log_pattern,
+            "Script": str(result.script_path),
         }
     )

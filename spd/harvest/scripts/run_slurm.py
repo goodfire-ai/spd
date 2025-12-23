@@ -7,15 +7,9 @@ Usage:
     spd-harvest <wandb_path> --n_batches 8000 --n_gpus 8
 """
 
-from datetime import datetime
-
 from spd.log import logger
-from spd.settings import DEFAULT_PARTITION_NAME, REPO_ROOT, SBATCH_SCRIPTS_DIR, SLURM_LOGS_DIR
-from spd.utils.command_utils import submit_slurm_script
-
-
-def _generate_job_id() -> str:
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+from spd.settings import DEFAULT_PARTITION_NAME
+from spd.utils.slurm import SlurmConfig, generate_script, submit_slurm_job
 
 
 def harvest(
@@ -44,12 +38,8 @@ def harvest(
         partition: SLURM partition name.
         time: Job time limit.
     """
-    job_id = _generate_job_id()
-    SLURM_LOGS_DIR.mkdir(exist_ok=True)
-    SBATCH_SCRIPTS_DIR.mkdir(exist_ok=True)
-
-    gres = f"gpu:{n_gpus}" if n_gpus else "gpu:1"
-    job_name = f"harvest-{job_id}"
+    actual_n_gpus = n_gpus if n_gpus else 1
+    job_name = "harvest"
 
     # Build the harvest command with all args
     cmd_parts = [
@@ -67,52 +57,37 @@ def harvest(
 
     harvest_cmd = " \\\n    ".join(cmd_parts)
 
-    script_content = f"""\
-#!/bin/bash
-#SBATCH --job-name={job_name}
-#SBATCH --partition={partition}
-#SBATCH --nodes=1
-#SBATCH --gres={gres}
-#SBATCH --time={time}
-#SBATCH --output={SLURM_LOGS_DIR}/slurm-%j.out
-
-set -euo pipefail
-
+    # Build full command with echoes
+    full_command = f"""\
 echo "=== Harvest ==="
 echo "WANDB_PATH: {wandb_path}"
 echo "N_BATCHES: {n_batches}"
-echo "N_GPUS: {n_gpus or 1}"
+echo "N_GPUS: {actual_n_gpus}"
 echo "SLURM_JOB_ID: $SLURM_JOB_ID"
 echo "==============="
 
-cd {REPO_ROOT}
-source .venv/bin/activate
-
 {harvest_cmd}
 
-echo "Harvest complete!"
-"""
+echo "Harvest complete!\""""
 
-    script_path = SBATCH_SCRIPTS_DIR / f"harvest_{job_id}.sh"
-    script_path.write_text(script_content)
-    script_path.chmod(0o755)
-    slurm_job_id = submit_slurm_script(script_path)
-
-    # Rename to include SLURM job ID
-    final_script_path = SBATCH_SCRIPTS_DIR / f"harvest_{slurm_job_id}.sh"
-    script_path.rename(final_script_path)
-
-    # Create empty log file for tailing
-    (SLURM_LOGS_DIR / f"slurm-{slurm_job_id}.out").touch()
+    config = SlurmConfig(
+        job_name=job_name,
+        partition=partition,
+        n_gpus=actual_n_gpus,
+        time=time,
+        snapshot_branch=None,  # Harvest doesn't use git snapshots
+    )
+    script_content = generate_script(config, full_command)
+    result = submit_slurm_job(script_content, "harvest")
 
     logger.section("Harvest job submitted!")
     logger.values(
         {
-            "Job ID": slurm_job_id,
+            "Job ID": result.job_id,
             "WandB path": wandb_path,
             "N batches": n_batches,
-            "N GPUs": n_gpus or 1,
-            "Log": f"~/slurm_logs/slurm-{slurm_job_id}.out",
-            "Script": str(final_script_path),
+            "N GPUs": actual_n_gpus,
+            "Log": result.log_pattern,
+            "Script": str(result.script_path),
         }
     )

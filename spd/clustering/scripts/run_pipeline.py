@@ -20,7 +20,6 @@ Output structure (only pipeline_config.json is saved to directly in this script.
 import argparse
 import os
 import shlex
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -33,14 +32,16 @@ from spd.clustering.consts import DistancesMethod
 from spd.clustering.storage import StorageBase
 from spd.log import logger
 from spd.settings import SPD_CACHE_DIR
-from spd.utils.command_utils import (
-    create_slurm_array_script,
-    create_slurm_script,
-    run_script_array_local,
-    submit_slurm_script,
-)
 from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.run_utils import _NO_ARG_PARSSED_SENTINEL, ExecutionStamp, read_noneable_str
+from spd.utils.slurm import (
+    SlurmArrayConfig,
+    SlurmConfig,
+    generate_array_script,
+    generate_script,
+    run_locally,
+    submit_slurm_job,
+)
 
 os.environ["WANDB_QUIET"] = "true"
 
@@ -284,14 +285,14 @@ def main(
     # Submit to SLURM
     if local:
         # submit clustering array job
-        run_script_array_local(
+        run_locally(
             commands=clustering_commands,
             parallel=local_clustering_parallel,
         )
 
         # submit calc_distances jobs in parallel
         logger.info("Calculating distances...")
-        run_script_array_local(
+        run_locally(
             commands=calc_distances_commands,
             parallel=local_calc_distances_parallel,
             track_resources=track_resources_calc_distances,
@@ -321,67 +322,65 @@ def main(
         assert pipeline_config.slurm_partition is not None, (
             "must specify slurm_partition if not running locally"
         )
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Submit clustering array job
-            clustering_script_path = Path(temp_dir) / f"clustering_{pipeline_run_id}.sh"
 
-            create_slurm_array_script(
-                script_path=clustering_script_path,
-                job_name=f"{pipeline_config.slurm_job_name_prefix}_cluster",
-                commands=clustering_commands,
-                snapshot_branch=execution_stamp.snapshot_branch,
-                max_concurrent_tasks=pipeline_config.n_runs,  # Run all concurrently
-                n_gpus_per_job=1,  # Always 1 GPU per run
+        # Submit clustering array job
+        clustering_config = SlurmArrayConfig(
+            job_name=f"{pipeline_config.slurm_job_name_prefix}_cluster",
+            partition=pipeline_config.slurm_partition,
+            n_gpus=1,  # Always 1 GPU per run
+            snapshot_branch=execution_stamp.snapshot_branch,
+            max_concurrent_tasks=pipeline_config.n_runs,  # Run all concurrently
+        )
+        clustering_script = generate_array_script(clustering_config, clustering_commands)
+        clustering_result = submit_slurm_job(
+            clustering_script,
+            "clustering",
+            is_array=True,
+            n_array_tasks=len(clustering_commands),
+        )
+        array_job_id = clustering_result.job_id
+
+        # Submit calc_distances jobs (one per method) with dependency on array job
+        calc_distances_job_ids: list[str] = []
+        calc_distances_logs: list[str] = []
+
+        for method, cmd in zip(
+            pipeline_config.distances_methods, calc_distances_commands, strict=True
+        ):
+            dist_config = SlurmConfig(
+                job_name=f"{pipeline_config.slurm_job_name_prefix}_dist_{method}",
                 partition=pipeline_config.slurm_partition,
+                n_gpus=1,
+                snapshot_branch=execution_stamp.snapshot_branch,
+                dependency_job_id=array_job_id,
             )
-            array_job_id = submit_slurm_script(clustering_script_path)
+            dist_script = generate_script(dist_config, cmd)
+            dist_result = submit_slurm_job(dist_script, f"calc_distances_{method}")
+            calc_distances_job_ids.append(dist_result.job_id)
+            calc_distances_logs.append(dist_result.log_pattern)
 
-            # Submit calc_distances jobs (one per method) with dependency on array job
-            calc_distances_job_ids: list[str] = []
-            calc_distances_logs: list[str] = []
+        logger.section("Jobs submitted successfully!")
 
-            for _i, (method, cmd) in enumerate(
-                zip(pipeline_config.distances_methods, calc_distances_commands, strict=True)
-            ):
-                calc_distances_script_path = (
-                    Path(temp_dir) / f"calc_distances_{method}_{pipeline_run_id}.sh"
-                )
+        # Build distances plot paths dict
+        distances_plots = {
+            method: str(storage.plots_dir / f"distances_{method}.png")
+            for method in pipeline_config.distances_methods
+        }
 
-                create_slurm_script(
-                    script_path=calc_distances_script_path,
-                    job_name=f"{pipeline_config.slurm_job_name_prefix}_dist_{method}",
-                    command=cmd,
-                    snapshot_branch=execution_stamp.snapshot_branch,
-                    n_gpus=1,  # Always 1 GPU for distances calculation
-                    partition=pipeline_config.slurm_partition,
-                    dependency_job_id=array_job_id,
-                )
-                job_id = submit_slurm_script(calc_distances_script_path)
-                calc_distances_job_ids.append(job_id)
-                calc_distances_logs.append(f"~/slurm_logs/slurm-{job_id}.out")
-
-            logger.section("Jobs submitted successfully!")
-
-            # Build distances plot paths dict
-            distances_plots = {
-                method: str(storage.plots_dir / f"distances_{method}.png")
-                for method in pipeline_config.distances_methods
+        logger.values(
+            {
+                "Clustering Array Job ID": array_job_id,
+                "Calc Distances Job IDs": ", ".join(calc_distances_job_ids),
+                "Total clustering runs": len(clustering_commands),
+                "Pipeline run ID": pipeline_run_id,
+                "Pipeline output dir": str(storage.base_dir),
+                "Clustering logs": clustering_result.log_pattern,
+                "Calc Distances logs": ", ".join(calc_distances_logs),
             }
-
-            logger.values(
-                {
-                    "Clustering Array Job ID": array_job_id,
-                    "Calc Distances Job IDs": ", ".join(calc_distances_job_ids),
-                    "Total clustering runs": len(clustering_commands),
-                    "Pipeline run ID": pipeline_run_id,
-                    "Pipeline output dir": str(storage.base_dir),
-                    "Clustering logs": f"~/slurm_logs/slurm-{array_job_id}_*.out",
-                    "Calc Distances logs": ", ".join(calc_distances_logs),
-                }
-            )
-            logger.info("Distances plots will be saved to:")
-            for method, path in distances_plots.items():
-                logger.info(f"  {method}: {path}")
+        )
+        logger.info("Distances plots will be saved to:")
+        for method, path in distances_plots.items():
+            logger.info(f"  {method}: {path}")
 
 
 def cli():
