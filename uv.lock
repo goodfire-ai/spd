@@ -1909,7 +1909,7 @@ wheels = [
 [[package]]
 name = "simple-stories-train"
 version = "0.0.1"
-source = { git = "https://github.com/goodfire-ai/simple_stories_train.git?rev=dev#72c4c863150d6c475e44afe13af2d2b18e34492a" }
+source = { git = "https://github.com/goodfire-ai/simple_stories_train.git?rev=dev#16f574d274849c90fe15e5c4df231f3885e44a7d" }
 dependencies = [
     { name = "datasets" },
     { name = "fire" },

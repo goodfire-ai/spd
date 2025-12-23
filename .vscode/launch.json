@@ -243,28 +243,13 @@
             }
         },
         {
-            "name": "lm streamlit",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "streamlit",
-            "args": [
-                "run",
-                "${workspaceFolder}/spd/experiments/lm/streamlit_v1/app.py",
-                "--server.port",
-                "2000",
-                "--",
-                "--model_path",
-                "wandb:goodfire/spd/runs/ioprgffh"
-            ]
-        },
-        {
             "name": "run_clustering example",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/clustering/scripts/run_clustering.py",
             "args": [
                 "--config",
-                "${workspaceFolder}/spd/clustering/configs/example.yaml",
+                "${workspaceFolder}/spd/clustering/configs/crc/example.yaml",
             ],
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
