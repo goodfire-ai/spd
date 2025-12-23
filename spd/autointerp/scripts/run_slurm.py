@@ -7,33 +7,16 @@ Usage:
     spd-autointerp <wandb_path> --budget_usd 100
 """
 
-import subprocess
 from datetime import datetime
-from pathlib import Path
 
 from spd.autointerp.interpret import OpenRouterModelName
 from spd.log import logger
-from spd.settings import REPO_ROOT
+from spd.settings import REPO_ROOT, SBATCH_SCRIPTS_DIR, SLURM_LOGS_DIR
+from spd.utils.command_utils import submit_slurm_script
 
 
 def _generate_job_id() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def _submit_slurm_job(script_content: str, script_path: Path) -> str:
-    """Write script and submit to SLURM, returning job ID."""
-    with open(script_path, "w") as f:
-        f.write(script_content)
-    script_path.chmod(0o755)
-
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=False
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to submit SLURM job: {result.stderr}")
-
-    job_id = result.stdout.strip().split()[-1]
-    return job_id
 
 
 def launch_interpret_job(
@@ -53,11 +36,8 @@ def launch_interpret_job(
         max_examples_per_component: Maximum number of activation examples per component.
     """
     job_id = _generate_job_id()
-    slurm_logs_dir = Path.home() / "slurm_logs"
-    slurm_logs_dir.mkdir(exist_ok=True)
-
-    sbatch_scripts_dir = Path.home() / "sbatch_scripts"
-    sbatch_scripts_dir.mkdir(exist_ok=True)
+    SLURM_LOGS_DIR.mkdir(exist_ok=True)
+    SBATCH_SCRIPTS_DIR.mkdir(exist_ok=True)
 
     job_name = f"interpret-{job_id}"
 
@@ -77,7 +57,7 @@ def launch_interpret_job(
 #SBATCH --gres=gpu:0
 #SBATCH --cpus-per-task=4
 #SBATCH --time={time}
-#SBATCH --output={slurm_logs_dir}/slurm-%j.out
+#SBATCH --output={SLURM_LOGS_DIR}/slurm-%j.out
 
 set -euo pipefail
 
@@ -102,15 +82,17 @@ fi
 echo "Interpret complete!"
 """
 
-    script_path = sbatch_scripts_dir / f"interpret_{job_id}.sh"
-    slurm_job_id = _submit_slurm_job(script_content, script_path)
+    script_path = SBATCH_SCRIPTS_DIR / f"interpret_{job_id}.sh"
+    script_path.write_text(script_content)
+    script_path.chmod(0o755)
+    slurm_job_id = submit_slurm_script(script_path)
 
     # Rename to include SLURM job ID
-    final_script_path = sbatch_scripts_dir / f"interpret_{slurm_job_id}.sh"
+    final_script_path = SBATCH_SCRIPTS_DIR / f"interpret_{slurm_job_id}.sh"
     script_path.rename(final_script_path)
 
     # Create empty log file for tailing
-    (slurm_logs_dir / f"slurm-{slurm_job_id}.out").touch()
+    (SLURM_LOGS_DIR / f"slurm-{slurm_job_id}.out").touch()
 
     logger.section("Interpret job submitted!")
     logger.values(

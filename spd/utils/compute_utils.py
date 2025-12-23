@@ -2,7 +2,6 @@
 
 import json
 import shlex
-import subprocess
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -231,22 +230,3 @@ esac
 """
 
     return script_content
-
-
-def submit_slurm_array(script_path: Path) -> str:
-    """Submit a SLURM job array and return the array job ID.
-
-    Args:
-        script_path: Path to SLURM batch script
-
-    Returns:
-        Array job ID from submitted job array
-    """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=False
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to submit SLURM job array: {result.stderr}")
-    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
-    job_id = result.stdout.strip().split()[-1]
-    return job_id

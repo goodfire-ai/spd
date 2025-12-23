@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from spd.log import logger
-from spd.settings import REPO_ROOT
+from spd.settings import REPO_ROOT, SLURM_LOGS_DIR
 
 
 def run_script_array_local(
@@ -185,7 +185,7 @@ source .venv/bin/activate
 #SBATCH --partition={partition}
 #SBATCH --time=72:00:00
 #SBATCH --job-name={job_name}
-#SBATCH --output=$HOME/slurm_logs/slurm-%A_%a.out
+#SBATCH --output={SLURM_LOGS_DIR}/slurm-%A_%a.out
 #SBATCH --array={array_range}
 
 # Create job-specific working directory
@@ -265,7 +265,7 @@ source .venv/bin/activate
 #SBATCH --partition={partition}
 #SBATCH --time=72:00:00
 #SBATCH --job-name={job_name}
-#SBATCH --output=$HOME/slurm_logs/slurm-%j.out
+#SBATCH --output={SLURM_LOGS_DIR}/slurm-%j.out
 {dependency_line}
 
 # Create job-specific working directory

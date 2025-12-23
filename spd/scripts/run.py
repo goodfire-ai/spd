@@ -18,12 +18,12 @@ import yaml
 from spd.configs import Config
 from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY, get_max_expected_runtime
-from spd.settings import REPO_ROOT
+from spd.settings import REPO_ROOT, SBATCH_SCRIPTS_DIR, SLURM_LOGS_DIR
+from spd.utils.command_utils import submit_slurm_script
 from spd.utils.compute_utils import (
     GPUS_PER_NODE,
     TrainingJob,
     create_slurm_array_script,
-    submit_slurm_array,
 )
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
@@ -91,15 +91,14 @@ def launch_slurm_run(
 
     slurm_job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
 
-    slurm_logs_dir = Path.home() / "slurm_logs"
-    slurm_logs_dir.mkdir(exist_ok=True)
+    SLURM_LOGS_DIR.mkdir(exist_ok=True)
 
     array_script_content = create_slurm_array_script(
         slurm_job_name=slurm_job_name,
         run_id=run_id,
         training_jobs=training_jobs,
         sweep_params=sweep_params,
-        slurm_logs_dir=slurm_logs_dir,
+        slurm_logs_dir=SLURM_LOGS_DIR,
         snapshot_branch=snapshot_branch,
         n_gpus=n_gpus,
         partition=partition,
@@ -107,23 +106,22 @@ def launch_slurm_run(
     )
 
     # Save script to permanent location for debugging
-    sbatch_scripts_dir = Path.home() / "sbatch_scripts"
-    sbatch_scripts_dir.mkdir(exist_ok=True)
+    SBATCH_SCRIPTS_DIR.mkdir(exist_ok=True)
 
-    array_script_path = sbatch_scripts_dir / f"run_array_{run_id}.sh"
+    array_script_path = SBATCH_SCRIPTS_DIR / f"run_array_{run_id}.sh"
     with open(array_script_path, "w") as f:
         f.write(array_script_content)
     array_script_path.chmod(0o755)
-    array_job_id = submit_slurm_array(array_script_path)
+    array_job_id = submit_slurm_script(array_script_path)
 
     # Rename script to include job ID for easier correlation with logs
-    final_script_path = sbatch_scripts_dir / f"{array_job_id}.sh"
+    final_script_path = SBATCH_SCRIPTS_DIR / f"{array_job_id}.sh"
     array_script_path.rename(final_script_path)
 
     # Quality of life: create empty log files for each job so you can tail
     # them before waiting for the job to start
     for i in range(len(training_jobs)):
-        (slurm_logs_dir / f"slurm-{array_job_id}_{i + 1}.out").touch()
+        (SLURM_LOGS_DIR / f"slurm-{array_job_id}_{i + 1}.out").touch()
 
     logger.section("Job submitted successfully!")
     logger.values(
