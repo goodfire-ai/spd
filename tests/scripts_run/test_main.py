@@ -25,7 +25,7 @@ class TestSPDRun:
         with pytest.raises(ValueError, match=f"Invalid experiments.*{fake_exp_name}"):
             _get_experiments(f"{fake_exp_name},tms_5-2")
 
-    @patch("spd.scripts.run.submit_slurm_array")
+    @patch("spd.scripts.run.submit_slurm_job")
     @patch("spd.scripts.run.create_slurm_array_script")
     @patch("spd.scripts.run.create_git_snapshot")
     @patch("spd.scripts.run._wandb_setup")
@@ -34,14 +34,21 @@ class TestSPDRun:
         mock_wandb_setup,
         mock_create_git_snapshot,
         mock_create_slurm_array_script,
-        mock_submit_slurm_array,
+        mock_submit_slurm_job,
     ):
         """Test that sweep runs create SLURM array jobs with sweep params."""
+        from pathlib import Path
+
         from spd.scripts.run_cli import main
+        from spd.utils.slurm import SubmitResult
 
         mock_create_git_snapshot.return_value = ("test-branch", "12345678")
         mock_create_slurm_array_script.return_value = "#!/bin/bash\necho test"
-        mock_submit_slurm_array.return_value = "12345"
+        mock_submit_slurm_job.return_value = SubmitResult(
+            job_id="12345",
+            script_path=Path("/tmp/test.sh"),
+            log_pattern="~/slurm_logs/slurm-12345_*.out",
+        )
 
         main(
             experiments="tms_5-2",

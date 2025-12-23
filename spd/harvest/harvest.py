@@ -169,8 +169,12 @@ def harvest(
     )
 
     train_iter = iter(train_loader)
-    for _ in tqdm.tqdm(range(config.n_batches), desc="Harvesting"):
-        batch = extract_batch_data(next(train_iter)).to(device)
+    for batch_idx in tqdm.tqdm(range(config.n_batches), desc="Harvesting"):
+        try:
+            batch = extract_batch_data(next(train_iter)).to(device)
+        except StopIteration:
+            print(f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early.")
+            break
 
         with torch.no_grad():
             out = model(batch, cache_type="input")
@@ -240,7 +244,15 @@ def _harvest_worker(
     batches_processed = 0
     last_log_time = time.time()
     for batch_idx in range(n_batches):
-        batch_data = extract_batch_data(next(train_iter))
+        try:
+            batch_data = extract_batch_data(next(train_iter))
+        except StopIteration:
+            print(
+                f"[Worker {rank}] Dataset exhausted at batch {batch_idx}/{n_batches}. "
+                f"Finishing early.",
+                flush=True,
+            )
+            break
         if batch_idx % world_size != rank:
             continue
 

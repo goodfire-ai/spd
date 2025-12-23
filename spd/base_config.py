@@ -15,6 +15,8 @@ class BaseConfig(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
+    # TODO: add a "config_type" field, which is set to the class name, so that when loading a config we can check whether the config type matches the expected class
+
     @classmethod
     def from_file(cls, path: Path | str) -> Self:
         """Load config from path to a JSON or YAML file."""
@@ -29,7 +31,12 @@ class BaseConfig(BaseModel):
             case _:
                 raise ValueError(f"Only (.json, .yaml, .yml) files are supported, got {path}")
 
-        return cls.model_validate(data)
+        try:
+            cfg = cls.model_validate(data)
+        except Exception as e:
+            e.add_note(f"Error validating config {cls=} from path `{path.as_posix()}`\n{data = }")
+            raise e
+        return cfg
 
     def to_file(self, path: Path | str) -> None:
         """Save config to file (format inferred from extension)."""

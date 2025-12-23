@@ -11,7 +11,7 @@ lr: 1e-3
 n_eval_steps: 200
 
 task_config:
-  task_name: induction_head
+  task_name: ih
 
 n_mask_samples: 1
 module_info:

@@ -33,7 +33,7 @@ class InductionHeadsTrainConfig(BaseConfig):
 
 
 class IHTaskConfig(BaseConfig):
-    task_name: Literal["induction_head"]
+    task_name: Literal["ih"]
     prefix_window: PositiveInt | None = Field(
         default=None,
         description="Number of tokens to use as a prefix window for the induction head. If none, uses the full sequence length.",
