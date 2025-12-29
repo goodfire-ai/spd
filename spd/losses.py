@@ -19,6 +19,7 @@ from spd.configs import (
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
     StochasticReconSubsetLossConfig,
+    TanhImportanceMinimalityLossConfig,
     UnmaskedReconLossConfig,
 )
 from spd.metrics import (
@@ -34,6 +35,7 @@ from spd.metrics import (
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
+    tanh_importance_minimality_loss,
     unmasked_recon_loss,
 )
 from spd.models.component_model import CIOutputs, ComponentModel
@@ -74,6 +76,12 @@ def compute_total_loss(
                     p_anneal_start_frac=cfg.p_anneal_start_frac,
                     p_anneal_final_p=cfg.p_anneal_final_p,
                     p_anneal_end_frac=cfg.p_anneal_end_frac,
+                )
+            case TanhImportanceMinimalityLossConfig():
+                loss = tanh_importance_minimality_loss(
+                    ci_upper_leaky=ci.upper_leaky,
+                    scale=cfg.scale,
+                    sharpness=cfg.sharpness,
                 )
             case UnmaskedReconLossConfig():
                 loss = unmasked_recon_loss(

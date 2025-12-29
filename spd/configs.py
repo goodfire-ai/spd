@@ -55,6 +55,23 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     eps: float = 1e-12
 
 
+class TanhImportanceMinimalityLossConfig(LossMetricConfig):
+    """Tanh penalty for importance minimality, following Anthropic's sparse coding work.
+
+    Uses the penalty (A/B) * tanh(x * B) from Hurley & Rickard 2008.
+    For small x: provides L1-like gradient (penalty ≈ A*x)
+    For large x: penalty saturates to A/B (no incentive to shrink)
+
+    Args:
+        scale: The A parameter controlling overall scale and L1-like gradient for small values.
+        sharpness: The B parameter controlling transition sharpness. Larger = sharper cutoff.
+    """
+
+    classname: Literal["TanhImportanceMinimalityLoss"] = "TanhImportanceMinimalityLoss"
+    scale: float = 1.0
+    sharpness: float = 1.0
+
+
 class UniformKSubsetRoutingConfig(BaseConfig):
     type: Literal["uniform_k_subset"] = "uniform_k_subset"
 
@@ -218,7 +235,12 @@ ReconLossConfigType = (
     | StochasticHiddenActsReconLossConfig
 )
 
-LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
+LossMetricConfigType = (
+    FaithfulnessLossConfig
+    | ImportanceMinimalityLossConfig
+    | TanhImportanceMinimalityLossConfig
+    | ReconLossConfigType
+)
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
