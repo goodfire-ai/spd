@@ -622,7 +622,7 @@
                 <button
                     class="run-btn"
                     onclick={onRunIntervention}
-                    disabled={selectedCount === 0 || runningIntervention}
+                    disabled={runningIntervention}
                 >
                     {runningIntervention ? "Running..." : "Run"}
                 </button>
