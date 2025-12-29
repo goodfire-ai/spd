@@ -346,42 +346,6 @@
         flex-wrap: wrap;
     }
 
-    .info-icon {
-        position: relative;
-        cursor: help;
-        color: var(--text-muted);
-        font-size: var(--text-xs);
-        width: 14px;
-        height: 14px;
-        line-height: 14px;
-        text-align: center;
-        border: 1px solid var(--border-default);
-        border-radius: 50%;
-    }
-
-    .info-icon::after {
-        content: attr(data-tooltip);
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-top: 4px;
-        padding: var(--space-1) var(--space-2);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-default);
-        color: var(--text-secondary);
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        white-space: nowrap;
-        opacity: 0;
-        pointer-events: none;
-        z-index: 100;
-    }
-
-    .info-icon:hover::after {
-        opacity: 1;
-    }
-
     .compute-options label {
         display: flex;
         align-items: center;

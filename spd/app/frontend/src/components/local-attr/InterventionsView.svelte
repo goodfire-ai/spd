@@ -616,6 +616,11 @@
         <!-- Intervention controls -->
         <div class="intervention-controls">
             <span class="node-count">{selectedCount} / {interventableCount} selected</span>
+            <span
+                class="info-icon"
+                data-tooltip="NOTE: Biases in each layer that have them are always active, regardless of which nodes are selected"
+                >?</span
+            >
             <div class="button-group">
                 <button onclick={selectAll}>Select All</button>
                 <button onclick={clearSelection}>Clear</button>
