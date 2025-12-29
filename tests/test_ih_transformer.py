@@ -96,7 +96,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         tokenizer_name=None,
         # Task Specific
         task_config=IHTaskConfig(
-            task_name="induction_head",
+            task_name="ih",
         ),
     )
 

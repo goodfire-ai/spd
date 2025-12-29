@@ -9,6 +9,10 @@ REPO_ROOT = (
 default_cache_dir = str(Path.home() / "spd_cache")
 SPD_CACHE_DIR = Path(os.environ.get("SPD_CACHE_DIR", default_cache_dir))
 
+# SLURM directories
+SLURM_LOGS_DIR = Path.home() / "slurm_logs"
+SBATCH_SCRIPTS_DIR = Path.home() / "sbatch_scripts"
+
 # this is the gpu-enabled partition on the cluster
 # Not sure why we call it "default" instead of "gpu" or "compute" but keeping the convention here for consistency
 DEFAULT_PARTITION_NAME = "h200-reserved"

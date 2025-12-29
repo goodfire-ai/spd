@@ -58,7 +58,6 @@ def insert_identity_operations_(
     if unmatched:
         raise ValueError(f"Identity patterns did not match any modules: {sorted(unmatched)}")
 
-    # Add identity layers and hooks
     for module_path in identity_module_paths:
         module = target_model.get_submodule(module_path)
 
@@ -72,5 +71,5 @@ def insert_identity_operations_(
             case _:
                 raise ValueError(f"Module {module} not supported. type: {type(module)}")
 
-        module.pre_identity = Identity(d_in)  # type: ignore
+        module.pre_identity = Identity(d_in)
         module.register_forward_pre_hook(pre_id_hook, with_kwargs=True)

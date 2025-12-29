@@ -97,7 +97,7 @@ class ModelComparator:
             "tms": self._create_tms_data_loader,
             "resid_mlp": self._create_resid_mlp_data_loader,
             "lm": self._create_lm_data_loader,
-            "induction_head": self._create_ih_data_loader,
+            "ih": self._create_ih_data_loader,
         }
 
         if task_name not in data_loader_fns:
