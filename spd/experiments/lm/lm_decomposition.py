@@ -43,6 +43,7 @@ def main(
         assert config_json is not None
         config = Config(**json.loads(config_json.removeprefix("json:")))
 
+    exit(0)
     dist_state = init_distributed()
     logger.info(f"Distributed state: {dist_state}")
 
