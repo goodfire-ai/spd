@@ -269,7 +269,7 @@ def _generate_setup_section(config: SlurmConfig, is_array: bool) -> str:
     - Clone repo to workspace
     - Copy .env file
     - Checkout snapshot branch
-    - uv sync and activate venv
+    - Activate existing venv from REPO_ROOT (skip slow uv sync)
 
     If snapshot_branch is None:
     - Just cd to REPO_ROOT
@@ -283,6 +283,9 @@ def _generate_setup_section(config: SlurmConfig, is_array: bool) -> str:
 
     if config.snapshot_branch is not None:
         # Full git snapshot setup
+        # We use the existing venv from REPO_ROOT to avoid slow uv sync (~60s on compute nodes).
+        # This is safe because packages rarely change between commits, and the snapshot ensures
+        # the source code is consistent. PYTHONPATH ensures imports come from the cloned workspace.
         return f"""\
 # Create job-specific working directory
 WORK_DIR="$HOME/slurm_workspaces/{config.job_name}-{workspace_suffix}"
@@ -303,11 +306,10 @@ cd "$WORK_DIR"
 # Checkout the snapshot branch to ensure consistent code
 git checkout "{config.snapshot_branch}"
 
-# Ensure that dependencies are using the snapshot branch
-deactivate 2>/dev/null || true
-unset VIRTUAL_ENV
-uv sync --no-dev --link-mode copy -q
-source .venv/bin/activate"""
+# Use existing venv from REPO_ROOT (avoids ~60s uv sync)
+# Set PYTHONPATH so imports come from the cloned workspace, not the original
+source "{REPO_ROOT}/.venv/bin/activate"
+export PYTHONPATH="$WORK_DIR:${{PYTHONPATH:-}}" """
     else:
         # Simple setup without git clone
         return f"""\
