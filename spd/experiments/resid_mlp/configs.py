@@ -1,9 +1,9 @@
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import Field, PositiveFloat, PositiveInt, model_validator
 
 from spd.base_config import BaseConfig
-from spd.spd_types import Probability
+from spd.configs import ScheduleConfig, migrate_to_lr_schedule_config
 
 
 class ResidMLPModelConfig(BaseConfig):
@@ -36,11 +36,16 @@ class ResidMLPTrainConfig(BaseConfig):
     batch_size: PositiveInt
     steps: PositiveInt
     print_freq: PositiveInt
-    lr: PositiveFloat
-    lr_schedule: Literal["constant", "cosine"] = "constant"
+    lr_schedule: ScheduleConfig
     fixed_random_embedding: bool = False
     fixed_identity_embedding: bool = False
     n_batches_final_losses: PositiveInt = 1
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+        migrate_to_lr_schedule_config(config_dict)
+        return config_dict
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
@@ -57,20 +62,3 @@ class ResidMLPTrainConfig(BaseConfig):
             if len(all_indices) != len(set(all_indices)):
                 raise ValueError("Synced inputs must be non-overlapping")
         return self
-
-
-class ResidMLPTaskConfig(BaseConfig):
-    task_name: Literal["resid_mlp"] = Field(
-        default="resid_mlp",
-        description="Identifier for the residual-MLP decomposition task",
-    )
-    feature_probability: Probability = Field(
-        ...,
-        description="Probability that a given feature is active in generated data",
-    )
-    data_generation_type: Literal[
-        "exactly_one_active", "exactly_two_active", "at_least_zero_active"
-    ] = Field(
-        default="at_least_zero_active",
-        description="Strategy for generating synthetic data for residual-MLP training",
-    )

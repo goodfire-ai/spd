@@ -3,7 +3,6 @@ https://colab.research.google.com/github/anthropics/toy-models-of-superposition/
 """
 
 from pathlib import Path
-from typing import Literal
 
 import einops
 import matplotlib.pyplot as plt
@@ -14,12 +13,13 @@ from matplotlib import collections as mc
 from torch import Tensor, nn
 from tqdm import tqdm, trange
 
+from spd.configs import ScheduleConfig
 from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import set_seed
+from spd.utils.general_utils import get_scheduled_value, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 
 
@@ -30,24 +30,16 @@ def train(
     importance: float,
     steps: int,
     print_freq: int,
-    lr: float,
-    lr_schedule: Literal["constant", "cosine"],
+    lr_schedule: ScheduleConfig,
 ) -> None:
     hooks = []
 
-    opt = torch.optim.AdamW(list(model.parameters()), lr=lr)
+    opt = torch.optim.AdamW(list(model.parameters()), lr=lr_schedule.start_val)
 
     data_iter = iter(dataloader)
     with trange(steps, ncols=0) as t:
         for step in t:
-            # Update the learning rate based on schedule
-            match lr_schedule:
-                case "constant":
-                    step_lr = lr
-                case "cosine":
-                    # Half-period cosine decay from 1 to 0
-                    progress = step / max(steps - 1, 1)
-                    step_lr = lr * 0.5 * (1 + np.cos(np.pi * progress))
+            step_lr = get_scheduled_value(step, steps, lr_schedule)
             for group in opt.param_groups:
                 group["lr"] = step_lr
             opt.zero_grad(set_to_none=True)
@@ -199,7 +191,6 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
         steps=config.steps,
         importance=1.0,
         print_freq=100,
-        lr=config.lr,
         lr_schedule=config.lr_schedule,
     )
 
@@ -352,8 +343,7 @@ if __name__ == "__main__":
         batch_size=1024,
         steps=10000,
         seed=0,
-        lr=5e-3,
-        lr_schedule="constant",
+        lr_schedule=ScheduleConfig(start_val=5e-3, fn_type="constant"),
         data_generation_type="at_least_zero_active",
         fixed_identity_hidden_layers=False,
         fixed_random_hidden_layers=False,
@@ -373,8 +363,7 @@ if __name__ == "__main__":
     #     batch_size=1024,
     #     steps=10000,
     #     seed=0,
-    #     lr=5e-3,
-    #     lr_schedule="constant",
+    #     lr_schedule=ScheduleConfig(start_val=5e-3, fn_type="constant"),
     #     data_generation_type="at_least_zero_active",
     #     fixed_identity_hidden_layers=True,
     #     fixed_random_hidden_layers=False,
@@ -395,14 +384,13 @@ if __name__ == "__main__":
     #     batch_size=8192,
     #     steps=10000,
     #     seed=0,
-    #     lr=5e-3,
-    #     lr_schedule="constant",
+    #     lr_schedule=ScheduleConfig(start_val=5e-3, fn_type="constant"),
     #     data_generation_type="at_least_zero_active",
     #     fixed_identity_hidden_layers=False,
     #     fixed_random_hidden_layers=False,
     #     # synced_inputs=[[5, 6], [0, 2, 3]],
     # )
-    # # TMS 40-10
+    # # TMS 40-10 w/ identity
     # config = TMSTrainConfig(
     #     wandb_project="spd",
     #     tms_model_config=TMSModelConfig(
@@ -418,8 +406,7 @@ if __name__ == "__main__":
     #     batch_size=8192,
     #     steps=10000,
     #     seed=0,
-    #     lr=5e-3,
-    #     lr_schedule="constant",
+    #     lr_schedule=ScheduleConfig(start_val=5e-3, fn_type="constant"),
     #     data_generation_type="at_least_zero_active",
     #     fixed_identity_hidden_layers=True,
     #     fixed_random_hidden_layers=False,

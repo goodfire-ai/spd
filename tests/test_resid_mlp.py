@@ -3,10 +3,11 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     ModulePatternInfoConfig,
+    ResidMLPTaskConfig,
     ScheduleConfig,
     StochasticReconLossConfig,
 )
-from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
+from spd.experiments.resid_mlp.configs import ResidMLPModelConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.identity_insertion import insert_identity_operations_

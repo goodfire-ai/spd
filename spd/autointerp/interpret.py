@@ -24,7 +24,7 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.prompt_template import format_prompt_template
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
-from spd.experiments.lm.configs import LMTaskConfig
+from spd.configs import LMTaskConfig
 from spd.harvest.harvest import HarvestResult
 from spd.harvest.schemas import ComponentData
 from spd.log import logger

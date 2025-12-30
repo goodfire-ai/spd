@@ -8,9 +8,8 @@ import fire
 import wandb
 from simple_stories_train.run_info import RunInfo as SSRunInfo
 
-from spd.configs import Config
+from spd.configs import Config, LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (

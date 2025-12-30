@@ -5,9 +5,7 @@ All tests use realistic sweep parameters with discriminated lists (loss_metric_c
 
 import json
 
-from spd.configs import Config, ImportanceMinimalityLossConfig
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.experiments.tms.configs import TMSTaskConfig
+from spd.configs import Config, ImportanceMinimalityLossConfig, LMTaskConfig, TMSTaskConfig
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations
 
 

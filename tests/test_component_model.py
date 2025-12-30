@@ -13,8 +13,8 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     ModulePatternInfoConfig,
     ScheduleConfig,
+    TMSTaskConfig,
 )
-from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import (

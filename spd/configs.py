@@ -13,25 +13,8 @@ from pydantic import (
 )
 
 from spd.base_config import BaseConfig
-from spd.experiments.ih.configs import IHTaskConfig
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
-from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
 from spd.spd_types import CiFnType, ModelPath, Probability
-
-
-class ModulePatternInfoConfig(BaseConfig):
-    """Configuration for a module pattern with its number of components.
-
-    Used in config files to specify which modules to decompose and how many
-    components (C) to use for each module matching the pattern.
-    """
-
-    module_pattern: str = Field(..., description="fnmatch-style pattern to match module names")
-    C: PositiveInt = Field(
-        ..., description="Number of components for modules matching this pattern"
-    )
 
 
 class ScheduleConfig(BaseConfig):
@@ -54,6 +37,129 @@ class ScheduleConfig(BaseConfig):
         if self.fn_type == "constant" and self.final_val_frac != 1.0:
             raise ValueError("constant schedule requires final_val_frac == 1.0")
         return self
+
+
+def migrate_to_lr_schedule_config(config_dict: dict[str, Any]) -> None:
+    """Migrate old LR config format (lr + lr_schedule + lr_warmup_pct) to ScheduleConfig.
+
+    Modifies config_dict in place.
+    """
+    if "lr" not in config_dict:
+        return
+
+    logger.info("Migrating old LR config format to ScheduleConfig")
+
+    old_lr = config_dict.pop("lr")
+    old_fn_type = config_dict.pop("lr_schedule", "constant")
+    old_warmup_pct = config_dict.pop("lr_warmup_pct", 0.0)
+
+    # Old cosine decayed to 0, old constant stayed at 1
+    final_val_frac = 0.0 if old_fn_type == "cosine" else 1.0
+
+    config_dict["lr_schedule"] = {
+        "start_val": old_lr,
+        "fn_type": old_fn_type,
+        "warmup_pct": old_warmup_pct,
+        "final_val_frac": final_val_frac,
+    }
+
+
+# Task configs - these define task-specific parameters for SPD decomposition
+class TMSTaskConfig(BaseConfig):
+    task_name: Literal["tms"] = Field(
+        default="tms",
+        description="Task identifier for TMS",
+    )
+    feature_probability: Probability = Field(
+        ...,
+        description="Probability that a given feature is active in generated data",
+    )
+    data_generation_type: Literal["exactly_one_active", "at_least_zero_active"] = Field(
+        default="at_least_zero_active",
+        description="Strategy for generating synthetic data for TMS training",
+    )
+
+
+class ResidMLPTaskConfig(BaseConfig):
+    task_name: Literal["resid_mlp"] = Field(
+        default="resid_mlp",
+        description="Identifier for the residual-MLP decomposition task",
+    )
+    feature_probability: Probability = Field(
+        ...,
+        description="Probability that a given feature is active in generated data",
+    )
+    data_generation_type: Literal[
+        "exactly_one_active", "exactly_two_active", "at_least_zero_active"
+    ] = Field(
+        default="at_least_zero_active",
+        description="Strategy for generating synthetic data for residual-MLP training",
+    )
+
+
+class IHTaskConfig(BaseConfig):
+    task_name: Literal["ih"]
+    prefix_window: PositiveInt | None = Field(
+        default=None,
+        description="Number of tokens to use as a prefix window for the induction head. If none, uses the full sequence length.",
+    )
+
+
+class LMTaskConfig(BaseConfig):
+    task_name: Literal["lm"] = Field(
+        default="lm",
+        description="Identifier for the language-model decomposition task",
+    )
+    max_seq_len: PositiveInt = Field(
+        default=512,
+        description="Maximum sequence length to truncate or pad inputs to",
+    )
+    buffer_size: PositiveInt = Field(
+        default=1000,
+        description="Buffered sample count for streaming dataset shuffling",
+    )
+    dataset_name: str = Field(
+        default="lennart-finke/SimpleStories",
+        description="HuggingFace dataset identifier to use for the LM task",
+    )
+    column_name: str = Field(
+        default="story",
+        description="Dataset column that contains the text to train on",
+    )
+    train_data_split: str = Field(
+        default="train",
+        description="Name of the dataset split used for training",
+    )
+    eval_data_split: str = Field(
+        default="test",
+        description="Name of the dataset split used for evaluation",
+    )
+    shuffle_each_epoch: bool = Field(
+        default=True,
+        description="Whether to reshuffle data at each epoch. Set False in tests to keep fixed "
+        "order across dp modes.",
+    )
+    is_tokenized: bool = Field(
+        default=False,
+        description="Whether the dataset is already tokenized",
+    )
+    streaming: bool = Field(
+        default=False,
+        description="Whether to use a streaming dataset",
+    )
+
+
+class ModulePatternInfoConfig(BaseConfig):
+    """Configuration for a module pattern with its number of components.
+
+    Used in config files to specify which modules to decompose and how many
+    components (C) to use for each module matching the pattern.
+    """
+
+    module_pattern: str = Field(..., description="fnmatch-style pattern to match module names")
+    C: PositiveInt = Field(
+        ..., description="Number of components for modules matching this pattern"
+    )
 
 
 #### Metrics that can be used as losses in training or eval ####
@@ -516,7 +622,7 @@ class Config(BaseConfig):
         config_dict.pop("eval_metrics", None)
 
         cls._migrate_to_module_info(config_dict)
-        cls._migrate_to_lr_schedule_config(config_dict)
+        migrate_to_lr_schedule_config(config_dict)
 
         for key in list(config_dict.keys()):
             val = config_dict[key]
@@ -565,29 +671,6 @@ class Config(BaseConfig):
             config_dict["identity_module_info"] = [
                 {"module_pattern": p, "C": global_c} for p in identity_patterns
             ]
-
-    @classmethod
-    def _migrate_to_lr_schedule_config(cls, config_dict: dict[str, Any]) -> None:
-        """Migrate old LR config format (lr + lr_schedule + lr_warmup_pct) to ScheduleConfig."""
-        # Check if using old format (lr as a float, not lr_schedule as a config)
-        if "lr" not in config_dict:
-            return
-
-        logger.info("Migrating old LR config format to LRScheduleConfig")
-
-        old_lr = config_dict.pop("lr")
-        old_fn_type = config_dict.pop("lr_schedule", "constant")
-        old_warmup_pct = config_dict.pop("lr_warmup_pct", 0.0)
-
-        # Old cosine decayed to 0, old constant stayed at 1
-        final_val_frac = 0.0 if old_fn_type == "cosine" else 1.0
-
-        config_dict["lr_schedule"] = {
-            "start_val": old_lr,
-            "fn_type": old_fn_type,
-            "warmup_pct": old_warmup_pct,
-            "final_val_frac": final_val_frac,
-        }
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:

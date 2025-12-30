@@ -4,8 +4,7 @@ from pathlib import Path
 import fire
 import wandb
 
-from spd.configs import Config
-from spd.experiments.ih.configs import IHTaskConfig
+from spd.configs import Config, IHTaskConfig
 from spd.experiments.ih.model import InductionModelTargetRunInfo, InductionTransformer
 from spd.log import logger
 from spd.run_spd import optimize

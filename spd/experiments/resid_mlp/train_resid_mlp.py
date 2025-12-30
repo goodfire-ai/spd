@@ -1,13 +1,13 @@
 """Trains a residual MLP model on one-hot input vectors."""
 
 import einops
-import numpy as np
 import torch
 import wandb
 from jaxtyping import Float
 from torch import Tensor, nn
 from tqdm import tqdm
 
+from spd.configs import ScheduleConfig
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTrainConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import (
@@ -17,7 +17,7 @@ from spd.log import logger
 from spd.settings import DEFAULT_PROJECT_NAME
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import compute_feature_importances, set_seed
+from spd.utils.general_utils import compute_feature_importances, get_scheduled_value, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
 
@@ -84,21 +84,16 @@ def train(
     if config.wandb_project:
         wandb.save(str(label_coeffs_path), base_path=out_dir, policy="now")
 
-    optimizer = torch.optim.AdamW(trainable_params, lr=config.lr, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(
+        trainable_params, lr=config.lr_schedule.start_val, weight_decay=0.01
+    )
 
     pbar = tqdm(range(config.steps), total=config.steps)
     for step, (batch, labels) in zip(pbar, dataloader, strict=False):
         if step >= config.steps:
             break
 
-        # Update the learning rate based on schedule
-        match config.lr_schedule:
-            case "constant":
-                current_lr = config.lr
-            case "cosine":
-                # Half-period cosine decay from 1 to 0
-                progress = step / max(config.steps - 1, 1)
-                current_lr = config.lr * 0.5 * (1 + np.cos(np.pi * progress))
+        current_lr = get_scheduled_value(step, config.steps, config.lr_schedule)
         for param_group in optimizer.param_groups:
             param_group["lr"] = current_lr
 
@@ -234,8 +229,7 @@ if __name__ == "__main__":
         batch_size=2048,
         steps=1000,  # 1 layer
         print_freq=100,
-        lr=3e-3,
-        lr_schedule="cosine",
+        lr_schedule=ScheduleConfig(start_val=3e-3, fn_type="cosine", final_val_frac=0.0),
         fixed_random_embedding=True,
         fixed_identity_embedding=False,
         n_batches_final_losses=10,
@@ -264,8 +258,7 @@ if __name__ == "__main__":
     #     batch_size=2048,
     #     steps=1000, # 2 layers
     #     print_freq=100,
-    #     lr=3e-3,
-    #     lr_schedule="cosine",
+    #     lr_schedule=ScheduleConfig(start_val=3e-3, fn_type="cosine", final_val_frac=0.0),
     #     fixed_random_embedding=True,
     #     fixed_identity_embedding=False,
     #     n_batches_final_losses=10,
@@ -294,8 +287,7 @@ if __name__ == "__main__":
     #     batch_size=2048,
     #     steps=10_000,  # 3 layers
     #     print_freq=100,
-    #     lr=3e-3,
-    #     lr_schedule="cosine",
+    #     lr_schedule=ScheduleConfig(start_val=3e-3, fn_type="cosine", final_val_frac=0.0),
     #     fixed_random_embedding=True,
     #     fixed_identity_embedding=False,
     #     n_batches_final_losses=10,

@@ -6,13 +6,13 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    LMTaskConfig,
     ModulePatternInfoConfig,
     ScheduleConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
 from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.general_utils import resolve_class, set_seed

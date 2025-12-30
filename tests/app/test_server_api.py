@@ -21,8 +21,7 @@ from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
-from spd.configs import Config, ModulePatternInfoConfig, ScheduleConfig
-from spd.experiments.lm.configs import LMTaskConfig
+from spd.configs import Config, LMTaskConfig, ModulePatternInfoConfig, ScheduleConfig
 from spd.models.component_model import ComponentModel
 from spd.utils.module_utils import expand_module_patterns
 

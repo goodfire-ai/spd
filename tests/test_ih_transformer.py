@@ -4,6 +4,7 @@ from spd.configs import (
     CI_L0Config,
     Config,
     FaithfulnessLossConfig,
+    IHTaskConfig,
     ImportanceMinimalityLossConfig,
     ModulePatternInfoConfig,
     ScheduleConfig,
@@ -11,7 +12,7 @@ from spd.configs import (
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
-from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
+from spd.experiments.ih.configs import InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
 from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize

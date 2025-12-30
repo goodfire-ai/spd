@@ -11,8 +11,9 @@ from spd.configs import (
     ScheduleConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
+    TMSTaskConfig,
 )
-from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
+from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.experiments.tms.train_tms import get_model_and_dataloader, train
 from spd.identity_insertion import insert_identity_operations_
@@ -164,7 +165,7 @@ def test_train_tms_happy_path():
         feature_probability=0.1,
         batch_size=32,
         steps=5,
-        lr=5e-3,
+        lr_schedule=ScheduleConfig(start_val=5e-3),
         data_generation_type="at_least_zero_active",
         fixed_identity_hidden_layers=False,
         fixed_random_hidden_layers=False,
@@ -177,7 +178,6 @@ def test_train_tms_happy_path():
         model,
         dataloader,
         importance=1.0,
-        lr=config.lr,
         lr_schedule=config.lr_schedule,
         steps=config.steps,
         print_freq=1000,
@@ -205,7 +205,7 @@ def test_tms_train_fixed_identity():
         feature_probability=0.1,
         batch_size=32,
         steps=2,
-        lr=5e-3,
+        lr_schedule=ScheduleConfig(start_val=5e-3),
         data_generation_type="at_least_zero_active",
         fixed_identity_hidden_layers=True,
         fixed_random_hidden_layers=False,
@@ -224,7 +224,6 @@ def test_tms_train_fixed_identity():
         model,
         dataloader,
         importance=1.0,
-        lr=config.lr,
         lr_schedule=config.lr_schedule,
         steps=config.steps,
         print_freq=1000,
@@ -253,7 +252,7 @@ def test_tms_train_fixed_random():
         feature_probability=0.1,
         batch_size=32,
         steps=2,
-        lr=5e-3,
+        lr_schedule=ScheduleConfig(start_val=5e-3),
         data_generation_type="at_least_zero_active",
         fixed_identity_hidden_layers=False,
         fixed_random_hidden_layers=True,
@@ -268,7 +267,6 @@ def test_tms_train_fixed_random():
         model,
         dataloader,
         importance=1.0,
-        lr=config.lr,
         lr_schedule=config.lr_schedule,
         steps=config.steps,
         print_freq=1000,
