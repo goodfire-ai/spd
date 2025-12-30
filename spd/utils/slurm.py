@@ -3,8 +3,7 @@
 This module provides a single source of truth for generating and submitting SLURM jobs.
 It handles:
 - SBATCH header generation
-- Workspace creation with cleanup
-- Git snapshot checkout (optional)
+- Snapshot workspace activation (pre-created by spd-run)
 - Virtual environment activation
 - Job submission with script renaming and log file creation
 
@@ -32,7 +31,8 @@ class SlurmConfig:
         n_tasks: Number of tasks (defaults to n_nodes if not set, for multi-node DDP)
         time: Time limit in HH:MM:SS format
         cpus_per_task: CPUs per task (for CPU-bound jobs like autointerp)
-        snapshot_branch: Git branch to checkout. If None, just cd to REPO_ROOT without cloning.
+        snapshot_workspace: Path to pre-created workspace with snapshot and venv.
+                           If None, uses REPO_ROOT directly.
         dependency_job_id: If set, job waits for this job to complete (afterok dependency)
     """
 
@@ -43,7 +43,7 @@ class SlurmConfig:
     n_tasks: int | None = None
     time: str = "72:00:00"
     cpus_per_task: int | None = None
-    snapshot_branch: str | None = None
+    snapshot_workspace: Path | None = None
     dependency_job_id: str | None = None
 
 
@@ -262,54 +262,18 @@ def _generate_sbatch_header(
 
 
 def _generate_setup_section(config: SlurmConfig, is_array: bool) -> str:
-    """Generate workspace creation and git/venv setup.
+    """Generate workspace setup commands.
 
-    If snapshot_branch is set:
-    - Create workspace dir with trap for cleanup
-    - Clone repo to workspace
-    - Copy .env file
-    - Checkout snapshot branch
-    - uv sync and activate venv
-
-    If snapshot_branch is None:
-    - Just cd to REPO_ROOT
-    - Activate existing venv
+    If snapshot_workspace is set, use it. Otherwise, use REPO_ROOT directly.
     """
-    # Workspace directory naming
-    if is_array:
-        workspace_suffix = "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
-    else:
-        workspace_suffix = "$SLURM_JOB_ID"
+    del is_array  # unused
 
-    if config.snapshot_branch is not None:
-        # Full git snapshot setup
+    if config.snapshot_workspace is not None:
         return f"""\
-# Create job-specific working directory
-WORK_DIR="$HOME/slurm_workspaces/{config.job_name}-{workspace_suffix}"
-mkdir -p "$WORK_DIR"
-
-# Clean up the workspace when the script exits
-trap 'rm -rf "$WORK_DIR"' EXIT
-
-# Clone the repository to the job-specific directory
-git clone "{REPO_ROOT}" "$WORK_DIR"
-
-# Change to the cloned repository directory
-cd "$WORK_DIR"
-
-# Copy the .env file from the original repository for WandB authentication (if it exists)
-[ -f "{REPO_ROOT}/.env" ] && cp "{REPO_ROOT}/.env" .env
-
-# Checkout the snapshot branch to ensure consistent code
-git checkout "{config.snapshot_branch}"
-
-# Ensure that dependencies are using the snapshot branch
-deactivate 2>/dev/null || true
-unset VIRTUAL_ENV
-uv sync --no-dev --link-mode copy -q
+# Use pre-created snapshot workspace
+cd "{config.snapshot_workspace}"
 source .venv/bin/activate"""
     else:
-        # Simple setup without git clone
         return f"""\
 cd "{REPO_ROOT}"
 source .venv/bin/activate"""

@@ -78,7 +78,7 @@ def harvest(
         partition=partition,
         n_gpus=actual_n_gpus,
         time=time,
-        snapshot_branch=None,  # Harvest doesn't use git snapshots
+        # Harvest doesn't use git snapshots - runs from REPO_ROOT
     )
     script_content = generate_script(config, full_command)
     result = submit_slurm_job(script_content, "harvest")
