@@ -84,6 +84,7 @@ def create_git_snapshot(run_id: str) -> tuple[str, str]:
                 capture_output=True,
             )
 
+            logger.info(f"Copying current working tree to worktree: {REPO_ROOT} -> {worktree_path}")
             # Copy current working tree to worktree (including untracked files)
             subprocess.run(
                 [
@@ -99,14 +100,17 @@ def create_git_snapshot(run_id: str) -> tuple[str, str]:
                 capture_output=True,
             )
 
+            logger.info(f"Staging all changes in the worktree: {worktree_path}")
             # Stage all changes in the worktree
             subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True, capture_output=True)
 
+            logger.info(f"Checking if there are changes to commit: {worktree_path}")
             # Check if there are changes to commit
             diff_result = subprocess.run(
                 ["git", "diff", "--cached", "--quiet"], cwd=worktree_path, capture_output=True
             )
 
+            logger.info(f"Committing changes if any exist: {worktree_path}")
             # Commit changes if any exist
             if diff_result.returncode != 0:  # Non-zero means there are changes
                 subprocess.run(
@@ -116,6 +120,7 @@ def create_git_snapshot(run_id: str) -> tuple[str, str]:
                     capture_output=True,
                 )
 
+            logger.info(f"Getting the commit hash of HEAD: {worktree_path}")
             # Get the commit hash of HEAD (either new commit or base commit if nothing changed)
             rev_parse = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
@@ -126,6 +131,7 @@ def create_git_snapshot(run_id: str) -> tuple[str, str]:
             )
             commit_hash = rev_parse.stdout.strip()
 
+            logger.info(f"Trying push: {worktree_path} -> {snapshot_branch}")
             # Try push (non-fatal if fails)
             try:
                 subprocess.run(
@@ -143,6 +149,7 @@ def create_git_snapshot(run_id: str) -> tuple[str, str]:
                 )
 
         finally:
+            logger.info(f"Cleaning up worktree: {worktree_path}")
             # Clean up worktree (branch remains in main repo)
             subprocess.run(
                 ["git", "worktree", "remove", "--force", str(worktree_path)],
@@ -151,4 +158,5 @@ def create_git_snapshot(run_id: str) -> tuple[str, str]:
                 capture_output=True,
             )
 
+    logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
     return snapshot_branch, commit_hash
