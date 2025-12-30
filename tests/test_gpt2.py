@@ -7,6 +7,7 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     ModulePatternInfoConfig,
+    ScheduleConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
@@ -53,11 +54,11 @@ def test_gpt_2_decomposition_happy_path() -> None:
         ],
         output_loss_type="kl",
         # Training
-        lr=1e-3,
+        lr_schedule=ScheduleConfig(
+            start_val=1e-3, fn_type="cosine", warmup_pct=0.01, final_val_frac=0.0
+        ),
         batch_size=4,
         steps=2,
-        lr_schedule="cosine",
-        lr_warmup_pct=0.01,
         n_eval_steps=1,
         # Logging & Saving
         train_log_freq=50,  # Print at step 0, 50, and 100

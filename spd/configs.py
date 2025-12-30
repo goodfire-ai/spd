@@ -34,6 +34,28 @@ class ModulePatternInfoConfig(BaseConfig):
     )
 
 
+class ScheduleConfig(BaseConfig):
+    """Configuration for a schedule with warmup and decay. Can be used for LR or other values."""
+
+    start_val: PositiveFloat = Field(..., description="Starting/peak value (after warmup)")
+    warmup_pct: Probability = Field(
+        default=0.0, description="Fraction of total steps for linear warmup"
+    )
+    final_val_frac: NonNegativeFloat = Field(
+        default=1.0,
+        description="End value as fraction of start_val. Can be <1 (decay), =1 (no decay), or >1 (increase)",
+    )
+    fn_type: Literal["constant", "cosine", "linear"] = Field(
+        default="constant", description="Decay function type after warmup"
+    )
+
+    @model_validator(mode="after")
+    def validate_constant_schedule(self) -> Self:
+        if self.fn_type == "constant" and self.final_val_frac != 1.0:
+            raise ValueError("constant schedule requires final_val_frac == 1.0")
+        return self
+
+
 #### Metrics that can be used as losses in training or eval ####
 class LossMetricConfig(BaseConfig):
     coeff: float | None = Field(
@@ -327,7 +349,7 @@ class Config(BaseConfig):
     )
 
     # --- Training ---
-    lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
+    lr_schedule: ScheduleConfig = Field(..., description="Learning rate schedule configuration")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
     batch_size: PositiveInt = Field(
         ...,
@@ -366,15 +388,6 @@ class Config(BaseConfig):
     @property
     def microbatch_size(self) -> PositiveInt:
         return self.batch_size // self.gradient_accumulation_steps
-
-    lr_schedule: Literal["constant", "cosine"] = Field(
-        default="constant",
-        description="Type of learning-rate schedule to apply",
-    )
-    lr_warmup_pct: Probability = Field(
-        default=0.0,
-        description="Fraction of total steps to linearly warm up the learning rate",
-    )
 
     # --- Logging & Saving ---
     out_dir: Path | None = Field(
@@ -503,6 +516,7 @@ class Config(BaseConfig):
         config_dict.pop("eval_metrics", None)
 
         cls._migrate_to_module_info(config_dict)
+        cls._migrate_to_lr_schedule_config(config_dict)
 
         for key in list(config_dict.keys()):
             val = config_dict[key]
@@ -551,6 +565,29 @@ class Config(BaseConfig):
             config_dict["identity_module_info"] = [
                 {"module_pattern": p, "C": global_c} for p in identity_patterns
             ]
+
+    @classmethod
+    def _migrate_to_lr_schedule_config(cls, config_dict: dict[str, Any]) -> None:
+        """Migrate old LR config format (lr + lr_schedule + lr_warmup_pct) to ScheduleConfig."""
+        # Check if using old format (lr as a float, not lr_schedule as a config)
+        if "lr" not in config_dict:
+            return
+
+        logger.info("Migrating old LR config format to LRScheduleConfig")
+
+        old_lr = config_dict.pop("lr")
+        old_fn_type = config_dict.pop("lr_schedule", "constant")
+        old_warmup_pct = config_dict.pop("lr_warmup_pct", 0.0)
+
+        # Old cosine decayed to 0, old constant stayed at 1
+        final_val_frac = 0.0 if old_fn_type == "cosine" else 1.0
+
+        config_dict["lr_schedule"] = {
+            "start_val": old_lr,
+            "fn_type": old_fn_type,
+            "warmup_pct": old_warmup_pct,
+            "final_val_frac": final_val_frac,
+        }
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:

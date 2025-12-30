@@ -481,7 +481,9 @@ class TestConfigIntegration:
 
             # Check overrides applied
             assert config.seed == combo["seed"]
-            assert config.lr == combo["lr"]
+            assert (
+                config.lr_schedule.start_val == combo["lr"]
+            )  # Migration converts lr to lr_schedule
             assert isinstance(config.task_config, TMSTaskConfig)
             assert (
                 config.task_config.feature_probability == combo["task_config.feature_probability"]

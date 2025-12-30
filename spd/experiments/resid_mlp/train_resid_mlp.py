@@ -1,6 +1,7 @@
 """Trains a residual MLP model on one-hot input vectors."""
 
 import einops
+import numpy as np
 import torch
 import wandb
 from jaxtyping import Float
@@ -16,7 +17,7 @@ from spd.log import logger
 from spd.settings import DEFAULT_PROJECT_NAME
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import compute_feature_importances, get_lr_schedule_fn, set_seed
+from spd.utils.general_utils import compute_feature_importances, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 from spd.utils.wandb_utils import init_wandb
 
@@ -85,16 +86,19 @@ def train(
 
     optimizer = torch.optim.AdamW(trainable_params, lr=config.lr, weight_decay=0.01)
 
-    # Add this line to get the lr_schedule_fn
-    lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule)
-
     pbar = tqdm(range(config.steps), total=config.steps)
     for step, (batch, labels) in zip(pbar, dataloader, strict=False):
         if step >= config.steps:
             break
 
-        # Add this block to update the learning rate
-        current_lr = config.lr * lr_schedule_fn(step, config.steps)
+        # Update the learning rate based on schedule
+        match config.lr_schedule:
+            case "constant":
+                current_lr = config.lr
+            case "cosine":
+                # Half-period cosine decay from 1 to 0
+                progress = step / max(config.steps - 1, 1)
+                current_lr = config.lr * 0.5 * (1 + np.cos(np.pi * progress))
         for param_group in optimizer.param_groups:
             param_group["lr"] = current_lr
 

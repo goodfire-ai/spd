@@ -3,6 +3,7 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     ModulePatternInfoConfig,
+    ScheduleConfig,
     StochasticReconLossConfig,
 )
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTaskConfig
@@ -59,11 +60,11 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         ],
         output_loss_type="mse",
         # Training
-        lr=1e-3,
+        lr_schedule=ScheduleConfig(
+            start_val=1e-3, fn_type="cosine", warmup_pct=0.01, final_val_frac=0.0
+        ),
         batch_size=4,
         steps=3,  # Run more steps to see improvement
-        lr_schedule="cosine",
-        lr_warmup_pct=0.01,
         n_eval_steps=1,
         eval_freq=10,
         eval_batch_size=4,

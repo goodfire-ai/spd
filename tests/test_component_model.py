@@ -8,7 +8,12 @@ from jaxtyping import Float, Int
 from torch import Tensor, nn
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
-from spd.configs import Config, ImportanceMinimalityLossConfig, ModulePatternInfoConfig
+from spd.configs import (
+    Config,
+    ImportanceMinimalityLossConfig,
+    ModulePatternInfoConfig,
+    ScheduleConfig,
+)
 from spd.experiments.tms.configs import TMSTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
@@ -141,7 +146,7 @@ def test_from_run_info():
             ci_fn_hidden_dims=[4],
             batch_size=1,
             steps=1,
-            lr=1e-3,
+            lr_schedule=ScheduleConfig(start_val=1e-3),
             n_eval_steps=1,
             eval_batch_size=1,
             eval_freq=1,
