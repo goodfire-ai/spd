@@ -37,7 +37,7 @@ class ResidMLPTrainConfig(BaseConfig):
     steps: PositiveInt
     print_freq: PositiveInt
     lr: PositiveFloat
-    lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = "constant"
+    lr_schedule: Literal["constant", "cosine"] = "constant"
     fixed_random_embedding: bool = False
     fixed_identity_embedding: bool = False
     n_batches_final_losses: PositiveInt = 1

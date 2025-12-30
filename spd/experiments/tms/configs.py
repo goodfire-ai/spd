@@ -23,7 +23,7 @@ class TMSTrainConfig(BaseConfig):
     steps: PositiveInt
     seed: int = 0
     lr: float
-    lr_schedule: Literal["linear", "cosine", "constant"] = "linear"
+    lr_schedule: Literal["constant", "cosine"] = "constant"
     data_generation_type: Literal["at_least_zero_active", "exactly_one_active"]
     fixed_identity_hidden_layers: bool = False
     fixed_random_hidden_layers: bool = False

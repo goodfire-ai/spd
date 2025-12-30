@@ -12,12 +12,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 from jaxtyping import Float
-from pydantic import BaseModel, PositiveFloat
+from pydantic import BaseModel
 from pydantic.v1.utils import deep_update
 from torch import Tensor
 
 from spd.base_config import BaseConfig
-from spd.log import logger
 from spd.utils.run_utils import save_file
 
 # Avoid seaborn package installation (sns.color_palette("colorblind").as_hex())
@@ -97,28 +96,16 @@ def compute_feature_importances(
 
 
 def get_lr_schedule_fn(
-    lr_schedule: Literal["linear", "constant", "cosine", "exponential"],
-    lr_exponential_halflife: PositiveFloat | None = None,
+    lr_schedule: Literal["constant", "cosine"],
 ) -> Callable[[int, int], float]:
-    """Get a function that returns the learning rate at a given step.
-
-    Args:
-        lr_schedule: The learning rate schedule to use
-        lr_exponential_halflife: The halflife of the exponential learning rate schedule
-    """
-    if lr_schedule == "linear":
-        return lambda step, steps: 1 - (step / steps)
-    elif lr_schedule == "constant":
-        return lambda *_: 1.0
-    elif lr_schedule == "cosine":
-        return lambda step, steps: 1.0 if steps == 1 else np.cos(0.5 * np.pi * step / (steps - 1))
-    else:
-        # Exponential
-        assert lr_exponential_halflife is not None  # Should have been caught by model validator
-        halflife = lr_exponential_halflife
-        gamma = 0.5 ** (1 / halflife)
-        logger.info(f"Using exponential LR schedule with halflife {halflife} steps (gamma {gamma})")
-        return lambda step, steps: gamma**step
+    """Get a function that returns the learning rate at a given step."""
+    match lr_schedule:
+        case "constant":
+            return lambda *_: 1.0
+        case "cosine":
+            return (
+                lambda step, steps: 1.0 if steps == 1 else np.cos(0.5 * np.pi * step / (steps - 1))
+            )
 
 
 def get_lr_with_warmup(

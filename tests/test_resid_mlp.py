@@ -63,7 +63,6 @@ def test_resid_mlp_decomposition_happy_path() -> None:
         batch_size=4,
         steps=3,  # Run more steps to see improvement
         lr_schedule="cosine",
-        lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
         n_eval_steps=1,
         eval_freq=10,

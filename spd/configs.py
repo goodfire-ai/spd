@@ -367,13 +367,9 @@ class Config(BaseConfig):
     def microbatch_size(self) -> PositiveInt:
         return self.batch_size // self.gradient_accumulation_steps
 
-    lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
+    lr_schedule: Literal["constant", "cosine"] = Field(
         default="constant",
         description="Type of learning-rate schedule to apply",
-    )
-    lr_exponential_halflife: PositiveFloat | None = Field(
-        default=None,
-        description="Half-life parameter when using an exponential LR schedule",
     )
     lr_warmup_pct: Probability = Field(
         default=0.0,
@@ -487,6 +483,7 @@ class Config(BaseConfig):
         "p_anneal_end_frac",
         "importance_minimality_coeff",
         "dist_backend",
+        "lr_exponential_halflife",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
@@ -557,12 +554,6 @@ class Config(BaseConfig):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        # Check that lr_exponential_halflife is not None if lr_schedule is "exponential"
-        if self.lr_schedule == "exponential":
-            assert self.lr_exponential_halflife is not None, (
-                "lr_exponential_halflife must be set if lr_schedule is exponential"
-            )
-
         assert self.batch_size % self.gradient_accumulation_steps == 0, (
             "batch_size must be divisible by gradient_accumulation_steps"
         )

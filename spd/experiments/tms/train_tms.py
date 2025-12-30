@@ -19,7 +19,7 @@ from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import set_seed
+from spd.utils.general_utils import get_lr_schedule_fn, set_seed
 from spd.utils.run_utils import get_output_dir, save_file
 
 
@@ -43,16 +43,11 @@ def train(
     steps: int,
     print_freq: int,
     lr: float,
-    lr_schedule: Literal["linear", "cosine", "constant"],
+    lr_schedule: Literal["constant", "cosine"],
 ) -> None:
     hooks = []
 
-    assert lr_schedule in ["linear", "cosine", "constant"], f"Invalid lr_schedule: {lr_schedule}"
-    lr_schedule_fn = {
-        "linear": linear_lr,
-        "cosine": cosine_decay_lr,
-        "constant": constant_lr,
-    }[lr_schedule]
+    lr_schedule_fn = get_lr_schedule_fn(lr_schedule)
 
     opt = torch.optim.AdamW(list(model.parameters()), lr=lr)
 

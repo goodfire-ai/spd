@@ -70,7 +70,6 @@ def test_tms_decomposition_happy_path() -> None:
         batch_size=4,
         steps=3,  # Run only a few steps for the test
         lr_schedule="cosine",
-        lr_exponential_halflife=None,
         lr_warmup_pct=0.0,
         n_eval_steps=1,
         # Faithfulness Warmup
