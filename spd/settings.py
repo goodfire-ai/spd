@@ -12,6 +12,7 @@ SPD_CACHE_DIR = Path(os.environ.get("SPD_CACHE_DIR", default_cache_dir))
 # SLURM directories
 SLURM_LOGS_DIR = Path.home() / "slurm_logs"
 SBATCH_SCRIPTS_DIR = Path.home() / "sbatch_scripts"
+SLURM_WORKSPACES_DIR = Path.home() / "slurm_workspaces"
 
 # this is the gpu-enabled partition on the cluster
 # Not sure why we call it "default" instead of "gpu" or "compute" but keeping the convention here for consistency

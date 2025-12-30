@@ -24,7 +24,7 @@ from spd.utils.compute_utils import (
     TrainingJob,
     create_slurm_array_script,
 )
-from spd.utils.git_utils import create_git_snapshot
+from spd.utils.git_utils import create_git_snapshot, create_snapshot_workspace
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
 from spd.utils.slurm import submit_slurm_job
 from spd.utils.wandb_utils import ReportCfg, create_view_and_report
@@ -79,6 +79,9 @@ def launch_slurm_run(
     snapshot_branch, commit_hash = create_git_snapshot(run_id=run_id)
     logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
 
+    # Create shared workspace with snapshot (runs uv sync once here, not per-task)
+    snapshot_workspace = create_snapshot_workspace(run_id=run_id, snapshot_branch=snapshot_branch)
+
     _wandb_setup(
         create_report=create_report,
         report_title=report_title,
@@ -96,7 +99,7 @@ def launch_slurm_run(
         run_id=run_id,
         training_jobs=training_jobs,
         sweep_params=sweep_params,
-        snapshot_branch=snapshot_branch,
+        snapshot_workspace=snapshot_workspace,
         n_gpus=n_gpus,
         partition=partition,
         max_concurrent_tasks=n_agents,

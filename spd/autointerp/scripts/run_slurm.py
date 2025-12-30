@@ -58,7 +58,7 @@ def launch_interpret_job(
         partition=partition,
         n_gpus=0,  # CPU-only job
         time=time,
-        snapshot_branch=None,  # Autointerp doesn't use git snapshots
+        # Autointerp doesn't use git snapshots - runs from REPO_ROOT
     )
     script_content = generate_script(config, full_command)
     result = submit_slurm_job(script_content, "interpret")

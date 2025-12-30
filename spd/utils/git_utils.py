@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from spd.log import logger
-from spd.settings import REPO_ROOT
+from spd.settings import REPO_ROOT, SLURM_WORKSPACES_DIR
 
 
 def repo_current_branch() -> str:
@@ -152,3 +152,61 @@ def create_git_snapshot(run_id: str) -> tuple[str, str]:
             )
 
     return snapshot_branch, commit_hash
+
+
+def create_snapshot_workspace(run_id: str, snapshot_branch: str) -> Path:
+    """Create a shared workspace with the snapshot branch checked out and dependencies installed.
+
+    This runs once on the login node before SLURM jobs are submitted. All SLURM tasks
+    then use this pre-created workspace, avoiding the slow per-task `uv sync` (~60s).
+
+    Args:
+        run_id: Unique identifier for the run
+        snapshot_branch: The git branch to checkout (created by create_git_snapshot)
+
+    Returns:
+        Path to the workspace directory
+
+    Raises:
+        subprocess.CalledProcessError: If git or uv commands fail
+    """
+    workspace_path = SLURM_WORKSPACES_DIR / f"spd-{run_id}"
+    SLURM_WORKSPACES_DIR.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Creating snapshot workspace at {workspace_path}...")
+
+    # Clone the repository
+    subprocess.run(
+        ["git", "clone", str(REPO_ROOT), str(workspace_path)],
+        check=True,
+        capture_output=True,
+    )
+
+    # Checkout the snapshot branch
+    subprocess.run(
+        ["git", "checkout", snapshot_branch],
+        cwd=workspace_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Copy .env file if it exists (for WandB auth)
+    env_file = REPO_ROOT / ".env"
+    if env_file.exists():
+        subprocess.run(
+            ["cp", str(env_file), str(workspace_path / ".env")],
+            check=True,
+            capture_output=True,
+        )
+
+    # Install dependencies with uv sync (this is the slow part, but only runs once)
+    logger.info("Running uv sync (this may take ~60s)...")
+    subprocess.run(
+        ["uv", "sync", "--no-dev", "--link-mode", "copy", "-q"],
+        cwd=workspace_path,
+        check=True,
+        capture_output=True,
+    )
+
+    logger.info(f"Snapshot workspace ready: {workspace_path}")
+    return workspace_path

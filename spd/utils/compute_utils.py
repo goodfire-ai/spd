@@ -123,12 +123,12 @@ def create_slurm_array_script(
     run_id: str,
     training_jobs: list[TrainingJob],
     sweep_params: dict[str, Any] | None,
-    snapshot_branch: str,
+    snapshot_workspace: Path,
     n_gpus: int | None,
     partition: str,
     max_concurrent_tasks: int | None = None,
 ) -> str:
-    """Create a SLURM job array script with git snapshot for consistent code.
+    """Create a SLURM job array script using a pre-created snapshot workspace.
 
     This is a thin wrapper around slurm.generate_array_script that handles
     TrainingJob -> command string conversion and multi-node DDP setup.
@@ -138,7 +138,7 @@ def create_slurm_array_script(
         run_id: Unique identifier for the run.
         training_jobs: List of training jobs to execute.
         sweep_params: Optional sweep parameters to pass to the jobs.
-        snapshot_branch: Git branch to checkout.
+        snapshot_workspace: Path to pre-created workspace with snapshot and venv.
         n_gpus: Number of GPUs. None or 1 means single GPU. 2-8 means single-node DDP.
                 >8 means multi-node DDP (must be divisible by 8).
         partition: SLURM partition to use.
@@ -166,7 +166,7 @@ def create_slurm_array_script(
         partition=partition,
         n_gpus=gpus_per_node,
         n_nodes=n_nodes,
-        snapshot_branch=snapshot_branch,
+        snapshot_workspace=snapshot_workspace,
         max_concurrent_tasks=max_concurrent_tasks,
     )
 

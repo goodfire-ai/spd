@@ -12,7 +12,11 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from spd.base_config import BaseConfig
 from spd.configs import Config, LMTaskConfig
 from spd.log import logger
-from spd.utils.distributed_utils import DistributedState
+from spd.utils.distributed_utils import (
+    DistributedState,
+    is_main_process,
+    sync_across_processes,
+)
 
 
 class DatasetConfig(BaseConfig):
@@ -228,14 +232,30 @@ def create_data_loader(
         )
     else:
         to_lower = "SimpleStories" in dataset_config.name
-        torch_dataset = tokenize_and_concatenate(
-            dataset,  # pyright: ignore[reportArgumentType]
-            tokenizer,
-            max_length=dataset_config.n_ctx,
-            column_name=dataset_config.column_name,
-            add_bos_token=False,
-            to_lower=to_lower,
-        )
+
+        def do_tokenize() -> Dataset:
+            return tokenize_and_concatenate(
+                dataset,  # pyright: ignore[reportArgumentType]
+                tokenizer,
+                max_length=dataset_config.n_ctx,
+                column_name=dataset_config.column_name,
+                add_bos_token=False,
+                to_lower=to_lower,
+            )
+
+        # In distributed mode, have rank 0 tokenize first to populate the HuggingFace cache,
+        # then other ranks can load from cache. This avoids CPU contention from all ranks
+        # tokenizing simultaneously (which causes significant slowdown).
+        if dist_state is not None and is_main_process():
+            logger.info("Rank 0: tokenizing dataset (other ranks will use cache)")
+            torch_dataset = do_tokenize()
+            sync_across_processes()
+        elif dist_state is not None:
+            sync_across_processes()
+            logger.info(f"Rank {dist_state.rank}: loading tokenized dataset from cache")
+            torch_dataset = do_tokenize()
+        else:
+            torch_dataset = do_tokenize()
 
     sampler = None
     if not dataset_config.streaming and dist_state is not None:
