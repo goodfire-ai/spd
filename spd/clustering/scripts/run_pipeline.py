@@ -332,7 +332,7 @@ def main(
             job_name=f"{pipeline_config.slurm_job_name_prefix}_cluster",
             partition=pipeline_config.slurm_partition,
             n_gpus=1,  # Always 1 GPU per run
-            snapshot_branch=execution_stamp.snapshot_branch,
+            snapshot_workspace=execution_stamp.snapshot_workspace,
             max_concurrent_tasks=pipeline_config.n_runs,  # Run all concurrently
         )
         clustering_script = generate_array_script(clustering_config, clustering_commands)
@@ -355,7 +355,7 @@ def main(
                 job_name=f"{pipeline_config.slurm_job_name_prefix}_dist_{method}",
                 partition=pipeline_config.slurm_partition,
                 n_gpus=1,
-                snapshot_branch=execution_stamp.snapshot_branch,
+                snapshot_workspace=execution_stamp.snapshot_workspace,
                 dependency_job_id=array_job_id,
             )
             dist_script = generate_script(dist_config, cmd)

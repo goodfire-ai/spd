@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from spd.log import logger
-from spd.settings import REPO_ROOT
+from spd.settings import REPO_ROOT, SLURM_WORKSPACES_DIR
 
 
 def repo_current_branch() -> str:
@@ -152,3 +152,56 @@ def create_git_snapshot(run_id: str) -> tuple[str, str]:
             )
 
     return snapshot_branch, commit_hash
+
+
+def create_snapshot_workspace(run_id: str) -> Path:
+    """Create a shared workspace by copying REPO_ROOT (including .venv) at submission time.
+
+    This captures the exact state of REPO_ROOT (code + venv) when spd-run is executed.
+    Much faster than git clone + uv sync (~15s vs ~70s) because it copies the existing
+    venv instead of rebuilding it.
+
+    Args:
+        run_id: Unique identifier for the run
+
+    Returns:
+        Path to the workspace directory
+
+    Raises:
+        subprocess.CalledProcessError: If rsync or uv commands fail
+    """
+    workspace_path = SLURM_WORKSPACES_DIR / f"spd-{run_id}"
+    SLURM_WORKSPACES_DIR.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Creating snapshot workspace at {workspace_path}...")
+
+    # rsync REPO_ROOT to workspace, respecting .gitignore but including .venv
+    # Filter rules are processed in order: include .venv first, then apply .gitignore
+    logger.info("Copying codebase and venv with rsync...")
+    subprocess.run(
+        [
+            "rsync",
+            "-a",
+            "--include=.venv",
+            "--include=.venv/**",
+            "--filter=:- .gitignore",
+            "--exclude=.git",
+            f"{REPO_ROOT}/",
+            f"{workspace_path}/",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    # Fix editable install to point to workspace instead of REPO_ROOT
+    # This is fast (~1-2s) because --no-deps skips dependency resolution
+    logger.info("Fixing editable install paths...")
+    subprocess.run(
+        ["uv", "pip", "install", "-e", ".", "--no-deps", "-q"],
+        cwd=workspace_path,
+        check=True,
+        capture_output=True,
+    )
+
+    logger.info(f"Snapshot workspace ready: {workspace_path}")
+    return workspace_path

@@ -19,6 +19,7 @@ from spd.log import logger
 from spd.settings import DEFAULT_PROJECT_NAME, SPD_CACHE_DIR
 from spd.utils.git_utils import (
     create_git_snapshot,
+    create_snapshot_workspace,
     repo_current_branch,
     repo_current_commit_hash,
     repo_is_clean,
@@ -467,9 +468,9 @@ RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
 
 class ExecutionStamp(NamedTuple):
     run_id: str
-    snapshot_branch: str
     commit_hash: str
     run_type: RunType
+    snapshot_workspace: Path | None
 
     @staticmethod
     def _generate_run_id(run_type: RunType) -> str:
@@ -487,31 +488,32 @@ class ExecutionStamp(NamedTuple):
         run_type: RunType,
         create_snapshot: bool,
     ) -> "ExecutionStamp":
-        """create an execution stamp, possibly including a git snapshot branch"""
+        """Create an execution stamp, possibly including a snapshot workspace."""
 
         run_id: str = ExecutionStamp._generate_run_id(run_type)
-        snapshot_branch: str
         commit_hash: str
+        snapshot_workspace: Path | None
 
         if create_snapshot:
             snapshot_branch, commit_hash = create_git_snapshot(run_id=run_id)
             logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
+            snapshot_workspace = create_snapshot_workspace(run_id=run_id)
         else:
-            snapshot_branch = repo_current_branch()
+            snapshot_workspace = None
             if repo_is_clean(catch_except_as_false=True):
                 commit_hash = repo_current_commit_hash()
-                logger.info(f"Using current branch: {snapshot_branch} ({commit_hash[:8]})")
+                logger.info(f"Using current branch: {repo_current_branch()} ({commit_hash[:8]})")
             else:
                 commit_hash = "none"
                 logger.info(
-                    f"Using current branch: {snapshot_branch} (unpushed changes, no commit hash)"
+                    f"Using current branch: {repo_current_branch()} (unpushed changes, no commit hash)"
                 )
 
         return ExecutionStamp(
             run_id=run_id,
-            snapshot_branch=snapshot_branch,
             commit_hash=commit_hash,
             run_type=run_type,
+            snapshot_workspace=snapshot_workspace,
         )
 
     @property
