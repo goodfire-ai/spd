@@ -19,20 +19,8 @@ from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import get_lr_schedule_fn, set_seed
+from spd.utils.general_utils import set_seed
 from spd.utils.run_utils import get_output_dir, save_file
-
-
-def linear_lr(step: int, steps: int) -> float:
-    return 1 - (step / steps)
-
-
-def constant_lr(*_: int) -> float:
-    return 1.0
-
-
-def cosine_decay_lr(step: int, steps: int) -> float:
-    return np.cos(0.5 * np.pi * step / (steps - 1))
 
 
 def train(
@@ -47,14 +35,19 @@ def train(
 ) -> None:
     hooks = []
 
-    lr_schedule_fn = get_lr_schedule_fn(lr_schedule)
-
     opt = torch.optim.AdamW(list(model.parameters()), lr=lr)
 
     data_iter = iter(dataloader)
     with trange(steps, ncols=0) as t:
         for step in t:
-            step_lr = lr * lr_schedule_fn(step, steps)
+            # Update the learning rate based on schedule
+            match lr_schedule:
+                case "constant":
+                    step_lr = lr
+                case "cosine":
+                    # Half-period cosine decay from 1 to 0
+                    progress = step / max(steps - 1, 1)
+                    step_lr = lr * 0.5 * (1 + np.cos(np.pi * progress))
             for group in opt.param_groups:
                 group["lr"] = step_lr
             opt.zero_grad(set_to_none=True)

@@ -43,10 +43,11 @@ output_loss_type: kl
 batch_size: 256
 eval_batch_size: 64
 steps: 20000
-lr: 0.0005
-lr_schedule: cosine
-lr_warmup_pct: 0.0
-lr_exponential_halflife: null
+lr_schedule:
+  start_val: 0.0005
+  fn_type: cosine
+  warmup_pct: 0.0
+  final_val_frac: 0.0
 gradient_accumulation_steps: 1
 
 

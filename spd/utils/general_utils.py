@@ -1,6 +1,6 @@
 import importlib
 import random
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -17,6 +17,7 @@ from pydantic.v1.utils import deep_update
 from torch import Tensor
 
 from spd.base_config import BaseConfig
+from spd.configs import ScheduleConfig
 from spd.utils.run_utils import save_file
 
 # Avoid seaborn package installation (sns.color_palette("colorblind").as_hex())
@@ -95,30 +96,45 @@ def compute_feature_importances(
     return importance_tensor
 
 
-def get_lr_schedule_fn(
-    lr_schedule: Literal["constant", "cosine"],
-) -> Callable[[int, int], float]:
-    """Get a function that returns the learning rate at a given step."""
-    match lr_schedule:
-        case "constant":
-            return lambda *_: 1.0
-        case "cosine":
-            return (
-                lambda step, steps: 1.0 if steps == 1 else np.cos(0.5 * np.pi * step / (steps - 1))
-            )
+def get_scheduled_value(step: int, total_steps: int, config: ScheduleConfig) -> float:
+    """Get the scheduled value at a given step.
 
+    Handles warmup and decay according to the schedule config.
 
-def get_lr_with_warmup(
-    step: int,
-    steps: int,
-    lr: float,
-    lr_schedule_fn: Callable[[int, int], float],
-    lr_warmup_pct: float,
-) -> float:
-    warmup_steps = int(steps * lr_warmup_pct)
+    Args:
+        step: Current step (0-indexed)
+        total_steps: Total number of steps
+        config: Schedule configuration
+    """
+    warmup_steps = int(total_steps * config.warmup_pct)
+
+    # Warmup phase: linear increase from 0 to start_val
     if step < warmup_steps:
-        return lr * (step / warmup_steps)
-    return lr * lr_schedule_fn(step - warmup_steps, steps - warmup_steps)
+        return config.start_val * (step / warmup_steps) if warmup_steps > 0 else config.start_val
+
+    # Decay phase
+    decay_step = step - warmup_steps
+    decay_steps = total_steps - warmup_steps
+
+    # Handle edge case: no decay steps (100% warmup)
+    if decay_steps <= 1:
+        return config.start_val
+
+    progress = decay_step / (decay_steps - 1)  # 0 at start of decay, 1 at end
+
+    match config.fn_type:
+        case "constant":
+            return config.start_val
+        case "linear":
+            # Linear decay from 1 to final_val_frac
+            multiplier = config.final_val_frac + (1 - config.final_val_frac) * (1 - progress)
+            return config.start_val * multiplier
+        case "cosine":
+            # Half-period cosine decay from 1 to final_val_frac
+            multiplier = config.final_val_frac + (1 - config.final_val_frac) * 0.5 * (
+                1 + np.cos(np.pi * progress)
+            )
+            return config.start_val * multiplier
 
 
 def replace_deprecated_param_names(

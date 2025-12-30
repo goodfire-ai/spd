@@ -243,8 +243,9 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
   global:
     seed:
       values: [0, 1, 2]
-    lr:
-      values: [0.001, 0.01]
+    lr_schedule:
+      start_val:
+        values: [0.001, 0.01]
 
   # Experiment-specific parameters (override global)
   tms_5-2:

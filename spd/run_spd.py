@@ -44,8 +44,7 @@ from spd.utils.distributed_utils import (
 from spd.utils.general_utils import (
     dict_safe_update_,
     extract_batch_data,
-    get_lr_schedule_fn,
-    get_lr_with_warmup,
+    get_scheduled_value,
 )
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import expand_module_patterns, replace_std_values_in_layernorm
@@ -205,10 +204,9 @@ def optimize(
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
     optimized_params = component_params + ci_fn_params
-    optimizer = optim.AdamW(optimized_params, lr=config.lr, weight_decay=0)
+    optimizer = optim.AdamW(optimized_params, lr=config.lr_schedule.start_val, weight_decay=0)
 
-    lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule)
-    logger.info(f"Base LR scheduler created: {config.lr_schedule}")
+    logger.info(f"LR scheduler: {config.lr_schedule.fn_type}")
 
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
@@ -244,12 +242,8 @@ def optimize(
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
 
-        step_lr = get_lr_with_warmup(
-            step=step,
-            steps=config.steps,
-            lr=config.lr,
-            lr_schedule_fn=lr_schedule_fn,
-            lr_warmup_pct=config.lr_warmup_pct,
+        step_lr = get_scheduled_value(
+            step=step, total_steps=config.steps, config=config.lr_schedule
         )
         for group in optimizer.param_groups:
             group["lr"] = step_lr
