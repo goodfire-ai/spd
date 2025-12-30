@@ -39,8 +39,10 @@ output_loss_type: mse
 batch_size: 2048
 eval_batch_size: 2048
 steps: 25000
-lr: 3e-4
-lr_schedule: constant
+lr_schedule:
+  start_val: 3e-4
+  fn_type: constant
+  warmup_pct: 0.0
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200

@@ -42,7 +42,6 @@ loss_metric_configs:
 - coeff: 100000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
-lr: 0.0005
 steps: 400000
 batch_size: 64
 gradient_accumulation_steps: 1
@@ -50,9 +49,11 @@ grad_clip_norm: 0.01
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
-lr_schedule: cosine
-lr_exponential_halflife: null
-lr_warmup_pct: 0.0
+lr_schedule:
+  start_val: 0.0005
+  fn_type: cosine
+  warmup_pct: 0.0
+  final_val_frac: 0.1
 out_dir: null
 train_log_freq: 200
 eval_freq: 1000
