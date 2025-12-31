@@ -106,21 +106,23 @@ def get_scheduled_value(step: int, total_steps: int, config: ScheduleConfig) -> 
         total_steps: Total number of steps
         config: Schedule configuration
     """
+    assert step >= 0, f"step must be non-negative, got {step}"
+    assert total_steps > 0, f"total_steps must be positive, got {total_steps}"
+    assert step <= total_steps, f"step ({step}) cannot exceed total_steps ({total_steps})"
+
     warmup_steps = int(total_steps * config.warmup_pct)
-
-    # Warmup phase: linear increase from 0 to start_val
-    if step < warmup_steps:
-        return config.start_val * (step / warmup_steps) if warmup_steps > 0 else config.start_val
-
-    # Decay phase
-    decay_step = step - warmup_steps
     decay_steps = total_steps - warmup_steps
 
-    # Handle edge case: no decay steps (100% warmup)
+    # Warmup phase first - always takes priority
+    if step < warmup_steps:
+        return config.start_val * (step / warmup_steps)
+
+    # Edge case: 0 or 1 decay steps means no actual decay
     if decay_steps <= 1:
         return config.start_val
 
-    progress = decay_step / (decay_steps - 1)  # 0 at start of decay, 1 at end
+    # Normal decay phase (decay_steps >= 2)
+    progress = (step - warmup_steps) / (decay_steps - 1)  # 0 at start of decay, 1 at end
 
     match config.fn_type:
         case "constant":
