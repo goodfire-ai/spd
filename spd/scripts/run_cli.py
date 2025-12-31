@@ -4,7 +4,7 @@ from spd.settings import DEFAULT_PARTITION_NAME, DEFAULT_PROJECT_NAME
 
 
 def main(
-    experiments: str | None = None,
+    experiments: str | tuple[str, ...] | None = None,
     sweep: str | bool = False,
     n_agents: int | None = None,
     create_report: bool = False,
