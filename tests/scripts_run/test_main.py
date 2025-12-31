@@ -71,7 +71,7 @@ class TestSPDRun:
         jobs with params swept correctly"""
 
         sweep_params = {
-            "global": {"lr": {"values": [1, 2]}},
+            "global": {"lr_schedule": {"start_val": {"values": [1, 2]}}},
             "tms_5-2": {
                 "steps": {"values": [100, 200]},
                 "module_info": {
@@ -97,28 +97,28 @@ class TestSPDRun:
 
         configs = [j.config for j in training_jobs]
 
-        def there_is_one_with(lr: int, steps: int, c: int) -> bool:
+        def there_is_one_with(start_val: int, steps: int, c: int) -> bool:
             matching = [
                 cfg
                 for cfg in configs
-                if cfg.lr == lr
+                if cfg.lr_schedule.start_val == start_val
                 and cfg.steps == steps
                 and c == cfg.module_info[0].C
                 and c == cfg.module_info[1].C
             ]
             return len(matching) == 1
 
-        # 2 lr * 2 steps * 2 module_info = 8 jobs
+        # 2 start_val * 2 steps * 2 module_info = 8 jobs
         assert len(configs) == 8
 
-        assert there_is_one_with(lr=1, steps=100, c=10)
-        assert there_is_one_with(lr=1, steps=100, c=20)
-        assert there_is_one_with(lr=1, steps=200, c=10)
-        assert there_is_one_with(lr=1, steps=200, c=20)
-        assert there_is_one_with(lr=2, steps=100, c=10)
-        assert there_is_one_with(lr=2, steps=100, c=20)
-        assert there_is_one_with(lr=2, steps=200, c=10)
-        assert there_is_one_with(lr=2, steps=200, c=20)
+        assert there_is_one_with(start_val=1, steps=100, c=10)
+        assert there_is_one_with(start_val=1, steps=100, c=20)
+        assert there_is_one_with(start_val=1, steps=200, c=10)
+        assert there_is_one_with(start_val=1, steps=200, c=20)
+        assert there_is_one_with(start_val=2, steps=100, c=10)
+        assert there_is_one_with(start_val=2, steps=100, c=20)
+        assert there_is_one_with(start_val=2, steps=200, c=10)
+        assert there_is_one_with(start_val=2, steps=200, c=20)
 
     def test_create_training_jobs_sweep_multi_experiment(self):
         """when given sweep params, _create_training_jobs should generate the correct number of

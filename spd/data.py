@@ -10,8 +10,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.base_config import BaseConfig
-from spd.configs import Config
-from spd.experiments.lm.configs import LMTaskConfig
+from spd.configs import Config, LMTaskConfig
 from spd.log import logger
 from spd.utils.distributed_utils import DistributedState
 

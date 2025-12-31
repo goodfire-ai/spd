@@ -10,8 +10,7 @@ from pathlib import Path
 import fire
 import wandb
 
-from spd.configs import Config
-from spd.experiments.tms.configs import TMSTaskConfig
+from spd.configs import Config, TMSTaskConfig
 from spd.experiments.tms.models import TMSModel, TMSTargetRunInfo
 from spd.log import logger
 from spd.run_spd import optimize

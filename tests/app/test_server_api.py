@@ -21,8 +21,7 @@ from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
-from spd.configs import Config, ModulePatternInfoConfig
-from spd.experiments.lm.configs import LMTaskConfig
+from spd.configs import Config, LMTaskConfig, ModulePatternInfoConfig, ScheduleConfig
 from spd.models.component_model import ComponentModel
 from spd.utils.module_utils import expand_module_patterns
 
@@ -94,7 +93,7 @@ def app_with_state():
             pretrained_model_output_attr="idx_0",
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
             output_loss_type="kl",
-            lr=1e-3,
+            lr_schedule=ScheduleConfig(start_val=1e-3),
             steps=1,
             batch_size=1,
             eval_batch_size=1,

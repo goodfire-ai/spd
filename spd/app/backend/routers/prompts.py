@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from spd.app.backend.compute import compute_ci_only, extract_active_from_ci
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.utils import log_errors
+from spd.configs import LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data

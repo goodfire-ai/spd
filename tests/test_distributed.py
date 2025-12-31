@@ -37,9 +37,7 @@ TEST_CONFIG = {
     # --- Training ---
     "batch_size": 2,
     "steps": 20,
-    "lr": 1e-2,
-    "lr_schedule": "constant",
-    "lr_warmup_pct": 0.0,
+    "lr_schedule": {"start_val": 1e-2, "fn_type": "constant"},
     "gradient_accumulation_steps": 1,
     # --- Logging & Saving ---
     "train_log_freq": 9999,

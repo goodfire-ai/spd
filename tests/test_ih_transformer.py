@@ -4,13 +4,15 @@ from spd.configs import (
     CI_L0Config,
     Config,
     FaithfulnessLossConfig,
+    IHTaskConfig,
     ImportanceMinimalityLossConfig,
     ModulePatternInfoConfig,
+    ScheduleConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
-from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
+from spd.experiments.ih.configs import InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
 from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
@@ -68,12 +70,11 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         ],
         output_loss_type="kl",
         # Training
-        lr=1e-3,
+        lr_schedule=ScheduleConfig(
+            start_val=1e-3, fn_type="cosine", warmup_pct=0.01, final_val_frac=0.0
+        ),
         batch_size=4,
         steps=2,
-        lr_schedule="cosine",
-        lr_exponential_halflife=None,
-        lr_warmup_pct=0.01,
         n_eval_steps=1,
         # Logging & Saving
         train_log_freq=50,  # Print at step 0, 50, and 100
