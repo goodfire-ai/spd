@@ -31,7 +31,7 @@ from spd.utils.wandb_utils import ReportCfg, create_view_and_report
 
 
 def launch_slurm_run(
-    experiments: str | None,
+    experiments: str | tuple[str, ...] | None,
     sweep: str | bool,
     n_agents: int | None,
     create_report: bool,
@@ -233,22 +233,25 @@ def _merge_sweep_params(base: dict[str, Any], override: dict[str, Any]) -> None:
 
 
 def _get_experiments(
-    experiments_list_str: str | None = None,
+    experiments_input: str | tuple[str, ...] | None = None,
 ) -> list[str]:
-    """Get and validate the list of experiments to run based on the input string.
+    """Get and validate the list of experiments to run.
 
     Args:
-        experiments: Comma-separated list of experiment names. If None, runs all experiments.
+        experiments_input: Experiment names as comma-separated string or tuple.
+            If None, runs all experiments.
 
     Returns:
         List of experiment names to run.
     """
 
     # Determine experiment list
-    if experiments_list_str is None:
+    if experiments_input is None:
         experiments = list(EXPERIMENT_REGISTRY.keys())
+    elif isinstance(experiments_input, tuple):
+        experiments = [exp.strip() for exp in experiments_input]
     else:
-        experiments = [exp.strip() for exp in experiments_list_str.split(",")]
+        experiments = [exp.strip() for exp in experiments_input.split(",")]
 
     # Validate experiment names
     invalid_experiments = [exp for exp in experiments if exp not in EXPERIMENT_REGISTRY]
