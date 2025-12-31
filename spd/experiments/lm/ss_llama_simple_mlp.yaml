@@ -42,7 +42,7 @@ loss_metric_configs:
 - coeff: 100000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
-steps: 400000
+steps: 200000
 batch_size: 128
 gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
