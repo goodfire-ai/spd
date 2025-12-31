@@ -10,21 +10,21 @@ sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
   - module_pattern: "h.*.mlp.c_fc"
-    C: 704
+    C: 650
   - module_pattern: "h.*.mlp.down_proj"
-    C: 704
+    C: 580
   - module_pattern: "h.*.attn.q_proj"
-    C: 704
+    C: 250
   - module_pattern: "h.*.attn.k_proj"
-    C: 704
+    C: 200
   - module_pattern: "h.*.attn.v_proj"
-    C: 704
+    C: 350
   - module_pattern: "h.*.attn.o_proj"
-    C: 704
+    C: 300
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.002
+- coeff: 0.004
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   p_anneal_start_frac: 0.0
@@ -42,10 +42,11 @@ loss_metric_configs:
 - coeff: 100000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
-steps: 400000
-batch_size: 64
+steps: 200000
+batch_size: 128
 gradient_accumulation_steps: 1
-grad_clip_norm: 0.01
+grad_clip_norm_components: 0.01
+grad_clip_norm_ci_fns: null
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
@@ -57,7 +58,7 @@ lr_schedule:
 out_dir: null
 train_log_freq: 200
 eval_freq: 1000
-eval_batch_size: 64
+eval_batch_size: 128
 slow_eval_freq: 10000
 n_eval_steps: 5
 slow_eval_on_first_step: true
