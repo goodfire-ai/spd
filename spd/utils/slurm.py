@@ -286,6 +286,7 @@ def _generate_setup_section(config: SlurmConfig, is_array: bool) -> str:
         return f"""\
 # Create job-specific working directory
 WORK_DIR="$HOME/slurm_workspaces/{config.job_name}-{workspace_suffix}"
+# WORK_DIR="/tmp/spd-workspace-{config.job_name}-{workspace_suffix}"
 mkdir -p "$WORK_DIR"
 
 # Clean up the workspace when the script exits
