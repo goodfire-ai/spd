@@ -9,7 +9,8 @@ CLUSTER_BASE_PATH = Path("/mnt/polished-lake/spd")
 ON_CLUSTER = CLUSTER_BASE_PATH.exists()
 
 # Base directory for SPD outputs (runs, logs, scripts, etc.)
-SPD_OUT_DIR = CLUSTER_BASE_PATH if ON_CLUSTER else Path.home() / "spd_out"
+_default_out_dir = CLUSTER_BASE_PATH if ON_CLUSTER else Path.home() / "spd_out"
+SPD_OUT_DIR = Path(os.environ.get("SPD_OUT_DIR", _default_out_dir))
 SPD_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # SLURM directories
