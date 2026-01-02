@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from transformers import PreTrainedModel
 
@@ -19,7 +21,7 @@ from spd.utils.general_utils import resolve_class, set_seed
 
 
 @pytest.mark.slow
-def test_gpt_2_decomposition_happy_path() -> None:
+def test_gpt_2_decomposition_happy_path(tmp_path: Path) -> None:
     """Test that SPD decomposition works on for GPT-2"""
     set_seed(0)
     device = "cpu"
@@ -148,7 +150,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
         train_loader=train_loader,
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
-        out_dir=None,
+        out_dir=tmp_path,
     )
 
     # Basic assertion to ensure the test ran

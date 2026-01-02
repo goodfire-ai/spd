@@ -17,7 +17,7 @@ from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import save_pre_run_info, set_seed
-from spd.utils.run_utils import ExecutionStamp
+from spd.utils.run_utils import setup_decomposition_run
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -44,30 +44,23 @@ def main(
     device = get_device()
     logger.info(f"Using device: {device}")
 
-    execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
-    out_dir = execution_stamp.out_dir
-    logger.info(f"Run ID: {execution_stamp.run_id}")
-    logger.info(f"Output directory: {out_dir}")
+    set_seed(config.seed)
 
+    out_dir, run_id, tags = setup_decomposition_run(
+        experiment_tag="tms", evals_id=evals_id, sweep_id=sweep_id
+    )
     if config.wandb_project:
-        tags = ["tms"]
-        if evals_id:
-            tags.append(evals_id)
-        if sweep_id:
-            tags.append(sweep_id)
         config = init_wandb(
             config=config,
             project=config.wandb_project,
-            run_id=execution_stamp.run_id,
+            run_id=run_id,
             name=config.wandb_run_name,
             tags=tags,
         )
+    logger.info(config)
 
     task_config = config.task_config
     assert isinstance(task_config, TMSTaskConfig)
-
-    set_seed(config.seed)
-    logger.info(config)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
     target_run_info = TMSTargetRunInfo.from_path(config.pretrained_model_path)

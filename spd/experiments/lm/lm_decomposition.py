@@ -1,7 +1,6 @@
 """Language Model decomposition script."""
 
 import json
-import os
 from pathlib import Path
 
 import fire
@@ -22,7 +21,7 @@ from spd.utils.distributed_utils import (
     with_distributed_cleanup,
 )
 from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
-from spd.utils.run_utils import ExecutionStamp
+from spd.utils.run_utils import setup_decomposition_run
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -54,30 +53,17 @@ def main(
     set_seed(config.seed)
 
     if is_main_process():
-        execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
-        out_dir = execution_stamp.out_dir
-        logger.info(f"Run ID: {execution_stamp.run_id}")
-        logger.info(f"Output directory: {out_dir}")
-
+        out_dir, run_id, tags = setup_decomposition_run(
+            experiment_tag="lm", evals_id=evals_id, sweep_id=sweep_id
+        )
         if config.wandb_project:
-            tags = ["lm"]
-            if evals_id:
-                tags.append(evals_id)
-            if sweep_id:
-                tags.append(sweep_id)
-            slurm_array_job_id = os.getenv("SLURM_ARRAY_JOB_ID", None)
-            if slurm_array_job_id is not None:
-                logger.info(f"Running on slurm array job id: {slurm_array_job_id}")
-                tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
-
             config = init_wandb(
                 config=config,
                 project=config.wandb_project,
-                run_id=execution_stamp.run_id,
+                run_id=run_id,
                 name=config.wandb_run_name,
                 tags=tags,
             )
-
         logger.info(config)
     else:
         out_dir = None

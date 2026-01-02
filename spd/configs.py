@@ -597,6 +597,7 @@ class Config(BaseConfig):
         "importance_minimality_coeff",
         "dist_backend",
         "lr_exponential_halflife",
+        "out_dir",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
