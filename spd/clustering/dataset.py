@@ -6,9 +6,8 @@ Each clustering run loads its own dataset batch, seeded by the run index.
 from typing import Any
 
 from spd.clustering.consts import BatchTensor
+from spd.configs import LMTaskConfig, ResidMLPTaskConfig
 from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName

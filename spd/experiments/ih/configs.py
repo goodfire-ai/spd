@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, PositiveInt
+from pydantic import PositiveInt
 
 from spd.base_config import BaseConfig
 
@@ -30,11 +30,3 @@ class InductionHeadsTrainConfig(BaseConfig):
     seed: int = 0
     attention_maps_n_steps: PositiveInt
     prefix_window: PositiveInt
-
-
-class IHTaskConfig(BaseConfig):
-    task_name: Literal["ih"]
-    prefix_window: PositiveInt | None = Field(
-        default=None,
-        description="Number of tokens to use as a prefix window for the induction head. If none, uses the full sequence length.",
-    )

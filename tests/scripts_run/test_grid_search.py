@@ -5,9 +5,7 @@ All tests use realistic sweep parameters with discriminated lists (loss_metric_c
 
 import json
 
-from spd.configs import Config, ImportanceMinimalityLossConfig
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.experiments.tms.configs import TMSTaskConfig
+from spd.configs import Config, ImportanceMinimalityLossConfig, LMTaskConfig, TMSTaskConfig
 from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations
 
 
@@ -481,7 +479,9 @@ class TestConfigIntegration:
 
             # Check overrides applied
             assert config.seed == combo["seed"]
-            assert config.lr == combo["lr"]
+            assert (
+                config.lr_schedule.start_val == combo["lr"]
+            )  # Migration converts lr to lr_schedule
             assert isinstance(config.task_config, TMSTaskConfig)
             assert (
                 config.task_config.feature_probability == combo["task_config.feature_probability"]

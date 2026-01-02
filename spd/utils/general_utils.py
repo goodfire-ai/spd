@@ -1,6 +1,6 @@
 import importlib
 import random
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -12,12 +12,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 from jaxtyping import Float
-from pydantic import BaseModel, PositiveFloat
+from pydantic import BaseModel
 from pydantic.v1.utils import deep_update
 from torch import Tensor
 
 from spd.base_config import BaseConfig
-from spd.log import logger
+from spd.configs import ScheduleConfig
 from spd.utils.run_utils import save_file
 
 # Avoid seaborn package installation (sns.color_palette("colorblind").as_hex())
@@ -96,42 +96,47 @@ def compute_feature_importances(
     return importance_tensor
 
 
-def get_lr_schedule_fn(
-    lr_schedule: Literal["linear", "constant", "cosine", "exponential"],
-    lr_exponential_halflife: PositiveFloat | None = None,
-) -> Callable[[int, int], float]:
-    """Get a function that returns the learning rate at a given step.
+def get_scheduled_value(step: int, total_steps: int, config: ScheduleConfig) -> float:
+    """Get the scheduled value at a given step.
+
+    Handles warmup and decay according to the schedule config.
 
     Args:
-        lr_schedule: The learning rate schedule to use
-        lr_exponential_halflife: The halflife of the exponential learning rate schedule
+        step: Current step (0-indexed)
+        total_steps: Total number of steps
+        config: Schedule configuration
     """
-    if lr_schedule == "linear":
-        return lambda step, steps: 1 - (step / steps)
-    elif lr_schedule == "constant":
-        return lambda *_: 1.0
-    elif lr_schedule == "cosine":
-        return lambda step, steps: 1.0 if steps == 1 else np.cos(0.5 * np.pi * step / (steps - 1))
-    else:
-        # Exponential
-        assert lr_exponential_halflife is not None  # Should have been caught by model validator
-        halflife = lr_exponential_halflife
-        gamma = 0.5 ** (1 / halflife)
-        logger.info(f"Using exponential LR schedule with halflife {halflife} steps (gamma {gamma})")
-        return lambda step, steps: gamma**step
+    assert step >= 0, f"step must be non-negative, got {step}"
+    assert total_steps > 0, f"total_steps must be positive, got {total_steps}"
+    assert step <= total_steps, f"step ({step}) cannot exceed total_steps ({total_steps})"
 
+    warmup_steps = int(total_steps * config.warmup_pct)
+    decay_steps = total_steps - warmup_steps
 
-def get_lr_with_warmup(
-    step: int,
-    steps: int,
-    lr: float,
-    lr_schedule_fn: Callable[[int, int], float],
-    lr_warmup_pct: float,
-) -> float:
-    warmup_steps = int(steps * lr_warmup_pct)
+    # Warmup phase first - always takes priority
     if step < warmup_steps:
-        return lr * (step / warmup_steps)
-    return lr * lr_schedule_fn(step - warmup_steps, steps - warmup_steps)
+        return config.start_val * (step / warmup_steps)
+
+    # Edge case: 0 or 1 decay steps means no actual decay
+    if decay_steps <= 1:
+        return config.start_val
+
+    # Normal decay phase (decay_steps >= 2)
+    progress = (step - warmup_steps) / (decay_steps - 1)  # 0 at start of decay, 1 at end
+
+    match config.fn_type:
+        case "constant":
+            return config.start_val
+        case "linear":
+            # Linear decay from 1 to final_val_frac
+            multiplier = config.final_val_frac + (1 - config.final_val_frac) * (1 - progress)
+            return config.start_val * multiplier
+        case "cosine":
+            # Half-period cosine decay from 1 to final_val_frac
+            multiplier = config.final_val_frac + (1 - config.final_val_frac) * 0.5 * (
+                1 + np.cos(np.pi * progress)
+            )
+            return config.start_val * multiplier
 
 
 def replace_deprecated_param_names(

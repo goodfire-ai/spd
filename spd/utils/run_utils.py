@@ -16,7 +16,7 @@ import wandb
 import yaml
 
 from spd.log import logger
-from spd.settings import DEFAULT_PROJECT_NAME, SPD_CACHE_DIR
+from spd.settings import DEFAULT_PROJECT_NAME, SPD_OUT_DIR
 from spd.utils.git_utils import (
     create_git_snapshot,
     repo_current_branch,
@@ -65,7 +65,7 @@ def get_output_dir(use_wandb_id: bool = True) -> Path:
     else:
         run_id = get_local_run_id()
 
-    run_dir = SPD_CACHE_DIR / "runs" / run_id
+    run_dir = SPD_OUT_DIR / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
 
@@ -456,12 +456,12 @@ def generate_run_name(params: dict[str, Any]) -> str:
     return "-".join(parts)
 
 
-RunType = Literal["spd", "cluster", "ensemble"]
+RunType = Literal["spd", "clustering/runs", "clustering/ensembles"]
 
 RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
     "spd": "s",
-    "cluster": "c",
-    "ensemble": "e",
+    "clustering/runs": "c",
+    "clustering/ensembles": "e",
 }
 
 
@@ -517,7 +517,7 @@ class ExecutionStamp(NamedTuple):
     @property
     def out_dir(self) -> Path:
         """Get the output directory for this execution stamp."""
-        run_dir = SPD_CACHE_DIR / self.run_type / self.run_id
+        run_dir = SPD_OUT_DIR / self.run_type / self.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
 

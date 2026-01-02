@@ -3,7 +3,6 @@
 import base64
 import hashlib
 import json
-from pathlib import Path
 from typing import Any
 
 from pydantic import Field, PositiveInt, field_validator, model_validator
@@ -11,7 +10,6 @@ from pydantic import Field, PositiveInt, field_validator, model_validator
 from spd.base_config import BaseConfig
 from spd.clustering.merge_config import MergeConfig
 from spd.registry import EXPERIMENT_REGISTRY
-from spd.settings import SPD_CACHE_DIR
 
 
 class LoggingIntervals(BaseConfig):
@@ -46,10 +44,6 @@ class ClusteringRunConfig(BaseConfig):
 
     batch_size: PositiveInt = Field(..., description="Batch size for processing")
     dataset_seed: int = Field(0, description="Seed for dataset generation/loading")
-    base_output_dir: Path = Field(
-        default=SPD_CACHE_DIR / "clustering",
-        description="Base directory to save clustering runs",
-    )
     ensemble_id: str | None = Field(
         default=None,
         description="Ensemble identifier for WandB grouping",

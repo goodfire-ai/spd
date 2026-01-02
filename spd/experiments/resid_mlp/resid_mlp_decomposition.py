@@ -6,8 +6,7 @@ from pathlib import Path
 import fire
 import wandb
 
-from spd.configs import Config
-from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
+from spd.configs import Config, ResidMLPTaskConfig
 from spd.experiments.resid_mlp.models import (
     ResidMLP,
     ResidMLPTargetRunInfo,

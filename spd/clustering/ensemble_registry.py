@@ -6,10 +6,10 @@ Uses SQLite to maintain a mapping of (pipeline_run_id, idx, clustering_run_id).
 import sqlite3
 from contextlib import contextmanager
 
-from spd.settings import SPD_CACHE_DIR
+from spd.settings import SPD_OUT_DIR
 
 # SQLite database path
-_ENSEMBLE_REGISTRY_DB = SPD_CACHE_DIR / "clustering_ensemble_registry.db"
+_ENSEMBLE_REGISTRY_DB = SPD_OUT_DIR / "clustering" / "ensemble_registry.db"
 
 
 @contextmanager

@@ -30,10 +30,11 @@ output_loss_type: kl
 # --- Training ---
 batch_size: 2
 steps: 50_000
-lr: 3e-4
-lr_schedule: cosine
-lr_warmup_pct: 0.01
-lr_exponential_halflife: null
+lr_schedule:
+  start_val: 3e-4
+  fn_type: cosine
+  warmup_pct: 0.01
+  final_val_frac: 0.1
 gradient_accumulation_steps: 1
 
 # --- Faithfulness Warmup ---

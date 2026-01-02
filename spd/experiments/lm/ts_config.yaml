@@ -33,10 +33,10 @@ output_loss_type: kl
 batch_size: 4
 eval_batch_size: 4
 steps: 50_000
-lr: 1e-4
-lr_schedule: constant
-lr_warmup_pct: 0.01
-lr_exponential_halflife: null
+lr_schedule:
+  start_val: 1e-4
+  fn_type: constant
+  warmup_pct: 0.01
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200

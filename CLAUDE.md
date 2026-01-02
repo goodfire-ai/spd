@@ -130,8 +130,15 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 
 - `spd/harvest/` - Offline GPU pipeline for collecting component statistics (correlations, token stats, activation examples)
 - `spd/autointerp/` - LLM-based automated interpretation of components
-- Data stored at `/mnt/polished-lake/spd/data/{harvest,autointerp}/<run_id>/`
+- Data stored at `SPD_OUT_DIR/{harvest,autointerp}/<run_id>/`
 - See `spd/harvest/CLAUDE.md` and `spd/autointerp/CLAUDE.md` for details
+
+**Output Directory (`SPD_OUT_DIR`):**
+
+- Defined in `spd/settings.py`
+- On cluster: `/mnt/polished-lake/spd/`
+- Off cluster: `~/spd_out/`
+- Contains: runs, SLURM logs, sbatch scripts, clustering outputs, harvest data, autointerp results
 
 **Environment setup:**
 
@@ -243,8 +250,9 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
   global:
     seed:
       values: [0, 1, 2]
-    lr:
-      values: [0.001, 0.01]
+    lr_schedule:
+      start_val:
+        values: [0.001, 0.01]
 
   # Experiment-specific parameters (override global)
   tms_5-2:

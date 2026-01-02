@@ -109,7 +109,7 @@ class ModelComparator:
 
     def _create_tms_data_loader(self) -> Iterator[Any]:
         """Create data loader for TMS task."""
-        from spd.experiments.tms.configs import TMSTaskConfig
+        from spd.configs import TMSTaskConfig
         from spd.experiments.tms.models import TMSTargetRunInfo
         from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 
@@ -140,7 +140,7 @@ class ModelComparator:
 
     def _create_resid_mlp_data_loader(self) -> Iterator[Any]:
         """Create data loader for ResidMLP task."""
-        from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
+        from spd.configs import ResidMLPTaskConfig
         from spd.experiments.resid_mlp.models import ResidMLPTargetRunInfo
         from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
         from spd.utils.data_utils import DatasetGeneratedDataLoader
@@ -174,8 +174,8 @@ class ModelComparator:
 
     def _create_lm_data_loader(self) -> Iterator[Any]:
         """Create data loader for LM task."""
+        from spd.configs import LMTaskConfig
         from spd.data import DatasetConfig, create_data_loader
-        from spd.experiments.lm.configs import LMTaskConfig
 
         assert self.current_config.tokenizer_name, "tokenizer_name must be set"
         assert isinstance(self.current_config.task_config, LMTaskConfig)
@@ -202,7 +202,7 @@ class ModelComparator:
 
     def _create_ih_data_loader(self) -> Iterator[Any]:
         """Create data loader for IH task."""
-        from spd.experiments.ih.configs import IHTaskConfig
+        from spd.configs import IHTaskConfig
         from spd.experiments.ih.model import InductionModelTargetRunInfo
         from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 

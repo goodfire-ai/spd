@@ -29,7 +29,7 @@ export const CANONICAL_RUNS: RegistryEntry[] = [
         notes: "Lucius' run, Dec 8",
         clusterMappings: [
             {
-                path: "/mnt/polished-lake/spd/ensemble/e-c313e883/cluster_mapping_e-c313e883.json",
+                path: "clustering/ensembles/e-c313e883/cluster_mapping_e-c313e883.json",
                 notes: "All layers, 80 iterations",
             },
         ],
@@ -48,11 +48,11 @@ export const CANONICAL_RUNS: RegistryEntry[] = [
         modelName: "ss_llama_simple_mlp (1L)",
         clusterMappings: [
             {
-                path: "/mnt/polished-lake/spd/ensemble/e-04370c84/cluster_mapping_e-04370c84.json",
+                path: "clustering/ensembles/e-04370c84/cluster_mapping_e-04370c84.json",
                 notes: "All layers, 200 iterations",
             },
             {
-                path: "/mnt/polished-lake/spd/ensemble/e-5f228e5f/cluster_mapping_e-5f228e5f.json",
+                path: "clustering/ensembles/e-5f228e5f/cluster_mapping_e-5f228e5f.json",
                 notes: "Just down_proj, 80 iterations",
             },
         ],

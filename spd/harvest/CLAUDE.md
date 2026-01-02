@@ -17,10 +17,10 @@ spd-harvest <wandb_path>
 
 ## Data Storage
 
-Data is stored outside the repo at `/mnt/polished-lake/spd/data/`:
+Data is stored in `SPD_OUT_DIR/harvest/` (see `spd/settings.py`):
 
 ```
-/mnt/polished-lake/spd/data/harvest/<run_id>/
+SPD_OUT_DIR/harvest/<run_id>/
 ├── activation_contexts/
 │   ├── config.json
 │   └── components.jsonl      # One ComponentData per line
