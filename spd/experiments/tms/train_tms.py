@@ -20,7 +20,7 @@ from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import get_scheduled_value, set_seed
-from spd.utils.run_utils import get_output_dir, save_file
+from spd.utils.run_utils import ExecutionStamp, save_file
 
 
 def train(
@@ -169,13 +169,21 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
     elif config.fixed_random_hidden_layers:
         run_name += "_fixed-random"
 
+    execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
     if config.wandb_project:
         tags = [f"tms_{model_cfg.n_features}-{model_cfg.n_hidden}"]
         if model_cfg.n_hidden_layers > 0:
             tags[0] += "-id"
-        wandb.init(project=config.wandb_project, name=run_name, tags=tags)
-
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        wandb.init(
+            id=execution_stamp.run_id,
+            project=config.wandb_project,
+            name=run_name,
+            tags=tags,
+        )
 
     # Save config
     config_path = out_dir / "tms_train_config.yaml"

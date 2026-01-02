@@ -1,7 +1,6 @@
 import importlib
 import random
 from collections.abc import Sequence
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -41,11 +40,6 @@ def set_seed(seed: int | None) -> None:
         torch.manual_seed(seed)
         np.random.seed(seed)
         random.seed(seed)
-
-
-def generate_sweep_id() -> str:
-    """Generate a unique sweep ID based on timestamp."""
-    return f"sweep_id-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
 def replace_pydantic_model[BaseModelType: BaseModel](

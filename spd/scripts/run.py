@@ -25,9 +25,9 @@ from spd.utils.compute_utils import (
     create_slurm_array_script,
 )
 from spd.utils.git_utils import create_git_snapshot
-from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
+from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations
 from spd.utils.slurm import submit_slurm_job
-from spd.utils.wandb_utils import ReportCfg, create_view_and_report
+from spd.utils.wandb_utils import ReportCfg, create_view_and_report, generate_wandb_run_name
 
 
 def launch_slurm_run(
@@ -176,7 +176,7 @@ def _create_training_jobs(
                 base_config_dict = base_config.model_dump(mode="json")
                 config_dict_with_overrides = apply_nested_updates(base_config_dict, param_combo)
                 config_dict_with_overrides["wandb_project"] = project
-                wandb_run_name = f"{experiment}-{generate_run_name(param_combo)}"
+                wandb_run_name = f"{experiment}-{generate_wandb_run_name(param_combo)}"
                 config_dict_with_overrides["wandb_run_name"] = wandb_run_name
                 config_with_overrides = Config(**config_dict_with_overrides)
 

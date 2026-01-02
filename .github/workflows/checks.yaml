@@ -25,6 +25,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Container runs as different user than repo owner, causing "dubious ownership" errors.
+      # Tests that run subprocesses (e.g. test_distributed.py) need git commands to work.
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
