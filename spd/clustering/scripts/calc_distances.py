@@ -1,7 +1,7 @@
 """Calculate distances between clustering runs in an ensemble.
 
 Output structure:
-    SPD_CACHE_DIR/ensemble/{pipeline_run_id}/
+    SPD_OUT_DIR/clustering/ensembles/{pipeline_run_id}/
         ├── pipeline_config.yaml              # Created by run_pipeline.py
         ├── ensemble_meta.json                # Ensemble metadata
         ├── ensemble_merge_array.npz          # Normalized merge array
@@ -26,7 +26,7 @@ from spd.clustering.merge_history import MergeHistory, MergeHistoryEnsemble
 from spd.clustering.plotting.merge import plot_dists_distribution
 from spd.clustering.scripts.run_clustering import ClusteringRunStorage
 from spd.log import logger
-from spd.settings import SPD_CACHE_DIR
+from spd.settings import SPD_OUT_DIR
 from spd.utils.run_utils import ExecutionStamp
 
 # Set spawn method for CUDA compatibility with multiprocessing
@@ -63,11 +63,10 @@ def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
                 run_id=clustering_run_id,
                 snapshot_branch="<not needed>",
                 commit_hash="<not needed>",
-                run_type="cluster",
+                run_type="clustering/runs",
             )
         ).history_path
 
-        # SPD_CACHE_DIR / "cluster" / clustering_run_id / "history.npz"
         if not history_path.exists():
             raise FileNotFoundError(
                 f"History not found for run {clustering_run_id}: {history_path}"
@@ -80,7 +79,7 @@ def main(pipeline_run_id: str, distances_method: DistancesMethod) -> None:
     merge_array, merge_meta = ensemble.normalized()
 
     # Get pipeline output directory
-    pipeline_dir = SPD_CACHE_DIR / "ensemble" / pipeline_run_id
+    pipeline_dir = SPD_OUT_DIR / "clustering" / "ensembles" / pipeline_run_id
 
     # Save ensemble metadata and merge array
     ensemble_meta_path = pipeline_dir / "ensemble_meta.json"

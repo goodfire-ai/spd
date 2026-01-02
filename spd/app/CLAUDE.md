@@ -285,7 +285,7 @@ Located at `.data/app/local_attr.db`. Delete this file if schema changes cause i
 | `graphs`           | `(prompt_id, optimization_params)` | Attribution edges + output probs + node CI values |
 | `intervention_runs`| `graph_id`                         | Saved intervention results                        |
 
-Note: Activation contexts, correlations, token stats, and interpretations are loaded from pre-harvested data at `/mnt/polished-lake/spd/data/` (see `spd/harvest/` and `spd/autointerp/`).
+Note: Activation contexts, correlations, token stats, and interpretations are loaded from pre-harvested data at `SPD_OUT_DIR/{harvest,autointerp}/` (see `spd/harvest/` and `spd/autointerp/`).
 
 ---
 
@@ -304,7 +304,7 @@ StateManager.get() → AppState:
       - harvest: HarvestCache  # Lazy-loaded pre-harvested data
   - dataset_search_state: DatasetSearchState | None  # Cached search results
 
-HarvestCache:  # Lazy-loads from /mnt/polished-lake/spd/data/harvest/<run_id>/
+HarvestCache:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
   - correlations: CorrelationStorage | None
   - token_stats: TokenStatsStorage | None
   - activation_contexts: dict[str, ComponentData] | None

@@ -3,11 +3,10 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-# Shared data directory (outside of repo, persists across checkouts)
-DATA_ROOT = Path("/mnt/polished-lake/spd/data")
+from spd.settings import SPD_OUT_DIR
 
 # Base directory for harvest data
-HARVEST_DATA_DIR = DATA_ROOT / "harvest"
+HARVEST_DATA_DIR = SPD_OUT_DIR / "harvest"
 
 
 def get_harvest_dir(wandb_run_id: str) -> Path:

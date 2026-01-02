@@ -9,7 +9,7 @@ import yaml
 from wandb.apis.public import Run
 
 from spd.log import logger
-from spd.settings import SPD_CACHE_DIR
+from spd.settings import SPD_OUT_DIR
 from spd.spd_types import ModelPath
 from spd.utils.general_utils import fetch_latest_local_checkpoint
 from spd.utils.wandb_utils import (
@@ -78,7 +78,7 @@ class RunInfo[T]:
             file_paths = cls._resolve_from_checkpoint_path(Path(path))
         else:
             # Wandb path - check cache first
-            run_dir = SPD_CACHE_DIR / "runs" / f"{project}-{run_id}"
+            run_dir = SPD_OUT_DIR / "runs" / f"{project}-{run_id}"
             if run_dir.exists():
                 logger.info(f"Loading run from {run_dir}")
                 file_paths = cls._resolve_from_run_dir(run_dir)

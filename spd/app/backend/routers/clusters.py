@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from spd.app.backend.state import StateManager
 from spd.app.backend.utils import log_errors
 from spd.base_config import BaseConfig
+from spd.settings import SPD_OUT_DIR
 
 router = APIRouter(prefix="/api/clusters", tags=["clusters"])
 
@@ -38,6 +39,8 @@ class ClusterMappingFile(BaseConfig):
 def load_cluster_mapping(file_path: str) -> ClusterMapping:
     """Load a cluster mapping JSON file from the given path.
 
+    Paths are resolved relative to SPD_OUT_DIR unless they are absolute.
+
     The file should contain a JSON object with:
     - ensemble_id: string
     - notes: string
@@ -50,6 +53,8 @@ def load_cluster_mapping(file_path: str) -> ClusterMapping:
         raise HTTPException(status_code=400, detail="No run loaded. Load a run first.")
 
     path = Path(file_path)
+    if not path.is_absolute():
+        path = SPD_OUT_DIR / path
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
     if not path.is_file():

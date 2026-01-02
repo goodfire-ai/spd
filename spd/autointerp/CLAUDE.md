@@ -16,8 +16,10 @@ Requires `OPENROUTER_API_KEY` env var.
 
 ## Data Storage
 
+Data is stored in `SPD_OUT_DIR/autointerp/` (see `spd/settings.py`):
+
 ```
-/mnt/polished-lake/spd/data/autointerp/<run_id>/
+SPD_OUT_DIR/autointerp/<run_id>/
 └── results.jsonl    # One InterpretationResult per line (append-only for resume)
 ```
 
