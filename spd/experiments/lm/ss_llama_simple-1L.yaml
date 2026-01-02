@@ -59,7 +59,6 @@ lr_schedule:
   fn_type: cosine
   warmup_pct: 0.0
   final_val_frac: 0.1
-out_dir: null
 train_log_freq: 200
 eval_freq: 1000
 eval_batch_size: 64
