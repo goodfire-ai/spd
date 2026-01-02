@@ -294,7 +294,7 @@
     // Run intervention and save to DB
     async function handleRunIntervention() {
         const composerState = activeComposerState;
-        if (!activeCard || !activeGraph || !composerState || composerState.selection.size === 0) return;
+        if (!activeCard || !activeGraph || !composerState) return;
 
         runningIntervention = true;
         try {
