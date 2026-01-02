@@ -5,18 +5,16 @@ import itertools
 import json
 import os
 import secrets
-import string
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Final, Literal, NamedTuple
 
 import torch
-import wandb
 import yaml
 
 from spd.log import logger
-from spd.settings import DEFAULT_PROJECT_NAME, SPD_OUT_DIR
+from spd.settings import SPD_OUT_DIR
 from spd.utils.git_utils import (
     create_git_snapshot,
     repo_current_branch,
@@ -29,45 +27,6 @@ _DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
     "loss_metric_configs": "classname",
     "eval_metric_configs": "classname",
 }
-
-
-def get_local_run_id() -> str:
-    """Generate a unique run ID. Used if wandb is not active.
-
-    Format: local-<random_8_chars>
-    Where random_8_chars is a combination of lowercase letters and digits.
-
-    Returns:
-        Unique run ID string
-    """
-    # Generate 8 random characters (lowercase letters and digits)
-    chars = string.ascii_lowercase + string.digits
-    random_suffix = "".join(secrets.choice(chars) for _ in range(8))
-
-    return f"local-{random_suffix}"
-
-
-# TODO: avoid using this function?
-def get_output_dir(use_wandb_id: bool = True) -> Path:
-    """Get the output directory for a run.
-
-    If WandB is active, uses the WandB project and run ID. Otherwise, generates a local run ID.
-
-    Returns:
-        Path to the output directory
-    """
-    # Check if wandb is active and has a run
-    if use_wandb_id:
-        assert wandb.run is not None, "WandB run is not active"
-        # Get project name from wandb.run, fallback to DEFAULT_PROJECT_NAME if not available
-        project = getattr(wandb.run, "project", DEFAULT_PROJECT_NAME)
-        run_id = f"{project}-{wandb.run.id}"
-    else:
-        run_id = get_local_run_id()
-
-    run_dir = SPD_OUT_DIR / "runs" / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
 
 
 def _save_json(data: Any, path: Path | str, **kwargs: Any) -> None:
@@ -456,10 +415,11 @@ def generate_run_name(params: dict[str, Any]) -> str:
     return "-".join(parts)
 
 
-RunType = Literal["spd", "clustering/runs", "clustering/ensembles"]
+RunType = Literal["spd", "train", "clustering/runs", "clustering/ensembles"]
 
 RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
     "spd": "s",
+    "train": "t",
     "clustering/runs": "c",
     "clustering/ensembles": "e",
 }

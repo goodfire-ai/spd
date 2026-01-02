@@ -173,13 +173,18 @@ def download_wandb_file(run: Run, wandb_run_dir: Path, file_name: str) -> Path:
 
 
 def init_wandb[T_config: BaseConfig](
-    config: T_config, project: str, name: str | None = None, tags: list[str] | None = None
+    config: T_config,
+    project: str,
+    run_id: str,
+    name: str | None = None,
+    tags: list[str] | None = None,
 ) -> T_config:
     """Initialize Weights & Biases and return a config updated with sweep hyperparameters.
 
     Args:
         config: The base config.
         project: The name of the wandb project.
+        run_id: The unique run ID (from ExecutionStamp).
         name: The name of the wandb run.
         tags: Optional list of tags to add to the run.
 
@@ -188,8 +193,8 @@ def init_wandb[T_config: BaseConfig](
     """
     load_dotenv(override=True)
 
-    # TODO: pass run id from ExecutionStamp
     wandb.init(
+        id=run_id,
         project=project,
         entity=os.getenv("WANDB_ENTITY"),
         name=name,

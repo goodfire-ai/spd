@@ -1,6 +1,5 @@
 """Config classes of various types"""
 
-from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
@@ -496,11 +495,6 @@ class Config(BaseConfig):
         return self.batch_size // self.gradient_accumulation_steps
 
     # --- Logging & Saving ---
-    out_dir: Path | None = Field(
-        default=None,
-        description="Directory to save output to. If None, creates a dir using the wandb run id or "
-        "randomly generates one",
-    )
     train_log_freq: PositiveInt = Field(
         ...,
         description="Interval (in steps) at which to log training metrics",

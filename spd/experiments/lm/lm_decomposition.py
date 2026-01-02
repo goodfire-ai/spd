@@ -22,7 +22,7 @@ from spd.utils.distributed_utils import (
     with_distributed_cleanup,
 )
 from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
-from spd.utils.run_utils import get_output_dir
+from spd.utils.run_utils import ExecutionStamp
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -54,6 +54,11 @@ def main(
     set_seed(config.seed)
 
     if is_main_process():
+        execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
+        out_dir = execution_stamp.out_dir
+        logger.info(f"Run ID: {execution_stamp.run_id}")
+        logger.info(f"Output directory: {out_dir}")
+
         if config.wandb_project:
             tags = ["lm"]
             if evals_id:
@@ -65,17 +70,14 @@ def main(
                 logger.info(f"Running on slurm array job id: {slurm_array_job_id}")
                 tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
 
-            config = init_wandb(config, config.wandb_project, tags=tags)
-            assert wandb.run
-            if config.wandb_run_name:
-                wandb.run.name = config.wandb_run_name
+            config = init_wandb(
+                config=config,
+                project=config.wandb_project,
+                run_id=execution_stamp.run_id,
+                name=config.wandb_run_name,
+                tags=tags,
+            )
 
-        if config.out_dir is not None:
-            out_dir = config.out_dir
-            out_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
-        logger.info(f"Output directory: {out_dir}")
         logger.info(config)
     else:
         out_dir = None

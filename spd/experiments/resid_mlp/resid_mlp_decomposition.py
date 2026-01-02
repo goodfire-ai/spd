@@ -17,7 +17,7 @@ from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import save_pre_run_info, set_seed
-from spd.utils.run_utils import get_output_dir, save_file
+from spd.utils.run_utils import ExecutionStamp, save_file
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -40,15 +40,25 @@ def main(
     sweep_params = (
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
     )
+
+    execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
     if config.wandb_project:
         tags = ["resid_mlp"]
         if evals_id:
             tags.append(evals_id)
         if sweep_id:
             tags.append(sweep_id)
-        config = init_wandb(config, config.wandb_project, tags=tags)
-
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        config = init_wandb(
+            config=config,
+            project=config.wandb_project,
+            run_id=execution_stamp.run_id,
+            name=config.wandb_run_name,
+            tags=tags,
+        )
 
     set_seed(config.seed)
     logger.info(config)
@@ -62,11 +72,6 @@ def main(
     target_model = ResidMLP.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
-
-    if config.wandb_project:
-        assert wandb.run, "wandb.run must be initialized before training"
-        if config.wandb_run_name:
-            wandb.run.name = config.wandb_run_name
 
     save_pre_run_info(
         save_to_wandb=config.wandb_project is not None,
