@@ -77,7 +77,6 @@ class TestClusteringPipelineConfigValidation:
                 clustering_run_config_path=Path("nonexistent/path.json"),
                 n_runs=2,
                 distances_methods=["perm_invariant_hamming"],
-                base_output_dir=Path("/tmp/test"),
                 slurm_job_name_prefix=None,
                 slurm_partition=None,
                 wandb_entity="test",
@@ -92,7 +91,6 @@ class TestClusteringPipelineConfigValidation:
             clustering_run_config_path=expected_path,
             n_runs=2,
             distances_methods=["perm_invariant_hamming"],
-            base_output_dir=Path("/tmp/test"),
             wandb_entity="test",
             create_git_snapshot=False,
         )

@@ -2,8 +2,8 @@
 
 Stores runs, prompts, and attribution graphs.
 Activation contexts and correlations are stored in the harvest pipeline output at
-/mnt/polished-lake/spd/data/harvest/<run_id>/.
-Interpretations are stored separately at /mnt/polished-lake/spd/data/autointerp/<run_id>/.
+SPD_OUT_DIR/harvest/<run_id>/.
+Interpretations are stored separately at SPD_OUT_DIR/autointerp/<run_id>/.
 """
 
 import json

@@ -5,7 +5,7 @@ This can be run as a standalone script, or called via `spd-clustering`
 in to identify the run within the pipeline ensemble.
 
 Output structure:
-    <ExecutionStamp.out_dir>/  # from execution stamp (run_type="cluster")
+    <ExecutionStamp.out_dir>/  # from execution stamp (run_type="clustering/runs")
     ├── clustering_run_config.json
     └── history.npz
 """
@@ -221,7 +221,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
     # Create ExecutionStamp and storage
     # don't create git snapshot -- if we are part of an ensemble, the snapshot should be created by the pipeline
     execution_stamp = ExecutionStamp.create(
-        run_type="cluster",
+        run_type="clustering/runs",
         create_snapshot=False,
     )
     storage = ClusteringRunStorage(execution_stamp)

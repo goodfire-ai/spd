@@ -21,18 +21,21 @@ python -m spd.clustering.scripts.run_clustering --config <clustering_run_config.
 
 ## Data Storage
 
+Data is stored in `SPD_OUT_DIR/clustering/` (see `spd/settings.py`):
+
 ```
-/mnt/polished-lake/spd/clustering/
-├── cluster/<run_id>/                    # Single clustering run outputs
+SPD_OUT_DIR/clustering/
+├── runs/<run_id>/                       # Single clustering run outputs
 │   ├── clustering_run_config.json
 │   └── history.zip                      # MergeHistory (group assignments per iteration)
-└── ensemble/<pipeline_run_id>/          # Pipeline/ensemble outputs
-    ├── pipeline_config.yaml
-    ├── ensemble_meta.json               # Component labels, iteration stats
-    ├── ensemble_merge_array.npz         # Normalized merge array
-    ├── distances_<method>.npz           # Distance matrices
-    └── plots/
-        └── distances_<method>.png       # Distance distribution visualization
+├── ensembles/<pipeline_run_id>/         # Pipeline/ensemble outputs
+│   ├── pipeline_config.yaml
+│   ├── clustering_run_config.json       # Copy of the config used
+│   ├── ensemble_meta.json               # Component labels, iteration stats
+│   ├── ensemble_merge_array.npz         # Normalized merge array
+│   ├── distances_<method>.npz           # Distance matrices
+│   └── distances_<method>.png           # Distance distribution plot
+└── ensemble_registry.db                 # SQLite DB mapping pipeline → clustering runs
 ```
 
 ## Architecture

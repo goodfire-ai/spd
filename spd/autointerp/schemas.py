@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from spd.harvest.schemas import DATA_ROOT
+from spd.settings import SPD_OUT_DIR
 
-# Base directory for autointerp data (separate from harvest)
-AUTOINTERP_DATA_DIR = DATA_ROOT / "autointerp"
+# Base directory for autointerp data
+AUTOINTERP_DATA_DIR = SPD_OUT_DIR / "autointerp"
 
 
 def get_autointerp_dir(wandb_run_id: str) -> Path:

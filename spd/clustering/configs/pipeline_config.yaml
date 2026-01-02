@@ -1,7 +1,6 @@
 clustering_run_config_path: "spd/clustering/configs/crc/ss_llama_simple_mlp-1L.json"
 n_runs: 2
 distances_methods: ["perm_invariant_hamming"]
-base_output_dir: "/mnt/polished-lake/spd/clustering"
 slurm_job_name_prefix: "spd"
 slurm_partition: "h200-reserved"
 wandb_project: "spd"

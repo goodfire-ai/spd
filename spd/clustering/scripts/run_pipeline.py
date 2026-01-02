@@ -31,7 +31,6 @@ from spd.clustering.clustering_run_config import ClusteringRunConfig
 from spd.clustering.consts import DistancesMethod
 from spd.clustering.storage import StorageBase
 from spd.log import logger
-from spd.settings import SPD_CACHE_DIR
 from spd.utils.general_utils import replace_pydantic_model
 from spd.utils.run_utils import (
     _NO_ARG_PARSSED_SENTINEL,
@@ -82,10 +81,6 @@ class ClusteringPipelineConfig(BaseConfig):
     n_runs: PositiveInt = Field(description="Number of clustering runs in the ensemble")
     distances_methods: list[DistancesMethod] = Field(
         description="List of method(s) to use for calculating distances"
-    )
-    base_output_dir: Path = Field(
-        default=SPD_CACHE_DIR / "clustering_pipeline",
-        description="Base directory for outputs of clustering ensemble pipeline runs.",
     )
     slurm_job_name_prefix: str | None = Field(
         default=None, description="Prefix for SLURM job names"
@@ -250,7 +245,7 @@ def main(
 
     # Create ExecutionStamp for pipeline
     execution_stamp: ExecutionStamp = ExecutionStamp.create(
-        run_type="ensemble",
+        run_type="clustering/ensembles",
         create_snapshot=pipeline_config.create_git_snapshot,
     )
     pipeline_run_id: str = execution_stamp.run_id
