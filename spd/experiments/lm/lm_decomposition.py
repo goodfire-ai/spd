@@ -57,7 +57,7 @@ def main(
             experiment_tag="lm", evals_id=evals_id, sweep_id=sweep_id
         )
         if config.wandb_project:
-            config = init_wandb(
+            init_wandb(
                 config=config,
                 project=config.wandb_project,
                 run_id=run_id,

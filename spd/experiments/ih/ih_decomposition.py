@@ -52,7 +52,7 @@ def main(
             tags.append(evals_id)
         if sweep_id:
             tags.append(sweep_id)
-        config = init_wandb(
+        init_wandb(
             config=config,
             project=config.wandb_project,
             run_id=execution_stamp.run_id,

@@ -68,8 +68,12 @@ def train(
 
     if config.wandb_project:
         tags = [f"resid_mlp{config.resid_mlp_model_config.n_layers}-train"]
-        config = init_wandb(
-            config, config.wandb_project, execution_stamp.run_id, name=run_name, tags=tags
+        init_wandb(
+            config=config,
+            project=config.wandb_project,
+            run_id=execution_stamp.run_id,
+            name=run_name,
+            tags=tags,
         )
 
     # Save config

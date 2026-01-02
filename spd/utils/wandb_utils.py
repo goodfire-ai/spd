@@ -16,7 +16,7 @@ from spd.base_config import BaseConfig
 from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import fetch_latest_checkpoint_name, replace_pydantic_model
+from spd.utils.general_utils import fetch_latest_checkpoint_name
 
 WORKSPACE_TEMPLATES = {
     "default": "https://wandb.ai/goodfire/spd?nw=css034maye",
@@ -272,24 +272,21 @@ def download_wandb_file(run: Run, wandb_run_dir: Path, file_name: str) -> Path:
     return path
 
 
-def init_wandb[T_config: BaseConfig](
-    config: T_config,
+def init_wandb(
+    config: BaseConfig,
     project: str,
     run_id: str,
     name: str | None = None,
     tags: list[str] | None = None,
-) -> T_config:
-    """Initialize Weights & Biases and return a config updated with sweep hyperparameters.
+) -> None:
+    """Initialize Weights & Biases and log the config.
 
     Args:
-        config: The base config.
+        config: The config to log.
         project: The name of the wandb project.
         run_id: The unique run ID (from ExecutionStamp).
         name: The name of the wandb run.
         tags: Optional list of tags to add to the run.
-
-    Returns:
-        Config updated with sweep hyperparameters (if any).
     """
     load_dotenv(override=True)
 
@@ -305,9 +302,6 @@ def init_wandb[T_config: BaseConfig](
         root=str(REPO_ROOT / "spd"), exclude_fn=lambda path: "out" in Path(path).parts
     )
 
-    # Update the config with the hyperparameters for this sweep (if any)
-    config = replace_pydantic_model(config, wandb.config.as_dict())
-
     config_dict = config.model_dump(mode="json")
     # We also want flattened names for easier wandb searchability
     flattened_config_dict = flatten_metric_configs(config_dict)
@@ -317,7 +311,6 @@ def init_wandb[T_config: BaseConfig](
     if "eval_metric_configs" in config_dict:
         del config_dict["eval_metric_configs"]
     wandb.config.update({**config_dict, **flattened_config_dict})
-    return config
 
 
 def ensure_project_exists(project: str) -> None:
