@@ -1,13 +1,10 @@
-from collections.abc import Callable, Generator, Sequence
-from contextlib import contextmanager
+from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import partial
 from typing import Any, Literal, NamedTuple, overload, override
 
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor, nn
-from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
 from spd.configs import Config, SamplingType
@@ -23,6 +20,7 @@ from spd.models.components import (
     VectorMLPCiFn,
     VectorSharedMLPCiFn,
 )
+from spd.models.masked_module import MaskedModule
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import CiFnType, ModelPath
 from spd.utils.general_utils import resolve_class, runtime_cast
@@ -93,14 +91,11 @@ class ComponentModel(LoadableModule):
         self.module_to_c = {info.module_path: info.C for info in module_path_info}
         self.target_module_paths = list(self.module_to_c.keys())
 
+        # Create trainable components and CI functions against the *original* target modules.
+        # We patch the target model only after this, to avoid CI fn creation seeing wrappers.
         self.components = ComponentModel._create_components(
-            target_model=target_model,
-            module_to_c=self.module_to_c,
+            target_model=target_model, module_to_c=self.module_to_c
         )
-        self._components = nn.ModuleDict(
-            {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
-        )
-
         self.ci_fns = ComponentModel._create_ci_fns(
             target_model=target_model,
             module_to_c=self.module_to_c,
@@ -110,6 +105,22 @@ class ComponentModel(LoadableModule):
         self._ci_fns = nn.ModuleDict(
             {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
         )
+
+        # Patch the target model in-place: wrap each decomposed module with MaskedModule.
+        # IMPORTANT: Process paths in order of decreasing depth (deepest first) so that
+        # wrapping a parent module doesn't prevent access to its children.
+        # E.g., wrap "linear1.pre_identity" before "linear1".
+        self._masked_modules: dict[str, MaskedModule] = {}
+        sorted_paths = sorted(self.target_module_paths, key=lambda p: p.count("."), reverse=True)
+        for module_path in sorted_paths:
+            base_module = target_model.get_submodule(module_path)
+            masked = MaskedModule(
+                module_name=module_path,
+                base=base_module,
+                components=self.components[module_path],
+            )
+            _set_submodule_by_path(target_model, module_path, masked)
+            self._masked_modules[module_path] = masked
 
         if sigmoid_type == "leaky_hard":
             self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
@@ -121,6 +132,8 @@ class ComponentModel(LoadableModule):
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
+        if isinstance(target_module, MaskedModule):
+            target_module = target_module.base
 
         match target_module:
             case RadfordConv1D():
@@ -295,134 +308,54 @@ class ComponentModel(LoadableModule):
         cache_type: Literal["component_acts", "input", "none"] = "none",
         **kwargs: Any,
     ) -> Tensor | OutputWithCache:
-        """Forward pass with optional component replacement and/or input caching.
+        """Forward pass with optional component replacement and/or caching, without hooks.
 
-        This method handles the following 4 cases:
-        1. mask_infos is None and cache_type is "none": Regular forward pass.
-        2. mask_infos is None and cache_type is "input" or "component_acts": Forward pass with
-            caching on all modules in self.target_module_paths.
-        3. mask_infos is not None and cache_type is "input" or "component_acts": Forward pass with
-            component replacement and caching on the modules provided in mask_infos.
-        4. mask_infos is not None and cache_type is "none": Forward pass with component replacement
-            on the modules provided in mask_infos and no caching.
-
-        Args:
-            mask_infos: Dictionary mapping module names to ComponentsMaskInfo.
-                If provided, those modules will be replaced with their components.
-            cache_type: If "input" or "component_acts", cache the inputs or component acts to the
-                modules provided in mask_infos. If "none", no caching is done. If mask_infos is None,
-                cache the inputs or component acts to all modules in self.target_module_paths.
-
-        Returns:
-            OutputWithCache object if cache_type is "input" or "component_acts", otherwise the
-            model output tensor.
+        Semantics match the previous hook-based implementation:
+        - `mask_infos is None and cache_type == "none"`: pure target model forward.
+        - `mask_infos is None and cache_type != "none"`: cache on all decomposed modules.
+        - `mask_infos is not None`: activate exactly those modules for component replacement.
+          If also caching, cache only on the modules provided in `mask_infos`.
         """
-        if mask_infos is None and cache_type == "none":
-            # No hooks needed. Do a regular forward pass of the target model.
-            return self._extract_output(self.target_model(*args, **kwargs))
+        cache: dict[str, Tensor] | None = {} if cache_type != "none" else None
 
-        cache: dict[str, Tensor] = {}
-        hooks: dict[str, Callable[..., Any]] = {}
-
-        hook_module_names = list(mask_infos.keys()) if mask_infos else self.target_module_paths
-
-        for module_name in hook_module_names:
-            mask_info = mask_infos[module_name] if mask_infos else None
-            components = self.components[module_name] if mask_info else None
-
-            hooks[module_name] = partial(
-                self._components_and_cache_hook,
-                module_name=module_name,
-                components=components,
-                mask_info=mask_info,
-                cache_type=cache_type,
-                cache=cache,
+        if cache_type == "none":
+            cache_names: set[str] = set()
+        else:
+            cache_names = (
+                set(mask_infos.keys()) if mask_infos is not None else set(self.target_module_paths)
             )
 
-        with self._attach_forward_hooks(hooks):
-            raw_out = self.target_model(*args, **kwargs)
+        active_infos = mask_infos if mask_infos is not None else {}
 
+        for name in self.target_module_paths:
+            masked = self._masked_modules[name]
+            is_active = name in active_infos
+            is_caching = name in cache_names
+            masked.set_runtime_state(
+                active=is_active,
+                mask_info=(active_infos[name] if is_active else None),
+                cache_type=(cache_type if is_caching else "none"),
+                cache=(cache if is_caching else None),
+            )
+
+        raw_out = self.target_model(*args, **kwargs)
         out = self._extract_output(raw_out)
-        match cache_type:
-            case "input" | "component_acts":
-                return OutputWithCache(output=out, cache=cache)
-            case "none":
-                return out
+        if cache_type == "none":
+            return out
+        assert cache is not None
+        return OutputWithCache(output=out, cache=cache)
 
-    def _components_and_cache_hook(
-        self,
-        _module: nn.Module,
-        args: list[Any],
-        kwargs: dict[Any, Any],
-        output: Any,
-        module_name: str,
-        components: Components | None,
-        mask_info: ComponentsMaskInfo | None,
-        cache_type: Literal["component_acts", "input", "none"],
-        cache: dict[str, Tensor],
-    ) -> Any | None:
-        """Unified hook function that handles both component replacement and caching.
+    def validate_masked_module_state(self) -> None:
+        """Validate that all MaskedModules have consistent runtime state.
 
-        Args:
-            module: The module being hooked
-            args: Module forward args
-            kwargs: Module forward kwargs
-            output: Module forward output
-            module_name: Name of the module in the target model
-            components: Component replacement (if using components)
-            mask_info: Mask information (if using components)
-            cache_type: Whether to cache the component acts, input, or none
-            cache: Cache dictionary to populate (if cache_type is not None)
+        Call this for debugging after set_runtime_state() has been called on all modules
+        but before the forward pass. Useful for catching state configuration bugs.
 
-        Returns:
-            If using components: modified output (or None to keep original)
-            If not using components: None (keeps original output)
+        Raises:
+            AssertionError: If any MaskedModule has inconsistent state.
         """
-        assert len(args) == 1, "Expected 1 argument"
-        assert len(kwargs) == 0, "Expected no keyword arguments"
-        x = args[0]
-        assert isinstance(x, Tensor), "Expected input tensor"
-
-        if cache_type == "input":
-            cache[module_name] = x
-
-        if components is not None and mask_info is not None:
-            assert isinstance(output, Tensor), (
-                f"Only supports single-tensor outputs, got {type(output)}"
-            )
-
-            component_acts_cache = {} if cache_type == "component_acts" else None
-            components_out = components(
-                x,
-                mask=mask_info.component_mask,
-                weight_delta_and_mask=mask_info.weight_delta_and_mask,
-                component_acts_cache=component_acts_cache,
-            )
-            if component_acts_cache is not None:
-                for k, v in component_acts_cache.items():
-                    cache[f"{module_name}_{k}"] = v
-
-            if mask_info.routing_mask == "all":
-                return components_out
-
-            return torch.where(mask_info.routing_mask[..., None], components_out, output)
-
-        # No component replacement - keep original output
-        return None
-
-    @contextmanager
-    def _attach_forward_hooks(self, hooks: dict[str, Callable[..., Any]]) -> Generator[None]:
-        """Context manager to temporarily attach forward hooks to the target model."""
-        handles: list[RemovableHandle] = []
-        for module_name, hook in hooks.items():
-            target_module = self.target_model.get_submodule(module_name)
-            handle = target_module.register_forward_hook(hook, with_kwargs=True)
-            handles.append(handle)
-        try:
-            yield
-        finally:
-            for handle in handles:
-                handle.remove()
+        for masked in self._masked_modules.values():
+            masked.validate_state()
 
     @classmethod
     @override
@@ -572,6 +505,36 @@ def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
             )
             # module path has "." replaced with "-"
             new_key = f"_components.{target_module_path.replace('.', '-')}.{new_key.split('.')[-1]}"
+        # If we now store components under target_model.<path>.components.{U,V}, map legacy keys.
+        if new_key.startswith("_components."):
+            # _components.<dashed_path>.<U|V>  -> target_model.<dotted_path>.components.<U|V>
+            parts = new_key.split(".")
+            if len(parts) == 3 and parts[0] == "_components" and parts[2] in {"U", "V"}:
+                dotted_path = parts[1].replace("-", ".")
+                new_key = f"target_model.{dotted_path}.components.{parts[2]}"
         # replace if modified
         if new_key != key:
             state_dict[new_key] = state_dict.pop(key)
+
+
+def _set_submodule_by_path(root: nn.Module, module_path: str, new_module: nn.Module) -> None:
+    """Set `root.<module_path>` to `new_module`, supporting ModuleList/Sequential numeric segments."""
+    if module_path == "":
+        raise ValueError("module_path cannot be empty")
+    parts = module_path.split(".")
+    parent: nn.Module = root
+    for part in parts[:-1]:
+        parent = _get_child_module(parent, part)
+    last = parts[-1]
+    if last.isdigit():
+        # Parent is a container type (ModuleList/Sequential) that supports indexing
+        parent[int(last)] = new_module  # pyright: ignore[reportIndexIssue]
+    else:
+        setattr(parent, last, new_module)
+
+
+def _get_child_module(parent: nn.Module, part: str) -> nn.Module:
+    if part.isdigit():
+        # Parent is a container type (ModuleList/Sequential) that supports indexing
+        return parent[int(part)]  # pyright: ignore[reportIndexIssue]
+    return parent.get_submodule(part)

@@ -404,6 +404,11 @@ class Config(BaseConfig):
         default="leaky_hard",
         description="Type of sigmoid to use for causal importance calculation",
     )
+    torch_compile: bool = Field(
+        default=False,
+        description="Whether to use torch.compile() for the forward pass. "
+        "Can provide speedups but may increase compilation time on first steps.",
+    )
     module_info: list[ModulePatternInfoConfig] = Field(
         ...,
         description="List of module patterns with C values specifying which modules to decompose. "

@@ -163,9 +163,17 @@ def optimize(
         replace_std_values_in_layernorm(model, ln_stds)
     model.to(device)
 
+    # Optionally compile the model for potential speedups
+    compiled_model: ComponentModel | nn.Module = model
+    if config.torch_compile:
+        logger.info("Compiling model with torch.compile()...")
+        # torch.compile returns a callable that wraps the model; type system doesn't understand this
+        compiled_model = torch.compile(model, fullgraph=False)  # pyright: ignore[reportAssignmentType]
+        logger.info("Model compiled.")
+
     # Wrap model with DDP if distributed
     dist_state = get_distributed_state()
-    wrapped_model: nn.Module = model
+    wrapped_model: nn.Module = compiled_model
     if dist_state is not None:
         if dist_state.backend == "nccl":
             device_id = dist_state.local_rank
