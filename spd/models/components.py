@@ -176,11 +176,11 @@ class LinearComponents(Components):
     @override
     def weight(self) -> Float[Tensor, "d_out d_in"]:
         """(V @ U).T. Transposed to match nn.Linear which uses (d_out, d_in)"""
-        return einops.einsum(self.V, self.U, "d_in C, C d_out -> d_out d_in")
+        return (self.V @ self.U).T
 
     @override
     def get_inner_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
-        return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
+        return x @ self.V
 
     @override
     def forward(
@@ -211,18 +211,17 @@ class LinearComponents(Components):
         if mask is not None:
             component_acts = component_acts * mask
 
-        out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
+        out = component_acts @ self.U
 
         if weight_delta_and_mask is not None:
             weight_delta, weight_delta_mask = weight_delta_and_mask
-            unmasked_delta_out = einops.einsum(x, weight_delta, "... d_in, d_out d_in -> ... d_out")
+            # weight_delta is (d_out, d_in), so transpose for matmul: x @ weight_delta.T
+            unmasked_delta_out = x @ weight_delta.T
             assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
-            out += einops.einsum(
-                weight_delta_mask, unmasked_delta_out, "..., ... d_out -> ... d_out"
-            )
+            out = out + weight_delta_mask.unsqueeze(-1) * unmasked_delta_out
 
         if self.bias is not None:
-            out += self.bias
+            out = out + self.bias
 
         return out
 
@@ -244,9 +243,7 @@ class EmbeddingComponents(Components):
     @override
     def weight(self) -> Float[Tensor, "vocab_size embedding_dim"]:
         """V @ U"""
-        return einops.einsum(
-            self.V, self.U, "vocab_size C, C embedding_dim -> vocab_size embedding_dim"
-        )
+        return self.V @ self.U
 
     @override
     def get_inner_acts(self, x: Int[Tensor, "..."]) -> Float[Tensor, "... C"]:
@@ -282,15 +279,13 @@ class EmbeddingComponents(Components):
         if mask is not None:
             component_acts = component_acts * mask
 
-        out = einops.einsum(component_acts, self.U, "... C, C embedding_dim -> ... embedding_dim")
+        out = component_acts @ self.U
 
         if weight_delta_and_mask is not None:
             weight_delta, weight_delta_mask = weight_delta_and_mask
             unmasked_delta_out = weight_delta[x]
             assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
-            out += einops.einsum(
-                weight_delta_mask, unmasked_delta_out, "..., ... embedding_dim -> ... embedding_dim"
-            )
+            out = out + weight_delta_mask.unsqueeze(-1) * unmasked_delta_out
 
         return out
 

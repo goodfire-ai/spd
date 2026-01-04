@@ -1,6 +1,6 @@
 import tempfile
 from pathlib import Path
-from typing import Any, override
+from typing import Any, Literal, override
 
 import pytest
 import torch
@@ -31,6 +31,7 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
     make_mask_infos,
 )
+from spd.models.masked_module import MaskedModule
 from spd.spd_types import ModelPath
 from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 from spd.utils.run_utils import save_file
@@ -100,6 +101,8 @@ def test_correct_parameters_require_grad():
         assert components.V.requires_grad
 
         target_module = component_model.target_model.get_submodule(module_path)
+        if isinstance(target_module, MaskedModule):
+            target_module = target_module.base
 
         if isinstance(target_module, nn.Linear | RadfordConv1D):
             assert not target_module.weight.requires_grad
@@ -286,8 +289,11 @@ def test_full_weight_delta_matches_target_behaviour():
         sigmoid_type="leaky_hard",
     )
 
+    embed_module = target_model.embed
+    assert isinstance(embed_module, MaskedModule)
+    assert isinstance(embed_module.base, nn.Embedding)
     token_ids = torch.randint(
-        low=0, high=target_model.embed.num_embeddings, size=(BATCH_SIZE,), dtype=torch.long
+        low=0, high=embed_module.base.num_embeddings, size=(BATCH_SIZE,), dtype=torch.long
     )
 
     # WHEN we forward the component model with weight deltas and a weight delta mask of all 1s
@@ -319,9 +325,12 @@ def test_input_cache_captures_pre_weight_input():
     )
 
     # WHEN we forward the component model with input caching
+    embed_module = target_model.embed
+    assert isinstance(embed_module, MaskedModule)
+    assert isinstance(embed_module.base, nn.Embedding)
     token_ids = torch.randint(
         low=0,
-        high=target_model.embed.num_embeddings,
+        high=embed_module.base.num_embeddings,
         size=(BATCH_SIZE,),
         dtype=torch.long,
     )
@@ -336,7 +345,9 @@ def test_input_cache_captures_pre_weight_input():
     assert torch.equal(cache["embed"], token_ids)
     embed_out = target_model.embed(token_ids)
 
-    assert cache["mlp"].shape == (BATCH_SIZE, target_model.mlp.in_features)
+    mlp_module = target_model.mlp
+    assert isinstance(mlp_module, MaskedModule)
+    assert cache["mlp"].shape == (BATCH_SIZE, mlp_module.base.in_features)
     torch.testing.assert_close(cache["mlp"], embed_out)
 
 
@@ -362,6 +373,13 @@ def test_weight_deltas():
 
 
 def test_replacement_effects_fwd_pass():
+    """Test that component forward pass replaces the base module correctly.
+
+    With the MaskedModule design, calling cm() with mask_infos uses components,
+    while calling cm() without mask_infos uses the base module. We verify:
+    1. When component weights match base weights, both produce the same output
+    2. When base weights differ from component weights, outputs differ proportionally
+    """
     d_in = 10
     d_out = 20
     C = 30
@@ -388,28 +406,37 @@ def test_replacement_effects_fwd_pass():
         sigmoid_type="leaky_hard",
     )
 
-    # WHEN we set the target model weights to be UV
-    model.linear.weight.copy_(cm.components["linear"].weight)
+    # WHEN we set the base model weights to match the component weights (V @ U)
+    assert isinstance(model.linear, MaskedModule)
+    assert isinstance(model.linear.base, nn.Linear)
+    model.linear.base.weight.copy_(cm.components["linear"].weight)
 
     # AND we use all components
-    input = torch.randn(BATCH_SIZE, d_in)
+    input_tensor = torch.randn(BATCH_SIZE, d_in)
     use_all_components = ComponentsMaskInfo(component_mask=torch.ones(BATCH_SIZE, C))
 
-    # THEN the model output matches the component model output
-    model_out = model(input)
-    cm_out_with_all_components = cm(input, mask_infos={"linear": use_all_components})
-    torch.testing.assert_close(model_out, cm_out_with_all_components)
+    # THEN the base model output matches the component model output
+    # (use cm() for both to ensure consistent state management)
+    base_out = cm(input_tensor)  # No mask_infos -> uses base module
+    components_out = cm(input_tensor, mask_infos={"linear": use_all_components})
+    torch.testing.assert_close(base_out, components_out)
 
-    # however, WHEN we double the values of the model weights
-    model.linear.weight.mul_(2)
+    # however, WHEN we double the base model weights (components unchanged)
+    model.linear.base.weight.mul_(2)
 
-    # THEN the component-only output should be 1/2 the model output
-    new_model_out = model(input)
-    new_cm_out_with_all_components = cm(input, mask_infos={"linear": use_all_components})
-    torch.testing.assert_close(new_model_out, new_cm_out_with_all_components * 2)
+    # THEN the base output should be 2x the component output
+    new_base_out = cm(input_tensor)  # Uses modified base weights
+    new_components_out = cm(input_tensor, mask_infos={"linear": use_all_components})
+    torch.testing.assert_close(new_base_out, new_components_out * 2)
 
 
 def test_replacing_identity():
+    """Test that identity insertion works with MaskedModule wrapping.
+
+    With MaskedModule design, we must use cm() for all forwards to ensure
+    consistent state management. Calling model() directly after cm() would
+    use stale MaskedModule state.
+    """
     d = 10
     C = 20
 
@@ -445,27 +472,104 @@ def test_replacing_identity():
     )
 
     # and a random input
-    input = torch.randn(BATCH_SIZE, d)
+    input_tensor = torch.randn(BATCH_SIZE, d)
 
-    # WHEN we forward with the model
+    # WHEN we forward with cm (no mask_infos -> uses base modules)
     # THEN it should just act as the identity
-    torch.testing.assert_close(model(input), input)
-    torch.testing.assert_close(cm(input), input)
+    cm_base_out = cm(input_tensor)
+    torch.testing.assert_close(cm_base_out, input_tensor)
 
     # WHEN we forward with the identity components
     use_all_components = ComponentsMaskInfo(component_mask=torch.ones(BATCH_SIZE, C))
 
-    cm_components_out = cm(input, mask_infos={"linear.pre_identity": use_all_components})
+    cm_components_out = cm(input_tensor, mask_infos={"linear.pre_identity": use_all_components})
 
-    # THEN it should modify the input
-    assert not torch.allclose(cm_components_out, input)
+    # THEN it should modify the input (components have random init, not identity)
+    assert not torch.allclose(cm_components_out, input_tensor)
 
-    # BUT the original model output should be unchanged
-    cm_target_out = cm(input)
-    assert torch.allclose(cm_target_out, model(input))
+    # AND when we forward again without mask_infos, it should return to identity behavior
+    cm_base_out_again = cm(input_tensor)
+    torch.testing.assert_close(cm_base_out_again, input_tensor)
+
+
+@pytest.mark.parametrize("cache_type", ["none", "input", "component_acts"])
+def test_torch_compile_masked_forward(cache_type: Literal["none", "input", "component_acts"]):
+    """Verify that torch.compile() works with MaskedModule forward passes.
+
+    This test ensures that the module-patching approach (replacing target modules with
+    MaskedModule wrappers) is compatible with torch.compile(). The previous hook-based
+    approach was incompatible because dynamic hook registration/removal breaks graph tracing.
+    """
+    d_in = 8
+    d_out = 6
+    C = 4
+
+    class TwoLayerModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layer1 = nn.Linear(d_in, d_out, bias=False)
+            self.layer2 = nn.Linear(d_out, d_out, bias=True)
+
+        @override
+        def forward(self, x: Tensor) -> Tensor:
+            return self.layer2(torch.relu(self.layer1(x)))
+
+    model = TwoLayerModel()
+    model.eval()
+    model.requires_grad_(False)
+
+    cm = ComponentModel(
+        target_model=model,
+        module_path_info=[
+            ModulePathInfo(module_path="layer1", C=C),
+            ModulePathInfo(module_path="layer2", C=C),
+        ],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
+    )
+
+    # Compile the component model
+    compiled_cm = torch.compile(cm, fullgraph=False)
+
+    input_tensor = torch.randn(BATCH_SIZE, d_in)
+    component_masks = {
+        "layer1": torch.ones(BATCH_SIZE, C),
+        "layer2": torch.ones(BATCH_SIZE, C),
+    }
+    mask_infos = make_mask_infos(component_masks)
+
+    # Test 1: Compiled forward without components (pure target model)
+    if cache_type == "none":
+        eager_out = cm(input_tensor)
+        compiled_out = compiled_cm(input_tensor)
+        torch.testing.assert_close(compiled_out, eager_out)
+
+    # Test 2: Compiled forward with components
+    if cache_type == "none":
+        eager_out = cm(input_tensor, mask_infos=mask_infos)
+        compiled_out = compiled_cm(input_tensor, mask_infos=mask_infos)
+        torch.testing.assert_close(compiled_out, eager_out)
+    else:
+        eager_out, eager_cache = cm(input_tensor, mask_infos=mask_infos, cache_type=cache_type)
+        compiled_out, compiled_cache = compiled_cm(
+            input_tensor, mask_infos=mask_infos, cache_type=cache_type
+        )
+        torch.testing.assert_close(compiled_out, eager_out)
+        # Verify cache contents match
+        assert set(eager_cache.keys()) == set(compiled_cache.keys())
+        for key in eager_cache:
+            torch.testing.assert_close(compiled_cache[key], eager_cache[key])
 
 
 def test_routing():
+    """Test that routing_mask correctly routes some positions to components and others to base.
+
+    With MaskedModule design, we must use cm() for all forwards to ensure
+    consistent state management. Calling model() directly after cm() would
+    use stale MaskedModule state.
+    """
     d = 10
     C = 20
 
@@ -495,20 +599,20 @@ def test_routing():
     )
 
     # and a random input
-    input = torch.randn(BATCH_SIZE, d)
+    input_tensor = torch.randn(BATCH_SIZE, d)
 
-    # WHEN we forward with the model
+    # WHEN we forward with cm (no mask_infos -> uses base modules)
     # THEN it should just act as the identity
-    torch.testing.assert_close(model(input), input)
-    torch.testing.assert_close(cm(input), input)
+    base_out = cm(input_tensor)
+    torch.testing.assert_close(base_out, input_tensor)
 
-    # WHEN we forward with the components
+    # WHEN we forward with the components (all positions routed to components)
     use_all_components = ComponentsMaskInfo(component_mask=torch.ones(BATCH_SIZE, C))
 
-    cm_components_out = cm(input, mask_infos={"linear": use_all_components})
+    cm_components_out = cm(input_tensor, mask_infos={"linear": use_all_components})
 
-    # THEN it should modify the input
-    assert not torch.allclose(cm_components_out, input)
+    # THEN it should modify the input (components have random init, not identity)
+    assert not torch.allclose(cm_components_out, input_tensor)
 
     # but WHEN we forward with the components with routing:
     use_all_components_for_example_0 = ComponentsMaskInfo(
@@ -516,12 +620,13 @@ def test_routing():
         routing_mask=torch.tensor([True, False]),  # route to components only for example 0
     )
 
-    cm_routed_out = cm(input, mask_infos={"linear": use_all_components_for_example_0})
+    cm_routed_out = cm(input_tensor, mask_infos={"linear": use_all_components_for_example_0})
 
-    target_out = model(input)
+    # Get base output for comparison (must use cm() to ensure state is reset properly)
+    base_out_for_comparison = cm(input_tensor)
 
     # THEN the output should be different for the first example (where it's routed to components)
-    assert not torch.allclose(cm_routed_out[0], target_out[0])
+    assert not torch.allclose(cm_routed_out[0], base_out_for_comparison[0])
 
     # but it should be the same for the second example (where it's not routed to components)
-    assert torch.allclose(cm_routed_out[1], target_out[1])
+    torch.testing.assert_close(cm_routed_out[1], base_out_for_comparison[1])

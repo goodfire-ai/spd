@@ -17,6 +17,14 @@ from spd.configs import ModulePatternInfoConfig
 from spd.models.components import Identity
 
 
+def _is_identity_or_masked_identity(module: nn.Module) -> bool:
+    """Check if module is Identity or MaskedModule wrapping Identity."""
+    if isinstance(module, Identity):
+        return True
+    # Avoid circular import by checking attribute instead of importing MaskedModule
+    return hasattr(module, "base") and isinstance(module.base, Identity)
+
+
 def pre_id_hook(
     mod: nn.Module,
     args: tuple[Any, ...],
@@ -27,10 +35,14 @@ def pre_id_hook(
     # simple for now.
     assert not kwargs, f"Expected no kwargs, got {kwargs.keys()}"
     assert hasattr(mod, "pre_identity"), f"Module {mod} has no pre_identity attribute"
-    assert isinstance(mod.pre_identity, Identity), (
-        f"Module {mod} pre_identity is not an Identity layer"
+    pre_identity = mod.pre_identity
+    assert isinstance(pre_identity, nn.Module), (
+        f"pre_identity is not a Module: {type(pre_identity)}"
     )
-    return (mod.pre_identity(args[0]),), {}
+    assert _is_identity_or_masked_identity(pre_identity), (
+        f"Module {mod} pre_identity is not an Identity layer (or MaskedModule wrapping Identity)"
+    )
+    return (pre_identity(args[0]),), {}
 
 
 def insert_identity_operations_(
