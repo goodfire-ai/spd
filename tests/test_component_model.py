@@ -525,3 +525,88 @@ def test_routing():
 
     # but it should be the same for the second example (where it's not routed to components)
     assert torch.allclose(cm_routed_out[1], target_out[1])
+
+
+def test_shared_mask_optimization_linear():
+    """Test that shared mask optimization produces same results as per-element masking."""
+    batch_size = 8
+    seq_len = 16
+    d_in = 32
+    d_out = 64
+    C = 10
+
+    linear = LinearComponents(C=C, d_in=d_in, d_out=d_out, bias=None)
+
+    x = torch.randn(batch_size, seq_len, d_in)
+
+    # Shared mask (singleton batch dims) - triggers weight-masking optimization
+    shared_mask = torch.rand(1, 1, C)
+
+    # Expanded mask (same values, full batch dims) - uses standard path
+    expanded_mask = shared_mask.expand(batch_size, seq_len, C).clone()
+
+    # Both should produce same output
+    out_shared = linear(x, mask=shared_mask)
+    out_expanded = linear(x, mask=expanded_mask)
+
+    torch.testing.assert_close(out_shared, out_expanded)
+
+    # Verify gradients flow correctly through both paths
+    x_shared = x.clone().requires_grad_(True)
+    x_expanded = x.clone().requires_grad_(True)
+    mask_shared = shared_mask.clone().requires_grad_(True)
+    mask_expanded = expanded_mask.clone().requires_grad_(True)
+
+    loss_shared = linear(x_shared, mask=mask_shared).sum()
+    loss_expanded = linear(x_expanded, mask=mask_expanded).sum()
+
+    loss_shared.backward()
+    loss_expanded.backward()
+
+    # Gradients wrt x should be the same
+    torch.testing.assert_close(x_shared.grad, x_expanded.grad)
+
+    # Gradient wrt mask - shared should be the sum over batch dims of expanded
+    assert mask_expanded.grad is not None
+    expected_mask_grad = mask_expanded.grad.sum(dim=(0, 1), keepdim=True)
+    torch.testing.assert_close(mask_shared.grad, expected_mask_grad)
+
+
+def test_shared_mask_optimization_embedding():
+    """Test that shared mask optimization produces same results for embeddings."""
+    batch_size = 8
+    seq_len = 16
+    vocab_size = 100
+    embedding_dim = 64
+    C = 10
+
+    embedding = EmbeddingComponents(C=C, vocab_size=vocab_size, embedding_dim=embedding_dim)
+
+    x = torch.randint(0, vocab_size, (batch_size, seq_len))
+
+    # Shared mask (singleton batch dims) - triggers weight-masking optimization
+    shared_mask = torch.rand(1, 1, C)
+
+    # Expanded mask (same values, full batch dims) - uses standard path
+    expanded_mask = shared_mask.expand(batch_size, seq_len, C).clone()
+
+    # Both should produce same output
+    out_shared = embedding(x, mask=shared_mask)
+    out_expanded = embedding(x, mask=expanded_mask)
+
+    torch.testing.assert_close(out_shared, out_expanded)
+
+    # Verify gradients flow correctly
+    mask_shared = shared_mask.clone().requires_grad_(True)
+    mask_expanded = expanded_mask.clone().requires_grad_(True)
+
+    loss_shared = embedding(x, mask=mask_shared).sum()
+    loss_expanded = embedding(x, mask=mask_expanded).sum()
+
+    loss_shared.backward()
+    loss_expanded.backward()
+
+    # Gradient wrt mask - shared should be the sum over batch dims of expanded
+    assert mask_expanded.grad is not None
+    expected_mask_grad = mask_expanded.grad.sum(dim=(0, 1), keepdim=True)
+    torch.testing.assert_close(mask_shared.grad, expected_mask_grad)

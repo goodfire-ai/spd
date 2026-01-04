@@ -153,6 +153,12 @@ def calc_multibatch_pgd_masked_recon_loss(
     return final_loss / final_n_examples
 
 
+def _is_shared_mask(adv_sources: dict[str, Tensor]) -> bool:
+    """Check if adv_sources have singleton batch dims (shared across batch)."""
+    first_adv = next(iter(adv_sources.values()))
+    return all(d == 1 for d in first_adv.shape[:-1])
+
+
 def _forward_with_adv_sources(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
@@ -164,23 +170,50 @@ def _forward_with_adv_sources(
     output_loss_type: Literal["mse", "kl"],
     batch_dims: tuple[int, ...],
 ):
-    expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
-    adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
-    match weight_deltas:
-        case None:
-            weight_deltas_and_masks = None
-            adv_sources_components = expanded_adv_sources
-        case dict():
-            weight_deltas_and_masks = {
-                k: (weight_deltas[k], expanded_adv_sources[k][..., -1]) for k in weight_deltas
-            }
-            adv_sources_components = {k: v[..., :-1] for k, v in expanded_adv_sources.items()}
+    # When mask is shared across batch (singleton batch dims), skip expansion and CI interpolation.
+    # This enables weight-masking optimization in LinearComponents.forward().
+    mask_is_shared = _is_shared_mask(adv_sources)
 
-    mask_infos = make_mask_infos(
-        component_masks=_interpolate_component_mask(ci, adv_sources_components),
-        weight_deltas_and_masks=weight_deltas_and_masks,
-        routing_masks=routing_masks,
-    )
+    if mask_is_shared:
+        # Keep masks with singleton batch dims for weight-masking optimization
+        adv_sources_components: dict[str, Float[Tensor, ...]]
+        match weight_deltas:
+            case None:
+                weight_deltas_and_masks = None
+                adv_sources_components = adv_sources
+            case dict():
+                weight_deltas_and_masks = {
+                    k: (weight_deltas[k], adv_sources[k][..., -1].expand(*batch_dims))
+                    for k in weight_deltas
+                }
+                adv_sources_components = {k: v[..., :-1] for k, v in adv_sources.items()}
+
+        # Skip CI interpolation for shared masks - use adv_sources directly as masks.
+        # This is valid because: (1) CI interpolation produces per-example masks which defeats
+        # the shared optimization, (2) for PGD we want to find worst-case masks independent of CI.
+        mask_infos = make_mask_infos(
+            component_masks=adv_sources_components,
+            weight_deltas_and_masks=weight_deltas_and_masks,
+            routing_masks=routing_masks,
+        )
+    else:
+        expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
+        match weight_deltas:
+            case None:
+                weight_deltas_and_masks = None
+                adv_sources_components = expanded_adv_sources
+            case dict():
+                weight_deltas_and_masks = {
+                    k: (weight_deltas[k], expanded_adv_sources[k][..., -1]) for k in weight_deltas
+                }
+                adv_sources_components = {k: v[..., :-1] for k, v in expanded_adv_sources.items()}
+
+        mask_infos = make_mask_infos(
+            component_masks=_interpolate_component_mask(ci, adv_sources_components),
+            weight_deltas_and_masks=weight_deltas_and_masks,
+            routing_masks=routing_masks,
+        )
+
     out = model(batch, mask_infos=mask_infos)
 
     sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
