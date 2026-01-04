@@ -182,6 +182,10 @@ class LinearComponents(Components):
     def get_inner_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
         return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
 
+    def _is_shared_mask(self, mask: Tensor) -> bool:
+        """Check if mask is shared across batch (all dims except last are singleton)."""
+        return all(d == 1 for d in mask.shape[:-1])
+
     @override
     def forward(
         self,
@@ -194,7 +198,9 @@ class LinearComponents(Components):
 
         Args:
             x: Input tensor
-            mask: Tensor which masks parameter components.
+            mask: Tensor which masks parameter components. If the mask has singleton dimensions
+                for all batch dims (i.e., shape [1, ..., 1, C]), an optimized weight-masking path
+                is used that precomputes masked weights instead of masking per-element.
             weight_delta_and_mask: Optional tuple of tensors containing:
                 0: the weight differences between the target model and summed component weights
                 1: mask over the weight delta component for each sample
@@ -202,16 +208,32 @@ class LinearComponents(Components):
         Returns:
             output: The summed output across all components
         """
-        component_acts = self.get_inner_acts(x)
-        if component_acts_cache is not None:
-            component_acts_cache["pre_detach"] = component_acts
-            component_acts = component_acts.detach().requires_grad_(True)
-            component_acts_cache["post_detach"] = component_acts
+        # Optimized path: when mask is shared across batch and we don't need component_acts_cache,
+        # precompute masked weights and do a single matmul instead of two matmuls with intermediate.
+        # This is more efficient because: (1) avoids storing batch*seq*C intermediate tensor,
+        # (2) single fused matmul is faster than two separate matmuls.
+        use_weight_masking = (
+            mask is not None and component_acts_cache is None and self._is_shared_mask(mask)
+        )
 
-        if mask is not None:
-            component_acts = component_acts * mask
+        if use_weight_masking:
+            assert mask is not None  # for type checker
+            squeezed_mask = mask.view(self.C)
+            # V @ diag(mask) @ U = (V * mask) @ U
+            masked_V = self.V * squeezed_mask
+            W = einops.einsum(masked_V, self.U, "d_in C, C d_out -> d_in d_out")
+            out = einops.einsum(x, W, "... d_in, d_in d_out -> ... d_out")
+        else:
+            component_acts = self.get_inner_acts(x)
+            if component_acts_cache is not None:
+                component_acts_cache["pre_detach"] = component_acts
+                component_acts = component_acts.detach().requires_grad_(True)
+                component_acts_cache["post_detach"] = component_acts
 
-        out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
+            if mask is not None:
+                component_acts = component_acts * mask
+
+            out = einops.einsum(component_acts, self.U, "... C, C d_out -> ... d_out")
 
         if weight_delta_and_mask is not None:
             weight_delta, weight_delta_mask = weight_delta_and_mask
@@ -252,6 +274,10 @@ class EmbeddingComponents(Components):
     def get_inner_acts(self, x: Int[Tensor, "..."]) -> Float[Tensor, "... C"]:
         return self.V[x]
 
+    def _is_shared_mask(self, mask: Tensor) -> bool:
+        """Check if mask is shared across batch (all dims except last are singleton)."""
+        return all(d == 1 for d in mask.shape[:-1])
+
     @override
     def forward(
         self,
@@ -264,7 +290,9 @@ class EmbeddingComponents(Components):
 
         Args:
             x: Input tensor of token indices
-            mask: Tensor which masks parameter components. May be boolean or float.
+            mask: Tensor which masks parameter components. If the mask has singleton dimensions
+                for all batch dims (i.e., shape [1, ..., 1, C]), an optimized path is used that
+                precomputes the masked embedding table instead of masking per-element.
             weight_delta_and_mask: Optional tuple of tensors containing:
                 0: the weight differences between the target model and summed component weights
                 1: mask over the weight delta component for each sample
@@ -272,17 +300,33 @@ class EmbeddingComponents(Components):
         """
         assert x.dtype == torch.long, "x must be an integer tensor"
 
-        component_acts: Float[Tensor, "... C"] = self.get_inner_acts(x)
+        # Optimized path: when mask is shared across batch and we don't need component_acts_cache,
+        # precompute masked embedding table and index into it instead of per-element masking.
+        use_weight_masking = (
+            mask is not None and component_acts_cache is None and self._is_shared_mask(mask)
+        )
 
-        if component_acts_cache is not None:
-            component_acts_cache["pre_detach"] = component_acts
-            component_acts = component_acts.detach().requires_grad_(True)
-            component_acts_cache["post_detach"] = component_acts
+        if use_weight_masking:
+            assert mask is not None  # for type checker
+            squeezed_mask = mask.view(self.C)
+            # (V * mask) @ U gives masked embedding table
+            masked_V = self.V * squeezed_mask
+            W = einops.einsum(masked_V, self.U, "vocab C, C d_emb -> vocab d_emb")
+            out = W[x]
+        else:
+            component_acts: Float[Tensor, "... C"] = self.get_inner_acts(x)
 
-        if mask is not None:
-            component_acts = component_acts * mask
+            if component_acts_cache is not None:
+                component_acts_cache["pre_detach"] = component_acts
+                component_acts = component_acts.detach().requires_grad_(True)
+                component_acts_cache["post_detach"] = component_acts
 
-        out = einops.einsum(component_acts, self.U, "... C, C embedding_dim -> ... embedding_dim")
+            if mask is not None:
+                component_acts = component_acts * mask
+
+            out = einops.einsum(
+                component_acts, self.U, "... C, C embedding_dim -> ... embedding_dim"
+            )
 
         if weight_delta_and_mask is not None:
             weight_delta, weight_delta_mask = weight_delta_and_mask
