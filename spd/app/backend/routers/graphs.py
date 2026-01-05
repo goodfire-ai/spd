@@ -270,12 +270,7 @@ def compute_max_abs_subcomp_act(node_subcomp_acts: dict[str, float]) -> float:
     """Compute max absolute subcomponent activation for normalization."""
     if not node_subcomp_acts:
         return 1.0
-    max_val = 0.0
-    for val in node_subcomp_acts.values():
-        abs_val = abs(val)
-        if abs_val > max_val:
-            max_val = abs_val
-    return max_val if max_val > 0 else 1.0
+    return max(abs(v) for v in node_subcomp_acts.values()) or 1.0
 
 
 @router.post("")

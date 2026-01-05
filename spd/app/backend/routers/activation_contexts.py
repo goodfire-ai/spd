@@ -137,11 +137,12 @@ def probe_component(
         sampling=loaded.config.sampling,
     )
 
+    assert request.layer in loaded.model.components, f"Layer {request.layer} not in model"
+
     ci_tensor = result.ci_lower_leaky[request.layer]
     ci_values = ci_tensor[0, :, request.component_idx].tolist()
     token_strings = [loaded.token_strings[t] for t in token_ids]
 
-    # Compute subcomponent activations (v_i^T @ a) for the requested component
     input_acts = result.pre_weight_acts[request.layer]
     subcomp_acts_tensor = loaded.model.components[request.layer].get_component_acts(input_acts)
     subcomp_acts = subcomp_acts_tensor[0, :, request.component_idx].tolist()
