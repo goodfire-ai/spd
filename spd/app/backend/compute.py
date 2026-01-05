@@ -572,20 +572,16 @@ def extract_node_subcomp_acts(
     """
     node_subcomp_acts: dict[str, float] = {}
     for layer_name, input_acts in pre_weight_acts.items():
-        # Skip layers that don't have components (e.g., "wte")
         if layer_name not in model.components:
             continue
 
-        # Compute v_i^T @ a for all components: [1, seq, C]
         subcomp_acts = model.components[layer_name].get_component_acts(input_acts)
         n_seq = subcomp_acts.shape[1]
         n_components = subcomp_acts.shape[2]
 
-        # If CI values are provided, only extract for alive nodes (CI > threshold)
         if ci_lower_leaky is not None and layer_name in ci_lower_leaky:
             ci = ci_lower_leaky[layer_name]
             alive_mask = ci[0] > ci_threshold  # [seq, C]
-            # Use torch.where to find alive (seq_pos, c_idx) pairs efficiently
             alive_indices = torch.where(alive_mask)
             for seq_pos, c_idx in zip(
                 alive_indices[0].tolist(), alive_indices[1].tolist(), strict=True
@@ -593,7 +589,6 @@ def extract_node_subcomp_acts(
                 key = f"{layer_name}:{seq_pos}:{c_idx}"
                 node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
         else:
-            # Fall back to extracting all nodes
             for seq_pos in range(n_seq):
                 for c_idx in range(n_components):
                     key = f"{layer_name}:{seq_pos}:{c_idx}"
