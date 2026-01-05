@@ -143,8 +143,7 @@ def probe_component(
     ci_values = ci_tensor[0, :, request.component_idx].tolist()
     token_strings = [loaded.token_strings[t] for t in token_ids]
 
-    input_acts = result.pre_weight_acts[request.layer]
-    subcomp_acts_tensor = loaded.model.components[request.layer].get_component_acts(input_acts)
+    subcomp_acts_tensor = result.component_acts[request.layer]
     subcomp_acts = subcomp_acts_tensor[0, :, request.component_idx].tolist()
 
     return ComponentProbeResponse(

@@ -375,8 +375,9 @@ def compute_edges_from_ci(
         pbar.close()
 
     node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
+    component_acts = model.get_all_component_acts(pre_weight_acts)
     node_subcomp_acts = extract_node_subcomp_acts(
-        model, pre_weight_acts, ci_lower_leaky=ci_lower_leaky, ci_threshold=0.0
+        component_acts, ci_lower_leaky=ci_lower_leaky, ci_threshold=0.0
     )
     return LocalAttributionResult(
         edges=edges,
@@ -493,6 +494,7 @@ class CIOnlyResult:
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]]
     output_probs: Float[Tensor, "1 seq vocab"]
     pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]]
+    component_acts: dict[str, Float[Tensor, "1 seq C"]]
 
 
 def compute_ci_only(
@@ -521,11 +523,13 @@ def compute_ci_only(
             detach_inputs=False,
         )
         output_probs = torch.softmax(output_with_cache.output, dim=-1)
+        component_acts = model.get_all_component_acts(output_with_cache.cache)
 
     return CIOnlyResult(
         ci_lower_leaky=ci.lower_leaky,
         output_probs=output_probs,
         pre_weight_acts=output_with_cache.cache,
+        component_acts=component_acts,
     )
 
 
@@ -552,30 +556,23 @@ def extract_node_ci_vals(
 
 
 def extract_node_subcomp_acts(
-    model: ComponentModel,
-    pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
+    component_acts: dict[str, Float[Tensor, "1 seq C"]],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]] | None = None,
     ci_threshold: float = 0.0,
 ) -> dict[str, float]:
-    """Extract per-node subcomponent activations (v_i^T @ a) from pre-weight activations.
+    """Extract per-node subcomponent activations from pre-computed component acts.
 
     Args:
-        model: The ComponentModel containing the V matrices.
-        pre_weight_acts: Dict mapping layer name to input activations [1, seq, d_in].
+        component_acts: Dict mapping layer name to component activations [1, seq, C].
         ci_lower_leaky: Optional dict mapping layer name to CI tensor [1, seq, C].
             If provided, only nodes with CI > ci_threshold are included.
-        ci_threshold: Threshold for filtering nodes by CI value. Only used if
-            ci_lower_leaky is provided.
+        ci_threshold: Threshold for filtering nodes by CI value.
 
     Returns:
         Dict mapping "layer:seq:c_idx" to subcomponent activation value.
     """
     node_subcomp_acts: dict[str, float] = {}
-    for layer_name, input_acts in pre_weight_acts.items():
-        if layer_name not in model.components:
-            continue
-
-        subcomp_acts = model.components[layer_name].get_component_acts(input_acts)
+    for layer_name, subcomp_acts in component_acts.items():
         n_seq = subcomp_acts.shape[1]
         n_components = subcomp_acts.shape[2]
 

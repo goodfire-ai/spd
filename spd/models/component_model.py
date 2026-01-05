@@ -542,6 +542,24 @@ class ComponentModel(LoadableModule):
             pre_sigmoid=pre_sigmoid,
         )
 
+    def get_all_component_acts(
+        self,
+        pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "..."]],
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        """Compute component activations (v_i^T @ a) for all layers.
+
+        Args:
+            pre_weight_acts: Dict mapping layer name to input activations.
+
+        Returns:
+            Dict mapping layer name to component activations tensor.
+        """
+        return {
+            layer: self.components[layer].get_component_acts(acts)
+            for layer, acts in pre_weight_acts.items()
+            if layer in self.components
+        }
+
     def calc_weight_deltas(self) -> dict[str, Float[Tensor, "d_out d_in"]]:
         """Calculate the weight differences between the target and component weights (V@U) for each layer."""
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] = {}

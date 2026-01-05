@@ -195,11 +195,9 @@ def harvest(
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
 
+            component_acts = model.get_all_component_acts(out.cache)
             subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
-                [
-                    model.components[layer].get_component_acts(out.cache[layer])
-                    for layer in layer_names
-                ],
+                [component_acts[layer] for layer in layer_names],
                 dim=2,
             )
 
@@ -283,11 +281,9 @@ def _harvest_worker(
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
 
+            component_acts = model.get_all_component_acts(out.cache)
             subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
-                [
-                    model.components[layer].get_component_acts(out.cache[layer])
-                    for layer in layer_names
-                ],
+                [component_acts[layer] for layer in layer_names],
                 dim=2,
             )
 
