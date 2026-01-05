@@ -506,7 +506,7 @@ class ComponentModel(LoadableModule):
 
             match ci_fn:
                 case MLPCiFn():
-                    ci_fn_input = self.components[target_module_name].get_inner_acts(
+                    ci_fn_input = self.components[target_module_name].get_component_acts(
                         input_activations
                     )
                 case VectorMLPCiFn() | VectorSharedMLPCiFn():

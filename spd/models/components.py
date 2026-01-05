@@ -43,7 +43,7 @@ class Linear(nn.Module):
 
 
 class MLPCiFn(nn.Module):
-    """MLP-based function that map component 'inner acts' to a scalar output for each component."""
+    """MLP-based function that creates a scalar output for each component."""
 
     def __init__(self, C: int, hidden_dims: list[int]):
         super().__init__()
@@ -148,8 +148,8 @@ class Components(ABC, nn.Module):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_inner_acts(self, x: Tensor) -> Tensor:
-        """Get the inner acts of the component."""
+    def get_component_acts(self, x: Tensor) -> Tensor:
+        """Get the component acts of the component."""
         raise NotImplementedError()
 
 
@@ -179,7 +179,7 @@ class LinearComponents(Components):
         return einops.einsum(self.V, self.U, "d_in C, C d_out -> d_out d_in")
 
     @override
-    def get_inner_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
+    def get_component_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
         return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
 
     @override
@@ -202,7 +202,7 @@ class LinearComponents(Components):
         Returns:
             output: The summed output across all components
         """
-        component_acts = self.get_inner_acts(x)
+        component_acts = self.get_component_acts(x)
         if component_acts_cache is not None:
             component_acts_cache["pre_detach"] = component_acts
             component_acts = component_acts.detach().requires_grad_(True)
@@ -249,7 +249,7 @@ class EmbeddingComponents(Components):
         )
 
     @override
-    def get_inner_acts(self, x: Int[Tensor, "..."]) -> Float[Tensor, "... C"]:
+    def get_component_acts(self, x: Int[Tensor, "..."]) -> Float[Tensor, "... C"]:
         return self.V[x]
 
     @override
@@ -272,7 +272,7 @@ class EmbeddingComponents(Components):
         """
         assert x.dtype == torch.long, "x must be an integer tensor"
 
-        component_acts: Float[Tensor, "... C"] = self.get_inner_acts(x)
+        component_acts: Float[Tensor, "... C"] = self.get_component_acts(x)
 
         if component_acts_cache is not None:
             component_acts_cache["pre_detach"] = component_acts
