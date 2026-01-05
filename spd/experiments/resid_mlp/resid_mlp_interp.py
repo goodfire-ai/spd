@@ -18,7 +18,7 @@ from spd.plotting import plot_causal_importance_vals
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import set_seed
-from spd.utils.run_utils import get_output_dir
+from spd.utils.run_utils import ExecutionStamp
 
 
 def extract_ci_val_figures(
@@ -541,7 +541,8 @@ def main(out_dir: Path, device: str):
 
 
 if __name__ == "__main__":
-    out_dir = get_output_dir(use_wandb_id=False) / "figures"
+    execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
+    out_dir = execution_stamp.out_dir / "figures"
     out_dir.mkdir(parents=True, exist_ok=True)
     set_seed(0)
     device = get_device()

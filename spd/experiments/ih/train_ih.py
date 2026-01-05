@@ -16,7 +16,7 @@ from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import set_seed
-from spd.utils.run_utils import get_output_dir, save_file
+from spd.utils.run_utils import ExecutionStamp, save_file
 
 
 def linear_lr(step: int, steps: int) -> float:
@@ -146,11 +146,16 @@ def run_train(config: InductionHeadsTrainConfig, device: str) -> None:
     run_name += f"use_pos_encoding_{config.ih_model_config.use_pos_encoding}"
     run_name += f"use_layer_norm_{config.ih_model_config.use_layer_norm}"
 
+    execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
     if config.wandb_project:
         tags = [f"ih_{config.ih_model_config.vocab_size}vocab_{config.ih_model_config.seq_len}seq"]
-        wandb.init(project=config.wandb_project, name=run_name, tags=tags)
-
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        wandb.init(
+            id=execution_stamp.run_id, project=config.wandb_project, name=run_name, tags=tags
+        )
 
     # Save config
     config_path = out_dir / "ih_train_config.yaml"

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import cast
 
 import torch
@@ -22,7 +23,7 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDatase
 from spd.utils.general_utils import set_seed
 
 
-def test_tms_decomposition_happy_path() -> None:
+def test_tms_decomposition_happy_path(tmp_path: Path) -> None:
     """Test that SPD decomposition works on a TMS model."""
     set_seed(0)
     device = "cpu"
@@ -137,7 +138,7 @@ def test_tms_decomposition_happy_path() -> None:
         train_loader=train_loader,
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
-        out_dir=None,
+        out_dir=tmp_path,
         tied_weights=tied_weights,
     )
 

@@ -5,18 +5,16 @@ import itertools
 import json
 import os
 import secrets
-import string
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Final, Literal, NamedTuple
 
 import torch
-import wandb
 import yaml
 
 from spd.log import logger
-from spd.settings import DEFAULT_PROJECT_NAME, SPD_OUT_DIR
+from spd.settings import SPD_OUT_DIR
 from spd.utils.git_utils import (
     create_git_snapshot,
     repo_current_branch,
@@ -29,45 +27,6 @@ _DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
     "loss_metric_configs": "classname",
     "eval_metric_configs": "classname",
 }
-
-
-def get_local_run_id() -> str:
-    """Generate a unique run ID. Used if wandb is not active.
-
-    Format: local-<random_8_chars>
-    Where random_8_chars is a combination of lowercase letters and digits.
-
-    Returns:
-        Unique run ID string
-    """
-    # Generate 8 random characters (lowercase letters and digits)
-    chars = string.ascii_lowercase + string.digits
-    random_suffix = "".join(secrets.choice(chars) for _ in range(8))
-
-    return f"local-{random_suffix}"
-
-
-# TODO: avoid using this function?
-def get_output_dir(use_wandb_id: bool = True) -> Path:
-    """Get the output directory for a run.
-
-    If WandB is active, uses the WandB project and run ID. Otherwise, generates a local run ID.
-
-    Returns:
-        Path to the output directory
-    """
-    # Check if wandb is active and has a run
-    if use_wandb_id:
-        assert wandb.run is not None, "WandB run is not active"
-        # Get project name from wandb.run, fallback to DEFAULT_PROJECT_NAME if not available
-        project = getattr(wandb.run, "project", DEFAULT_PROJECT_NAME)
-        run_id = f"{project}-{wandb.run.id}"
-    else:
-        run_id = get_local_run_id()
-
-    run_dir = SPD_OUT_DIR / "runs" / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
 
 
 def _save_json(data: Any, path: Path | str, **kwargs: Any) -> None:
@@ -355,111 +314,11 @@ def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any
     return combinations
 
 
-METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
-    # Loss metrics
-    "FaithfulnessLoss": "Faith",
-    "ImportanceMinimalityLoss": "ImpMin",
-    "StochasticReconLoss": "StochRecon",
-    "StochasticReconSubsetLoss": "StochReconSub",
-    "StochasticReconLayerwiseLoss": "StochReconLayer",
-    "CIMaskedReconLoss": "CIMaskRecon",
-    "CIMaskedReconSubsetLoss": "CIMaskReconSub",
-    "CIMaskedReconLayerwiseLoss": "CIMaskReconLayer",
-    "PGDReconLoss": "PGDRecon",
-    "PGDReconSubsetLoss": "PGDReconSub",
-    "PGDReconLayerwiseLoss": "PGDReconLayer",
-    "StochasticHiddenActsReconLoss": "StochHiddenRecon",
-    "UnmaskedReconLoss": "UnmaskedRecon",
-    # Eval metrics
-    "CEandKLLosses": "CEandKL",
-    "CIHistograms": "CIHist",
-    "CI_L0": "CI_L0",
-    "CIMeanPerComponent": "CIMeanPerComp",
-    "ComponentActivationDensity": "CompActDens",
-    "IdentityCIError": "IdCIErr",
-    "PermutedCIPlots": "PermCIPlots",
-    "UVPlots": "UVPlots",
-    "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
-    "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
-    "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
-}
-
-
-def _parse_metric_config_key(key: str) -> tuple[str, str, str] | None:
-    """Parse a metric config key into (list_field, classname, param).
-
-    Args:
-        key: Flattened key like "loss_metric_configs.ImportanceMinimalityLoss.pnorm"
-
-    Returns:
-        Tuple of (list_field, classname, param) if it's a metric config key, None otherwise
-    """
-    parts = key.split(".")
-    if len(parts) >= 3 and parts[0] in ("loss_metric_configs", "eval_metric_configs"):
-        list_field = parts[0]
-        classname = parts[1]
-        param = ".".join(parts[2:])  # Handle nested params like "task_config.feature_probability"
-        return (list_field, classname, param)
-    return None
-
-
-def generate_run_name(params: dict[str, Any]) -> str:
-    """Generate a run name based on sweep parameters.
-
-    Handles special formatting for metric configs (loss_metric_configs, eval_metric_configs)
-    by abbreviating classnames and grouping parameters by metric type.
-
-    Args:
-        params: Dictionary of flattened sweep parameters
-
-    Returns:
-        Formatted run name string
-
-    Example:
-        >>> params = {
-        ...     "seed": 42,
-        ...     "loss_metric_configs.ImportanceMinimalityLoss.pnorm": 0.9,
-        ...     "loss_metric_configs.ImportanceMinimalityLoss.coeff": 0.001,
-        ... }
-        >>> generate_run_name(params)
-        "seed-42-ImpMin-coeff-0.001-pnorm-0.9"
-    """
-    # Group parameters by type: regular params and metric config params
-    regular_params: list[tuple[str, Any]] = []
-    metric_params: dict[str, list[tuple[str, Any]]] = {}  # classname -> [(param, value), ...]
-
-    for key, value in params.items():
-        parsed = _parse_metric_config_key(key)
-        if parsed:
-            _, classname, param = parsed
-            # Get short name for the classname
-            short_name = METRIC_CONFIG_SHORT_NAMES.get(classname, classname)
-            if short_name not in metric_params:
-                metric_params[short_name] = []
-            metric_params[short_name].append((param, value))
-        else:
-            regular_params.append((key, value))
-
-    # Build parts list
-    parts: list[str] = []
-
-    # Add regular params (sorted for consistency)
-    for key, value in sorted(regular_params):
-        parts.append(f"{key}-{value}")
-
-    # Add metric config params (sorted by classname, then by param)
-    for short_name in sorted(metric_params.keys()):
-        parts.append(short_name)
-        for param, value in sorted(metric_params[short_name]):
-            parts.append(f"{param}-{value}")
-
-    return "-".join(parts)
-
-
-RunType = Literal["spd", "clustering/runs", "clustering/ensembles"]
+RunType = Literal["spd", "train", "clustering/runs", "clustering/ensembles"]
 
 RUN_TYPE_ABBREVIATIONS: Final[dict[RunType, str]] = {
     "spd": "s",
+    "train": "t",
     "clustering/runs": "c",
     "clustering/ensembles": "e",
 }
@@ -487,9 +346,8 @@ class ExecutionStamp(NamedTuple):
         run_type: RunType,
         create_snapshot: bool,
     ) -> "ExecutionStamp":
-        """create an execution stamp, possibly including a git snapshot branch"""
-
-        run_id: str = ExecutionStamp._generate_run_id(run_type)
+        """Create an execution stamp, possibly including a git snapshot branch."""
+        run_id = ExecutionStamp._generate_run_id(run_type)
         snapshot_branch: str
         commit_hash: str
 
@@ -498,13 +356,13 @@ class ExecutionStamp(NamedTuple):
             logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
         else:
             snapshot_branch = repo_current_branch()
-            if repo_is_clean(catch_except_as_false=True):
+            if repo_is_clean():
                 commit_hash = repo_current_commit_hash()
                 logger.info(f"Using current branch: {snapshot_branch} ({commit_hash[:8]})")
             else:
                 commit_hash = "none"
                 logger.info(
-                    f"Using current branch: {snapshot_branch} (unpushed changes, no commit hash)"
+                    f"Using current branch: {snapshot_branch} (uncommitted changes, no commit hash)"
                 )
 
         return ExecutionStamp(
@@ -520,6 +378,38 @@ class ExecutionStamp(NamedTuple):
         run_dir = SPD_OUT_DIR / self.run_type / self.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         return run_dir
+
+
+def setup_decomposition_run(
+    experiment_tag: str,
+    evals_id: str | None = None,
+    sweep_id: str | None = None,
+) -> tuple[Path, str, list[str]]:
+    """Set up run infrastructure for a decomposition experiment.
+
+    Creates execution stamp, logs run info, and builds W&B tags.
+    Should only be called on main process for distributed training.
+
+    Args:
+        experiment_tag: Tag for the experiment type (e.g., "lm", "tms", "resid_mlp")
+        evals_id: Optional evaluation identifier to add as W&B tag
+        sweep_id: Optional sweep identifier to add as W&B tag
+
+    Returns:
+        Tuple of (output directory, run_id, tags for W&B).
+    """
+    execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
+    tags = [i for i in [experiment_tag, evals_id, sweep_id] if i is not None]
+    slurm_array_job_id = os.getenv("SLURM_ARRAY_JOB_ID", None)
+    if slurm_array_job_id is not None:
+        logger.info(f"Running on slurm array job id: {slurm_array_job_id}")
+        tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
+
+    return out_dir, execution_stamp.run_id, tags
 
 
 _NO_ARG_PARSSED_SENTINEL = object()

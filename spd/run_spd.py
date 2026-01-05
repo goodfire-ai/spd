@@ -315,12 +315,12 @@ def optimize(
             microbatch_log_data["train/schedules/lr"] = step_lr
 
             if is_main_process():
+                assert out_dir is not None
                 tqdm.write(f"--- Step {step} ---")
                 tqdm.write(f"LR: {step_lr:.6f}")
                 for name, value in microbatch_log_data.items():
                     tqdm.write(f"{name}: {value:.15f}")
-                if out_dir is not None:
-                    local_log(microbatch_log_data, step, out_dir)
+                local_log(microbatch_log_data, step, out_dir)
                 if config.wandb_project:
                     try_wandb(wandb.log, microbatch_log_data, step=step)
 
@@ -357,10 +357,10 @@ def optimize(
                 dict_safe_update_(metrics, multibatch_pgd_metrics)
 
                 if is_main_process():
+                    assert out_dir is not None
                     for k, v in metrics.items():
                         tqdm.write(f"eval/{k}: {v}")
-                    if out_dir is not None:
-                        local_log(metrics, step, out_dir)
+                    local_log(metrics, step, out_dir)
                     if config.wandb_project:
                         wandb_logs = {
                             f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
@@ -375,13 +375,10 @@ def optimize(
 
         # --- Saving Checkpoint --- #
         if (
-            (
-                (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
-                or step == config.steps
-            )
-            and out_dir is not None
-            and is_main_process()
-        ):
+            (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
+            or step == config.steps
+        ) and is_main_process():
+            assert out_dir is not None
             # Save the state dict of the underlying module (not DDP wrapper)
             save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
             logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")

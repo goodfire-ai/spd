@@ -18,7 +18,7 @@ from spd.settings import DEFAULT_PROJECT_NAME
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import compute_feature_importances, get_scheduled_value, set_seed
-from spd.utils.run_utils import get_output_dir, save_file
+from spd.utils.run_utils import ExecutionStamp, save_file
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -61,11 +61,20 @@ def train(
     device: str,
     run_name: str,
 ) -> Float[Tensor, ""]:
+    execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
     if config.wandb_project:
         tags = [f"resid_mlp{config.resid_mlp_model_config.n_layers}-train"]
-        config = init_wandb(config, config.wandb_project, name=run_name, tags=tags)
-
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        init_wandb(
+            config=config,
+            project=config.wandb_project,
+            run_id=execution_stamp.run_id,
+            name=run_name,
+            tags=tags,
+        )
 
     # Save config
     config_path = out_dir / "resid_mlp_train_config.yaml"
