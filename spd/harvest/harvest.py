@@ -104,6 +104,7 @@ def _build_harvest_result(
     components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
     print(f"Built {len(components)} components (skipped components with no firings)")
 
+    # Build component keys list (same ordering as tensors)
     component_keys = [
         f"{layer}:{c}"
         for layer in harvester.layer_names

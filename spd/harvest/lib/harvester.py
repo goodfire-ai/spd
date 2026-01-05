@@ -44,6 +44,8 @@ class HarvesterState:
     subcomp_act_squared_sums: Tensor
     subcomp_act_mins: Tensor
     subcomp_act_maxs: Tensor
+
+    # Reservoir states
     reservoir_states: list[ReservoirState[ActivationExampleTuple]]
 
     @staticmethod
@@ -61,6 +63,7 @@ class HarvesterState:
             assert s.context_tokens_per_side == first.context_tokens_per_side
             assert len(s.reservoir_states) == len(first.reservoir_states)
 
+        # Sum tensor accumulators
         firing_counts = torch.stack([s.firing_counts for s in states]).sum(dim=0)
         ci_sums = torch.stack([s.ci_sums for s in states]).sum(dim=0)
         count_ij = torch.stack([s.count_ij for s in states]).sum(dim=0)
@@ -79,6 +82,7 @@ class HarvesterState:
         subcomp_act_mins = torch.stack([s.subcomp_act_mins for s in states]).min(dim=0).values
         subcomp_act_maxs = torch.stack([s.subcomp_act_maxs for s in states]).max(dim=0).values
 
+        # Merge reservoir states
         n_components = len(first.reservoir_states)
         merged_reservoirs = [
             ReservoirState.merge([s.reservoir_states[i] for s in states])
@@ -129,6 +133,8 @@ class Harvester:
         self.context_tokens_per_side = context_tokens_per_side
         self.device = device
 
+        # Precompute layer offsets for flat indexing
+        # layer_offsets[layer_name] gives the starting flat index for that layer's components
         self.layer_offsets: dict[str, int] = {}
         offset = 0
         for layer in layer_names:
@@ -137,10 +143,12 @@ class Harvester:
 
         n_components = sum(c_per_layer[layer] for layer in layer_names)
 
+        # Correlation accumulators
         self.firing_counts = torch.zeros(n_components, device=device)
         self.ci_sums = torch.zeros(n_components, device=device)
         self.count_ij = torch.zeros(n_components, n_components, device=device, dtype=torch.float32)
 
+        # Token stat accumulators
         self.input_token_counts: Int[Tensor, "n_components vocab"] = torch.zeros(
             n_components, vocab_size, device=device, dtype=torch.long
         )
@@ -167,6 +175,7 @@ class Harvester:
             (n_components,), float("-inf"), device=device
         )
 
+        # Reservoir samplers for activation examples
         self.activation_example_samplers = [
             ReservoirSampler[ActivationExampleTuple](k=max_examples_per_component)
             for _ in range(n_components)
