@@ -33,7 +33,11 @@ export async function getComponentDetail(layer: string, componentIdx: number): P
     );
 }
 
-export async function probeComponent(text: string, layer: string, componentIdx: number): Promise<ComponentProbeResult> {
+export async function probeComponent(
+    text: string,
+    layer: string,
+    componentIdx: number,
+): Promise<ComponentProbeResult> {
     return fetchJson<ComponentProbeResult>(`${API_URL}/api/activation_contexts/probe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

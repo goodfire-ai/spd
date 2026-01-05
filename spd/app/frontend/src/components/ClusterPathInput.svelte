@@ -78,7 +78,9 @@
             <span class="cluster-path">
                 {clusterMapping.filePath.split("_").pop()?.replace(".json", "")}
             </span>
-            <button type="button" class="clear-button" onclick={handleClear} title="Clear cluster mapping"> x </button>
+            <button type="button" class="clear-button" onclick={handleClear} title="Clear cluster mapping">
+                x
+            </button>
             {#if showLoadedTooltip}
                 <div class="cluster-tooltip">
                     {#if loadedClusterNotes}
