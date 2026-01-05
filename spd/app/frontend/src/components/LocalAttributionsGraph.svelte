@@ -126,7 +126,7 @@
         return layer;
     }
 
-    // Use pre-computed values from backend
+    // Use pre-computed values from backend, derive max CI
     const maxAbsAttr = $derived(data.maxAbsAttr || 1);
     const maxCi = $derived.by(() => {
         let max = 0;
