@@ -40,6 +40,9 @@ class SubcomponentMetadata(BaseModel):
 
     subcomponent_idx: int
     mean_ci: float
+    mean_subcomp_act: float | None = (
+        None  # Mean subcomponent activation (v_i^T @ a), None for old harvests
+    )
 
 
 class SubcomponentActivationContexts(BaseModel):
@@ -51,6 +54,9 @@ class SubcomponentActivationContexts(BaseModel):
 
     subcomponent_idx: int
     mean_ci: float
+    mean_subcomp_act: float | None = (
+        None  # Mean subcomponent activation (v_i^T @ a), None for old harvests
+    )
 
     # Examples - columnar arrays (n_examples ~ topk, window_size ~ 2*n_tokens_either_side+1)
     example_tokens: list[list[str]]  # [n_examples][window_size]

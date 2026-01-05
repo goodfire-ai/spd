@@ -37,6 +37,16 @@ class ComponentTokenPMI:
 
 
 @dataclass
+class SubcompActStats:
+    """Statistics for subcomponent activations (v_i^T @ a)."""
+
+    mean: float
+    std: float
+    min: float
+    max: float
+
+
+@dataclass
 class ComponentData:
     component_key: str
     layer: str
@@ -45,3 +55,4 @@ class ComponentData:
     activation_examples: list[ActivationExample]
     input_token_pmi: ComponentTokenPMI
     output_token_pmi: ComponentTokenPMI
+    subcomp_act_stats: SubcompActStats | None = None  # None for backwards compat with old harvests

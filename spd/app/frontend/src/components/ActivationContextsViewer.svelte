@@ -300,6 +300,9 @@
     <div class="component-section">
         <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
             <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
+            {#if currentMetadata.mean_subcomp_act !== null}
+                <span class="mean-subcomp-act">Mean Act: {formatMeanCi(currentMetadata.mean_subcomp_act)}</span>
+            {/if}
         </SectionHeader>
 
         <InterpretationBadge {interpretation} />
@@ -496,6 +499,13 @@
     .mean-ci {
         font-weight: 400;
         color: var(--text-muted);
+        font-family: var(--font-mono);
+        margin-left: var(--space-2);
+    }
+
+    .mean-subcomp-act {
+        font-weight: 400;
+        color: var(--accent-secondary);
         font-family: var(--font-mono);
         margin-left: var(--space-2);
     }

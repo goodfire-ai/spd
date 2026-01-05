@@ -10,8 +10,9 @@
         NodePosition,
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
-    import { colors, getEdgeColor, getOutputNodeColor } from "../lib/colors";
+    import { colors, getEdgeColor, getOutputNodeColor, getSubcompActColor } from "../lib/colors";
     import { clusterMapping } from "../lib/clusterMapping.svelte";
+    import { displaySettings } from "../lib/displaySettings.svelte";
     import {
         lerp,
         calcTooltipPos,
@@ -125,7 +126,7 @@
         return layer;
     }
 
-    // Use pre-computed values from backend, derive max CI
+    // Use pre-computed values from backend
     const maxAbsAttr = $derived(data.maxAbsAttr || 1);
     const maxCi = $derived.by(() => {
         let max = 0;
@@ -134,6 +135,11 @@
         }
         return max || 1; // Avoid division by zero
     });
+    // Check if nodeSubcompActs has actual data (empty object {} is truthy in JS)
+    const hasSubcompActData = $derived(
+        data.nodeSubcompActs && Object.keys(data.nodeSubcompActs).length > 0,
+    );
+    const maxAbsSubcompAct = $derived(data.maxAbsSubcompAct || 1);
 
     // All nodes from nodeCiVals (for layout and rendering)
     const allNodes = $derived(new SvelteSet(Object.keys(data.nodeCiVals)));
@@ -463,10 +469,17 @@
                     opacity = 0.4 + probEntry.prob * 0.6;
                 }
             } else {
-                // Component nodes: opacity based on CI (brighter = higher CI)
-                const ci = data.nodeCiVals[`${layer}:${seqIdx}:${cIdx}`] || 0;
-                const intensity = Math.min(1, ci / maxCi);
-                opacity = 0.2 + intensity * 0.8;
+                // Component nodes: color/opacity based on CI or subcomp activation
+                if (displaySettings.nodeColorMode === "ci" || !hasSubcompActData) {
+                    const ci = data.nodeCiVals[`${layer}:${seqIdx}:${cIdx}`] || 0;
+                    const intensity = Math.min(1, ci / maxCi);
+                    opacity = 0.2 + intensity * 0.8;
+                } else {
+                    const subcompAct = data.nodeSubcompActs![`${layer}:${seqIdx}:${cIdx}`] ?? 0;
+                    const intensity = Math.min(1, Math.abs(subcompAct) / maxAbsSubcompAct);
+                    fill = getSubcompActColor(subcompAct);
+                    opacity = 0.3 + intensity * 0.7;
+                }
             }
 
             styles[nodeKey] = { fill, opacity };
@@ -724,6 +737,7 @@
             {activationContextsSummary}
             outputProbs={data.outputProbs}
             nodeCiVals={data.nodeCiVals}
+            nodeSubcompActs={data.nodeSubcompActs}
             tokens={data.tokens}
             edgesBySource={data.edgesBySource}
             edgesByTarget={data.edgesByTarget}

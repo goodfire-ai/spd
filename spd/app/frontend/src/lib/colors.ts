@@ -45,6 +45,11 @@ export function getEdgeColor(val: number): string {
     return val > 0 ? colors.positive : colors.negative;
 }
 
+/** Get node color for subcomponent activation (blue=positive, red=negative) */
+export function getSubcompActColor(val: number): string {
+    return val >= 0 ? colors.positive : colors.negative;
+}
+
 /** Get token highlight background */
 export function getTokenHighlightBg(ci: number): string {
     const { r, g, b } = colors.tokenHighlight;

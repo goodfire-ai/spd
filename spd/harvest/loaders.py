@@ -6,6 +6,7 @@ from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,
+    SubcompActStats,
     get_activation_contexts_dir,
     get_correlations_dir,
 )
@@ -28,6 +29,9 @@ def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | No
             ]
             data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
             data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
+            # Handle subcomp_act_stats (may be None for old harvests)
+            if data.get("subcomp_act_stats") is not None:
+                data["subcomp_act_stats"] = SubcompActStats(**data["subcomp_act_stats"])
             comp = ComponentData(**data)
             components[comp.component_key] = comp
     return components

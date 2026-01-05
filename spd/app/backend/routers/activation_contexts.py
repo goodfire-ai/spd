@@ -25,10 +25,11 @@ class ComponentProbeRequest(BaseModel):
 
 
 class ComponentProbeResponse(BaseModel):
-    """Response with CI values for a component on custom text."""
+    """Response with CI and subcomponent activation values for a component on custom text."""
 
     tokens: list[str]
     ci_values: list[float]
+    subcomp_acts: list[float]
 
 
 router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts"])
@@ -50,10 +51,13 @@ def get_activation_contexts_summary(
     # Group by layer
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
     for comp in contexts.values():
+        # Get mean subcomponent activation if available (new harvests)
+        mean_subcomp_act = comp.subcomp_act_stats.mean if comp.subcomp_act_stats else None
         summary[comp.layer].append(
             SubcomponentMetadata(
                 subcomponent_idx=comp.component_idx,
                 mean_ci=comp.mean_ci,
+                mean_subcomp_act=mean_subcomp_act,
             )
         )
 
@@ -97,9 +101,13 @@ def get_activation_context_detail(
     example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in comp.activation_examples]
     example_ci = [ex.ci_values for ex in comp.activation_examples]
 
+    # Get mean subcomponent activation if available (new harvests)
+    mean_subcomp_act = comp.subcomp_act_stats.mean if comp.subcomp_act_stats else None
+
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,
         mean_ci=comp.mean_ci,
+        mean_subcomp_act=mean_subcomp_act,
         example_tokens=example_tokens,
         example_ci=example_ci,
     )
@@ -111,7 +119,7 @@ def probe_component(
     request: ComponentProbeRequest,
     loaded: DepLoadedRun,
 ) -> ComponentProbeResponse:
-    """Probe a component's CI values on custom text.
+    """Probe a component's CI and subcomponent activation values on custom text.
 
     Fast endpoint for testing hypotheses about component activation.
     Only requires a single forward pass.
@@ -133,4 +141,11 @@ def probe_component(
     ci_values = ci_tensor[0, :, request.component_idx].tolist()
     token_strings = [loaded.token_strings[t] for t in token_ids]
 
-    return ComponentProbeResponse(tokens=token_strings, ci_values=ci_values)
+    # Compute subcomponent activations (v_i^T @ a) for the requested component
+    input_acts = result.pre_weight_acts[request.layer]
+    subcomp_acts_tensor = loaded.model.components[request.layer].get_component_acts(input_acts)
+    subcomp_acts = subcomp_acts_tensor[0, :, request.component_idx].tolist()
+
+    return ComponentProbeResponse(
+        tokens=token_strings, ci_values=ci_values, subcomp_acts=subcomp_acts
+    )

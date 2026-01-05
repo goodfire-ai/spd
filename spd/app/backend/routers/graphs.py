@@ -55,7 +55,9 @@ class GraphData(BaseModel):
     nodeCiVals: dict[
         str, float
     ]  # node key -> CI value (or output prob for output nodes or 1 for wte node)
+    nodeSubcompActs: dict[str, float]  # node key -> subcomponent activation (v_i^T @ a)
     maxAbsAttr: float  # max absolute edge value
+    maxAbsSubcompAct: float  # max absolute subcomponent activation for normalization
     l0_total: int  # total active components at current CI threshold
 
 
@@ -264,6 +266,18 @@ def compute_max_abs_attr(edges: list[Edge]) -> float:
     return max_abs_attr
 
 
+def compute_max_abs_subcomp_act(node_subcomp_acts: dict[str, float]) -> float:
+    """Compute max absolute subcomponent activation for normalization."""
+    if not node_subcomp_acts:
+        return 1.0
+    max_val = 0.0
+    for val in node_subcomp_acts.values():
+        abs_val = abs(val)
+        if abs_val > max_val:
+            max_val = abs_val
+    return max_val if max_val > 0 else 1.0
+
+
 @router.post("")
 @log_errors
 def compute_graph_stream(
@@ -306,6 +320,7 @@ def compute_graph_stream(
                 edges=result.edges,
                 output_probs=raw_output_probs,
                 node_ci_vals=result.node_ci_vals,
+                node_subcomp_acts=result.node_subcomp_acts,
             ),
         )
 
@@ -327,7 +342,9 @@ def compute_graph_stream(
             edges=edges_data,
             outputProbs=raw_output_probs,
             nodeCiVals=node_ci_vals_with_pseudo,
+            nodeSubcompActs=result.node_subcomp_acts,
             maxAbsAttr=max_abs_attr,
+            maxAbsSubcompAct=compute_max_abs_subcomp_act(result.node_subcomp_acts),
             l0_total=len(filtered_node_ci_vals),
         )
 
@@ -476,6 +493,7 @@ def compute_graph_optimized_stream(
                 edges=result.edges,
                 output_probs=raw_output_probs,
                 node_ci_vals=result.node_ci_vals,
+                node_subcomp_acts=result.node_subcomp_acts,
                 optimization_params=opt_params,
                 label_prob=result.label_prob,
             ),
@@ -499,7 +517,9 @@ def compute_graph_optimized_stream(
             edges=edges_data,
             outputProbs=raw_output_probs,
             nodeCiVals=node_ci_vals_with_pseudo,
+            nodeSubcompActs=result.node_subcomp_acts,
             maxAbsAttr=max_abs_attr,
+            maxAbsSubcompAct=compute_max_abs_subcomp_act(result.node_subcomp_acts),
             l0_total=len(filtered_node_ci_vals),
             optimization=OptimizationResult(
                 imp_min_coeff=imp_min_coeff,
@@ -617,7 +637,9 @@ def get_graphs(
                     edges=edges_data,
                     outputProbs=graph.output_probs,
                     nodeCiVals=node_ci_vals_with_pseudo,
+                    nodeSubcompActs=graph.node_subcomp_acts,
                     maxAbsAttr=max_abs_attr,
+                    maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
                     l0_total=l0_total,
                 )
             )
@@ -637,7 +659,9 @@ def get_graphs(
                     edges=edges_data,
                     outputProbs=graph.output_probs,
                     nodeCiVals=node_ci_vals_with_pseudo,
+                    nodeSubcompActs=graph.node_subcomp_acts,
                     maxAbsAttr=max_abs_attr,
+                    maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
                     l0_total=l0_total,
                     optimization=OptimizationResult(
                         imp_min_coeff=graph.optimization_params.imp_min_coeff,

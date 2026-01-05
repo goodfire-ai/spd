@@ -7,6 +7,14 @@ import { SvelteSet } from "svelte/reactivity";
 // Available correlation stat types
 export type CorrelationStatType = "pmi" | "bottom_pmi" | "precision" | "recall" | "jaccard";
 
+// Node color mode for graph visualization
+export type NodeColorMode = "ci" | "subcomp_act";
+
+export const NODE_COLOR_MODE_LABELS: Record<NodeColorMode, string> = {
+    ci: "CI",
+    subcomp_act: "Subcomp Act",
+};
+
 export const CORRELATION_STAT_LABELS: Record<CorrelationStatType, string> = {
     pmi: "PMI",
     bottom_pmi: "Bottom PMI",
@@ -31,6 +39,7 @@ type StoredSettings = {
     visibleCorrelationStats?: string[];
     showSetOverlapVis?: boolean;
     showEdgeAttributions?: boolean;
+    nodeColorMode?: NodeColorMode;
 };
 
 function loadFromStorage(): StoredSettings | undefined {
@@ -58,6 +67,17 @@ function loadShowEdgeAttributions(): boolean {
     return loadFromStorage()?.showEdgeAttributions ?? true;
 }
 
+const VALID_COLOR_MODES: NodeColorMode[] = ["ci", "subcomp_act"];
+
+function loadNodeColorMode(): NodeColorMode {
+    const stored = loadFromStorage();
+    const mode = stored?.nodeColorMode;
+    if (mode == null || !VALID_COLOR_MODES.includes(mode)) {
+        return "ci";
+    }
+    return mode;
+}
+
 function saveToStorage(settings: StoredSettings) {
     try {
         const current = loadFromStorage();
@@ -78,6 +98,9 @@ class DisplaySettingsState {
 
     // Whether to show edge attribution lists in hover panel
     showEdgeAttributions = $state(loadShowEdgeAttributions());
+
+    // Node color mode for graph visualization
+    nodeColorMode = $state<NodeColorMode>(loadNodeColorMode());
 
     toggleCorrelationStat(stat: CorrelationStatType) {
         if (this.visibleCorrelationStats.has(stat)) {
@@ -103,6 +126,11 @@ class DisplaySettingsState {
     toggleEdgeAttributions() {
         this.showEdgeAttributions = !this.showEdgeAttributions;
         saveToStorage({ showEdgeAttributions: this.showEdgeAttributions });
+    }
+
+    setNodeColorMode(mode: NodeColorMode) {
+        this.nodeColorMode = mode;
+        saveToStorage({ nodeColorMode: mode });
     }
 }
 

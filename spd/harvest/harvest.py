@@ -26,6 +26,7 @@ from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,
+    SubcompActStats,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
@@ -87,6 +88,9 @@ class HarvestResult:
                 ]
                 data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
                 data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
+                # Handle subcomp_act_stats (may be None for old harvests)
+                if data.get("subcomp_act_stats") is not None:
+                    data["subcomp_act_stats"] = SubcompActStats(**data["subcomp_act_stats"])
                 components.append(ComponentData(**data))
 
         return components
@@ -192,7 +196,16 @@ def harvest(
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
 
-            harvester.process_batch(batch, ci, probs)
+            # Compute subcomponent activations (v_i^T @ a) for statistics
+            subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
+                [
+                    model.components[layer].get_component_acts(out.cache[layer])
+                    for layer in layer_names
+                ],
+                dim=2,
+            )
+
+            harvester.process_batch(batch, ci, probs, subcomp_acts)
 
     print(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
 
@@ -271,7 +284,17 @@ def _harvest_worker(
             )
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
-            harvester.process_batch(batch, ci, probs)
+
+            # Compute subcomponent activations (v_i^T @ a) for statistics
+            subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
+                [
+                    model.components[layer].get_component_acts(out.cache[layer])
+                    for layer in layer_names
+                ],
+                dim=2,
+            )
+
+            harvester.process_batch(batch, ci, probs, subcomp_acts)
 
         batches_processed += 1
         now = time.time()

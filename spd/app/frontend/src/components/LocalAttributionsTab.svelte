@@ -104,7 +104,6 @@
     let hideUnpinnedEdges = $state(false);
     let hideNodeCard = $state(false);
 
-
     // Pinned nodes for attributions graph
     let pinnedNodes = $state<PinnedNode[]>([]);
 

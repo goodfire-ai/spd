@@ -1,10 +1,6 @@
 <script lang="ts">
     import { displaySettings } from "../../lib/displaySettings.svelte";
-    import {
-        getComponentCorrelations,
-        getComponentTokenStats,
-        type Interpretation,
-    } from "../../lib/api";
+    import { getComponentCorrelations, getComponentTokenStats, type Interpretation } from "../../lib/api";
     import type {
         ComponentCorrelations,
         ComponentDetail,
@@ -158,9 +154,9 @@
         return tokenStats.data.input.top_recall.map(([token]) => token);
     });
 
-    // Format mean CI for display
-    function formatMeanCi(ci: number): string {
-        return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
+    // Format mean CI or subcomponent activation for display
+    function formatMeanValue(val: number): string {
+        return Math.abs(val) < 0.001 ? val.toExponential(2) : val.toFixed(3);
     }
 
     // === Edge attribution lists ===
@@ -219,7 +215,10 @@
 <div class="component-node-card">
     <SectionHeader title="Position {seqIdx}" level="h4">
         {#if summary}
-            <span class="mean-ci">Mean CI: {formatMeanCi(summary.mean_ci)}</span>
+            <span class="mean-ci">Mean CI: {formatMeanValue(summary.mean_ci)}</span>
+            {#if summary.mean_subcomp_act !== null}
+                <span class="mean-subcomp-act">Mean Act: {formatMeanValue(summary.mean_subcomp_act)}</span>
+            {/if}
         {/if}
     </SectionHeader>
 
@@ -355,6 +354,13 @@
     .mean-ci {
         font-weight: 400;
         color: var(--text-muted);
+        font-family: var(--font-mono);
+        margin-left: var(--space-2);
+    }
+
+    .mean-subcomp-act {
+        font-weight: 400;
+        color: var(--accent-secondary);
         font-family: var(--font-mono);
         margin-left: var(--space-2);
     }

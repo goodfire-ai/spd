@@ -22,9 +22,7 @@
 
     let { sectionTitle, sectionSubtitle, lists }: Props = $props();
 
-    const hasData = $derived(
-        lists?.status === "loaded" && lists.data.some((list) => list.items.length > 0),
-    );
+    const hasData = $derived(lists?.status === "loaded" && lists.data.some((list) => list.items.length > 0));
 </script>
 
 <div class="token-stats-section">

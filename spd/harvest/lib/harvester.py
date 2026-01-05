@@ -11,7 +11,7 @@ from torch import Tensor
 
 from spd.harvest.lib.reservoir_sampler import ReservoirSampler, ReservoirState
 from spd.harvest.lib.sampling import sample_at_most_n_per_group, top_k_pmi
-from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
+from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI, SubcompActStats
 
 # Sentinel for padding token windows at sequence boundaries.
 WINDOW_PAD_SENTINEL = -1
@@ -40,6 +40,12 @@ class HarvesterState:
     output_token_prob_mass: Tensor
     output_token_prob_totals: Tensor
     total_tokens_processed: int
+
+    # Subcomponent activation statistics accumulators
+    subcomp_act_sums: Tensor
+    subcomp_act_squared_sums: Tensor
+    subcomp_act_mins: Tensor
+    subcomp_act_maxs: Tensor
 
     # Reservoir states
     reservoir_states: list[ReservoirState[ActivationExampleTuple]]
@@ -71,6 +77,14 @@ class HarvesterState:
         )
         total_tokens_processed = sum(s.total_tokens_processed for s in states)
 
+        # Subcomponent activation stats: sum for sums, element-wise min/max for mins/maxs
+        subcomp_act_sums = torch.stack([s.subcomp_act_sums for s in states]).sum(dim=0)
+        subcomp_act_squared_sums = torch.stack([s.subcomp_act_squared_sums for s in states]).sum(
+            dim=0
+        )
+        subcomp_act_mins = torch.stack([s.subcomp_act_mins for s in states]).min(dim=0).values
+        subcomp_act_maxs = torch.stack([s.subcomp_act_maxs for s in states]).max(dim=0).values
+
         # Merge reservoir states
         n_components = len(first.reservoir_states)
         merged_reservoirs = [
@@ -93,6 +107,10 @@ class HarvesterState:
             output_token_prob_mass=output_token_prob_mass,
             output_token_prob_totals=output_token_prob_totals,
             total_tokens_processed=total_tokens_processed,
+            subcomp_act_sums=subcomp_act_sums,
+            subcomp_act_squared_sums=subcomp_act_squared_sums,
+            subcomp_act_mins=subcomp_act_mins,
+            subcomp_act_maxs=subcomp_act_maxs,
             reservoir_states=merged_reservoirs,
         )
 
@@ -147,6 +165,20 @@ class Harvester:
             vocab_size, device=device
         )
 
+        # Subcomponent activation stats accumulators (for v_i^T @ a)
+        self.subcomp_act_sums: Float[Tensor, " n_components"] = torch.zeros(
+            n_components, device=device
+        )
+        self.subcomp_act_squared_sums: Float[Tensor, " n_components"] = torch.zeros(
+            n_components, device=device
+        )
+        self.subcomp_act_mins: Float[Tensor, " n_components"] = torch.full(
+            (n_components,), float("inf"), device=device
+        )
+        self.subcomp_act_maxs: Float[Tensor, " n_components"] = torch.full(
+            (n_components,), float("-inf"), device=device
+        )
+
         # Reservoir samplers for activation examples
         self.activation_example_samplers = [
             ReservoirSampler[ActivationExampleTuple](k=max_examples_per_component)
@@ -160,8 +192,16 @@ class Harvester:
         batch: Int[Tensor, "B S"],
         ci: Float[Tensor, "B S n_comp"],
         output_probs: Float[Tensor, "B S V"],
+        subcomp_acts: Float[Tensor, "B S n_comp"] | None = None,
     ) -> None:
-        """Accumulate stats from a single batch."""
+        """Accumulate stats from a single batch.
+
+        Args:
+            batch: Token IDs
+            ci: Causal importance values per component
+            output_probs: Output probabilities
+            subcomp_acts: Subcomponent activations (v_i^T @ a). Optional for backwards compat.
+        """
         self.total_tokens_processed += batch.numel()
 
         firing = (ci > self.ci_threshold).float()
@@ -175,6 +215,10 @@ class Harvester:
         self._accumulate_input_token_stats(batch_flat, firing_flat)
         self._accumulate_output_token_stats(output_probs_flat, firing_flat)
         self._collect_activation_examples(batch, ci)
+
+        if subcomp_acts is not None:
+            subcomp_acts_flat = rearrange(subcomp_acts, "b s c -> (b s) c")
+            self._accumulate_subcomp_act_stats(subcomp_acts_flat, firing_flat)
 
     def _accumulate_firing_stats(
         self,
@@ -230,6 +274,31 @@ class Harvester:
         self.output_token_prob_mass += einsum(firing_flat, output_probs_flat, "pos c, pos v -> c v")
         # Sum of P(token | pos) across all positions (for normalization)
         self.output_token_prob_totals += reduce(output_probs_flat, "pos v -> v", "sum")
+
+    def _accumulate_subcomp_act_stats(
+        self,
+        subcomp_acts_flat: Float[Tensor, "pos n_comp"],
+        firing_flat: Float[Tensor, "pos n_comp"],
+    ) -> None:
+        """Accumulate statistics for subcomponent activations (v_i^T @ a).
+
+        Only accumulates stats when component is firing (CI > threshold).
+        This gives us stats conditioned on the component being active.
+        """
+        # Mask activations to only count when firing
+        masked_acts = subcomp_acts_flat * firing_flat
+
+        # Accumulate sums for mean calculation
+        self.subcomp_act_sums += reduce(masked_acts, "pos c -> c", "sum")
+        self.subcomp_act_squared_sums += reduce(masked_acts**2, "pos c -> c", "sum")
+
+        # Update min/max per component (only where firing)
+        # Use masked_fill to ignore non-firing positions
+        firing_bool = firing_flat > 0
+        acts_for_min = subcomp_acts_flat.masked_fill(~firing_bool, float("inf"))
+        acts_for_max = subcomp_acts_flat.masked_fill(~firing_bool, float("-inf"))
+        self.subcomp_act_mins = torch.minimum(self.subcomp_act_mins, acts_for_min.min(dim=0).values)
+        self.subcomp_act_maxs = torch.maximum(self.subcomp_act_maxs, acts_for_max.max(dim=0).values)
 
     def _collect_activation_examples(
         self,
@@ -303,6 +372,10 @@ class Harvester:
             output_token_prob_mass=self.output_token_prob_mass.cpu(),
             output_token_prob_totals=self.output_token_prob_totals.cpu(),
             total_tokens_processed=self.total_tokens_processed,
+            subcomp_act_sums=self.subcomp_act_sums.cpu(),
+            subcomp_act_squared_sums=self.subcomp_act_squared_sums.cpu(),
+            subcomp_act_mins=self.subcomp_act_mins.cpu(),
+            subcomp_act_maxs=self.subcomp_act_maxs.cpu(),
             reservoir_states=[s.get_state() for s in self.activation_example_samplers],
         )
 
@@ -326,6 +399,10 @@ class Harvester:
         harvester.output_token_prob_mass = state.output_token_prob_mass.to(device)
         harvester.output_token_prob_totals = state.output_token_prob_totals.to(device)
         harvester.total_tokens_processed = state.total_tokens_processed
+        harvester.subcomp_act_sums = state.subcomp_act_sums.to(device)
+        harvester.subcomp_act_squared_sums = state.subcomp_act_squared_sums.to(device)
+        harvester.subcomp_act_mins = state.subcomp_act_mins.to(device)
+        harvester.subcomp_act_maxs = state.subcomp_act_maxs.to(device)
         harvester.activation_example_samplers = [
             ReservoirSampler.from_state(s) for s in state.reservoir_states
         ]
@@ -340,6 +417,17 @@ class Harvester:
         input_token_totals = self.input_token_totals.cpu()
         output_token_prob_mass = self.output_token_prob_mass.cpu()
         output_token_prob_totals = self.output_token_prob_totals.cpu()
+
+        # Compute subcomponent activation statistics
+        # Mean is sum / firing_count (stats conditioned on component firing)
+        subcomp_act_means = (self.subcomp_act_sums / self.firing_counts.clamp(min=1)).cpu()
+        # Std = sqrt(E[X^2] - E[X]^2)
+        subcomp_act_stds = torch.sqrt(
+            (self.subcomp_act_squared_sums / self.firing_counts.clamp(min=1))
+            - (self.subcomp_act_sums / self.firing_counts.clamp(min=1)) ** 2
+        ).cpu()
+        subcomp_act_mins = self.subcomp_act_mins.cpu()
+        subcomp_act_maxs = self.subcomp_act_maxs.cpu()
 
         self._log_base_rate_summary(firing_counts, input_token_totals)
 
@@ -383,6 +471,23 @@ class Harvester:
                     top_k=pmi_top_k_tokens,
                 )
 
+                # Build subcomponent activation stats (handle edge cases)
+                sc_mean = float(subcomp_act_means[flat_idx])
+                sc_std = float(subcomp_act_stds[flat_idx])
+                sc_min = float(subcomp_act_mins[flat_idx])
+                sc_max = float(subcomp_act_maxs[flat_idx])
+                # Handle inf values for components that never fired
+                if sc_min == float("inf"):
+                    sc_min = 0.0
+                if sc_max == float("-inf"):
+                    sc_max = 0.0
+                subcomp_act_stats = SubcompActStats(
+                    mean=sc_mean,
+                    std=sc_std if not torch.isnan(torch.tensor(sc_std)) else 0.0,
+                    min=sc_min,
+                    max=sc_max,
+                )
+
                 components.append(
                     ComponentData(
                         component_key=f"{layer_name}:{component_idx}",
@@ -392,6 +497,7 @@ class Harvester:
                         activation_examples=activation_examples,
                         input_token_pmi=input_token_pmi,
                         output_token_pmi=output_token_pmi,
+                        subcomp_act_stats=subcomp_act_stats,
                     )
                 )
 

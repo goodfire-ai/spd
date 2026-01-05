@@ -88,6 +88,7 @@ class LocalAttributionResult:
     edges: list[Edge]
     output_probs: Float[Tensor, "seq vocab"]  # Softmax probabilities for output logits
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
+    node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
 
 
 @dataclass
@@ -98,6 +99,7 @@ class OptimizedLocalAttributionResult:
     output_probs: Float[Tensor, "seq vocab"]
     label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
+    node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
 
 
 def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
@@ -226,6 +228,7 @@ def compute_edges_from_ci(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
+    pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
     sources_by_target: dict[str, list[str]],
     output_prob_threshold: float,
     device: str,
@@ -372,7 +375,15 @@ def compute_edges_from_ci(
         pbar.close()
 
     node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
-    return LocalAttributionResult(edges=edges, output_probs=output_probs, node_ci_vals=node_ci_vals)
+    node_subcomp_acts = extract_node_subcomp_acts(
+        model, pre_weight_acts, ci_lower_leaky=ci_lower_leaky, ci_threshold=0.0
+    )
+    return LocalAttributionResult(
+        edges=edges,
+        output_probs=output_probs,
+        node_ci_vals=node_ci_vals,
+        node_subcomp_acts=node_subcomp_acts,
+    )
 
 
 def compute_local_attributions(
@@ -402,6 +413,7 @@ def compute_local_attributions(
         model=model,
         tokens=tokens,
         ci_lower_leaky=ci.lower_leaky,
+        pre_weight_acts=pre_weight_acts,
         sources_by_target=sources_by_target,
         output_prob_threshold=output_prob_threshold,
         device=device,
@@ -449,10 +461,15 @@ def compute_local_attributions_optimized(
     if on_progress is not None:
         on_progress(0, 1, "graph")
 
+    # Get pre_weight_acts for subcomponent activation computation
+    with torch.no_grad():
+        pre_weight_acts = model(tokens, cache_type="input").cache
+
     result = compute_edges_from_ci(
         model=model,
         tokens=tokens,
         ci_lower_leaky=ci_outputs.lower_leaky,
+        pre_weight_acts=pre_weight_acts,
         sources_by_target=sources_by_target,
         output_prob_threshold=output_prob_threshold,
         device=device,
@@ -465,6 +482,7 @@ def compute_local_attributions_optimized(
         output_probs=result.output_probs,
         label_prob=label_prob,
         node_ci_vals=result.node_ci_vals,
+        node_subcomp_acts=result.node_subcomp_acts,
     )
 
 
@@ -474,6 +492,7 @@ class CIOnlyResult:
 
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]]
     output_probs: Float[Tensor, "1 seq vocab"]
+    pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]]
 
 
 def compute_ci_only(
@@ -492,7 +511,7 @@ def compute_ci_only(
         sampling: Sampling type to use for causal importances.
 
     Returns:
-        CIOnlyResult containing CI values per layer and output probabilities.
+        CIOnlyResult containing CI values per layer, output probabilities, and pre-weight activations.
     """
     with torch.no_grad():
         output_with_cache: OutputWithCache = model(tokens, cache_type="input")
@@ -503,7 +522,11 @@ def compute_ci_only(
         )
         output_probs = torch.softmax(output_with_cache.output, dim=-1)
 
-    return CIOnlyResult(ci_lower_leaky=ci.lower_leaky, output_probs=output_probs)
+    return CIOnlyResult(
+        ci_lower_leaky=ci.lower_leaky,
+        output_probs=output_probs,
+        pre_weight_acts=output_with_cache.cache,
+    )
 
 
 def extract_node_ci_vals(
@@ -526,6 +549,57 @@ def extract_node_ci_vals(
                 key = f"{layer_name}:{seq_pos}:{c_idx}"
                 node_ci_vals[key] = float(ci_tensor[0, seq_pos, c_idx].item())
     return node_ci_vals
+
+
+def extract_node_subcomp_acts(
+    model: ComponentModel,
+    pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
+    ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]] | None = None,
+    ci_threshold: float = 0.0,
+) -> dict[str, float]:
+    """Extract per-node subcomponent activations (v_i^T @ a) from pre-weight activations.
+
+    Args:
+        model: The ComponentModel containing the V matrices.
+        pre_weight_acts: Dict mapping layer name to input activations [1, seq, d_in].
+        ci_lower_leaky: Optional dict mapping layer name to CI tensor [1, seq, C].
+            If provided, only nodes with CI > ci_threshold are included.
+        ci_threshold: Threshold for filtering nodes by CI value. Only used if
+            ci_lower_leaky is provided.
+
+    Returns:
+        Dict mapping "layer:seq:c_idx" to subcomponent activation value.
+    """
+    node_subcomp_acts: dict[str, float] = {}
+    for layer_name, input_acts in pre_weight_acts.items():
+        # Skip layers that don't have components (e.g., "wte")
+        if layer_name not in model.components:
+            continue
+
+        # Compute v_i^T @ a for all components: [1, seq, C]
+        subcomp_acts = model.components[layer_name].get_component_acts(input_acts)
+        n_seq = subcomp_acts.shape[1]
+        n_components = subcomp_acts.shape[2]
+
+        # If CI values are provided, only extract for alive nodes (CI > threshold)
+        if ci_lower_leaky is not None and layer_name in ci_lower_leaky:
+            ci = ci_lower_leaky[layer_name]
+            alive_mask = ci[0] > ci_threshold  # [seq, C]
+            # Use torch.where to find alive (seq_pos, c_idx) pairs efficiently
+            alive_indices = torch.where(alive_mask)
+            for seq_pos, c_idx in zip(
+                alive_indices[0].tolist(), alive_indices[1].tolist(), strict=True
+            ):
+                key = f"{layer_name}:{seq_pos}:{c_idx}"
+                node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
+        else:
+            # Fall back to extracting all nodes
+            for seq_pos in range(n_seq):
+                for c_idx in range(n_components):
+                    key = f"{layer_name}:{seq_pos}:{c_idx}"
+                    node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
+
+    return node_subcomp_acts
 
 
 def extract_active_from_ci(
