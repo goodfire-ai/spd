@@ -88,7 +88,6 @@ class HarvestResult:
                 ]
                 data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
                 data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-                # Handle subcomp_act_stats (may be None for old harvests)
                 if data.get("subcomp_act_stats") is not None:
                     data["subcomp_act_stats"] = SubcompActStats(**data["subcomp_act_stats"])
                 components.append(ComponentData(**data))
@@ -105,7 +104,6 @@ def _build_harvest_result(
     components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
     print(f"Built {len(components)} components (skipped components with no firings)")
 
-    # Build component keys list (same ordering as tensors)
     component_keys = [
         f"{layer}:{c}"
         for layer in harvester.layer_names
@@ -196,7 +194,6 @@ def harvest(
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
 
-            # Compute subcomponent activations (v_i^T @ a) for statistics
             subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
                 [
                     model.components[layer].get_component_acts(out.cache[layer])
@@ -285,7 +282,6 @@ def _harvest_worker(
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
 
-            # Compute subcomponent activations (v_i^T @ a) for statistics
             subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
                 [
                     model.components[layer].get_component_acts(out.cache[layer])
