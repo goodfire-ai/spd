@@ -31,10 +31,10 @@
         }
     }
 
-    function getUnderlineStyle(innerAct: number): string {
-        if (colorMode !== "both") return "none";
+    function getUnderlineColor(innerAct: number): string {
+        if (colorMode !== "both") return "transparent";
         const normalizedAbs = Math.abs(innerAct) / maxAbsInnerAct;
-        return `3px solid ${getComponentActivationColor(innerAct, normalizedAbs)}`;
+        return getComponentActivationColor(innerAct, normalizedAbs);
     }
 </script>
 
@@ -42,7 +42,7 @@
     {#each tokenStrings as tok, i (i)}
         <span
             class="token-highlight"
-            style="background-color:{getBgColor(tokenCi[i], tokenInnerActs[i])};border-bottom:{getUnderlineStyle(
+            style="background-color:{getBgColor(tokenCi[i], tokenInnerActs[i])};--underline-color:{getUnderlineColor(
                 tokenInnerActs[i],
             )}"
             data-tooltip={getTooltipText(tokenCi[i], tokenInnerActs[i])}
@@ -61,17 +61,28 @@
 
     .token-highlight {
         display: inline;
-        padding: 1px 0 4px 0;
+        padding: 1px 0 0 0;
         margin-right: 1px;
+        margin-bottom: 3px;
         border-right: 1px solid var(--border-subtle);
         position: relative;
         white-space: pre;
     }
 
+    .token-highlight::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -3px;
+        height: 3px;
+        background-color: var(--underline-color, transparent);
+    }
+
     .token-highlight::after {
         content: attr(data-tooltip);
         position: absolute;
-        top: calc(100% + 4px);
+        top: calc(100% + 8px);
         left: 0;
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
