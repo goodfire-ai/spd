@@ -350,13 +350,15 @@ def harvest_parallel(
 
     import torch.multiprocessing as mp
 
+    from spd.data import train_loader_and_tokenizer
     from spd.models.component_model import ComponentModel, SPDRunInfo
 
-    # Pre-cache wandb files before spawning workers
-    print("Pre-caching model files from wandb...")
+    # Pre-cache model and dataset before spawning workers
+    print("Pre-caching model and dataset...")
     run_info = SPDRunInfo.from_path(config.wandb_path)
     _ = ComponentModel.from_run_info(run_info)
-    print("Model files cached. Spawning workers...")
+    _, _ = train_loader_and_tokenizer(run_info.config, config.batch_size)
+    print("Pre-caching complete. Spawning workers...")
 
     mp.set_start_method("spawn", force=True)
 
