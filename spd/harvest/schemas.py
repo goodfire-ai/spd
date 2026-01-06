@@ -28,6 +28,7 @@ def get_correlations_dir(wandb_run_id: str) -> Path:
 class ActivationExample:
     token_ids: list[int]
     ci_values: list[float]
+    inner_acts: list[float]  # Normalized inner activations (v_i^T @ a / ||v_i||)
 
 
 @dataclass
@@ -55,4 +56,4 @@ class ComponentData:
     activation_examples: list[ActivationExample]
     input_token_pmi: ComponentTokenPMI
     output_token_pmi: ComponentTokenPMI
-    subcomp_act_stats: SubcompActStats | None = None  # None for backwards compat with old harvests
+    subcomp_act_stats: SubcompActStats

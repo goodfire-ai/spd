@@ -30,7 +30,35 @@ from spd.harvest.schemas import (
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data
+
+
+def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
+    """Compute ||U[:,c]|| for each component c in each layer.
+
+    Component activations (v_i^T @ a) have a scale invariance: scaling V by α and U by 1/α
+    leaves the weight matrix unchanged but scales inner activations by α. To make inner
+    activations reflect actual output contribution, we multiply by the U column norms.
+    This gives a value proportional to the magnitude of the component's output vector.
+    """
+    u_norms: dict[str, Float[Tensor, " C"]] = {}
+    for layer_name, component in model.components.items():
+        # U has shape (d_out, C) for LinearComponents
+        u_norms[layer_name] = component.U.norm(dim=0)  # [C]
+    return u_norms
+
+
+def _normalize_component_acts(
+    component_acts: dict[str, Float[Tensor, "B S C"]],
+    u_norms: dict[str, Float[Tensor, " C"]],
+) -> dict[str, Float[Tensor, "B S C"]]:
+    """Normalize component activations by U column norms (output magnitude)."""
+    normalized = {}
+    for layer_name, acts in component_acts.items():
+        norms = u_norms[layer_name].to(acts.device)
+        normalized[layer_name] = acts * norms
+    return normalized
 
 
 @dataclass
@@ -88,8 +116,7 @@ class HarvestResult:
                 ]
                 data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
                 data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-                if data.get("subcomp_act_stats") is not None:
-                    data["subcomp_act_stats"] = SubcompActStats(**data["subcomp_act_stats"])
+                data["subcomp_act_stats"] = SubcompActStats(**data["subcomp_act_stats"])
                 components.append(ComponentData(**data))
 
         return components
@@ -144,7 +171,7 @@ def harvest(
 ) -> None:
     """Single-pass harvest of token stats, activation contexts, and correlations."""
     from spd.data import train_loader_and_tokenizer
-    from spd.models.component_model import ComponentModel, SPDRunInfo
+    from spd.models.component_model import SPDRunInfo
     from spd.utils.distributed_utils import get_device
 
     device = torch.device(get_device())
@@ -160,6 +187,9 @@ def harvest(
     layer_names = list(model.target_module_paths)
     vocab_size = tokenizer.vocab_size
     assert isinstance(vocab_size, int)
+
+    # Precompute U norms for normalizing component activations
+    u_norms = _compute_u_norms(model)
 
     harvester = Harvester(
         layer_names=layer_names,
@@ -196,8 +226,9 @@ def harvest(
             assert ci.shape[2] == expected_n_comp
 
             component_acts = model.get_all_component_acts(out.cache)
+            normalized_acts = _normalize_component_acts(component_acts, u_norms)
             subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
-                [component_acts[layer] for layer in layer_names],
+                [normalized_acts[layer] for layer in layer_names],
                 dim=2,
             )
 
@@ -223,7 +254,6 @@ def _harvest_worker(
 ) -> None:
     """Worker function for parallel harvesting. Runs in subprocess."""
     from spd.data import train_loader_and_tokenizer
-    from spd.models.component_model import ComponentModel, SPDRunInfo
 
     device = torch.device(f"cuda:{rank}")
     print(f"[Worker {rank}] Starting on {device}", flush=True)
@@ -238,6 +268,8 @@ def _harvest_worker(
     layer_names = list(model.target_module_paths)
     vocab_size = tokenizer.vocab_size
     assert isinstance(vocab_size, int)
+
+    u_norms = _compute_u_norms(model)
 
     harvester = Harvester(
         layer_names=layer_names,
@@ -282,8 +314,9 @@ def _harvest_worker(
             assert ci.shape[2] == expected_n_comp
 
             component_acts = model.get_all_component_acts(out.cache)
+            normalized_acts = _normalize_component_acts(component_acts, u_norms)
             subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
-                [component_acts[layer] for layer in layer_names],
+                [normalized_acts[layer] for layer in layer_names],
                 dim=2,
             )
 

@@ -50,7 +50,6 @@ RETRYABLE_ERRORS = (
 
 
 class OpenRouterModelName(StrEnum):
-    GEMINI_2_5_FLASH = "google/gemini-2.5-flash"
     GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
 
 
@@ -74,8 +73,6 @@ INTERPRETATION_SCHEMA = {
     "required": ["label", "confidence", "reasoning"],
     "additionalProperties": False,
 }
-
-FAKING_RESPONSES = False
 
 
 @dataclass
@@ -162,19 +159,6 @@ async def interpret_component(
     prompt = format_prompt_template(
         component=component, arch=arch, tokenizer=tokenizer, max_examples=max_examples
     )
-
-    if FAKING_RESPONSES:
-        return (
-            InterpretationResult(
-                component_key=component.component_key,
-                label="The concept of love",
-                confidence="high",
-                reasoning="The component fires when the word 'love' is present in the input.",
-                raw_response='{"label": "The concept of love", "confidence": "high", "reasoning": "..."}',
-            ),
-            0,
-            0,
-        )
 
     try:
         raw, in_tok, out_tok = await chat_with_retry(

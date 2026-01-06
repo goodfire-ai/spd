@@ -188,7 +188,7 @@ async def request_component_interpretation(
     arch = get_architecture_info(loaded.run.wandb_path)
 
     # Interpret the component
-    model_name = OpenRouterModelName.GEMINI_2_5_FLASH
+    model_name = OpenRouterModelName.GEMINI_3_FLASH_PREVIEW
 
     async with OpenRouter(api_key=api_key) as client:
         res = await interpret_component(

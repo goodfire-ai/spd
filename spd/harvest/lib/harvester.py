@@ -16,8 +16,8 @@ from spd.harvest.schemas import ActivationExample, ComponentData, ComponentToken
 # Sentinel for padding token windows at sequence boundaries.
 WINDOW_PAD_SENTINEL = -1
 
-# Entry: (token_ids, ci_values_in_window)
-ActivationExampleTuple = tuple[list[int], list[float]]
+# Entry: (token_ids, ci_values_in_window, inner_acts_in_window)
+ActivationExampleTuple = tuple[list[int], list[float], list[float]]
 
 
 @dataclass
@@ -188,7 +188,7 @@ class Harvester:
         batch: Int[Tensor, "B S"],
         ci: Float[Tensor, "B S n_comp"],
         output_probs: Float[Tensor, "B S V"],
-        subcomp_acts: Float[Tensor, "B S n_comp"] | None = None,
+        subcomp_acts: Float[Tensor, "B S n_comp"],
     ) -> None:
         """Accumulate stats from a single batch.
 
@@ -196,7 +196,7 @@ class Harvester:
             batch: Token IDs
             ci: Causal importance values per component
             output_probs: Output probabilities
-            subcomp_acts: Subcomponent activations (v_i^T @ a). Optional for backwards compat.
+            subcomp_acts: Normalized subcomponent activations (v_i^T @ a / ||v_i||).
         """
         self.total_tokens_processed += batch.numel()
 
@@ -210,11 +210,10 @@ class Harvester:
         self._accumulate_cooccurrence_stats(firing_flat)
         self._accumulate_input_token_stats(batch_flat, firing_flat)
         self._accumulate_output_token_stats(output_probs_flat, firing_flat)
-        self._collect_activation_examples(batch, ci)
+        self._collect_activation_examples(batch, ci, subcomp_acts)
 
-        if subcomp_acts is not None:
-            subcomp_acts_flat = rearrange(subcomp_acts, "b s c -> (b s) c")
-            self._accumulate_subcomp_act_stats(subcomp_acts_flat, firing_flat)
+        subcomp_acts_flat = rearrange(subcomp_acts, "b s c -> (b s) c")
+        self._accumulate_subcomp_act_stats(subcomp_acts_flat, firing_flat)
 
     def _accumulate_firing_stats(
         self,
@@ -292,6 +291,7 @@ class Harvester:
         self,
         batch: Int[Tensor, "B S"],
         ci: Float[Tensor, "B S n_comp"],
+        subcomp_acts: Float[Tensor, "B S n_comp"],
     ) -> None:
         """Reservoir sample activation examples from high-CI firings."""
         firing = ci > self.ci_threshold
@@ -318,6 +318,11 @@ class Harvester:
         ci_padded = torch.nn.functional.pad(
             ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
         )
+        subcomp_acts_padded = torch.nn.functional.pad(
+            subcomp_acts,
+            (0, 0, self.context_tokens_per_side, self.context_tokens_per_side),
+            value=0.0,
+        )
 
         # Build indices to extract [n_firings, window_size] windows via advanced indexing.
         # For each firing, we want tokens at [seq_idx - k, ..., seq_idx, ..., seq_idx + k]
@@ -333,15 +338,19 @@ class Harvester:
         # Advanced indexing: token_windows[i, j] = batch_padded[batch_idx[i], window_seq_indices[i, j]]
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
+        inner_act_windows = subcomp_acts_padded[
+            batch_idx_expanded, window_seq_indices, component_idx_expanded
+        ]
 
         # Add to reservoir samplers
-        for comp_idx, tokens, ci_vals in zip(
+        for comp_idx, tokens, ci_vals, inner_acts in zip(
             cast(list[int], component_idx.cpu().tolist()),
             cast(list[list[int]], token_windows.cpu().tolist()),
             cast(list[list[float]], ci_windows.cpu().tolist()),
+            cast(list[list[float]], inner_act_windows.cpu().tolist()),
             strict=True,
         ):
-            self.activation_example_samplers[comp_idx].add((tokens, ci_vals))
+            self.activation_example_samplers[comp_idx].add((tokens, ci_vals, inner_acts))
 
     def get_state(self) -> HarvesterState:
         """Extract serializable state for parallel merging."""
@@ -408,11 +417,13 @@ class Harvester:
 
         # Compute subcomponent activation statistics
         # Mean is sum / firing_count (stats conditioned on component firing)
-        subcomp_act_means = (self.subcomp_act_sums / self.firing_counts.clamp(min=1)).cpu()
-        # Std = sqrt(E[X^2] - E[X]^2)
+        subcomp_act_means = (self.subcomp_act_sums / self.firing_counts).cpu()
+        # Std = sqrt(E[X^2] - E[X]^2), clamped to handle floating-point precision
         subcomp_act_stds = torch.sqrt(
-            (self.subcomp_act_squared_sums / self.firing_counts.clamp(min=1))
-            - (self.subcomp_act_sums / self.firing_counts.clamp(min=1)) ** 2
+            (
+                (self.subcomp_act_squared_sums / self.firing_counts)
+                - (self.subcomp_act_sums / self.firing_counts) ** 2
+            ).clamp(min=0)
         ).cpu()
         subcomp_act_mins = self.subcomp_act_mins.cpu()
         subcomp_act_maxs = self.subcomp_act_maxs.cpu()
@@ -439,8 +450,10 @@ class Harvester:
                 # Build activation examples from reservoir (uniform random sample)
                 sampler = self.activation_example_samplers[flat_idx]
                 activation_examples = [
-                    ActivationExample(token_ids=token_ids, ci_values=ci_values)
-                    for token_ids, ci_values in sampler.samples
+                    ActivationExample(
+                        token_ids=token_ids, ci_values=ci_values, inner_acts=inner_acts
+                    )
+                    for token_ids, ci_values, inner_acts in sampler.samples
                 ]
 
                 input_token_pmi = _compute_token_pmi(
@@ -459,21 +472,21 @@ class Harvester:
                     top_k=pmi_top_k_tokens,
                 )
 
-                # Build subcomponent activation stats (handle edge cases)
-                sc_mean = float(subcomp_act_means[flat_idx])
-                sc_std = float(subcomp_act_stds[flat_idx])
-                sc_min = float(subcomp_act_mins[flat_idx])
-                sc_max = float(subcomp_act_maxs[flat_idx])
-                # Handle inf values for components that never fired
-                if sc_min == float("inf"):
-                    sc_min = 0.0
-                if sc_max == float("-inf"):
-                    sc_max = 0.0
+                subcomp_act_mean = subcomp_act_means[flat_idx]
+                subcomp_act_std = subcomp_act_stds[flat_idx]
+                subcomp_act_min = subcomp_act_mins[flat_idx]
+                subcomp_act_max = subcomp_act_maxs[flat_idx]
+
+                assert subcomp_act_mean.isfinite(), f"nonfinite mean: {subcomp_act_mean}"
+                assert subcomp_act_std.isfinite(), f"nonfinite std: {subcomp_act_std}"
+                assert subcomp_act_min.isfinite(), f"nonfinite min: {subcomp_act_min}"
+                assert subcomp_act_max.isfinite(), f"nonfinite max: {subcomp_act_max}"
+
                 subcomp_act_stats = SubcompActStats(
-                    mean=sc_mean,
-                    std=sc_std if not torch.isnan(torch.tensor(sc_std)) else 0.0,
-                    min=sc_min,
-                    max=sc_max,
+                    mean=float(subcomp_act_mean),
+                    std=float(subcomp_act_std),
+                    min=float(subcomp_act_min),
+                    max=float(subcomp_act_max),
                 )
 
                 components.append(
