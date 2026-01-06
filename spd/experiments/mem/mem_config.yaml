@@ -1,6 +1,6 @@
 wandb_project: spd
 wandb_run_name: null
-wandb_run_name_prefix: ''
+wandb_run_name_prefix: '' #hej
 seed: 0
 C: 300
 n_mask_samples: 1
