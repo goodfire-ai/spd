@@ -15,6 +15,15 @@ export const NODE_COLOR_MODE_LABELS: Record<NodeColorMode, string> = {
     subcomp_act: "Subcomp Act",
 };
 
+// Example color mode for activation contexts viewer
+export type ExampleColorMode = "ci" | "inner_act" | "both";
+
+export const EXAMPLE_COLOR_MODE_LABELS: Record<ExampleColorMode, string> = {
+    ci: "CI",
+    inner_act: "Inner Act",
+    both: "Both",
+};
+
 export const CORRELATION_STAT_LABELS: Record<CorrelationStatType, string> = {
     pmi: "PMI",
     bottom_pmi: "Bottom PMI",
@@ -40,6 +49,7 @@ type StoredSettings = {
     showSetOverlapVis?: boolean;
     showEdgeAttributions?: boolean;
     nodeColorMode?: NodeColorMode;
+    exampleColorMode?: ExampleColorMode;
 };
 
 function loadFromStorage(): StoredSettings | undefined {
@@ -67,12 +77,22 @@ function loadShowEdgeAttributions(): boolean {
     return loadFromStorage()?.showEdgeAttributions ?? true;
 }
 
-const VALID_COLOR_MODES: NodeColorMode[] = ["ci", "subcomp_act"];
+const VALID_NODE_COLOR_MODES: NodeColorMode[] = ["ci", "subcomp_act"];
+const VALID_EXAMPLE_COLOR_MODES: ExampleColorMode[] = ["ci", "inner_act", "both"];
 
 function loadNodeColorMode(): NodeColorMode {
     const stored = loadFromStorage();
     const mode = stored?.nodeColorMode;
-    if (mode == null || !VALID_COLOR_MODES.includes(mode)) {
+    if (mode == null || !VALID_NODE_COLOR_MODES.includes(mode)) {
+        return "ci";
+    }
+    return mode;
+}
+
+function loadExampleColorMode(): ExampleColorMode {
+    const stored = loadFromStorage();
+    const mode = stored?.exampleColorMode;
+    if (mode == null || !VALID_EXAMPLE_COLOR_MODES.includes(mode)) {
         return "ci";
     }
     return mode;
@@ -102,12 +122,12 @@ class DisplaySettingsState {
     // Node color mode for graph visualization
     nodeColorMode = $state<NodeColorMode>(loadNodeColorMode());
 
+    // Example color mode for activation contexts viewer
+    exampleColorMode = $state<ExampleColorMode>(loadExampleColorMode());
+
     toggleCorrelationStat(stat: CorrelationStatType) {
         if (this.visibleCorrelationStats.has(stat)) {
-            // Don't allow disabling the last stat
-            if (this.visibleCorrelationStats.size > 1) {
-                this.visibleCorrelationStats.delete(stat);
-            }
+            this.visibleCorrelationStats.delete(stat);
         } else {
             this.visibleCorrelationStats.add(stat);
         }
@@ -116,6 +136,10 @@ class DisplaySettingsState {
 
     isCorrelationStatVisible(stat: CorrelationStatType): boolean {
         return this.visibleCorrelationStats.has(stat);
+    }
+
+    hasAnyCorrelationStatsVisible(): boolean {
+        return this.visibleCorrelationStats.size > 0;
     }
 
     toggleSetOverlapVis() {
@@ -131,6 +155,11 @@ class DisplaySettingsState {
     setNodeColorMode(mode: NodeColorMode) {
         this.nodeColorMode = mode;
         saveToStorage({ nodeColorMode: mode });
+    }
+
+    setExampleColorMode(mode: ExampleColorMode) {
+        this.exampleColorMode = mode;
+        saveToStorage({ exampleColorMode: mode });
     }
 }
 

@@ -3,6 +3,7 @@
     import type { SubcomponentActivationContexts, HarvestMetadata, Interpretation } from "../lib/api";
     import * as api from "../lib/api";
     import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
+    import { displaySettings } from "../lib/displaySettings.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
@@ -295,14 +296,13 @@
                 <span class="search-error">{searchError}</span>
             {/if}
         </div>
+
     </div>
 
     <div class="component-section">
         <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
             <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
-            {#if currentMetadata.mean_subcomp_act !== null}
-                <span class="mean-subcomp-act">Mean Act: {formatMeanCi(currentMetadata.mean_subcomp_act)}</span>
-            {/if}
+            <span class="mean-subcomp-act">Mean Act: {formatMeanCi(currentMetadata.mean_subcomp_act)}</span>
         </SectionHeader>
 
         <InterpretationBadge {interpretation} />
@@ -322,18 +322,20 @@
         </div>
 
         <!-- Component correlations -->
-        <div class="correlations-section">
-            <SectionHeader title="Correlated Components" />
-            {#if correlations?.status === "loaded"}
-                <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
-            {:else if correlations?.status === "loading"}
-                <StatusText>Loading...</StatusText>
-            {:else if correlations?.status === "error"}
-                <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
-            {:else}
-                <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
-            {/if}
-        </div>
+        {#if displaySettings.hasAnyCorrelationStatsVisible()}
+            <div class="correlations-section">
+                <SectionHeader title="Correlated Components" />
+                {#if correlations?.status === "loaded"}
+                    <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
+                {:else if correlations?.status === "loading"}
+                    <StatusText>Loading...</StatusText>
+                {:else if correlations?.status === "error"}
+                    <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
+                {:else}
+                    <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
+                {/if}
+            </div>
+        {/if}
 
         <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
 
@@ -343,6 +345,7 @@
             <ActivationContextsPagedTable
                 exampleTokens={currentComponent.data.example_tokens}
                 exampleCi={currentComponent.data.example_ci}
+                exampleInnerActs={currentComponent.data.example_inner_acts}
                 activatingTokens={inputTopRecall.map(({ token }) => token)}
             />
         {:else if currentComponent?.status === "error"}

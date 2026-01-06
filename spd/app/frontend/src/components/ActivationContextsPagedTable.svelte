@@ -1,15 +1,34 @@
 <script lang="ts">
+    import {
+        displaySettings,
+        EXAMPLE_COLOR_MODE_LABELS,
+        type ExampleColorMode,
+    } from "../lib/displaySettings.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
         // Columnar data
         exampleTokens: string[][]; // [n_examples, window_size]
         exampleCi: number[][]; // [n_examples, window_size]
+        exampleInnerActs: number[][]; // [n_examples, window_size]
         // Unique activating tokens (from pr_tokens, already sorted by recall)
         activatingTokens: string[];
     }
 
-    let { exampleTokens, exampleCi, activatingTokens }: Props = $props();
+    let { exampleTokens, exampleCi, exampleInnerActs, activatingTokens }: Props = $props();
+
+    // Compute max absolute inner act for normalization (display-only concern)
+    let maxAbsInnerAct = $derived.by(() => {
+        let max = 0;
+        for (const row of exampleInnerActs) {
+            for (const val of row) {
+                const abs = Math.abs(val);
+                if (abs > max) max = abs;
+            }
+        }
+        if (max === 0) throw new Error("No nonzero inner acts found");
+        return max;
+    });
 
     let currentPage = $state(0);
     let pageSize = $state(20);
@@ -108,12 +127,31 @@
                 {/each}
             </select>
         </div>
+        <div class="color-mode-control">
+            <label for="color-mode-select">Color by:</label>
+            <select
+                id="color-mode-select"
+                value={displaySettings.exampleColorMode}
+                onchange={(e) =>
+                    displaySettings.setExampleColorMode(e.currentTarget.value as ExampleColorMode)}
+            >
+                {#each Object.entries(EXAMPLE_COLOR_MODE_LABELS) as [mode, label] (mode)}
+                    <option value={mode}>{label}</option>
+                {/each}
+            </select>
+        </div>
     </div>
     <div class="examples">
         <div class="examples-inner">
             {#each paginatedIndices as idx (idx)}
                 <div class="example-item">
-                    <TokenHighlights tokenStrings={exampleTokens[idx]} tokenCi={exampleCi[idx]} />
+                    <TokenHighlights
+                        tokenStrings={exampleTokens[idx]}
+                        tokenCi={exampleCi[idx]}
+                        tokenInnerActs={exampleInnerActs[idx]}
+                        colorMode={displaySettings.exampleColorMode}
+                        {maxAbsInnerAct}
+                    />
                 </div>
             {/each}
         </div>
@@ -154,14 +192,16 @@
     }
 
     .filter-control,
-    .page-size-control {
+    .page-size-control,
+    .color-mode-control {
         display: flex;
         align-items: center;
         gap: var(--space-2);
     }
 
     .filter-control label,
-    .page-size-control label {
+    .page-size-control label,
+    .color-mode-control label {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
@@ -170,7 +210,8 @@
     }
 
     .filter-control select,
-    .page-size-control select {
+    .page-size-control select,
+    .color-mode-control select {
         border: 1px solid var(--border-default);
         border-radius: var(--radius-sm);
         padding: var(--space-1) var(--space-2);
@@ -183,7 +224,8 @@
     }
 
     .filter-control select:focus,
-    .page-size-control select:focus {
+    .page-size-control select:focus,
+    .color-mode-control select:focus {
         outline: none;
         border-color: var(--accent-primary-dim);
     }

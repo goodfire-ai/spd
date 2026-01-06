@@ -216,9 +216,7 @@
     <SectionHeader title="Position {seqIdx}" level="h4">
         {#if summary}
             <span class="mean-ci">Mean CI: {formatMeanValue(summary.mean_ci)}</span>
-            {#if summary.mean_subcomp_act !== null}
-                <span class="mean-subcomp-act">Mean Act: {formatMeanValue(summary.mean_subcomp_act)}</span>
-            {/if}
+            <span class="mean-subcomp-act">Mean Act: {formatMeanValue(summary.mean_subcomp_act)}</span>
         {/if}
     </SectionHeader>
 
@@ -329,8 +327,9 @@
             {#if detail?.data.example_tokens.length > 0}
                 <!-- Full mode: paged table with filtering -->
                 <ActivationContextsPagedTable
-                    exampleTokens={detail?.data.example_tokens}
-                    exampleCi={detail?.data.example_ci}
+                    exampleTokens={detail.data.example_tokens}
+                    exampleCi={detail.data.example_ci}
+                    exampleInnerActs={detail.data.example_inner_acts}
                     {activatingTokens}
                 />
             {/if}

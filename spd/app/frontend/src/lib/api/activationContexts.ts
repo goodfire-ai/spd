@@ -9,14 +9,16 @@ import { API_URL, fetchJson } from "./index";
 export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     mean_ci: number;
+    mean_subcomp_act: number;
     example_tokens: string[][];
     example_ci: number[][];
+    example_inner_acts: number[][];
 };
 
 export type SubcomponentMetadata = {
     subcomponent_idx: number;
     mean_ci: number;
-    mean_subcomp_act: number | null;
+    mean_subcomp_act: number;
 };
 
 export type HarvestMetadata = {

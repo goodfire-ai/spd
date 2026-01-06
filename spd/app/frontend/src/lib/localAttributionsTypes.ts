@@ -84,7 +84,7 @@ export type OptimizationResult = {
 export type ComponentSummary = {
     subcomponent_idx: number;
     mean_ci: number;
-    mean_subcomp_act: number | null; // Mean subcomponent activation (v_i^T @ a), null for old harvests
+    mean_subcomp_act: number; // Mean normalized subcomponent activation (v_i^T @ a / ||v_i||)
 };
 
 export type ActivationContextsSummary = Record<string, ComponentSummary[]>;
@@ -93,8 +93,10 @@ export type ActivationContextsSummary = Record<string, ComponentSummary[]>;
 export type ComponentDetail = {
     subcomponent_idx: number;
     mean_ci: number;
+    mean_subcomp_act: number;
     example_tokens: string[][];
     example_ci: number[][];
+    example_inner_acts: number[][];
 };
 
 export type CorrelatedComponent = {

@@ -50,10 +50,21 @@ export function getSubcompActColor(val: number): string {
     return val >= 0 ? colors.positive : colors.negative;
 }
 
-/** Get token highlight background */
+/** Get token highlight background for CI values (0-1, green) */
 export function getTokenHighlightBg(ci: number): string {
     const { r, g, b } = colors.tokenHighlight;
     return `rgba(${r},${g},${b},${ci * colors.tokenHighlightOpacity})`;
+}
+
+/** Get underline color for inner activations (red -> transparent -> blue) */
+export function getInnerActUnderlineColor(value: number, normalizedAbs: number): string {
+    if (value >= 0) {
+        // Blue for positive
+        return `rgba(37, 99, 235, ${normalizedAbs})`;
+    } else {
+        // Red for negative
+        return `rgba(220, 38, 38, ${normalizedAbs})`;
+    }
 }
 
 /** Get output header gradient background based on probability */
