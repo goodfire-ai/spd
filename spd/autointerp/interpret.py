@@ -25,8 +25,10 @@ from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.prompt_template import format_prompt_template
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.configs import LMTaskConfig
+from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.harvest import HarvestResult
 from spd.harvest.schemas import ComponentData
+from spd.harvest.storage import TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
@@ -153,11 +155,18 @@ async def interpret_component(
     component: ComponentData,
     arch: ArchitectureInfo,
     tokenizer: PreTrainedTokenizerBase,
+    input_token_stats: TokenPRLift,
+    output_token_stats: TokenPRLift,
     max_examples: int,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
     prompt = format_prompt_template(
-        component=component, arch=arch, tokenizer=tokenizer, max_examples=max_examples
+        component=component,
+        arch=arch,
+        tokenizer=tokenizer,
+        input_token_stats=input_token_stats,
+        output_token_stats=output_token_stats,
+        max_examples=max_examples,
     )
 
     try:
@@ -211,6 +220,7 @@ async def interpret_all(
     interpreter_model: str,
     output_path: Path,
     max_examples_per_component: int,
+    token_stats: TokenStatsStorage,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
@@ -244,12 +254,28 @@ async def interpret_all(
     ) -> None:
         async with semaphore:
             try:
+                # Compute token stats for this component
+                input_stats = get_input_token_stats(
+                    token_stats, component.component_key, tokenizer, top_k=20
+                )
+                output_stats = get_output_token_stats(
+                    token_stats, component.component_key, tokenizer, top_k=50
+                )
+                assert input_stats is not None, (
+                    f"No input token stats for {component.component_key}"
+                )
+                assert output_stats is not None, (
+                    f"No output token stats for {component.component_key}"
+                )
+
                 res = await interpret_component(
                     client=client,
                     model=interpreter_model,
                     component=component,
                     arch=arch,
                     tokenizer=tokenizer,
+                    input_token_stats=input_stats,
+                    output_token_stats=output_stats,
                     max_examples=max_examples_per_component,
                 )
                 if res is None:
@@ -317,12 +343,20 @@ def run_interpret(
     openrouter_api_key: str,
     interpreter_model: str,
     activation_contexts_dir: Path,
+    correlations_dir: Path,
     autointerp_dir: Path,
     max_examples_per_component: int,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
     output_path = autointerp_dir / "results.jsonl"
+
+    # Load token stats
+    token_stats_path = correlations_dir / "token_stats.pt"
+    assert token_stats_path.exists(), (
+        f"token_stats.pt not found at {token_stats_path}. Run harvest first."
+    )
+    token_stats = TokenStatsStorage.load(token_stats_path)
 
     results = asyncio.run(
         interpret_all(
@@ -332,6 +366,7 @@ def run_interpret(
             interpreter_model=interpreter_model,
             output_path=output_path,
             max_examples_per_component=max_examples_per_component,
+            token_stats=token_stats,
         )
     )
 

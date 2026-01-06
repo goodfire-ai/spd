@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 from spd.autointerp.interpret import OpenRouterModelName, run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
-from spd.harvest.schemas import get_activation_contexts_dir
+from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -40,6 +40,8 @@ def main(
         f"Activation contexts not found at {activation_contexts_dir}. Run harvest first."
     )
 
+    correlations_dir = get_correlations_dir(run_id)
+
     autointerp_dir = get_autointerp_dir(run_id)
     autointerp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -48,6 +50,7 @@ def main(
         openrouter_api_key,
         model,
         activation_contexts_dir,
+        correlations_dir,
         autointerp_dir,
         max_examples_per_component,
     )

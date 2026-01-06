@@ -77,135 +77,8 @@ def format_prompt_template(
     component: ComponentData,
     arch: ArchitectureInfo,
     tokenizer: PreTrainedTokenizerBase,
-    max_examples: int,
-) -> str:
-    lookup = build_token_lookup(tokenizer, tokenizer.name_or_path)
-
-    PADDING_SENTINEL = -1
-
-    examples_str = ""
-    examples = component.activation_examples[:max_examples]
-    for example_idx, example in enumerate(examples):
-        # Filter out padding sentinel (-1) for decoding
-        valid_token_ids: list[int] = []
-        for tid in example.token_ids:
-            if tid == PADDING_SENTINEL:
-                continue
-            assert tid >= 0, (
-                f"Unexpected token_id {tid} (expected valid token or {PADDING_SENTINEL})"
-            )
-            valid_token_ids.append(tid)
-
-        full_text = tokenizer.decode(valid_token_ids) if valid_token_ids else ""
-        full_text_escaped_str = full_text.replace('"', '\\"')
-
-        def token_str(token_id: int) -> str:
-            if token_id == PADDING_SENTINEL:
-                return "<pad>"
-            return lookup[token_id]
-
-        token_activation_pairs_str = ", ".join(
-            [
-                f'("{token_str(token_id)}", {ci:.2f})'
-                for token_id, ci in zip(example.token_ids, example.ci_values, strict=True)
-            ]
-        )
-
-        this_example_str = f'''\
-**Example {example_idx + 1}**
-
-Full text: "{full_text_escaped_str}"
-
-Token activation pairs: {token_activation_pairs_str}'''
-
-        examples_str += this_example_str
-
-    top_input_tokens_by_pmi_str = "\n".join(
-        [f'- "{lookup[token_id]}" ({pmi:.2f})' for token_id, pmi in component.input_token_pmi.top]
-    )
-    top_output_tokens_by_pmi_str = "\n".join(
-        [f'- "{lookup[token_id]}" ({pmi:.2f})' for token_id, pmi in component.output_token_pmi.top]
-    )
-    bottom_output_tokens_by_pmi_str = "\n".join(
-        [
-            f'- "{lookup[token_id]}" ({pmi:.2f})'
-            for token_id, pmi in component.output_token_pmi.bottom
-        ]
-    )
-
-    dataset_description = DATASET_DESCRIPTIONS[arch.dataset_name]
-
-    return f"""\
-Hi Claude,
-
-I'm working on interpretability research and could use your help labeling a component from a neural
-network. We've decomposed a language model into sparse components using SPD (Stochastic Parameter
-Decomposition), and I'd like to understand what this particular component does. To give some
-background, in spd, we learn decompositions of a model's parameter weight matrices, in terms of
-rank-1 components. We train the decomposition such that very few of these components need to be
-present in order to recreate the behaviour of the orginal model on any given prompt. This means that
-locally, the model becomes extremely low rank and more inherently interpretable. These components 
-are then treated as the basic atoms of computation.
-
-
-## Context
-
-**Target model (the model we're decomposing)**: {arch.model_class} ({arch.n_blocks} layers),
-
-**Training data**: {arch.dataset_name} — {dataset_description}
-
-This component is from the {_parse_layer_description(component.layer, arch.n_blocks)}.
-
-Mean causal importance (how densely this component is active in the training data): {component.mean_ci * 100:.4f}%
-
----
-
-## Component-Token Correlations:
-
-**Top Input Tokens by PMI** - Tokens on which this component has a higher than expected probability of firing:
-{top_input_tokens_by_pmi_str}
-
-**Top Output Tokens by PMI** - Tokens which have a higher than expected probability of being predicted when this component fires:
-{top_output_tokens_by_pmi_str}
-
-**Bottom Output Tokens by PMI** - Tokens which have a lower than expected probability of being predicted when this component fires:
-{bottom_output_tokens_by_pmi_str}
-
-*Note: Bottom input tokens by PMI are not really meaningful because many tokens never co-occur with many components (-inf PMI)*
-
---- 
-
-## Activation Examples
-
-These are contexts where this component fires strongly. The texts are shown twice. One tokenized as
-normal, and once as (token, ci) pairs.
-
-{examples_str}
-
----
-
-Keep in mind:
-- Earlier layers often capture local/syntactic patterns; later layers capture semantics
-
----
-
-## Response Format
-
-Your response should be in JSON format, matching this schema:
-```json
-{INTERPRETATION_SCHEMA_JSON_STR}
-```
-
-Please directly output the JSON object, without any other text or comments. Thank you!
-"""
-
-
-def format_prompt_template_v2(
-    component: ComponentData,
-    arch: ArchitectureInfo,
-    tokenizer: PreTrainedTokenizerBase,
-    input_token_stats: TokenPRLift | None,
-    output_token_stats: TokenPRLift | None,
+    input_token_stats: TokenPRLift,
+    output_token_stats: TokenPRLift,
     max_examples: int,
     ci_display_threshold: float = 0.3,
     output_precision_top_k: int = 40,
@@ -302,7 +175,7 @@ Return JSON:
 
 
 def _build_input_token_section(
-    input_stats: TokenPRLift | None,
+    input_stats: TokenPRLift,
     input_pmi: list[tuple[str, float]] | None,
 ) -> str:
     """Build input token analysis section using recall, precision, and PMI."""
@@ -310,9 +183,6 @@ def _build_input_token_section(
 ## Input Token Analysis
 
 """
-    if not input_stats:
-        section += "  (No input token data available)\n"
-        return section
 
     # Recall section
     if input_stats.top_recall:
@@ -328,13 +198,8 @@ def _build_input_token_section(
     # Precision section - very important for detecting deterministic triggers
     if input_stats.top_precision:
         section += '_**Precision** = "When token X appears, what % of the time does this component fire?"_\n'
-        # Filter to tokens with meaningful precision (>20%) to avoid noise
-        high_prec = [(t, p) for t, p in input_stats.top_precision[:15] if p > 0.20]
-        if high_prec:
-            for token, prec in high_prec[:10]:
-                section += f"  {repr(token)}: {prec * 100:.0f}%\n"
-        else:
-            section += "  (No tokens with >20% precision)\n"
+        for token, prec in input_stats.top_precision[:10]:
+            section += f"  {repr(token)}: {prec * 100:.0f}%\n"
         section += "\n"
 
     # PMI section - shows surprising associations
@@ -352,18 +217,11 @@ def _build_input_token_section(
             section += f"  {repr(token)}: {pmi:.2f}\n"
         section += "\n"
 
-    # Add interpretive note
-    top_recall = input_stats.top_recall[0][1] if input_stats.top_recall else 0
-    if top_recall > 0.5:
-        section += "_This component fires predominantly on a specific token/pattern._"
-    elif top_recall < 0.15:
-        section += "_No single input token dominates - fires across many tokens._"
-
     return section
 
 
 def _build_output_token_section(
-    output_stats: TokenPRLift | None,
+    output_stats: TokenPRLift,
     output_pmi: list[tuple[str, float]] | None,
     top_k: int,
 ) -> str:
@@ -374,12 +232,9 @@ def _build_output_token_section(
 _These are tokens the model predicts when this component is active._
 
 """
-    if not output_stats and not output_pmi:
-        section += "  (No output token data available)\n"
-        return section
 
     # Precision section
-    if output_stats and output_stats.top_precision:
+    if output_stats.top_precision:
         section += '_**Precision** = "When the model predicts token X, what % of the time is this component active?"_\n\n'
         # Group by precision ranges
         very_high = [(t, p) for t, p in output_stats.top_precision[:top_k] if p > 0.90]
@@ -440,9 +295,7 @@ _Showing tokens where CI > {ci_threshold} (component is active)_
         # Decode full text
         valid_tokens = [t for t in example.token_ids if t != padding_sentinel and t >= 0]
         full_text = tokenizer.decode(valid_tokens) if valid_tokens else ""
-        # Truncate for display
-        display_text = full_text[:70] + "..." if len(full_text) > 70 else full_text
-        display_text = display_text.replace("\n", " ")
+        display_text = full_text.replace("\n", " ")
 
         # Get high-CI tokens
         active_tokens = []
@@ -451,9 +304,7 @@ _Showing tokens where CI > {ci_threshold} (component is active)_
                 tok = lookup[tid].strip()
                 active_tokens.append(f'"{tok}"')
 
-        active_str = ", ".join(active_tokens[:8])
-        if len(active_tokens) > 8:
-            active_str += f" (+{len(active_tokens) - 8} more)"
+        active_str = ", ".join(active_tokens)
 
         section += f'Ex {i + 1}: "{display_text}"\n'
         section += f"  Active tokens: {active_str}\n\n"
