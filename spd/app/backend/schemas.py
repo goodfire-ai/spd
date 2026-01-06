@@ -40,9 +40,7 @@ class SubcomponentMetadata(BaseModel):
 
     subcomponent_idx: int
     mean_ci: float
-    mean_subcomp_act: float | None = (
-        None  # Mean subcomponent activation (v_i^T @ a), None for old harvests
-    )
+    mean_subcomp_act: float  # Mean normalized subcomponent activation (v_i^T @ a / ||v_i||)
 
 
 class SubcomponentActivationContexts(BaseModel):
@@ -54,10 +52,11 @@ class SubcomponentActivationContexts(BaseModel):
 
     subcomponent_idx: int
     mean_ci: float
-    mean_subcomp_act: float | None = (
-        None  # Mean subcomponent activation (v_i^T @ a), None for old harvests
-    )
+    mean_subcomp_act: float  # Mean normalized subcomponent activation (inner_act * ||u_i||)
 
     # Examples - columnar arrays (n_examples ~ topk, window_size ~ 2*n_tokens_either_side+1)
     example_tokens: list[list[str]]  # [n_examples][window_size]
     example_ci: list[list[float]]  # [n_examples][window_size]
+    example_inner_acts: list[
+        list[float]
+    ]  # [n_examples][window_size] - normalized inner activations

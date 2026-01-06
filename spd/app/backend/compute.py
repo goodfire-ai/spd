@@ -579,9 +579,9 @@ def extract_node_subcomp_acts(
         if ci_lower_leaky is not None and layer_name in ci_lower_leaky:
             ci = ci_lower_leaky[layer_name]
             alive_mask = ci[0] > ci_threshold  # [seq, C]
-            alive_indices = torch.where(alive_mask)
+            alive_seq_indices, alive_c_indices = torch.where(alive_mask)
             for seq_pos, c_idx in zip(
-                alive_indices[0].tolist(), alive_indices[1].tolist(), strict=True
+                alive_seq_indices.tolist(), alive_c_indices.tolist(), strict=True
             ):
                 key = f"{layer_name}:{seq_pos}:{c_idx}"
                 node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
