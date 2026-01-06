@@ -20,6 +20,12 @@ from spd.utils.wandb_utils import parse_wandb_run_path
         ),
         ("  myentity/myproject/abcd1234  ", ("myentity", "myproject", "abcd1234")),  # whitespace
         ("my-entity/my_project/abcd1234", ("my-entity", "my_project", "abcd1234")),  # special chars
+        ("goodfire/spd/runs/s-d2ec3bfe", ("goodfire", "spd", "s-d2ec3bfe")),  # Newer runid format
+        ("wandb:goodfire/spd/s-d2ec3bfe", ("goodfire", "spd", "s-d2ec3bfe")),
+        (
+            "https://wandb.ai/goodfire/spd/runs/s-d2ec3bfe",
+            ("goodfire", "spd", "s-d2ec3bfe"),
+        ),
     ],
     ids=[
         "compact",
@@ -30,6 +36,9 @@ from spd.utils.wandb_utils import parse_wandb_run_path
         "url-with-query",
         "whitespace",
         "special-chars",
+        "hyphenated-runid",
+        "hyphenated-runid-prefix",
+        "hyphenated-runid-url",
     ],
 )
 def test_parse_wandb_run_path_valid(input_path: str, expected: tuple[str, str, str]):
@@ -44,7 +53,8 @@ def test_parse_wandb_run_path_valid(input_path: str, expected: tuple[str, str, s
         "myentity/myproject/abc1234",
         "myentity/myproject/abcd12345",
         "myentity/myproject/ABCD1234",
-        "myentity/myproject/abcd-123",
+        "myentity/myproject/abcd_1234",
+        "myentity/myproject/ab-cd1234",
         "abcd1234",
         "",
         "not a valid path at all",
@@ -58,7 +68,8 @@ def test_parse_wandb_run_path_valid(input_path: str, expected: tuple[str, str, s
         "runid-too-short",
         "runid-too-long",
         "runid-uppercase",
-        "runid-invalid-chars",
+        "runid-has-underscore",
+        "runid-prefix-too-long",
         "only-runid",
         "empty",
         "random-text",
