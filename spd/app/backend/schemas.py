@@ -40,7 +40,7 @@ class SubcomponentMetadata(BaseModel):
 
     subcomponent_idx: int
     mean_ci: float
-    mean_subcomp_act: float  # Mean normalized subcomponent activation (v_i^T @ a / ||v_i||)
+    mean_subcomp_act: float  # Mean normalized subcomponent activation (inner_act * ||u_i||)
 
 
 class SubcomponentActivationContexts(BaseModel):

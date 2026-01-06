@@ -196,7 +196,7 @@ class Harvester:
             batch: Token IDs
             ci: Causal importance values per component
             output_probs: Output probabilities
-            subcomp_acts: Normalized subcomponent activations (v_i^T @ a / ||v_i||).
+            subcomp_acts: Normalized subcomponent activations: (v_i^T @ a) * ||u_i||.
         """
         self.total_tokens_processed += batch.numel()
 

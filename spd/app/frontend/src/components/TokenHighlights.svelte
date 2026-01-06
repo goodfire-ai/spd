@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { getTokenHighlightBg, getInnerActUnderlineColor } from "../lib/colors";
+    import { getTokenHighlightBg, getComponentActivationColor } from "../lib/colors";
     import type { ExampleColorMode } from "../lib/displaySettings.svelte";
 
     interface Props {
@@ -24,15 +24,9 @@
 
     function getBgColor(ci: number, innerAct: number): string {
         if (colorMode === "inner_act") {
-            // Inner act mode: use inner act for background coloring (normalized)
             const normalizedAbs = Math.abs(innerAct) / maxAbsInnerAct;
-            if (innerAct >= 0) {
-                return `rgba(37, 99, 235, ${normalizedAbs})`; // blue
-            } else {
-                return `rgba(220, 38, 38, ${normalizedAbs})`; // red
-            }
+            return getComponentActivationColor(innerAct, normalizedAbs);
         } else {
-            // CI or Both mode: use CI for background
             return getTokenHighlightBg(ci);
         }
     }
@@ -40,7 +34,7 @@
     function getUnderlineStyle(innerAct: number): string {
         if (colorMode !== "both") return "none";
         const normalizedAbs = Math.abs(innerAct) / maxAbsInnerAct;
-        return `3px solid ${getInnerActUnderlineColor(innerAct, normalizedAbs)}`;
+        return `3px solid ${getComponentActivationColor(innerAct, normalizedAbs)}`;
     }
 </script>
 

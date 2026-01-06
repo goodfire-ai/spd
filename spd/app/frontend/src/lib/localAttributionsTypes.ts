@@ -84,7 +84,7 @@ export type OptimizationResult = {
 export type ComponentSummary = {
     subcomponent_idx: number;
     mean_ci: number;
-    mean_subcomp_act: number; // Mean normalized subcomponent activation (v_i^T @ a / ||v_i||)
+    mean_subcomp_act: number; // Mean normalized subcomponent activation: (v_i^T @ a) * ||u_i||
 };
 
 export type ActivationContextsSummary = Record<string, ComponentSummary[]>;

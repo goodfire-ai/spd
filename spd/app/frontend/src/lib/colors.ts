@@ -56,14 +56,12 @@ export function getTokenHighlightBg(ci: number): string {
     return `rgba(${r},${g},${b},${ci * colors.tokenHighlightOpacity})`;
 }
 
-/** Get underline color for inner activations (red -> transparent -> blue) */
-export function getInnerActUnderlineColor(value: number, normalizedAbs: number): string {
+/** Get color for component activations (blue for positive, red for negative) */
+export function getComponentActivationColor(value: number, normalizedAbs: number): string {
     if (value >= 0) {
-        // Blue for positive
-        return `rgba(37, 99, 235, ${normalizedAbs})`;
+        return `rgba(37, 99, 235, ${normalizedAbs})`; // blue
     } else {
-        // Red for negative
-        return `rgba(220, 38, 38, ${normalizedAbs})`;
+        return `rgba(220, 38, 38, ${normalizedAbs})`; // red
     }
 }
 
