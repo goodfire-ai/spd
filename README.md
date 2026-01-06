@@ -34,23 +34,30 @@ loads from huggingface and `spd/experiments/lm/ss_gpt2_simple_config.yaml` for a
 loads from https://github.com/goodfire-ai/simple_stories_train (with the model weights saved on
 wandb).
 
-### Run SPD
+## CLI Commands
 
-**Simple local execution** - Use `spd-simple` to run a single experiment locally:
+The following CLI commands are available after installation:
+
+### `spd-local` - Local Execution
+
+Run a single SPD experiment locally without SLURM:
 
 ```bash
-spd-simple tms_5-2           # Run on single GPU (default)
-spd-simple tms_5-2 --cpu     # Run on CPU
-spd-simple tms_5-2 --dp 4    # Run on 4 GPUs (single node DDP)
+spd-local tms_5-2           # Run on single GPU (default)
+spd-local tms_5-2 --cpu     # Run on CPU
+spd-local tms_5-2 --dp 4    # Run on 4 GPUs (single node DDP)
 ```
 
-**SLURM cluster execution** - Use `spd-run` for full-featured cluster orchestration with git
-snapshots, W&B views, and sweeps:
+### `spd-run` - SLURM Cluster Execution
+
+Run experiments on a SLURM cluster with git snapshots and W&B integration:
 
 ```bash
 spd-run --experiments tms_5-2                    # Run a specific experiment
 spd-run --experiments tms_5-2,resid_mlp1         # Run multiple experiments
 spd-run                                          # Run all experiments
+spd-run --experiments tms_5-2 --cpu              # Run on CPU
+spd-run --experiments ss_llama_simple --dp 4     # Data parallelism (4 GPUs)
 ```
 
 For running hyperparameter sweeps:
@@ -82,8 +89,41 @@ spd-run --experiments <experiment_name> --sweep --n_agents <n-agents> [--cpu]
         values: [0.05, 0.1]
   ```
 
-Note that SPD can also be run by executing any of the `*_decomposition.py` scripts defined in the experiment
-subdirectories, along with a corresponding config file. E.g.
+### `spd-harvest` - Component Statistics Collection
+
+Collect component statistics (activation examples, correlations, token stats) for a trained run:
+
+```bash
+spd-harvest wandb:spd/runs/abc123 1000              # Harvest with 1000 batches
+spd-harvest wandb:spd/runs/abc123 8000 --n_gpus 8   # Multi-GPU harvest
+```
+
+See `spd/harvest/CLAUDE.md` for details.
+
+### `spd-autointerp` - Automated Interpretation
+
+Generate LLM interpretations for harvested components:
+
+```bash
+spd-autointerp wandb:spd/runs/abc123
+```
+
+Requires `OPENROUTER_API_KEY` env var. See `spd/autointerp/CLAUDE.md` for details.
+
+### `spd-clustering` - Clustering Pipeline
+
+Run clustering analysis on SPD decompositions:
+
+```bash
+spd-clustering --config path/to/config.yaml
+spd-clustering --config config.yaml --local        # Run locally instead of SLURM
+```
+
+### Direct Script Execution
+
+SPD can also be run by executing any of the `*_decomposition.py` scripts defined in the experiment
+subdirectories, along with a corresponding config file:
+
 ```bash
 python spd/experiments/tms/tms_decomposition.py spd/experiments/tms/tms_5-2_config.yaml
 ```
