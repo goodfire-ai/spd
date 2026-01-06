@@ -59,7 +59,7 @@ class StoredGraph(BaseModel):
 
     id: int = -1  # -1 for unsaved graphs, set by DB on save
     edges: list[Edge]
-    output_probs: dict[str, OutputProbability]  # seq:c_idx -> {prob, token}
+    out_probs: dict[str, OutputProbability]  # seq:c_idx -> {prob, target_prob, token}
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
     optimization_params: OptimizationParams | None = None
     label_prob: float | None = (
@@ -455,7 +455,7 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         edges_json = json.dumps([asdict(e) for e in graph.edges])
-        probs_json = json.dumps({k: v.model_dump() for k, v in graph.output_probs.items()})
+        probs_json = json.dumps({k: v.model_dump() for k, v in graph.out_probs.items()})
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
         is_optimized = 1 if graph.optimization_params else 0
 
@@ -542,7 +542,7 @@ class LocalAttrDB:
         results: list[StoredGraph] = []
         for row in rows:
             edges = [_edge_from_dict(e) for e in json.loads(row["edges_data"])]
-            output_probs = {
+            out_probs = {
                 k: OutputProbability(**v) for k, v in json.loads(row["output_probs_data"]).items()
             }
 
@@ -566,7 +566,7 @@ class LocalAttrDB:
                 StoredGraph(
                     id=row["id"],
                     edges=edges,
-                    output_probs=output_probs,
+                    out_probs=out_probs,
                     node_ci_vals=node_ci_vals,
                     optimization_params=opt_params,
                     label_prob=label_prob,

@@ -22,7 +22,8 @@ export type EdgeAttribution = {
 };
 
 export type OutputProbEntry = {
-    prob: number;
+    prob: number; // CI-masked (SPD model) probability
+    target_prob: number; // Target model probability
     token: string;
 };
 
