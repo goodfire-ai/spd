@@ -696,11 +696,7 @@
                             </div>
 
                             {#if activeCard.activeView === "graph"}
-                                <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
-                                    {#if loadingCardId === activeCard.id && loadingState}
-                                        <ComputeProgressOverlay state={loadingState} />
-                                    {/if}
-
+                                <div class="graph-area">
                                     <ViewControls
                                         topK={activeGraph.viewSettings.topK}
                                         componentGap={activeGraph.viewSettings.componentGap}
