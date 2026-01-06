@@ -35,17 +35,17 @@ from spd.utils.general_utils import extract_batch_data
 
 
 def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
-    """Compute ||U[:,c]|| for each component c in each layer.
+    """Compute ||U[c,:]|| for each component c in each layer.
 
     Component activations (v_i^T @ a) have a scale invariance: scaling V by α and U by 1/α
     leaves the weight matrix unchanged but scales inner activations by α. To make inner
-    activations reflect actual output contribution, we multiply by the U column norms.
+    activations reflect actual output contribution, we multiply by the U row norms.
     This gives a value proportional to the magnitude of the component's output vector.
     """
     u_norms: dict[str, Float[Tensor, " C"]] = {}
     for layer_name, component in model.components.items():
-        # U has shape (d_out, C) for LinearComponents
-        u_norms[layer_name] = component.U.norm(dim=0)  # [C]
+        # U has shape (C, d_out) for LinearComponents
+        u_norms[layer_name] = component.U.norm(dim=1)  # [C]
     return u_norms
 
 
