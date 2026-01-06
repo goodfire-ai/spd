@@ -30,6 +30,7 @@ export type Interpretation = {
     label: string;
     confidence: "low" | "medium" | "high";
     reasoning: string;
+    prompt: string;
 };
 
 export async function getAllInterpretations(): Promise<Record<string, Interpretation>> {

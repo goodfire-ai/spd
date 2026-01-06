@@ -207,6 +207,7 @@ async def interpret_component(
             confidence=confidence,
             reasoning=reasoning,
             raw_response=raw,
+            prompt=prompt,
         ),
         in_tok,
         out_tok,

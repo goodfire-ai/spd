@@ -72,6 +72,7 @@ class InterpretationResponse(BaseModel):
     label: str
     confidence: str
     reasoning: str
+    prompt: str
 
 
 @router.get("/interpretations")
@@ -92,6 +93,7 @@ def get_all_interpretations(
             label=result.label,
             confidence=result.confidence,
             reasoning=result.reasoning,
+            prompt=result.prompt,
         )
         for key, result in interpretations.items()
     }
@@ -121,6 +123,7 @@ def get_component_interpretation(
         label=result.label,
         confidence=result.confidence,
         reasoning=result.reasoning,
+        prompt=result.prompt,
     )
 
 
@@ -159,6 +162,7 @@ async def request_component_interpretation(
             label=result.label,
             confidence=result.confidence,
             reasoning=result.reasoning,
+            prompt=result.prompt,
         )
 
     # Get component data from harvest
@@ -249,6 +253,7 @@ async def request_component_interpretation(
         label=result.label,
         confidence=result.confidence,
         reasoning=result.reasoning,
+        prompt=result.prompt,
     )
 
 

@@ -13,6 +13,7 @@
 
     let requesting = $state(false);
     let requestError = $state<string | null>(null);
+    let showPrompt = $state(false);
 
     const canRequest = $derived(layer !== undefined && cIdx !== undefined && onInterpretationGenerated !== undefined);
 
@@ -32,27 +33,44 @@
     }
 </script>
 
-<div class="interpretation-badge" class:loading={requesting}>
-    {#if interpretation?.status === "loaded"}
-        <span class="interpretation-label">{interpretation.data.label}</span>
-        <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
-    {:else if interpretation?.status === "loading" || requesting}
-        <span class="interpretation-label loading-text">Generating interpretation...</span>
-    {:else if interpretation?.status === "error" || requestError}
-        <span class="interpretation-label error-text">{requestError || String(interpretation?.error)}</span>
-        {#if canRequest}
-            <button class="retry-btn" onclick={handleRequestInterpretation}>Retry</button>
+<div class="interpretation-container">
+    <div class="interpretation-badge" class:loading={requesting}>
+        {#if interpretation?.status === "loaded"}
+            <span class="interpretation-label">{interpretation.data.label}</span>
+            <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
+            <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
+                {showPrompt ? "Hide" : "View"} Prompt
+            </button>
+        {:else if interpretation?.status === "loading" || requesting}
+            <span class="interpretation-label loading-text">Generating interpretation...</span>
+        {:else if interpretation?.status === "error" || requestError}
+            <span class="interpretation-label error-text">{requestError || String(interpretation?.error)}</span>
+            {#if canRequest}
+                <button class="retry-btn" onclick={handleRequestInterpretation}>Retry</button>
+            {/if}
+        {:else if interpretation === null && canRequest}
+            <button class="generate-btn" onclick={handleRequestInterpretation}>Generate Interpretation</button>
+        {:else if interpretation === null}
+            <span class="interpretation-label muted">No interpretation available</span>
+        {:else}
+            <span class="interpretation-label muted">Something went wrong</span>
         {/if}
-    {:else if interpretation === null && canRequest}
-        <button class="generate-btn" onclick={handleRequestInterpretation}>Generate Interpretation</button>
-    {:else if interpretation === null}
-        <span class="interpretation-label muted">No interpretation available</span>
-    {:else}
-        <span class="interpretation-label muted">Something went wrong</span>
+    </div>
+
+    {#if showPrompt && interpretation?.status === "loaded"}
+        <div class="prompt-display">
+            <pre>{interpretation.data.prompt}</pre>
+        </div>
     {/if}
 </div>
 
 <style>
+    .interpretation-container {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
     .interpretation-badge {
         display: flex;
         align-items: center;
@@ -137,5 +155,40 @@
     .retry-btn:hover {
         background: var(--bg-surface);
         border-color: var(--border-strong);
+    }
+
+    .prompt-toggle {
+        margin-left: auto;
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-xs);
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        font-weight: 500;
+    }
+
+    .prompt-toggle:hover {
+        background: var(--bg-surface);
+        border-color: var(--border-strong);
+    }
+
+    .prompt-display {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+        padding: var(--space-3);
+        max-height: 400px;
+        overflow: auto;
+    }
+
+    .prompt-display pre {
+        margin: 0;
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--text-secondary);
     }
 </style>
