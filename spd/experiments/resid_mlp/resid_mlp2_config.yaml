@@ -23,6 +23,7 @@ loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 0.0001
     pnorm: 2.0
+    pnorm_2: 1.5
   - classname: "StochasticReconSubsetLoss"
     coeff: 2.0
   - classname: "PGDReconSubsetLoss"
