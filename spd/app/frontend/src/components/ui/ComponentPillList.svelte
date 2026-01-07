@@ -13,8 +13,9 @@
 
     let { items, onComponentClick, pageSize = 40 }: Props = $props();
 
-    function getInterpretationLabel(componentKey: string): string | null {
-        return runState.getInterpretation(componentKey)?.label ?? null;
+    function parseComponentKey(componentKey: string): { layer: string; cIdx: number } {
+        const [layer, cIdxStr] = componentKey.split(":");
+        return { layer, cIdx: parseInt(cIdxStr) };
     }
 
     let currentPage = $state(0);
@@ -45,13 +46,18 @@
     <div class="components">
         {#each paginatedItems as { component_key, score, count_i, count_j, count_ij, n_tokens } (component_key)}
             {@const borderColor = getBorderColor(score)}
-            {@const label = getInterpretationLabel(component_key)}
+            {@const { layer, cIdx } = parseComponentKey(component_key)}
+            {@const interpState = runState.getInterpretation(layer, cIdx)}
+            {@const label = interpState?.status === "loaded" ? interpState.data?.label : null}
             <button
                 class="component-pill"
                 class:clickable={!!onComponentClick}
                 style="border-left: 8px solid {borderColor};"
                 onclick={() => onComponentClick?.(component_key)}
-                onmouseenter={() => (hoveredKey = component_key)}
+                onmouseenter={() => {
+                    hoveredKey = component_key;
+                    runState.loadInterpretation(layer, cIdx);
+                }}
                 onmouseleave={() => (hoveredKey = null)}
                 title={component_key}
             >

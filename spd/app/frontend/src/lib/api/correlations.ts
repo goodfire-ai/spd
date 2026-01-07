@@ -33,10 +33,6 @@ export type Interpretation = {
     prompt: string;
 };
 
-export async function getAllInterpretations(): Promise<Record<string, Interpretation>> {
-    return fetchJson<Record<string, Interpretation>>(`${API_URL}/api/correlations/interpretations`);
-}
-
 export async function getComponentInterpretation(
     layer: string,
     componentIdx: number,

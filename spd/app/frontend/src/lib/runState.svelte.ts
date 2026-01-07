@@ -15,8 +15,8 @@ class RunState {
     /** The currently loaded run */
     run = $state<Loadable<RunData>>(null);
 
-    /** Interpretation labels keyed by component key (layer:cIdx) */
-    interpretations = $state<Record<string, Interpretation>>({});
+    /** Lazy-loaded interpretations keyed by component key (layer:cIdx) */
+    interpretations = $state<Record<string, Loadable<Interpretation | null>>>({});
 
     /** Lazy-loaded component details keyed by component key (layer:cIdx) */
     componentDetails = $state<Record<string, Loadable<ComponentDetail>>>({});
@@ -58,14 +58,24 @@ class RunState {
         }
     }
 
-    /** Load all interpretations from the server */
-    async loadInterpretations() {
-        this.interpretations = await api.getAllInterpretations();
+    /** Load interpretation (lazy, with caching) */
+    async loadInterpretation(layer: string, cIdx: number) {
+        const cacheKey = `${layer}:${cIdx}`;
+        if (this.interpretations[cacheKey]?.status === "loading") return;
+
+        this.interpretations[cacheKey] = { status: "loading" };
+        try {
+            const interp = await api.getComponentInterpretation(layer, cIdx);
+            this.interpretations[cacheKey] = { status: "loaded", data: interp };
+        } catch (error) {
+            this.interpretations[cacheKey] = { status: "error", error };
+        }
     }
 
-    /** Get interpretation for a component, if available */
-    getInterpretation(componentKey: string): Interpretation | undefined {
-        return this.interpretations[componentKey];
+    /** Get interpretation from cache */
+    getInterpretation(layer: string, cIdx: number): Loadable<Interpretation | null> {
+        const cacheKey = `${layer}:${cIdx}`;
+        return this.interpretations[cacheKey] ?? null;
     }
 
     /** Load component detail (lazy, with caching) */

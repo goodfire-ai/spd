@@ -6,7 +6,6 @@ import {
     requestComponentInterpretation,
 } from "./api";
 import type { ComponentCorrelations, TokenStats } from "./localAttributionsTypes";
-import { runState } from "./runState.svelte";
 
 /** Correlations are paginated in the UI, so fetch more */
 const CORRELATIONS_TOP_K = 100;
@@ -110,7 +109,6 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         try {
             const result = await requestComponentInterpretation(layer, cIdx);
             interpretation = { status: "loaded", data: result };
-            runState.loadInterpretations();
         } catch (e) {
             interpretation = { status: "error", error: e instanceof Error ? e.message : String(e) };
         }

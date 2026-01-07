@@ -1,7 +1,6 @@
 <script lang="ts">
     import type { EdgeAttribution } from "../../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
-    import type { Interpretation } from "../../lib/api";
     import { runState } from "../../lib/runState.svelte";
     import { lerp } from "../local-attr/graphUtils";
 
@@ -14,15 +13,10 @@
 
     let { items, onNodeClick, pageSize, direction }: Props = $props();
 
-    // Extract component key (layer:cIdx) from node key (layer:seq:cIdx)
-    function getComponentKey(nodeKey: string): string {
+    // Extract layer and cIdx from node key (layer:seq:cIdx)
+    function parseNodeKey(nodeKey: string): { layer: string; cIdx: number } {
         const parts = nodeKey.split(":");
-        return `${parts[0]}:${parts[2]}`; // layer:cIdx
-    }
-
-    function getInterpretation(nodeKey: string): Interpretation | undefined {
-        const componentKey = getComponentKey(nodeKey);
-        return runState.getInterpretation(componentKey);
+        return { layer: parts[0], cIdx: parseInt(parts[2]) };
     }
 
     let currentPage = $state(0);
@@ -38,6 +32,8 @@
         const target = event.currentTarget as HTMLElement;
         const rect = target.getBoundingClientRect();
         tooltipPosition = { top: rect.top, left: rect.left };
+        const { layer, cIdx } = parseNodeKey(nodeKey);
+        runState.loadInterpretation(layer, cIdx);
     }
 
     function handleMouseLeave() {
@@ -76,7 +72,9 @@
         {#each paginatedItems as { nodeKey, value, normalizedMagnitude } (nodeKey)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
-            {@const interp = getInterpretation(nodeKey)}
+            {@const { layer, cIdx } = parseNodeKey(nodeKey)}
+            {@const interpState = runState.getInterpretation(layer, cIdx)}
+            {@const interp = interpState?.status === "loaded" ? interpState.data : null}
             {@const isHovered = hoveredNodeKey === nodeKey}
             <div
                 class="pill-container"
@@ -84,7 +82,7 @@
                 onmouseleave={handleMouseLeave}
             >
                 <button class="edge-pill" style="background: {bgColor};" onclick={() => onNodeClick(nodeKey)}>
-                    <span class="interp-label" style="color: {textColor};">{interp?.label ?? "N/A"}</span>
+                    <span class="interp-label" style="color: {textColor};">{interp?.label ?? "..."}</span>
                     <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
                 </button>
                 {#if isHovered && interp && tooltipPosition}

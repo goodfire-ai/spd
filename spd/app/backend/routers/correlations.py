@@ -75,30 +75,6 @@ class InterpretationResponse(BaseModel):
     prompt: str
 
 
-@router.get("/interpretations")
-@log_errors
-def get_all_interpretations(
-    loaded: DepLoadedRun,
-) -> dict[str, InterpretationResponse]:
-    """Get all interpretation labels.
-
-    Returns a dict keyed by component_key (layer:cIdx).
-    """
-    interpretations = loaded.harvest.interpretations
-    if interpretations is None:
-        return {}
-
-    return {
-        key: InterpretationResponse(
-            label=result.label,
-            confidence=result.confidence,
-            reasoning=result.reasoning,
-            prompt=result.prompt,
-        )
-        for key, result in interpretations.items()
-    }
-
-
 @router.get("/interpretations/{layer}/{component_idx}")
 @log_errors
 def get_component_interpretation(

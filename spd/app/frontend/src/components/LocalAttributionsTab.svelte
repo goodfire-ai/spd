@@ -144,7 +144,6 @@
             previousRunId = currentRunId;
             loadPromptsList();
             loadAllTokens();
-            runState.loadInterpretations();
             promptCards = [];
             activeCardPromptId = null;
         } else if (currentRunId === null && previousRunId !== null) {

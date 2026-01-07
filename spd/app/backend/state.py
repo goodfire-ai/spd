@@ -56,15 +56,8 @@ class HarvestCache:
 
     @property
     def interpretations(self) -> dict[str, InterpretationResult] | None:
-        import time
-
-        from spd.log import logger
-
         if self._interpretations is _NOT_LOADED:
-            starttime = time.time()
             self._interpretations = load_interpretations(self.run_id)
-            timetaken = time.time() - starttime
-            logger.info(f"Loaded interpretations for {self.run_id} in {timetaken:.2f} seconds")
         assert isinstance(self._interpretations, dict | None), (
             "inconsistent state, interpretations not loaded"
         )
