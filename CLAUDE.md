@@ -146,6 +146,84 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 - Uses WandB for experiment tracking and model storage
 - All runs generate timestamped output directories with configs, models, and plots
 
+## Directory Structure
+
+```
+spd-main/
+├── papers/                          # Research papers (SPD, APD)
+├── scripts/                         # Standalone utility scripts
+├── tests/                           # Test suite
+├── spd/                             # Main source code
+│   ├── app/                         # Web visualization app (see app/CLAUDE.md)
+│   ├── autointerp/                  # LLM interpretation (see autointerp/CLAUDE.md)
+│   ├── clustering/                  # Component clustering (see clustering/CLAUDE.md)
+│   ├── harvest/                     # Statistics collection (see harvest/CLAUDE.md)
+│   ├── experiments/                 # Experiment implementations
+│   │   ├── tms/                     # Toy Model of Superposition
+│   │   ├── resid_mlp/               # Residual MLP
+│   │   ├── lm/                      # Language models
+│   │   └── ih/                      # Induction heads
+│   ├── metrics/                     # Metric functions for WandB (CI histograms, etc.)
+│   ├── models/
+│   │   ├── component_model.py       # ComponentModel, SPDRunInfo, from_pretrained()
+│   │   └── components.py            # LinearComponent, EmbeddingComponent, etc.
+│   ├── scripts/                     # CLI entry points (spd-run, spd-local)
+│   ├── utils/
+│   │   └── slurm.py                 # SlurmConfig, submit functions
+│   ├── configs.py                   # Pydantic configs (Config, ModuleInfo, etc.)
+│   ├── registry.py                  # Experiment registry (name → config)
+│   ├── run_spd.py                   # Main optimization loop
+│   ├── losses.py                    # Loss functions (faithfulness, reconstruction, etc.)
+│   ├── figures.py                   # WandB figure generation
+│   └── settings.py                  # SPD_OUT_DIR, SLURM_LOGS_DIR, SBATCH_SCRIPTS_DIR
+├── Makefile                         # Dev commands (make check, make test)
+└── pyproject.toml                   # Package config
+```
+
+## Quick Navigation
+
+### CLI Entry Points
+
+| Command | Entry Point | Description |
+|---------|-------------|-------------|
+| `spd-run` | `spd/scripts/run.py` | SLURM-based experiment runner |
+| `spd-local` | `spd/scripts/run_local.py` | Local experiment runner |
+| `spd-harvest` | `spd/harvest/scripts/cli.py` | Submit harvest SLURM job |
+| `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
+| `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
+
+### Files to Skip When Searching
+
+Use `spd/` as the search root (not repo root) to avoid noise.
+
+**Always skip:**
+- `.venv/` - Virtual environment
+- `__pycache__/`, `.pytest_cache/`, `.ruff_cache/` - Build artifacts
+- `node_modules/` - Frontend dependencies
+- `.git/` - Version control
+- `.data/` - Runtime data/caches
+- `notebooks/` - Analysis notebooks (unless explicitly relevant)
+- `wandb/` - WandB local files
+
+**Usually skip unless relevant:**
+- `tests/` - Test files (unless debugging test failures)
+- `papers/` - Research paper drafts
+
+### Common Call Chains
+
+**Running Experiments:**
+- `spd-run` → `spd/scripts/run.py` → `spd/utils/slurm.py` → SLURM → `spd/run_spd.py`
+- `spd-local` → `spd/scripts/run_local.py` → `spd/run_spd.py` directly
+
+**Harvest Pipeline:**
+- `spd-harvest` → `spd/harvest/scripts/cli.py` → `spd/utils/slurm.py` → `spd/harvest/harvest.py`
+
+**Autointerp Pipeline:**
+- `spd-autointerp` → `spd/autointerp/scripts/cli.py` → `spd/utils/slurm.py` → `spd/autointerp/interpret.py`
+
+**Clustering Pipeline:**
+- `spd-clustering` → `spd/clustering/scripts/run_pipeline.py` → `spd/utils/slurm.py` → `spd/clustering/scripts/run_clustering.py`
+
 ## Common Usage Patterns
 
 ### Running Experiments Locally (`spd-local`)
@@ -301,6 +379,7 @@ Downloaded runs are cached in `SPD_OUT_DIR/runs/<project>-<run_id>/`.
 - When making PRs, use the github template defined in `.github/pull_request_template.md`.
 - Only commit the files that include the relevant changes, don't commit all files.
 - Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
+- **Update CLAUDE.md files** when changing code structure, adding/removing files, or modifying key interfaces. Update the CLAUDE.md in the same directory (or nearest parent) as the changed files.
 
 ## Coding Guidelines
 
