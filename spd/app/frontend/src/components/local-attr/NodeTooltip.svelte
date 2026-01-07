@@ -24,6 +24,7 @@
         activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
+        nodeSubcompActs: Record<string, number>;
         tokens: string[];
         edgesBySource: Map<string, Edge[]>;
         edgesByTarget: Map<string, Edge[]>;
@@ -39,6 +40,7 @@
         activationContextsSummary,
         outputProbs,
         nodeCiVals,
+        nodeSubcompActs,
         tokens,
         edgesBySource,
         edgesByTarget,
@@ -66,6 +68,13 @@
         return nodeCiVals[key] ?? null;
     });
 
+    // Get subcomponent activation for component nodes
+    const subcompAct = $derived.by(() => {
+        if (!isComponent) return null;
+        const key = `${hoveredNode.layer}:${hoveredNode.seqIdx}:${hoveredNode.cIdx}`;
+        return nodeSubcompActs[key] ?? null;
+    });
+
     // Get cluster ID for component nodes (undefined = no mapping, null = singleton, number = cluster)
     const clusterId = $derived(
         isComponent ? clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx) : undefined,
@@ -90,6 +99,9 @@
     <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
     {#if isComponent && ciVal !== null}
         <div class="ci-value">CI: {ciVal.toFixed(3)}</div>
+    {/if}
+    {#if isComponent && subcompAct !== null}
+        <div class="subcomp-act">Subcomp Act: {subcompAct.toFixed(3)}</div>
     {/if}
     {#if clusterId !== undefined}
         <div class="cluster-id">Cluster: {clusterId ?? "null"}</div>
@@ -137,6 +149,14 @@
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         color: var(--accent-primary);
+        font-weight: 600;
+        margin: var(--space-1) 0 var(--space-2) 0;
+    }
+
+    .subcomp-act {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--accent-secondary);
         font-weight: 600;
         margin: var(--space-1) 0 var(--space-2) 0;
     }

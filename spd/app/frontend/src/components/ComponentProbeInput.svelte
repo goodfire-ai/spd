@@ -73,7 +73,7 @@
                 >{#each probeResult.tokens as tok, i (i)}<span
                         class="probe-token"
                         style="background-color:{getTokenHighlightBg(probeResult.ci_values[i])}"
-                        title="CI: {probeResult.ci_values[i].toFixed(4)}">{tok}</span
+                        title="CI: {probeResult.ci_values[i].toFixed(4)}, Act: {probeResult.subcomp_acts[i].toFixed(4)}">{tok}</span
                     >{/each}</span
             >
         </div>

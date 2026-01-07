@@ -37,7 +37,9 @@ export type GraphData = {
     edgesByTarget: Map<string, Edge[]>; // nodeKey -> edges where this node is target
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
     nodeCiVals: Record<string, number>; // node key -> CI value (or output prob for output nodes or 1 for wte node)
+    nodeSubcompActs: Record<string, number>; // node key -> subcomponent activation (v_i^T @ a)
     maxAbsAttr: number; // max absolute edge value
+    maxAbsSubcompAct: number; // max absolute subcomponent activation for normalization
     l0_total: number; // total active components at current CI threshold
     optimization?: OptimizationResult;
 };
@@ -95,6 +97,7 @@ export type ComponentDetail = {
     mean_ci: number;
     example_tokens: string[][];
     example_ci: number[][];
+    example_component_acts: number[][];
 };
 
 export type CorrelatedComponent = {
@@ -186,6 +189,7 @@ export type LayoutResult = {
 export type ComponentProbeResult = {
     tokens: string[];
     ci_values: number[];
+    subcomp_acts: number[];
 };
 
 // Display name mapping for special layers

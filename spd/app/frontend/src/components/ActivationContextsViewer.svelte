@@ -2,6 +2,7 @@
     import type { Loadable } from "../lib";
     import type { SubcomponentActivationContexts, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
+    import { displaySettings } from "../lib/displaySettings.svelte";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
@@ -228,6 +229,7 @@
                 <span class="search-error">{searchError}</span>
             {/if}
         </div>
+
     </div>
 
     <div class="component-section">
@@ -258,18 +260,20 @@
         </div>
 
         <!-- Component correlations -->
-        <div class="correlations-section">
-            <SectionHeader title="Correlated Components" />
-            {#if componentData.correlations === null || componentData.correlations.status === "loading"}
-                <StatusText>Loading...</StatusText>
-            {:else if componentData.correlations.status === "error"}
-                <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
-            {:else if componentData.correlations.data === null}
-                <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
-            {:else}
-                <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
-            {/if}
-        </div>
+        {#if displaySettings.hasAnyCorrelationStatsVisible()}
+            <div class="correlations-section">
+                <SectionHeader title="Correlated Components" />
+                {#if componentData.correlations === null || componentData.correlations.status === "loading"}
+                    <StatusText>Loading...</StatusText>
+                {:else if componentData.correlations.status === "error"}
+                    <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
+                {:else if componentData.correlations.data === null}
+                    <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
+                {:else}
+                    <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
+                {/if}
+            </div>
+        {/if}
 
         <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
 
@@ -279,6 +283,7 @@
             <ActivationContextsPagedTable
                 exampleTokens={currentComponent.data.example_tokens}
                 exampleCi={currentComponent.data.example_ci}
+                exampleComponentActs={currentComponent.data.example_component_acts}
                 activatingTokens={inputTopRecall.map(({ token }) => token)}
             />
         {:else if currentComponent?.status === "error"}
