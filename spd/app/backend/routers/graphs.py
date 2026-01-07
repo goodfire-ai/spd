@@ -313,7 +313,7 @@ def compute_graph_stream(
         )
 
         out_probs = build_out_probs(
-            ci_masked_out_probs=result.ci_masked_out_probs[0].cpu(),
+            ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
             target_out_probs=result.target_out_probs.cpu(),
             output_prob_threshold=output_prob_threshold,
             token_strings=loaded.token_strings,
@@ -489,7 +489,7 @@ def compute_graph_optimized_stream(
         )
 
         out_probs = build_out_probs(
-            ci_masked_out_probs=result.ci_masked_out_probs[0].cpu(),
+            ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
             target_out_probs=result.target_out_probs.cpu(),
             output_prob_threshold=output_prob_threshold,
             token_strings=loaded.token_strings,
