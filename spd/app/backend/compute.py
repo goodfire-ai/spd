@@ -675,6 +675,94 @@ class InterventionResult:
     ]  # [(token, id, spd_prob, logit, target_prob)]
 
 
+def parse_node_key(key: str) -> Node:
+    """Parse a node key string like 'layer:seq:cIdx' back to a Node dataclass."""
+    parts = key.split(":")
+    assert len(parts) == 3, f"Invalid node key format: {key}"
+    layer, seq_pos, component_idx = parts
+    return Node(layer=layer, seq_pos=int(seq_pos), component_idx=int(component_idx))
+
+
+def compute_output_attributions(
+    edges: list[Edge],
+    output_probs: dict[str, float],
+    final_seq_pos: int,
+) -> list[Edge]:
+    """Compute total attribution from each node to output logits at final position.
+
+    This computes the sum of all path contributions from each internal node to each
+    output node, where path contribution = product of edge values along the path.
+
+    Algorithm:
+    1. Build adjacency map: node_key -> [(child_key, edge_val), ...]
+    2. Identify output nodes at final_seq_pos
+    3. For each output node, run backward DP to compute total attribution from all nodes
+    4. Return new edges: internal_node -> output_node with summed attribution
+
+    Args:
+        edges: Connected attribution edges (adjacent layers).
+        output_probs: Output probability entries keyed by "seq:cIdx".
+        final_seq_pos: The final sequence position (len(tokens) - 1).
+
+    Returns:
+        List of edges from each internal node to each output node at final position.
+    """
+    # Build adjacency: source_key -> list of (target_key, strength)
+    adjacency: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    all_nodes: set[str] = set()
+
+    for edge in edges:
+        source_key = str(edge.source)
+        target_key = str(edge.target)
+        adjacency[source_key].append((target_key, edge.strength))
+        all_nodes.add(source_key)
+        all_nodes.add(target_key)
+
+    # Find output nodes at final position (format: "output:seq:cIdx")
+    output_nodes: list[str] = []
+    for key in output_probs:
+        # key is "seq:cIdx", check if seq matches final_seq_pos
+        seq_str, c_idx_str = key.split(":")
+        if int(seq_str) == final_seq_pos:
+            output_nodes.append(f"output:{seq_str}:{c_idx_str}")
+
+    def _get_output_attr_recursive(
+        node: str,
+        memo: dict[str, float],
+        adj: dict[str, list[tuple[str, float]]],
+    ) -> float:
+        """Compute output attribution for a node via memoized DFS."""
+        if node in memo:
+            return memo[node]
+        total = 0.0
+        for child, edge_val in adj.get(node, []):
+            total += edge_val * _get_output_attr_recursive(child, memo, adj)
+        memo[node] = total
+        return total
+
+    # For each output, compute attribution from all nodes via memoized DFS
+    new_edges: list[Edge] = []
+    for output_node in output_nodes:
+        memo: dict[str, float] = {output_node: 1.0}
+
+        # Compute attribution for all non-output nodes
+        for node in all_nodes:
+            if node.startswith("output:"):
+                continue
+            attr = _get_output_attr_recursive(node, memo, adjacency)
+            if attr != 0:
+                new_edges.append(
+                    Edge(
+                        source=parse_node_key(node),
+                        target=parse_node_key(output_node),
+                        strength=attr,
+                        is_cross_seq=False,
+                    )
+                )
+
+    return new_edges
+
+
 def compute_intervention_forward(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],

@@ -3,7 +3,7 @@
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
-    import type { NormalizeType } from "../../lib/api";
+    import type { NormalizeType, AttributionMode } from "../../lib/api";
     import {
         isInterventableNode,
         type ActivationContextsSummary,
@@ -54,6 +54,7 @@
         layerGap: number;
         normalizeEdges: NormalizeType;
         ciThreshold: Loadable<number>;
+        attributionMode: AttributionMode;
         hideUnpinnedEdges: boolean;
         hideNodeCard: boolean;
         onTopKChange: (value: number) => void;
@@ -61,6 +62,7 @@
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
+        onAttributionModeChange: (value: AttributionMode) => void;
         onHideUnpinnedEdgesChange: (value: boolean) => void;
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
@@ -86,6 +88,7 @@
         layerGap,
         normalizeEdges,
         ciThreshold,
+        attributionMode,
         hideUnpinnedEdges,
         hideNodeCard,
         onTopKChange,
@@ -93,6 +96,7 @@
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
+        onAttributionModeChange,
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
         activationContextsSummary,
@@ -610,6 +614,7 @@
             {filteredEdgeCount}
             {normalizeEdges}
             {ciThreshold}
+            {attributionMode}
             {hideUnpinnedEdges}
             {hideNodeCard}
             {onTopKChange}
@@ -617,6 +622,7 @@
             {onLayerGapChange}
             {onNormalizeChange}
             {onCiThresholdChange}
+            {onAttributionModeChange}
             {onHideUnpinnedEdgesChange}
             {onHideNodeCardChange}
         />

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { NormalizeType } from "../../lib/api";
+    import type { NormalizeType, AttributionMode } from "../../lib/api";
     import type { Loadable } from "../../lib/index";
 
     type Props = {
@@ -9,6 +9,7 @@
         filteredEdgeCount: number | null;
         normalizeEdges: NormalizeType;
         ciThreshold: Loadable<number>;
+        attributionMode?: AttributionMode;
         hideUnpinnedEdges?: boolean;
         hideNodeCard?: boolean;
         onTopKChange: (value: number) => void;
@@ -16,6 +17,7 @@
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
+        onAttributionModeChange?: (value: AttributionMode) => void;
         onHideUnpinnedEdgesChange?: (value: boolean) => void;
         onHideNodeCardChange?: (value: boolean) => void;
     };
@@ -27,6 +29,7 @@
         filteredEdgeCount,
         normalizeEdges,
         ciThreshold,
+        attributionMode,
         hideUnpinnedEdges,
         hideNodeCard,
         onTopKChange,
@@ -34,6 +37,7 @@
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
+        onAttributionModeChange,
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
     }: Props = $props();
@@ -55,6 +59,18 @@
 </script>
 
 <div class="controls-bar">
+    {#if onAttributionModeChange && attributionMode}
+        <label>
+            <span>Attribution</span>
+            <select
+                value={attributionMode}
+                onchange={(e) => onAttributionModeChange(e.currentTarget.value as AttributionMode)}
+            >
+                <option value="connected">to connected</option>
+                <option value="output">to output</option>
+            </select>
+        </label>
+    {/if}
     <label>
         <span>Edge Norm</span>
         <select value={normalizeEdges} onchange={(e) => onNormalizeChange(e.currentTarget.value as NormalizeType)}>

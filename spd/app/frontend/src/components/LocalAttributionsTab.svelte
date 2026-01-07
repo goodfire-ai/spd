@@ -97,6 +97,7 @@
         layerGap: 30,
         normalizeEdges: "layer",
         ciThreshold: 0,
+        attributionMode: "connected",
     };
 
     // Edge count is derived from the graph rendering, not stored per-graph
@@ -522,14 +523,14 @@
         loadingState = null;
     }
 
-    // Refetch graph data when normalize or ciThreshold changes (these affect server-side filtering)
+    // Refetch graph data when normalize, ciThreshold, or attributionMode changes (these affect server-side filtering)
     async function refetchActiveGraphData() {
         if (!activeCard || !activeGraph) return;
 
-        const { normalizeEdges, ciThreshold } = activeGraph.viewSettings;
+        const { normalizeEdges, ciThreshold, attributionMode } = activeGraph.viewSettings;
         refetchingGraphId = activeGraph.id;
         try {
-            const storedGraphs = await api.getGraphs(activeCard.id, normalizeEdges, ciThreshold);
+            const storedGraphs = await api.getGraphs(activeCard.id, normalizeEdges, ciThreshold, attributionMode);
             const matchingData = storedGraphs.find((g) => g.id === activeGraph.id);
 
             if (!matchingData) {
@@ -581,6 +582,11 @@
 
     async function handleCiThresholdChange(value: number) {
         updateActiveGraphViewSettings({ ciThreshold: value });
+        await refetchActiveGraphData();
+    }
+
+    async function handleAttributionModeChange(value: api.AttributionMode) {
+        updateActiveGraphViewSettings({ attributionMode: value });
         await refetchActiveGraphData();
     }
 
@@ -705,6 +711,7 @@
                                         ciThreshold={refetchingGraphId === activeGraph.id
                                             ? { status: "loading" }
                                             : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
+                                        attributionMode={activeGraph.viewSettings.attributionMode}
                                         {hideUnpinnedEdges}
                                         {hideNodeCard}
                                         onTopKChange={handleTopKChange}
@@ -712,6 +719,7 @@
                                         onLayerGapChange={handleLayerGapChange}
                                         onNormalizeChange={handleNormalizeChange}
                                         onCiThresholdChange={handleCiThresholdChange}
+                                        onAttributionModeChange={handleAttributionModeChange}
                                         onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                         onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     />
@@ -764,6 +772,7 @@
                                     ciThreshold={refetchingGraphId === activeGraph.id
                                         ? { status: "loading" }
                                         : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
+                                    attributionMode={activeGraph.viewSettings.attributionMode}
                                     {hideUnpinnedEdges}
                                     {hideNodeCard}
                                     onTopKChange={handleTopKChange}
@@ -771,6 +780,7 @@
                                     onLayerGapChange={handleLayerGapChange}
                                     onNormalizeChange={handleNormalizeChange}
                                     onCiThresholdChange={handleCiThresholdChange}
+                                    onAttributionModeChange={handleAttributionModeChange}
                                     onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                     {activationContextsSummary}

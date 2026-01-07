@@ -17,6 +17,7 @@ from spd.app.backend.compute import (
     Edge,
     compute_local_attributions,
     compute_local_attributions_optimized,
+    compute_output_attributions,
 )
 from spd.app.backend.database import OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
@@ -270,6 +271,7 @@ def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
 
 
 NormalizeType = Literal["none", "target", "layer"]
+AttributionMode = Literal["connected", "output"]
 
 
 def compute_max_abs_attr(edges: list[Edge]) -> float:
@@ -611,11 +613,16 @@ def get_graphs(
     ci_threshold: Annotated[float, Query(ge=0)],
     loaded: DepLoadedRun,
     manager: DepStateManager,
+    attribution_mode: Annotated[AttributionMode, Query()] = "connected",
 ) -> list[GraphData | GraphDataWithOptimization]:
     """Get all stored graphs for a prompt.
 
     Returns list of graphs (both standard and optimized) for the given prompt.
     Returns empty list if no graphs exist.
+
+    Args:
+        attribution_mode: "connected" for edges between adjacent layers (default),
+                         "output" for edges showing total attribution to output nodes.
     """
     db = manager.db
     prompt = db.get_prompt(prompt_id)
@@ -626,6 +633,8 @@ def get_graphs(
     stored_graphs = db.get_graphs(prompt_id)
 
     num_tokens = len(prompt.token_ids)
+    final_seq_pos = num_tokens - 1
+
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
         is_optimized = graph.optimization_params is not None
@@ -635,13 +644,32 @@ def get_graphs(
         node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
             filtered_node_ci_vals, num_tokens, graph.out_probs
         )
-        edges_data, max_abs_attr = process_edges_for_response(
-            raw_edges=graph.edges,
-            normalize=normalize,
-            num_tokens=num_tokens,
-            node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
-            is_optimized=is_optimized,
-        )
+
+        # Compute edges based on attribution mode
+        if attribution_mode == "output":
+            # Compute output attribution edges on-the-fly from connected edges
+            output_probs_keys = {k: v.prob for k, v in graph.out_probs.items()}
+            output_attr_edges = compute_output_attributions(
+                edges=graph.edges,
+                output_probs=output_probs_keys,
+                final_seq_pos=final_seq_pos,
+            )
+            edges_data, max_abs_attr = process_edges_for_response(
+                raw_edges=output_attr_edges,
+                normalize=normalize,
+                num_tokens=num_tokens,
+                node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
+                is_optimized=is_optimized,
+            )
+        else:
+            # Default: use connected edges
+            edges_data, max_abs_attr = process_edges_for_response(
+                raw_edges=graph.edges,
+                normalize=normalize,
+                num_tokens=num_tokens,
+                node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
+                is_optimized=is_optimized,
+            )
 
         if not is_optimized:
             # Standard graph

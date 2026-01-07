@@ -7,6 +7,7 @@ import { buildEdgeIndexes } from "../localAttributionsTypes";
 import { API_URL, ApiError, fetchJson } from "./index";
 
 export type NormalizeType = "none" | "target" | "layer";
+export type AttributionMode = "connected" | "output";
 
 export type GraphProgress = {
     current: number;
@@ -171,10 +172,12 @@ export async function getGraphs(
     promptId: number,
     normalize: NormalizeType,
     ciThreshold: number,
+    attributionMode: AttributionMode = "connected",
 ): Promise<GraphData[]> {
     const url = new URL(`${API_URL}/api/graphs/${promptId}`);
     url.searchParams.set("normalize", normalize);
     url.searchParams.set("ci_threshold", String(ciThreshold));
+    url.searchParams.set("attribution_mode", attributionMode);
     const graphs = await fetchJson<Omit<GraphData, "edgesBySource" | "edgesByTarget">[]>(url.toString());
     return graphs.map((g) => {
         const { edgesBySource, edgesByTarget } = buildEdgeIndexes(g.edges);
