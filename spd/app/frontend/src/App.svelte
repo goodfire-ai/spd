@@ -18,7 +18,7 @@
     let showRunSelector = $state(true);
 
     // Lifted activation contexts state - shared between tabs
-    let activationContextsSummary = $state<ActivationContextsSummary | null>(null);
+    let activationContextsSummary = $state<Loadable<ActivationContextsSummary>>(null);
 
     // When run loads successfully, hide selector and load activation contexts
     $effect(() => {
@@ -33,8 +33,19 @@
     }
 
     async function loadActivationContextsSummary() {
-        activationContextsSummary = await api.getActivationContextsSummary();
+        activationContextsSummary = { status: "loading" };
+        try {
+            const data = await api.getActivationContextsSummary();
+            activationContextsSummary = { status: "loaded", data };
+        } catch (e) {
+            activationContextsSummary = { status: "error", error: e };
+        }
     }
+
+    // Extract data for components that just need data | null
+    const activationContextsData = $derived(
+        activationContextsSummary?.status === "loaded" ? activationContextsSummary.data : null,
+    );
 
     function handleChangeRun() {
         showRunSelector = true;
@@ -128,7 +139,7 @@
             {#if runState.run?.status === "loaded"}
                 <!-- Use hidden class instead of conditional rendering to preserve state -->
                 <div class="tab-content" class:hidden={activeTab !== "prompts"}>
-                    <LocalAttributionsTab {activationContextsSummary} />
+                    <LocalAttributionsTab activationContextsSummary={activationContextsData} />
                 </div>
                 <div class="tab-content" class:hidden={activeTab !== "components"}>
                     <ActivationContextsTab {activationContextsSummary} />
