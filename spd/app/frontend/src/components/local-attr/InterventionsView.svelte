@@ -589,6 +589,10 @@
         return (prob * 100).toExponential(1) + "%";
     }
 
+    function formatLogit(logit: number): string {
+        return logit.toFixed(2);
+    }
+
     function getRowLabel(layer: string): string {
         const info = parseLayer(layer);
         const rowKey = getRowKey(layer);
@@ -877,10 +881,10 @@
                                                     {#if pred}
                                                         <span class="pred-token">"{pred.token}"</span>
                                                         <span class="pred-prob spd"
-                                                            >SPD: {formatProb(pred.spd_prob)}</span
+                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(pred.logit)})</span
                                                         >
                                                         <span class="pred-prob targ"
-                                                            >Targ: {formatProb(pred.target_prob)}</span
+                                                            >Targ: {formatProb(pred.target_prob)} (logit: {formatLogit(pred.target_logit)})</span
                                                         >
                                                     {:else}
                                                         -
@@ -946,8 +950,11 @@
                                                                 >
                                                                     {#if pred}
                                                                         <span class="pred-token">"{pred.token}"</span>
-                                                                        <span class="pred-prob"
-                                                                            >{formatProb(pred.spd_prob)}</span
+                                                                        <span class="pred-prob spd"
+                                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(pred.logit)})</span
+                                                                        >
+                                                                        <span class="pred-prob targ"
+                                                                            >Targ: {formatProb(pred.target_prob)} (logit: {formatLogit(pred.target_logit)})</span
                                                                         >
                                                                     {:else}
                                                                         -

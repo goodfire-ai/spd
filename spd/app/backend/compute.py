@@ -683,8 +683,8 @@ class InterventionResult:
 
     input_tokens: list[str]
     predictions_per_position: list[
-        list[tuple[str, int, float, float, float]]
-    ]  # [(token, id, spd_prob, logit, target_prob)]
+        list[tuple[str, int, float, float, float, float]]
+    ]  # [(token, id, spd_prob, logit, target_prob, target_logit)]
 
 
 def compute_intervention_forward(
@@ -735,18 +735,20 @@ def compute_intervention_forward(
         target_out_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(target_logits, dim=-1)
 
     # Get top-k predictions per position (based on SPD model's top-k)
-    predictions_per_position: list[list[tuple[str, int, float, float, float]]] = []
+    predictions_per_position: list[list[tuple[str, int, float, float, float, float]]] = []
     for pos in range(seq_len):
         pos_spd_probs = spd_probs[0, pos]
         pos_spd_logits = spd_logits[0, pos]
         pos_target_out_probs = target_out_probs[0, pos]
+        pos_target_logits = target_logits[0, pos]
         top_probs, top_ids = torch.topk(pos_spd_probs, top_k)
 
-        pos_predictions: list[tuple[str, int, float, float, float]] = []
+        pos_predictions: list[tuple[str, int, float, float, float, float]] = []
         for spd_prob, token_id in zip(top_probs, top_ids, strict=True):
             tid = int(token_id.item())
             token_str = tokenizer.decode([tid])
             target_prob = float(pos_target_out_probs[tid].item())
+            target_logit = float(pos_target_logits[tid].item())
             pos_predictions.append(
                 (
                     token_str,
@@ -754,6 +756,7 @@ def compute_intervention_forward(
                     float(spd_prob.item()),
                     float(pos_spd_logits[tid].item()),
                     target_prob,
+                    target_logit,
                 )
             )
         predictions_per_position.append(pos_predictions)
