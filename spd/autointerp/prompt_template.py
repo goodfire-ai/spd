@@ -43,7 +43,7 @@ INTERPRETATION_SCHEMA = {
         "confidence": {
             "type": "string",
             "enum": ["low", "medium", "high"],
-            "description": "How clear-cut the interpretation is",
+            "description": "low = multiple plausible interpretations or weak signal; medium = coherent pattern but some noise; high = clear, consistent pattern across metrics",
         },
         "reasoning": {
             "type": "string",
@@ -146,7 +146,7 @@ Label this neural network component from a sparse decomposition.
 **Model**: {arch.model_class} ({arch.n_blocks} layers)
 **Dataset**: {dataset_description}
 **Component location**: {layer_desc}
-**Firing density**: {component.mean_ci * 100:.2f}%{firing_rate_context}
+**Activation rate**: {component.mean_ci * 100:.2f}%{firing_rate_context}
 
 ---
 
@@ -164,8 +164,10 @@ Label this neural network component from a sparse decomposition.
 
 ## Task
 
-Based on the output tokens this component helps predict, what concept or pattern does it represent?
+Based on the above information, what concept or pattern does this component represent?
 Focus on what the component *does* (what tokens it helps predict) rather than just what triggers it.
+
+If the pattern is unclear or the evidence is weak, say so. Use "unclear" or "noisy" in your label if appropriate—do not force an interpretation where none exists.
 
 Return JSON:
 ```json
@@ -182,13 +184,13 @@ def _build_input_token_section(
     section = """\
 ## Correlations with Input Tokens
 
-The following metrics concern correlations between this component firing, and the "current" token: the token on which the component fires.
+The following metrics concern correlations between this component firing and the "current" token (the token at the position where the component is active).
 
 """
 
     # Recall section
     if input_stats.top_recall:
-        section += '_**Recall** = "What % of this component\'s firings occurred on token X?"_\n'
+        section += '**Recall:** _"What % of this component\'s firings occurred on token X?"_\n'
         for token, recall in input_stats.top_recall[:10]:
             pct = recall * 100
             if pct >= 1:
@@ -199,16 +201,14 @@ The following metrics concern correlations between this component firing, and th
 
     # Precision section - very important for detecting deterministic triggers
     if input_stats.top_precision:
-        section += '_**Precision** = "When token X appears, what % of the time does this component fire?"_\n'
+        section += '**Precision:** _"When token X appears, what % of the time does this component fire?"_\n'
         for token, prec in input_stats.top_precision[:10]:
             section += f"  {repr(token)}: {prec * 100:.0f}%\n"
         section += "\n"
 
     # PMI section - shows surprising associations
     if input_pmi:
-        section += (
-            "_**PMI** = Tokens with higher-than-expected co-occurrence (surprisal measure)_\n"
-        )
+        section += "**PMI:** _Tokens with higher-than-expected co-occurrence_\n"
         # Filter out very short tokens (likely subword noise) and show top PMI
         filtered_pmi = [
             (t, p)
@@ -231,13 +231,13 @@ def _build_output_token_section(
     section = """\
 ## Correlations with Predicted Tokens
 
-The following metrics concern correlations between this component firing, and the subsequently predicted token.
+The following metrics concern correlations between this component firing and the token the model predicts at that position.
 
 """
 
     # Precision section
     if output_stats.top_precision:
-        section += '_**Precision** = "When the model predicts token X, what % of the time is this component active?"_\n\n'
+        section += '**Precision:** _"When the model predicts token X, what % of the time is this component active?"_\n\n'
         # Group by precision ranges
         very_high = [(t, p) for t, p in output_stats.top_precision[:top_k] if p > 0.90]
         high = [(t, p) for t, p in output_stats.top_precision[:top_k] if 0.70 <= p <= 0.90]
@@ -263,9 +263,7 @@ The following metrics concern correlations between this component firing, and th
 
     # PMI section for output tokens
     if output_pmi:
-        section += (
-            "_**PMI** = Tokens with higher-than-expected probability when this component fires_\n"
-        )
+        section += "**PMI:** _Tokens with higher-than-expected co-occurrence_\n"
         filtered_pmi = [
             (t, p)
             for t, p in output_pmi
@@ -299,12 +297,12 @@ _Showing tokens where CI > {ci_threshold} (component is active)_
         full_text = tokenizer.decode(valid_tokens) if valid_tokens else ""
         display_text = full_text.replace("\n", " ")
 
-        # Get high-CI tokens
+        # Get high-CI tokens with their CI values
         active_tokens = []
         for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
             if ci > ci_threshold and tid != padding_sentinel and tid >= 0:
                 tok = lookup[tid].strip()
-                active_tokens.append(f'"{tok}"')
+                active_tokens.append(f'"{tok}" ({ci:.2f})')
 
         active_str = ", ".join(active_tokens)
 
