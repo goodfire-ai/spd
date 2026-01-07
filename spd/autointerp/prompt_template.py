@@ -180,7 +180,9 @@ def _build_input_token_section(
 ) -> str:
     """Build input token analysis section using recall, precision, and PMI."""
     section = """\
-## Input Token Analysis
+## Correlations with Input Tokens
+
+The following metrics concern correlations between this component firing, and the "current" token: the token on which the component fires.
 
 """
 
@@ -227,9 +229,9 @@ def _build_output_token_section(
 ) -> str:
     """Build output token analysis section using precision and PMI."""
     section = """\
-## Output Token Analysis
+## Correlations with Predicted Tokens
 
-_These are tokens the model predicts when this component is active._
+The following metrics concern correlations between this component firing, and the subsequently predicted token.
 
 """
 
