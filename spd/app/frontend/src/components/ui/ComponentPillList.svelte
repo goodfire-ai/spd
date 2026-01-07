@@ -29,6 +29,14 @@
         currentPage = 0;
     });
 
+    // Fetch interpretations for visible items
+    $effect(() => {
+        for (const { component_key } of paginatedItems) {
+            const { layer, cIdx } = parseComponentKey(component_key);
+            runState.loadInterpretation(layer, cIdx);
+        }
+    });
+
     function getBorderColor(score: number): string {
         const intensity = lerp(0.3, 1, score);
         return `rgba(22, 163, 74, ${intensity})`;
@@ -54,10 +62,7 @@
                 class:clickable={!!onComponentClick}
                 style="border-left: 8px solid {borderColor};"
                 onclick={() => onComponentClick?.(component_key)}
-                onmouseenter={() => {
-                    hoveredKey = component_key;
-                    runState.loadInterpretation(layer, cIdx);
-                }}
+                onmouseenter={() => (hoveredKey = component_key)}
                 onmouseleave={() => (hoveredKey = null)}
                 title={component_key}
             >

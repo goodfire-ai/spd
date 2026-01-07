@@ -32,8 +32,6 @@
         const target = event.currentTarget as HTMLElement;
         const rect = target.getBoundingClientRect();
         tooltipPosition = { top: rect.top, left: rect.left };
-        const { layer, cIdx } = parseNodeKey(nodeKey);
-        runState.loadInterpretation(layer, cIdx);
     }
 
     function handleMouseLeave() {
@@ -45,6 +43,14 @@
     $effect(() => {
         items; // eslint-disable-line @typescript-eslint/no-unused-expressions
         currentPage = 0;
+    });
+
+    // Fetch interpretations for visible items
+    $effect(() => {
+        for (const { nodeKey } of paginatedItems) {
+            const { layer, cIdx } = parseNodeKey(nodeKey);
+            runState.loadInterpretation(layer, cIdx);
+        }
     });
 
     function getBgColor(normalizedMagnitude: number): string {
