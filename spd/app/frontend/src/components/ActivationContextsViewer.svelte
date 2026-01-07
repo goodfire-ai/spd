@@ -283,7 +283,7 @@
             <ActivationContextsPagedTable
                 exampleTokens={currentComponent.data.example_tokens}
                 exampleCi={currentComponent.data.example_ci}
-                exampleInnerActs={currentComponent.data.example_inner_acts}
+                exampleComponentActs={currentComponent.data.example_component_acts}
                 activatingTokens={inputTopRecall.map(({ token }) => token)}
             />
         {:else if currentComponent?.status === "error"}

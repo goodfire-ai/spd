@@ -16,11 +16,11 @@ export const NODE_COLOR_MODE_LABELS: Record<NodeColorMode, string> = {
 };
 
 // Example color mode for activation contexts viewer
-export type ExampleColorMode = "ci" | "inner_act" | "both";
+export type ExampleColorMode = "ci" | "component_act" | "both";
 
 export const EXAMPLE_COLOR_MODE_LABELS: Record<ExampleColorMode, string> = {
     ci: "CI",
-    inner_act: "Inner Act",
+    component_act: "Component Act",
     both: "Both",
 };
 
@@ -78,7 +78,7 @@ function loadShowEdgeAttributions(): boolean {
 }
 
 const VALID_NODE_COLOR_MODES: NodeColorMode[] = ["ci", "subcomp_act"];
-const VALID_EXAMPLE_COLOR_MODES: ExampleColorMode[] = ["ci", "inner_act", "both"];
+const VALID_EXAMPLE_COLOR_MODES: ExampleColorMode[] = ["ci", "component_act", "both"];
 
 function loadNodeColorMode(): NodeColorMode {
     const stored = loadFromStorage();

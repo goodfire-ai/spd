@@ -27,7 +27,7 @@ def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | No
                 ActivationExample(
                     token_ids=ex["token_ids"],
                     ci_values=ex["ci_values"],
-                    inner_acts=ex.get("inner_acts", [0.0] * len(ex["token_ids"])),
+                    component_acts=ex.get("component_acts", [0.0] * len(ex["token_ids"])),
                 )
                 for ex in data["activation_examples"]
             ]

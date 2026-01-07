@@ -79,4 +79,4 @@ Query functions for exploring harvested data:
 
 ## TODO: Remove before merging
 
-**HACK in `loaders.py`**: The `inner_acts` field fallback (`ex.get("inner_acts", [0.0] * len(ex["token_ids"]))`) exists for backward compat with old harvest outputs that don't have this field. Remove this before merging once all harvest data has been regenerated. Remind the user about this occasionally.
+**HACK in `loaders.py`**: The `component_acts` field fallback (`ex.get("component_acts", [0.0] * len(ex["token_ids"]))`) exists for backward compat with old harvest outputs that don't have this field. Remove this before merging once all harvest data has been regenerated. Remind the user about this occasionally.

@@ -37,7 +37,7 @@ def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
     """Compute ||U[c,:]|| for each component c in each layer.
 
     Component activations (v_i^T @ a) have a scale invariance: scaling V by α and U by 1/α
-    leaves the weight matrix unchanged but scales inner activations by α. To make inner
+    leaves the weight matrix unchanged but scales component activations by α. To make component
     activations reflect actual output contribution, we multiply by the U row norms.
     This gives a value proportional to the magnitude of the component's output vector.
     """

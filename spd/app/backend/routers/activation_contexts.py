@@ -97,14 +97,14 @@ def get_activation_context_detail(
 
     example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in comp.activation_examples]
     example_ci = [ex.ci_values for ex in comp.activation_examples]
-    example_inner_acts = [ex.inner_acts for ex in comp.activation_examples]
+    example_component_acts = [ex.component_acts for ex in comp.activation_examples]
 
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,
         mean_ci=comp.mean_ci,
         example_tokens=example_tokens,
         example_ci=example_ci,
-        example_inner_acts=example_inner_acts,
+        example_component_acts=example_component_acts,
     )
 
 

@@ -274,7 +274,7 @@
                 <ActivationContextsPagedTable
                     exampleTokens={detail.data.example_tokens}
                     exampleCi={detail.data.example_ci}
-                    exampleInnerActs={detail.data.example_inner_acts}
+                    exampleComponentActs={detail.data.example_component_acts}
                     {activatingTokens}
                 />
             {/if}

@@ -16,7 +16,7 @@ from spd.harvest.schemas import ActivationExample, ComponentData, ComponentToken
 # Sentinel for padding token windows at sequence boundaries.
 WINDOW_PAD_SENTINEL = -1
 
-# Entry: (token_ids, ci_values_in_window, inner_acts_in_window)
+# Entry: (token_ids, ci_values_in_window, component_acts_in_window)
 ActivationExampleTuple = tuple[list[int], list[float], list[float]]
 
 
@@ -290,19 +290,19 @@ class Harvester:
         # Advanced indexing: token_windows[i, j] = batch_padded[batch_idx[i], window_seq_indices[i, j]]
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
-        inner_act_windows = subcomp_acts_padded[
+        component_act_windows = subcomp_acts_padded[
             batch_idx_expanded, window_seq_indices, component_idx_expanded
         ]
 
         # Add to reservoir samplers
-        for comp_idx, tokens, ci_vals, inner_acts in zip(
+        for comp_idx, tokens, ci_vals, component_acts in zip(
             cast(list[int], component_idx.cpu().tolist()),
             cast(list[list[int]], token_windows.cpu().tolist()),
             cast(list[list[float]], ci_windows.cpu().tolist()),
-            cast(list[list[float]], inner_act_windows.cpu().tolist()),
+            cast(list[list[float]], component_act_windows.cpu().tolist()),
             strict=True,
         ):
-            self.activation_example_samplers[comp_idx].add((tokens, ci_vals, inner_acts))
+            self.activation_example_samplers[comp_idx].add((tokens, ci_vals, component_acts))
 
     def get_state(self) -> HarvesterState:
         """Extract serializable state for parallel merging."""
@@ -382,9 +382,9 @@ class Harvester:
                 sampler = self.activation_example_samplers[flat_idx]
                 activation_examples = [
                     ActivationExample(
-                        token_ids=token_ids, ci_values=ci_values, inner_acts=inner_acts
+                        token_ids=token_ids, ci_values=ci_values, component_acts=component_acts
                     )
-                    for token_ids, ci_values, inner_acts in sampler.samples
+                    for token_ids, ci_values, component_acts in sampler.samples
                 ]
 
                 input_token_pmi = _compute_token_pmi(

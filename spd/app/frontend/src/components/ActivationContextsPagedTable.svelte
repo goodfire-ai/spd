@@ -10,23 +10,23 @@
         // Columnar data
         exampleTokens: string[][]; // [n_examples, window_size]
         exampleCi: number[][]; // [n_examples, window_size]
-        exampleInnerActs: number[][]; // [n_examples, window_size]
+        exampleComponentActs: number[][]; // [n_examples, window_size]
         // Unique activating tokens (from pr_tokens, already sorted by recall)
         activatingTokens: string[];
     }
 
-    let { exampleTokens, exampleCi, exampleInnerActs, activatingTokens }: Props = $props();
+    let { exampleTokens, exampleCi, exampleComponentActs, activatingTokens }: Props = $props();
 
-    // Compute max absolute inner act for normalization (display-only concern)
-    let maxAbsInnerAct = $derived.by(() => {
+    // Compute max absolute component act for normalization (display-only concern)
+    let maxAbsComponentAct = $derived.by(() => {
         let max = 0;
-        for (const row of exampleInnerActs) {
+        for (const row of exampleComponentActs) {
             for (const val of row) {
                 const abs = Math.abs(val);
                 if (abs > max) max = abs;
             }
         }
-        if (max === 0) throw new Error("No nonzero inner acts found");
+        if (max === 0) throw new Error("No nonzero component acts found");
         return max;
     });
 
@@ -148,9 +148,9 @@
                     <TokenHighlights
                         tokenStrings={exampleTokens[idx]}
                         tokenCi={exampleCi[idx]}
-                        tokenInnerActs={exampleInnerActs[idx]}
+                        tokenComponentActs={exampleComponentActs[idx]}
                         colorMode={displaySettings.exampleColorMode}
-                        {maxAbsInnerAct}
+                        {maxAbsComponentAct}
                     />
                 </div>
             {/each}

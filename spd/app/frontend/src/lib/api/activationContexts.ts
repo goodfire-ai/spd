@@ -11,7 +11,7 @@ export type SubcomponentActivationContexts = {
     mean_ci: number;
     example_tokens: string[][];
     example_ci: number[][];
-    example_inner_acts: number[][];
+    example_component_acts: number[][];
 };
 
 export type SubcomponentMetadata = {

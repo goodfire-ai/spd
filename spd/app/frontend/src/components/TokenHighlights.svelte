@@ -5,36 +5,36 @@
     interface Props {
         tokenStrings: string[];
         tokenCi: number[]; // CI values (0-1)
-        tokenInnerActs: number[]; // Inner activations (can be negative)
+        tokenComponentActs: number[]; // Component activations (can be negative)
         colorMode: ExampleColorMode;
-        maxAbsInnerAct: number; // For normalizing inner act colors
+        maxAbsComponentAct: number; // For normalizing component act colors
     }
 
-    let { tokenStrings, tokenCi, tokenInnerActs, colorMode, maxAbsInnerAct }: Props = $props();
+    let { tokenStrings, tokenCi, tokenComponentActs, colorMode, maxAbsComponentAct }: Props = $props();
 
-    function getTooltipText(ci: number, innerAct: number): string {
+    function getTooltipText(ci: number, componentAct: number): string {
         if (colorMode === "ci") {
             return `CI: ${ci.toFixed(3)}`;
-        } else if (colorMode === "inner_act") {
-            return `Act: ${innerAct.toFixed(3)}`;
+        } else if (colorMode === "component_act") {
+            return `Act: ${componentAct.toFixed(3)}`;
         } else {
-            return `CI: ${ci.toFixed(3)} | Act: ${innerAct.toFixed(3)}`;
+            return `CI: ${ci.toFixed(3)} | Act: ${componentAct.toFixed(3)}`;
         }
     }
 
-    function getBgColor(ci: number, innerAct: number): string {
-        if (colorMode === "inner_act") {
-            const normalizedAbs = Math.abs(innerAct) / maxAbsInnerAct;
-            return getComponentActivationColor(innerAct, normalizedAbs);
+    function getBgColor(ci: number, componentAct: number): string {
+        if (colorMode === "component_act") {
+            const normalizedAbs = Math.abs(componentAct) / maxAbsComponentAct;
+            return getComponentActivationColor(componentAct, normalizedAbs);
         } else {
             return getTokenHighlightBg(ci);
         }
     }
 
-    function getUnderlineColor(innerAct: number): string {
+    function getUnderlineColor(componentAct: number): string {
         if (colorMode !== "both") return "transparent";
-        const normalizedAbs = Math.abs(innerAct) / maxAbsInnerAct;
-        return getComponentActivationColor(innerAct, normalizedAbs);
+        const normalizedAbs = Math.abs(componentAct) / maxAbsComponentAct;
+        return getComponentActivationColor(componentAct, normalizedAbs);
     }
 </script>
 
@@ -42,10 +42,10 @@
     {#each tokenStrings as tok, i (i)}
         <span
             class="token-highlight"
-            style="background-color:{getBgColor(tokenCi[i], tokenInnerActs[i])};--underline-color:{getUnderlineColor(
-                tokenInnerActs[i],
+            style="background-color:{getBgColor(tokenCi[i], tokenComponentActs[i])};--underline-color:{getUnderlineColor(
+                tokenComponentActs[i],
             )}"
-            data-tooltip={getTooltipText(tokenCi[i], tokenInnerActs[i])}
+            data-tooltip={getTooltipText(tokenCi[i], tokenComponentActs[i])}
         >
             {tok}
         </span>
