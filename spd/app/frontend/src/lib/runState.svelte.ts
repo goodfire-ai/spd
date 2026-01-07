@@ -63,8 +63,8 @@ class RunState {
     async loadInterpretation(layer: string, cIdx: number) {
         const cacheKey = `${layer}:${cIdx}`;
         // Use untrack to avoid creating reactive dependency when checking cache
-        const alreadyCached = untrack(() => cacheKey in this.interpretations);
-        if (alreadyCached) return;
+        const status = untrack(() => this.interpretations[cacheKey]?.status);
+        if (status === "loading" || status === "loaded") return;
 
         this.interpretations[cacheKey] = { status: "loading" };
         try {
