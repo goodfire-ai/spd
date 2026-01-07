@@ -45,7 +45,7 @@
     let correlations = $state<Loadable<ComponentCorrelations>>(null);
 
     // Token stats state (from batch job)
-    let tokenStats = $state<Loadable<TokenStats>>(null);
+    let tokenStats = $state<Loadable<TokenStats | null>>(null);
 
     // Interpretation state
     const interp = useInterpretation(() => ({ layer, cIdx }));
@@ -75,7 +75,7 @@
         getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
                 if (cancelled) return;
-                tokenStats = data ? { status: "loaded", data } : null;
+                tokenStats = { status: "loaded", data };
             })
             .catch((error) => {
                 if (cancelled) return;
@@ -89,57 +89,43 @@
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
 
-    type TokenValue = { token: string; value: number };
-    type TokenList = { title: string; mathNotation?: string; items: TokenValue[] };
-
-    // Transform tokenStats into Loadable<TokenList[]> for input tokens section
-    const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
-        if (tokenStats == null) return null;
-        if (tokenStats.status === "loading") return { status: "loading" };
-        if (tokenStats.status === "error") return tokenStats;
-        return {
-            status: "loaded",
-            data: [
-                {
-                    title: "Top PMI",
-                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
-                    items: tokenStats.data.input.top_pmi
-                        .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
-                        .map(([token, value]) => ({ token, value })),
-                },
-            ],
-        };
+    // Derive token lists from loaded tokenStats (null if not loaded or no data)
+    const inputTokenLists = $derived.by(() => {
+        if (tokenStats?.status !== "loaded" || tokenStats.data === null) return null;
+        return [
+            {
+                title: "Top PMI",
+                mathNotation: "log(P(firing, token) / P(firing)P(token))",
+                items: tokenStats.data.input.top_pmi
+                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .map(([token, value]) => ({ token, value })),
+            },
+        ];
     });
 
-    // Transform tokenStats into Loadable<TokenList[]> for output tokens section
-    const outputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
-        if (tokenStats == null) return null;
-        if (tokenStats.status === "loading") return { status: "loading" };
-        if (tokenStats.status === "error") return tokenStats;
-        return {
-            status: "loaded",
-            data: [
-                {
-                    title: "Top PMI",
-                    mathNotation: "positive association with predictions",
-                    items: tokenStats.data.output.top_pmi
-                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
-                        .map(([token, value]) => ({ token, value })),
-                },
-                {
-                    title: "Bottom PMI",
-                    mathNotation: "negative association with predictions",
-                    items: tokenStats.data.output.bottom_pmi
-                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
-                        .map(([token, value]) => ({ token, value })),
-                },
-            ],
-        };
+    const outputTokenLists = $derived.by(() => {
+        if (tokenStats?.status !== "loaded" || tokenStats.data === null) return null;
+        return [
+            {
+                title: "Top PMI",
+                mathNotation: "positive association with predictions",
+                items: tokenStats.data.output.top_pmi
+                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .map(([token, value]) => ({ token, value })),
+            },
+            {
+                title: "Bottom PMI",
+                mathNotation: "negative association with predictions",
+                items: tokenStats.data.output.bottom_pmi
+                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .map(([token, value]) => ({ token, value })),
+            },
+        ];
     });
 
     // Activating tokens from token stats (for highlighting)
     const activatingTokens = $derived.by(() => {
-        if (tokenStats == null || tokenStats.status !== "loaded") return [];
+        if (tokenStats === null || tokenStats.status !== "loaded" || tokenStats.data === null) return [];
         return tokenStats.data.input.top_recall.map(([token]) => token);
     });
 
@@ -274,17 +260,23 @@
     {/if}
 
     <div class="token-stats-row">
-        <TokenStatsSection
-            sectionTitle="Input Tokens"
-            sectionSubtitle="(what activates this component)"
-            lists={inputTokenLists}
-        />
+        {#if tokenStats === null || tokenStats.status === "loading"}
+            <StatusText>Loading token stats...</StatusText>
+        {:else if tokenStats.status === "error"}
+            <StatusText>Error: {String(tokenStats.error)}</StatusText>
+        {:else}
+            <TokenStatsSection
+                sectionTitle="Input Tokens"
+                sectionSubtitle="(what activates this component)"
+                lists={inputTokenLists}
+            />
 
-        <TokenStatsSection
-            sectionTitle="Output Tokens"
-            sectionSubtitle="(what this component predicts)"
-            lists={outputTokenLists}
-        />
+            <TokenStatsSection
+                sectionTitle="Output Tokens"
+                sectionSubtitle="(what this component predicts)"
+                lists={outputTokenLists}
+            />
+        {/if}
     </div>
 
     <!-- Component correlations -->

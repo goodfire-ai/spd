@@ -1,9 +1,10 @@
 import { getComponentInterpretation, requestComponentInterpretation, type Interpretation } from "./api";
 import { runState } from "./runState.svelte";
 
-/** Interpretation can be: none, generating, loaded, or error */
+/** Interpretation can be: none, loading, generating, loaded, or error */
 export type InterpretationState =
     | { status: "none" }
+    | { status: "loading" }
     | { status: "generating" }
     | { status: "loaded"; data: Interpretation }
     | { status: "error"; error: unknown };
@@ -23,7 +24,7 @@ export function useInterpretation(getCoords: () => { layer: string; cIdx: number
         }
         const { layer, cIdx } = coords;
         let stale = false;
-        interpretation = { status: "none" };
+        interpretation = { status: "loading" };
 
         getComponentInterpretation(layer, cIdx)
             .then((data) => {

@@ -18,8 +18,8 @@ export type { InterpretationState };
  * Handles stale request cancellation when coords change.
  */
 export function useComponentData(getCoords: () => ComponentCoords | null) {
-    let correlations = $state<Loadable<ComponentCorrelations>>(null);
-    let tokenStats = $state<Loadable<TokenStats>>(null);
+    let correlations = $state<Loadable<ComponentCorrelations | null>>(null);
+    let tokenStats = $state<Loadable<TokenStats | null>>(null);
     let interpretation = $state<InterpretationState>({ status: "none" });
 
     $effect(() => {
@@ -34,16 +34,16 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         const { layer, cIdx } = coords;
         let stale = false;
 
-        // Reset all while fetching
-        correlations = null;
-        tokenStats = null;
-        interpretation = { status: "none" };
+        // Set loading state
+        correlations = { status: "loading" };
+        tokenStats = { status: "loading" };
+        interpretation = { status: "loading" };
 
         // Fetch correlations
         getComponentCorrelations(layer, cIdx, 1000)
             .then((data) => {
                 if (stale) return;
-                correlations = data ? { status: "loaded", data } : null;
+                correlations = { status: "loaded", data };
             })
             .catch((error) => {
                 if (stale) return;
@@ -54,7 +54,7 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         getComponentTokenStats(layer, cIdx, 1000)
             .then((data) => {
                 if (stale) return;
-                tokenStats = data ? { status: "loaded", data } : null;
+                tokenStats = { status: "loaded", data };
             })
             .catch((error) => {
                 if (stale) return;

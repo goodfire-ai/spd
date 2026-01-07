@@ -12,10 +12,12 @@
 </script>
 
 <div class="interpretation-container">
-    <div class="interpretation-badge" class:loading={interpretation?.status === "generating"}>
-        {#if interpretation?.status === "generating"}
+    <div class="interpretation-badge" class:loading={interpretation.status === "loading" || interpretation.status === "generating"}>
+        {#if interpretation.status === "loading"}
+            <span class="interpretation-label loading-text">Loading...</span>
+        {:else if interpretation.status === "generating"}
             <span class="interpretation-label loading-text">Generating interpretation...</span>
-        {:else if interpretation?.status === "loaded"}
+        {:else if interpretation.status === "loaded"}
             <div class="interpretation-content">
                 <div class="interpretation-header">
                     <span class="interpretation-label">{interpretation.data.label}</span>
