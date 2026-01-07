@@ -7,11 +7,18 @@ import {
 } from "./api";
 import type { ComponentCorrelations, TokenStats } from "./localAttributionsTypes";
 import { runState } from "./runState.svelte";
-import { type InterpretationState } from "./useInterpretation.svelte";
 
 export type ComponentCoords = { layer: string; cIdx: number };
 
-export type { InterpretationState };
+/** Interpretation can be: none, loading, generating, loaded, or error */
+export type InterpretationState =
+    | { status: "none" }
+    | { status: "loading" }
+    | { status: "generating" }
+    | { status: "loaded"; data: Interpretation }
+    | { status: "error"; error: unknown };
+
+import type { Interpretation } from "./api";
 
 /**
  * Fetches all data for a component: correlations, token stats, and interpretation.

@@ -1,14 +1,11 @@
 <script lang="ts">
     import { displaySettings } from "../../lib/displaySettings.svelte";
-    import { getComponentCorrelations, getComponentTokenStats } from "../../lib/api";
-    import { useInterpretation } from "../../lib/useInterpretation.svelte";
+    import { useComponentData } from "../../lib/useComponentData.svelte";
     import type {
-        ComponentCorrelations,
         ComponentDetail,
         ComponentSummary,
         Edge,
         EdgeAttribution,
-        TokenStats,
     } from "../../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
@@ -41,56 +38,15 @@
         onPinComponent(clickedLayer, parseInt(clickedCIdx), seqIdx);
     }
 
-    // Correlations state
-    let correlations = $state<Loadable<ComponentCorrelations>>(null);
-
-    // Token stats state (from batch job)
-    let tokenStats = $state<Loadable<TokenStats | null>>(null);
-
-    // Interpretation state
-    const interp = useInterpretation(() => ({ layer, cIdx }));
-
-    // Fetch correlations when component changes
-    $effect(() => {
-        let cancelled = false;
-        correlations = { status: "loading" };
-        getComponentCorrelations(layer, cIdx, 1000)
-            .then((data) => {
-                if (cancelled) return;
-                correlations = data ? { status: "loaded", data } : null;
-            })
-            .catch((error) => {
-                if (cancelled) return;
-                correlations = { status: "error", error };
-            });
-        return () => {
-            cancelled = true;
-        };
-    });
-
-    // Fetch token stats when component changes
-    $effect(() => {
-        let cancelled = false;
-        tokenStats = { status: "loading" };
-        getComponentTokenStats(layer, cIdx, 1000)
-            .then((data) => {
-                if (cancelled) return;
-                tokenStats = { status: "loaded", data };
-            })
-            .catch((error) => {
-                if (cancelled) return;
-                tokenStats = { status: "error", error };
-            });
-        return () => {
-            cancelled = true;
-        };
-    });
+    // Fetch all component data (correlations, token stats, interpretation)
+    const componentData = useComponentData(() => ({ layer, cIdx }));
 
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
 
     // Derive token lists from loaded tokenStats (null if not loaded or no data)
     const inputTokenLists = $derived.by(() => {
+        const tokenStats = componentData.tokenStats;
         if (tokenStats?.status !== "loaded" || tokenStats.data === null) return null;
         return [
             {
@@ -104,6 +60,7 @@
     });
 
     const outputTokenLists = $derived.by(() => {
+        const tokenStats = componentData.tokenStats;
         if (tokenStats?.status !== "loaded" || tokenStats.data === null) return null;
         return [
             {
@@ -125,6 +82,7 @@
 
     // Activating tokens from token stats (for highlighting)
     const activatingTokens = $derived.by(() => {
+        const tokenStats = componentData.tokenStats;
         if (tokenStats === null || tokenStats.status !== "loaded" || tokenStats.data === null) return [];
         return tokenStats.data.input.top_recall.map(([token]) => token);
     });
@@ -194,7 +152,7 @@
         {/if}
     </SectionHeader>
 
-    <InterpretationBadge interpretation={interp.interpretation} onGenerate={interp.generateInterpretation} />
+    <InterpretationBadge interpretation={componentData.interpretation} onGenerate={componentData.generateInterpretation} />
 
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
@@ -260,10 +218,10 @@
     {/if}
 
     <div class="token-stats-row">
-        {#if tokenStats === null || tokenStats.status === "loading"}
+        {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
             <StatusText>Loading token stats...</StatusText>
-        {:else if tokenStats.status === "error"}
-            <StatusText>Error: {String(tokenStats.error)}</StatusText>
+        {:else if componentData.tokenStats.status === "error"}
+            <StatusText>Error: {String(componentData.tokenStats.error)}</StatusText>
         {:else}
             <TokenStatsSection
                 sectionTitle="Input Tokens"
@@ -282,18 +240,18 @@
     <!-- Component correlations -->
     <div class="correlations-section">
         <SectionHeader title="Correlated Components" />
-        {#if correlations?.status === "loading"}
+        {#if componentData.correlations?.status === "loading"}
             <StatusText>Loading...</StatusText>
-        {:else if correlations?.status === "loaded"}
+        {:else if componentData.correlations?.status === "loaded" && componentData.correlations.data}
             <ComponentCorrelationMetrics
-                correlations={correlations.data}
+                correlations={componentData.correlations.data}
                 pageSize={16}
                 onComponentClick={handleCorrelationClick}
             />
-        {:else if correlations?.status === "error"}
-            <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
+        {:else if componentData.correlations?.status === "error"}
+            <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
         {:else}
-            <StatusText>Something went wrong loading correlations.</StatusText>
+            <StatusText>No correlations available.</StatusText>
         {/if}
     </div>
 
