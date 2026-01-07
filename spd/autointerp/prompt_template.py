@@ -91,7 +91,6 @@ def format_prompt_template(
     - Only shows high-CI tokens in examples (reduces noise)
     - Includes inline metric definitions
     - Better dataset descriptions to avoid vacuous interpretations
-    - Filters noisy PMI entries (short subword tokens)
     """
     lookup = build_token_lookup(tokenizer, tokenizer.name_or_path)
     PADDING_SENTINEL = -1
@@ -209,13 +208,7 @@ The following metrics concern correlations between this component firing and the
     # PMI section - shows surprising associations
     if input_pmi:
         section += "**PMI:** _Tokens with higher-than-expected co-occurrence_\n"
-        # Filter out very short tokens (likely subword noise) and show top PMI
-        filtered_pmi = [
-            (t, p)
-            for t, p in input_pmi
-            if len(t.strip()) > 1 or t.strip() in {".", ",", '"', "'", "!", "?"}
-        ]
-        for token, pmi in filtered_pmi[:8]:
+        for token, pmi in input_pmi[:8]:
             section += f"  {repr(token)}: {pmi:.2f}\n"
         section += "\n"
 
@@ -264,12 +257,7 @@ The following metrics concern correlations between this component firing and the
     # PMI section for output tokens
     if output_pmi:
         section += "**PMI:** _Tokens with higher-than-expected co-occurrence_\n"
-        filtered_pmi = [
-            (t, p)
-            for t, p in output_pmi
-            if len(t.strip()) > 1 or t.strip() in {".", ",", '"', "'", "!", "?"}
-        ]
-        for token, pmi in filtered_pmi[:10]:
+        for token, pmi in output_pmi[:10]:
             section += f"  {repr(token)}: {pmi:.2f}\n"
 
     return section

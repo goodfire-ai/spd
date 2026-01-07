@@ -8,6 +8,11 @@ import {
 import type { ComponentCorrelations, TokenStats } from "./localAttributionsTypes";
 import { runState } from "./runState.svelte";
 
+/** Correlations are paginated in the UI, so fetch more */
+const CORRELATIONS_TOP_K = 100;
+/** Token stats are displayed directly (max 50 shown) */
+const TOKEN_STATS_TOP_K = 50;
+
 export type ComponentCoords = { layer: string; cIdx: number };
 
 /** Interpretation can be: none, loading, generating, loaded, or error */
@@ -47,7 +52,7 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         interpretation = { status: "loading" };
 
         // Fetch correlations
-        getComponentCorrelations(layer, cIdx, 1000)
+        getComponentCorrelations(layer, cIdx, CORRELATIONS_TOP_K)
             .then((data) => {
                 if (stale) return;
                 correlations = { status: "loaded", data };
@@ -58,7 +63,7 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
             });
 
         // Fetch token stats
-        getComponentTokenStats(layer, cIdx, 1000)
+        getComponentTokenStats(layer, cIdx, TOKEN_STATS_TOP_K)
             .then((data) => {
                 if (stale) return;
                 tokenStats = { status: "loaded", data };

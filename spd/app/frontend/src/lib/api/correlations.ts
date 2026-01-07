@@ -8,7 +8,7 @@ import { API_URL, fetchJson } from "./index";
 export async function getComponentCorrelations(
     layer: string,
     componentIdx: number,
-    topK: number = 10,
+    topK: number,
 ): Promise<ComponentCorrelations | null> {
     const url = new URL(`${API_URL}/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
@@ -18,7 +18,7 @@ export async function getComponentCorrelations(
 export async function getComponentTokenStats(
     layer: string,
     componentIdx: number,
-    topK: number = 10,
+    topK: number,
 ): Promise<TokenStats | null> {
     const url = new URL(`${API_URL}/api/correlations/token_stats/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
