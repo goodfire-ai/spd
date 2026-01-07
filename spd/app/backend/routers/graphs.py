@@ -177,7 +177,17 @@ def build_out_probs(
     """Build output probs dict from CI-masked and target model tensors.
 
     Filters by CI-masked probability threshold, but includes both probabilities.
+
+    Args:
+        ci_masked_out_probs: Shape [seq, vocab] - CI-masked model output probabilities
+        target_out_probs: Shape [seq, vocab] - Target model output probabilities
     """
+    assert ci_masked_out_probs.ndim == 2, f"Expected [seq, vocab], got {ci_masked_out_probs.shape}"
+    assert target_out_probs.ndim == 2, f"Expected [seq, vocab], got {target_out_probs.shape}"
+    assert ci_masked_out_probs.shape == target_out_probs.shape, (
+        f"Shape mismatch: {ci_masked_out_probs.shape} vs {target_out_probs.shape}"
+    )
+
     out_probs: dict[str, OutputProbability] = {}
     for s in range(ci_masked_out_probs.shape[0]):
         for c_idx in range(ci_masked_out_probs.shape[1]):
