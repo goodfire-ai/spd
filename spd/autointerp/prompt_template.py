@@ -134,16 +134,19 @@ def format_prompt_template(
     layer_desc = _parse_layer_description(component.layer, arch.n_blocks)
 
     return f"""\
-Label this neural network component from a sparse decomposition.
+Label this neural network component from a Stochastic Parameter Decomposition.
 
 ## Background
 
 {SPD_THEORETICAL_CONTEXT}
 
-## Context
+## Model Context
 
 **Model**: {arch.model_class} ({arch.n_blocks} layers)
 **Dataset**: {dataset_description}
+
+## Component Context
+
 **Component location**: {layer_desc}
 **Activation rate**: {component.mean_ci * 100:.2f}%{firing_rate_context}
 
