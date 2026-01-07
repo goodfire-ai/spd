@@ -58,6 +58,7 @@ def launch_interpret_job(
         job_name=job_name,
         partition=partition,
         n_gpus=0,  # CPU-only job
+        cpus_per_task=16,  # (cluster default is 16cpus/gpu and 15GB memory/cpu. We need the memory)
         time=time,
         snapshot_branch=None,  # Autointerp doesn't use git snapshots
     )
