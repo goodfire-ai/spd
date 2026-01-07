@@ -5,6 +5,7 @@ Contains:
 - StateManager: Singleton managing app-wide state with proper lifecycle
 """
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -66,7 +67,11 @@ class HarvestCache:
     @property
     def activation_contexts(self) -> dict[str, ComponentData] | None:
         if self._activation_contexts is _NOT_LOADED:
+            print("loading activation contexts")
+            start_time = time.time()
             self._activation_contexts = load_activation_contexts(self.run_id)
+            end_time = time.time()
+            print(f"activation contexts loaded in {end_time - start_time:.2f} seconds")
         assert isinstance(self._activation_contexts, dict | None), (
             "inconsistent state, activation contexts not loaded"
         )
