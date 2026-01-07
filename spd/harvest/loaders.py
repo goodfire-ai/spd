@@ -6,7 +6,6 @@ from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,
-    SubcompActStats,
     get_activation_contexts_dir,
     get_correlations_dir,
 )
@@ -25,12 +24,15 @@ def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | No
         for line in f:
             data = json.loads(line)
             data["activation_examples"] = [
-                ActivationExample(**ex) for ex in data["activation_examples"]
+                ActivationExample(
+                    token_ids=ex["token_ids"],
+                    ci_values=ex["ci_values"],
+                    inner_acts=ex.get("inner_acts", [0.0] * len(ex["token_ids"])),
+                )
+                for ex in data["activation_examples"]
             ]
             data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
             data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-            if data.get("subcomp_act_stats") is not None:
-                data["subcomp_act_stats"] = SubcompActStats(**data["subcomp_act_stats"])
             comp = ComponentData(**data)
             components[comp.component_key] = comp
     return components

@@ -156,7 +156,6 @@
     <SectionHeader title="Position {seqIdx}" level="h4">
         {#if summary}
             <span class="mean-ci">Mean CI: {formatMeanValue(summary.mean_ci)}</span>
-            <span class="mean-subcomp-act">Mean Act: {formatMeanValue(summary.mean_subcomp_act)}</span>
         {/if}
     </SectionHeader>
 
@@ -299,13 +298,6 @@
     .mean-ci {
         font-weight: 400;
         color: var(--text-muted);
-        font-family: var(--font-mono);
-        margin-left: var(--space-2);
-    }
-
-    .mean-subcomp-act {
-        font-weight: 400;
-        color: var(--accent-secondary);
         font-family: var(--font-mono);
         margin-left: var(--space-2);
     }

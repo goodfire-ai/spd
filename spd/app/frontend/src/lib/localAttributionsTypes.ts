@@ -85,7 +85,6 @@ export type OptimizationResult = {
 export type ComponentSummary = {
     subcomponent_idx: number;
     mean_ci: number;
-    mean_subcomp_act: number; // Mean normalized subcomponent activation: (v_i^T @ a) * ||u_i||
 };
 
 export type ActivationContextsSummary = Record<string, ComponentSummary[]>;
@@ -94,7 +93,6 @@ export type ActivationContextsSummary = Record<string, ComponentSummary[]>;
 export type ComponentDetail = {
     subcomponent_idx: number;
     mean_ci: number;
-    mean_subcomp_act: number;
     example_tokens: string[][];
     example_ci: number[][];
     example_inner_acts: number[][];

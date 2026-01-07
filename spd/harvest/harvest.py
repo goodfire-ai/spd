@@ -26,7 +26,6 @@ from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
     ComponentTokenPMI,
-    SubcompActStats,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
@@ -116,7 +115,6 @@ class HarvestResult:
                 ]
                 data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
                 data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-                data["subcomp_act_stats"] = SubcompActStats(**data["subcomp_act_stats"])
                 components.append(ComponentData(**data))
 
         return components

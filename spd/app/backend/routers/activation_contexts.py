@@ -51,12 +51,10 @@ def get_activation_contexts_summary(
     # Group by layer
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
     for comp in contexts.values():
-        # Get mean subcomponent activation if available (new harvests)
         summary[comp.layer].append(
             SubcomponentMetadata(
                 subcomponent_idx=comp.component_idx,
                 mean_ci=comp.mean_ci,
-                mean_subcomp_act=comp.subcomp_act_stats.mean,
             )
         )
 
@@ -104,7 +102,6 @@ def get_activation_context_detail(
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,
         mean_ci=comp.mean_ci,
-        mean_subcomp_act=comp.subcomp_act_stats.mean,
         example_tokens=example_tokens,
         example_ci=example_ci,
         example_inner_acts=example_inner_acts,
