@@ -1,23 +1,28 @@
 <script lang="ts">
+    import type { Loadable } from "../lib";
     import type { ActivationContextsSummary } from "../lib/localAttributionsTypes";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
 
     interface Props {
-        activationContextsSummary: ActivationContextsSummary | null;
+        activationContextsSummary: Loadable<ActivationContextsSummary>;
     }
 
     let { activationContextsSummary }: Props = $props();
 </script>
 
 <div class="tab-content">
-    {#if activationContextsSummary === null}
+    {#if activationContextsSummary === null || activationContextsSummary.status === "loading"}
+        <div class="empty-state">
+            <p>Loading activation contexts...</p>
+        </div>
+    {:else if activationContextsSummary.status === "error"}
         <div class="empty-state">
             <p>No activation contexts available.</p>
             <p class="hint">Run the harvest pipeline first:</p>
-            <code>python -m spd.autointerp.scripts.run_autointerp harvest &lt;wandb_path&gt;</code>
+            <code>spd-harvest &lt;wandb_path&gt;</code>
         </div>
     {:else}
-        <ActivationContextsViewer harvestMetadata={{ layers: activationContextsSummary }} />
+        <ActivationContextsViewer harvestMetadata={{ layers: activationContextsSummary.data }} />
     {/if}
 </div>
 

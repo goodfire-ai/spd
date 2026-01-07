@@ -15,7 +15,8 @@ from pydantic import BaseModel
 class OutputProbability(BaseModel):
     """Output probability for a specific token at a specific position."""
 
-    prob: float
+    prob: float  # CI-masked (SPD model) probability
+    target_prob: float  # Target model probability
     token: str
 
 

@@ -265,6 +265,31 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
 
 **Logs:** logs are found in `~/slurm_logs/slurm-<job_id>_<task_id>.out`
 
+### Loading Models from WandB
+
+Load trained SPD models from wandb or local paths using these methods:
+
+```python
+from spd.models.component_model import ComponentModel, SPDRunInfo
+
+# Option 1: Load model directly (simplest)
+model = ComponentModel.from_pretrained("wandb:entity/project/runs/run_id")
+
+# Option 2: Load run info first, then model (access config before loading)
+run_info = SPDRunInfo.from_path("wandb:entity/project/runs/run_id")
+print(run_info.config)  # Inspect config before loading model
+model = ComponentModel.from_run_info(run_info)
+
+# Local paths work too
+model = ComponentModel.from_pretrained("/path/to/checkpoint.pt")
+```
+**Path formats:**
+
+- WandB: `wandb:entity/project/run_id` or `wandb:entity/project/runs/run_id`
+- Local: Direct path to checkpoint file (config must be in same directory as `final_config.yaml`)
+
+Downloaded runs are cached in `SPD_OUT_DIR/runs/<project>-<run_id>/`.
+
 ### Cluster Usage Guidelines
 
 - DO NOT use more than 8 GPUs at one time
