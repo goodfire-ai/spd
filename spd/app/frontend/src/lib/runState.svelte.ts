@@ -6,6 +6,7 @@
  * prop drilling for these commonly-needed values.
  */
 
+import { untrack } from "svelte";
 import type { Loadable } from ".";
 import * as api from "./api";
 import type { RunState as RunData, Interpretation } from "./api";
@@ -61,7 +62,9 @@ class RunState {
     /** Load interpretation (lazy, with caching) */
     async loadInterpretation(layer: string, cIdx: number) {
         const cacheKey = `${layer}:${cIdx}`;
-        if (this.interpretations[cacheKey]?.status === "loading") return;
+        // Use untrack to avoid creating reactive dependency when checking cache
+        const alreadyCached = untrack(() => cacheKey in this.interpretations);
+        if (alreadyCached) return;
 
         this.interpretations[cacheKey] = { status: "loading" };
         try {
