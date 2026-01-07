@@ -2,8 +2,7 @@
     import type { Loadable } from "../lib";
     import type { SubcomponentActivationContexts, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
-    import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
-    import { useInterpretation } from "../lib/useInterpretation.svelte";
+    import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
@@ -32,22 +31,16 @@
     // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive, just for deduplication
     const requestedKeys = new Set<string>();
 
-    // Correlations state
-    let correlations = $state<Loadable<ComponentCorrelations>>(null);
-
-    // Token stats state (from batch job)
-    let tokenStats = $state<Loadable<TokenStats>>(null);
-
-    // Interpretation state
-    const { interpretation, request: requestInterpretation } = useInterpretation(() => {
-        const cIdx = currentMetadata?.subcomponent_idx;
-        return cIdx !== undefined ? { layer: selectedLayer, cIdx } : null;
-    });
-
     // Layer metadata is already sorted by mean_ci desc from backend
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
     let currentMetadata = $derived<api.SubcomponentMetadata>(currentLayerMetadata[currentPage]);
+
+    // Fetch correlations, token stats, and interpretation for current component
+    const componentData = useComponentData(() => {
+        const cIdx = currentMetadata?.subcomponent_idx;
+        return cIdx !== undefined ? { layer: selectedLayer, cIdx } : null;
+    });
 
     function getCacheKey(layer: string, componentIdx: number) {
         return `${layer}:${componentIdx}`;
@@ -142,48 +135,9 @@
         };
     });
 
-    // Fetch correlations when component changes
-    $effect(() => {
-        const layer = selectedLayer;
-        const cIdx = currentMetadata?.subcomponent_idx;
-        if (cIdx === undefined) return;
-
-        correlations = { status: "loading" };
-        api.getComponentCorrelations(layer, cIdx, 1000)
-            .then((data) => {
-                if (data != null) {
-                    correlations = { status: "loaded", data };
-                } else {
-                    correlations = { status: "error", error: "No correlations found" };
-                }
-            })
-            .catch((error) => {
-                correlations = { status: "error", error };
-            });
-    });
-
-    // Fetch token stats when component changes (from batch job)
-    $effect(() => {
-        const layer = selectedLayer;
-        const cIdx = currentMetadata?.subcomponent_idx;
-        if (cIdx === undefined) return;
-
-        tokenStats = { status: "loading" };
-        api.getComponentTokenStats(layer, cIdx, 1000)
-            .then((data) => {
-                if (data != null) {
-                    tokenStats = { status: "loaded", data };
-                } else {
-                    tokenStats = { status: "error", error: "No token stats found" };
-                }
-            })
-            .catch((error) => {
-                tokenStats = { status: "error", error };
-            });
-    });
-
     // Transform tokenStats into Loadable<TokenList[]> for input tokens section
     const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        const tokenStats = componentData.tokenStats;
         if (tokenStats == null) return null;
         if (tokenStats.status === "loading") return { status: "loading" };
         if (tokenStats.status === "error") return tokenStats;
@@ -203,6 +157,7 @@
 
     // Transform tokenStats into Loadable<TokenList[]> for output tokens section
     const outputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
+        const tokenStats = componentData.tokenStats;
         if (tokenStats == null) return null;
         if (tokenStats.status === "loading") return { status: "loading" };
         if (tokenStats.status === "error") return tokenStats;
@@ -229,6 +184,7 @@
 
     // Activating tokens from token stats (for highlighting in table)
     let inputTopRecall = $derived.by(() => {
+        const tokenStats = componentData.tokenStats;
         if (tokenStats?.status !== "loaded") return [];
         return tokenStats.data.input.top_recall.map(([token, value]) => ({ token, value }));
     });
@@ -286,7 +242,7 @@
             <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
         </SectionHeader>
 
-        <InterpretationBadge {interpretation} onRequestInterpretation={requestInterpretation} />
+        <InterpretationBadge interpretation={componentData.interpretation} onGenerate={componentData.generateInterpretation} />
 
         <div class="token-stats-row">
             <TokenStatsSection
@@ -305,13 +261,11 @@
         <!-- Component correlations -->
         <div class="correlations-section">
             <SectionHeader title="Correlated Components" />
-            {#if correlations?.status === "loaded"}
-                <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
-            {:else if correlations?.status === "loading"}
-                <StatusText>Loading...</StatusText>
-            {:else if correlations?.status === "error"}
-                <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
-            {:else}
+            {#if componentData.correlations?.status === "loaded"}
+                <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
+            {:else if componentData.correlations?.status === "error"}
+                <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
+            {:else if componentData.correlations === null}
                 <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
             {/if}
         </div>

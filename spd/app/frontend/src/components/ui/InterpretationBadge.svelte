@@ -1,38 +1,42 @@
 <script lang="ts">
-    import type { Loadable } from "../../lib";
-    import type { Interpretation } from "../../lib/api";
+    import type { InterpretationState } from "../../lib/useComponentData.svelte";
 
     interface Props {
-        interpretation: Loadable<Interpretation>;
-        onRequestInterpretation?: () => void;
+        interpretation: InterpretationState;
+        onGenerate?: () => void;
     }
 
-    let { interpretation, onRequestInterpretation }: Props = $props();
+    let { interpretation, onGenerate }: Props = $props();
 
     let showPrompt = $state(false);
 </script>
 
 <div class="interpretation-container">
-    <div class="interpretation-badge" class:loading={interpretation?.status === "loading"}>
-        {#if interpretation?.status === "loaded"}
-            <span class="interpretation-label">{interpretation.data.label}</span>
-            <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
+    <div class="interpretation-badge" class:loading={interpretation?.status === "generating"}>
+        {#if interpretation?.status === "generating"}
+            <span class="interpretation-label loading-text">Generating interpretation...</span>
+        {:else if interpretation?.status === "loaded"}
+            <div class="interpretation-content">
+                <div class="interpretation-header">
+                    <span class="interpretation-label">{interpretation.data.label}</span>
+                    <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
+                </div>
+                {#if interpretation.data.reasoning}
+                    <span class="interpretation-reasoning">{interpretation.data.reasoning}</span>
+                {/if}
+            </div>
             <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
                 {showPrompt ? "Hide" : "View"} Prompt
             </button>
-        {:else if interpretation?.status === "loading"}
-            <span class="interpretation-label loading-text">Generating interpretation...</span>
         {:else if interpretation?.status === "error"}
             <span class="interpretation-label error-text">{String(interpretation.error)}</span>
-            {#if onRequestInterpretation}
-                <button class="retry-btn" onclick={onRequestInterpretation}>Retry</button>
+            {#if onGenerate}
+                <button class="retry-btn" onclick={onGenerate}>Retry</button>
             {/if}
-        {:else if interpretation === null && onRequestInterpretation}
-            <button class="generate-btn" onclick={onRequestInterpretation}>Generate Interpretation</button>
-        {:else if interpretation === null}
+        {:else if interpretation.status === "none" && onGenerate}
+            <button class="generate-btn" onclick={onGenerate}>Generate Interpretation</button>
+        {:else if interpretation.status === "none"}
             <span class="interpretation-label muted">No interpretation available</span>
-        {:else}
-            <span class="interpretation-label muted">Something went wrong</span>
         {/if}
     </div>
 
@@ -52,12 +56,32 @@
 
     .interpretation-badge {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: var(--space-2);
         padding: var(--space-2) var(--space-3);
         background: var(--bg-secondary);
         border-radius: var(--radius-md);
         border-left: 3px solid var(--color-accent, #6366f1);
+    }
+
+    .interpretation-content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+        flex: 1;
+        min-width: 0;
+    }
+
+    .interpretation-header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .interpretation-reasoning {
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        line-height: 1.4;
     }
 
     .interpretation-badge.loading {

@@ -48,7 +48,7 @@
     let tokenStats = $state<Loadable<TokenStats>>(null);
 
     // Interpretation state
-    const { interpretation, request: requestInterpretation } = useInterpretation(() => ({ layer, cIdx }));
+    const interp = useInterpretation(() => ({ layer, cIdx }));
 
     // Fetch correlations when component changes
     $effect(() => {
@@ -208,7 +208,7 @@
         {/if}
     </SectionHeader>
 
-    <InterpretationBadge {interpretation} onRequestInterpretation={requestInterpretation} />
+    <InterpretationBadge interpretation={interp.interpretation} onGenerate={interp.generateInterpretation} />
 
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
