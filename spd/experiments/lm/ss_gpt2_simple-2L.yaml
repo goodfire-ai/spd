@@ -5,19 +5,24 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 1
-C: 650
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
 ci_fn_hidden_dims: [550]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  - "h.*.mlp.c_fc"
-  - "h.*.mlp.down_proj"
-  - "h.*.attn.q_proj"
-  - "h.*.attn.k_proj"
-  - "h.*.attn.v_proj"
-  - "h.*.attn.o_proj"
-identity_module_patterns: null
+module_info:
+  - module_pattern: "h.*.mlp.c_fc"
+    C: 650
+  - module_pattern: "h.*.mlp.down_proj"
+    C: 650
+  - module_pattern: "h.*.attn.q_proj"
+    C: 650
+  - module_pattern: "h.*.attn.k_proj"
+    C: 650
+  - module_pattern: "h.*.attn.v_proj"
+    C: 650
+  - module_pattern: "h.*.attn.o_proj"
+    C: 650
+identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
 - coeff: 0.002
@@ -42,17 +47,17 @@ loss_metric_configs:
 - coeff: 1000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
-lr: 0.0002
+lr_schedule:
+  start_val: 0.0002
+  fn_type: cosine
+  warmup_pct: 0.0
+  final_val_frac: 0.1
 steps: 400_000
 batch_size: 64
 gradient_accumulation_steps: 1
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
-lr_schedule: cosine
-lr_exponential_halflife: null
-lr_warmup_pct: 0.0
-out_dir: null
 train_log_freq: 200
 eval_freq: 1000
 eval_batch_size: 64

@@ -165,6 +165,32 @@
             }
         },
         {
+            "name": "ss_llama_simple_mlp",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_simple_mlp.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "ss_llama_simple_mlp-1L",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/experiments/lm/lm_decomposition.py",
+            "args": "${workspaceFolder}/spd/experiments/lm/ss_llama_simple_mlp-1L.yaml",
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
             "name": "ss_gpt2",
             "type": "debugpy",
             "request": "launch",
@@ -217,19 +243,36 @@
             }
         },
         {
-            "name": "lm streamlit",
+            "name": "run_clustering example",
             "type": "debugpy",
             "request": "launch",
-            "module": "streamlit",
+            "program": "${workspaceFolder}/spd/clustering/scripts/run_clustering.py",
             "args": [
-                "run",
-                "${workspaceFolder}/spd/experiments/lm/streamlit_v1/app.py",
-                "--server.port",
-                "2000",
-                "--",
-                "--model_path",
-                "wandb:goodfire/spd/runs/ioprgffh"
-            ]
+                "--config",
+                "${workspaceFolder}/spd/clustering/configs/crc/example.yaml",
+            ],
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
+        },
+        {
+            "name": "clustering pipeline",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/spd/clustering/scripts/run_pipeline.py",
+            "args": [
+                "--config",
+                "${workspaceFolder}/spd/clustering/configs/pipeline_config.yaml",
+            ],
+            "python": "${command:python.interpreterPath}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
+            }
         }
     ]
 }

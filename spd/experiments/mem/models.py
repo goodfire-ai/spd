@@ -15,7 +15,6 @@ from wandb.apis.public import Run
 from spd.experiments.mem.configs import MemModelConfig, MemTaskConfig, MemTrainConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.run_utils import check_run_exists
 from spd.utils.wandb_utils import (
     download_wandb_file,
     fetch_latest_wandb_checkpoint,
@@ -34,18 +33,11 @@ class MemTargetRunInfo(RunInfo[MemTrainConfig]):
     def from_path(cls, path: ModelPath) -> "MemTargetRunInfo":
         """Load the run info from a wandb run or a local path to a checkpoint."""
         if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            # Check if run exists in shared filesystem first
-            run_dir = check_run_exists(path)
-            if run_dir:
-                # Use local files from shared filesystem
-                mem_train_config_path = run_dir / "mem_train_config.yaml"
-                checkpoint_path = run_dir / "mem.pth"
-            else:
-                # Download from wandb
-                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                mem_train_config_path, checkpoint_path = MemTransformer._download_wandb_files(
-                    wandb_path
-                )
+            # Download from wandb
+            wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
+            mem_train_config_path, checkpoint_path = MemTransformer._download_wandb_files(
+                wandb_path
+            )
         else:
             # `path` should be a local path to a checkpoint
             mem_train_config_path = Path(path).parent / "mem_train_config.yaml"
@@ -311,9 +303,7 @@ def expand_model(
     new_model = MemTransformer(new_config)
 
     # Helper functions for padding
-    def pad_2d(
-        old_tensor: Tensor, new_shape: tuple[int, int], pad_value: float = 0.0
-    ) -> Tensor:
+    def pad_2d(old_tensor: Tensor, new_shape: tuple[int, int], pad_value: float = 0.0) -> Tensor:
         """Pad a 2D tensor, preserving original values in top-left corner."""
         new_tensor = torch.full(new_shape, pad_value, dtype=old_tensor.dtype)
         new_tensor[: old_tensor.shape[0], : old_tensor.shape[1]] = old_tensor
@@ -349,9 +339,7 @@ def expand_model(
         new_model.block.mlp.up_proj.weight.copy_(
             pad_2d(model.block.mlp.up_proj.weight, (d_mlp_new, d_model_new))
         )
-        new_model.block.mlp.up_proj.bias.copy_(
-            pad_1d(model.block.mlp.up_proj.bias, d_mlp_new)
-        )
+        new_model.block.mlp.up_proj.bias.copy_(pad_1d(model.block.mlp.up_proj.bias, d_mlp_new))
 
         # MLP down_proj: [d_model, d_mlp] -> [d_model_new, d_mlp_new]
         new_model.block.mlp.down_proj.weight.copy_(
@@ -377,9 +365,7 @@ def expand_model(
             new_model.block.ln2.bias.copy_(pad_1d(model.block.ln2.bias, d_model_new))
 
             # ln_f: [d_model] -> [d_model_new]
-            new_model.ln_f.weight.copy_(
-                pad_1d(model.ln_f.weight, d_model_new, pad_value=1.0)
-            )
+            new_model.ln_f.weight.copy_(pad_1d(model.ln_f.weight, d_model_new, pad_value=1.0))
             new_model.ln_f.bias.copy_(pad_1d(model.ln_f.bias, d_model_new))
 
         # Unembed: [vocab_size, d_model] -> [vocab_size, d_model_new]

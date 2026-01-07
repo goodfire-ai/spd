@@ -7,6 +7,7 @@ from jaxtyping import Float
 from torch import Tensor, nn
 from tqdm import tqdm
 
+from spd.configs import ScheduleConfig
 from spd.experiments.resid_mlp.configs import ResidMLPModelConfig, ResidMLPTrainConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import (
@@ -16,8 +17,8 @@ from spd.log import logger
 from spd.settings import DEFAULT_PROJECT_NAME
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import compute_feature_importances, get_lr_schedule_fn, set_seed
-from spd.utils.run_utils import get_output_dir, save_file
+from spd.utils.general_utils import compute_feature_importances, get_scheduled_value, set_seed
+from spd.utils.run_utils import ExecutionStamp, save_file
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -60,11 +61,20 @@ def train(
     device: str,
     run_name: str,
 ) -> Float[Tensor, ""]:
+    execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
     if config.wandb_project:
         tags = [f"resid_mlp{config.resid_mlp_model_config.n_layers}-train"]
-        config = init_wandb(config, config.wandb_project, name=run_name, tags=tags)
-
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        init_wandb(
+            config=config,
+            project=config.wandb_project,
+            run_id=execution_stamp.run_id,
+            name=run_name,
+            tags=tags,
+        )
 
     # Save config
     config_path = out_dir / "resid_mlp_train_config.yaml"
@@ -83,18 +93,16 @@ def train(
     if config.wandb_project:
         wandb.save(str(label_coeffs_path), base_path=out_dir, policy="now")
 
-    optimizer = torch.optim.AdamW(trainable_params, lr=config.lr, weight_decay=0.01)
-
-    # Add this line to get the lr_schedule_fn
-    lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule)
+    optimizer = torch.optim.AdamW(
+        trainable_params, lr=config.lr_schedule.start_val, weight_decay=0.01
+    )
 
     pbar = tqdm(range(config.steps), total=config.steps)
     for step, (batch, labels) in zip(pbar, dataloader, strict=False):
         if step >= config.steps:
             break
 
-        # Add this block to update the learning rate
-        current_lr = config.lr * lr_schedule_fn(step, config.steps)
+        current_lr = get_scheduled_value(step, config.steps, config.lr_schedule)
         for param_group in optimizer.param_groups:
             param_group["lr"] = current_lr
 
@@ -230,8 +238,7 @@ if __name__ == "__main__":
         batch_size=2048,
         steps=1000,  # 1 layer
         print_freq=100,
-        lr=3e-3,
-        lr_schedule="cosine",
+        lr_schedule=ScheduleConfig(start_val=3e-3, fn_type="cosine", final_val_frac=0.0),
         fixed_random_embedding=True,
         fixed_identity_embedding=False,
         n_batches_final_losses=10,
@@ -260,8 +267,7 @@ if __name__ == "__main__":
     #     batch_size=2048,
     #     steps=1000, # 2 layers
     #     print_freq=100,
-    #     lr=3e-3,
-    #     lr_schedule="cosine",
+    #     lr_schedule=ScheduleConfig(start_val=3e-3, fn_type="cosine", final_val_frac=0.0),
     #     fixed_random_embedding=True,
     #     fixed_identity_embedding=False,
     #     n_batches_final_losses=10,
@@ -290,8 +296,7 @@ if __name__ == "__main__":
     #     batch_size=2048,
     #     steps=10_000,  # 3 layers
     #     print_freq=100,
-    #     lr=3e-3,
-    #     lr_schedule="cosine",
+    #     lr_schedule=ScheduleConfig(start_val=3e-3, fn_type="cosine", final_val_frac=0.0),
     #     fixed_random_embedding=True,
     #     fixed_identity_embedding=False,
     #     n_batches_final_losses=10,

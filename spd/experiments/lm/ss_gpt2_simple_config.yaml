@@ -5,21 +5,24 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 1200
 n_mask_samples: 1
 ci_fn_type: "shared_mlp"
 ci_fn_hidden_dims: [1000]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  [
-    "h.*.mlp.c_fc",
-    "h.*.mlp.down_proj",
-    "h.*.attn.q_proj",
-    "h.*.attn.k_proj",
-    "h.*.attn.v_proj",
-    "h.*.attn.o_proj",
-  ]
-identity_module_patterns: null
+module_info:
+  - module_pattern: "h.*.mlp.c_fc"
+    C: 1200
+  - module_pattern: "h.*.mlp.down_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.q_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.k_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.v_proj"
+    C: 1200
+  - module_pattern: "h.*.attn.o_proj"
+    C: 1200
+identity_module_info: null
 sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
@@ -40,10 +43,11 @@ output_loss_type: kl
 batch_size: 256
 eval_batch_size: 64
 steps: 20000
-lr: 0.0005
-lr_schedule: cosine
-lr_warmup_pct: 0.0
-lr_exponential_halflife: null
+lr_schedule:
+  start_val: 0.0005
+  fn_type: cosine
+  warmup_pct: 0.0
+  final_val_frac: 0.1
 gradient_accumulation_steps: 1
 
 

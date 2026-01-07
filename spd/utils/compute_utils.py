@@ -2,14 +2,13 @@
 
 import json
 import shlex
-import subprocess
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from spd.configs import Config
-from spd.settings import REPO_ROOT
+from spd.utils.slurm import SlurmArrayConfig, generate_array_script
 
 CUDA_FLAGS = {
     "NCCL_DEBUG": "WARN",
@@ -124,13 +123,15 @@ def create_slurm_array_script(
     run_id: str,
     training_jobs: list[TrainingJob],
     sweep_params: dict[str, Any] | None,
-    slurm_logs_dir: Path,
     snapshot_branch: str,
     n_gpus: int | None,
     partition: str,
     max_concurrent_tasks: int | None = None,
 ) -> str:
     """Create a SLURM job array script with git snapshot for consistent code.
+
+    This is a thin wrapper around slurm.generate_array_script that handles
+    TrainingJob -> command string conversion and multi-node DDP setup.
 
     Args:
         slurm_job_name: Name for the SLURM job array
@@ -143,110 +144,31 @@ def create_slurm_array_script(
         partition: SLURM partition to use.
         max_concurrent_tasks: Maximum number of array tasks to run concurrently. If None, no limit.
     """
-    n_jobs = len(training_jobs)
-
-    # Create array range (SLURM arrays are 1-indexed)
-    if max_concurrent_tasks is not None:
-        array_range = f"1-{n_jobs}%{max_concurrent_tasks}"
-    else:
-        array_range = f"1-{n_jobs}"
-
-    # Create case statement for commands (SLURM is 1-indexed, but we pass 0-indexed to get_command)
-    case_block_lines = []
+    # Convert TrainingJobs to command strings
+    commands: list[str] = []
     for i, training_job in enumerate(training_jobs):
-        command = get_command(run_id, training_job, i, n_gpus, sweep_params)
-        case_block_lines.append(f"{i + 1})")
-        if command.env_vars is not None:
-            for k, v in command.env_vars.items():
-                case_block_lines.append(f"    export {k}={v}")
-        case_block_lines.append(f"    {command.command}")
-        case_block_lines.append("    ;;")
-    case_block = "\n".join(case_block_lines)
+        cmd = get_command(run_id, training_job, i, n_gpus, sweep_params)
+        commands.append(cmd.command)
 
-    # Compute SLURM resource allocation
+    # Compute SLURM resource allocation for multi-node DDP
     if n_gpus is None or n_gpus == 1:
         n_nodes = 1
-        gpus_per_task = 1
+        gpus_per_node = 1
     elif n_gpus <= GPUS_PER_NODE:
         n_nodes = 1
-        gpus_per_task = n_gpus
+        gpus_per_node = n_gpus
     else:
         n_nodes = n_gpus // GPUS_PER_NODE
-        gpus_per_task = GPUS_PER_NODE
+        gpus_per_node = GPUS_PER_NODE
 
-    script_content = f"""\
-#!/bin/bash
-#SBATCH --nodes={n_nodes}
-#SBATCH --ntasks={n_nodes}
-#SBATCH --gres=gpu:{gpus_per_task}
-
-#SBATCH --partition={partition}
-#SBATCH --time=72:00:00
-#SBATCH --job-name={slurm_job_name}
-#SBATCH --output={slurm_logs_dir}/slurm-%A_%a.out
-#SBATCH --array={array_range}
-
-# Create job-specific working directory on shared filesystem (for multi-node access)
-WORK_DIR="$HOME/slurm_workspaces/{slurm_job_name}-${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}"
-mkdir -p "$WORK_DIR"
-
-# Clean up the workspace when the script exits
-trap 'rm -rf "$WORK_DIR"' EXIT
-
-# Clone the repository to the job-specific directory
-git clone {REPO_ROOT} "$WORK_DIR"
-
-# Change to the cloned repository directory
-cd "$WORK_DIR"
-
-# Copy the .env file from the original repository for WandB authentication
-cp {REPO_ROOT}/.env .env
-
-# Checkout the snapshot branch to ensure consistent code
-git checkout "{snapshot_branch}"
-
-# Ensure that dependencies are using the snapshot branch. SLURM might inherit the
-# parent environment, so we need to deactivate and unset the virtual environment.
-echo "Deactivating virtual environment"
-deactivate 2>/dev/null || true
-unset VIRTUAL_ENV
-
-# echo "Syncing dependencies"
-uv sync --no-dev --link-mode copy -q
-
-
-echo "Activating virtual environment"
-source .venv/bin/activate
-
-echo "Debug: SLURM_NODEID=$SLURM_NODEID"
-echo "Debug: SLURM_PROCID=$SLURM_PROCID"
-echo "Debug: SLURM_JOB_NODELIST=$SLURM_JOB_NODELIST"
-echo "Debug: Master node=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)"
-
-echo "Running..."
-# Execute the appropriate command based on array task ID
-case $SLURM_ARRAY_TASK_ID in
-{case_block}
-esac
-"""
-
-    return script_content
-
-
-def submit_slurm_array(script_path: Path) -> str:
-    """Submit a SLURM job array and return the array job ID.
-
-    Args:
-        script_path: Path to SLURM batch script
-
-    Returns:
-        Array job ID from submitted job array
-    """
-    result = subprocess.run(
-        ["sbatch", str(script_path)], capture_output=True, text=True, check=False
+    config = SlurmArrayConfig(
+        job_name=slurm_job_name,
+        partition=partition,
+        n_gpus=gpus_per_node,
+        n_nodes=n_nodes,
+        snapshot_branch=snapshot_branch,
+        max_concurrent_tasks=max_concurrent_tasks,
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to submit SLURM job array: {result.stderr}")
-    # Extract job ID from sbatch output (format: "Submitted batch job 12345")
-    job_id = result.stdout.strip().split()[-1]
-    return job_id
+
+    # CUDA_FLAGS are always set for training jobs
+    return generate_array_script(config, commands, env=CUDA_FLAGS)

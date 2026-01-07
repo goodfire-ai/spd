@@ -23,15 +23,15 @@ from spd.utils.compute_utils import (
     GPUS_PER_NODE,
     TrainingJob,
     create_slurm_array_script,
-    submit_slurm_array,
 )
 from spd.utils.git_utils import create_git_snapshot
-from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations, generate_run_name
-from spd.utils.wandb_utils import ReportCfg, create_view_and_report
+from spd.utils.run_utils import apply_nested_updates, generate_grid_combinations
+from spd.utils.slurm import submit_slurm_job
+from spd.utils.wandb_utils import ReportCfg, create_view_and_report, generate_wandb_run_name
 
 
 def launch_slurm_run(
-    experiments: str | None,
+    experiments: str | tuple[str, ...] | None,
     sweep: str | bool,
     n_agents: int | None,
     create_report: bool,
@@ -76,7 +76,7 @@ def launch_slurm_run(
         sweep_params=sweep_params,
     )
 
-    snapshot_branch, commit_hash = create_git_snapshot(branch_name_prefix="run")
+    snapshot_branch, commit_hash = create_git_snapshot(run_id=run_id)
     logger.info(f"Created git snapshot branch: {snapshot_branch} ({commit_hash[:8]})")
 
     _wandb_setup(
@@ -91,48 +91,33 @@ def launch_slurm_run(
 
     slurm_job_name = f"spd-{job_suffix or get_max_expected_runtime(experiments_list)}"
 
-    slurm_logs_dir = Path.home() / "slurm_logs"
-    slurm_logs_dir.mkdir(exist_ok=True)
-
     array_script_content = create_slurm_array_script(
         slurm_job_name=slurm_job_name,
         run_id=run_id,
         training_jobs=training_jobs,
         sweep_params=sweep_params,
-        slurm_logs_dir=slurm_logs_dir,
         snapshot_branch=snapshot_branch,
         n_gpus=n_gpus,
         partition=partition,
         max_concurrent_tasks=n_agents,
     )
 
-    # Save script to permanent location for debugging
-    sbatch_scripts_dir = Path.home() / "sbatch_scripts"
-    sbatch_scripts_dir.mkdir(exist_ok=True)
-
-    array_script_path = sbatch_scripts_dir / f"run_array_{run_id}.sh"
-    with open(array_script_path, "w") as f:
-        f.write(array_script_content)
-    array_script_path.chmod(0o755)
-    array_job_id = submit_slurm_array(array_script_path)
-
-    # Rename script to include job ID for easier correlation with logs
-    final_script_path = sbatch_scripts_dir / f"{array_job_id}.sh"
-    array_script_path.rename(final_script_path)
-
-    # Quality of life: create empty log files for each job so you can tail
-    # them before waiting for the job to start
-    for i in range(len(training_jobs)):
-        (slurm_logs_dir / f"slurm-{array_job_id}_{i + 1}.out").touch()
+    # Submit script (handles file writing, submission, renaming, and log file creation)
+    result = submit_slurm_job(
+        array_script_content,
+        f"run_array_{run_id}",
+        is_array=True,
+        n_array_tasks=len(training_jobs),
+    )
 
     logger.section("Job submitted successfully!")
     logger.values(
         {
-            "Array Job ID": array_job_id,
+            "Array Job ID": result.job_id,
             "Total training jobs": len(training_jobs),
             "Max concurrent tasks": n_agents,
-            "View logs in": f"~/slurm_logs/slurm-{array_job_id}_*.out",
-            "Script": str(final_script_path),
+            "View logs in": result.log_pattern,
+            "Script": str(result.script_path),
         }
     )
 
@@ -191,7 +176,7 @@ def _create_training_jobs(
                 base_config_dict = base_config.model_dump(mode="json")
                 config_dict_with_overrides = apply_nested_updates(base_config_dict, param_combo)
                 config_dict_with_overrides["wandb_project"] = project
-                wandb_run_name = f"{experiment}-{generate_run_name(param_combo)}"
+                wandb_run_name = f"{experiment}-{generate_wandb_run_name(param_combo)}"
                 config_dict_with_overrides["wandb_run_name"] = wandb_run_name
                 config_with_overrides = Config(**config_dict_with_overrides)
 
@@ -248,22 +233,25 @@ def _merge_sweep_params(base: dict[str, Any], override: dict[str, Any]) -> None:
 
 
 def _get_experiments(
-    experiments_list_str: str | None = None,
+    experiments_input: str | tuple[str, ...] | None = None,
 ) -> list[str]:
-    """Get and validate the list of experiments to run based on the input string.
+    """Get and validate the list of experiments to run.
 
     Args:
-        experiments: Comma-separated list of experiment names. If None, runs all experiments.
+        experiments_input: Experiment names as comma-separated string or tuple.
+            If None, runs all experiments.
 
     Returns:
         List of experiment names to run.
     """
 
     # Determine experiment list
-    if experiments_list_str is None:
+    if experiments_input is None:
         experiments = list(EXPERIMENT_REGISTRY.keys())
+    elif isinstance(experiments_input, tuple):
+        experiments = [exp.strip() for exp in experiments_input]
     else:
-        experiments = [exp.strip() for exp in experiments_list_str.split(",")]
+        experiments = [exp.strip() for exp in experiments_input.split(",")]
 
     # Validate experiment names
     invalid_experiments = [exp for exp in experiments if exp not in EXPERIMENT_REGISTRY]

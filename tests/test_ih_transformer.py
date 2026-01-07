@@ -1,15 +1,20 @@
+from pathlib import Path
+
 import pytest
 
 from spd.configs import (
     CI_L0Config,
     Config,
     FaithfulnessLossConfig,
+    IHTaskConfig,
     ImportanceMinimalityLossConfig,
+    ModulePatternInfoConfig,
+    ScheduleConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
-from spd.experiments.ih.configs import IHTaskConfig, InductionModelConfig
+from spd.experiments.ih.configs import InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
 from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
@@ -18,7 +23,7 @@ from spd.utils.general_utils import set_seed
 
 
 @pytest.mark.slow
-def test_ih_transformer_decomposition_happy_path() -> None:
+def test_ih_transformer_decomposition_happy_path(tmp_path: Path) -> None:
     """Test that SPD decomposition works on a 2-layer, 1 head attention-only Transformer model"""
     set_seed(0)
     device = "cpu"
@@ -44,12 +49,16 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="vector_mlp",
         ci_fn_hidden_dims=[128],
-        target_module_patterns=["blocks.*.attn.q_proj", "blocks.*.attn.k_proj"],
-        identity_module_patterns=["blocks.*.attn.q_proj"],
+        module_info=[
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.q_proj", C=10),
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.k_proj", C=10),
+        ],
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="blocks.*.attn.q_proj", C=10),
+        ],
         # Loss Coefficients
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
@@ -63,12 +72,11 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         ],
         output_loss_type="kl",
         # Training
-        lr=1e-3,
+        lr_schedule=ScheduleConfig(
+            start_val=1e-3, fn_type="cosine", warmup_pct=0.01, final_val_frac=0.0
+        ),
         batch_size=4,
         steps=2,
-        lr_schedule="cosine",
-        lr_exponential_halflife=None,
-        lr_warmup_pct=0.01,
         n_eval_steps=1,
         # Logging & Saving
         train_log_freq=50,  # Print at step 0, 50, and 100
@@ -91,7 +99,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         tokenizer_name=None,
         # Task Specific
         task_config=IHTaskConfig(
-            task_name="induction_head",
+            task_name="ih",
         ),
     )
 
@@ -101,8 +109,8 @@ def test_ih_transformer_decomposition_happy_path() -> None:
     target_model.eval()
     target_model.requires_grad_(False)
 
-    if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     dataset = InductionDataset(
         seq_len=ih_transformer_config.seq_len,
@@ -126,7 +134,7 @@ def test_ih_transformer_decomposition_happy_path() -> None:
         train_loader=train_loader,
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
-        out_dir=None,
+        out_dir=tmp_path,
     )
 
     # Basic assertion to ensure the test ran

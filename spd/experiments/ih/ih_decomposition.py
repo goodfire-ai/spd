@@ -4,8 +4,7 @@ from pathlib import Path
 import fire
 import wandb
 
-from spd.configs import Config
-from spd.experiments.ih.configs import IHTaskConfig
+from spd.configs import Config, IHTaskConfig
 from spd.experiments.ih.model import InductionModelTargetRunInfo, InductionTransformer
 from spd.log import logger
 from spd.run_spd import optimize
@@ -15,7 +14,7 @@ from spd.utils.general_utils import (
     save_pre_run_info,
     set_seed,
 )
-from spd.utils.run_utils import get_output_dir
+from spd.utils.run_utils import ExecutionStamp
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -42,16 +41,24 @@ def main(
     device = get_device()
     logger.info(f"Using device: {device}")
 
+    execution_stamp = ExecutionStamp.create(run_type="spd", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
     if config.wandb_project:
         tags = ["ih"]
         if evals_id:
             tags.append(evals_id)
         if sweep_id:
             tags.append(sweep_id)
-        config = init_wandb(config, config.wandb_project, tags=tags)
-
-    # Get output directory (automatically uses wandb run ID if available)
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        init_wandb(
+            config=config,
+            project=config.wandb_project,
+            run_id=execution_stamp.run_id,
+            name=config.wandb_run_name,
+            tags=tags,
+        )
 
     task_config = config.task_config
     assert isinstance(task_config, IHTaskConfig)
@@ -64,10 +71,6 @@ def main(
     target_model = InductionTransformer.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
-
-    if config.wandb_project:
-        assert wandb.run, "wandb.run must be initialized before training"
-        wandb.run.name = config.wandb_run_name
 
     save_pre_run_info(
         save_to_wandb=config.wandb_project is not None,

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import cast
 
 import torch
@@ -7,10 +8,13 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    ModulePatternInfoConfig,
+    ScheduleConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
+    TMSTaskConfig,
 )
-from spd.experiments.tms.configs import TMSModelConfig, TMSTaskConfig, TMSTrainConfig
+from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.experiments.tms.train_tms import get_model_and_dataloader, train
 from spd.identity_insertion import insert_identity_operations_
@@ -19,7 +23,7 @@ from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDatase
 from spd.utils.general_utils import set_seed
 
 
-def test_tms_decomposition_happy_path() -> None:
+def test_tms_decomposition_happy_path(tmp_path: Path) -> None:
     """Test that SPD decomposition works on a TMS model."""
     set_seed(0)
     device = "cpu"
@@ -42,12 +46,17 @@ def test_tms_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[8],
-        target_module_patterns=["linear1", "linear2", "hidden_layers.0"],
-        identity_module_patterns=["linear1"],
+        module_info=[
+            ModulePatternInfoConfig(module_pattern="linear1", C=10),
+            ModulePatternInfoConfig(module_pattern="linear2", C=10),
+            ModulePatternInfoConfig(module_pattern="hidden_layers.0", C=10),
+        ],
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="linear1", C=10),
+        ],
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
                 coeff=3e-3,
@@ -60,12 +69,11 @@ def test_tms_decomposition_happy_path() -> None:
         ],
         output_loss_type="mse",
         # Training
-        lr=1e-3,
+        lr_schedule=ScheduleConfig(
+            start_val=1e-3, fn_type="cosine", warmup_pct=0.0, final_val_frac=0.0
+        ),
         batch_size=4,
         steps=3,  # Run only a few steps for the test
-        lr_schedule="cosine",
-        lr_exponential_halflife=None,
-        lr_warmup_pct=0.0,
         n_eval_steps=1,
         # Faithfulness Warmup
         faithfulness_warmup_steps=2,
@@ -97,8 +105,8 @@ def test_tms_decomposition_happy_path() -> None:
     target_model = TMSModel(config=tms_model_config).to(device)
     target_model.eval()
 
-    if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     assert isinstance(config.task_config, TMSTaskConfig)
     # Create dataset
@@ -130,7 +138,7 @@ def test_tms_decomposition_happy_path() -> None:
         train_loader=train_loader,
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
-        out_dir=None,
+        out_dir=tmp_path,
         tied_weights=tied_weights,
     )
 
@@ -158,7 +166,7 @@ def test_train_tms_happy_path():
         feature_probability=0.1,
         batch_size=32,
         steps=5,
-        lr=5e-3,
+        lr_schedule=ScheduleConfig(start_val=5e-3),
         data_generation_type="at_least_zero_active",
         fixed_identity_hidden_layers=False,
         fixed_random_hidden_layers=False,
@@ -171,7 +179,6 @@ def test_train_tms_happy_path():
         model,
         dataloader,
         importance=1.0,
-        lr=config.lr,
         lr_schedule=config.lr_schedule,
         steps=config.steps,
         print_freq=1000,
@@ -199,7 +206,7 @@ def test_tms_train_fixed_identity():
         feature_probability=0.1,
         batch_size=32,
         steps=2,
-        lr=5e-3,
+        lr_schedule=ScheduleConfig(start_val=5e-3),
         data_generation_type="at_least_zero_active",
         fixed_identity_hidden_layers=True,
         fixed_random_hidden_layers=False,
@@ -218,7 +225,6 @@ def test_tms_train_fixed_identity():
         model,
         dataloader,
         importance=1.0,
-        lr=config.lr,
         lr_schedule=config.lr_schedule,
         steps=config.steps,
         print_freq=1000,
@@ -247,7 +253,7 @@ def test_tms_train_fixed_random():
         feature_probability=0.1,
         batch_size=32,
         steps=2,
-        lr=5e-3,
+        lr_schedule=ScheduleConfig(start_val=5e-3),
         data_generation_type="at_least_zero_active",
         fixed_identity_hidden_layers=False,
         fixed_random_hidden_layers=True,
@@ -262,7 +268,6 @@ def test_tms_train_fixed_random():
         model,
         dataloader,
         importance=1.0,
-        lr=config.lr,
         lr_schedule=config.lr_schedule,
         steps=config.steps,
         print_freq=1000,

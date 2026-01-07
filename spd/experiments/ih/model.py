@@ -1,58 +1,24 @@
 import math
 from dataclasses import dataclass
-from pathlib import Path
 from typing import override
 
 import torch
-import wandb
-import yaml
 from jaxtyping import Float
 from torch import Tensor, nn
 from torch.nn import functional as F
-from wandb.apis.public import Run
 
-from spd.experiments.ih.configs import IHTaskConfig, InductionHeadsTrainConfig, InductionModelConfig
+from spd.experiments.ih.configs import InductionHeadsTrainConfig, InductionModelConfig
 from spd.interfaces import LoadableModule, RunInfo
-from spd.spd_types import WANDB_PATH_PREFIX, ModelPath
-from spd.utils.run_utils import check_run_exists
-from spd.utils.wandb_utils import (
-    download_wandb_file,
-    fetch_latest_wandb_checkpoint,
-    fetch_wandb_run_dir,
-)
+from spd.spd_types import ModelPath
 
 
 @dataclass
 class InductionModelTargetRunInfo(RunInfo[InductionHeadsTrainConfig]):
     """Run info from training an InductionModel."""
 
-    @override
-    @classmethod
-    def from_path(cls, path: ModelPath) -> "InductionModelTargetRunInfo":
-        """Load the run info from a wandb run or a local path to a checkpoint."""
-        if isinstance(path, str) and path.startswith(WANDB_PATH_PREFIX):
-            # Check if run exists in shared filesystem first
-            run_dir = check_run_exists(path)
-            if run_dir:
-                # Use local files from shared filesystem
-                induction_train_config_path = run_dir / "ih_train_config.yaml"
-                checkpoint_path = run_dir / "ih.pth"
-            else:
-                # Download from wandb
-                wandb_path = path.removeprefix(WANDB_PATH_PREFIX)
-                induction_train_config_path, checkpoint_path = (
-                    InductionTransformer._download_wandb_files(wandb_path)
-                )
-        else:
-            # `path` should be a local path to a checkpoint
-            induction_train_config_path = Path(path).parent / "ih_train_config.yaml"
-            checkpoint_path = Path(path)
-
-        with open(induction_train_config_path) as f:
-            induction_train_config_dict = yaml.safe_load(f)
-
-        ih_train_config = InductionHeadsTrainConfig(**induction_train_config_dict)
-        return cls(checkpoint_path=checkpoint_path, config=ih_train_config)
+    config_class = InductionHeadsTrainConfig
+    config_filename = "ih_train_config.yaml"
+    checkpoint_filename = "ih.pth"
 
 
 class PositionalEncoding(nn.Module):
@@ -266,27 +232,6 @@ class InductionTransformer(LoadableModule):
             x = block(x)
 
         return torch.stack(attn_weights, dim=1)
-
-    @staticmethod
-    def _download_wandb_files(wandb_project_run_id: str) -> tuple[Path, Path]:
-        """Download the relevant files from a wandb run.
-
-        Returns:
-            - induction_model_config_path: Path to the induction model config
-            - checkpoint_path: Path to the checkpoint
-        """
-        api = wandb.Api()
-        run: Run = api.run(wandb_project_run_id)
-        run_dir = fetch_wandb_run_dir(run.id)
-
-        task_name = IHTaskConfig.model_fields["task_name"].default
-        induction_model_config_path = download_wandb_file(
-            run, run_dir, f"{task_name}_train_config.yaml"
-        )
-
-        checkpoint = fetch_latest_wandb_checkpoint(run)
-        checkpoint_path = download_wandb_file(run, run_dir, checkpoint.name)
-        return induction_model_config_path, checkpoint_path
 
     @classmethod
     @override

@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -37,9 +38,7 @@ TEST_CONFIG = {
     # --- Training ---
     "batch_size": 2,
     "steps": 20,
-    "lr": 1e-2,
-    "lr_schedule": "constant",
-    "lr_warmup_pct": 0.0,
+    "lr_schedule": {"start_val": 1e-2, "fn_type": "constant"},
     "gradient_accumulation_steps": 1,
     # --- Logging & Saving ---
     "train_log_freq": 9999,
@@ -74,6 +73,13 @@ TEST_CONFIG = {
 }
 
 
+def _parse_run_id_from_output(stderr: str) -> str:
+    """Parse the run_id from the subprocess stderr output."""
+    match = re.search(r"Run ID: (s-[a-f0-9]+)", stderr)
+    assert match, f"Could not find run_id in output:\n{stderr}"
+    return match.group(1)
+
+
 @pytest.mark.slow
 class TestDistributedDeterminicity:
     def test_distributed_determinicity(self):
@@ -95,33 +101,29 @@ class TestDistributedDeterminicity:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
 
-            # Create separate output directories for each run
-            dp1_out_dir = tmpdir / "dp1_output"
-            dp2_out_dir = tmpdir / "dp2_output"
-
             # Run with dp=1
-            config_dp1 = TEST_CONFIG.copy()
-            config_dp1["out_dir"] = str(dp1_out_dir)
-
             config_path_dp1 = tmpdir / "test_config_dp1.yaml"
             with open(config_path_dp1, "w") as f:
-                yaml.dump(config_dp1, f)
+                yaml.dump(TEST_CONFIG, f)
 
             # ports should be globally unique in tests to allow test parallelization
             # see discussion at: https://github.com/goodfire-ai/spd/pull/186
-            self._run_experiment(config_path_dp1, n_processes=1, port=29501)
+            dp1_run_id = self._run_experiment(
+                config_path_dp1, n_processes=1, port=29501, spd_out_dir=tmpdir
+            )
+            dp1_out_dir = tmpdir / "spd" / dp1_run_id
 
             # Run with dp=2
-            config_dp2 = TEST_CONFIG.copy()
-            config_dp2["out_dir"] = str(dp2_out_dir)
-
             config_path_dp2 = tmpdir / "test_config_dp2.yaml"
             with open(config_path_dp2, "w") as f:
-                yaml.dump(config_dp2, f)
+                yaml.dump(TEST_CONFIG, f)
 
             # ports should be globally unique in tests to allow test parallelization
             # see discussion at: https://github.com/goodfire-ai/spd/pull/186
-            self._run_experiment(config_path_dp2, n_processes=2, port=29502)
+            dp2_run_id = self._run_experiment(
+                config_path_dp2, n_processes=2, port=29502, spd_out_dir=tmpdir
+            )
+            dp2_out_dir = tmpdir / "spd" / dp2_run_id
 
             # Load and compare metrics from metrics.jsonl files
             dp1_metrics = self._load_metrics(dp1_out_dir / "metrics.jsonl")
@@ -138,8 +140,9 @@ class TestDistributedDeterminicity:
         config_path: Path,
         n_processes: int,
         port: int,
-    ) -> None:
-        """Run the experiment using torchrun."""
+        spd_out_dir: Path,
+    ) -> str:
+        """Run the experiment using torchrun. Returns the run_id."""
         script_path = REPO_ROOT / "spd" / "experiments" / "lm" / "lm_decomposition.py"
         assert script_path.exists(), f"{script_path} not found"
 
@@ -153,9 +156,10 @@ class TestDistributedDeterminicity:
             str(config_path),
         ]
 
-        # disable cuda so we run on cpu:
+        # disable cuda so we run on cpu, and set SPD_OUT_DIR to temp directory
         new_env = os.environ.copy()
         new_env["CUDA_VISIBLE_DEVICES"] = ""
+        new_env["SPD_OUT_DIR"] = str(spd_out_dir)
 
         result = subprocess.run(cmd, env=new_env, capture_output=True, text=True, timeout=300)
 
@@ -163,6 +167,8 @@ class TestDistributedDeterminicity:
             print(f"STDOUT: {result.stdout}")
             print(f"STDERR: {result.stderr}")
             raise RuntimeError(f"torchrun failed with code {result.returncode}")
+
+        return _parse_run_id_from_output(result.stderr)
 
     def _load_metrics(self, metrics_file: Path) -> list[dict[str, float]]:
         """Load eval metrics from the metrics.jsonl file."""

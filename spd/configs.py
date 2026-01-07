@@ -1,6 +1,5 @@
 """Config classes of various types"""
 
-from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal, Self
 
 from pydantic import (
@@ -13,14 +12,174 @@ from pydantic import (
 )
 
 from spd.base_config import BaseConfig
-from spd.experiments.ih.configs import IHTaskConfig
-from spd.experiments.lm.configs import LMTaskConfig
-from spd.experiments.mem.configs import MemTaskConfig
-from spd.experiments.resid_mlp.configs import ResidMLPTaskConfig
-from spd.experiments.tms.configs import TMSTaskConfig
 from spd.log import logger
-from spd.models.components import CiFnType
-from spd.spd_types import ModelPath, Probability
+from spd.spd_types import CiFnType, ModelPath, Probability
+
+
+class ScheduleConfig(BaseConfig):
+    """Configuration for a schedule with warmup and decay. Can be used for LR or other values."""
+
+    start_val: PositiveFloat = Field(..., description="Starting/peak value (after warmup)")
+    warmup_pct: Probability = Field(
+        default=0.0, description="Fraction of total steps for linear warmup"
+    )
+    final_val_frac: NonNegativeFloat = Field(
+        default=1.0,
+        description="End value as fraction of start_val. Can be <1 (decay), =1 (no decay), or >1 (increase)",
+    )
+    fn_type: Literal["constant", "cosine", "linear"] = Field(
+        default="constant", description="Decay function type after warmup"
+    )
+
+    @model_validator(mode="after")
+    def validate_constant_schedule(self) -> Self:
+        if self.fn_type == "constant" and self.final_val_frac != 1.0:
+            raise ValueError("constant schedule requires final_val_frac == 1.0")
+        return self
+
+
+def migrate_to_lr_schedule_config(config_dict: dict[str, Any]) -> None:
+    """Migrate old LR config format (lr + lr_schedule + lr_warmup_pct) to ScheduleConfig.
+
+    Modifies config_dict in place.
+    """
+    if "lr" not in config_dict:
+        return
+
+    logger.info("Migrating old LR config format to ScheduleConfig")
+
+    old_lr = config_dict.pop("lr")
+    old_fn_type = config_dict.pop("lr_schedule", "constant")
+    old_warmup_pct = config_dict.pop("lr_warmup_pct", 0.0)
+
+    # Old cosine decayed to 0, old constant stayed at 1
+    final_val_frac = 0.0 if old_fn_type == "cosine" else 1.0
+
+    config_dict["lr_schedule"] = {
+        "start_val": old_lr,
+        "fn_type": old_fn_type,
+        "warmup_pct": old_warmup_pct,
+        "final_val_frac": final_val_frac,
+    }
+
+
+# Task configs - these define task-specific parameters for SPD decomposition
+class TMSTaskConfig(BaseConfig):
+    task_name: Literal["tms"] = Field(
+        default="tms",
+        description="Task identifier for TMS",
+    )
+    feature_probability: Probability = Field(
+        ...,
+        description="Probability that a given feature is active in generated data",
+    )
+    data_generation_type: Literal["exactly_one_active", "at_least_zero_active"] = Field(
+        default="at_least_zero_active",
+        description="Strategy for generating synthetic data for TMS training",
+    )
+
+
+class ResidMLPTaskConfig(BaseConfig):
+    task_name: Literal["resid_mlp"] = Field(
+        default="resid_mlp",
+        description="Identifier for the residual-MLP decomposition task",
+    )
+    feature_probability: Probability = Field(
+        ...,
+        description="Probability that a given feature is active in generated data",
+    )
+    data_generation_type: Literal[
+        "exactly_one_active", "exactly_two_active", "at_least_zero_active"
+    ] = Field(
+        default="at_least_zero_active",
+        description="Strategy for generating synthetic data for residual-MLP training",
+    )
+
+
+class IHTaskConfig(BaseConfig):
+    task_name: Literal["ih"]
+    prefix_window: PositiveInt | None = Field(
+        default=None,
+        description="Number of tokens to use as a prefix window for the induction head. If none, uses the full sequence length.",
+    )
+
+
+class LMTaskConfig(BaseConfig):
+    task_name: Literal["lm"] = Field(
+        default="lm",
+        description="Identifier for the language-model decomposition task",
+    )
+    max_seq_len: PositiveInt = Field(
+        default=512,
+        description="Maximum sequence length to truncate or pad inputs to",
+    )
+    buffer_size: PositiveInt = Field(
+        default=1000,
+        description="Buffered sample count for streaming dataset shuffling",
+    )
+    dataset_name: str = Field(
+        default="lennart-finke/SimpleStories",
+        description="HuggingFace dataset identifier to use for the LM task",
+    )
+    column_name: str = Field(
+        default="story",
+        description="Dataset column that contains the text to train on",
+    )
+    train_data_split: str = Field(
+        default="train",
+        description="Name of the dataset split used for training",
+    )
+    eval_data_split: str = Field(
+        default="test",
+        description="Name of the dataset split used for evaluation",
+    )
+    shuffle_each_epoch: bool = Field(
+        default=True,
+        description="Whether to reshuffle data at each epoch. Set False in tests to keep fixed "
+        "order across dp modes.",
+    )
+    is_tokenized: bool = Field(
+        default=False,
+        description="Whether the dataset is already tokenized",
+    )
+    streaming: bool = Field(
+        default=False,
+        description="Whether to use a streaming dataset",
+    )
+
+
+class MemTaskConfig(BaseConfig):
+    """Task configuration for the mem decomposition task."""
+
+    task_name: Literal["mem"] = Field(
+        default="mem",
+        description="Identifier for the mem decomposition task",
+    )
+    expand: bool = Field(
+        default=False,
+        description="Whether to expand model dimensions before decomposition",
+    )
+    d_model_new: int | None = Field(
+        default=None,
+        description="New d_model dimension (must be >= original d_model). Required if expand=True.",
+    )
+    d_mlp_new: int | None = Field(
+        default=None,
+        description="New d_mlp dimension (must be >= original d_mlp). Required if expand=True.",
+    )
+
+
+class ModulePatternInfoConfig(BaseConfig):
+    """Configuration for a module pattern with its number of components.
+
+    Used in config files to specify which modules to decompose and how many
+    components (C) to use for each module matching the pattern.
+    """
+
+    module_pattern: str = Field(..., description="fnmatch-style pattern to match module names")
+    C: PositiveInt = Field(
+        ..., description="Number of components for modules matching this pattern"
+    )
 
 
 #### Metrics that can be used as losses in training or eval ####
@@ -246,10 +405,6 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
-    C: PositiveInt = Field(
-        ...,
-        description="The number of subcomponents per layer",
-    )
     n_mask_samples: PositiveInt = Field(
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
@@ -270,22 +425,34 @@ class Config(BaseConfig):
         default="leaky_hard",
         description="Type of sigmoid to use for causal importance calculation",
     )
-    target_module_patterns: list[str] = Field(
+    module_info: list[ModulePatternInfoConfig] = Field(
         ...,
-        description="List of fnmatch-style patterns that select modules to decompose",
+        description="List of module patterns with C values specifying which modules to decompose. "
+        "Example: [{module_pattern: 'h.*.mlp.c_fc', C: 10}, {module_pattern: 'h.*.attn.*', C: 20}]",
     )
-    identity_module_patterns: list[str] | None = Field(
+    identity_module_info: list[ModulePatternInfoConfig] | None = Field(
         default=None,
-        description="List of fnmatch-style patterns that select modules in which an identity "
-        "matrix should be inserted and decomposed beforehand",
+        description="List of identity module patterns with C values. "
+        "Identity operations will be inserted at these modules.",
     )
 
     @property
-    def all_module_patterns(self):
-        if self.identity_module_patterns is None:
-            return self.target_module_patterns
-        identity_final_patterns = [f"{p}.pre_identity" for p in self.identity_module_patterns]
-        return self.target_module_patterns + identity_final_patterns
+    def all_module_info(self) -> list[ModulePatternInfoConfig]:
+        """Combine target and identity patterns with their C values.
+
+        Returns list of ModulePatternInfoConfig with .pre_identity suffix added to identity patterns.
+        """
+        result = list(self.module_info)
+
+        if self.identity_module_info is not None:
+            for info in self.identity_module_info:
+                result.append(
+                    ModulePatternInfoConfig(
+                        module_pattern=f"{info.module_pattern}.pre_identity", C=info.C
+                    )
+                )
+
+        return result
 
     use_delta_component: bool = Field(
         default=True,
@@ -309,7 +476,7 @@ class Config(BaseConfig):
     )
 
     # --- Training ---
-    lr: PositiveFloat = Field(..., description="Learning rate for optimiser")
+    lr_schedule: ScheduleConfig = Field(..., description="Learning rate schedule configuration")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
     batch_size: PositiveInt = Field(
         ...,
@@ -322,9 +489,13 @@ class Config(BaseConfig):
         default=1,
         description="Number of steps to accumulate gradients over before updating parameters",
     )
-    grad_clip_norm: PositiveFloat | None = Field(
+    grad_clip_norm_components: PositiveFloat | None = Field(
         default=None,
-        description="If set, clip gradient norm to this value before each optimiser step",
+        description="If set, apply grad norm clipping to the parameters of the components",
+    )
+    grad_clip_norm_ci_fns: PositiveFloat | None = Field(
+        default=None,
+        description="If set, apply grad norm clipping to the parameters of the CI functions",
     )
 
     # --- Faithfulness Warmup ---
@@ -345,25 +516,7 @@ class Config(BaseConfig):
     def microbatch_size(self) -> PositiveInt:
         return self.batch_size // self.gradient_accumulation_steps
 
-    lr_schedule: Literal["linear", "constant", "cosine", "exponential"] = Field(
-        default="constant",
-        description="Type of learning-rate schedule to apply",
-    )
-    lr_exponential_halflife: PositiveFloat | None = Field(
-        default=None,
-        description="Half-life parameter when using an exponential LR schedule",
-    )
-    lr_warmup_pct: Probability = Field(
-        default=0.0,
-        description="Fraction of total steps to linearly warm up the learning rate",
-    )
-
     # --- Logging & Saving ---
-    out_dir: Path | None = Field(
-        default=None,
-        description="Directory to save output to. If None, creates a dir using the wandb run id or "
-        "randomly generates one",
-    )
     train_log_freq: PositiveInt = Field(
         ...,
         description="Interval (in steps) at which to log training metrics",
@@ -465,8 +618,11 @@ class Config(BaseConfig):
         "p_anneal_end_frac",
         "importance_minimality_coeff",
         "dist_backend",
+        "lr_exponential_halflife",
+        "out_dir",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
+        "grad_clip_norm": "grad_clip_norm_components",
         "print_freq": "eval_freq",
         "pretrained_model_name_hf": "pretrained_model_name",
         "recon_coeff": "ci_recon_coeff",
@@ -481,6 +637,9 @@ class Config(BaseConfig):
 
         # We don't bother mapping the old ``eval_metrics`` to the new ``eval_metric_configs``.
         config_dict.pop("eval_metrics", None)
+
+        cls._migrate_to_module_info(config_dict)
+        migrate_to_lr_schedule_config(config_dict)
 
         for key in list(config_dict.keys()):
             val = config_dict[key]
@@ -507,14 +666,31 @@ class Config(BaseConfig):
             config_dict["slow_eval_freq"] = config_dict["eval_freq"]
         return config_dict
 
+    @classmethod
+    def _migrate_to_module_info(cls, config_dict: dict[str, Any]) -> None:
+        """Migrate old config format (C + target_module_patterns) to new module_info format."""
+        cond = "C" in config_dict or "target_module_patterns" in config_dict
+        if not cond:
+            return
+
+        logger.warning(
+            "Found old config keys for C definition, mapping old structure to new module_info structure"
+        )
+        global_c = config_dict["C"]
+        config_dict["module_info"] = [
+            {"module_pattern": p, "C": global_c} for p in config_dict["target_module_patterns"]
+        ]
+        del config_dict["C"]
+        del config_dict["target_module_patterns"]
+
+        identity_patterns = config_dict.pop("identity_module_patterns", None)
+        if identity_patterns is not None:
+            config_dict["identity_module_info"] = [
+                {"module_pattern": p, "C": global_c} for p in identity_patterns
+            ]
+
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        # Check that lr_exponential_halflife is not None if lr_schedule is "exponential"
-        if self.lr_schedule == "exponential":
-            assert self.lr_exponential_halflife is not None, (
-                "lr_exponential_halflife must be set if lr_schedule is exponential"
-            )
-
         assert self.batch_size % self.gradient_accumulation_steps == 0, (
             "batch_size must be divisible by gradient_accumulation_steps"
         )

@@ -1,16 +1,14 @@
 """Language Model decomposition script."""
 
 import json
-import os
 from pathlib import Path
 
 import fire
 import wandb
 from simple_stories_train.run_info import RunInfo as SSRunInfo
 
-from spd.configs import Config
+from spd.configs import Config, LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
@@ -23,7 +21,7 @@ from spd.utils.distributed_utils import (
     with_distributed_cleanup,
 )
 from spd.utils.general_utils import resolve_class, save_pre_run_info, set_seed
-from spd.utils.run_utils import get_output_dir
+from spd.utils.run_utils import setup_decomposition_run
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -55,28 +53,17 @@ def main(
     set_seed(config.seed)
 
     if is_main_process():
+        out_dir, run_id, tags = setup_decomposition_run(
+            experiment_tag="lm", evals_id=evals_id, sweep_id=sweep_id
+        )
         if config.wandb_project:
-            tags = ["lm"]
-            if evals_id:
-                tags.append(evals_id)
-            if sweep_id:
-                tags.append(sweep_id)
-            slurm_array_job_id = os.getenv("SLURM_ARRAY_JOB_ID", None)
-            if slurm_array_job_id is not None:
-                logger.info(f"Running on slurm array job id: {slurm_array_job_id}")
-                tags.append(f"slurm-array-job-id_{slurm_array_job_id}")
-
-            config = init_wandb(config, config.wandb_project, tags=tags)
-            assert wandb.run
-            if config.wandb_run_name:
-                wandb.run.name = config.wandb_run_name
-
-        if config.out_dir is not None:
-            out_dir = config.out_dir
-            out_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
-        logger.info(f"Output directory: {out_dir}")
+            init_wandb(
+                config=config,
+                project=config.wandb_project,
+                run_id=run_id,
+                name=config.wandb_run_name,
+                tags=tags,
+            )
         logger.info(config)
     else:
         out_dir = None

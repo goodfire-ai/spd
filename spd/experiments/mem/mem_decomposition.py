@@ -6,8 +6,7 @@ from pathlib import Path
 import fire
 import wandb
 
-from spd.configs import Config
-from spd.experiments.mem.configs import MemTaskConfig
+from spd.configs import Config, MemTaskConfig
 from spd.experiments.mem.mem_dataset import MemDataset
 from spd.experiments.mem.models import MemTargetRunInfo, MemTransformer, expand_model
 from spd.log import logger
@@ -15,7 +14,7 @@ from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import save_pre_run_info, set_seed
-from spd.utils.run_utils import get_output_dir
+from spd.utils.run_utils import setup_decomposition_run
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -48,15 +47,18 @@ def main(
         None if sweep_params_json is None else json.loads(sweep_params_json.removeprefix("json:"))
     )
 
-    if config.wandb_project:
-        tags = ["mem"]
-        if evals_id:
-            tags.append(evals_id)
-        if sweep_id:
-            tags.append(sweep_id)
-        config = init_wandb(config, config.wandb_project, tags=tags)
+    out_dir, run_id, tags = setup_decomposition_run(
+        experiment_tag="mem", evals_id=evals_id, sweep_id=sweep_id
+    )
 
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+    if config.wandb_project:
+        init_wandb(
+            config=config,
+            project=config.wandb_project,
+            run_id=run_id,
+            name=config.wandb_run_name,
+            tags=tags,
+        )
 
     set_seed(config.seed)
     logger.info(config)

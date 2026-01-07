@@ -6,12 +6,15 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 20
 n_mask_samples: 1
 ci_fn_type: "mlp"
 ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
-target_module_patterns: ["linear1", "linear2"]
+module_info:
+  - module_pattern: "linear1"
+    C: 20
+  - module_pattern: "linear2"
+    C: 20
 use_delta_component: true
 
 loss_metric_configs:
@@ -28,9 +31,11 @@ output_loss_type: mse
 batch_size: 4096
 eval_batch_size: 4096
 steps: 10_000
-lr: 1e-3
-lr_schedule: cosine
-lr_warmup_pct: 0.0
+lr_schedule:
+  start_val: 1e-3
+  fn_type: cosine
+  warmup_pct: 0.0
+  final_val_frac: 0.0
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200

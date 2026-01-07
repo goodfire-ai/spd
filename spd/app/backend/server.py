@@ -1,157 +1,166 @@
-import json
+"""Unified FastAPI server for the SPD app.
+
+Merges the main app backend with the local attributions server.
+Supports multiple runs, on-demand attribution graph computation,
+and activation contexts generation.
+
+Usage:
+    python -m spd.app.backend.server --port 8000
+"""
+
 import traceback
-import uuid
-from collections.abc import Generator
-from functools import wraps
-from urllib.parse import unquote
+from contextlib import asynccontextmanager
 
 import fire
+import torch
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from spd.app.backend.lib.activation_contexts import get_activations_data_streaming
-from spd.app.backend.schemas import (
-    HarvestMetadata,
-    ModelActivationContexts,
-    Status,
-    SubcomponentActivationContexts,
-    SubcomponentMetadata,
+from spd.app.backend.database import LocalAttrDB
+from spd.app.backend.routers import (
+    activation_contexts_router,
+    clusters_router,
+    correlations_router,
+    dataset_search_router,
+    graphs_router,
+    intervention_router,
+    prompts_router,
+    runs_router,
 )
-from spd.app.backend.services.run_context_service import RunContextService
+from spd.app.backend.state import StateManager
+from spd.log import logger
+from spd.utils.distributed_utils import get_device
 
-run_context_service = RunContextService()
-
-
-def handle_errors(func):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
-    """Decorator to add error handling with traceback to endpoints"""
-
-    @wraps(func)
-    def sync_wrapper(*args, **kwargs):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            traceback.print_exc()
-            raise HTTPException(status_code=500, detail=str(e)) from e
-
-    return sync_wrapper
+DEVICE = get_device()
 
 
-app = FastAPI(debug=True)
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
+    """Initialize DB connection at startup. Model loaded on-demand via /api/runs/load."""
+    manager = StateManager.get()
 
+    db = LocalAttrDB(check_same_thread=False)
+    db.init_schema()
+    manager.initialize(db)
+
+    logger.info(f"[STARTUP] DB initialized: {db.db_path}")
+    logger.info(f"[STARTUP] Device: {DEVICE}")
+    logger.info(f"[STARTUP] CUDA available: {torch.cuda.is_available()}")
+
+    yield
+
+    manager.close()
+
+
+app = FastAPI(title="SPD App API", lifespan=lifespan, debug=True)
+
+# Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    # extremely permissive CORS policy for now as we're only running locally
-    allow_origins=["*"],
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-@app.get("/status")
-@handle_errors
-def get_status() -> Status:
-    return run_context_service.get_status()
+# comment out if wanted
+# @app.middleware("http")
+# async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]):
+#     """Log all incoming requests and their responses."""
+#     logger.info(f"[REQUEST] {request.method} {request.url.path}?{request.url.query}")
+#     response = await call_next(request)
+#     logger.info(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}")
+#     return response
 
 
-@app.post("/runs/load")
-@handle_errors
-def load_run(wandb_run_path: str):
-    run_context_service.load_run(unquote(wandb_run_path))
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Log validation errors (400s) with full details."""
+    logger.error(f"[VALIDATION ERROR] {request.method} {request.url.path}")
+    logger.error(f"[VALIDATION ERROR] Errors: {exc.errors()}")
+    if exc.body is not None:
+        logger.error(f"[VALIDATION ERROR] Request body: {exc.body}")
+
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": exc.errors(),
+            "type": "RequestValidationError",
+            "path": request.url.path,
+            "method": request.method,
+            "body": str(exc.body) if exc.body is not None else None,
+        },
+    )
 
 
-@app.get("/activation_contexts/subcomponents")
-def get_subcomponent_activation_contexts(
-    importance_threshold: float,
-    n_batches: int,
-    batch_size: int,
-    n_tokens_either_side: int,
-    topk_examples: int,
-) -> StreamingResponse:
-    run_context = run_context_service.train_run_context
-    if run_context is None:
-        raise HTTPException(status_code=400, detail="No training run loaded")
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Log HTTP exceptions with context."""
+    logger.error(f"[HTTP {exc.status_code}] {request.method} {request.url.path}")
+    logger.error(f"[HTTP {exc.status_code}] Detail: {exc.detail}")
 
-    def generate() -> Generator[str]:
-        for res in get_activations_data_streaming(
-            run_context,
-            importance_threshold,
-            n_batches,
-            n_tokens_either_side,
-            batch_size,
-            topk_examples,
-        ):
-            match res:
-                case ("progress", progress):
-                    progress_data = {"type": "progress", "progress": progress}
-                    yield f"data: {json.dumps(progress_data)}\n\n"
-                case ("complete", data):
-                    # Generate harvest ID and cache the full result
-                    harvest_id = str(uuid.uuid4())
-                    harvest_cache[harvest_id] = data
-
-                    # Build lightweight metadata response using Pydantic
-                    metadata = HarvestMetadata(
-                        harvest_id=harvest_id,
-                        layers={
-                            layer_name: [
-                                SubcomponentMetadata(
-                                    subcomponent_idx=subcomp.subcomponent_idx,
-                                    mean_ci=subcomp.mean_ci,
-                                )
-                                for subcomp in subcomponents
-                            ]
-                            for layer_name, subcomponents in data.layers.items()
-                        },
-                    )
-
-                    complete_data = {"type": "complete", "result": metadata.model_dump()}
-                    yield f"data: {json.dumps(complete_data)}\n\n"
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "type": "HTTPException",
+            "path": request.url.path,
+            "method": request.method,
+        },
+    )
 
 
-# Cache for harvest results, keyed by UUID
-harvest_cache: dict[str, ModelActivationContexts] = {}
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Log full exception details for debugging."""
+    tb = traceback.format_exc()
+    logger.error(f"[ERROR] {request.method} {request.url.path}")
+    logger.error(f"[ERROR] Exception: {type(exc).__name__}: {exc}")
+    logger.error(f"[ERROR] Traceback:\n{tb}")
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": str(exc),
+            "type": type(exc).__name__,
+            "path": request.url.path,
+            "method": request.method,
+        },
+    )
 
 
-@app.get("/activation_contexts/{harvest_id}/{layer}/{component_idx}")
-@handle_errors
-def get_component_detail(
-    harvest_id: str, layer: str, component_idx: int
-) -> SubcomponentActivationContexts:
-    """Lazy-load endpoint for single component data"""
-    if (cached_data := harvest_cache.get(harvest_id)) is None:
-        raise HTTPException(status_code=404, detail="Harvest ID not found")
-
-    if (layer_data := cached_data.layers.get(layer)) is None:
-        raise HTTPException(status_code=404, detail=f"Layer '{layer}' not found")
-
-    # Find the component by index
-    component = None
-    for subcomp in layer_data:
-        if subcomp.subcomponent_idx == component_idx:
-            component = subcomp
-            break
-
-    if component is None:
-        raise HTTPException(
-            status_code=404, detail=f"Component {component_idx} not found in layer '{layer}'"
-        )
-
-    return component
-
-
-@app.get("/")
-@handle_errors
-def healthcheck() -> str:
-    return "Hello, World!"
+# Routers
+app.include_router(runs_router)
+app.include_router(prompts_router)
+app.include_router(graphs_router)
+app.include_router(activation_contexts_router)
+app.include_router(correlations_router)
+app.include_router(clusters_router)
+app.include_router(intervention_router)
+app.include_router(dataset_search_router)
 
 
 def cli(port: int = 8000) -> None:
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    """Run the server.
+
+    Args:
+        port: Port to serve on (default 8000)
+    """
+    logger.info(f"Starting server on port {port}")
+    uvicorn.run(
+        "spd.app.backend.server:app",
+        host="0.0.0.0",
+        port=port,
+        log_level="info",
+    )
 
 
 if __name__ == "__main__":

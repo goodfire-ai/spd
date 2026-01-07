@@ -13,14 +13,22 @@ SPD (Stochastic Parameter Decomposition) is a research framework for analyzing n
 
 **Available experiments** (defined in `spd/registry.py`):
 
-- `tms_5-2` - TMS with 5 features, 2 hidden dimensions
-- `tms_5-2-id` - TMS with 5 features, 2 hidden dimensions (fixed identity in-between)
-- `tms_40-10` - TMS with 40 features, 10 hidden dimensions  
-- `tms_40-10-id` - TMS with 40 features, 10 hidden dimensions (fixed identity in-between)
-- `resid_mlp1` - ResidualMLP with 1 layer
-- `resid_mlp2` - ResidualMLP with 2 layers
-- `resid_mlp3` - ResidualMLP with 3 layers
-- `ss_emb` - Language model experiments (loaded from HuggingFace)
+- **TMS (Toy Model of Superposition)**:
+  - `tms_5-2` - TMS with 5 features, 2 hidden dimensions
+  - `tms_5-2-id` - TMS with 5 features, 2 hidden dimensions (fixed identity in-between)
+  - `tms_40-10` - TMS with 40 features, 10 hidden dimensions
+  - `tms_40-10-id` - TMS with 40 features, 10 hidden dimensions (fixed identity in-between)
+- **ResidualMLP**:
+  - `resid_mlp1` - ResidualMLP with 1 layer
+  - `resid_mlp2` - ResidualMLP with 2 layers
+  - `resid_mlp3` - ResidualMLP with 3 layers
+- **Language Models**:
+  - `ss_llama_simple`, `ss_llama_simple-1L`, `ss_llama_simple-2L` - Simple Stories Llama variants
+  - `ss_llama_simple_mlp`, `ss_llama_simple_mlp-1L`, `ss_llama_simple_mlp-2L` - Llama MLP-only variants
+  - `ss_gpt2`, `ss_gpt2_simple`, `ss_gpt2_simple_noln` - Simple Stories GPT-2 variants
+  - `ss_gpt2_simple-1L`, `ss_gpt2_simple-2L` - GPT-2 simple layer variants
+  - `gpt2` - Standard GPT-2
+  - `ts` - TinyStories
 
 ## Research Papers
 
@@ -48,6 +56,7 @@ This repository implements methods from two key research papers on parameter dec
 
 - `make install-dev` - Install package with dev dependencies and pre-commit hooks
 - `make install` - Install package only (`pip install -e .`)
+- `make install-app` - Install frontend dependencies (`npm install` in `spd/app/frontend/`)
 
 **Code Quality:**
 
@@ -55,12 +64,24 @@ This repository implements methods from two key research papers on parameter dec
 - `make type` - Run basedpyright type checking only
 - `make format` - Run ruff linter and formatter
 
+**Frontend (when working on `spd/app/frontend/`):**
+
+- `make check-app` - Run frontend checks (format, type check, lint)
+- Or run individually from `spd/app/frontend/`:
+  - `npm run format` - Format code with Prettier
+  - `npm run check` - Run Svelte type checking
+  - `npm run lint` - Run ESLint
+
 **Testing:**
 
 - `make test` - Run tests (excluding slow tests)
 - `make test-all` - Run all tests including slow ones
 - `python -m pytest tests/test_specific.py` - Run specific test file
 - `python -m pytest tests/test_specific.py::test_function` - Run specific test
+
+**Running the App:**
+
+- `make app` - Launch the SPD visualization app (backend + frontend)
 
 ## Architecture Overview
 
@@ -105,6 +126,20 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 - Causal importance quantifies component contributions to model outputs
 - Multiple loss terms balance faithfulness, reconstruction quality, and sparsity
 
+**Harvest & Autointerp Modules:**
+
+- `spd/harvest/` - Offline GPU pipeline for collecting component statistics (correlations, token stats, activation examples)
+- `spd/autointerp/` - LLM-based automated interpretation of components
+- Data stored at `SPD_OUT_DIR/{harvest,autointerp}/<run_id>/`
+- See `spd/harvest/CLAUDE.md` and `spd/autointerp/CLAUDE.md` for details
+
+**Output Directory (`SPD_OUT_DIR`):**
+
+- Defined in `spd/settings.py`
+- On cluster: `/mnt/polished-lake/spd/`
+- Off cluster: `~/spd_out/`
+- Contains: runs, SLURM logs, sbatch scripts, clustering outputs, harvest data, autointerp results
+
 **Environment setup:**
 
 - Requires `.env` file with WandB credentials (see `.env.example`)
@@ -113,17 +148,49 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 
 ## Common Usage Patterns
 
-### Running Experiments Locally (`spd-simple`)
+### Running Experiments Locally (`spd-local`)
 
-For collaborators and simple local execution, use `spd-simple`:
+For collaborators and simple local execution, use `spd-local`:
 
 ```bash
-spd-simple tms_5-2           # Run on single GPU (default)
-spd-simple tms_5-2 --cpu     # Run on CPU
-spd-simple tms_5-2 --dp 4    # Run on 4 GPUs (single node DDP)
+spd-local tms_5-2           # Run on single GPU (default)
+spd-local tms_5-2 --cpu     # Run on CPU
+spd-local tms_5-2 --dp 4    # Run on 4 GPUs (single node DDP)
 ```
 
 This runs experiments directly without SLURM, git snapshots, or W&B views/reports.
+
+### Web App for Visualization
+
+The SPD app provides interactive visualization of component decompositions and attributions:
+
+```bash
+make app                        # Launch backend + frontend dev servers
+# or
+python -m spd.app.run_app
+```
+
+The app has its own detailed documentation in `spd/app/CLAUDE.md` and `spd/app/README.md`.
+
+### Harvesting Component Statistics (`spd-harvest`)
+
+Collect component statistics (activation examples, correlations, token stats) for a run:
+
+```bash
+spd-harvest <wandb_path>              # Submit SLURM job to harvest statistics
+```
+
+See `spd/harvest/CLAUDE.md` for details.
+
+### Automated Component Interpretation (`spd-autointerp`)
+
+Generate LLM interpretations for harvested components:
+
+```bash
+spd-autointerp <wandb_path>            # Submit SLURM job to interpret components
+```
+
+Requires `OPENROUTER_API_KEY` env var. See `spd/autointerp/CLAUDE.md` for details.
 
 ### Running on SLURM Cluster (`spd-run`)
 
@@ -164,7 +231,7 @@ spd-run --sweep --n_agents 10                                 # Sweep all experi
 spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom sweep params file
 ```
 
-**Supported experiments:** `tms_5-2`, `tms_5-2-id`, `tms_40-10`, `tms_40-10-id`, `resid_mlp1`, `resid_mlp2`, `resid_mlp3`, `ss_emb`
+**Supported experiments:** All experiments in `spd/registry.py` (run `spd-local --help` to see available options)
 
 **How it works:**
 
@@ -183,8 +250,9 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
   global:
     seed:
       values: [0, 1, 2]
-    lr:
-      values: [0.001, 0.01]
+    lr_schedule:
+      start_val:
+        values: [0.001, 0.01]
 
   # Experiment-specific parameters (override global)
   tms_5-2:
@@ -196,6 +264,31 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
   ```
 
 **Logs:** logs are found in `~/slurm_logs/slurm-<job_id>_<task_id>.out`
+
+### Loading Models from WandB
+
+Load trained SPD models from wandb or local paths using these methods:
+
+```python
+from spd.models.component_model import ComponentModel, SPDRunInfo
+
+# Option 1: Load model directly (simplest)
+model = ComponentModel.from_pretrained("wandb:entity/project/runs/run_id")
+
+# Option 2: Load run info first, then model (access config before loading)
+run_info = SPDRunInfo.from_path("wandb:entity/project/runs/run_id")
+print(run_info.config)  # Inspect config before loading model
+model = ComponentModel.from_run_info(run_info)
+
+# Local paths work too
+model = ComponentModel.from_pretrained("/path/to/checkpoint.pt")
+```
+**Path formats:**
+
+- WandB: `wandb:entity/project/run_id` or `wandb:entity/project/runs/run_id`
+- Local: Direct path to checkpoint file (config must be in same directory as `final_config.yaml`)
+
+Downloaded runs are cached in `SPD_OUT_DIR/runs/<project>-<run_id>/`.
 
 ### Cluster Usage Guidelines
 
@@ -210,4 +303,79 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
 - Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
 
 ## Coding Guidelines
-see @STYLE.md
+
+**This is research code, not production. Prioritize simplicity and fail-fast over defensive programming.**
+
+Core principles:
+- **Fail fast** - assert assumptions, crash on violations, don't silently recover
+- **No backwards compat** - delete unused code, don't deprecate or add migration shims
+- **Narrow types** - avoid `| None` unless null is semantically meaningful; use discriminated unions over bags of optional fields
+- **No try/except for control flow** - check preconditions explicitly, then trust them
+- **YAGNI** - don't add abstractions, config options, or flexibility for hypothetical futures
+
+```python
+# BAD - defensive, recovers silently, wide types
+def get_config(path: str) -> dict | None:
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except:
+        return None
+
+config = get_config(path)
+if config is not None:
+    value = config.get("key", "default")
+
+# GOOD - fail fast, narrow types, trust preconditions
+def get_config(path: Path) -> Config:
+    assert path.exists(), f"config not found: {path}"
+    with open(path) as f:
+        data = json.load(f)
+    return Config(**data)  # pydantic validates
+
+config = get_config(path)
+value = config.key
+```
+
+More detail in STYLE.md
+
+## Software Engineering Principles
+
+- If you have an invariant in your head, assert it. Are you afraid to assert? sounds like your program might already be broken. Assert, assert, assert. Never soft fail
+- never write: `if everythingIsOk: continueHappyPath()`. Instead do `assert everythingIsOk`
+- You should have a VERY good reason to handle an error gracefully. If your program isn't working like it should then it shouldn't be running, you should be fixing it
+- Write your invariants into types as much as possible.
+  - if you either have a and b, or neither, don't make them both independently optional, put them in an optional tuple
+- Don't use bare dictionaries for structures whose values aren't homogenous
+  - good: { <id>: <val>}
+  - bad: {"tokens": …, "loss": …}
+- Keep I/O as high up as possible, make as many functions as possible pure.
+- Default args are a good idea far less often than they're typically used
+- You should have a very good reason for having a default value for an argument, especially if it's caller also defaults to the same thing
+- Keep defaults high in the call stack.
+- Delete unused code. If an argument is always x, strongly consider removing as an argument and just inlining
+- Differentiate no data from empty collections. Often it's important to differentiate `None` from `[]`
+- Do not write try catch blocks unless it absolutely makes sense
+- Comments hide sloppy code. If you feel the need to write a comment, consider that you should instead
+  - name your functions more clearly
+  - name your variables more clearly
+  - separate a chunk of logic into a function
+  - seperate an inlined computation into a meaningfully named variable
+
+Some other notes:
+
+- Please don’t write dialogic / narrativised comments or code. Instead, write comments that describe
+  the code as is, not the diff you're making.
+  - These are examples of narrativising comments:
+    - `# the function now uses y instead of x`
+    - `# changed to be faster`
+    - `# we now traverse in reverse`
+  - Here's an example of a bad diff:
+    ```diff
+95 -      # Reservoir states
+96 -      reservoir_states: list[ReservoirState]
+95 +      # Reservoir state (tensor-based)
+96 +      reservoir: TensorReservoirState
+    ```
+    This is bad because the new comment makes reference to a change in code, not just the state of
+    the code.

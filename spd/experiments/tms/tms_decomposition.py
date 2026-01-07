@@ -10,15 +10,14 @@ from pathlib import Path
 import fire
 import wandb
 
-from spd.configs import Config
-from spd.experiments.tms.configs import TMSTaskConfig
+from spd.configs import Config, TMSTaskConfig
 from spd.experiments.tms.models import TMSModel, TMSTargetRunInfo
 from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import save_pre_run_info, set_seed
-from spd.utils.run_utils import get_output_dir
+from spd.utils.run_utils import setup_decomposition_run
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -45,32 +44,29 @@ def main(
     device = get_device()
     logger.info(f"Using device: {device}")
 
-    if config.wandb_project:
-        tags = ["tms"]
-        if evals_id:
-            tags.append(evals_id)
-        if sweep_id:
-            tags.append(sweep_id)
-        config = init_wandb(config, config.wandb_project, tags=tags)
+    set_seed(config.seed)
 
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+    out_dir, run_id, tags = setup_decomposition_run(
+        experiment_tag="tms", evals_id=evals_id, sweep_id=sweep_id
+    )
+    if config.wandb_project:
+        init_wandb(
+            config=config,
+            project=config.wandb_project,
+            run_id=run_id,
+            name=config.wandb_run_name,
+            tags=tags,
+        )
+    logger.info(config)
 
     task_config = config.task_config
     assert isinstance(task_config, TMSTaskConfig)
-
-    set_seed(config.seed)
-    logger.info(config)
 
     assert config.pretrained_model_path, "pretrained_model_path must be set"
     target_run_info = TMSTargetRunInfo.from_path(config.pretrained_model_path)
     target_model = TMSModel.from_run_info(target_run_info)
     target_model = target_model.to(device)
     target_model.eval()
-
-    if config.wandb_project:
-        assert wandb.run, "wandb.run must be initialized before training"
-        if config.wandb_run_name:
-            wandb.run.name = config.wandb_run_name
 
     save_pre_run_info(
         save_to_wandb=config.wandb_project is not None,

@@ -1,4 +1,5 @@
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,14 +10,13 @@ import wandb.errors
 import wandb_workspaces.reports.v2 as wr
 import wandb_workspaces.workspaces as ws
 from dotenv import load_dotenv
-from pydantic import BaseModel
 from wandb.apis.public import File, Run
 
+from spd.base_config import BaseConfig
 from spd.log import logger
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.settings import REPO_ROOT
-from spd.utils.general_utils import fetch_latest_checkpoint_name, replace_pydantic_model
-from spd.utils.run_utils import METRIC_CONFIG_SHORT_NAMES
+from spd.utils.general_utils import fetch_latest_checkpoint_name
 
 WORKSPACE_TEMPLATES = {
     "default": "https://wandb.ai/goodfire/spd?nw=css034maye",
@@ -28,6 +28,160 @@ WORKSPACE_TEMPLATES = {
     "resid_mlp2": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
     "resid_mlp3": "https://wandb.ai/goodfire/nathu-spd?nw=5im20fd95rg",
 }
+
+# Regex patterns for parsing W&B run references
+# Run IDs can be 8 chars (e.g., "d2ec3bfe") or prefixed with char-dash (e.g., "s-d2ec3bfe")
+_RUN_ID_PATTERN = r"(?:[a-z0-9]-)?[a-z0-9]{8}"
+_WANDB_PATH_RE = re.compile(rf"^([^/\s]+)/([^/\s]+)/({_RUN_ID_PATTERN})$")
+_WANDB_PATH_WITH_RUNS_RE = re.compile(rf"^([^/\s]+)/([^/\s]+)/runs/({_RUN_ID_PATTERN})$")
+_WANDB_URL_RE = re.compile(
+    rf"^https://wandb\.ai/([^/]+)/([^/]+)/runs/({_RUN_ID_PATTERN})(?:/[^?]*)?(?:\?.*)?$"
+)
+
+# Short names for metric classes, used for W&B run names and view names
+METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
+    # Loss metrics
+    "FaithfulnessLoss": "Faith",
+    "ImportanceMinimalityLoss": "ImpMin",
+    "StochasticReconLoss": "StochRecon",
+    "StochasticReconSubsetLoss": "StochReconSub",
+    "StochasticReconLayerwiseLoss": "StochReconLayer",
+    "CIMaskedReconLoss": "CIMaskRecon",
+    "CIMaskedReconSubsetLoss": "CIMaskReconSub",
+    "CIMaskedReconLayerwiseLoss": "CIMaskReconLayer",
+    "PGDReconLoss": "PGDRecon",
+    "PGDReconSubsetLoss": "PGDReconSub",
+    "PGDReconLayerwiseLoss": "PGDReconLayer",
+    "StochasticHiddenActsReconLoss": "StochHiddenRecon",
+    "UnmaskedReconLoss": "UnmaskedRecon",
+    # Eval metrics
+    "CEandKLLosses": "CEandKL",
+    "CIHistograms": "CIHist",
+    "CI_L0": "CI_L0",
+    "CIMeanPerComponent": "CIMeanPerComp",
+    "ComponentActivationDensity": "CompActDens",
+    "IdentityCIError": "IdCIErr",
+    "PermutedCIPlots": "PermCIPlots",
+    "UVPlots": "UVPlots",
+    "StochasticReconSubsetCEAndKL": "StochReconSubCEKL",
+    "PGDMultiBatchReconLoss": "PGDMultiBatchRecon",
+    "PGDMultiBatchReconSubsetLoss": "PGDMultiBatchReconSub",
+}
+
+
+def _parse_metric_config_key(key: str) -> tuple[str, str, str] | None:
+    """Parse a metric config key into (list_field, classname, param).
+
+    Args:
+        key: Flattened key like "loss_metric_configs.ImportanceMinimalityLoss.pnorm"
+
+    Returns:
+        Tuple of (list_field, classname, param) if it's a metric config key, None otherwise
+    """
+    parts = key.split(".")
+    if len(parts) >= 3 and parts[0] in ("loss_metric_configs", "eval_metric_configs"):
+        list_field = parts[0]
+        classname = parts[1]
+        param = ".".join(parts[2:])  # Handle nested params like "task_config.feature_probability"
+        return (list_field, classname, param)
+    return None
+
+
+def generate_wandb_run_name(params: dict[str, Any]) -> str:
+    """Generate a W&B run name based on sweep parameters.
+
+    Handles special formatting for metric configs (loss_metric_configs, eval_metric_configs)
+    by abbreviating classnames and grouping parameters by metric type.
+
+    Args:
+        params: Dictionary of flattened sweep parameters
+
+    Returns:
+        Formatted run name string
+
+    Example:
+        >>> params = {
+        ...     "seed": 42,
+        ...     "loss_metric_configs.ImportanceMinimalityLoss.pnorm": 0.9,
+        ...     "loss_metric_configs.ImportanceMinimalityLoss.coeff": 0.001,
+        ... }
+        >>> generate_wandb_run_name(params)
+        "seed-42-ImpMin-coeff-0.001-pnorm-0.9"
+    """
+    # Group parameters by type: regular params and metric config params
+    regular_params: list[tuple[str, Any]] = []
+    metric_params: dict[str, list[tuple[str, Any]]] = {}  # classname -> [(param, value), ...]
+
+    for key, value in params.items():
+        parsed = _parse_metric_config_key(key)
+        if parsed:
+            _, classname, param = parsed
+            # Get short name for the classname
+            short_name = METRIC_CONFIG_SHORT_NAMES.get(classname, classname)
+            if short_name not in metric_params:
+                metric_params[short_name] = []
+            metric_params[short_name].append((param, value))
+        else:
+            regular_params.append((key, value))
+
+    # Build parts list
+    parts: list[str] = []
+
+    # Add regular params (sorted for consistency)
+    for key, value in sorted(regular_params):
+        parts.append(f"{key}-{value}")
+
+    # Add metric config params (sorted by classname, then by param)
+    for short_name in sorted(metric_params.keys()):
+        parts.append(short_name)
+        for param, value in sorted(metric_params[short_name]):
+            parts.append(f"{param}-{value}")
+
+    return "-".join(parts)
+
+
+def parse_wandb_run_path(input_path: str) -> tuple[str, str, str]:
+    """Parse various W&B run reference formats into (entity, project, run_id).
+
+    Accepts:
+    - "entity/project/runId" (compact form)
+    - "entity/project/runs/runId" (with /runs/)
+    - "wandb:entity/project/runId" (with wandb: prefix)
+    - "wandb:entity/project/runs/runId" (full wandb: form)
+    - "https://wandb.ai/entity/project/runs/runId..." (URL)
+
+    Returns:
+        Tuple of (entity, project, run_id)
+
+    Raises:
+        ValueError: If the input doesn't match any expected format.
+    """
+    s = input_path.strip()
+
+    # Strip wandb: prefix if present
+    if s.startswith("wandb:"):
+        s = s[6:]
+
+    # Try compact form: entity/project/runid
+    if m := _WANDB_PATH_RE.match(s):
+        return m.group(1), m.group(2), m.group(3)
+
+    # Try form with /runs/: entity/project/runs/runid
+    if m := _WANDB_PATH_WITH_RUNS_RE.match(s):
+        return m.group(1), m.group(2), m.group(3)
+
+    # Try full URL
+    if m := _WANDB_URL_RE.match(s):
+        return m.group(1), m.group(2), m.group(3)
+
+    raise ValueError(
+        f"Invalid W&B run reference. Expected one of:\n"
+        f' - "entity/project/xxxxxxxx"\n'
+        f' - "entity/project/runs/xxxxxxxx"\n'
+        f' - "wandb:entity/project/runs/xxxxxxxx"\n'
+        f' - "https://wandb.ai/entity/project/runs/xxxxxxxx"\n'
+        f'Got: "{input_path}"'
+    )
 
 
 def flatten_metric_configs(config_dict: dict[str, Any]) -> dict[str, Any]:
@@ -120,23 +274,26 @@ def download_wandb_file(run: Run, wandb_run_dir: Path, file_name: str) -> Path:
     return path
 
 
-def init_wandb[T_config: BaseModel](
-    config: T_config, project: str, name: str | None = None, tags: list[str] | None = None
-) -> T_config:
-    """Initialize Weights & Biases and return a config updated with sweep hyperparameters.
+def init_wandb(
+    config: BaseConfig,
+    project: str,
+    run_id: str,
+    name: str | None = None,
+    tags: list[str] | None = None,
+) -> None:
+    """Initialize Weights & Biases and log the config.
 
     Args:
-        config: The base config.
+        config: The config to log.
         project: The name of the wandb project.
+        run_id: The unique run ID (from ExecutionStamp).
         name: The name of the wandb run.
         tags: Optional list of tags to add to the run.
-
-    Returns:
-        Config updated with sweep hyperparameters (if any).
     """
     load_dotenv(override=True)
 
     wandb.init(
+        id=run_id,
         project=project,
         entity=os.getenv("WANDB_ENTITY"),
         name=name,
@@ -147,9 +304,6 @@ def init_wandb[T_config: BaseModel](
         root=str(REPO_ROOT / "spd"), exclude_fn=lambda path: "out" in Path(path).parts
     )
 
-    # Update the config with the hyperparameters for this sweep (if any)
-    config = replace_pydantic_model(config, wandb.config.as_dict())
-
     config_dict = config.model_dump(mode="json")
     # We also want flattened names for easier wandb searchability
     flattened_config_dict = flatten_metric_configs(config_dict)
@@ -159,7 +313,6 @@ def init_wandb[T_config: BaseModel](
     if "eval_metric_configs" in config_dict:
         del config_dict["eval_metric_configs"]
     wandb.config.update({**config_dict, **flattened_config_dict})
-    return config
 
 
 def ensure_project_exists(project: str) -> None:

@@ -71,17 +71,20 @@ def analyze_decomposition(
         seed=target_run_info.config.seed,
     )
 
+    # Get C from module_info (use first module's C value as representative)
+    n_components = spd_config.module_info[0].C
+
     out(f"Loaded dataset with {dataset.n_facts} facts")
     out(f"Vocab size: {target_model.config.vocab_size}")
     out(f"Sequence length: {target_model.config.seq_len}")
-    out(f"Number of components (C): {spd_config.C}")
+    out(f"Number of components (C): {n_components}")
     out()
 
     # Print U and V matrices for a specific component if requested
     if print_component_idx is not None:
-        if print_component_idx < 0 or print_component_idx >= spd_config.C:
+        if print_component_idx < 0 or print_component_idx >= n_components:
             raise ValueError(
-                f"print_component_idx must be in [0, {spd_config.C - 1}], got {print_component_idx}"
+                f"print_component_idx must be in [0, {n_components - 1}], got {print_component_idx}"
             )
         out("=" * 80)
         out(f"U AND V MATRICES FOR COMPONENT {print_component_idx}")
@@ -128,9 +131,9 @@ def analyze_decomposition(
     for module_name, ci_values in importances_by_module.items():
         # ci_values shape: [n_facts, seq_len, C]
         out()
-        out(f"\n{'='*80}")
+        out(f"\n{'=' * 80}")
         out(f"MODULE: {module_name}")
-        out(f"{'='*80}")
+        out(f"{'=' * 80}")
 
         _, _, _ = ci_values.shape  # n_facts, seq_len, n_components
 
@@ -153,7 +156,9 @@ def analyze_decomposition(
             mean_ci = mean_ci_per_comp[comp_idx].item()
 
             if n_active == 0:
-                out(f"\n  [Rank {rank+1}] Component {comp_idx} (mean CI={mean_ci:.3f}): No facts above threshold")
+                out(
+                    f"\n  [Rank {rank + 1}] Component {comp_idx} (mean CI={mean_ci:.3f}): No facts above threshold"
+                )
                 continue
 
             # Sort by causal importance (descending)
@@ -162,8 +167,10 @@ def analyze_decomposition(
             active_indices = active_indices[sorted_order]
             active_cis = active_cis[sorted_order]
 
-            out(f"\n  [Rank {rank+1}] Component {comp_idx} (mean CI={mean_ci:.3f}): {n_active} facts above threshold")
-            out(f"  {'─'*60}")
+            out(
+                f"\n  [Rank {rank + 1}] Component {comp_idx} (mean CI={mean_ci:.3f}): {n_active} facts above threshold"
+            )
+            out(f"  {'─' * 60}")
 
             # Show up to max_facts_to_show
             n_to_show = min(n_active, max_facts_to_show)
@@ -173,7 +180,9 @@ def analyze_decomposition(
                 input_tokens = all_inputs[fact_idx].tolist()
                 label_token = int(all_labels[fact_idx].item())
 
-                out(f"    Fact {fact_idx:4d}: input={input_tokens} → label={label_token}  (CI={ci_val:.3f})")
+                out(
+                    f"    Fact {fact_idx:4d}: input={input_tokens} → label={label_token}  (CI={ci_val:.3f})"
+                )
 
             if n_active > max_facts_to_show:
                 out(f"    ... and {n_active - max_facts_to_show} more facts")
@@ -200,7 +209,7 @@ def analyze_decomposition(
             mean_ci = mean_ci_per_comp[comp_idx].item()
             max_ci = comp_ci.max().item()
             out(
-                f"  [Rank {rank+1:2d}] Component {comp_idx:3d}: "
+                f"  [Rank {rank + 1:2d}] Component {comp_idx:3d}: "
                 f"active on {n_active:4d}/{dataset.n_facts} facts, "
                 f"mean CI={mean_ci:.3f}, max CI={max_ci:.3f}"
             )
@@ -214,9 +223,9 @@ def analyze_decomposition(
     for module_name, ci_values in importances_by_module.items():
         ci_final_pos = ci_values[:, -1, :]  # [n_facts, C]
 
-        out(f"\n{'='*80}")
+        out(f"\n{'=' * 80}")
         out(f"MODULE: {module_name}")
-        out(f"{'='*80}")
+        out(f"{'=' * 80}")
 
         for fact_idx in range(dataset.n_facts):
             fact_ci = ci_final_pos[fact_idx, :]  # [C]

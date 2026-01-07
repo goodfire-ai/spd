@@ -76,6 +76,15 @@ coverage:
 	uv run python -m coverage report -m > $(COVERAGE_DIR)/coverage.txt
 	uv run python -m coverage html --directory=$(COVERAGE_DIR)/html/
 
+
+.PHONY: clean
+clean:
+	@echo "Cleaning Python cache and build artifacts..."
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -rf build/ dist/ .ruff_cache/ .pytest_cache/ .coverage
+
+
 .PHONY: app
 app:
 	@uv run python spd/app/run_app.py

@@ -6,15 +6,16 @@ wandb_run_name_prefix: ""
 
 # --- General ---
 seed: 0
-C: 100
 n_mask_samples: 1
 ci_fn_type: "mlp"
 ci_fn_hidden_dims: [16]
 sigmoid_type: "leaky_hard"
-target_module_patterns:
-  - "layers.*.mlp_in"
-  - "layers.*.mlp_out"
-identity_module_patterns: null
+module_info:
+  - module_pattern: "layers.*.mlp_in"
+    C: 100
+  - module_pattern: "layers.*.mlp_out"
+    C: 100
+identity_module_info: null
 use_delta_component: true
 
 # --- Loss config ---
@@ -32,9 +33,10 @@ output_loss_type: mse
 batch_size: 2048
 eval_batch_size: 2048
 steps: 20_000
-lr: 2e-3
-lr_schedule: constant
-lr_warmup_pct: 0.0
+lr_schedule:
+  start_val: 2e-3
+  fn_type: constant
+  warmup_pct: 0.0
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200

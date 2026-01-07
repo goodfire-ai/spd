@@ -44,11 +44,10 @@ from spd.utils.distributed_utils import (
 from spd.utils.general_utils import (
     dict_safe_update_,
     extract_batch_data,
-    get_lr_schedule_fn,
-    get_lr_with_warmup,
+    get_scheduled_value,
 )
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
-from spd.utils.module_utils import replace_std_values_in_layernorm
+from spd.utils.module_utils import expand_module_patterns, replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
 from spd.utils.wandb_utils import try_wandb
 
@@ -140,15 +139,19 @@ def optimize(
     if is_main_process():
         logger.info(f"Train+eval logs saved to directory: {out_dir}")
 
-    if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+    if config.identity_module_info is not None:
+        insert_identity_operations_(
+            target_model,
+            identity_module_info=config.identity_module_info,
+        )
 
     target_model.requires_grad_(False)
 
+    module_path_info = expand_module_patterns(target_model, config.all_module_info)
+
     model = ComponentModel(
         target_model=target_model,
-        target_module_patterns=config.all_module_patterns,
-        C=config.C,
+        module_path_info=module_path_info,
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
@@ -201,10 +204,9 @@ def optimize(
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
     optimized_params = component_params + ci_fn_params
-    optimizer = optim.AdamW(optimized_params, lr=config.lr, weight_decay=0)
+    optimizer = optim.AdamW(optimized_params, lr=config.lr_schedule.start_val, weight_decay=0)
 
-    lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule, config.lr_exponential_halflife)
-    logger.info(f"Base LR scheduler created: {config.lr_schedule}")
+    logger.info(f"LR scheduler: {config.lr_schedule.fn_type}")
 
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
@@ -230,8 +232,7 @@ def optimize(
         else sample_batch.shape  # else it's a batch of token ids
     )
     alive_tracker = AliveComponentsTracker(
-        target_module_paths=model.target_module_paths,
-        C=config.C,
+        module_to_c=model.module_to_c,
         device=device,
         n_examples_until_dead=config.n_examples_until_dead,
         ci_alive_threshold=config.ci_alive_threshold,
@@ -241,12 +242,8 @@ def optimize(
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
 
-        step_lr = get_lr_with_warmup(
-            step=step,
-            steps=config.steps,
-            lr=config.lr,
-            lr_schedule_fn=lr_schedule_fn,
-            lr_warmup_pct=config.lr_warmup_pct,
+        step_lr = get_scheduled_value(
+            step=step, total_steps=config.steps, config=config.lr_schedule
         )
         for group in optimizer.param_groups:
             group["lr"] = step_lr
@@ -318,12 +315,12 @@ def optimize(
             microbatch_log_data["train/schedules/lr"] = step_lr
 
             if is_main_process():
+                assert out_dir is not None
                 tqdm.write(f"--- Step {step} ---")
                 tqdm.write(f"LR: {step_lr:.6f}")
                 for name, value in microbatch_log_data.items():
                     tqdm.write(f"{name}: {value:.15f}")
-                if out_dir is not None:
-                    local_log(microbatch_log_data, step, out_dir)
+                local_log(microbatch_log_data, step, out_dir)
                 if config.wandb_project:
                     try_wandb(wandb.log, microbatch_log_data, step=step)
 
@@ -360,10 +357,10 @@ def optimize(
                 dict_safe_update_(metrics, multibatch_pgd_metrics)
 
                 if is_main_process():
+                    assert out_dir is not None
                     for k, v in metrics.items():
                         tqdm.write(f"eval/{k}: {v}")
-                    if out_dir is not None:
-                        local_log(metrics, step, out_dir)
+                    local_log(metrics, step, out_dir)
                     if config.wandb_project:
                         wandb_logs = {
                             f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
@@ -378,13 +375,10 @@ def optimize(
 
         # --- Saving Checkpoint --- #
         if (
-            (
-                (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
-                or step == config.steps
-            )
-            and out_dir is not None
-            and is_main_process()
-        ):
+            (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
+            or step == config.steps
+        ) and is_main_process():
+            assert out_dir is not None
             # Save the state dict of the underlying module (not DDP wrapper)
             save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
             logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")
@@ -399,8 +393,10 @@ def optimize(
         # Skip gradient step if we are at the last step (last step just for plotting and logging)
         if step != config.steps:
             sync_across_processes()
-            if config.grad_clip_norm is not None:
-                clip_grad_norm_(optimized_params, config.grad_clip_norm)
+            if config.grad_clip_norm_components is not None:
+                clip_grad_norm_(component_params, config.grad_clip_norm_components)
+            if config.grad_clip_norm_ci_fns is not None:
+                clip_grad_norm_(ci_fn_params, config.grad_clip_norm_ci_fns)
             optimizer.step()
 
     if is_main_process():

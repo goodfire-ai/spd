@@ -45,7 +45,7 @@ def compute_total_loss(
     batch: Int[Tensor, "..."],
     ci: CIOutputs,
     target_out: Tensor,
-    weight_deltas: dict[str, Float[Tensor, " d_out d_in"]],
+    weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     current_frac_of_training: float,
     sampling: SamplingType,

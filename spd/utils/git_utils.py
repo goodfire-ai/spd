@@ -1,6 +1,5 @@
 """Git utilities for creating code snapshots."""
 
-import datetime
 import subprocess
 import tempfile
 from pathlib import Path
@@ -30,7 +29,19 @@ def repo_current_branch() -> str:
     return result.stdout.strip()
 
 
-def create_git_snapshot(branch_name_prefix: str) -> tuple[str, str]:
+def repo_is_clean() -> bool:
+    """Return True if the current git repository has no uncommitted or untracked changes."""
+    status = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+    return status == ""
+
+
+def repo_current_commit_hash() -> str:
+    """Return the current commit hash of the active HEAD."""
+    commit_hash: str = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    return commit_hash
+
+
+def create_git_snapshot(run_id: str) -> tuple[str, str]:
     """Create a git snapshot branch with current changes.
 
     Creates a timestamped branch containing all current changes (staged and unstaged). Uses a
@@ -44,13 +55,12 @@ def create_git_snapshot(branch_name_prefix: str) -> tuple[str, str]:
     Raises:
         subprocess.CalledProcessError: If git commands fail (except for push)
     """
-    # Generate timestamped branch name
-    timestamp_utc = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
-    snapshot_branch = f"{branch_name_prefix}-{timestamp_utc}"
+    # prefix branch name
+    snapshot_branch: str = f"snapshot/{run_id}"
 
     # Create temporary worktree path
     with tempfile.TemporaryDirectory() as temp_dir:
-        worktree_path = Path(temp_dir) / f"spd-snapshot-{timestamp_utc}"
+        worktree_path = Path(temp_dir) / f"spd-snapshot-{run_id}"
 
         try:
             # Create worktree with new branch
@@ -87,7 +97,7 @@ def create_git_snapshot(branch_name_prefix: str) -> tuple[str, str]:
             # Commit changes if any exist
             if diff_result.returncode != 0:  # Non-zero means there are changes
                 subprocess.run(
-                    ["git", "commit", "-m", f"Sweep snapshot {timestamp_utc}", "--no-verify"],
+                    ["git", "commit", "-m", f"run id {run_id}", "--no-verify"],
                     cwd=worktree_path,
                     check=True,
                     capture_output=True,

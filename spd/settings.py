@@ -5,9 +5,17 @@ REPO_ROOT = (
     Path(os.environ["GITHUB_WORKSPACE"]) if os.environ.get("CI") else Path(__file__).parent.parent
 )
 
-# Base directory for SPD cache. Defaults to a subdirectory in the home directory.
-default_cache_dir = str(Path.home() / "spd_cache")
-SPD_CACHE_DIR = Path(os.environ.get("SPD_CACHE_DIR", default_cache_dir))
+CLUSTER_BASE_PATH = Path("/mnt/polished-lake/spd")
+ON_CLUSTER = CLUSTER_BASE_PATH.exists()
+
+# Base directory for SPD outputs (runs, logs, scripts, etc.)
+_default_out_dir = CLUSTER_BASE_PATH if ON_CLUSTER else Path.home() / "spd_out"
+SPD_OUT_DIR = Path(os.environ.get("SPD_OUT_DIR", _default_out_dir))
+SPD_OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# SLURM directories
+SLURM_LOGS_DIR = SPD_OUT_DIR / "slurm_logs"
+SBATCH_SCRIPTS_DIR = SPD_OUT_DIR / "sbatch_scripts"
 
 # this is the gpu-enabled partition on the cluster
 # Not sure why we call it "default" instead of "gpu" or "compute" but keeping the convention here for consistency

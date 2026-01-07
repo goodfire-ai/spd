@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from transformers import PreTrainedModel
 
@@ -6,18 +8,20 @@ from spd.configs import (
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    LMTaskConfig,
+    ModulePatternInfoConfig,
+    ScheduleConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
 )
 from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.lm.configs import LMTaskConfig
 from spd.identity_insertion import insert_identity_operations_
 from spd.run_spd import optimize
 from spd.utils.general_utils import resolve_class, set_seed
 
 
 @pytest.mark.slow
-def test_gpt_2_decomposition_happy_path() -> None:
+def test_gpt_2_decomposition_happy_path(tmp_path: Path) -> None:
     """Test that SPD decomposition works on for GPT-2"""
     set_seed(0)
     device = "cpu"
@@ -30,12 +34,16 @@ def test_gpt_2_decomposition_happy_path() -> None:
         wandb_run_name_prefix="",
         # General
         seed=0,
-        C=10,  # Smaller C for faster testing
         n_mask_samples=1,
         ci_fn_type="vector_mlp",
         ci_fn_hidden_dims=[128],
-        target_module_patterns=["transformer.h.2.attn.c_attn", "transformer.h.3.mlp.c_fc"],
-        identity_module_patterns=["transformer.h.1.attn.c_attn"],
+        module_info=[
+            ModulePatternInfoConfig(module_pattern="transformer.h.2.attn.c_attn", C=10),
+            ModulePatternInfoConfig(module_pattern="transformer.h.3.mlp.c_fc", C=10),
+        ],
+        identity_module_info=[
+            ModulePatternInfoConfig(module_pattern="transformer.h.1.attn.c_attn", C=10),
+        ],
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
                 coeff=1e-2,
@@ -48,12 +56,11 @@ def test_gpt_2_decomposition_happy_path() -> None:
         ],
         output_loss_type="kl",
         # Training
-        lr=1e-3,
+        lr_schedule=ScheduleConfig(
+            start_val=1e-3, fn_type="cosine", warmup_pct=0.01, final_val_frac=0.0
+        ),
         batch_size=4,
         steps=2,
-        lr_schedule="cosine",
-        lr_exponential_halflife=None,
-        lr_warmup_pct=0.01,
         n_eval_steps=1,
         # Logging & Saving
         train_log_freq=50,  # Print at step 0, 50, and 100
@@ -97,8 +104,8 @@ def test_gpt_2_decomposition_happy_path() -> None:
     target_model = hf_model_class.from_pretrained(config.pretrained_model_name)
     target_model.eval()
 
-    if config.identity_module_patterns is not None:
-        insert_identity_operations_(target_model, identity_patterns=config.identity_module_patterns)
+    if config.identity_module_info is not None:
+        insert_identity_operations_(target_model, identity_module_info=config.identity_module_info)
 
     train_data_config = DatasetConfig(
         name=config.task_config.dataset_name,
@@ -143,7 +150,7 @@ def test_gpt_2_decomposition_happy_path() -> None:
         train_loader=train_loader,
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
-        out_dir=None,
+        out_dir=tmp_path,
     )
 
     # Basic assertion to ensure the test ran

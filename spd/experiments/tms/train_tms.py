@@ -3,7 +3,6 @@ https://colab.research.google.com/github/anthropics/toy-models-of-superposition/
 """
 
 from pathlib import Path
-from typing import Literal
 
 import einops
 import matplotlib.pyplot as plt
@@ -14,25 +13,14 @@ from matplotlib import collections as mc
 from torch import Tensor, nn
 from tqdm import tqdm, trange
 
+from spd.configs import ScheduleConfig
 from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import set_seed
-from spd.utils.run_utils import get_output_dir, save_file
-
-
-def linear_lr(step: int, steps: int) -> float:
-    return 1 - (step / steps)
-
-
-def constant_lr(*_: int) -> float:
-    return 1.0
-
-
-def cosine_decay_lr(step: int, steps: int) -> float:
-    return np.cos(0.5 * np.pi * step / (steps - 1))
+from spd.utils.general_utils import get_scheduled_value, set_seed
+from spd.utils.run_utils import ExecutionStamp, save_file
 
 
 def train(
@@ -42,24 +30,16 @@ def train(
     importance: float,
     steps: int,
     print_freq: int,
-    lr: float,
-    lr_schedule: Literal["linear", "cosine", "constant"],
+    lr_schedule: ScheduleConfig,
 ) -> None:
     hooks = []
 
-    assert lr_schedule in ["linear", "cosine", "constant"], f"Invalid lr_schedule: {lr_schedule}"
-    lr_schedule_fn = {
-        "linear": linear_lr,
-        "cosine": cosine_decay_lr,
-        "constant": constant_lr,
-    }[lr_schedule]
-
-    opt = torch.optim.AdamW(list(model.parameters()), lr=lr)
+    opt = torch.optim.AdamW(list(model.parameters()), lr=lr_schedule.start_val)
 
     data_iter = iter(dataloader)
     with trange(steps, ncols=0) as t:
         for step in t:
-            step_lr = lr * lr_schedule_fn(step, steps)
+            step_lr = get_scheduled_value(step, steps, lr_schedule)
             for group in opt.param_groups:
                 group["lr"] = step_lr
             opt.zero_grad(set_to_none=True)
@@ -189,13 +169,21 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
     elif config.fixed_random_hidden_layers:
         run_name += "_fixed-random"
 
+    execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
     if config.wandb_project:
         tags = [f"tms_{model_cfg.n_features}-{model_cfg.n_hidden}"]
         if model_cfg.n_hidden_layers > 0:
             tags[0] += "-id"
-        wandb.init(project=config.wandb_project, name=run_name, tags=tags)
-
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        wandb.init(
+            id=execution_stamp.run_id,
+            project=config.wandb_project,
+            name=run_name,
+            tags=tags,
+        )
 
     # Save config
     config_path = out_dir / "tms_train_config.yaml"
@@ -211,7 +199,6 @@ def run_train(config: TMSTrainConfig, device: str) -> None:
         steps=config.steps,
         importance=1.0,
         print_freq=100,
-        lr=config.lr,
         lr_schedule=config.lr_schedule,
     )
 
@@ -364,8 +351,7 @@ if __name__ == "__main__":
         batch_size=1024,
         steps=10000,
         seed=0,
-        lr=5e-3,
-        lr_schedule="constant",
+        lr_schedule=ScheduleConfig(start_val=5e-3, fn_type="constant"),
         data_generation_type="at_least_zero_active",
         fixed_identity_hidden_layers=False,
         fixed_random_hidden_layers=False,
@@ -385,8 +371,7 @@ if __name__ == "__main__":
     #     batch_size=1024,
     #     steps=10000,
     #     seed=0,
-    #     lr=5e-3,
-    #     lr_schedule="constant",
+    #     lr_schedule=ScheduleConfig(start_val=5e-3, fn_type="constant"),
     #     data_generation_type="at_least_zero_active",
     #     fixed_identity_hidden_layers=True,
     #     fixed_random_hidden_layers=False,
@@ -407,14 +392,13 @@ if __name__ == "__main__":
     #     batch_size=8192,
     #     steps=10000,
     #     seed=0,
-    #     lr=5e-3,
-    #     lr_schedule="constant",
+    #     lr_schedule=ScheduleConfig(start_val=5e-3, fn_type="constant"),
     #     data_generation_type="at_least_zero_active",
     #     fixed_identity_hidden_layers=False,
     #     fixed_random_hidden_layers=False,
     #     # synced_inputs=[[5, 6], [0, 2, 3]],
     # )
-    # # TMS 40-10
+    # # TMS 40-10 w/ identity
     # config = TMSTrainConfig(
     #     wandb_project="spd",
     #     tms_model_config=TMSModelConfig(
@@ -430,8 +414,7 @@ if __name__ == "__main__":
     #     batch_size=8192,
     #     steps=10000,
     #     seed=0,
-    #     lr=5e-3,
-    #     lr_schedule="constant",
+    #     lr_schedule=ScheduleConfig(start_val=5e-3, fn_type="constant"),
     #     data_generation_type="at_least_zero_active",
     #     fixed_identity_hidden_layers=True,
     #     fixed_random_hidden_layers=False,

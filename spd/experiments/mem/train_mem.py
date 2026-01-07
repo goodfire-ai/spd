@@ -7,6 +7,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from tqdm import tqdm
 
+from spd.configs import ScheduleConfig
 from spd.experiments.mem.configs import MemModelConfig, MemTrainConfig
 from spd.experiments.mem.mem_dataset import MemDataset
 from spd.experiments.mem.models import MemTransformer
@@ -14,8 +15,8 @@ from spd.log import logger
 from spd.settings import DEFAULT_PROJECT_NAME
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import get_lr_schedule_fn, set_seed
-from spd.utils.run_utils import get_output_dir, save_file
+from spd.utils.general_utils import get_scheduled_value, set_seed
+from spd.utils.run_utils import ExecutionStamp, save_file
 from spd.utils.wandb_utils import init_wandb
 
 
@@ -83,11 +84,16 @@ def train(
     Returns:
         Final loss value
     """
+    execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=False)
+    out_dir = execution_stamp.out_dir
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Output directory: {out_dir}")
+
     if config.wandb_project:
         tags = ["mem-train"]
-        config = init_wandb(config, config.wandb_project, name=run_name, tags=tags)
-
-    out_dir = get_output_dir(use_wandb_id=config.wandb_project is not None)
+        init_wandb(
+            config, config.wandb_project, run_id=execution_stamp.run_id, name=run_name, tags=tags
+        )
 
     # Save config
     config_path = out_dir / "mem_train_config.yaml"
@@ -98,8 +104,12 @@ def train(
 
     optimizer = torch.optim.AdamW(trainable_params, lr=config.lr, weight_decay=0.01)
 
-    # Get the lr_schedule_fn
-    lr_schedule_fn = get_lr_schedule_fn(config.lr_schedule)
+    # Create a ScheduleConfig from the old-style lr config for backward compatibility
+    lr_schedule_config = ScheduleConfig(
+        start_val=config.lr,
+        fn_type=config.lr_schedule,
+        final_val_frac=0.0 if config.lr_schedule == "cosine" else 1.0,
+    )
 
     pbar = tqdm(range(config.steps), total=config.steps)
     for step, (batch, labels) in zip(pbar, dataloader, strict=False):
@@ -107,7 +117,7 @@ def train(
             break
 
         # Update the learning rate
-        current_lr = config.lr * lr_schedule_fn(step, config.steps)
+        current_lr = get_scheduled_value(step, config.steps, lr_schedule_config)
         for param_group in optimizer.param_groups:
             param_group["lr"] = current_lr
 
