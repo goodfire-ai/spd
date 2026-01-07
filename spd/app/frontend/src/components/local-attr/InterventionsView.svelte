@@ -12,7 +12,15 @@
         type TokenInfo,
     } from "../../lib/localAttributionsTypes";
     import { runState } from "../../lib/runState.svelte";
-    import { calcTooltipPos, computeClusterSpans, computeComponentOffsets, lerp, sortComponentsByCluster, sortComponentsByImportance, type ClusterSpan } from "./graphUtils";
+    import {
+        calcTooltipPos,
+        computeClusterSpans,
+        computeComponentOffsets,
+        lerp,
+        sortComponentsByCluster,
+        sortComponentsByImportance,
+        type ClusterSpan,
+    } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
     import type { StoredGraph } from "./types";
@@ -624,11 +632,7 @@
             <div class="button-group">
                 <button onclick={selectAll}>Select All</button>
                 <button onclick={clearSelection}>Clear</button>
-                <button
-                    class="run-btn"
-                    onclick={onRunIntervention}
-                    disabled={runningIntervention}
-                >
+                <button class="run-btn" onclick={onRunIntervention} disabled={runningIntervention}>
                     {runningIntervention ? "Running..." : "Run"}
                 </button>
             </div>
@@ -974,6 +978,7 @@
             {activationContextsSummary}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
+            nodeSubcompActs={graph.data.nodeSubcompActs}
             {tokens}
             edgesBySource={graph.data.edgesBySource}
             edgesByTarget={graph.data.edgesByTarget}

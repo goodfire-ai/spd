@@ -61,6 +61,7 @@ class StoredGraph(BaseModel):
     edges: list[Edge]
     out_probs: dict[str, OutputProbability]  # seq:c_idx -> {prob, target_prob, token}
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
+    node_subcomp_acts: dict[str, float] = {}  # layer:seq:c_idx -> subcomp act (v_i^T @ a)
     optimization_params: OptimizationParams | None = None
     label_prob: float | None = (
         None  # P(label_token) with optimized CI mask, only for optimized graphs
@@ -180,6 +181,8 @@ class LocalAttrDB:
                 edges_data TEXT NOT NULL,
                 -- Node CI values: "layer:seq:c_idx" -> ci_val (required for all graphs)
                 node_ci_vals TEXT NOT NULL,
+                -- Node subcomponent activations: "layer:seq:c_idx" -> v_i^T @ a
+                node_subcomp_acts TEXT NOT NULL DEFAULT '{}',
                 -- Output probabilities: "seq:c_idx" -> {prob, token}
                 output_probs_data TEXT NOT NULL,
 
@@ -457,6 +460,7 @@ class LocalAttrDB:
         edges_json = json.dumps([asdict(e) for e in graph.edges])
         probs_json = json.dumps({k: v.model_dump() for k, v in graph.out_probs.items()})
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
+        node_subcomp_acts_json = json.dumps(graph.node_subcomp_acts)
         is_optimized = 1 if graph.optimization_params else 0
 
         # Extract optimization-specific values (NULL for standard graphs)
@@ -482,9 +486,9 @@ class LocalAttrDB:
                 """INSERT INTO graphs
                    (prompt_id, is_optimized,
                     label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
-                    edges_data, output_probs_data, node_ci_vals,
+                    edges_data, output_probs_data, node_ci_vals, node_subcomp_acts,
                     label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
@@ -497,6 +501,7 @@ class LocalAttrDB:
                     edges_json,
                     probs_json,
                     node_ci_vals_json,
+                    node_subcomp_acts_json,
                     label_prob,
                 ),
             )
@@ -522,7 +527,7 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         rows = conn.execute(
-            """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
+            """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals, node_subcomp_acts,
                       label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
                       label_prob
                FROM graphs
@@ -547,6 +552,7 @@ class LocalAttrDB:
             }
 
             node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
+            node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
 
             opt_params: OptimizationParams | None = None
             label_prob: float | None = None
@@ -568,6 +574,7 @@ class LocalAttrDB:
                     edges=edges,
                     out_probs=out_probs,
                     node_ci_vals=node_ci_vals,
+                    node_subcomp_acts=node_subcomp_acts,
                     optimization_params=opt_params,
                     label_prob=label_prob,
                 )

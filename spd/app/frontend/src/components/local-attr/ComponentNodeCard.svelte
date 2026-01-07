@@ -94,9 +94,9 @@
         return tokenStats.data.input.top_recall.map(([token]) => token);
     });
 
-    // Format mean CI for display
-    function formatMeanCi(ci: number): string {
-        return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
+    // Format mean CI or subcomponent activation for display
+    function formatNumericalValue(val: number): string {
+        return Math.abs(val) < 0.001 ? val.toExponential(2) : val.toFixed(3);
     }
 
     // === Edge attribution lists ===
@@ -155,7 +155,7 @@
 <div class="component-node-card">
     <SectionHeader title="Position {seqIdx}" level="h4">
         {#if summary}
-            <span class="mean-ci">Mean CI: {formatMeanCi(summary.mean_ci)}</span>
+            <span class="mean-ci">Mean CI: {formatNumericalValue(summary.mean_ci)}</span>
         {/if}
     </SectionHeader>
 
@@ -272,8 +272,9 @@
             {#if detail?.data.example_tokens.length > 0}
                 <!-- Full mode: paged table with filtering -->
                 <ActivationContextsPagedTable
-                    exampleTokens={detail?.data.example_tokens}
-                    exampleCi={detail?.data.example_ci}
+                    exampleTokens={detail.data.example_tokens}
+                    exampleCi={detail.data.example_ci}
+                    exampleComponentActs={detail.data.example_component_acts}
                     {activatingTokens}
                 />
             {/if}
