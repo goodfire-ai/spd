@@ -1,8 +1,9 @@
 <script lang="ts">
     import type { Loadable } from "../lib";
-    import type { SubcomponentActivationContexts, HarvestMetadata, Interpretation } from "../lib/api";
+    import type { SubcomponentActivationContexts, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
     import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
+    import { useInterpretation } from "../lib/useInterpretation.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
@@ -38,7 +39,10 @@
     let tokenStats = $state<Loadable<TokenStats>>(null);
 
     // Interpretation state
-    let interpretation = $state<Loadable<Interpretation>>(null);
+    const { interpretation, request: requestInterpretation } = useInterpretation(() => {
+        const cIdx = currentMetadata?.subcomponent_idx;
+        return cIdx !== undefined ? { layer: selectedLayer, cIdx } : null;
+    });
 
     // Layer metadata is already sorted by mean_ci desc from backend
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
@@ -178,26 +182,6 @@
             });
     });
 
-    // Fetch interpretation when component changes
-    $effect(() => {
-        const layer = selectedLayer;
-        const cIdx = currentMetadata?.subcomponent_idx;
-        if (cIdx === undefined) return;
-
-        interpretation = { status: "loading" };
-        api.getComponentInterpretation(layer, cIdx)
-            .then((data) => {
-                if (data != null) {
-                    interpretation = { status: "loaded", data };
-                } else {
-                    interpretation = { status: "error", error: "No interpretation found" };
-                }
-            })
-            .catch((error) => {
-                interpretation = { status: "error", error };
-            });
-    });
-
     // Transform tokenStats into Loadable<TokenList[]> for input tokens section
     const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
         if (tokenStats == null) return null;
@@ -302,7 +286,7 @@
             <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
         </SectionHeader>
 
-        <InterpretationBadge {interpretation} />
+        <InterpretationBadge {interpretation} onRequestInterpretation={requestInterpretation} />
 
         <div class="token-stats-row">
             <TokenStatsSection

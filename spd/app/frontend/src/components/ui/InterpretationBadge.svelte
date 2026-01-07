@@ -1,55 +1,34 @@
 <script lang="ts">
     import type { Loadable } from "../../lib";
-    import { requestComponentInterpretation, type Interpretation } from "../../lib/api";
+    import type { Interpretation } from "../../lib/api";
 
     interface Props {
         interpretation: Loadable<Interpretation>;
-        layer?: string;
-        cIdx?: number;
-        onInterpretationGenerated?: (interp: Interpretation) => void;
+        onRequestInterpretation?: () => void;
     }
 
-    let { interpretation, layer, cIdx, onInterpretationGenerated }: Props = $props();
+    let { interpretation, onRequestInterpretation }: Props = $props();
 
-    let requesting = $state(false);
-    let requestError = $state<string | null>(null);
     let showPrompt = $state(false);
-
-    const canRequest = $derived(layer !== undefined && cIdx !== undefined && onInterpretationGenerated !== undefined);
-
-    async function handleRequestInterpretation() {
-        if (!canRequest || requesting) return;
-        requesting = true;
-        requestError = null;
-
-        try {
-            const result = await requestComponentInterpretation(layer!, cIdx!);
-            onInterpretationGenerated!(result);
-        } catch (e) {
-            requestError = e instanceof Error ? e.message : String(e);
-        } finally {
-            requesting = false;
-        }
-    }
 </script>
 
 <div class="interpretation-container">
-    <div class="interpretation-badge" class:loading={requesting}>
+    <div class="interpretation-badge" class:loading={interpretation?.status === "loading"}>
         {#if interpretation?.status === "loaded"}
             <span class="interpretation-label">{interpretation.data.label}</span>
             <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
             <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
                 {showPrompt ? "Hide" : "View"} Prompt
             </button>
-        {:else if interpretation?.status === "loading" || requesting}
+        {:else if interpretation?.status === "loading"}
             <span class="interpretation-label loading-text">Generating interpretation...</span>
-        {:else if interpretation?.status === "error" || requestError}
-            <span class="interpretation-label error-text">{requestError || String(interpretation?.error)}</span>
-            {#if canRequest}
-                <button class="retry-btn" onclick={handleRequestInterpretation}>Retry</button>
+        {:else if interpretation?.status === "error"}
+            <span class="interpretation-label error-text">{String(interpretation.error)}</span>
+            {#if onRequestInterpretation}
+                <button class="retry-btn" onclick={onRequestInterpretation}>Retry</button>
             {/if}
-        {:else if interpretation === null && canRequest}
-            <button class="generate-btn" onclick={handleRequestInterpretation}>Generate Interpretation</button>
+        {:else if interpretation === null && onRequestInterpretation}
+            <button class="generate-btn" onclick={onRequestInterpretation}>Generate Interpretation</button>
         {:else if interpretation === null}
             <span class="interpretation-label muted">No interpretation available</span>
         {:else}

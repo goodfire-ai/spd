@@ -1,10 +1,7 @@
 <script lang="ts">
     import { displaySettings } from "../../lib/displaySettings.svelte";
-    import {
-        getComponentCorrelations,
-        getComponentTokenStats,
-        type Interpretation,
-    } from "../../lib/api";
+    import { getComponentCorrelations, getComponentTokenStats } from "../../lib/api";
+    import { useInterpretation } from "../../lib/useInterpretation.svelte";
     import type {
         ComponentCorrelations,
         ComponentDetail,
@@ -13,7 +10,6 @@
         EdgeAttribution,
         TokenStats,
     } from "../../lib/localAttributionsTypes";
-    import { runState } from "../../lib/runState.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
@@ -37,11 +33,6 @@
 
     let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, onPinComponent, detail }: Props = $props();
 
-    function handleInterpretationGenerated(interp: Interpretation) {
-        const key = `${layer}:${cIdx}`;
-        runState.addInterpretation(key, interp);
-    }
-
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
         if (!onPinComponent) return;
@@ -56,14 +47,8 @@
     // Token stats state (from batch job)
     let tokenStats = $state<Loadable<TokenStats>>(null);
 
-    // Interpretation from global store (keyed by layer:cIdx)
-    const interpretation: Loadable<Interpretation> = $derived.by(() => {
-        const cached = runState.getInterpretation(`${layer}:${cIdx}`);
-        if (cached) {
-            return { status: "loaded", data: cached };
-        }
-        return null; // No interpretation available
-    });
+    // Interpretation state
+    const { interpretation, request: requestInterpretation } = useInterpretation(() => ({ layer, cIdx }));
 
     // Fetch correlations when component changes
     $effect(() => {
@@ -223,7 +208,7 @@
         {/if}
     </SectionHeader>
 
-    <InterpretationBadge {interpretation} {layer} {cIdx} onInterpretationGenerated={handleInterpretationGenerated} />
+    <InterpretationBadge {interpretation} onRequestInterpretation={requestInterpretation} />
 
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
