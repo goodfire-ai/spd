@@ -2,11 +2,11 @@ wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: '' #hej
 seed: 0
-C: 300
+C: 200
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-- 300
+- 200
 sampling: continuous
 sigmoid_type: leaky_hard
 target_module_patterns:
@@ -20,11 +20,12 @@ target_module_patterns:
 identity_module_patterns: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.2
+- coeff: 1
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
+  pnorm_2: 1.2
   p_anneal_start_frac: 0.0
-  p_anneal_final_p: 0.5
+  p_anneal_final_p: 0.3
   p_anneal_end_frac: 1.0
   eps: 1.0e-12
 - coeff: 0.5
@@ -45,8 +46,8 @@ loss_metric_configs:
   classname: FaithfulnessLoss
 output_loss_type: mem
 lr: 1e-3
-steps: 20000
-batch_size: 3200
+steps: 100000
+batch_size: 2048
 gradient_accumulation_steps: 1
 grad_clip_norm: null
 faithfulness_warmup_steps: 100
