@@ -284,9 +284,7 @@ def compute_max_abs_attr(edges: list[Edge]) -> float:
 
 def compute_max_abs_subcomp_act(node_subcomp_acts: dict[str, float]) -> float:
     """Compute max absolute subcomponent activation for normalization."""
-    if not node_subcomp_acts:
-        return 1.0
-    return max(abs(v) for v in node_subcomp_acts.values()) or 1.0
+    return max(abs(v) for v in node_subcomp_acts.values())
 
 
 @router.post("")

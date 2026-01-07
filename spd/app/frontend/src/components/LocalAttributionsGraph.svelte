@@ -139,7 +139,7 @@
     const hasSubcompActData = $derived(
         data.nodeSubcompActs && Object.keys(data.nodeSubcompActs).length > 0,
     );
-    const maxAbsSubcompAct = $derived(data.maxAbsSubcompAct || 1);
+    const maxAbsSubcompAct = $derived(data.maxAbsSubcompAct);
 
     // All nodes from nodeCiVals (for layout and rendering)
     const allNodes = $derived(new SvelteSet(Object.keys(data.nodeCiVals)));
@@ -472,11 +472,17 @@
                 // Component nodes: color/opacity based on CI or subcomp activation
                 if (displaySettings.nodeColorMode === "ci" || !hasSubcompActData) {
                     const ci = data.nodeCiVals[`${layer}:${seqIdx}:${cIdx}`] || 0;
-                    const intensity = Math.min(1, ci / maxCi);
+                    const intensity = ci / maxCi;
+                    if (intensity > 1) {
+                        throw new Error(`Inconsistent state: intensity > 1: ${intensity}`)
+                    }
                     opacity = 0.2 + intensity * 0.8;
                 } else {
                     const subcompAct = data.nodeSubcompActs![`${layer}:${seqIdx}:${cIdx}`] ?? 0;
-                    const intensity = Math.min(1, Math.abs(subcompAct) / maxAbsSubcompAct);
+                    const intensity = subcompAct / maxAbsSubcompAct;
+                    if (intensity > 1) {
+                        throw new Error(`Inconsistent state: intensity > 1: ${intensity}`)
+                    }
                     fill = getSubcompActColor(subcompAct);
                     opacity = 0.3 + intensity * 0.7;
                 }

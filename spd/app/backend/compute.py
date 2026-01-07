@@ -379,7 +379,7 @@ def compute_edges_from_ci(
     node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
     component_acts = model.get_all_component_acts(pre_weight_acts)
     node_subcomp_acts = extract_node_subcomp_acts(
-        component_acts, ci_lower_leaky=ci_lower_leaky, ci_threshold=0.0
+        component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky
     )
 
     return LocalAttributionResult(
@@ -571,39 +571,29 @@ def extract_node_ci_vals(
 
 def extract_node_subcomp_acts(
     component_acts: dict[str, Float[Tensor, "1 seq C"]],
-    ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]] | None = None,
-    ci_threshold: float = 0.0,
+    ci_threshold: float,
+    ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
 ) -> dict[str, float]:
     """Extract per-node subcomponent activations from pre-computed component acts.
 
     Args:
         component_acts: Dict mapping layer name to component activations [1, seq, C].
-        ci_lower_leaky: Optional dict mapping layer name to CI tensor [1, seq, C].
-            If provided, only nodes with CI > ci_threshold are included.
         ci_threshold: Threshold for filtering nodes by CI value.
+        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, C].
 
     Returns:
         Dict mapping "layer:seq:c_idx" to subcomponent activation value.
     """
     node_subcomp_acts: dict[str, float] = {}
     for layer_name, subcomp_acts in component_acts.items():
-        n_seq = subcomp_acts.shape[1]
-        n_components = subcomp_acts.shape[2]
-
-        if ci_lower_leaky is not None and layer_name in ci_lower_leaky:
-            ci = ci_lower_leaky[layer_name]
-            alive_mask = ci[0] > ci_threshold  # [seq, C]
-            alive_seq_indices, alive_c_indices = torch.where(alive_mask)
-            for seq_pos, c_idx in zip(
-                alive_seq_indices.tolist(), alive_c_indices.tolist(), strict=True
-            ):
-                key = f"{layer_name}:{seq_pos}:{c_idx}"
-                node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
-        else:
-            for seq_pos in range(n_seq):
-                for c_idx in range(n_components):
-                    key = f"{layer_name}:{seq_pos}:{c_idx}"
-                    node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
+        ci = ci_lower_leaky[layer_name]
+        alive_mask = ci[0] > ci_threshold  # [seq, C]
+        alive_seq_indices, alive_c_indices = torch.where(alive_mask)
+        for seq_pos, c_idx in zip(
+            alive_seq_indices.tolist(), alive_c_indices.tolist(), strict=True
+        ):
+            key = f"{layer_name}:{seq_pos}:{c_idx}"
+            node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
 
     return node_subcomp_acts
 

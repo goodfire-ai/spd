@@ -95,7 +95,7 @@
     });
 
     // Format mean CI or subcomponent activation for display
-    function formatMeanValue(val: number): string {
+    function formatNumericalValue(val: number): string {
         return Math.abs(val) < 0.001 ? val.toExponential(2) : val.toFixed(3);
     }
 
@@ -155,7 +155,7 @@
 <div class="component-node-card">
     <SectionHeader title="Position {seqIdx}" level="h4">
         {#if summary}
-            <span class="mean-ci">Mean CI: {formatMeanValue(summary.mean_ci)}</span>
+            <span class="mean-ci">Mean CI: {formatNumericalValue(summary.mean_ci)}</span>
         {/if}
     </SectionHeader>
 

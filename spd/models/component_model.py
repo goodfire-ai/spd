@@ -546,7 +546,7 @@ class ComponentModel(LoadableModule):
         self,
         pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "..."]],
     ) -> dict[str, Float[Tensor, "... C"]]:
-        """Compute component activations (v_i^T @ a) for all layers.
+        """Compute component activations (v_i^T @ x) for all layers.
 
         Args:
             pre_weight_acts: Dict mapping layer name to input activations.
