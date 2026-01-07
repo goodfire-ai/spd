@@ -50,9 +50,16 @@
         if (tokenStats?.status !== "loaded" || tokenStats.data === null) return null;
         return [
             {
-                title: "Top PMI",
-                mathNotation: "log(P(firing, token) / P(firing)P(token))",
-                items: tokenStats.data.input.top_pmi
+                title: "Top Recall",
+                mathNotation: "P(token | component fires)",
+                items: tokenStats.data.input.top_recall
+                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .map(([token, value]) => ({ token, value })),
+            },
+            {
+                title: "Top Precision",
+                mathNotation: "P(component fires | token)",
+                items: tokenStats.data.input.top_precision
                     .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
                     .map(([token, value]) => ({ token, value })),
             },

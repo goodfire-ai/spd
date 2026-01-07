@@ -157,7 +157,6 @@ async def interpret_component(
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    max_examples: int,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
     prompt = format_prompt_template(
@@ -166,7 +165,6 @@ async def interpret_component(
         tokenizer=tokenizer,
         input_token_stats=input_token_stats,
         output_token_stats=output_token_stats,
-        max_examples=max_examples,
     )
 
     try:
@@ -220,7 +218,6 @@ async def interpret_all(
     openrouter_api_key: str,
     interpreter_model: str,
     output_path: Path,
-    max_examples_per_component: int,
     token_stats: TokenStatsStorage,
     limit: int | None = None,
 ) -> list[InterpretationResult]:
@@ -280,7 +277,6 @@ async def interpret_all(
                     tokenizer=tokenizer,
                     input_token_stats=input_stats,
                     output_token_stats=output_stats,
-                    max_examples=max_examples_per_component,
                 )
                 if res is None:
                     logger.error(f"Failed to interpret {component.component_key}")
@@ -349,7 +345,6 @@ def run_interpret(
     activation_contexts_dir: Path,
     correlations_dir: Path,
     autointerp_dir: Path,
-    max_examples_per_component: int,
     limit: int | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
@@ -370,7 +365,6 @@ def run_interpret(
             openrouter_api_key=openrouter_api_key,
             interpreter_model=interpreter_model,
             output_path=output_path,
-            max_examples_per_component=max_examples_per_component,
             token_stats=token_stats,
             limit=limit,
         )

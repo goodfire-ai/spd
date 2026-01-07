@@ -20,7 +20,6 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 def main(
     wandb_path: str,
     model: OpenRouterModelName,
-    max_examples_per_component: int,
     limit: int | None = None,
 ) -> None:
     """Interpret harvested components.
@@ -28,7 +27,6 @@ def main(
     Args:
         wandb_path: WandB run path for the target decomposition run.
         model: OpenRouter model to use for interpretation.
-        max_examples_per_component: Maximum number of activation examples per component.
         limit: Maximum number of components to interpret (highest mean CI first).
     """
     _, _, run_id = parse_wandb_run_path(wandb_path)
@@ -54,7 +52,6 @@ def main(
         activation_contexts_dir,
         correlations_dir,
         autointerp_dir,
-        max_examples_per_component,
         limit,
     )
 

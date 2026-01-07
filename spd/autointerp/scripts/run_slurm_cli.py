@@ -13,7 +13,6 @@ def main(
     model: str = "google/gemini-3-flash-preview",
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
-    max_examples_per_component: int = 30,
     limit: int | None = None,
 ) -> None:
     from spd.autointerp.interpret import OpenRouterModelName
@@ -24,7 +23,6 @@ def main(
         model=OpenRouterModelName(model),
         partition=partition,
         time=time,
-        max_examples_per_component=max_examples_per_component,
         limit=limit,
     )
 

@@ -5,6 +5,7 @@ import json
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.utils import build_token_lookup
+from spd.autointerp import MAX_EXAMPLES_PER_COMPONENT
 from spd.autointerp.schemas import ArchitectureInfo
 from spd.harvest.analysis import TokenPRLift
 from spd.harvest.schemas import ComponentData
@@ -79,7 +80,6 @@ def format_prompt_template(
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    max_examples: int,
     ci_display_threshold: float = 0.3,
     output_precision_top_k: int = 40,
 ) -> str:
@@ -117,7 +117,7 @@ def format_prompt_template(
 
     # Build examples showing only high-CI tokens
     examples_section = _build_examples_section(
-        component, tokenizer, lookup, max_examples, ci_display_threshold, PADDING_SENTINEL
+        component, tokenizer, lookup, ci_display_threshold, PADDING_SENTINEL
     )
 
     # Get dataset description
@@ -267,7 +267,6 @@ def _build_examples_section(
     component: ComponentData,
     tokenizer: PreTrainedTokenizerBase,
     lookup: dict[int, str],
-    max_examples: int,
     ci_threshold: float,
     padding_sentinel: int,
 ) -> str:
@@ -278,7 +277,7 @@ def _build_examples_section(
 _Showing tokens where CI > {ci_threshold} (component is active)_
 
 """
-    examples = component.activation_examples[:max_examples]
+    examples = component.activation_examples[:MAX_EXAMPLES_PER_COMPONENT]
     for i, example in enumerate(examples):
         # Decode full text
         valid_tokens = [t for t in example.token_ids if t != padding_sentinel and t >= 0]

@@ -223,7 +223,6 @@ async def request_component_interpretation(
             tokenizer=loaded.tokenizer,
             input_token_stats=input_token_stats,
             output_token_stats=output_token_stats,
-            max_examples=50,
         )
 
     if res is None:
