@@ -222,6 +222,7 @@ async def interpret_all(
     output_path: Path,
     max_examples_per_component: int,
     token_stats: TokenStatsStorage,
+    limit: int | None = None,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
@@ -238,6 +239,8 @@ async def interpret_all(
 
     components_sorted = sorted(components, key=lambda c: c.mean_ci, reverse=True)
     remaining = [c for c in components_sorted if c.component_key not in completed]
+    if limit is not None:
+        remaining = remaining[:limit]
     print(f"Interpreting {len(remaining)} components")
     start_idx = len(results)
 
@@ -347,6 +350,7 @@ def run_interpret(
     correlations_dir: Path,
     autointerp_dir: Path,
     max_examples_per_component: int,
+    limit: int | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
@@ -368,6 +372,7 @@ def run_interpret(
             output_path=output_path,
             max_examples_per_component=max_examples_per_component,
             token_stats=token_stats,
+            limit=limit,
         )
     )
 
