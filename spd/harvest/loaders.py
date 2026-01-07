@@ -1,6 +1,7 @@
 """Loaders for reading harvest output files."""
 
 import json
+from dataclasses import dataclass
 
 from spd.harvest.schemas import (
     ActivationExample,
@@ -10,6 +11,35 @@ from spd.harvest.schemas import (
     get_correlations_dir,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+
+
+@dataclass
+class ComponentSummary:
+    """Lightweight summary of a component (no activation examples)."""
+
+    layer: str
+    component_idx: int
+    mean_ci: float
+
+
+def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSummary] | None:
+    """Load only summary metadata from activation contexts (fast, skips examples)."""
+    ctx_dir = get_activation_contexts_dir(wandb_run_id)
+    path = ctx_dir / "components.jsonl"
+    if not path.exists():
+        return None
+
+    summaries: dict[str, ComponentSummary] = {}
+    with open(path) as f:
+        for line in f:
+            data = json.loads(line)
+            summary = ComponentSummary(
+                layer=data["layer"],
+                component_idx=data["component_idx"],
+                mean_ci=data["mean_ci"],
+            )
+            summaries[f"{summary.layer}:{summary.component_idx}"] = summary
+    return summaries
 
 
 def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | None:

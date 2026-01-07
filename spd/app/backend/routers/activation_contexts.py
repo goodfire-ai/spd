@@ -40,17 +40,17 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    contexts = loaded.harvest.activation_contexts
-    if contexts is None:
+    summaries = loaded.harvest.activation_contexts_summary
+    if summaries is None:
         raise HTTPException(
             status_code=404,
             detail="No activation contexts found. Run harvest first.",
         )
 
     # Group by layer
-    summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
-    for comp in contexts.values():
-        summary[comp.layer].append(
+    result: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
+    for comp in summaries.values():
+        result[comp.layer].append(
             SubcomponentMetadata(
                 subcomponent_idx=comp.component_idx,
                 mean_ci=comp.mean_ci,
@@ -58,10 +58,10 @@ def get_activation_contexts_summary(
         )
 
     # Sort by mean CI descending within each layer
-    for layer in summary:
-        summary[layer].sort(key=lambda x: x.mean_ci, reverse=True)
+    for layer in result:
+        result[layer].sort(key=lambda x: x.mean_ci, reverse=True)
 
-    return dict(summary)
+    return dict(result)
 
 
 @router.get("/{layer}/{component_idx}")
