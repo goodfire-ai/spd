@@ -105,6 +105,8 @@
                             detail={runState.getComponentDetail(node.layer, node.cIdx)}
                             {edgesBySource}
                             {edgesByTarget}
+                            {tokens}
+                            {outputProbs}
                             onPinComponent={toggleComponentPinned}
                         />
                     {/if}
