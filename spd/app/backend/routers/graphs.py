@@ -168,13 +168,15 @@ ProgressCallback = Callable[[int, int, str], None]
 
 def build_out_probs(
     ci_masked_out_probs: torch.Tensor,
+    ci_masked_out_logits: torch.Tensor,
     target_out_probs: torch.Tensor,
+    target_out_logits: torch.Tensor,
     output_prob_threshold: float,
     token_strings: dict[int, str],
 ) -> dict[str, OutputProbability]:
     """Build output probs dict from CI-masked and target model tensors.
 
-    Filters by CI-masked probability threshold, but includes both probabilities.
+    Filters by CI-masked probability threshold, but includes both probabilities and logits.
     """
     out_probs: dict[str, OutputProbability] = {}
     for s in range(ci_masked_out_probs.shape[0]):
@@ -182,11 +184,15 @@ def build_out_probs(
             prob = float(ci_masked_out_probs[s, c_idx].item())
             if prob < output_prob_threshold:
                 continue
+            logit = float(ci_masked_out_logits[s, c_idx].item())
             target_prob = float(target_out_probs[s, c_idx].item())
+            target_logit = float(target_out_logits[s, c_idx].item())
             key = f"{s}:{c_idx}"
             out_probs[key] = OutputProbability(
                 prob=round(prob, 6),
+                logit=round(logit, 4),
                 target_prob=round(target_prob, 6),
+                target_logit=round(target_logit, 4),
                 token=token_strings[c_idx],
             )
     return out_probs
@@ -305,7 +311,9 @@ def compute_graph_stream(
 
         out_probs = build_out_probs(
             ci_masked_out_probs=result.ci_masked_out_probs[0].cpu(),
+            ci_masked_out_logits=result.ci_masked_out_logits[0].cpu(),
             target_out_probs=result.target_out_probs.cpu(),
+            target_out_logits=result.target_out_logits.cpu(),
             output_prob_threshold=output_prob_threshold,
             token_strings=loaded.token_strings,
         )
@@ -478,7 +486,9 @@ def compute_graph_optimized_stream(
 
         out_probs = build_out_probs(
             ci_masked_out_probs=result.ci_masked_out_probs[0].cpu(),
+            ci_masked_out_logits=result.ci_masked_out_logits[0].cpu(),
             target_out_probs=result.target_out_probs.cpu(),
+            target_out_logits=result.target_out_logits.cpu(),
             output_prob_threshold=output_prob_threshold,
             token_strings=loaded.token_strings,
         )

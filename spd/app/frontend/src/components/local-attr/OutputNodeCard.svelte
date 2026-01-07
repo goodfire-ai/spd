@@ -30,7 +30,9 @@
             .map(([key, entry]) => ({
                 seqIdx: parseInt(key.split(":")[0]),
                 prob: entry.prob,
+                logit: entry.logit,
                 target_prob: entry.target_prob,
+                target_logit: entry.target_logit,
                 token: entry.token,
             }))
             .sort((a, b) => b.prob - a.prob);
@@ -43,8 +45,8 @@
     {#if singlePosEntry}
         <div class="output-header" style="background: {getOutputHeaderColor(singlePosEntry.prob)};">
             <div class="output-token">"{escapeHtml(singlePosEntry.token)}"</div>
-            <div class="output-prob">CI-masked: {(singlePosEntry.prob * 100).toFixed(1)}%</div>
-            <div class="output-prob">Target: {(singlePosEntry.target_prob * 100).toFixed(1)}%</div>
+            <div class="output-prob">CI-masked: {(singlePosEntry.prob * 100).toFixed(1)}% (logit: {singlePosEntry.logit.toFixed(2)})</div>
+            <div class="output-prob">Target: {(singlePosEntry.target_prob * 100).toFixed(1)}% (logit: {singlePosEntry.target_logit.toFixed(2)})</div>
         </div>
         <p class="stats">
             <strong>Position:</strong>
@@ -59,7 +61,9 @@
                 <tr>
                     <th>Pos</th>
                     <th>CI-masked</th>
+                    <th>Logit</th>
                     <th>Target</th>
+                    <th>Logit</th>
                 </tr>
             </thead>
             <tbody>
@@ -67,7 +71,9 @@
                     <tr>
                         <td>{pos.seqIdx}</td>
                         <td>{(pos.prob * 100).toFixed(2)}%</td>
+                        <td>{pos.logit.toFixed(2)}</td>
                         <td>{(pos.target_prob * 100).toFixed(2)}%</td>
+                        <td>{pos.target_logit.toFixed(2)}</td>
                     </tr>
                 {/each}
             </tbody>

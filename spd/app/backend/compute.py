@@ -87,7 +87,9 @@ class LocalAttributionResult:
 
     edges: list[Edge]
     ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
+    ci_masked_out_logits: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) raw logits
     target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
+    target_out_logits: Float[Tensor, "seq vocab"]  # Target model raw logits
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
 
 
@@ -97,7 +99,9 @@ class OptimizedLocalAttributionResult:
 
     edges: list[Edge]
     ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
+    ci_masked_out_logits: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) raw logits
     target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
+    target_out_logits: Float[Tensor, "seq vocab"]  # Target model raw logits
     label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
 
@@ -230,6 +234,7 @@ def compute_edges_from_ci(
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
     sources_by_target: dict[str, list[str]],
     target_out_probs: Float[Tensor, "1 seq vocab"],
+    target_out_logits: Float[Tensor, "1 seq vocab"],
     output_prob_threshold: float,
     device: str,
     show_progress: bool,
@@ -374,10 +379,13 @@ def compute_edges_from_ci(
         pbar.close()
 
     node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
+    ci_masked_out_logits = comp_output_with_cache.output[0]  # [seq, vocab]
     return LocalAttributionResult(
         edges=edges,
         ci_masked_out_probs=ci_masked_out_probs,
+        ci_masked_out_logits=ci_masked_out_logits,
         target_out_probs=target_out_probs[0],
+        target_out_logits=target_out_logits[0],
         node_ci_vals=node_ci_vals,
     )
 
@@ -400,7 +408,8 @@ def compute_local_attributions(
     with torch.no_grad():
         output_with_cache = model(tokens, cache_type="input")
         pre_weight_acts = output_with_cache.cache
-        target_out_probs = torch.softmax(output_with_cache.output, dim=-1)
+        target_out_logits = output_with_cache.output
+        target_out_probs = torch.softmax(target_out_logits, dim=-1)
         ci = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
             sampling=sampling,
@@ -413,6 +422,7 @@ def compute_local_attributions(
         ci_lower_leaky=ci.lower_leaky,
         sources_by_target=sources_by_target,
         target_out_probs=target_out_probs,
+        target_out_logits=target_out_logits,
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
@@ -470,6 +480,7 @@ def compute_local_attributions_optimized(
         ci_lower_leaky=ci_outputs.lower_leaky,
         sources_by_target=sources_by_target,
         target_out_probs=target_out_probs,
+        target_out_logits=target_logits,
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
@@ -479,7 +490,9 @@ def compute_local_attributions_optimized(
     return OptimizedLocalAttributionResult(
         edges=result.edges,
         ci_masked_out_probs=result.ci_masked_out_probs,
+        ci_masked_out_logits=result.ci_masked_out_logits,
         target_out_probs=result.target_out_probs,
+        target_out_logits=result.target_out_logits,
         label_prob=label_prob,
         node_ci_vals=result.node_ci_vals,
     )
