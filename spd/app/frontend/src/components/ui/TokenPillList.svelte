@@ -6,16 +6,16 @@
 
     type Props = {
         items: TokenValue[];
-        /** PMI scale: value at which color reaches full intensity */
+        /** value at which color reaches full intensity */
         maxScale?: number;
         compact?: boolean;
     };
 
     let { items, maxScale = 10, compact = false }: Props = $props();
 
-    // Background color for PMI (blue-white-red colorway)
+    // Background color for (blue-white-red colorway)
     // Positive = blue, Zero = transparent, Negative = red
-    function getPmiBg(value: number): string {
+    function getBg(value: number): string {
         if (value > 0) {
             const intensity = Math.min(1, value / maxScale);
             return `rgba(59, 130, 246, ${intensity})`;
@@ -28,7 +28,7 @@
 
 <div class="tokens" class:compact>
     {#each items as { token, value } (token)}
-        <span class="token-pill" style="background: {getPmiBg(value)}" title="PMI: {value.toFixed(2)}">{token}</span>
+        <span class="token-pill" style="background: {getBg(value)}" title={value.toFixed(2)}>{token}</span>
     {/each}
 </div>
 

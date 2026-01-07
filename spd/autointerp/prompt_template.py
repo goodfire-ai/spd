@@ -164,7 +164,7 @@ Label this neural network component from a sparse decomposition.
 ## Task
 
 Based on the above information, what concept or pattern does this component represent?
-Focus on what the component *does* (what tokens it helps predict) rather than just what triggers it.
+Focus both on what the component *does* (what tokens it helps predict) and what triggers it.
 
 If the pattern is unclear or the evidence is weak, say so. Use "unclear" or "noisy" in your label if appropriate—do not force an interpretation where none exists.
 

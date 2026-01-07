@@ -52,9 +52,13 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         interpretation = { status: "loading" };
 
         // Fetch correlations
+        const correlationsStartTime = performance.now();
+        console.log(`Fetching correlations for ${layer}:${cIdx}`);
         getComponentCorrelations(layer, cIdx, CORRELATIONS_TOP_K)
             .then((data) => {
                 if (stale) return;
+                const timetaken = performance.now() - correlationsStartTime;
+                console.log(`Loaded correlations for ${layer}:${cIdx} in ${timetaken.toFixed(2)} seconds`);
                 correlations = { status: "loaded", data };
             })
             .catch((error) => {
@@ -63,9 +67,13 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
             });
 
         // Fetch token stats
+        const tokenStatsStartTime = performance.now();
+        console.log(`Fetching token stats for ${layer}:${cIdx}`);
         getComponentTokenStats(layer, cIdx, TOKEN_STATS_TOP_K)
             .then((data) => {
                 if (stale) return;
+                const timetaken = performance.now() - tokenStatsStartTime;
+                console.log(`Loaded token stats for ${layer}:${cIdx} in ${timetaken.toFixed(2)} seconds`);
                 tokenStats = { status: "loaded", data };
             })
             .catch((error) => {
@@ -74,9 +82,13 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
             });
 
         // Fetch interpretation
+        const interpretationStartTime = performance.now();
+        console.log(`Fetching interpretation for ${layer}:${cIdx}`);
         getComponentInterpretation(layer, cIdx)
             .then((data) => {
                 if (stale) return;
+                const timetaken = performance.now() - interpretationStartTime;
+                console.log(`Loaded interpretation for ${layer}:${cIdx} in ${timetaken.toFixed(2)} seconds`);
                 interpretation = data ? { status: "loaded", data } : { status: "none" };
             })
             .catch((error) => {
