@@ -150,110 +150,110 @@
 </script>
 
 <div class="viewer-content">
-        <div class="controls-row">
-            <div class="layer-select">
-                <label for="layer-select">Layer:</label>
-                <select id="layer-select" bind:value={selectedLayer}>
-                    {#each availableLayers as layer (layer)}
-                        <option value={layer}>{layer}</option>
-                    {/each}
-                </select>
-            </div>
-
-            <div class="pagination">
-                <label for="page-input">Subcomponent:</label>
-                <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
-                <input
-                    type="number"
-                    min="1"
-                    max={totalPages}
-                    value={currentPage + 1}
-                    oninput={handlePageInput}
-                    class="page-input"
-                />
-                <span>of {totalPages}</span>
-                <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
-            </div>
-
-            <div class="search-box">
-                <label for="search-input">Go to index:</label>
-                <input
-                    id="search-input"
-                    type="number"
-                    placeholder="e.g. 42"
-                    value={searchValue}
-                    oninput={handleSearchInput}
-                    class="search-input"
-                />
-                {#if searchError}
-                    <span class="search-error">{searchError}</span>
-                {/if}
-            </div>
+    <div class="controls-row">
+        <div class="layer-select">
+            <label for="layer-select">Layer:</label>
+            <select id="layer-select" bind:value={selectedLayer}>
+                {#each availableLayers as layer (layer)}
+                    <option value={layer}>{layer}</option>
+                {/each}
+            </select>
         </div>
 
-        <div class="component-section">
-            <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
-                <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
-            </SectionHeader>
-
-            <InterpretationBadge
-                interpretation={componentData.interpretation}
-                onGenerate={componentData.generateInterpretation}
+        <div class="pagination">
+            <label for="page-input">Subcomponent:</label>
+            <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
+            <input
+                type="number"
+                min="1"
+                max={totalPages}
+                value={currentPage + 1}
+                oninput={handlePageInput}
+                class="page-input"
             />
+            <span>of {totalPages}</span>
+            <button onclick={nextPage} disabled={currentPage === totalPages - 1}>&gt;</button>
+        </div>
 
-            <div class="token-stats-row">
-                {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
-                    <StatusText>Loading token stats...</StatusText>
-                {:else if componentData.tokenStats.status === "error"}
-                    <StatusText>Error: {String(componentData.tokenStats.error)}</StatusText>
-                {:else}
-                    <TokenStatsSection
-                        sectionTitle="Input Tokens"
-                        sectionSubtitle="(what activates this component)"
-                        lists={inputTokenLists}
-                    />
-
-                    <TokenStatsSection
-                        sectionTitle="Output Tokens"
-                        sectionSubtitle="(what this component predicts)"
-                        lists={outputTokenLists}
-                    />
-                {/if}
-            </div>
-
-            <!-- Component correlations -->
-            {#if displaySettings.hasAnyCorrelationStatsVisible()}
-                <div class="correlations-section">
-                    <SectionHeader title="Correlated Components" />
-                    {#if componentData.correlations === null || componentData.correlations.status === "loading"}
-                        <StatusText>Loading...</StatusText>
-                    {:else if componentData.correlations.status === "error"}
-                        <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
-                    {:else if componentData.correlations.data === null}
-                        <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
-                    {:else}
-                        <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
-                    {/if}
-                </div>
-            {/if}
-
-            <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
-
-            {#if currentComponent?.status === "loading"}
-                <div class="loading">Loading component data...</div>
-            {:else if currentComponent?.status === "loaded"}
-                <ActivationContextsPagedTable
-                    exampleTokens={currentComponent.data.example_tokens}
-                    exampleCi={currentComponent.data.example_ci}
-                    exampleComponentActs={currentComponent.data.example_component_acts}
-                    activatingTokens={inputTopRecall.map(({ token }) => token)}
-                />
-            {:else if currentComponent?.status === "error"}
-                <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
-            {:else}
-                <StatusText>Something went wrong loading component data.</StatusText>
+        <div class="search-box">
+            <label for="search-input">Go to index:</label>
+            <input
+                id="search-input"
+                type="number"
+                placeholder="e.g. 42"
+                value={searchValue}
+                oninput={handleSearchInput}
+                class="search-input"
+            />
+            {#if searchError}
+                <span class="search-error">{searchError}</span>
             {/if}
         </div>
+    </div>
+
+    <div class="component-section">
+        <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
+            <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
+        </SectionHeader>
+
+        <InterpretationBadge
+            interpretation={componentData.interpretation}
+            onGenerate={componentData.generateInterpretation}
+        />
+
+        <div class="token-stats-row">
+            {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
+                <StatusText>Loading token stats...</StatusText>
+            {:else if componentData.tokenStats.status === "error"}
+                <StatusText>Error: {String(componentData.tokenStats.error)}</StatusText>
+            {:else}
+                <TokenStatsSection
+                    sectionTitle="Input Tokens"
+                    sectionSubtitle="(what activates this component)"
+                    lists={inputTokenLists}
+                />
+
+                <TokenStatsSection
+                    sectionTitle="Output Tokens"
+                    sectionSubtitle="(what this component predicts)"
+                    lists={outputTokenLists}
+                />
+            {/if}
+        </div>
+
+        <!-- Component correlations -->
+        {#if displaySettings.hasAnyCorrelationStatsVisible()}
+            <div class="correlations-section">
+                <SectionHeader title="Correlated Components" />
+                {#if componentData.correlations === null || componentData.correlations.status === "loading"}
+                    <StatusText>Loading...</StatusText>
+                {:else if componentData.correlations.status === "error"}
+                    <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
+                {:else if componentData.correlations.data === null}
+                    <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
+                {:else}
+                    <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
+                {/if}
+            </div>
+        {/if}
+
+        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
+
+        {#if currentComponent?.status === "loading"}
+            <div class="loading">Loading component data...</div>
+        {:else if currentComponent?.status === "loaded"}
+            <ActivationContextsPagedTable
+                exampleTokens={currentComponent.data.example_tokens}
+                exampleCi={currentComponent.data.example_ci}
+                exampleComponentActs={currentComponent.data.example_component_acts}
+                activatingTokens={inputTopRecall.map(({ token }) => token)}
+            />
+        {:else if currentComponent?.status === "error"}
+            <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading component data.</StatusText>
+        {/if}
+    </div>
 </div>
 
 <style>
