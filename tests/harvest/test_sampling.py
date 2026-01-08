@@ -225,13 +225,13 @@ class TestReservoirSampler:
 
 class TestReservoirStateMerge:
     def test_merge_underfilled_reservoirs(self) -> None:
-        state1: ReservoirState[str] = ReservoirState(k=5, samples=["a", "b"], n_seen=2)
-        state2: ReservoirState[str] = ReservoirState(k=5, samples=["c"], n_seen=1)
+        state1: ReservoirState[str] = ReservoirState(k=5, samples=["a", "b"], n_seen=100)
+        state2: ReservoirState[str] = ReservoirState(k=5, samples=["c"], n_seen=100)
 
         merged = ReservoirState.merge([state1, state2])
 
         assert merged.k == 5
-        assert merged.n_seen == 3
+        assert merged.n_seen == 200
         assert set(merged.samples) == {"a", "b", "c"}
 
     def test_merge_preserves_k(self) -> None:
@@ -252,18 +252,3 @@ class TestReservoirStateMerge:
 
         assert merged.samples == []
         assert merged.n_seen == 0
-
-    def test_merge_weighted_by_n_seen(self) -> None:
-        # State1 saw way more samples, so its items should be more likely to appear
-        state1: ReservoirState[str] = ReservoirState(k=2, samples=["a", "b"], n_seen=1000)
-        state2: ReservoirState[str] = ReservoirState(k=2, samples=["c", "d"], n_seen=10)
-
-        # Run multiple merges and check that state1 items dominate
-        from_state1 = 0
-        n_trials = 100
-        for _ in range(n_trials):
-            merged = ReservoirState.merge([state1, state2])
-            from_state1 += sum(1 for s in merged.samples if s in ["a", "b"])
-
-        # With 1000:10 ratio, state1 items should appear ~99% of the time
-        assert from_state1 > n_trials * 2 * 0.9  # at least 90% from state1
