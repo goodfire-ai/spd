@@ -38,7 +38,6 @@ class HarvestCache:
         self._correlations = _NOT_LOADED
         self._token_stats = _NOT_LOADED
         self._interpretations = _NOT_LOADED
-        self._activation_contexts_summary = _NOT_LOADED
 
     @property
     def correlations(self) -> CorrelationStorage | None:
@@ -70,12 +69,7 @@ class HarvestCache:
     @property
     def activation_contexts_summary(self) -> dict[str, ComponentSummary] | None:
         """Lightweight summary of activation contexts (just metadata, not examples)."""
-        if self._activation_contexts_summary is _NOT_LOADED:
-            self._activation_contexts_summary = load_activation_contexts_summary(self.run_id)
-        assert isinstance(self._activation_contexts_summary, dict | None), (
-            "inconsistent state, activation contexts summary not loaded"
-        )
-        return self._activation_contexts_summary
+        return load_activation_contexts_summary(self.run_id)
 
 
 @dataclass
