@@ -13,7 +13,7 @@ from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
-from spd.harvest.loaders import load_activation_context_single
+from spd.harvest.loaders import load_component_activation_contexts
 from spd.utils.distributed_utils import get_device
 
 
@@ -75,7 +75,7 @@ def get_activation_context_detail(
     """Return full activation context data for a single component."""
     component_key = f"{layer}:{component_idx}"
 
-    comp = load_activation_context_single(loaded.harvest.run_id, component_key)
+    comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
     if comp is None:
         raise HTTPException(status_code=404, detail=f"Component {component_key} not found")
 

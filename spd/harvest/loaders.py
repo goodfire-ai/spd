@@ -22,16 +22,13 @@ def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSu
     return ComponentSummary.load_all(path)
 
 
-def load_activation_context_single(wandb_run_id: str, component_key: str) -> ComponentData | None:
-    """Load a single component's activation context by streaming through JSONL.
-
-    Streams through the file and only parses the matching line (~300KB)
-    instead of the entire file (~4GB).
-    """
+def load_component_activation_contexts(
+    wandb_run_id: str, component_key: str
+) -> ComponentData | None:
+    """Load a single component's activation contexts."""
     ctx_dir = get_activation_contexts_dir(wandb_run_id)
     path = ctx_dir / "components.jsonl"
-    if not path.exists():
-        return None
+    assert path.exists(), f"No activation contexts found at {path}"
 
     # Each line starts with {"component_key": "layer:idx", ...}
     expected_prefix = '{"component_key": '

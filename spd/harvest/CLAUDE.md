@@ -60,7 +60,7 @@ Implements reservoir sampling for uniform random sampling from a stream. Maintai
 
 Functions for loading harvested data by run ID:
 - `load_activation_contexts_summary(run_id)` -> dict[component_key, ComponentSummary]
-- `load_activation_context_single(run_id, component_key)` -> ComponentData (streams file)
+- `load_component_activation_contexts(run_id, component_key)` -> ComponentData
 - `load_correlations(run_id)` -> CorrelationStorage
 - `load_token_stats(run_id)` -> TokenStatsStorage
 

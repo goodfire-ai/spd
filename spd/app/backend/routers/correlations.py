@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
 from spd.harvest import analysis
-from spd.harvest.loaders import load_activation_context_single
+from spd.harvest.loaders import load_component_activation_contexts
 from spd.log import logger
 
 
@@ -165,8 +165,7 @@ async def request_component_interpretation(
             prompt=result.prompt,
         )
 
-    # Get component data from harvest (streaming to avoid loading entire 4GB file)
-    component_data = load_activation_context_single(loaded.harvest.run_id, component_key)
+    component_data = load_component_activation_contexts(loaded.harvest.run_id, component_key)
     if component_data is None:
         raise HTTPException(
             status_code=404,
