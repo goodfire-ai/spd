@@ -1,7 +1,6 @@
 """Loaders for reading harvest output files."""
 
 import json
-from random import random
 
 from spd.harvest.schemas import (
     ActivationExample,
@@ -20,18 +19,7 @@ def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSu
     path = ctx_dir / "summary.json"
     if not path.exists():
         return None
-
-    with open(path) as f:
-        data = json.load(f)
-
-    return {
-        key: ComponentSummary(
-            layer=val["layer"],
-            component_idx=val["component_idx"],
-            mean_ci=val["mean_ci"],
-        )
-        for key, val in data.items()
-    }
+    return ComponentSummary.load_all(path)
 
 
 def load_activation_context_single(wandb_run_id: str, component_key: str) -> ComponentData | None:
@@ -45,30 +33,25 @@ def load_activation_context_single(wandb_run_id: str, component_key: str) -> Com
     if not path.exists():
         return None
 
-    # Format: {"component_key": "layer:idx", ...}
+    # Each line starts with {"component_key": "layer:idx", ...}
+    expected_prefix = '{"component_key": '
     prefix = f'{{"component_key": "{component_key}"'
 
     with open(path) as f:
         for line in f:
+            assert line.startswith(expected_prefix), f"Unexpected line format: {line[:100]}"
             if not line.startswith(prefix):
                 continue
             # Found it - parse just this line
             data = json.loads(line)
             data["activation_examples"] = [
-                ActivationExample(
-                    token_ids=ex["token_ids"],
-                    ci_values=ex["ci_values"],
-                    component_acts=ex.get(
-                        "component_acts", [random() * 2 - 1 for _ in ex["token_ids"]]
-                    ),
-                )
-                for ex in data["activation_examples"]
+                ActivationExample(**ex) for ex in data["activation_examples"]
             ]
             data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
             data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
             return ComponentData(**data)
 
-    return None  # Component not found
+    return None
 
 
 def load_correlations(wandb_run_id: str) -> CorrelationStorage | None:
