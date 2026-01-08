@@ -14,8 +14,12 @@ from spd.app.backend.database import LocalAttrDB, Run
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
-from spd.harvest.loaders import load_activation_contexts, load_correlations, load_token_stats
-from spd.harvest.schemas import ComponentData
+from spd.harvest.loaders import (
+    load_activation_contexts_summary,
+    load_correlations,
+    load_token_stats,
+)
+from spd.harvest.schemas import ComponentSummary
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.models.component_model import ComponentModel
 
@@ -34,7 +38,7 @@ class HarvestCache:
         self._correlations = _NOT_LOADED
         self._token_stats = _NOT_LOADED
         self._interpretations = _NOT_LOADED
-        self._activation_contexts = _NOT_LOADED
+        self._activation_contexts_summary = _NOT_LOADED
 
     @property
     def correlations(self) -> CorrelationStorage | None:
@@ -64,13 +68,14 @@ class HarvestCache:
         return self._interpretations
 
     @property
-    def activation_contexts(self) -> dict[str, ComponentData] | None:
-        if self._activation_contexts is _NOT_LOADED:
-            self._activation_contexts = load_activation_contexts(self.run_id)
-        assert isinstance(self._activation_contexts, dict | None), (
-            "inconsistent state, activation contexts not loaded"
+    def activation_contexts_summary(self) -> dict[str, ComponentSummary] | None:
+        """Lightweight summary of activation contexts (just metadata, not examples)."""
+        if self._activation_contexts_summary is _NOT_LOADED:
+            self._activation_contexts_summary = load_activation_contexts_summary(self.run_id)
+        assert isinstance(self._activation_contexts_summary, dict | None), (
+            "inconsistent state, activation contexts summary not loaded"
         )
-        return self._activation_contexts
+        return self._activation_contexts_summary
 
 
 @dataclass

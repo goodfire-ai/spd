@@ -6,6 +6,7 @@ from random import random
 from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
+    ComponentSummary,
     ComponentTokenPMI,
     get_activation_contexts_dir,
     get_correlations_dir,
@@ -13,16 +14,45 @@ from spd.harvest.schemas import (
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 
 
-def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | None:
-    """Load activation contexts from harvest output."""
+def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSummary] | None:
+    """Load lightweight summary of activation contexts (just metadata, not full examples)."""
+    ctx_dir = get_activation_contexts_dir(wandb_run_id)
+    path = ctx_dir / "summary.json"
+    if not path.exists():
+        return None
+
+    with open(path) as f:
+        data = json.load(f)
+
+    return {
+        key: ComponentSummary(
+            layer=val["layer"],
+            component_idx=val["component_idx"],
+            mean_ci=val["mean_ci"],
+        )
+        for key, val in data.items()
+    }
+
+
+def load_activation_context_single(wandb_run_id: str, component_key: str) -> ComponentData | None:
+    """Load a single component's activation context by streaming through JSONL.
+
+    Streams through the file and only parses the matching line (~300KB)
+    instead of the entire file (~4GB).
+    """
     ctx_dir = get_activation_contexts_dir(wandb_run_id)
     path = ctx_dir / "components.jsonl"
     if not path.exists():
         return None
 
-    components: dict[str, ComponentData] = {}
+    # Format: {"component_key": "layer:idx", ...}
+    prefix = f'{{"component_key": "{component_key}"'
+
     with open(path) as f:
         for line in f:
+            if not line.startswith(prefix):
+                continue
+            # Found it - parse just this line
             data = json.loads(line)
             data["activation_examples"] = [
                 ActivationExample(
@@ -36,9 +66,9 @@ def load_activation_contexts(wandb_run_id: str) -> dict[str, ComponentData] | No
             ]
             data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
             data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-            comp = ComponentData(**data)
-            components[comp.component_key] = comp
-    return components
+            return ComponentData(**data)
+
+    return None  # Component not found
 
 
 def load_correlations(wandb_run_id: str) -> CorrelationStorage | None:

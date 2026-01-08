@@ -15,6 +15,7 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 import torch
 import tqdm
@@ -31,6 +32,19 @@ from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data
+
+
+def _round_floats(obj: Any, decimals: int = 3) -> Any:
+    """Recursively round all floats in a nested structure to reduce JSON size."""
+    if isinstance(obj, float):
+        return round(obj, decimals)
+    if isinstance(obj, dict):
+        return {k: _round_floats(v, decimals) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_round_floats(x, decimals) for x in obj]
+    if isinstance(obj, tuple):
+        return tuple(_round_floats(x, decimals) for x in obj)
+    return obj
 
 
 def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
@@ -91,8 +105,24 @@ class HarvestResult:
         components_path = activation_contexts_dir / "components.jsonl"
         with open(components_path, "w") as f:
             for comp in self.components:
-                f.write(json.dumps(asdict(comp)) + "\n")
+                # Round floats to 3 decimal places to reduce file size significantly
+                # (full-precision floats like 0.12345678901234567 become 0.123)
+                rounded = _round_floats(asdict(comp))
+                f.write(json.dumps(rounded) + "\n")
         logger.info(f"Saved {len(self.components)} components to {components_path}")
+
+        # Save lightweight summary (just metadata needed for /summary endpoint)
+        summary = {
+            comp.component_key: {
+                "layer": comp.layer,
+                "component_idx": comp.component_idx,
+                "mean_ci": round(comp.mean_ci, 3),
+            }
+            for comp in self.components
+        }
+        summary_path = activation_contexts_dir / "summary.json"
+        summary_path.write_text(json.dumps(summary))
+        logger.info(f"Saved summary to {summary_path}")
 
         # Save correlations (.pt)
         self.correlations.save(correlations_dir / "component_correlations.pt")

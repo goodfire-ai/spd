@@ -4,7 +4,6 @@ These endpoints serve data produced by the harvest pipeline (spd.harvest),
 which computes component co-occurrence statistics, token associations, and interpretations.
 """
 
-import time
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -13,6 +12,7 @@ from pydantic import BaseModel
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
 from spd.harvest import analysis
+from spd.harvest.loaders import load_activation_context_single
 from spd.log import logger
 
 
@@ -165,15 +165,8 @@ async def request_component_interpretation(
             prompt=result.prompt,
         )
 
-    # Get component data from harvest
-    activation_contexts = loaded.harvest.activation_contexts
-    if activation_contexts is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Activation contexts not available for this run. Run harvest first.",
-        )
-
-    component_data = activation_contexts.get(component_key)
+    # Get component data from harvest (streaming to avoid loading entire 4GB file)
+    component_data = load_activation_context_single(loaded.harvest.run_id, component_key)
     if component_data is None:
         raise HTTPException(
             status_code=404,
@@ -325,8 +318,6 @@ def get_component_correlations(
     Returns top-k correlations across different metrics (precision, recall, Jaccard, PMI).
     Returns None if correlations haven't been harvested for this run.
     """
-    start = time.perf_counter()
-
     correlations = loaded.harvest.correlations
     if correlations is None:
         return None
@@ -379,6 +370,4 @@ def get_component_correlations(
         ],
     )
 
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"get_component_correlations: {component_key} in {total_ms:.1f}ms")
     return response

@@ -38,6 +38,15 @@ class ComponentTokenPMI:
 
 
 @dataclass
+class ComponentSummary:
+    """Lightweight summary of a component (for /summary endpoint)."""
+
+    layer: str
+    component_idx: int
+    mean_ci: float
+
+
+@dataclass
 class ComponentData:
     component_key: str
     layer: str

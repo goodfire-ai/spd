@@ -23,7 +23,8 @@ Data is stored in `SPD_OUT_DIR/harvest/` (see `spd/settings.py`):
 SPD_OUT_DIR/harvest/<run_id>/
 ├── activation_contexts/
 │   ├── config.json
-│   └── components.jsonl      # One ComponentData per line
+│   ├── summary.json          # Lightweight {component_key: {layer, idx, mean_ci}}
+│   └── components.jsonl      # One ComponentData per line (~4GB, streamed on demand)
 └── correlations/
     ├── component_correlations.pt
     └── token_stats.pt
@@ -58,7 +59,8 @@ Implements reservoir sampling for uniform random sampling from a stream. Maintai
 ### Loaders (`loaders.py`)
 
 Functions for loading harvested data by run ID:
-- `load_activation_contexts(run_id)` -> dict[component_key, ComponentData]
+- `load_activation_contexts_summary(run_id)` -> dict[component_key, ComponentSummary]
+- `load_activation_context_single(run_id, component_key)` -> ComponentData (streams file)
 - `load_correlations(run_id)` -> CorrelationStorage
 - `load_token_stats(run_id)` -> TokenStatsStorage
 

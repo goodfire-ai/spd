@@ -57,6 +57,7 @@
     }
 
     // Returns null if: not yet loaded, layer not in harvest, or component not above threshold
+    // Note: O(n) search through ~700 components is fine - measured at ~10ms
     function findComponentSummary(layer: string, cIdx: number): ComponentSummary | null {
         if (!activationContextsSummary) return null;
         const layerSummaries = activationContextsSummary[layer];
