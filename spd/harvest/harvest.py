@@ -139,9 +139,9 @@ def _build_harvest_result(
     config: HarvestConfig,
 ) -> HarvestResult:
     """Build HarvestResult from a harvester."""
-    print("Building component results...")
+    logger.info("Building component results...")
     components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
-    print(f"Built {len(components)} components (skipped components with no firings)")
+    logger.info(f"Built {len(components)} components (skipped components with no firings)")
 
     # Build component keys list (same ordering as tensors)
     component_keys = [
@@ -187,7 +187,7 @@ def harvest(
     from spd.utils.distributed_utils import get_device
 
     device = torch.device(get_device())
-    print(f"Loading model on {device}")
+    logger.info(f"Loading model on {device}")
 
     run_info = SPDRunInfo.from_path(config.wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
@@ -218,7 +218,9 @@ def harvest(
         try:
             batch = extract_batch_data(next(train_iter)).to(device)
         except StopIteration:
-            print(f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early.")
+            logger.info(
+                f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early."
+            )
             break
 
         with torch.no_grad():
@@ -246,11 +248,11 @@ def harvest(
 
             harvester.process_batch(batch, ci, probs, subcomp_acts)
 
-    print(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
+    logger.info(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
 
     result = _build_harvest_result(harvester, config)
     result.save(activation_contexts_dir, correlations_dir)
-    print(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
+    logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
 
 
 def _harvest_worker(
@@ -268,7 +270,7 @@ def _harvest_worker(
     from spd.data import train_loader_and_tokenizer
 
     device = torch.device(f"cuda:{rank}")
-    print(f"[Worker {rank}] Starting on {device}", flush=True)
+    logger.info(f"[Worker {rank}] Starting on {device}")
 
     run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
@@ -300,10 +302,9 @@ def _harvest_worker(
         try:
             batch_data = extract_batch_data(next(train_iter))
         except StopIteration:
-            print(
+            logger.info(
                 f"[Worker {rank}] Dataset exhausted at batch {batch_idx}/{n_batches}. "
                 f"Finishing early.",
-                flush=True,
             )
             break
         if batch_idx % world_size != rank:
@@ -337,18 +338,21 @@ def _harvest_worker(
         batches_processed += 1
         now = time.time()
         if now - last_log_time >= 10:
-            print(f"[Worker {rank}] {batches_processed} batches", flush=True)
+            logger.info(f"[Worker {rank}] {batches_processed} batches")
             last_log_time = now
 
-    print(
+    logger.info(
         f"[Worker {rank}] Done. {batches_processed} batches, "
         f"{harvester.total_tokens_processed:,} tokens",
-        flush=True,
     )
     state = harvester.get_state()
     state_path = state_dir / f"worker_{rank}.pt"
     torch.save(state, state_path)
-    print(f"[Worker {rank}] Saved state to {state_path}", flush=True)
+    logger.info(f"[Worker {rank}] Saved state to {state_path}")
+
+    # Explicitly clean up CUDA resources to avoid slow process exit
+    del model, harvester
+    torch.cuda.empty_cache()
 
 
 def harvest_parallel(
@@ -366,11 +370,11 @@ def harvest_parallel(
     from spd.models.component_model import ComponentModel, SPDRunInfo
 
     # Pre-cache model and dataset before spawning workers
-    print("Pre-caching model and dataset...")
+    logger.info("Pre-caching model and dataset...")
     run_info = SPDRunInfo.from_path(config.wandb_path)
     _ = ComponentModel.from_run_info(run_info)
     _, _ = train_loader_and_tokenizer(run_info.config, config.batch_size)
-    print("Pre-caching complete. Spawning workers...")
+    logger.info("Pre-caching complete. Spawning workers...")
 
     mp.set_start_method("spawn", force=True)
 
@@ -396,9 +400,11 @@ def harvest_parallel(
             p.start()
             processes.append(p)
 
-        print(f"Launched {n_gpus} workers. Waiting for completion...")
+        logger.info(f"Launched {n_gpus} workers. Waiting for completion...")
         for i, p in enumerate(processes):
+            logger.info(f"Joining worker {i}...")
             p.join()
+            logger.info(f"Worker {i} joined (exit code {p.exitcode})")
             if p.exitcode != 0:
                 # Kill remaining workers and fail fast
                 for remaining in processes[i + 1 :]:
@@ -409,18 +415,18 @@ def harvest_parallel(
                     "Check stderr above for traceback."
                 )
 
-        print("All workers finished. Loading states from disk...")
+        logger.info("All workers finished. Loading states from disk...")
         states = []
         for rank in range(n_gpus):
             state_path = state_dir_path / f"worker_{rank}.pt"
             states.append(torch.load(state_path, weights_only=False))
 
-    print("Merging states...")
+    logger.info("Merging states...")
     merged_state = HarvesterState.merge(states)
-    print(f"Merged. Total tokens: {merged_state.total_tokens_processed:,}")
+    logger.info(f"Merged. Total tokens: {merged_state.total_tokens_processed:,}")
 
     harvester = Harvester.from_state(merged_state, torch.device("cpu"))
 
     result = _build_harvest_result(harvester, config)
     result.save(activation_contexts_dir, correlations_dir)
-    print(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
+    logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
