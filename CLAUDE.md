@@ -373,13 +373,6 @@ Downloaded runs are cached in `SPD_OUT_DIR/runs/<project>-<run_id>/`.
 - This includes not setting off multiple sweeps/evals that total >8 GPUs
 - Monitor jobs with: `squeue --format="%.18i %.9P %.15j %.12u %.12T %.10M %.9l %.6D %b %R" --me`
 
-## GitHub
-- To view github issues and PRs, use the github cli (e.g. `gh issue view 28` or `gh pr view 30`).
-- When making PRs, use the github template defined in `.github/pull_request_template.md`.
-- Before committing, ALWAYS ensure you are on the correct branch and do not use `git add .` to add all unstaged files. Instead, add only the individual files you changed, don't commit all files.
-- Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
-- NEVER use `--no-verify` to skip pre-commit hooks. They are there for a good reason. If pre-commit hooks fail, you MUST fix the underlying problem.
-
 
 ## Coding Guidelines & Software Engineering Principles
 
@@ -415,7 +408,6 @@ def get_config(path: Path) -> Config:
 config = get_config(path)
 value = config.key
 ```
-
 
 
 ### Tests
@@ -471,9 +463,22 @@ value = config.key
     This is bad because the new comment makes reference to a change in code, not just the state of
     the code.
 
+
 ### Other Important Software Development Practices
 - Backwards compatibility that adds complexity should be avoided.
 - Delete unused code. If an argument is always x, strongly consider removing as an argument and just inlining
-
-
 - **Update CLAUDE.md files** when changing code structure, adding/removing files, or modifying key interfaces. Update the CLAUDE.md in the same directory (or nearest parent) as the changed files.
+
+### GitHub
+- To view github issues and PRs, use the github cli (e.g. `gh issue view 28` or `gh pr view 30`).
+- When making PRs, use the github template defined in `.github/pull_request_template.md`.
+- Before committing, ALWAYS ensure you are on the correct branch and do not use `git add .` to add all unstaged files. Instead, add only the individual files you changed, don't commit all files.
+- Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
+- NEVER use `--no-verify` to skip pre-commit hooks. They are there for a good reason. If pre-commit hooks fail, you MUST fix the underlying problem.
+
+
+## Learning Loop In Each Repo
+- Always create a .claude/LEARNINGS.md file if it's not there.
+- Log Every Friction Point: If a build fails, a test hangs, or a logic error occurs, document the root cause and the specific fix before proceeding. Keep it brief but action-relevant.
+- Mandatory Update on Intervention: If you stop to ask for guidance, or if I provide a correction, you should update LEARNINGS.md with the "Signpost" (the specific instruction or realization) that prevented you from succeeding independently.
+- Iterate Toward Autonomy: Use the existing log to avoid repeating mistakes. Your goal is to reach a state where you can complete the objective without manual triggers.
