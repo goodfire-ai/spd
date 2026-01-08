@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 source .venv/bin/activate
 ```
+Repo requires `.env` file with WandB credentials (see `.env.example`)
+
 
 ## Project Overview
 SPD (Stochastic Parameter Decomposition) is a research framework for analyzing neural network components and their interactions through sparse parameter decomposition techniques.
@@ -26,9 +28,9 @@ The codebase supports three experimental domains: TMS (Toy Model of Superpositio
   - `tms_40-10`
   - `tms_40-10-id`
 - **ResidualMLP**:
-  - `resid_mlp1` - ResidualMLP with 1 layer
-  - `resid_mlp2`
-  - `resid_mlp3`
+  - `resid_mlp1` - 1 layer
+  - `resid_mlp2` - 2 layers
+  - `resid_mlp3` - 3 layers
 - **Language Models**:
   - `ss_llama_simple`, `ss_llama_simple-1L`, `ss_llama_simple-2L` - Simple Stories Llama variants
   - `ss_llama_simple_mlp`, `ss_llama_simple_mlp-1L`, `ss_llama_simple_mlp-2L` - Llama MLP-only variants
@@ -142,7 +144,6 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 
 **Experiment Logging:**
 
-- Repo requires `.env` file with WandB credentials (see `.env.example`)
 - Uses WandB for experiment tracking and model storage
 - All runs generate timestamped output directories with configs, models, and plots
 
@@ -243,7 +244,7 @@ This runs experiments directly without SLURM, git snapshots, or W&B views/report
 The SPD app provides interactive visualization of component decompositions and attributions:
 
 ```bash
-make app
+make app              # Launch backend + frontend dev servers
 # or
 python -m spd.app.run_app
 ```
@@ -412,9 +413,17 @@ value = config.key
 
 ### Tests
 - The point of tests in this codebase is to ensure that the code is working as expected, not to prevent production outages - there's no deployment here. Therefore, don't worry about lots of larger integration/end-to-end tests. These often require too much overhead for what it's worth in our case, and this codebase is interactively run so often that issues will likely be caught by the user at very little cost.
+
+### Assertions and error handling
 - If you have an invariant in your head, assert it. Are you afraid to assert? Sounds like your program might already be broken. Assert, assert, assert. Never soft fail.
 - Do not write: `if everythingIsOk: continueHappyPath()`. Instead do `assert everythingIsOk`
 - You should have a VERY good reason to handle an error gracefully. If your program isn't working like it should then it shouldn't be running, you should be fixing it.
+- Do not write `try-catch` blocks unless it definitely makes sense
+
+### Control Flow
+- Keep I/O as high up as possible. Make as many functions as possible pure.
+- Prefer `match` over `if/elif/else` chains when dispatching on conditions - more declarative and makes cases explicit
+- If you either have (a and b) or neither, don't make them both independently optional. Instead, put them in an optional tuple
 
 ### Types, Arguments, and Defaults
 - Write your invariants into types as much as possible.
@@ -435,11 +444,7 @@ value = config.key
 - Assert shapes liberally
 - Document complex tensor manipulations
 
-### Control Flow
-- Keep I/O as high up as possible. Make as many functions as possible pure.
-- Prefer `match` over `if/elif/else` chains when dispatching on conditions - more declarative and makes cases explicit
-- If you either have (a and b) or neither, don't make them both independently optional. Instead, put them in an optional tuple
-- Do not write `try-catch` blocks unless it definitely makes sense
+
 
 ### Comments
 
@@ -453,20 +458,19 @@ value = config.key
     - `# the function now uses y instead of x`
     - `# changed to be faster`
     - `# we now traverse in reverse`
-  - Here's an example of a bad diff:
-    ```diff
+- Here's an example of a bad diff, where the new comment makes reference to a change in code, not just the state of the code:
+```
 95 -      # Reservoir states
 96 -      reservoir_states: list[ReservoirState]
 95 +      # Reservoir state (tensor-based)
 96 +      reservoir: TensorReservoirState
-    ```
-    This is bad because the new comment makes reference to a change in code, not just the state of
-    the code.
+```
 
 
 ### Other Important Software Development Practices
 - Backwards compatibility that adds complexity should be avoided.
-- Delete unused code. If an argument is always x, strongly consider removing as an argument and just inlining
+- Delete unused code. 
+- If an argument is always x, strongly consider removing as an argument and just inlining
 - **Update CLAUDE.md files** when changing code structure, adding/removing files, or modifying key interfaces. Update the CLAUDE.md in the same directory (or nearest parent) as the changed files.
 
 ### GitHub
@@ -475,10 +479,3 @@ value = config.key
 - Before committing, ALWAYS ensure you are on the correct branch and do not use `git add .` to add all unstaged files. Instead, add only the individual files you changed, don't commit all files.
 - Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
 - NEVER use `--no-verify` to skip pre-commit hooks. They are there for a good reason. If pre-commit hooks fail, you MUST fix the underlying problem.
-
-
-## Learning Loop
-- Always create a .claude/LEARNINGS.md file if it's not there.
-- Log Every Friction Point: If a build fails, a test hangs, or a logic error occurs, document the root cause and the specific fix before proceeding. Keep it brief but action-relevant.
-- Mandatory Update on Intervention: If you stop to ask for guidance, or if I provide a correction, you should update LEARNINGS.md with the "Signpost" (the specific instruction or realization) that prevented you from succeeding independently.
-- Iterate Toward Autonomy: Use the existing log to avoid repeating mistakes. Your goal is to reach a state where you can complete the objective without manual triggers.
