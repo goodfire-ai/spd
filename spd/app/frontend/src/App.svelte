@@ -1,30 +1,25 @@
 <script lang="ts">
     import * as api from "./lib/api";
-    import type { ActivationContextsSummary } from "./lib/localAttributionsTypes";
     import { runState } from "./lib/runState.svelte";
     import type { Loadable } from "./lib";
 
     import { onMount } from "svelte";
-    import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
     import ClusterPathInput from "./components/ClusterPathInput.svelte";
     import DatasetSearchTab from "./components/DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./components/LocalAttributionsTab.svelte";
     import RunSelector from "./components/RunSelector.svelte";
     import DisplaySettingsDropdown from "./components/ui/DisplaySettingsDropdown.svelte";
+    import ActivationContextsTab from "./components/ActivationContextsTab.svelte";
 
     let backendUser = $state<Loadable<string>>(null);
 
     // When true, show the run selector even if a run is loaded
-    let showRunSelector = $state(true);
-
-    // Lifted activation contexts state - shared between tabs
-    let activationContextsSummary = $state<Loadable<ActivationContextsSummary>>(null);
+    let showWhichView = $state<"run-selector" | "run-page">("run-selector");
 
     // When run loads successfully, hide selector and load activation contexts
     $effect(() => {
         if (runState.run?.status === "loaded" && runState.run.data) {
-            showRunSelector = false;
-            loadActivationContextsSummary();
+            showWhichView = "run-page";
         }
     });
 
@@ -32,23 +27,8 @@
         await runState.loadRun(wandbPath, contextLength);
     }
 
-    async function loadActivationContextsSummary() {
-        activationContextsSummary = { status: "loading" };
-        try {
-            const data = await api.getActivationContextsSummary();
-            activationContextsSummary = { status: "loaded", data };
-        } catch (e) {
-            activationContextsSummary = { status: "error", error: e };
-        }
-    }
-
-    // Extract data for components that just need data | null
-    const activationContextsData = $derived(
-        activationContextsSummary?.status === "loaded" ? activationContextsSummary.data : null,
-    );
-
     function handleChangeRun() {
-        showRunSelector = true;
+        showWhichView = "run-selector";
     }
 
     onMount(() => {
@@ -60,13 +40,13 @@
     let showRunMenu = $state(false);
 </script>
 
-{#if showRunSelector}
+{#if showWhichView === "run-selector"}
     <RunSelector
         onSelect={handleLoadRun}
         isLoading={runState.run?.status === "loading"}
         username={backendUser?.status === "loaded" ? backendUser.data : null}
     />
-{:else}
+{:else if showWhichView === "run-page"}
     <div class="app-layout">
         <header class="top-bar">
             {#if runState.run?.status === "loaded" && runState.run.data}
@@ -139,10 +119,10 @@
             {#if runState.run?.status === "loaded"}
                 <!-- Use hidden class instead of conditional rendering to preserve state -->
                 <div class="tab-content" class:hidden={activeTab !== "prompts"}>
-                    <LocalAttributionsTab activationContextsSummary={activationContextsData} />
+                    <LocalAttributionsTab />
                 </div>
                 <div class="tab-content" class:hidden={activeTab !== "components"}>
-                    <ActivationContextsTab {activationContextsSummary} />
+                    <ActivationContextsTab />
                 </div>
             {:else if runState.run?.status === "loading"}
                 <div class="empty-state" class:hidden={activeTab === "dataset-search"}>

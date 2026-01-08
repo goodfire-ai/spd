@@ -2,7 +2,6 @@
     import * as api from "../lib/api";
     import {
         filterInterventableNodes,
-        type ActivationContextsSummary,
         type GraphData,
         type PinnedNode,
         type PromptPreview,
@@ -26,13 +25,6 @@
     } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
-
-    // Props - activation contexts state is lifted to App.svelte
-    type Props = {
-        activationContextsSummary: ActivationContextsSummary | null;
-    };
-
-    let { activationContextsSummary }: Props = $props();
 
     // Server state
     let loadedRun = $state<api.RunState | null>(null);
@@ -625,10 +617,6 @@
         </div>
     {:else}
         <div class="main-content">
-            {#if activationContextsSummary === null}
-                <div class="warning-banner">Activation contexts not generated. Component hover info unavailable.</div>
-            {/if}
-
             <div class="graph-container">
                 <div class="card-tabs-row">
                     <PromptCardTabs
@@ -733,7 +721,6 @@
                                             layerGap={activeGraph.viewSettings.layerGap}
                                             {hideUnpinnedEdges}
                                             {hideNodeCard}
-                                            {activationContextsSummary}
                                             stagedNodes={pinnedNodes}
                                             onStagedNodesChange={handlePinnedNodesChange}
                                             onEdgeCountChange={(count) => (filteredEdgeCount = count)}
@@ -742,7 +729,6 @@
                                 </div>
                                 <StagedNodesPanel
                                     stagedNodes={pinnedNodes}
-                                    {activationContextsSummary}
                                     outputProbs={activeGraph.data.outputProbs}
                                     tokens={activeCard.tokens}
                                     edgesBySource={activeGraph.data.edgesBySource}
@@ -773,7 +759,6 @@
                                     onCiThresholdChange={handleCiThresholdChange}
                                     onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
-                                    {activationContextsSummary}
                                     {runningIntervention}
                                     onSelectionChange={handleComposerSelectionChange}
                                     onRunIntervention={handleRunIntervention}
@@ -980,16 +965,6 @@
     .no-run-message .server-error {
         color: var(--status-negative-bright);
         margin-top: var(--space-2);
-        font-family: var(--font-mono);
-    }
-
-    .warning-banner {
-        padding: var(--space-2) var(--space-3);
-        background: var(--bg-elevated);
-        border: 1px solid var(--accent-primary-dim);
-        border-radius: var(--radius-sm);
-        color: var(--accent-primary);
-        font-size: var(--text-sm);
         font-family: var(--font-mono);
     }
 

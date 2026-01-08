@@ -323,6 +323,7 @@ HarvestCache:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
 ## Svelte 5 Conventions
 
 - Use `SvelteSet`/`SvelteMap` from `svelte/reactivity` instead of `Set`/`Map` - they're reactive without `$state()` wrapping
+- **Isolate nullability at higher levels**: Handle loading/error/null states in wrapper components so inner components can assume data is present. This avoids optional chaining and null checks scattered throughout the codebase. Example: `ActivationContextsTab` loads data and shows loading state, then renders `ActivationContextsViewer` only when data is ready - so the viewer can treat props as non-nullable.
 
 ---
 

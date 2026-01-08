@@ -24,7 +24,7 @@ SPD_OUT_DIR/harvest/<run_id>/
 ├── activation_contexts/
 │   ├── config.json
 │   ├── summary.json          # Lightweight {component_key: {layer, idx, mean_ci}}
-│   └── components.jsonl      # One ComponentData per line (~4GB, streamed on demand)
+│   └── components.jsonl      # One ComponentData per line (quite big - usually ≈10gb)
 └── correlations/
     ├── component_correlations.pt
     └── token_stats.pt

@@ -1,10 +1,5 @@
 <script lang="ts">
-    import type {
-        ActivationContextsSummary,
-        ComponentSummary,
-        OutputProbEntry,
-        Edge,
-    } from "../../lib/localAttributionsTypes";
+    import type { OutputProbEntry, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import { runState } from "../../lib/runState.svelte";
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
@@ -21,7 +16,6 @@
         hoveredNode: HoveredNode;
         tooltipPos: { x: number; y: number };
         hideNodeCard?: boolean;
-        activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
         nodeSubcompActs: Record<string, number>;
@@ -37,7 +31,6 @@
         hoveredNode,
         tooltipPos,
         hideNodeCard = false,
-        activationContextsSummary,
         outputProbs,
         nodeCiVals,
         nodeSubcompActs,
@@ -48,15 +41,6 @@
         onMouseLeave,
         onPinComponent,
     }: Props = $props();
-
-    // Returns null if: not yet loaded, layer not in harvest, or component not above threshold
-    // Note: O(n) search through ~700 components is fine - measured at ~10ms
-    function findComponentSummary(layer: string, cIdx: number): ComponentSummary | null {
-        if (!activationContextsSummary) return null;
-        const layerSummaries = activationContextsSummary[layer];
-        if (!layerSummaries) return null;
-        return layerSummaries.find((s) => s.subcomponent_idx === cIdx) ?? null;
-    }
 
     const isWte = $derived(hoveredNode.layer === "wte");
     const isOutput = $derived(hoveredNode.layer === "output");
@@ -123,7 +107,6 @@
             layer={hoveredNode.layer}
             cIdx={hoveredNode.cIdx}
             seqIdx={hoveredNode.seqIdx}
-            summary={findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
             detail={runState.getComponentDetail(hoveredNode.layer, hoveredNode.cIdx)}
             {edgesBySource}
             {edgesByTarget}

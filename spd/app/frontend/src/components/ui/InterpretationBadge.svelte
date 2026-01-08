@@ -12,7 +12,10 @@
 </script>
 
 <div class="interpretation-container">
-    <div class="interpretation-badge" class:loading={interpretation.status === "loading" || interpretation.status === "generating"}>
+    <div
+        class="interpretation-badge"
+        class:loading={interpretation.status === "loading" || interpretation.status === "generating"}
+    >
         {#if interpretation.status === "loading"}
             <span class="interpretation-label loading-text">Loading...</span>
         {:else if interpretation.status === "generating"}
@@ -21,7 +24,9 @@
             <div class="interpretation-content">
                 <div class="interpretation-header">
                     <span class="interpretation-label">{interpretation.data.label}</span>
-                    <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
+                    <span class="confidence confidence-{interpretation.data.confidence}"
+                        >{interpretation.data.confidence}</span
+                    >
                 </div>
                 {#if interpretation.data.reasoning}
                     <span class="interpretation-reasoning">{interpretation.data.reasoning}</span>

@@ -1,11 +1,12 @@
 import type { Loadable } from ".";
 import {
+    getActivationContextsSummary,
     getComponentCorrelations,
     getComponentInterpretation,
     getComponentTokenStats,
     requestComponentInterpretation,
 } from "./api";
-import type { ComponentCorrelations, TokenStats } from "./localAttributionsTypes";
+import type { ComponentCorrelations, ComponentSummary, TokenStats } from "./localAttributionsTypes";
 import { runState } from "./runState.svelte";
 
 /** Correlations are paginated in the UI, so fetch more */
@@ -30,13 +31,18 @@ import type { Interpretation } from "./api";
  * Handles stale request cancellation when coords change.
  */
 export function useComponentData(getCoords: () => ComponentCoords | null) {
+    let componentSummary = $state<Loadable<ComponentSummary>>(null);
+
+    // TODO why are these inner type nullable? this semantically conflicts with null as uninitialized
     let correlations = $state<Loadable<ComponentCorrelations | null>>(null);
     let tokenStats = $state<Loadable<TokenStats | null>>(null);
+
     let interpretation = $state<InterpretationState>({ status: "none" });
 
     $effect(() => {
         const coords = getCoords();
         if (!coords) {
+            componentSummary = null;
             correlations = null;
             tokenStats = null;
             interpretation = { status: "none" };
@@ -47,9 +53,29 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         let stale = false;
 
         // Set loading state
+        componentSummary = { status: "loading" };
         correlations = { status: "loading" };
         tokenStats = { status: "loading" };
         interpretation = { status: "loading" };
+
+        // Fetch component summary
+        getActivationContextsSummary()
+            .then((data) => {
+                if (stale) return;
+                const summary = data[layer].find((s) => s.subcomponent_idx === cIdx);
+                if (!summary) {
+                    componentSummary = {
+                        status: "error",
+                        error: new Error(`Component summary not found for ${layer}:${cIdx}`),
+                    };
+                    return;
+                }
+                componentSummary = { status: "loaded", data: summary };
+            })
+            .catch((error) => {
+                if (stale) return;
+                componentSummary = { status: "error", error };
+            });
 
         // Fetch correlations
         getComponentCorrelations(layer, cIdx, CORRELATIONS_TOP_K)
@@ -105,6 +131,9 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
     }
 
     return {
+        get componentSummary() {
+            return componentSummary;
+        },
         get correlations() {
             return correlations;
         },

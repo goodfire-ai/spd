@@ -6,7 +6,6 @@
     import type { NormalizeType } from "../../lib/api";
     import {
         isInterventableNode,
-        type ActivationContextsSummary,
         type LayerInfo,
         type NodePosition,
         type TokenInfo,
@@ -64,7 +63,6 @@
         onHideUnpinnedEdgesChange: (value: boolean) => void;
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
-        activationContextsSummary: ActivationContextsSummary | null;
         runningIntervention: boolean;
         onSelectionChange: (selection: Set<string>) => void;
         onRunIntervention: () => void;
@@ -95,7 +93,6 @@
         onCiThresholdChange,
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
-        activationContextsSummary,
         runningIntervention,
         onSelectionChange,
         onRunIntervention,
@@ -449,7 +446,7 @@
         hoveredNode = { layer, seqIdx, cIdx };
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
 
-        if (layer !== "output" && activationContextsSummary) {
+        if (layer !== "output") {
             runState.loadComponentDetail(layer, cIdx);
         }
     }
@@ -975,7 +972,6 @@
             {hoveredNode}
             {tooltipPos}
             {hideNodeCard}
-            {activationContextsSummary}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
             nodeSubcompActs={graph.data.nodeSubcompActs}

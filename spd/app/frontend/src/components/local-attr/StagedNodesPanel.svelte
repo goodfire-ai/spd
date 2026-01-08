@@ -1,11 +1,5 @@
 <script lang="ts">
-    import type {
-        ActivationContextsSummary,
-        ComponentSummary,
-        OutputProbEntry,
-        PinnedNode,
-        Edge,
-    } from "../../lib/localAttributionsTypes";
+    import type { OutputProbEntry, PinnedNode, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
     import { runState } from "../../lib/runState.svelte";
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
@@ -14,7 +8,6 @@
 
     type Props = {
         stagedNodes: PinnedNode[];
-        activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         tokens: string[];
         edgesBySource: Map<string, Edge[]>;
@@ -22,15 +15,7 @@
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
     };
 
-    let {
-        stagedNodes,
-        activationContextsSummary,
-        outputProbs,
-        tokens,
-        edgesBySource,
-        edgesByTarget,
-        onStagedNodesChange,
-    }: Props = $props();
+    let { stagedNodes, outputProbs, tokens, edgesBySource, edgesByTarget, onStagedNodesChange }: Props = $props();
 
     function clearAll() {
         onStagedNodesChange([]);
@@ -54,15 +39,6 @@
             throw new Error(`StagedNodesPanel: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`);
         }
         return tokens[seqIdx];
-    }
-
-    // Returns null if: not yet loaded, layer not in harvest, or component not above threshold
-    // Note: O(n) search through ~700 components is fine - measured at ~10ms
-    function findComponentSummary(layer: string, cIdx: number): ComponentSummary | null {
-        if (!activationContextsSummary) return null;
-        const layerSummaries = activationContextsSummary[layer];
-        if (!layerSummaries) return null;
-        return layerSummaries.find((s) => s.subcomponent_idx === cIdx) ?? null;
     }
 </script>
 
@@ -97,12 +73,10 @@
                     {:else if isOutput}
                         <OutputNodeCard cIdx={node.cIdx} {outputProbs} seqIdx={node.seqIdx} />
                     {:else}
-                        {@const summary = findComponentSummary(node.layer, node.cIdx)}
                         <ComponentNodeCard
                             layer={node.layer}
                             cIdx={node.cIdx}
                             seqIdx={node.seqIdx}
-                            {summary}
                             detail={runState.getComponentDetail(node.layer, node.cIdx)}
                             {edgesBySource}
                             {edgesByTarget}

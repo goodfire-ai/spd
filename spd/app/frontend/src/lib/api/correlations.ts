@@ -37,19 +37,13 @@ export async function getAllInterpretations(): Promise<Record<string, Interpreta
     return fetchJson<Record<string, Interpretation>>(`${API_URL}/api/correlations/interpretations`);
 }
 
-export async function getComponentInterpretation(
-    layer: string,
-    componentIdx: number,
-): Promise<Interpretation | null> {
+export async function getComponentInterpretation(layer: string, componentIdx: number): Promise<Interpretation | null> {
     return fetchJson<Interpretation | null>(
         `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
     );
 }
 
-export async function requestComponentInterpretation(
-    layer: string,
-    componentIdx: number,
-): Promise<Interpretation> {
+export async function requestComponentInterpretation(layer: string, componentIdx: number): Promise<Interpretation> {
     return fetchJson<Interpretation>(
         `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
         { method: "POST" },

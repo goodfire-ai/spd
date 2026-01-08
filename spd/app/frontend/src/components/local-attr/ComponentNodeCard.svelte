@@ -1,12 +1,7 @@
 <script lang="ts">
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
-    import type {
-        ComponentDetail,
-        ComponentSummary,
-        Edge,
-        EdgeAttribution,
-    } from "../../lib/localAttributionsTypes";
+    import type { ComponentDetail, Edge, EdgeAttribution } from "../../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
@@ -21,14 +16,13 @@
         layer: string;
         cIdx: number;
         seqIdx: number;
-        summary: ComponentSummary | null;
         edgesBySource: Map<string, Edge[]>;
         edgesByTarget: Map<string, Edge[]>;
         detail: Loadable<ComponentDetail>;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     };
 
-    let { layer, cIdx, seqIdx, summary, edgesBySource, edgesByTarget, onPinComponent, detail }: Props = $props();
+    let { layer, cIdx, seqIdx, edgesBySource, edgesByTarget, onPinComponent, detail }: Props = $props();
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -154,12 +148,15 @@
 
 <div class="component-node-card">
     <SectionHeader title="Position {seqIdx}" level="h4">
-        {#if summary}
-            <span class="mean-ci">Mean CI: {formatNumericalValue(summary.mean_ci)}</span>
+        {#if componentData.componentSummary?.status === "loaded"}
+            <span class="mean-ci">Mean CI: {formatNumericalValue(componentData.componentSummary.data.mean_ci)}</span>
         {/if}
     </SectionHeader>
 
-    <InterpretationBadge interpretation={componentData.interpretation} onGenerate={componentData.generateInterpretation} />
+    <InterpretationBadge
+        interpretation={componentData.interpretation}
+        onGenerate={componentData.generateInterpretation}
+    />
 
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}

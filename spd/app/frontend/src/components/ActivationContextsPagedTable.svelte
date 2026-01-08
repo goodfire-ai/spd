@@ -1,9 +1,5 @@
 <script lang="ts">
-    import {
-        displaySettings,
-        EXAMPLE_COLOR_MODE_LABELS,
-        type ExampleColorMode,
-    } from "../lib/displaySettings.svelte";
+    import { displaySettings, EXAMPLE_COLOR_MODE_LABELS, type ExampleColorMode } from "../lib/displaySettings.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
@@ -132,8 +128,7 @@
             <select
                 id="color-mode-select"
                 value={displaySettings.exampleColorMode}
-                onchange={(e) =>
-                    displaySettings.setExampleColorMode(e.currentTarget.value as ExampleColorMode)}
+                onchange={(e) => displaySettings.setExampleColorMode(e.currentTarget.value as ExampleColorMode)}
             >
                 {#each Object.entries(EXAMPLE_COLOR_MODE_LABELS) as [mode, label] (mode)}
                     <option value={mode}>{label}</option>

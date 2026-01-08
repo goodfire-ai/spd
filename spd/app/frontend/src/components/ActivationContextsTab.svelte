@@ -1,65 +1,44 @@
 <script lang="ts">
     import type { Loadable } from "../lib";
+    import * as api from "../lib/api";
     import type { ActivationContextsSummary } from "../lib/localAttributionsTypes";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
+    import StatusText from "./ui/StatusText.svelte";
 
-    interface Props {
-        activationContextsSummary: Loadable<ActivationContextsSummary>;
-    }
+    let summary = $state<Loadable<ActivationContextsSummary>>(null);
 
-    let { activationContextsSummary }: Props = $props();
+    $effect(() => {
+        summary = { status: "loading" };
+        api.getActivationContextsSummary()
+            .then((data) => {
+                summary = { status: "loaded", data };
+            })
+            .catch((error) => {
+                summary = { status: "error", error };
+            });
+    });
 </script>
 
-<div class="tab-content">
-    {#if activationContextsSummary === null || activationContextsSummary.status === "loading"}
-        <div class="empty-state">
-            <p>Loading activation contexts...</p>
-        </div>
-    {:else if activationContextsSummary.status === "error"}
-        <div class="empty-state">
-            <p>No activation contexts available.</p>
-            <p class="hint">Run the harvest pipeline first:</p>
-            <code>spd-harvest &lt;wandb_path&gt;</code>
-        </div>
+<div class="tab-wrapper">
+    {#if summary === null || summary.status === "loading"}
+        <div class="loading">Loading activation contexts summary...</div>
+    {:else if summary.status === "error"}
+        <StatusText>Error loading summary: {String(summary.error)}</StatusText>
     {:else}
-        <ActivationContextsViewer harvestMetadata={{ layers: activationContextsSummary.data }} />
+        <ActivationContextsViewer activationContextsSummary={summary.data} />
     {/if}
 </div>
 
 <style>
-    .tab-content {
-        flex: 1;
-        min-height: 0;
-        display: flex;
-        flex-direction: column;
-        padding: var(--space-6);
+    .tab-wrapper {
+        height: 100%;
     }
 
-    .empty-state {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        flex: 1;
-        gap: var(--space-2);
-        color: var(--text-muted);
+    .loading {
+        padding: var(--space-4);
+        text-align: center;
+        font-size: var(--text-sm);
         font-family: var(--font-sans);
-    }
-
-    .empty-state p {
-        margin: 0;
-    }
-
-    .hint {
-        font-size: var(--text-sm);
-    }
-
-    .empty-state code {
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-        background: var(--bg-elevated);
-        padding: var(--space-2) var(--space-3);
-        border-radius: var(--radius-md);
-        color: var(--text-primary);
+        color: var(--text-muted);
     }
 </style>
