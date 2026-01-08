@@ -17,7 +17,8 @@ def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSu
     """Load lightweight summary of activation contexts (just metadata, not full examples)."""
     ctx_dir = get_activation_contexts_dir(wandb_run_id)
     path = ctx_dir / "summary.json"
-    assert path.exists(), f"No activation contexts summary found at {path}"
+    if not path.exists():
+        return None
     return ComponentSummary.load_all(path)
 
 
