@@ -149,7 +149,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 ## Directory Structure
 
 ```
-spd-main/
+<repo-root>/
 ├── papers/                          # Research papers (SPD, APD)
 ├── scripts/                         # Standalone utility scripts
 ├── tests/                           # Test suite
@@ -163,7 +163,7 @@ spd-main/
 │   │   ├── resid_mlp/               # Residual MLP
 │   │   ├── lm/                      # Language models
 │   │   └── ih/                      # Induction heads
-│   ├── metrics/                     # Metric functions for WandB (CI histograms, etc.)
+│   ├── metrics/                     # Metrics - both for use as losses and as eval metrics
 │   ├── models/
 │   │   ├── component_model.py       # ComponentModel, SPDRunInfo, from_pretrained()
 │   │   └── components.py            # LinearComponent, EmbeddingComponent, etc.
