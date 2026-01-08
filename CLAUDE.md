@@ -477,7 +477,7 @@ value = config.key
 - NEVER use `--no-verify` to skip pre-commit hooks. They are there for a good reason. If pre-commit hooks fail, you MUST fix the underlying problem.
 
 
-## Learning Loop In Each Repo
+## Learning Loop
 - Always create a .claude/LEARNINGS.md file if it's not there.
 - Log Every Friction Point: If a build fails, a test hangs, or a logic error occurs, document the root cause and the specific fix before proceeding. Keep it brief but action-relevant.
 - Mandatory Update on Intervention: If you stop to ask for guidance, or if I provide a correction, you should update LEARNINGS.md with the "Signpost" (the specific instruction or realization) that prevented you from succeeding independently.
