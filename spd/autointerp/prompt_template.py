@@ -134,16 +134,19 @@ def format_prompt_template(
     layer_desc = _parse_layer_description(component.layer, arch.n_blocks)
 
     return f"""\
-Label this neural network component from a sparse decomposition.
+Label this neural network component from a Stochastic Parameter Decomposition.
 
 ## Background
 
 {SPD_THEORETICAL_CONTEXT}
 
-## Context
+## Model Context
 
 **Model**: {arch.model_class} ({arch.n_blocks} layers)
 **Dataset**: {dataset_description}
+
+## Component Context
+
 **Component location**: {layer_desc}
 **Activation rate**: {component.mean_ci * 100:.2f}%{firing_rate_context}
 
@@ -163,8 +166,8 @@ Label this neural network component from a sparse decomposition.
 
 ## Task
 
-Based on the above information, what concept or pattern does this component represent?
-Focus on what the component *does* (what tokens it helps predict) rather than just what triggers it.
+Based on the above context, what concept or pattern does this component represent?
+Consider both what the component *does* (what tokens it helps predict) and what triggers it.
 
 If the pattern is unclear or the evidence is weak, say so. Use "unclear" or "noisy" in your label if appropriate—do not force an interpretation where none exists.
 
