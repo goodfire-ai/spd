@@ -1,14 +1,14 @@
 {
     "merge_config": {
       "activation_threshold": 0.1,
-      "alpha": 1,
+      "alpha": 5,
       "iters": 1000,
       "merge_pair_sampling_method": "range",
       "merge_pair_sampling_kwargs": {"threshold": 0.001},
       "filter_dead_threshold": 0.1,
       "module_name_filter": null
     },
-    "model_path": "wandb:goodfire/spd/runs/vjbol27n",
+    "model_path": "wandb:goodfire/spd/runs/s-7884efcc",
     "batch_size": 512,
     "wandb_project": null,
     "logging_intervals": {
