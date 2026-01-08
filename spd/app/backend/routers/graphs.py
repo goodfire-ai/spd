@@ -55,7 +55,9 @@ class GraphData(BaseModel):
     nodeCiVals: dict[
         str, float
     ]  # node key -> CI value (or output prob for output nodes or 1 for wte node)
+    nodeSubcompActs: dict[str, float]  # node key -> subcomponent activation (v_i^T @ a)
     maxAbsAttr: float  # max absolute edge value
+    maxAbsSubcompAct: float  # max absolute subcomponent activation for normalization
     l0_total: int  # total active components at current CI threshold
 
 
@@ -166,24 +168,40 @@ GLOBAL_EDGE_LIMIT = 5_000
 ProgressCallback = Callable[[int, int, str], None]
 
 
-def build_output_probs(
-    output_probs_tensor: torch.Tensor,
+def build_out_probs(
+    ci_masked_out_probs: torch.Tensor,
+    target_out_probs: torch.Tensor,
     output_prob_threshold: float,
     token_strings: dict[int, str],
 ) -> dict[str, OutputProbability]:
-    """Build output probs dict from tensor."""
-    raw_output_probs: dict[str, OutputProbability] = {}
-    for s in range(output_probs_tensor.shape[0]):
-        for c_idx in range(output_probs_tensor.shape[1]):
-            prob = float(output_probs_tensor[s, c_idx].item())
+    """Build output probs dict from CI-masked and target model tensors.
+
+    Filters by CI-masked probability threshold, but includes both probabilities.
+
+    Args:
+        ci_masked_out_probs: Shape [seq, vocab] - CI-masked model output probabilities
+        target_out_probs: Shape [seq, vocab] - Target model output probabilities
+    """
+    assert ci_masked_out_probs.ndim == 2, f"Expected [seq, vocab], got {ci_masked_out_probs.shape}"
+    assert target_out_probs.ndim == 2, f"Expected [seq, vocab], got {target_out_probs.shape}"
+    assert ci_masked_out_probs.shape == target_out_probs.shape, (
+        f"Shape mismatch: {ci_masked_out_probs.shape} vs {target_out_probs.shape}"
+    )
+
+    out_probs: dict[str, OutputProbability] = {}
+    for s in range(ci_masked_out_probs.shape[0]):
+        for c_idx in range(ci_masked_out_probs.shape[1]):
+            prob = float(ci_masked_out_probs[s, c_idx].item())
             if prob < output_prob_threshold:
                 continue
+            target_prob = float(target_out_probs[s, c_idx].item())
             key = f"{s}:{c_idx}"
-            raw_output_probs[key] = OutputProbability(
+            out_probs[key] = OutputProbability(
                 prob=round(prob, 6),
+                target_prob=round(target_prob, 6),
                 token=token_strings[c_idx],
             )
-    return raw_output_probs
+    return out_probs
 
 
 def stream_computation(
@@ -264,6 +282,11 @@ def compute_max_abs_attr(edges: list[Edge]) -> float:
     return max_abs_attr
 
 
+def compute_max_abs_subcomp_act(node_subcomp_acts: dict[str, float]) -> float:
+    """Compute max absolute subcomponent activation for normalization."""
+    return max(abs(v) for v in node_subcomp_acts.values())
+
+
 @router.post("")
 @log_errors
 def compute_graph_stream(
@@ -297,21 +320,25 @@ def compute_graph_stream(
             on_progress=on_progress,
         )
 
-        raw_output_probs = build_output_probs(
-            result.output_probs[0].cpu(), output_prob_threshold, loaded.token_strings
+        out_probs = build_out_probs(
+            ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+            target_out_probs=result.target_out_probs.cpu(),
+            output_prob_threshold=output_prob_threshold,
+            token_strings=loaded.token_strings,
         )
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
                 edges=result.edges,
-                output_probs=raw_output_probs,
+                out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
+                node_subcomp_acts=result.node_subcomp_acts,
             ),
         )
 
         filtered_node_ci_vals = {k: v for k, v in result.node_ci_vals.items() if v > ci_threshold}
         node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
-            filtered_node_ci_vals, len(token_ids), raw_output_probs
+            filtered_node_ci_vals, len(token_ids), out_probs
         )
         edges_data, max_abs_attr = process_edges_for_response(
             raw_edges=result.edges,
@@ -325,9 +352,11 @@ def compute_graph_stream(
             id=graph_id,
             tokens=token_strings,
             edges=edges_data,
-            outputProbs=raw_output_probs,
+            outputProbs=out_probs,
             nodeCiVals=node_ci_vals_with_pseudo,
+            nodeSubcompActs=result.node_subcomp_acts,
             maxAbsAttr=max_abs_attr,
+            maxAbsSubcompAct=compute_max_abs_subcomp_act(result.node_subcomp_acts),
             l0_total=len(filtered_node_ci_vals),
         )
 
@@ -467,15 +496,19 @@ def compute_graph_optimized_stream(
             on_progress=on_progress,
         )
 
-        raw_output_probs = build_output_probs(
-            result.output_probs[0].cpu(), output_prob_threshold, loaded.token_strings
+        out_probs = build_out_probs(
+            ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+            target_out_probs=result.target_out_probs.cpu(),
+            output_prob_threshold=output_prob_threshold,
+            token_strings=loaded.token_strings,
         )
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
                 edges=result.edges,
-                output_probs=raw_output_probs,
+                out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
+                node_subcomp_acts=result.node_subcomp_acts,
                 optimization_params=opt_params,
                 label_prob=result.label_prob,
             ),
@@ -483,7 +516,7 @@ def compute_graph_optimized_stream(
 
         filtered_node_ci_vals = {k: v for k, v in result.node_ci_vals.items() if v > ci_threshold}
         node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
-            filtered_node_ci_vals, len(token_ids), raw_output_probs
+            filtered_node_ci_vals, len(token_ids), out_probs
         )
         edges_data, max_abs_attr = process_edges_for_response(
             raw_edges=result.edges,
@@ -497,9 +530,11 @@ def compute_graph_optimized_stream(
             id=graph_id,
             tokens=token_strings,
             edges=edges_data,
-            outputProbs=raw_output_probs,
+            outputProbs=out_probs,
             nodeCiVals=node_ci_vals_with_pseudo,
+            nodeSubcompActs=result.node_subcomp_acts,
             maxAbsAttr=max_abs_attr,
+            maxAbsSubcompAct=compute_max_abs_subcomp_act(result.node_subcomp_acts),
             l0_total=len(filtered_node_ci_vals),
             optimization=OptimizationResult(
                 imp_min_coeff=imp_min_coeff,
@@ -519,18 +554,18 @@ def compute_graph_optimized_stream(
 def _add_pseudo_layer_nodes(
     node_ci_vals: dict[str, float],
     num_tokens: int,
-    output_probs: dict[str, OutputProbability],
+    out_probs: dict[str, OutputProbability],
 ) -> dict[str, float]:
     """Add wte and output pseudo-nodes for simpler rendering and filtering logic.
 
-    wte nodes get CI=1.0 (always visible), output nodes use their probability.
+    wte nodes get CI=1.0 (always visible), output nodes use their CI-masked probability.
     """
     result = dict(node_ci_vals)
     for seq_pos in range(num_tokens):
         result[f"wte:{seq_pos}:0"] = 1.0
-    for key, output_prob in output_probs.items():
+    for key, out_prob in out_probs.items():
         seq_pos, token_id = key.split(":")
-        result[f"output:{seq_pos}:{token_id}"] = output_prob.prob
+        result[f"output:{seq_pos}:{token_id}"] = out_prob.prob
     return result
 
 
@@ -598,7 +633,7 @@ def get_graphs(
         l0_total = len(filtered_node_ci_vals)
 
         node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
-            filtered_node_ci_vals, num_tokens, graph.output_probs
+            filtered_node_ci_vals, num_tokens, graph.out_probs
         )
         edges_data, max_abs_attr = process_edges_for_response(
             raw_edges=graph.edges,
@@ -615,9 +650,11 @@ def get_graphs(
                     id=graph.id,
                     tokens=token_strings,
                     edges=edges_data,
-                    outputProbs=graph.output_probs,
+                    outputProbs=graph.out_probs,
                     nodeCiVals=node_ci_vals_with_pseudo,
+                    nodeSubcompActs=graph.node_subcomp_acts,
                     maxAbsAttr=max_abs_attr,
+                    maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
                     l0_total=l0_total,
                 )
             )
@@ -635,9 +672,11 @@ def get_graphs(
                     id=graph.id,
                     tokens=token_strings,
                     edges=edges_data,
-                    outputProbs=graph.output_probs,
+                    outputProbs=graph.out_probs,
                     nodeCiVals=node_ci_vals_with_pseudo,
+                    nodeSubcompActs=graph.node_subcomp_acts,
                     maxAbsAttr=max_abs_attr,
+                    maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
                     l0_total=l0_total,
                     optimization=OptimizationResult(
                         imp_min_coeff=graph.optimization_params.imp_min_coeff,

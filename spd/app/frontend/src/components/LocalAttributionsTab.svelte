@@ -104,7 +104,6 @@
     let hideUnpinnedEdges = $state(false);
     let hideNodeCard = $state(false);
 
-
     // Pinned nodes for attributions graph
     let pinnedNodes = $state<PinnedNode[]>([]);
 
@@ -294,7 +293,7 @@
     // Run intervention and save to DB
     async function handleRunIntervention() {
         const composerState = activeComposerState;
-        if (!activeCard || !activeGraph || !composerState || composerState.selection.size === 0) return;
+        if (!activeCard || !activeGraph || !composerState) return;
 
         runningIntervention = true;
         try {
@@ -696,11 +695,7 @@
                             </div>
 
                             {#if activeCard.activeView === "graph"}
-                                <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
-                                    {#if loadingCardId === activeCard.id && loadingState}
-                                        <ComputeProgressOverlay state={loadingState} />
-                                    {/if}
-
+                                <div class="graph-area">
                                     <ViewControls
                                         topK={activeGraph.viewSettings.topK}
                                         componentGap={activeGraph.viewSettings.componentGap}

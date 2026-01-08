@@ -63,11 +63,6 @@ class RunState {
         this.interpretations = await api.getAllInterpretations();
     }
 
-    /** Add a newly generated interpretation to the cache */
-    addInterpretation(componentKey: string, interp: Interpretation) {
-        this.interpretations = { ...this.interpretations, [componentKey]: interp };
-    }
-
     /** Get interpretation for a component, if available */
     getInterpretation(componentKey: string): Interpretation | undefined {
         return this.interpretations[componentKey];

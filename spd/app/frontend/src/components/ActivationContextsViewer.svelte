@@ -1,8 +1,9 @@
 <script lang="ts">
     import type { Loadable } from "../lib";
-    import type { SubcomponentActivationContexts, HarvestMetadata, Interpretation } from "../lib/api";
+    import type { SubcomponentActivationContexts, HarvestMetadata } from "../lib/api";
     import * as api from "../lib/api";
-    import type { ComponentCorrelations, TokenStats } from "../lib/localAttributionsTypes";
+    import { displaySettings } from "../lib/displaySettings.svelte";
+    import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
@@ -20,9 +21,6 @@
     const N_TOKENS_TO_DISPLAY_INPUT = 80;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
 
-    type TokenValue = { token: string; value: number };
-    type TokenList = { title: string; mathNotation?: string; items: TokenValue[] };
-
     let availableLayers = $derived(Object.keys(harvestMetadata.layers).sort());
     let currentPage = $state(0);
     let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
@@ -31,19 +29,16 @@
     // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive, just for deduplication
     const requestedKeys = new Set<string>();
 
-    // Correlations state
-    let correlations = $state<Loadable<ComponentCorrelations>>(null);
-
-    // Token stats state (from batch job)
-    let tokenStats = $state<Loadable<TokenStats>>(null);
-
-    // Interpretation state
-    let interpretation = $state<Loadable<Interpretation>>(null);
-
     // Layer metadata is already sorted by mean_ci desc from backend
     let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
     let currentMetadata = $derived<api.SubcomponentMetadata>(currentLayerMetadata[currentPage]);
+
+    // Fetch correlations, token stats, and interpretation for current component
+    const componentData = useComponentData(() => {
+        const cIdx = currentMetadata?.subcomponent_idx;
+        return cIdx !== undefined ? { layer: selectedLayer, cIdx } : null;
+    });
 
     function getCacheKey(layer: string, componentIdx: number) {
         return `${layer}:${componentIdx}`;
@@ -138,114 +133,53 @@
         };
     });
 
-    // Fetch correlations when component changes
-    $effect(() => {
-        const layer = selectedLayer;
-        const cIdx = currentMetadata?.subcomponent_idx;
-        if (cIdx === undefined) return;
-
-        correlations = { status: "loading" };
-        api.getComponentCorrelations(layer, cIdx, 1000)
-            .then((data) => {
-                if (data != null) {
-                    correlations = { status: "loaded", data };
-                } else {
-                    correlations = { status: "error", error: "No correlations found" };
-                }
-            })
-            .catch((error) => {
-                correlations = { status: "error", error };
-            });
+    // Derive token lists from loaded tokenStats (null if not loaded or no data)
+    const inputTokenLists = $derived.by(() => {
+        const ts = componentData.tokenStats;
+        if (ts?.status !== "loaded" || ts.data === null) return null;
+        return [
+            {
+                title: "Top Recall",
+                mathNotation: "P(token | component fires)",
+                items: ts.data.input.top_recall
+                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .map(([token, value]) => ({ token, value })),
+            },
+            {
+                title: "Top Precision",
+                mathNotation: "P(component fires | token)",
+                items: ts.data.input.top_precision
+                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .map(([token, value]) => ({ token, value })),
+            },
+        ];
     });
 
-    // Fetch token stats when component changes (from batch job)
-    $effect(() => {
-        const layer = selectedLayer;
-        const cIdx = currentMetadata?.subcomponent_idx;
-        if (cIdx === undefined) return;
-
-        tokenStats = { status: "loading" };
-        api.getComponentTokenStats(layer, cIdx, 1000)
-            .then((data) => {
-                if (data != null) {
-                    tokenStats = { status: "loaded", data };
-                } else {
-                    tokenStats = { status: "error", error: "No token stats found" };
-                }
-            })
-            .catch((error) => {
-                tokenStats = { status: "error", error };
-            });
-    });
-
-    // Fetch interpretation when component changes
-    $effect(() => {
-        const layer = selectedLayer;
-        const cIdx = currentMetadata?.subcomponent_idx;
-        if (cIdx === undefined) return;
-
-        interpretation = { status: "loading" };
-        api.getComponentInterpretation(layer, cIdx)
-            .then((data) => {
-                if (data != null) {
-                    interpretation = { status: "loaded", data };
-                } else {
-                    interpretation = { status: "error", error: "No interpretation found" };
-                }
-            })
-            .catch((error) => {
-                interpretation = { status: "error", error };
-            });
-    });
-
-    // Transform tokenStats into Loadable<TokenList[]> for input tokens section
-    const inputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
-        if (tokenStats == null) return null;
-        if (tokenStats.status === "loading") return { status: "loading" };
-        if (tokenStats.status === "error") return tokenStats;
-        return {
-            status: "loaded",
-            data: [
-                {
-                    title: "Top PMI",
-                    mathNotation: "log(P(firing, token) / P(firing)P(token))",
-                    items: tokenStats.data.input.top_pmi
-                        .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
-                        .map(([token, value]) => ({ token, value })),
-                },
-            ],
-        };
-    });
-
-    // Transform tokenStats into Loadable<TokenList[]> for output tokens section
-    const outputTokenLists: Loadable<TokenList[]> = $derived.by(() => {
-        if (tokenStats == null) return null;
-        if (tokenStats.status === "loading") return { status: "loading" };
-        if (tokenStats.status === "error") return tokenStats;
-        return {
-            status: "loaded",
-            data: [
-                {
-                    title: "Top PMI",
-                    mathNotation: "positive association with predictions",
-                    items: tokenStats.data.output.top_pmi
-                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
-                        .map(([token, value]) => ({ token, value })),
-                },
-                {
-                    title: "Bottom PMI",
-                    mathNotation: "negative association with predictions",
-                    items: tokenStats.data.output.bottom_pmi
-                        .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
-                        .map(([token, value]) => ({ token, value })),
-                },
-            ],
-        };
+    const outputTokenLists = $derived.by(() => {
+        const ts = componentData.tokenStats;
+        if (ts?.status !== "loaded" || ts.data === null) return null;
+        return [
+            {
+                title: "Top PMI",
+                mathNotation: "positive association with predictions",
+                items: ts.data.output.top_pmi
+                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .map(([token, value]) => ({ token, value })),
+            },
+            {
+                title: "Bottom PMI",
+                mathNotation: "negative association with predictions",
+                items: ts.data.output.bottom_pmi
+                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .map(([token, value]) => ({ token, value })),
+            },
+        ];
     });
 
     // Activating tokens from token stats (for highlighting in table)
     let inputTopRecall = $derived.by(() => {
-        if (tokenStats?.status !== "loaded") return [];
+        const tokenStats = componentData.tokenStats;
+        if (tokenStats?.status !== "loaded" || tokenStats.data === null) return [];
         return tokenStats.data.input.top_recall.map(([token, value]) => ({ token, value }));
     });
 
@@ -295,6 +229,7 @@
                 <span class="search-error">{searchError}</span>
             {/if}
         </div>
+
     </div>
 
     <div class="component-section">
@@ -302,35 +237,43 @@
             <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
         </SectionHeader>
 
-        <InterpretationBadge {interpretation} />
+        <InterpretationBadge interpretation={componentData.interpretation} onGenerate={componentData.generateInterpretation} />
 
         <div class="token-stats-row">
-            <TokenStatsSection
-                sectionTitle="Input Tokens"
-                sectionSubtitle="(what activates this component)"
-                lists={inputTokenLists}
-            />
+            {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
+                <StatusText>Loading token stats...</StatusText>
+            {:else if componentData.tokenStats.status === "error"}
+                <StatusText>Error: {String(componentData.tokenStats.error)}</StatusText>
+            {:else}
+                <TokenStatsSection
+                    sectionTitle="Input Tokens"
+                    sectionSubtitle="(what activates this component)"
+                    lists={inputTokenLists}
+                />
 
-            <TokenStatsSection
-                sectionTitle="Output Tokens"
-                sectionSubtitle="(what this component predicts)"
-                lists={outputTokenLists}
-            />
+                <TokenStatsSection
+                    sectionTitle="Output Tokens"
+                    sectionSubtitle="(what this component predicts)"
+                    lists={outputTokenLists}
+                />
+            {/if}
         </div>
 
         <!-- Component correlations -->
-        <div class="correlations-section">
-            <SectionHeader title="Correlated Components" />
-            {#if correlations?.status === "loaded"}
-                <ComponentCorrelationMetrics correlations={correlations.data} pageSize={40} />
-            {:else if correlations?.status === "loading"}
-                <StatusText>Loading...</StatusText>
-            {:else if correlations?.status === "error"}
-                <StatusText>Error loading correlations: {String(correlations.error)}</StatusText>
-            {:else}
-                <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
-            {/if}
-        </div>
+        {#if displaySettings.hasAnyCorrelationStatsVisible()}
+            <div class="correlations-section">
+                <SectionHeader title="Correlated Components" />
+                {#if componentData.correlations === null || componentData.correlations.status === "loading"}
+                    <StatusText>Loading...</StatusText>
+                {:else if componentData.correlations.status === "error"}
+                    <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
+                {:else if componentData.correlations.data === null}
+                    <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
+                {:else}
+                    <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
+                {/if}
+            </div>
+        {/if}
 
         <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
 
@@ -340,6 +283,7 @@
             <ActivationContextsPagedTable
                 exampleTokens={currentComponent.data.example_tokens}
                 exampleCi={currentComponent.data.example_ci}
+                exampleComponentActs={currentComponent.data.example_component_acts}
                 activatingTokens={inputTopRecall.map(({ token }) => token)}
             />
         {:else if currentComponent?.status === "error"}

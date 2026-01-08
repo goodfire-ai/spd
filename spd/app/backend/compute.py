@@ -32,7 +32,7 @@ class LayerAliveInfo:
 def compute_layer_alive_info(
     layer_name: str,
     ci_lower_leaky: dict[str, Tensor],
-    output_probs: Float[Tensor, "1 seq vocab"] | None,
+    ci_masked_out_probs: Float[Tensor, "1 seq vocab"] | None,
     output_prob_threshold: float,
     n_seq: int,
     device: str,
@@ -47,9 +47,9 @@ def compute_layer_alive_info(
         alive_mask = torch.ones(n_seq, 1, device=device, dtype=torch.bool)
         alive_c_idxs = [0]
     elif layer_name == "output":
-        assert output_probs is not None
-        assert output_probs.shape[0] == 1
-        alive_mask = output_probs[0] > output_prob_threshold
+        assert ci_masked_out_probs is not None
+        assert ci_masked_out_probs.shape[0] == 1
+        alive_mask = ci_masked_out_probs[0] > output_prob_threshold
         alive_c_idxs = torch.where(alive_mask.any(dim=0))[0].tolist()
     else:
         ci = ci_lower_leaky[layer_name]
@@ -86,8 +86,10 @@ class LocalAttributionResult:
     """Result of computing local attributions for a prompt."""
 
     edges: list[Edge]
-    output_probs: Float[Tensor, "seq vocab"]  # Softmax probabilities for output logits
+    ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
+    target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
+    node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
 
 
 @dataclass
@@ -95,9 +97,11 @@ class OptimizedLocalAttributionResult:
     """Result of computing local attributions with optimized CI values."""
 
     edges: list[Edge]
-    output_probs: Float[Tensor, "seq vocab"]
+    ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
+    target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
     label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
+    node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
 
 
 def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
@@ -226,7 +230,9 @@ def compute_edges_from_ci(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
+    pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
     sources_by_target: dict[str, list[str]],
+    target_out_probs: Float[Tensor, "1 seq vocab"],
     output_prob_threshold: float,
     device: str,
     show_progress: bool,
@@ -273,8 +279,7 @@ def compute_edges_from_ci(
     cache["wte_post_detach"] = wte_cached_output
     cache["output_pre_detach"] = comp_output_with_cache.output
 
-    # Compute output probabilities for thresholding
-    output_probs = torch.softmax(comp_output_with_cache.output, dim=-1)
+    ci_masked_out_probs = torch.softmax(comp_output_with_cache.output, dim=-1)
 
     # Compute alive info for all layers upfront
     all_layers: set[str] = set(sources_by_target.keys())
@@ -286,7 +291,7 @@ def compute_edges_from_ci(
         alive_info[layer] = compute_layer_alive_info(
             layer_name=layer,
             ci_lower_leaky=ci_lower_leaky,
-            output_probs=output_probs,
+            ci_masked_out_probs=ci_masked_out_probs,
             output_prob_threshold=output_prob_threshold,
             n_seq=n_seq,
             device=device,
@@ -372,7 +377,18 @@ def compute_edges_from_ci(
         pbar.close()
 
     node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
-    return LocalAttributionResult(edges=edges, output_probs=output_probs, node_ci_vals=node_ci_vals)
+    component_acts = model.get_all_component_acts(pre_weight_acts)
+    node_subcomp_acts = extract_node_subcomp_acts(
+        component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky
+    )
+
+    return LocalAttributionResult(
+        edges=edges,
+        ci_masked_out_probs=ci_masked_out_probs[0],
+        target_out_probs=target_out_probs[0],
+        node_ci_vals=node_ci_vals,
+        node_subcomp_acts=node_subcomp_acts,
+    )
 
 
 def compute_local_attributions(
@@ -391,7 +407,9 @@ def compute_local_attributions(
     For optimized sparse CI values, use compute_local_attributions_optimized().
     """
     with torch.no_grad():
-        pre_weight_acts = model(tokens, cache_type="input").cache
+        output_with_cache = model(tokens, cache_type="input")
+        pre_weight_acts = output_with_cache.cache
+        target_out_probs = torch.softmax(output_with_cache.output, dim=-1)
         ci = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
             sampling=sampling,
@@ -402,7 +420,9 @@ def compute_local_attributions(
         model=model,
         tokens=tokens,
         ci_lower_leaky=ci.lower_leaky,
+        pre_weight_acts=pre_weight_acts,
         sources_by_target=sources_by_target,
+        target_out_probs=target_out_probs,
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
@@ -428,6 +448,11 @@ def compute_local_attributions_optimized(
     L0 stats are computed dynamically at display time from node_ci_vals,
     not here at computation time.
     """
+    # Compute target model output probs (unmasked forward pass)
+    with torch.no_grad():
+        target_logits = model(tokens)
+        target_out_probs = torch.softmax(target_logits, dim=-1)
+
     ci_params = optimize_ci_values(
         model=model,
         tokens=tokens,
@@ -449,11 +474,17 @@ def compute_local_attributions_optimized(
     if on_progress is not None:
         on_progress(0, 1, "graph")
 
+    # Get pre_weight_acts for subcomponent activation computation
+    with torch.no_grad():
+        pre_weight_acts = model(tokens, cache_type="input").cache
+
     result = compute_edges_from_ci(
         model=model,
         tokens=tokens,
         ci_lower_leaky=ci_outputs.lower_leaky,
+        pre_weight_acts=pre_weight_acts,
         sources_by_target=sources_by_target,
+        target_out_probs=target_out_probs,
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
@@ -462,9 +493,11 @@ def compute_local_attributions_optimized(
 
     return OptimizedLocalAttributionResult(
         edges=result.edges,
-        output_probs=result.output_probs,
+        ci_masked_out_probs=result.ci_masked_out_probs,
+        target_out_probs=result.target_out_probs,
         label_prob=label_prob,
         node_ci_vals=result.node_ci_vals,
+        node_subcomp_acts=result.node_subcomp_acts,
     )
 
 
@@ -473,7 +506,9 @@ class CIOnlyResult:
     """Result of computing CI values only (no attribution graph)."""
 
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]]
-    output_probs: Float[Tensor, "1 seq vocab"]
+    target_out_probs: Float[Tensor, "1 seq vocab"]  # Target model (unmasked) softmax probs
+    pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]]
+    component_acts: dict[str, Float[Tensor, "1 seq C"]]
 
 
 def compute_ci_only(
@@ -492,7 +527,7 @@ def compute_ci_only(
         sampling: Sampling type to use for causal importances.
 
     Returns:
-        CIOnlyResult containing CI values per layer and output probabilities.
+        CIOnlyResult containing CI values per layer, target model output probabilities, pre-weight activations, and component activations.
     """
     with torch.no_grad():
         output_with_cache: OutputWithCache = model(tokens, cache_type="input")
@@ -501,9 +536,15 @@ def compute_ci_only(
             sampling=sampling,
             detach_inputs=False,
         )
-        output_probs = torch.softmax(output_with_cache.output, dim=-1)
+        target_out_probs = torch.softmax(output_with_cache.output, dim=-1)
+        component_acts = model.get_all_component_acts(output_with_cache.cache)
 
-    return CIOnlyResult(ci_lower_leaky=ci.lower_leaky, output_probs=output_probs)
+    return CIOnlyResult(
+        ci_lower_leaky=ci.lower_leaky,
+        target_out_probs=target_out_probs,
+        pre_weight_acts=output_with_cache.cache,
+        component_acts=component_acts,
+    )
 
 
 def extract_node_ci_vals(
@@ -528,9 +569,38 @@ def extract_node_ci_vals(
     return node_ci_vals
 
 
+def extract_node_subcomp_acts(
+    component_acts: dict[str, Float[Tensor, "1 seq C"]],
+    ci_threshold: float,
+    ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
+) -> dict[str, float]:
+    """Extract per-node subcomponent activations from pre-computed component acts.
+
+    Args:
+        component_acts: Dict mapping layer name to component activations [1, seq, C].
+        ci_threshold: Threshold for filtering nodes by CI value.
+        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, C].
+
+    Returns:
+        Dict mapping "layer:seq:c_idx" to subcomponent activation value.
+    """
+    node_subcomp_acts: dict[str, float] = {}
+    for layer_name, subcomp_acts in component_acts.items():
+        ci = ci_lower_leaky[layer_name]
+        alive_mask = ci[0] > ci_threshold  # [seq, C]
+        alive_seq_indices, alive_c_indices = torch.where(alive_mask)
+        for seq_pos, c_idx in zip(
+            alive_seq_indices.tolist(), alive_c_indices.tolist(), strict=True
+        ):
+            key = f"{layer_name}:{seq_pos}:{c_idx}"
+            node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
+
+    return node_subcomp_acts
+
+
 def extract_active_from_ci(
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]],
-    output_probs: Float[Tensor, "1 seq vocab"],
+    target_out_probs: Float[Tensor, "1 seq vocab"],
     ci_threshold: float,
     output_prob_threshold: float,  # TODO change me to topP (cumulative probability threshold)
     n_seq: int,
@@ -543,7 +613,7 @@ def extract_active_from_ci(
 
     Args:
         ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, n_components].
-        output_probs: Output probability tensor [1, seq, vocab].
+        target_out_probs: Target model output probability tensor [1, seq, vocab].
         ci_threshold: Threshold for component activation.
         output_prob_threshold: Threshold for output token activation.
         n_seq: Sequence length.
@@ -565,8 +635,8 @@ def extract_active_from_ci(
                 active[key] = (max_ci, positions)
 
     # Output layer - use probability threshold
-    for c_idx in range(output_probs.shape[-1]):
-        prob_per_pos = output_probs[0, :, c_idx]
+    for c_idx in range(target_out_probs.shape[-1]):
+        prob_per_pos = target_out_probs[0, :, c_idx]
         positions = torch.where(prob_per_pos > output_prob_threshold)[0].tolist()
         if positions:
             key = f"output:{c_idx}"
@@ -650,21 +720,21 @@ def compute_intervention_forward(
 
         # Target model forward pass (no masks)
         target_logits: Float[Tensor, "1 seq vocab"] = model(tokens)
-        target_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(target_logits, dim=-1)
+        target_out_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(target_logits, dim=-1)
 
     # Get top-k predictions per position (based on SPD model's top-k)
     predictions_per_position: list[list[tuple[str, int, float, float, float]]] = []
     for pos in range(seq_len):
         pos_spd_probs = spd_probs[0, pos]
         pos_spd_logits = spd_logits[0, pos]
-        pos_target_probs = target_probs[0, pos]
+        pos_target_out_probs = target_out_probs[0, pos]
         top_probs, top_ids = torch.topk(pos_spd_probs, top_k)
 
         pos_predictions: list[tuple[str, int, float, float, float]] = []
         for spd_prob, token_id in zip(top_probs, top_ids, strict=True):
             tid = int(token_id.item())
             token_str = tokenizer.decode([tid])
-            target_prob = float(pos_target_probs[tid].item())
+            target_prob = float(pos_target_out_probs[tid].item())
             pos_predictions.append(
                 (
                     token_str,

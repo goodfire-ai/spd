@@ -1,5 +1,4 @@
 <script lang="ts">
-    import type { Loadable } from "../../lib";
     import TokenPillList from "./TokenPillList.svelte";
     import StatusText from "./StatusText.svelte";
 
@@ -17,14 +16,12 @@
     type Props = {
         sectionTitle: string;
         sectionSubtitle?: string;
-        lists: Loadable<TokenList[]>;
+        lists: TokenList[] | null;
     };
 
     let { sectionTitle, sectionSubtitle, lists }: Props = $props();
 
-    const hasData = $derived(
-        lists?.status === "loaded" && lists.data.some((list) => list.items.length > 0),
-    );
+    const hasData = $derived(lists !== null && lists.some((list) => list.items.length > 0));
 </script>
 
 <div class="token-stats-section">
@@ -34,13 +31,9 @@
             <span class="math-notation">{sectionSubtitle}</span>
         {/if}
     </p>
-    {#if lists?.status === "loading"}
-        <StatusText variant="muted">Loading...</StatusText>
-    {:else if lists?.status === "error"}
-        <StatusText variant="muted">Error: {String(lists.error)}</StatusText>
-    {:else if hasData && lists?.status === "loaded"}
+    {#if hasData && lists !== null}
         <div class="token-stats">
-            {#each lists.data as list (list.title + (list.mathNotation ?? ""))}
+            {#each lists as list (list.title + (list.mathNotation ?? ""))}
                 {#if list.items.length > 0}
                     <div class="token-list">
                         <h5>

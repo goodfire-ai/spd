@@ -72,6 +72,7 @@ class InterpretationResponse(BaseModel):
     label: str
     confidence: str
     reasoning: str
+    prompt: str
 
 
 @router.get("/interpretations")
@@ -92,6 +93,7 @@ def get_all_interpretations(
             label=result.label,
             confidence=result.confidence,
             reasoning=result.reasoning,
+            prompt=result.prompt,
         )
         for key, result in interpretations.items()
     }
@@ -121,6 +123,7 @@ def get_component_interpretation(
         label=result.label,
         confidence=result.confidence,
         reasoning=result.reasoning,
+        prompt=result.prompt,
     )
 
 
@@ -159,6 +162,7 @@ async def request_component_interpretation(
             label=result.label,
             confidence=result.confidence,
             reasoning=result.reasoning,
+            prompt=result.prompt,
         )
 
     # Get component data from harvest
@@ -187,8 +191,28 @@ async def request_component_interpretation(
     # Get architecture info and tokenizer
     arch = get_architecture_info(loaded.run.wandb_path)
 
+    # Get token stats
+    token_stats = loaded.harvest.token_stats
+    if token_stats is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Token stats not available for this run. Run harvest first.",
+        )
+
+    input_token_stats = analysis.get_input_token_stats(
+        token_stats, component_key, loaded.tokenizer, top_k=20
+    )
+    output_token_stats = analysis.get_output_token_stats(
+        token_stats, component_key, loaded.tokenizer, top_k=50
+    )
+    if input_token_stats is None or output_token_stats is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Token stats not available for component {component_key}",
+        )
+
     # Interpret the component
-    model_name = OpenRouterModelName.GEMINI_2_5_FLASH
+    model_name = OpenRouterModelName.GEMINI_3_FLASH_PREVIEW
 
     async with OpenRouter(api_key=api_key) as client:
         res = await interpret_component(
@@ -197,7 +221,8 @@ async def request_component_interpretation(
             component=component_data,
             arch=arch,
             tokenizer=loaded.tokenizer,
-            max_examples=50,
+            input_token_stats=input_token_stats,
+            output_token_stats=output_token_stats,
         )
 
     if res is None:
@@ -227,6 +252,7 @@ async def request_component_interpretation(
         label=result.label,
         confidence=result.confidence,
         reasoning=result.reasoning,
+        prompt=result.prompt,
     )
 
 

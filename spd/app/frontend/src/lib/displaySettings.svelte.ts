@@ -7,6 +7,23 @@ import { SvelteSet } from "svelte/reactivity";
 // Available correlation stat types
 export type CorrelationStatType = "pmi" | "bottom_pmi" | "precision" | "recall" | "jaccard";
 
+// Node color mode for graph visualization
+export type NodeColorMode = "ci" | "subcomp_act";
+
+export const NODE_COLOR_MODE_LABELS: Record<NodeColorMode, string> = {
+    ci: "CI",
+    subcomp_act: "Subcomp Act",
+};
+
+// Example color mode for activation contexts viewer
+export type ExampleColorMode = "ci" | "component_act" | "both";
+
+export const EXAMPLE_COLOR_MODE_LABELS: Record<ExampleColorMode, string> = {
+    ci: "CI",
+    component_act: "Component Act",
+    both: "Both",
+};
+
 export const CORRELATION_STAT_LABELS: Record<CorrelationStatType, string> = {
     pmi: "PMI",
     bottom_pmi: "Bottom PMI",
@@ -31,6 +48,8 @@ type StoredSettings = {
     visibleCorrelationStats?: string[];
     showSetOverlapVis?: boolean;
     showEdgeAttributions?: boolean;
+    nodeColorMode?: NodeColorMode;
+    exampleColorMode?: ExampleColorMode;
 };
 
 function loadFromStorage(): StoredSettings | undefined {
@@ -58,6 +77,27 @@ function loadShowEdgeAttributions(): boolean {
     return loadFromStorage()?.showEdgeAttributions ?? true;
 }
 
+const VALID_NODE_COLOR_MODES: NodeColorMode[] = ["ci", "subcomp_act"];
+const VALID_EXAMPLE_COLOR_MODES: ExampleColorMode[] = ["ci", "component_act", "both"];
+
+function loadNodeColorMode(): NodeColorMode {
+    const stored = loadFromStorage();
+    const mode = stored?.nodeColorMode;
+    if (mode == null || !VALID_NODE_COLOR_MODES.includes(mode)) {
+        return "ci";
+    }
+    return mode;
+}
+
+function loadExampleColorMode(): ExampleColorMode {
+    const stored = loadFromStorage();
+    const mode = stored?.exampleColorMode;
+    if (mode == null || !VALID_EXAMPLE_COLOR_MODES.includes(mode)) {
+        return "ci";
+    }
+    return mode;
+}
+
 function saveToStorage(settings: StoredSettings) {
     try {
         const current = loadFromStorage();
@@ -79,12 +119,15 @@ class DisplaySettingsState {
     // Whether to show edge attribution lists in hover panel
     showEdgeAttributions = $state(loadShowEdgeAttributions());
 
+    // Node color mode for graph visualization
+    nodeColorMode = $state<NodeColorMode>(loadNodeColorMode());
+
+    // Example color mode for activation contexts viewer
+    exampleColorMode = $state<ExampleColorMode>(loadExampleColorMode());
+
     toggleCorrelationStat(stat: CorrelationStatType) {
         if (this.visibleCorrelationStats.has(stat)) {
-            // Don't allow disabling the last stat
-            if (this.visibleCorrelationStats.size > 1) {
-                this.visibleCorrelationStats.delete(stat);
-            }
+            this.visibleCorrelationStats.delete(stat);
         } else {
             this.visibleCorrelationStats.add(stat);
         }
@@ -95,6 +138,10 @@ class DisplaySettingsState {
         return this.visibleCorrelationStats.has(stat);
     }
 
+    hasAnyCorrelationStatsVisible(): boolean {
+        return this.visibleCorrelationStats.size > 0;
+    }
+
     toggleSetOverlapVis() {
         this.showSetOverlapVis = !this.showSetOverlapVis;
         saveToStorage({ showSetOverlapVis: this.showSetOverlapVis });
@@ -103,6 +150,16 @@ class DisplaySettingsState {
     toggleEdgeAttributions() {
         this.showEdgeAttributions = !this.showEdgeAttributions;
         saveToStorage({ showEdgeAttributions: this.showEdgeAttributions });
+    }
+
+    setNodeColorMode(mode: NodeColorMode) {
+        this.nodeColorMode = mode;
+        saveToStorage({ nodeColorMode: mode });
+    }
+
+    setExampleColorMode(mode: ExampleColorMode) {
+        this.exampleColorMode = mode;
+        saveToStorage({ exampleColorMode: mode });
     }
 }
 

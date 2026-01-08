@@ -1,15 +1,18 @@
 <script lang="ts">
     import {
         type CorrelationStatType,
+        type NodeColorMode,
         displaySettings,
         CORRELATION_STAT_LABELS,
         CORRELATION_STAT_DESCRIPTIONS,
+        NODE_COLOR_MODE_LABELS,
     } from "../../lib/displaySettings.svelte";
     import GearIcon from "./icons/GearIcon.svelte";
 
     let showDropdown = $state(false);
 
     const statTypes: CorrelationStatType[] = ["pmi", "precision", "recall", "jaccard"];
+    const colorModes: NodeColorMode[] = ["ci", "subcomp_act"];
 </script>
 
 <div
@@ -61,6 +64,23 @@
                     </label>
                 </div>
             </div>
+            <div class="settings-section">
+                <h4>Node Color</h4>
+                <p class="settings-hint">Color intensity based on</p>
+                <div class="radio-list">
+                    {#each colorModes as mode (mode)}
+                        <label class="radio-item">
+                            <input
+                                type="radio"
+                                name="node-color-mode"
+                                checked={displaySettings.nodeColorMode === mode}
+                                onchange={() => displaySettings.setNodeColorMode(mode)}
+                            />
+                            <span class="stat-label">{NODE_COLOR_MODE_LABELS[mode]}</span>
+                        </label>
+                    {/each}
+                </div>
+            </div>
         </div>
     {/if}
 </div>
@@ -84,7 +104,9 @@
         border-radius: var(--radius-sm);
         cursor: pointer;
         color: var(--text-muted);
-        transition: color 0.15s, background 0.15s;
+        transition:
+            color 0.15s,
+            background 0.15s;
     }
 
     .settings-button:hover {
@@ -170,5 +192,29 @@
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-family: var(--font-mono);
+    }
+
+    .radio-list {
+        display: flex;
+        gap: var(--space-3);
+    }
+
+    .radio-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        cursor: pointer;
+        padding: var(--space-1);
+        border-radius: var(--radius-sm);
+    }
+
+    .radio-item:hover {
+        background: var(--bg-inset);
+    }
+
+    .radio-item input {
+        margin: 0;
+        cursor: pointer;
+        accent-color: var(--accent-primary);
     }
 </style>
