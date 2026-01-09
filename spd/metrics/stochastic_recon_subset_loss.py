@@ -18,7 +18,7 @@ def _stochastic_recon_subset_loss_update(
     model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -44,7 +44,13 @@ def _stochastic_recon_subset_loss_update(
         out = model(batch, mask_infos=stoch_mask_infos)
         loss_type = output_loss_type
         loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-        n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+        if loss_type == "mse":
+            n_examples += out.shape.numel()
+        elif loss_type == "mem":
+            # For mem loss, we only count the final position
+            n_examples += out.shape[0]  # batch size only
+        else:  # kl
+            n_examples += out.shape[:-1].numel()
         sum_loss += loss
 
     return sum_loss, n_examples
@@ -60,7 +66,7 @@ def stochastic_recon_subset_loss(
     model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
@@ -93,14 +99,14 @@ class StochasticReconSubsetLoss(Metric):
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: Literal["mse", "kl", "mem"],
         routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.output_loss_type: Literal["mse", "kl", "mem"] = output_loss_type
         self.router = get_subset_router(routing, device)
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)

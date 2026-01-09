@@ -148,6 +148,27 @@ class LMTaskConfig(BaseConfig):
     )
 
 
+class MemTaskConfig(BaseConfig):
+    """Task configuration for the mem decomposition task."""
+
+    task_name: Literal["mem"] = Field(
+        default="mem",
+        description="Identifier for the mem decomposition task",
+    )
+    expand: bool = Field(
+        default=False,
+        description="Whether to expand model dimensions before decomposition",
+    )
+    d_model_new: int | None = Field(
+        default=None,
+        description="New d_model dimension (must be >= original d_model). Required if expand=True.",
+    )
+    d_mlp_new: int | None = Field(
+        default=None,
+        description="New d_mlp dimension (must be >= original d_mlp). Required if expand=True.",
+    )
+
+
 class ModulePatternInfoConfig(BaseConfig):
     """Configuration for a module pattern with its number of components.
 
@@ -176,6 +197,7 @@ class FaithfulnessLossConfig(LossMetricConfig):
 class ImportanceMinimalityLossConfig(LossMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
     pnorm: float
+    pnorm_2: float = 1.0
     p_anneal_start_frac: float = 1.0
     p_anneal_final_p: float | None = None
     p_anneal_end_frac: float = 1.0
@@ -362,7 +384,7 @@ EvalOnlyMetricConfigType = (
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
-TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
+TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig | MemTaskConfig
 
 SamplingType = Literal["continuous", "binomial"]
 
@@ -448,9 +470,10 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
+    output_loss_type: Literal["mse", "kl", "mem"] = Field(
         ...,
-        description="Metric used to measure recon error between model outputs and targets",
+        description="Metric used to measure recon error between model outputs and targets. "
+        "Use 'mem' for tasks that only care about the final sequence position.",
     )
 
     # --- Training ---

@@ -51,7 +51,7 @@ def compute_total_loss(
     sampling: SamplingType,
     use_delta_component: bool,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -70,6 +70,7 @@ def compute_total_loss(
                     ci_upper_leaky=ci.upper_leaky,
                     current_frac_of_training=current_frac_of_training,
                     pnorm=cfg.pnorm,
+                    pnorm_2=cfg.pnorm_2,
                     eps=cfg.eps,
                     p_anneal_start_frac=cfg.p_anneal_start_frac,
                     p_anneal_final_p=cfg.p_anneal_final_p,

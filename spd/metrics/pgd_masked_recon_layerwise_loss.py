@@ -18,7 +18,7 @@ def _pgd_recon_layerwise_loss_update(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
@@ -47,7 +47,7 @@ def pgd_recon_layerwise_loss(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
@@ -73,14 +73,14 @@ class PGDReconLayerwiseLoss(Metric):
     def __init__(
         self,
         model: ComponentModel,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: Literal["mse", "kl", "mem"],
         pgd_config: PGDConfig,
         device: str,
         use_delta_component: bool,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.output_loss_type: Literal["mse", "kl", "mem"] = output_loss_type
         self.use_delta_component: bool = use_delta_component
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
