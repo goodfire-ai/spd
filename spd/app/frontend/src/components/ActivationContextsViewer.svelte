@@ -203,6 +203,24 @@
             onGenerate={componentData.generateInterpretation}
         />
 
+        <!-- Activation examples -->
+        {#if componentData.componentDetail?.status === "loading"}
+            <div class="loading">Loading component data...</div>
+        {:else if componentData.componentDetail?.status === "loaded"}
+            <ActivationContextsPagedTable
+                exampleTokens={componentData.componentDetail.data.example_tokens}
+                exampleCi={componentData.componentDetail.data.example_ci}
+                exampleComponentActs={componentData.componentDetail.data.example_component_acts}
+                activatingTokens={inputTopRecall.map(({ token }) => token)}
+            />
+        {:else if componentData.componentDetail?.status === "error"}
+            <StatusText>Error loading component data: {String(componentData.componentDetail.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading component data.</StatusText>
+        {/if}
+
+        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
+
         <div class="token-stats-row">
             {#if componentData.tokenStats.status === "uninitialized" || componentData.tokenStats.status === "loading"}
                 <StatusText>Loading token stats...</StatusText>
@@ -237,23 +255,6 @@
                     <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
                 {/if}
             </div>
-        {/if}
-
-        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
-
-        {#if componentData.componentDetail?.status === "loading"}
-            <div class="loading">Loading component data...</div>
-        {:else if componentData.componentDetail?.status === "loaded"}
-            <ActivationContextsPagedTable
-                exampleTokens={componentData.componentDetail.data.example_tokens}
-                exampleCi={componentData.componentDetail.data.example_ci}
-                exampleComponentActs={componentData.componentDetail.data.example_component_acts}
-                activatingTokens={inputTopRecall.map(({ token }) => token)}
-            />
-        {:else if componentData.componentDetail?.status === "error"}
-            <StatusText>Error loading component data: {String(componentData.componentDetail.error)}</StatusText>
-        {:else}
-            <StatusText>Something went wrong loading component data.</StatusText>
         {/if}
     </div>
 </div>

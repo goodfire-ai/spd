@@ -168,6 +168,29 @@
         onGenerate={componentData.generateInterpretation}
     />
 
+    <!-- Activating examples (from harvest data) -->
+    <div class="activating-examples-section">
+        <SectionHeader title="Activating Examples" />
+        {#if componentData.componentDetail?.status === "loading"}
+            <StatusText>Loading details...</StatusText>
+        {:else if componentData.componentDetail?.status === "loaded"}
+            {#if componentData.componentDetail.data.example_tokens.length > 0}
+                <ActivationContextsPagedTable
+                    exampleTokens={componentData.componentDetail.data.example_tokens}
+                    exampleCi={componentData.componentDetail.data.example_ci}
+                    exampleComponentActs={componentData.componentDetail.data.example_component_acts}
+                    {activatingTokens}
+                />
+            {/if}
+        {:else if componentData.componentDetail?.status === "error"}
+            <StatusText>Error loading details: {String(componentData.componentDetail.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading details.</StatusText>
+        {/if}
+    </div>
+
+    <ComponentProbeInput {layer} componentIdx={cIdx} />
+
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
         <div class="edge-attributions-section">
@@ -274,28 +297,6 @@
             <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
         {:else}
             <StatusText>No correlations available.</StatusText>
-        {/if}
-    </div>
-
-    <ComponentProbeInput {layer} componentIdx={cIdx} />
-
-    <div class="activating-examples-section">
-        <SectionHeader title="Activating Examples" />
-        {#if componentData.componentDetail?.status === "loading"}
-            <StatusText>Loading details...</StatusText>
-        {:else if componentData.componentDetail?.status === "loaded"}
-            {#if componentData.componentDetail.data.example_tokens.length > 0}
-                <ActivationContextsPagedTable
-                    exampleTokens={componentData.componentDetail.data.example_tokens}
-                    exampleCi={componentData.componentDetail.data.example_ci}
-                    exampleComponentActs={componentData.componentDetail.data.example_component_acts}
-                    {activatingTokens}
-                />
-            {/if}
-        {:else if componentData.componentDetail?.status === "error"}
-            <StatusText>Error loading details: {String(componentData.componentDetail.error)}</StatusText>
-        {:else}
-            <StatusText>Something went wrong loading details.</StatusText>
         {/if}
     </div>
 </div>
