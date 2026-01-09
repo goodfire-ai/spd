@@ -25,12 +25,6 @@
     const totalPages = $derived(Math.ceil(items.length / pageSize));
     const paginatedItems = $derived(items.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
 
-    // Reset page when items change
-    $effect(() => {
-        items; // eslint-disable-line @typescript-eslint/no-unused-expressions
-        currentPage = 0;
-    });
-
     function getBorderColor(score: number): string {
         const intensity = lerp(0.3, 1, score);
         return `rgba(22, 163, 74, ${intensity})`;

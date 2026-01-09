@@ -272,7 +272,7 @@
                 {:else if componentData.correlations.data === null}
                     <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
                 {:else}
-                    <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
+                    <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={10} />
                 {/if}
             </div>
         {/if}
@@ -359,7 +359,7 @@
     }
 
     .search-input {
-        width: 70px;
+        width: 80px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
         font-size: var(--text-sm);

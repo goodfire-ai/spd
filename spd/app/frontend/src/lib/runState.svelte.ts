@@ -56,27 +56,22 @@ export function useRunState() {
         clusterMapping = null;
     }
 
-    // Auto-load data when run changes, auto-clear when run unloads
-    $effect(() => {
-        if (run.status === "loaded") {
-            // Run is loaded - fetch run-scoped data
-            prompts = { status: "loading" };
-            allTokens = { status: "loading" };
-            interpretations = { status: "loading" };
+    /** Fetch run-scoped data (prompts, tokens, interpretations) */
+    function fetchRunScopedData() {
+        prompts = { status: "loading" };
+        allTokens = { status: "loading" };
+        interpretations = { status: "loading" };
 
-            api.listPrompts()
-                .then((p) => (prompts = { status: "loaded", data: p }))
-                .catch((error) => (prompts = { status: "error", error }));
-            api.getAllTokens()
-                .then((t) => (allTokens = { status: "loaded", data: t }))
-                .catch((error) => (allTokens = { status: "error", error }));
-            api.getAllInterpretations()
-                .then((i) => (interpretations = { status: "loaded", data: i }))
-                .catch((error) => (interpretations = { status: "error", error }));
-        }
-
-        return resetRunScopedState;
-    });
+        api.listPrompts()
+            .then((p) => (prompts = { status: "loaded", data: p }))
+            .catch((error) => (prompts = { status: "error", error }));
+        api.getAllTokens()
+            .then((t) => (allTokens = { status: "loaded", data: t }))
+            .catch((error) => (allTokens = { status: "error", error }));
+        api.getAllInterpretations()
+            .then((i) => (interpretations = { status: "loaded", data: i }))
+            .catch((error) => (interpretations = { status: "error", error }));
+    }
 
     async function loadRun(wandbPath: string, contextLength: number) {
         run = { status: "loading" };
@@ -85,6 +80,7 @@ export function useRunState() {
             const status = await api.getStatus();
             if (status) {
                 run = { status: "loaded", data: status };
+                fetchRunScopedData();
             } else {
                 run = { status: "error", error: "Failed to load run" };
             }
@@ -107,7 +103,12 @@ export function useRunState() {
                 return;
             }
             if (status) {
+                const wasLoaded = run.status === "loaded";
                 run = { status: "loaded", data: status };
+                // Fetch run-scoped data if we weren't already loaded (e.g., page refresh with backend still running)
+                if (!wasLoaded) {
+                    fetchRunScopedData();
+                }
             } else {
                 run = { status: "uninitialized" };
             }
