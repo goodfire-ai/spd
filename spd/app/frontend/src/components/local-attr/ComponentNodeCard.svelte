@@ -36,10 +36,15 @@
     // Component data hook - call load() explicitly on mount.
     // Parents use {#key} or {#each} keys to remount this component when layer/cIdx change,
     // so we only need to load once on mount (no effect watching props).
+    // Debounce to avoid bombarding backend when hovering over many nodes quickly.
     const componentData = useComponentData();
+    const HOVER_DEBOUNCE_MS = 300;
 
     onMount(() => {
-        componentData.load(layer, cIdx);
+        const timeout = setTimeout(() => {
+            componentData.load(layer, cIdx);
+        }, HOVER_DEBOUNCE_MS);
+        return () => clearTimeout(timeout);
     });
 
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
