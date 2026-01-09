@@ -38,6 +38,7 @@ class TokenPrediction(BaseModel):
     spd_prob: float
     target_prob: float
     logit: float
+    target_logit: float
 
 
 class InterventionResponse(BaseModel):
@@ -132,8 +133,9 @@ def _run_intervention_forward(
                 spd_prob=spd_prob,
                 target_prob=target_prob,
                 logit=logit,
+                target_logit=target_logit,
             )
-            for token, token_id, spd_prob, logit, target_prob in pos_predictions
+            for token, token_id, spd_prob, logit, target_prob, target_logit in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]
@@ -174,8 +176,9 @@ def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> Inte
                 spd_prob=spd_prob,
                 target_prob=target_prob,
                 logit=logit,
+                target_logit=target_logit,
             )
-            for token, token_id, spd_prob, logit, target_prob in pos_predictions
+            for token, token_id, spd_prob, logit, target_prob, target_logit in pos_predictions
         ]
         for pos_predictions in result.predictions_per_position
     ]

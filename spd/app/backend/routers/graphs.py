@@ -17,10 +17,11 @@ from pydantic import BaseModel
 
 from spd.app.backend.compute import (
     Edge,
+    compute_direct_output_attributions,
     compute_local_attributions,
     compute_local_attributions_optimized,
 )
-from spd.app.backend.database import OptimizationParams, StoredGraph
+from spd.app.backend.database import AttributionMode, OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
 from spd.app.backend.schemas import OutputProbability
@@ -35,7 +36,6 @@ class EdgeData(BaseModel):
     src: str  # "layer:seq:cIdx"
     tgt: str  # "layer:seq:cIdx"
     val: float
-    is_cross_seq: bool = False
 
 
 class PromptPreview(BaseModel):
@@ -172,7 +172,9 @@ ProgressCallback = Callable[[int, int, str], None]
 
 def build_out_probs(
     ci_masked_out_probs: torch.Tensor,
+    ci_masked_out_logits: torch.Tensor,
     target_out_probs: torch.Tensor,
+    target_out_logits: torch.Tensor,
     output_prob_threshold: float,
     token_strings: dict[int, str],
 ) -> dict[str, OutputProbability]:
@@ -182,7 +184,11 @@ def build_out_probs(
 
     Args:
         ci_masked_out_probs: Shape [seq, vocab] - CI-masked model output probabilities
+        ci_masked_out_logits: Shape [seq, vocab] - CI-masked model output logits
         target_out_probs: Shape [seq, vocab] - Target model output probabilities
+        target_out_logits: Shape [seq, vocab] - Target model output logits
+        output_prob_threshold: Threshold for filtering output probabilities
+        token_strings: Dictionary mapping token IDs to strings
     """
     assert ci_masked_out_probs.ndim == 2, f"Expected [seq, vocab], got {ci_masked_out_probs.shape}"
     assert target_out_probs.ndim == 2, f"Expected [seq, vocab], got {target_out_probs.shape}"
@@ -196,11 +202,15 @@ def build_out_probs(
             prob = float(ci_masked_out_probs[s, c_idx].item())
             if prob < output_prob_threshold:
                 continue
+            logit = float(ci_masked_out_logits[s, c_idx].item())
             target_prob = float(target_out_probs[s, c_idx].item())
+            target_logit = float(target_out_logits[s, c_idx].item())
             key = f"{s}:{c_idx}"
             out_probs[key] = OutputProbability(
                 prob=round(prob, 6),
+                logit=round(logit, 4),
                 target_prob=round(target_prob, 6),
+                target_logit=round(target_logit, 4),
                 token=token_strings[c_idx],
             )
     return out_probs
@@ -287,6 +297,7 @@ def compute_max_abs_attr(edges: list[Edge]) -> float:
 
 def compute_max_abs_subcomp_act(node_subcomp_acts: dict[str, float]) -> float:
     """Compute max absolute subcomponent activation for normalization."""
+    assert node_subcomp_acts, "node_subcomp_acts should not be empty"
     return max(abs(v) for v in node_subcomp_acts.values())
 
 
@@ -325,13 +336,16 @@ def compute_graph_stream(
 
         out_probs = build_out_probs(
             ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+            ci_masked_out_logits=result.ci_masked_out_logits.cpu(),
             target_out_probs=result.target_out_probs.cpu(),
+            target_out_logits=result.target_out_logits.cpu(),
             output_prob_threshold=output_prob_threshold,
             token_strings=loaded.token_strings,
         )
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
+                attribution_mode="direct",
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
@@ -366,13 +380,89 @@ def compute_graph_stream(
     return stream_computation(work)
 
 
+@router.post("/output")
+@log_errors
+def compute_output_graph(
+    prompt_id: Annotated[int, Query()],
+    normalize: Annotated[NormalizeType, Query()],
+    ci_threshold: Annotated[float, Query()],
+    loaded: DepLoadedRun,
+    manager: DepStateManager,
+    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+) -> GraphData:
+    """Compute output attribution graph for a prompt.
+
+    Computes direct attributions from components to output logits via autograd.
+    """
+    db = manager.db
+    prompt = db.get_prompt(prompt_id)
+    if prompt is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    token_ids = prompt.token_ids
+    token_strings = [loaded.token_strings[t] for t in token_ids]
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+
+    result = compute_direct_output_attributions(
+        model=loaded.model,
+        tokens=tokens_tensor,
+        output_prob_threshold=output_prob_threshold,
+        sampling=loaded.config.sampling,
+        device=DEVICE,
+    )
+
+    out_probs = build_out_probs(
+        ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+        ci_masked_out_logits=result.ci_masked_out_logits.cpu(),
+        target_out_probs=result.target_out_probs.cpu(),
+        target_out_logits=result.target_out_logits.cpu(),
+        output_prob_threshold=output_prob_threshold,
+        token_strings=loaded.token_strings,
+    )
+
+    graph_id = db.save_graph(
+        prompt_id=prompt_id,
+        graph=StoredGraph(
+            attribution_mode="output",
+            edges=result.edges,
+            out_probs=out_probs,
+            node_ci_vals=result.node_ci_vals,
+            node_subcomp_acts=result.node_subcomp_acts,
+        ),
+    )
+
+    # Filter for display
+    filtered_node_ci_vals = {k: v for k, v in result.node_ci_vals.items() if v > ci_threshold}
+    node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
+        filtered_node_ci_vals, len(token_ids), out_probs
+    )
+    edges_data, max_abs_attr = process_edges_for_response(
+        raw_edges=result.edges,
+        normalize=normalize,
+        num_tokens=len(token_ids),
+        node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
+        is_optimized=False,
+    )
+
+    return GraphData(
+        id=graph_id,
+        tokens=token_strings,
+        edges=edges_data,
+        outputProbs=out_probs,
+        nodeCiVals=node_ci_vals_with_pseudo,
+        nodeSubcompActs=result.node_subcomp_acts,
+        maxAbsAttr=max_abs_attr,
+        maxAbsSubcompAct=compute_max_abs_subcomp_act(result.node_subcomp_acts),
+        l0_total=len(filtered_node_ci_vals),
+    )
+
+
 def _edge_to_edge_data(edge: Edge) -> EdgeData:
     """Convert Edge (internal format) to EdgeData (API format)."""
     return EdgeData(
         src=str(edge.source),
         tgt=str(edge.target),
         val=edge.strength,
-        is_cross_seq=edge.is_cross_seq,
     )
 
 
@@ -400,7 +490,6 @@ def _normalize_edges(edges: list[Edge], normalize: NormalizeType) -> list[Edge]:
                 Edge(
                     source=edge.source,
                     target=edge.target,
-                    is_cross_seq=edge.is_cross_seq,
                     strength=edge.strength / group_strength,
                 )
             )
@@ -501,13 +590,16 @@ def compute_graph_optimized_stream(
 
         out_probs = build_out_probs(
             ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+            ci_masked_out_logits=result.ci_masked_out_logits.cpu(),
             target_out_probs=result.target_out_probs.cpu(),
+            target_out_logits=result.target_out_logits.cpu(),
             output_prob_threshold=output_prob_threshold,
             token_strings=loaded.token_strings,
         )
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
+                attribution_mode="direct",
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
@@ -614,10 +706,11 @@ def get_graphs(
     ci_threshold: Annotated[float, Query(ge=0)],
     loaded: DepLoadedRun,
     manager: DepStateManager,
+    attribution_mode: Annotated[AttributionMode, Query()],
 ) -> list[GraphData | GraphDataWithOptimization]:
-    """Get all stored graphs for a prompt.
+    """Get stored graphs for a prompt.
 
-    Returns list of graphs (both standard and optimized) for the given prompt.
+    Returns list of graphs for the given prompt and attribution mode.
     Returns empty list if no graphs exist.
     """
     db = manager.db
@@ -626,9 +719,9 @@ def get_graphs(
         return []
 
     token_strings = [loaded.token_strings[t] for t in prompt.token_ids]
-    stored_graphs = db.get_graphs(prompt_id)
-
     num_tokens = len(prompt.token_ids)
+    stored_graphs = db.get_graphs(prompt_id, attribution_mode=attribution_mode)
+
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
         is_optimized = graph.optimization_params is not None
@@ -638,6 +731,7 @@ def get_graphs(
         node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
             filtered_node_ci_vals, num_tokens, graph.out_probs
         )
+
         edges_data, max_abs_attr = process_edges_for_response(
             raw_edges=graph.edges,
             normalize=normalize,

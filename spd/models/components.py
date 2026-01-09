@@ -189,6 +189,7 @@ class LinearComponents(Components):
         mask: Float[Tensor, "... C"] | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
         component_acts_cache: dict[str, Float[Tensor, "... C"]] | None = None,
+        detach_component_acts: bool = True,
     ) -> Float[Tensor, "... d_out"]:
         """Forward pass through V and U matrices.
 
@@ -199,14 +200,18 @@ class LinearComponents(Components):
                 0: the weight differences between the target model and summed component weights
                 1: mask over the weight delta component for each sample
             component_acts_cache: Cache dictionary to populate with component acts
+            detach_component_acts: If True, detach component_acts to break gradient flow between
+                component layers (for direct-connection attributions). If False, preserve gradient
+                flow (for output attributions).
         Returns:
             output: The summed output across all components
         """
         component_acts = self.get_component_acts(x)
         if component_acts_cache is not None:
             component_acts_cache["pre_detach"] = component_acts
-            component_acts = component_acts.detach().requires_grad_(True)
-            component_acts_cache["post_detach"] = component_acts
+            if detach_component_acts:
+                component_acts = component_acts.detach().requires_grad_(True)
+                component_acts_cache["post_detach"] = component_acts
 
         if mask is not None:
             component_acts = component_acts * mask
@@ -259,6 +264,7 @@ class EmbeddingComponents(Components):
         mask: Float[Tensor, "... C"] | None = None,
         weight_delta_and_mask: WeightDeltaAndMask | None = None,
         component_acts_cache: dict[str, Float[Tensor, "... C"]] | None = None,
+        detach_component_acts: bool = True,
     ) -> Float[Tensor, "... embedding_dim"]:
         """Forward through the embedding component using indexing instead of one-hot matmul.
 
@@ -269,6 +275,9 @@ class EmbeddingComponents(Components):
                 0: the weight differences between the target model and summed component weights
                 1: mask over the weight delta component for each sample
             component_acts_cache: Cache dictionary to populate with component acts
+            detach_component_acts: If True, detach component_acts to break gradient flow between
+                component layers (for direct-connection attributions). If False, preserve gradient
+                flow (for output attributions).
         """
         assert x.dtype == torch.long, "x must be an integer tensor"
 
@@ -276,8 +285,9 @@ class EmbeddingComponents(Components):
 
         if component_acts_cache is not None:
             component_acts_cache["pre_detach"] = component_acts
-            component_acts = component_acts.detach().requires_grad_(True)
-            component_acts_cache["post_detach"] = component_acts
+            if detach_component_acts:
+                component_acts = component_acts.detach().requires_grad_(True)
+                component_acts_cache["post_detach"] = component_acts
 
         if mask is not None:
             component_acts = component_acts * mask

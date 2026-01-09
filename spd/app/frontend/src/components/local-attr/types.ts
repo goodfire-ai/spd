@@ -1,6 +1,6 @@
 import type { GraphData } from "../../lib/localAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
-import type { NormalizeType } from "../../lib/api";
+import type { NormalizeType, AttributionMode } from "../../lib/api";
 
 export type ViewSettings = {
     topK: number;
@@ -8,6 +8,7 @@ export type ViewSettings = {
     layerGap: number;
     normalizeEdges: NormalizeType;
     ciThreshold: number;
+    attributionMode: AttributionMode;
 };
 
 /** Persisted graph data from the database */

@@ -7,6 +7,7 @@ import { buildEdgeIndexes } from "../localAttributionsTypes";
 import { API_URL, ApiError, fetchJson } from "./index";
 
 export type NormalizeType = "none" | "target" | "layer";
+export type AttributionMode = "direct" | "output";
 
 export type GraphProgress = {
     current: number;
@@ -171,15 +172,39 @@ export async function getGraphs(
     promptId: number,
     normalize: NormalizeType,
     ciThreshold: number,
+    attributionMode: AttributionMode,
 ): Promise<GraphData[]> {
     const url = new URL(`${API_URL}/api/graphs/${promptId}`);
     url.searchParams.set("normalize", normalize);
     url.searchParams.set("ci_threshold", String(ciThreshold));
+    url.searchParams.set("attribution_mode", attributionMode);
     const graphs = await fetchJson<Omit<GraphData, "edgesBySource" | "edgesByTarget">[]>(url.toString());
     return graphs.map((g) => {
         const { edgesBySource, edgesByTarget } = buildEdgeIndexes(g.edges);
         return { ...g, edgesBySource, edgesByTarget };
     });
+}
+
+export type ComputeOutputGraphParams = {
+    promptId: number;
+    normalize: NormalizeType;
+    ciThreshold: number;
+    outputProbThreshold?: number;
+};
+
+export async function computeOutputGraph(params: ComputeOutputGraphParams): Promise<GraphData> {
+    const url = new URL(`${API_URL}/api/graphs/output`);
+    url.searchParams.set("prompt_id", String(params.promptId));
+    url.searchParams.set("normalize", params.normalize);
+    url.searchParams.set("ci_threshold", String(params.ciThreshold));
+    if (params.outputProbThreshold !== undefined) {
+        url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
+    }
+    const data = await fetchJson<Omit<GraphData, "edgesBySource" | "edgesByTarget">>(url.toString(), {
+        method: "POST",
+    });
+    const { edgesBySource, edgesByTarget } = buildEdgeIndexes(data.edges);
+    return { ...data, edgesBySource, edgesByTarget };
 }
 
 export async function tokenizeText(text: string): Promise<TokenizeResult> {

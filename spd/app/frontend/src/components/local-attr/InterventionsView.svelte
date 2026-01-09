@@ -3,7 +3,7 @@
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
-    import type { NormalizeType } from "../../lib/api";
+    import type { NormalizeType, AttributionMode } from "../../lib/api";
     import {
         isInterventableNode,
         type ActivationContextsSummary,
@@ -56,6 +56,7 @@
         layerGap: number;
         normalizeEdges: NormalizeType;
         ciThreshold: Loadable<number>;
+        attributionMode: AttributionMode;
         hideUnpinnedEdges: boolean;
         hideNodeCard: boolean;
         onTopKChange: (value: number) => void;
@@ -63,6 +64,7 @@
         onLayerGapChange: (value: number) => void;
         onNormalizeChange: (value: NormalizeType) => void;
         onCiThresholdChange: (value: number) => void;
+        onAttributionModeChange: (value: AttributionMode) => void;
         onHideUnpinnedEdgesChange: (value: boolean) => void;
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
@@ -88,6 +90,7 @@
         layerGap,
         normalizeEdges,
         ciThreshold,
+        attributionMode,
         hideUnpinnedEdges,
         hideNodeCard,
         onTopKChange,
@@ -95,6 +98,7 @@
         onLayerGapChange,
         onNormalizeChange,
         onCiThresholdChange,
+        onAttributionModeChange,
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
         activationContextsSummary,
@@ -605,6 +609,10 @@
         return (prob * 100).toExponential(1) + "%";
     }
 
+    function formatLogit(logit: number): string {
+        return logit.toFixed(2);
+    }
+
     function getRowLabel(layer: string): string {
         const info = parseLayer(layer);
         const rowKey = getRowKey(layer);
@@ -626,6 +634,7 @@
             {filteredEdgeCount}
             {normalizeEdges}
             {ciThreshold}
+            {attributionMode}
             {hideUnpinnedEdges}
             {hideNodeCard}
             {onTopKChange}
@@ -633,6 +642,7 @@
             {onLayerGapChange}
             {onNormalizeChange}
             {onCiThresholdChange}
+            {onAttributionModeChange}
             {onHideUnpinnedEdgesChange}
             {onHideNodeCardChange}
         />
@@ -924,10 +934,10 @@
                                                     {#if pred}
                                                         <span class="pred-token">"{pred.token}"</span>
                                                         <span class="pred-prob spd"
-                                                            >SPD: {formatProb(pred.spd_prob)}</span
+                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(pred.logit)})</span
                                                         >
                                                         <span class="pred-prob targ"
-                                                            >Targ: {formatProb(pred.target_prob)}</span
+                                                            >Targ: {formatProb(pred.target_prob)} (logit: {formatLogit(pred.target_logit)})</span
                                                         >
                                                     {:else}
                                                         -
@@ -993,8 +1003,11 @@
                                                                 >
                                                                     {#if pred}
                                                                         <span class="pred-token">"{pred.token}"</span>
-                                                                        <span class="pred-prob"
-                                                                            >{formatProb(pred.spd_prob)}</span
+                                                                        <span class="pred-prob spd"
+                                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(pred.logit)})</span
+                                                                        >
+                                                                        <span class="pred-prob targ"
+                                                                            >Targ: {formatProb(pred.target_prob)} (logit: {formatLogit(pred.target_logit)})</span
                                                                         >
                                                                     {:else}
                                                                         -
