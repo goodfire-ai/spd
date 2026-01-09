@@ -95,6 +95,7 @@
     style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"
     onmouseenter={onMouseEnter}
     onmouseleave={onMouseLeave}
+    onwheel={(e) => e.stopPropagation()}
 >
     <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
     {#if isComponent && ciVal !== null}
@@ -126,6 +127,8 @@
             detail={runState.getComponentDetail(hoveredNode.layer, hoveredNode.cIdx)}
             {edgesBySource}
             {edgesByTarget}
+            {tokens}
+            {outputProbs}
             {onPinComponent}
         />
     {/if}
