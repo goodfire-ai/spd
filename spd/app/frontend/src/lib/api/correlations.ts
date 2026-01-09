@@ -10,13 +10,9 @@ export async function getComponentCorrelations(
     componentIdx: number,
     topK: number,
 ): Promise<ComponentCorrelations> {
-    const start = performance.now();
     const url = new URL(`${API_URL}/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
-    const result = await fetchJson<ComponentCorrelations>(url.toString());
-    const elapsed = performance.now() - start;
-    console.log(`[PERF] getComponentCorrelations(${layer}:${componentIdx}): ${elapsed.toFixed(1)}ms`);
-    return result;
+    return fetchJson<ComponentCorrelations>(url.toString());
 }
 
 export async function getComponentTokenStats(
@@ -24,13 +20,9 @@ export async function getComponentTokenStats(
     componentIdx: number,
     topK: number,
 ): Promise<TokenStats | null> {
-    const start = performance.now();
     const url = new URL(`${API_URL}/api/correlations/token_stats/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
-    const result = await fetchJson<TokenStats | null>(url.toString());
-    const elapsed = performance.now() - start;
-    console.log(`[PERF] getComponentTokenStats(${layer}:${componentIdx}): ${elapsed.toFixed(1)}ms`);
-    return result;
+    return fetchJson<TokenStats | null>(url.toString());
 }
 
 // Interpretation labels (prompt fetched separately via getInterpretationPrompt)
@@ -41,30 +33,18 @@ export type Interpretation = {
 };
 
 export async function getAllInterpretations(): Promise<Record<string, Interpretation>> {
-    const start = performance.now();
-    const result = await fetchJson<Record<string, Interpretation>>(`${API_URL}/api/correlations/interpretations`);
-    const elapsed = performance.now() - start;
-    console.log(`[PERF] getAllInterpretations: ${elapsed.toFixed(1)}ms (${Object.keys(result).length} interpretations)`);
-    return result;
+    return fetchJson<Record<string, Interpretation>>(`${API_URL}/api/correlations/interpretations`);
 }
 
 export async function getInterpretationPrompt(layer: string, componentIdx: number): Promise<string> {
-    const start = performance.now();
-    const result = await fetchJson<string>(
+    return fetchJson<string>(
         `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}/prompt`,
     );
-    const elapsed = performance.now() - start;
-    console.log(`[PERF] getInterpretationPrompt(${layer}:${componentIdx}): ${elapsed.toFixed(1)}ms`);
-    return result;
 }
 
 export async function requestComponentInterpretation(layer: string, componentIdx: number): Promise<Interpretation> {
-    const start = performance.now();
-    const result = await fetchJson<Interpretation>(
+    return fetchJson<Interpretation>(
         `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
         { method: "POST" },
     );
-    const elapsed = performance.now() - start;
-    console.log(`[PERF] requestComponentInterpretation(${layer}:${componentIdx}): ${elapsed.toFixed(1)}ms`);
-    return result;
 }
