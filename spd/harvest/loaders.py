@@ -1,6 +1,7 @@
 """Loaders for reading harvest output files."""
 
 import json
+import threading
 import time
 
 from spd.harvest.schemas import (
@@ -32,6 +33,9 @@ def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSu
 
 # Cache for component indices (run_id -> {component_key -> byte_offset})
 _component_index_cache: dict[str, dict[str, int]] = {}
+_component_index_lock = threading.Lock()
+
+_COMPONENT_KEY_PREFIX = '"component_key": "'
 
 
 def _get_component_index(wandb_run_id: str) -> dict[str, int]:
@@ -40,32 +44,42 @@ def _get_component_index(wandb_run_id: str) -> dict[str, int]:
     On first access, scans the components.jsonl file to build a byte offset
     index, then caches it in memory for O(1) lookups.
     """
+    # Fast path: already cached
     if wandb_run_id in _component_index_cache:
         return _component_index_cache[wandb_run_id]
 
-    ctx_dir = get_activation_contexts_dir(wandb_run_id)
-    components_path = ctx_dir / "components.jsonl"
-    assert components_path.exists(), f"No activation contexts found at {components_path}"
+    # Slow path: build index under lock to prevent duplicate work
+    with _component_index_lock:
+        # Double-check after acquiring lock
+        if wandb_run_id in _component_index_cache:
+            return _component_index_cache[wandb_run_id]
 
-    start = time.perf_counter()
-    index: dict[str, int] = {}
-    with open(components_path) as f:
-        while True:
-            offset = f.tell()
-            line = f.readline()
-            if not line:
-                break
-            # Extract component_key from start of JSON line
-            # Format: {"component_key": "layer:idx", ...}
-            key_start = line.find('"component_key": "') + len('"component_key": "')
-            key_end = line.find('"', key_start)
-            component_key = line[key_start:key_end]
-            index[component_key] = offset
+        ctx_dir = get_activation_contexts_dir(wandb_run_id)
+        components_path = ctx_dir / "components.jsonl"
+        assert components_path.exists(), f"No activation contexts found at {components_path}"
 
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"[PERF] Built component index: {elapsed_ms:.1f}ms ({len(index)} components)")
-    _component_index_cache[wandb_run_id] = index
-    return index
+        start = time.perf_counter()
+        index: dict[str, int] = {}
+        with open(components_path) as f:
+            while True:
+                offset = f.tell()
+                line = f.readline()
+                if not line:
+                    break
+                # Extract component_key from start of JSON line
+                # Format: {"component_key": "layer:idx", ...}
+                key_start = line.find(_COMPONENT_KEY_PREFIX)
+                assert key_start != -1, f"Malformed line in components.jsonl: {line[:100]}"
+                key_start += len(_COMPONENT_KEY_PREFIX)
+                key_end = line.find('"', key_start)
+                assert key_end != -1, f"Malformed line in components.jsonl: {line[:100]}"
+                component_key = line[key_start:key_end]
+                index[component_key] = offset
+
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.info(f"[PERF] Built component index: {elapsed_ms:.1f}ms ({len(index)} components)")
+        _component_index_cache[wandb_run_id] = index
+        return index
 
 
 def load_component_activation_contexts(wandb_run_id: str, component_key: str) -> ComponentData:
