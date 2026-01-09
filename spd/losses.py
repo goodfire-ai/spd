@@ -11,6 +11,8 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
+    ModulePatternInfoConfig,
+    NeuronSparsityLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
@@ -27,6 +29,7 @@ from spd.metrics import (
     ci_masked_recon_subset_loss,
     faithfulness_loss,
     importance_minimality_loss,
+    neuron_sparsity_loss,
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
     pgd_recon_subset_loss,
@@ -52,6 +55,7 @@ def compute_total_loss(
     use_delta_component: bool,
     n_mask_samples: int,
     output_loss_type: Literal["mse", "kl", "mem"],
+    module_info: list[ModulePatternInfoConfig] | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -75,6 +79,16 @@ def compute_total_loss(
                     p_anneal_start_frac=cfg.p_anneal_start_frac,
                     p_anneal_final_p=cfg.p_anneal_final_p,
                     p_anneal_end_frac=cfg.p_anneal_end_frac,
+                )
+            case NeuronSparsityLossConfig():
+                assert module_info is not None, (
+                    "module_info is required for NeuronSparsityLoss"
+                )
+                loss = neuron_sparsity_loss(
+                    model=model,
+                    ci_upper_leaky=ci.upper_leaky,
+                    module_info=module_info,
+                    pnorm=cfg.pnorm,
                 )
             case UnmaskedReconLossConfig():
                 loss = unmasked_recon_loss(
