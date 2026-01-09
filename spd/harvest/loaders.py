@@ -30,44 +30,68 @@ def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSu
     return result
 
 
+# Cache for component indices (run_id -> {component_key -> byte_offset})
+_component_index_cache: dict[str, dict[str, int]] = {}
+
+
+def _get_component_index(wandb_run_id: str) -> dict[str, int]:
+    """Get or build component index for a run.
+
+    On first access, scans the components.jsonl file to build a byte offset
+    index, then caches it in memory for O(1) lookups.
+    """
+    if wandb_run_id in _component_index_cache:
+        return _component_index_cache[wandb_run_id]
+
+    ctx_dir = get_activation_contexts_dir(wandb_run_id)
+    components_path = ctx_dir / "components.jsonl"
+    assert components_path.exists(), f"No activation contexts found at {components_path}"
+
+    start = time.perf_counter()
+    index: dict[str, int] = {}
+    with open(components_path) as f:
+        while True:
+            offset = f.tell()
+            line = f.readline()
+            if not line:
+                break
+            # Extract component_key from start of JSON line
+            # Format: {"component_key": "layer:idx", ...}
+            key_start = line.find('"component_key": "') + len('"component_key": "')
+            key_end = line.find('"', key_start)
+            component_key = line[key_start:key_end]
+            index[component_key] = offset
+
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    logger.info(f"[PERF] Built component index: {elapsed_ms:.1f}ms ({len(index)} components)")
+    _component_index_cache[wandb_run_id] = index
+    return index
+
+
 def load_component_activation_contexts(wandb_run_id: str, component_key: str) -> ComponentData:
-    """Load a single component's activation contexts."""
+    """Load a single component's activation contexts using index for O(1) lookup."""
     start = time.perf_counter()
     ctx_dir = get_activation_contexts_dir(wandb_run_id)
     path = ctx_dir / "components.jsonl"
     assert path.exists(), f"No activation contexts found at {path}"
 
-    # Each line starts with {"component_key": "layer:idx", ...}
-    expected_prefix = '{"component_key": '
-    prefix = f'{{"component_key": "{component_key}"'
+    index = _get_component_index(wandb_run_id)
+    if component_key not in index:
+        raise ValueError(f"Component {component_key} not found in activation contexts")
 
-    lines_scanned = 0
+    byte_offset = index[component_key]
     with open(path) as f:
-        for line in f:
-            lines_scanned += 1
-            assert line.startswith(expected_prefix), f"Unexpected line format: {line[:100]}"
-            if not line.startswith(prefix):
-                continue
-            # Found it - parse just this line
-            data = json.loads(line)
-            data["activation_examples"] = [
-                ActivationExample(**ex) for ex in data["activation_examples"]
-            ]
-            data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
-            data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            logger.info(
-                f"[PERF] load_component_activation_contexts({component_key}): "
-                f"{elapsed_ms:.1f}ms (scanned {lines_scanned} lines)"
-            )
-            return ComponentData(**data)
+        f.seek(byte_offset)
+        line = f.readline()
+
+    data = json.loads(line)
+    data["activation_examples"] = [ActivationExample(**ex) for ex in data["activation_examples"]]
+    data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
+    data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
 
     elapsed_ms = (time.perf_counter() - start) * 1000
-    logger.info(
-        f"[PERF] load_component_activation_contexts({component_key}): "
-        f"{elapsed_ms:.1f}ms (NOT FOUND, scanned {lines_scanned} lines)"
-    )
-    raise ValueError(f"Component {component_key} not found in activation contexts")
+    logger.info(f"[PERF] load_component_activation_contexts({component_key}): {elapsed_ms:.1f}ms")
+    return ComponentData(**data)
 
 
 def load_correlations(wandb_run_id: str) -> CorrelationStorage:

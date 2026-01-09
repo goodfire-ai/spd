@@ -62,10 +62,12 @@ class HarvestCache:
         return self._interpretations
 
     @property
-    def activation_contexts_summary(self) -> dict[str, ComponentSummary]:
+    def activation_contexts_summary(self) -> dict[str, ComponentSummary] | None:
         """Lightweight summary of activation contexts, keyed by component_key (e.g. 'h.0.mlp.c_fc:5')."""
         if self._activation_contexts_summary is _NOT_LOADED:
             self._activation_contexts_summary = load_activation_contexts_summary(self.run_id)
+        if self._activation_contexts_summary is None:
+            return None
         assert isinstance(self._activation_contexts_summary, dict)
         return self._activation_contexts_summary
 

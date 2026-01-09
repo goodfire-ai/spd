@@ -7,7 +7,7 @@ import time
 from collections import defaultdict
 
 import torch
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from spd.app.backend.compute import compute_ci_only
@@ -46,6 +46,8 @@ def get_activation_contexts_summary(
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
     start = time.perf_counter()
     summary_data = loaded.harvest.activation_contexts_summary
+    if summary_data is None:
+        raise HTTPException(status_code=404, detail="No activation contexts summary found")
     load_ms = (time.perf_counter() - start) * 1000
 
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
