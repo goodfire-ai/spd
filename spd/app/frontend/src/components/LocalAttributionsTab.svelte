@@ -22,6 +22,7 @@
         type ComposerState,
         type StoredGraph,
         type GraphComputeState,
+        type PromptGenerateState,
         type OptimizeConfig,
         type PromptCard,
         type ViewSettings,
@@ -67,10 +68,8 @@
     // Intervention loading state
     let runningIntervention = $state(false);
 
-    // Graph generation state
-    let generatingGraphs = $state(false);
-    let generateProgress = $state(0);
-    let generateCount = $state(0);
+    // Prompt generation state
+    let promptGenerate = $state<PromptGenerateState>({ status: "idle" });
 
     // Refetching state (for CI threshold/normalize changes) - tracks which graph is being refetched
     let refetchingGraphId = $state<number | null>(null);
@@ -591,20 +590,21 @@
     }
 
     async function handleGeneratePrompts(nPrompts: number) {
-        if (generatingGraphs) return;
+        if (promptGenerate.status === "generating") return;
 
-        generatingGraphs = true;
-        generateProgress = 0;
-        generateCount = 0;
+        promptGenerate = { status: "generating", progress: 0, count: 0 };
 
         try {
             await api.generatePrompts({ nPrompts }, (progress: number, count: number) => {
-                generateProgress = progress;
-                generateCount = count;
+                if (promptGenerate.status === "generating") {
+                    promptGenerate.progress = progress;
+                    promptGenerate.count = count;
+                }
             });
             await runState.refreshPrompts();
-        } finally {
-            generatingGraphs = false;
+            promptGenerate = { status: "idle" };
+        } catch (error) {
+            promptGenerate = { status: "error", error: String(error) };
         }
     }
 </script>
@@ -638,9 +638,7 @@
                         stagedNodes={pinnedNodes}
                         filterByStaged={false}
                         {filterLoading}
-                        {generatingGraphs}
-                        {generateProgress}
-                        {generateCount}
+                        {promptGenerate}
                         {isAddingCustomPrompt}
                         show={showPromptPicker}
                         onSelectPrompt={handleSelectPrompt}

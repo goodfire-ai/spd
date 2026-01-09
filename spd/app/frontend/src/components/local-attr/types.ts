@@ -74,6 +74,12 @@ export type GraphComputeState =
     | { status: "computing"; cardId: number; progress: LoadingState }
     | { status: "error"; error: string };
 
+/** State for prompt generation - tracks progress and count */
+export type PromptGenerateState =
+    | { status: "idle" }
+    | { status: "generating"; progress: number; count: number }
+    | { status: "error"; error: string };
+
 export function defaultOptimizeConfig(): OptimizeConfig {
     return {
         labelTokenText: "",
