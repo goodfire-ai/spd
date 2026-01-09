@@ -10,13 +10,15 @@ import json
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
 from spd.app.backend.compute import Edge, Node
 from spd.app.backend.schemas import OutputProbability
 from spd.settings import REPO_ROOT
+
+AttributionMode = Literal["direct", "output"]
 
 # Persistent data directories
 _APP_DATA_DIR = REPO_ROOT / ".data" / "app"
@@ -58,6 +60,7 @@ class StoredGraph(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
     id: int = -1  # -1 for unsaved graphs, set by DB on save
+    attribution_mode: AttributionMode = "direct"  # "direct" or "output"
     edges: list[Edge]
     out_probs: dict[str, OutputProbability]  # seq:c_idx -> {prob, target_prob, token}
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val (required for all graphs)
@@ -168,6 +171,7 @@ class LocalAttrDB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 prompt_id INTEGER NOT NULL REFERENCES prompts(id),
                 is_optimized INTEGER NOT NULL,
+                attribution_mode TEXT NOT NULL DEFAULT 'direct',
 
                 -- Optimization params (NULL for standard graphs)
                 label_token INTEGER,
@@ -193,7 +197,7 @@ class LocalAttrDB:
             );
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_standard
-                ON graphs(prompt_id)
+                ON graphs(prompt_id, attribution_mode)
                 WHERE is_optimized = 0;
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
@@ -484,14 +488,15 @@ class LocalAttrDB:
         try:
             cursor = conn.execute(
                 """INSERT INTO graphs
-                   (prompt_id, is_optimized,
+                   (prompt_id, is_optimized, attribution_mode,
                     label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
                     edges_data, output_probs_data, node_ci_vals, node_subcomp_acts,
                     label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
+                    graph.attribution_mode,
                     label_token,
                     imp_min_coeff,
                     ce_loss_coeff,
@@ -511,29 +516,30 @@ class LocalAttrDB:
             return graph_id
         except sqlite3.IntegrityError as e:
             raise ValueError(
-                f"Graph already exists for prompt_id={prompt_id}. "
+                f"Graph already exists for prompt_id={prompt_id} with mode={graph.attribution_mode}. "
                 "Use get_graphs() to retrieve existing graph or delete it first."
             ) from e
 
-    def get_graphs(self, prompt_id: int) -> list[StoredGraph]:
-        """Retrieve all stored graphs for a prompt.
+    def get_graphs(self, prompt_id: int, attribution_mode: AttributionMode) -> list[StoredGraph]:
+        """Retrieve stored graphs for a prompt.
 
         Args:
             prompt_id: The prompt ID.
+            attribution_mode: The attribution mode to filter by.
 
         Returns:
             List of stored graphs (standard and optimized).
         """
         conn = self._get_conn()
-
         rows = conn.execute(
-            """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals, node_subcomp_acts,
+            """SELECT id, is_optimized, attribution_mode, edges_data, output_probs_data,
+                      node_ci_vals, node_subcomp_acts,
                       label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
                       label_prob
                FROM graphs
-               WHERE prompt_id = ?
+               WHERE prompt_id = ? AND attribution_mode = ?
                ORDER BY is_optimized, created_at""",
-            (prompt_id,),
+            (prompt_id, attribution_mode),
         ).fetchall()
 
         def _edge_from_dict(d: dict[str, Any]) -> Edge:
@@ -541,7 +547,6 @@ class LocalAttrDB:
                 source=Node(**d["source"]),
                 target=Node(**d["target"]),
                 strength=float(d["strength"]),
-                is_cross_seq=bool(d["is_cross_seq"]),
             )
 
         results: list[StoredGraph] = []
@@ -571,6 +576,7 @@ class LocalAttrDB:
             results.append(
                 StoredGraph(
                     id=row["id"],
+                    attribution_mode=row["attribution_mode"],
                     edges=edges,
                     out_probs=out_probs,
                     node_ci_vals=node_ci_vals,

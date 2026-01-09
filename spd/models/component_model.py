@@ -271,6 +271,7 @@ class ComponentModel(LoadableModule):
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["component_acts", "input"],
+        detach_component_acts: bool = True,
         **kwargs: Any,
     ) -> OutputWithCache: ...
 
@@ -280,6 +281,7 @@ class ComponentModel(LoadableModule):
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["none"] = "none",
+        detach_component_acts: bool = True,
         **kwargs: Any,
     ) -> Tensor: ...
 
@@ -293,6 +295,7 @@ class ComponentModel(LoadableModule):
         *args: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["component_acts", "input", "none"] = "none",
+        detach_component_acts: bool = True,
         **kwargs: Any,
     ) -> Tensor | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
@@ -312,6 +315,9 @@ class ComponentModel(LoadableModule):
             cache_type: If "input" or "component_acts", cache the inputs or component acts to the
                 modules provided in mask_infos. If "none", no caching is done. If mask_infos is None,
                 cache the inputs or component acts to all modules in self.target_module_paths.
+            detach_component_acts: If True (default), detach cached component acts to break gradient
+                flow between layers (for layer-wise attribution). If False, preserve full gradient
+                flow for end-to-end output attribution. Only relevant when cache_type="component_acts".
 
         Returns:
             OutputWithCache object if cache_type is "input" or "component_acts", otherwise the
@@ -337,6 +343,7 @@ class ComponentModel(LoadableModule):
                 mask_info=mask_info,
                 cache_type=cache_type,
                 cache=cache,
+                detach_component_acts=detach_component_acts,
             )
 
         with self._attach_forward_hooks(hooks):
@@ -360,6 +367,7 @@ class ComponentModel(LoadableModule):
         mask_info: ComponentsMaskInfo | None,
         cache_type: Literal["component_acts", "input", "none"],
         cache: dict[str, Tensor],
+        detach_component_acts: bool,
     ) -> Any | None:
         """Unified hook function that handles both component replacement and caching.
 
@@ -373,6 +381,9 @@ class ComponentModel(LoadableModule):
             mask_info: Mask information (if using components)
             cache_type: Whether to cache the component acts, input, or none
             cache: Cache dictionary to populate (if cache_type is not None)
+            detach_component_acts: If True, detach cached component acts to break gradient
+                flow between layers. If False, preserve full gradient flow for end-to-end
+                attribution.
 
         Returns:
             If using components: modified output (or None to keep original)
@@ -397,6 +408,7 @@ class ComponentModel(LoadableModule):
                 mask=mask_info.component_mask,
                 weight_delta_and_mask=mask_info.weight_delta_and_mask,
                 component_acts_cache=component_acts_cache,
+                detach_component_acts=detach_component_acts,
             )
             if component_acts_cache is not None:
                 for k, v in component_acts_cache.items():

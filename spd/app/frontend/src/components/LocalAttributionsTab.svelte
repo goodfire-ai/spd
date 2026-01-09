@@ -97,7 +97,7 @@
         layerGap: 30,
         normalizeEdges: "layer",
         ciThreshold: 0,
-        attributionMode: "connected",
+        attributionMode: "direct",
     };
 
     // Edge count is derived from the graph rendering, not stored per-graph
@@ -171,11 +171,12 @@
     }
 
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
-        // Fetch stored graphs for this prompt
+        // Fetch stored graphs for this prompt (direct mode by default)
         const storedGraphs = await api.getGraphs(
             promptId,
             defaultViewSettings.normalizeEdges,
             defaultViewSettings.ciThreshold,
+            defaultViewSettings.attributionMode,
         );
         const graphs: StoredGraph[] = await Promise.all(
             storedGraphs.map(async (data) => {
@@ -586,8 +587,76 @@
     }
 
     async function handleAttributionModeChange(value: api.AttributionMode) {
-        updateActiveGraphViewSettings({ attributionMode: value });
-        await refetchActiveGraphData();
+        if (!activeCard || !activeGraph) return;
+
+        // If already on this mode, nothing to do
+        if (activeGraph.viewSettings.attributionMode === value) return;
+
+        const { normalizeEdges, ciThreshold } = activeGraph.viewSettings;
+
+        // Check if we already have a graph for this mode in this card
+        const existingGraph = activeCard.graphs.find(
+            (g) => g.viewSettings.attributionMode === value && !g.data.optimization,
+        );
+
+        if (existingGraph) {
+            // Switch to existing graph
+            promptCards = promptCards.map((card) => {
+                if (card.id !== activeCard.id) return card;
+                return { ...card, activeGraphId: existingGraph.id };
+            });
+            return;
+        }
+
+        // Need to compute/fetch the graph for this mode
+        // Try to get from DB first
+        const storedGraphs = await api.getGraphs(activeCard.id, normalizeEdges, ciThreshold, value);
+
+        let data: GraphData;
+        if (storedGraphs.length > 0) {
+            // Found in DB
+            data = storedGraphs[0];
+        } else if (value === "output") {
+            // Compute output graph
+            loadingCardId = activeCard.id;
+            loadingState = { stages: [{ name: "Computing output graph", progress: null }], currentStage: 0 };
+            try {
+                data = await api.computeOutputGraph({
+                    promptId: activeCard.id,
+                    normalize: normalizeEdges,
+                    ciThreshold,
+                });
+            } finally {
+                loadingCardId = null;
+                loadingState = null;
+            }
+        } else {
+            // Direct graph should always exist (it's computed first)
+            console.error("No direct graph found - this shouldn't happen");
+            return;
+        }
+
+        // Add graph to card and switch to it
+        const label = value === "output" ? "Output" : "Standard";
+        getComposerState(data.id, Object.keys(data.nodeCiVals));
+
+        promptCards = promptCards.map((card) => {
+            if (card.id !== activeCard.id) return card;
+            return {
+                ...card,
+                graphs: [
+                    ...card.graphs,
+                    {
+                        id: data.id,
+                        label,
+                        data,
+                        viewSettings: { ...defaultViewSettings, normalizeEdges, ciThreshold, attributionMode: value },
+                        interventionRuns: [],
+                    },
+                ],
+                activeGraphId: data.id,
+            };
+        });
     }
 
     function handleTopKChange(value: number) {

@@ -36,11 +36,18 @@ def compute_layer_alive_info(
     output_prob_threshold: float,
     n_seq: int,
     device: str,
+    ci_threshold: float,
 ) -> LayerAliveInfo:
     """Compute alive info for a layer. Handles regular, wte, and output layers.
 
-    For CI layers, all components with CI > 0 are considered alive.
-    Filtering by CI threshold is done at display time, not computation time.
+    Args:
+        layer_name: Name of the layer ("wte", "output", or a component layer name).
+        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, C].
+        ci_masked_out_probs: CI-masked output probabilities [1, seq, vocab]. Required for output layer.
+        output_prob_threshold: Threshold for output token activation.
+        n_seq: Sequence length.
+        device: Device string for tensor allocation.
+        ci_threshold: Threshold for component activation based on CI value.
     """
     if layer_name == "wte":
         # WTE: single pseudo-component, always alive at all positions
@@ -54,7 +61,7 @@ def compute_layer_alive_info(
     else:
         ci = ci_lower_leaky[layer_name]
         assert ci.shape[0] == 1
-        alive_mask = ci[0] > 0.0
+        alive_mask = ci[0] > ci_threshold
         alive_c_idxs = torch.where(alive_mask.any(dim=0))[0].tolist()
 
     return LayerAliveInfo(alive_mask, alive_c_idxs)
@@ -78,7 +85,6 @@ class Edge:
     source: Node
     target: Node
     strength: float
-    is_cross_seq: bool
 
 
 @dataclass
@@ -90,18 +96,7 @@ class LocalAttributionResult:
     target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
     node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
-
-
-@dataclass
-class OptimizedLocalAttributionResult:
-    """Result of computing local attributions with optimized CI values."""
-
-    edges: list[Edge]
-    ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
-    target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
-    label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
-    node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
-    node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
+    label_prob: float | None = None  # P(label_token) with optimized CI mask, only for optimized
 
 
 def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
@@ -252,19 +247,31 @@ def _compute_edges_for_target(
     source_infos: list[LayerAliveInfo],
     cache: dict[str, Tensor],
     n_seq: int,
+    source_cache_suffix: str = "post_detach",
+    target_seq_positions: list[int] | None = None,
 ) -> list[Edge]:
     """Compute all edges flowing into a single target layer.
 
     For each alive (s_out, c_out) in the target layer, computes gradient-based
     attribution strengths from all alive source components.
+
+    Args:
+        target: Target layer name (e.g., "h.0.mlp.c_fc" or "output")
+        sources: List of source layer names
+        target_info: Alive info for target layer
+        source_infos: Alive info for each source layer (same order as sources)
+        cache: Dict containing cached tensors ({layer}_pre_detach, {layer}_post_detach)
+        n_seq: Sequence length
+        source_cache_suffix: Cache key suffix for source tensors ("post_detach" or "pre_detach")
+        target_seq_positions: Which target seq positions to compute. None = all positions.
     """
     edges: list[Edge] = []
-    out_pre_detach: Float[Tensor, "1 s C"] = cache[f"{target}_pre_detach"]
-    in_post_detaches: list[Float[Tensor, "1 s C"]] = [
-        cache[f"{source}_post_detach"] for source in sources
-    ]
+    out_pre_detach = cache[f"{target}_pre_detach"]
+    in_sources = [cache[f"{source}_{source_cache_suffix}"] for source in sources]
 
-    for s_out in range(n_seq):
+    seq_positions = target_seq_positions if target_seq_positions is not None else range(n_seq)
+
+    for s_out in seq_positions:
         s_out_alive_c = [c for c in target_info.alive_c_idxs if target_info.alive_mask[s_out, c]]
         if not s_out_alive_c:
             continue
@@ -272,19 +279,21 @@ def _compute_edges_for_target(
         for c_out in s_out_alive_c:
             grads = torch.autograd.grad(
                 outputs=out_pre_detach[0, s_out, c_out],
-                inputs=in_post_detaches,
+                inputs=in_sources,
                 retain_graph=True,
             )
             with torch.no_grad():
-                for source, source_info, grad, in_post_detach in zip(
-                    sources, source_infos, grads, in_post_detaches, strict=True
+                for source, source_info, grad, in_source in zip(
+                    sources, source_infos, grads, in_sources, strict=True
                 ):
-                    is_cross_seq = is_kv_to_o_pair(source, target)
-                    weighted: Float[Tensor, "s C"] = (grad * in_post_detach)[0]
+                    # For k/v → o_proj or any → output, consider all source positions up to s_out
+                    causal_positions = is_kv_to_o_pair(source, target) or target == "output"
+
+                    weighted = (grad * in_source)[0]
                     if source == "wte":
                         weighted = weighted.sum(dim=1, keepdim=True)
 
-                    s_in_range = range(s_out + 1) if is_cross_seq else [s_out]
+                    s_in_range = range(s_out + 1) if causal_positions else [s_out]
                     for s_in in s_in_range:
                         for c_in in source_info.alive_c_idxs:
                             if not source_info.alive_mask[s_in, c_in]:
@@ -294,13 +303,12 @@ def _compute_edges_for_target(
                                     source=Node(layer=source, seq_pos=s_in, component_idx=c_in),
                                     target=Node(layer=target, seq_pos=s_out, component_idx=c_out),
                                     strength=weighted[s_in, c_in].item(),
-                                    is_cross_seq=is_cross_seq,
                                 )
                             )
     return edges
 
 
-def compute_edges_from_ci(
+def compute_attributions(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
@@ -312,7 +320,7 @@ def compute_edges_from_ci(
     show_progress: bool,
     on_progress: ProgressCallback | None = None,
 ) -> LocalAttributionResult:
-    """Core edge computation from pre-computed CI values.
+    """Core edge computation
 
     Computes gradient-based attribution edges between components using the
     provided CI values for masking. All components with CI > 0 are included;
@@ -350,7 +358,10 @@ def compute_edges_from_ci(
     )
     with torch.enable_grad():
         comp_output_with_cache: OutputWithCache = model(
-            tokens, mask_infos=unmasked_masks, cache_type="component_acts"
+            tokens,
+            mask_infos=unmasked_masks,
+            cache_type="component_acts",
+            detach_component_acts=True,
         )
 
     wte_handle.remove()
@@ -373,6 +384,7 @@ def compute_edges_from_ci(
             output_prob_threshold=output_prob_threshold,
             n_seq=n_seq,
             device=device,
+            ci_threshold=0.0,
         )
         for layer in all_layers
     }
@@ -450,7 +462,7 @@ def compute_local_attributions(
             detach_inputs=False,
         )
 
-    return compute_edges_from_ci(
+    return compute_attributions(
         model=model,
         tokens=tokens,
         ci_lower_leaky=ci.lower_leaky,
@@ -473,7 +485,7 @@ def compute_local_attributions_optimized(
     device: str,
     show_progress: bool,
     on_progress: ProgressCallback | None = None,
-) -> OptimizedLocalAttributionResult:
+) -> LocalAttributionResult:
     """Compute local attributions using optimized sparse CI values.
 
     Runs CI optimization to find a minimal sparse mask that preserves
@@ -512,7 +524,7 @@ def compute_local_attributions_optimized(
     with torch.no_grad():
         pre_weight_acts = model(tokens, cache_type="input").cache
 
-    result = compute_edges_from_ci(
+    result = compute_attributions(
         model=model,
         tokens=tokens,
         ci_lower_leaky=ci_outputs.lower_leaky,
@@ -525,14 +537,8 @@ def compute_local_attributions_optimized(
         on_progress=on_progress,
     )
 
-    return OptimizedLocalAttributionResult(
-        edges=result.edges,
-        ci_masked_out_probs=result.ci_masked_out_probs,
-        target_out_probs=result.target_out_probs,
-        label_prob=label_prob,
-        node_ci_vals=result.node_ci_vals,
-        node_subcomp_acts=result.node_subcomp_acts,
-    )
+    result.label_prob = label_prob
+    return result
 
 
 @dataclass
@@ -717,84 +723,134 @@ def parse_node_key(key: str) -> Node:
     return Node(layer=layer, seq_pos=int(seq_pos), component_idx=int(component_idx))
 
 
-def compute_output_attributions(
-    edges: list[Edge],
-    output_probs: dict[str, float],
-    final_seq_pos: int,
-) -> list[Edge]:
-    """Compute total attribution from each node to output logits at final position.
+def compute_direct_output_attributions(
+    model: ComponentModel,
+    tokens: Float[Tensor, "1 seq"],
+    output_prob_threshold: float,
+    sampling: SamplingType,
+    device: str,
+) -> LocalAttributionResult:
+    """Compute attribution from each component directly to output logits via autograd.
 
-    This computes the sum of all path contributions from each internal node to each
-    output node, where path contribution = product of edge values along the path.
+    Uses the chain rule: attribution = ∂logit/∂component_output × component_output
 
-    Algorithm:
-    1. Build adjacency map: node_key -> [(child_key, edge_val), ...]
-    2. Identify output nodes at final_seq_pos
-    3. For each output node, run backward DP to compute total attribution from all nodes
-    4. Return new edges: internal_node -> output_node with summed attribution
+    This computes the mathematically correct total attribution from any component
+    to any output token, properly accounting for all paths through the network.
+    Unlike edge chaining, this doesn't multiply in intermediate activation factors.
+
+    For the attribution computation, we use unmasked components and weight deltas
+    (same as compute_attributions) because we want to capture all attribution paths
+    through the network, not rely on CI masks being accurate.
+
+    All components with CI > 0 are included; filtering by CI threshold is done at
+    display time (matching compute_attributions behavior).
 
     Args:
-        edges: Connected attribution edges (adjacent layers).
-        output_probs: Output probability entries keyed by "seq:cIdx".
-        final_seq_pos: The final sequence position (len(tokens) - 1).
+        model: The ComponentModel to analyze.
+        tokens: Input tokens [1, seq].
+        output_prob_threshold: Output tokens with prob > threshold are included.
+        sampling: Sampling type for CI computation.
+        device: Device string for tensor allocation.
 
     Returns:
-        List of edges from each internal node to each output node at final position.
+        LocalAttributionResult with edges, output probs, CI values, and activations.
     """
-    # Build adjacency: source_key -> list of (target_key, strength)
-    adjacency: dict[str, list[tuple[str, float]]] = defaultdict(list)
-    all_nodes: set[str] = set()
+    n_seq = tokens.shape[1]
+    final_seq_pos = n_seq - 1
 
-    for edge in edges:
-        source_key = str(edge.source)
-        target_key = str(edge.target)
-        adjacency[source_key].append((target_key, edge.strength))
-        all_nodes.add(source_key)
-        all_nodes.add(target_key)
+    # Compute CI values and target model output
+    with torch.no_grad():
+        target_output = model(tokens, cache_type="input")
+        pre_weight_acts = target_output.cache
+        target_out_probs = torch.softmax(target_output.output, dim=-1)
 
-    # Find output nodes at final position (format: "output:seq:cIdx")
-    output_nodes: list[str] = []
-    for key in output_probs:
-        # key is "seq:cIdx", check if seq matches final_seq_pos
-        seq_str, c_idx_str = key.split(":")
-        if int(seq_str) == final_seq_pos:
-            output_nodes.append(f"output:{seq_str}:{c_idx_str}")
+        ci = model.calc_causal_importances(
+            pre_weight_acts=pre_weight_acts,
+            sampling=sampling,
+            detach_inputs=False,
+        )
 
-    def _get_output_attr_recursive(
-        node: str,
-        memo: dict[str, float],
-        adj: dict[str, list[tuple[str, float]]],
-    ) -> float:
-        """Compute output attribution for a node via memoized DFS."""
-        if node in memo:
-            return memo[node]
-        total = 0.0
-        for child, edge_val in adj.get(node, []):
-            total += edge_val * _get_output_attr_recursive(child, memo, adj)
-        memo[node] = total
-        return total
+    ci_lower_leaky = ci.lower_leaky
 
-    # For each output, compute attribution from all nodes via memoized DFS
-    new_edges: list[Edge] = []
-    for output_node in output_nodes:
-        memo: dict[str, float] = {output_node: 1.0}
+    # Compute CI-masked output probs (for display and determining alive outputs)
+    with torch.no_grad():
+        ci_masks = make_mask_infos(component_masks=ci_lower_leaky)
+        ci_masked_logits: Tensor = model(tokens, mask_infos=ci_masks)
+        ci_masked_out_probs = torch.softmax(ci_masked_logits, dim=-1)
 
-        # Compute attribution for all non-output nodes
-        for node in all_nodes:
-            if node.startswith("output:"):
-                continue
-            attr = _get_output_attr_recursive(node, memo, adjacency)
-            if attr != 0:
-                new_edges.append(
-                    Edge(
-                        source=parse_node_key(node),
-                        target=parse_node_key(output_node),
-                        strength=attr,
-                        is_cross_seq=False,
-                    )
-                )
+    # Setup wte hook to capture embedding output with gradients
+    wte_hook, wte_cache = _setup_wte_hook()
+    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
+    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
 
-    return new_edges
+    # Forward pass with gradients enabled for attribution computation
+    # Use unmasked components and weight deltas to capture all attribution paths
+    # Use detach_component_acts=False to preserve gradient flow for end-to-end attribution
+    weight_deltas = model.calc_weight_deltas()
+    weight_deltas_and_masks = {
+        k: (v, torch.ones(tokens.shape, device=device)) for k, v in weight_deltas.items()
+    }
+    unmasked_masks = make_mask_infos(
+        component_masks={k: torch.ones_like(v) for k, v in ci_lower_leaky.items()},
+        weight_deltas_and_masks=weight_deltas_and_masks,
+    )
+    with torch.enable_grad():
+        unmasked_output: OutputWithCache = model(
+            tokens,
+            mask_infos=unmasked_masks,
+            cache_type="component_acts",
+            detach_component_acts=False,
+        )
+
+    wte_handle.remove()
+    assert len(wte_cache) == 1, "wte output should be cached"
+
+    logits = unmasked_output.output  # [1, seq, vocab]
+    cache = unmasked_output.cache
+    cache["wte_pre_detach"] = wte_cache[0]
+    cache["output_pre_detach"] = logits
+
+    # Extract node CI values and activations (for return)
+    node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
+    component_acts = model.get_all_component_acts(pre_weight_acts)
+    node_subcomp_acts = extract_node_subcomp_acts(
+        component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky
+    )
+
+    # Build alive info for all sources and output
+    sources = ["wte"] + list(ci_lower_leaky.keys())
+    all_layers = sources + ["output"]
+    alive_info: dict[str, LayerAliveInfo] = {}
+    for layer in all_layers:
+        alive_info[layer] = compute_layer_alive_info(
+            layer_name=layer,
+            ci_lower_leaky=ci_lower_leaky,
+            ci_masked_out_probs=ci_masked_out_probs,
+            output_prob_threshold=output_prob_threshold,
+            n_seq=n_seq,
+            device=device,
+            ci_threshold=0.0,
+        )
+
+    # Compute edges using shared function
+    edges = _compute_edges_for_target(
+        target="output",
+        sources=sources,
+        target_info=alive_info["output"],
+        source_infos=[alive_info[s] for s in sources],
+        cache=cache,
+        n_seq=n_seq,
+        source_cache_suffix="pre_detach",
+        target_seq_positions=[final_seq_pos],
+    )
+
+    return LocalAttributionResult(
+        edges=edges,
+        ci_masked_out_probs=ci_masked_out_probs[0],
+        target_out_probs=target_out_probs[0],
+        node_ci_vals=node_ci_vals,
+        node_subcomp_acts=node_subcomp_acts,
+    )
 
 
 def compute_intervention_forward(

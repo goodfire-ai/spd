@@ -66,7 +66,7 @@
                 value={attributionMode}
                 onchange={(e) => onAttributionModeChange(e.currentTarget.value as AttributionMode)}
             >
-                <option value="connected">to connected</option>
+                <option value="direct">direct</option>
                 <option value="output">to output</option>
             </select>
         </label>

@@ -17,11 +17,11 @@ from pydantic import BaseModel
 
 from spd.app.backend.compute import (
     Edge,
+    compute_direct_output_attributions,
     compute_local_attributions,
     compute_local_attributions_optimized,
-    compute_output_attributions,
 )
-from spd.app.backend.database import OptimizationParams, StoredGraph
+from spd.app.backend.database import AttributionMode, OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
 from spd.app.backend.schemas import OutputProbability
@@ -36,7 +36,6 @@ class EdgeData(BaseModel):
     src: str  # "layer:seq:cIdx"
     tgt: str  # "layer:seq:cIdx"
     val: float
-    is_cross_seq: bool = False
 
 
 class PromptPreview(BaseModel):
@@ -274,7 +273,6 @@ def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
 
 
 NormalizeType = Literal["none", "target", "layer"]
-AttributionMode = Literal["connected", "output"]
 
 
 def compute_max_abs_attr(edges: list[Edge]) -> float:
@@ -334,6 +332,7 @@ def compute_graph_stream(
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
+                attribution_mode="direct",
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
@@ -368,13 +367,87 @@ def compute_graph_stream(
     return stream_computation(work)
 
 
+@router.post("/output")
+@log_errors
+def compute_output_graph(
+    prompt_id: Annotated[int, Query()],
+    normalize: Annotated[NormalizeType, Query()],
+    ci_threshold: Annotated[float, Query()],
+    loaded: DepLoadedRun,
+    manager: DepStateManager,
+    output_prob_threshold: Annotated[float, Query(ge=0, le=1)] = 0.01,
+) -> GraphData:
+    """Compute output attribution graph for a prompt.
+
+    Computes direct attributions from components to output logits via autograd.
+    """
+    db = manager.db
+    prompt = db.get_prompt(prompt_id)
+    if prompt is None:
+        raise HTTPException(status_code=404, detail="Prompt not found")
+
+    token_ids = prompt.token_ids
+    token_strings = [loaded.token_strings[t] for t in token_ids]
+    tokens_tensor = torch.tensor([token_ids], device=DEVICE)
+
+    result = compute_direct_output_attributions(
+        model=loaded.model,
+        tokens=tokens_tensor,
+        output_prob_threshold=output_prob_threshold,
+        sampling=loaded.config.sampling,
+        device=DEVICE,
+    )
+
+    out_probs = build_out_probs(
+        ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+        target_out_probs=result.target_out_probs.cpu(),
+        output_prob_threshold=output_prob_threshold,
+        token_strings=loaded.token_strings,
+    )
+
+    graph_id = db.save_graph(
+        prompt_id=prompt_id,
+        graph=StoredGraph(
+            attribution_mode="output",
+            edges=result.edges,
+            out_probs=out_probs,
+            node_ci_vals=result.node_ci_vals,
+            node_subcomp_acts=result.node_subcomp_acts,
+        ),
+    )
+
+    # Filter for display
+    filtered_node_ci_vals = {k: v for k, v in result.node_ci_vals.items() if v > ci_threshold}
+    node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
+        filtered_node_ci_vals, len(token_ids), out_probs
+    )
+    edges_data, max_abs_attr = process_edges_for_response(
+        raw_edges=result.edges,
+        normalize=normalize,
+        num_tokens=len(token_ids),
+        node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
+        is_optimized=False,
+    )
+
+    return GraphData(
+        id=graph_id,
+        tokens=token_strings,
+        edges=edges_data,
+        outputProbs=out_probs,
+        nodeCiVals=node_ci_vals_with_pseudo,
+        nodeSubcompActs=result.node_subcomp_acts,
+        maxAbsAttr=max_abs_attr,
+        maxAbsSubcompAct=compute_max_abs_subcomp_act(result.node_subcomp_acts),
+        l0_total=len(filtered_node_ci_vals),
+    )
+
+
 def _edge_to_edge_data(edge: Edge) -> EdgeData:
     """Convert Edge (internal format) to EdgeData (API format)."""
     return EdgeData(
         src=str(edge.source),
         tgt=str(edge.target),
         val=edge.strength,
-        is_cross_seq=edge.is_cross_seq,
     )
 
 
@@ -402,7 +475,6 @@ def _normalize_edges(edges: list[Edge], normalize: NormalizeType) -> list[Edge]:
                 Edge(
                     source=edge.source,
                     target=edge.target,
-                    is_cross_seq=edge.is_cross_seq,
                     strength=edge.strength / group_strength,
                 )
             )
@@ -510,6 +582,7 @@ def compute_graph_optimized_stream(
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
+                attribution_mode="direct",
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
@@ -616,16 +689,12 @@ def get_graphs(
     ci_threshold: Annotated[float, Query(ge=0)],
     loaded: DepLoadedRun,
     manager: DepStateManager,
-    attribution_mode: Annotated[AttributionMode, Query()] = "connected",
+    attribution_mode: Annotated[AttributionMode, Query()],
 ) -> list[GraphData | GraphDataWithOptimization]:
-    """Get all stored graphs for a prompt.
+    """Get stored graphs for a prompt.
 
-    Returns list of graphs (both standard and optimized) for the given prompt.
+    Returns list of graphs for the given prompt and attribution mode.
     Returns empty list if no graphs exist.
-
-    Args:
-        attribution_mode: "connected" for edges between adjacent layers (default),
-                         "output" for edges showing total attribution to output nodes.
     """
     db = manager.db
     prompt = db.get_prompt(prompt_id)
@@ -633,10 +702,8 @@ def get_graphs(
         return []
 
     token_strings = [loaded.token_strings[t] for t in prompt.token_ids]
-    stored_graphs = db.get_graphs(prompt_id)
-
     num_tokens = len(prompt.token_ids)
-    final_seq_pos = num_tokens - 1
+    stored_graphs = db.get_graphs(prompt_id, attribution_mode=attribution_mode)
 
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
@@ -648,31 +715,13 @@ def get_graphs(
             filtered_node_ci_vals, num_tokens, graph.out_probs
         )
 
-        # Compute edges based on attribution mode
-        if attribution_mode == "output":
-            # Compute output attribution edges on-the-fly from connected edges
-            output_probs_keys = {k: v.prob for k, v in graph.out_probs.items()}
-            output_attr_edges = compute_output_attributions(
-                edges=graph.edges,
-                output_probs=output_probs_keys,
-                final_seq_pos=final_seq_pos,
-            )
-            edges_data, max_abs_attr = process_edges_for_response(
-                raw_edges=output_attr_edges,
-                normalize=normalize,
-                num_tokens=num_tokens,
-                node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
-                is_optimized=is_optimized,
-            )
-        else:
-            # Default: use connected edges
-            edges_data, max_abs_attr = process_edges_for_response(
-                raw_edges=graph.edges,
-                normalize=normalize,
-                num_tokens=num_tokens,
-                node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
-                is_optimized=is_optimized,
-            )
+        edges_data, max_abs_attr = process_edges_for_response(
+            raw_edges=graph.edges,
+            normalize=normalize,
+            num_tokens=num_tokens,
+            node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
+            is_optimized=is_optimized,
+        )
 
         if not is_optimized:
             # Standard graph
