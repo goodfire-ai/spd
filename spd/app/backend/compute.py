@@ -226,6 +226,80 @@ def get_sources_by_target(
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
 
 
+def _setup_wte_hook() -> tuple[Callable[..., Any], list[Tensor]]:
+    """Create hook to capture wte output with gradients.
+
+    Returns the hook function and a mutable container for the cached output.
+    The container is a list to allow mutation from the hook closure.
+    """
+    wte_cache: list[Tensor] = []
+
+    def wte_hook(
+        _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
+    ) -> Any:
+        output.requires_grad_(True)
+        assert len(wte_cache) == 0, "wte output should be cached only once"
+        wte_cache.append(output)
+        return output
+
+    return wte_hook, wte_cache
+
+
+def _compute_edges_for_target(
+    target: str,
+    sources: list[str],
+    target_info: LayerAliveInfo,
+    source_infos: list[LayerAliveInfo],
+    cache: dict[str, Tensor],
+    n_seq: int,
+) -> list[Edge]:
+    """Compute all edges flowing into a single target layer.
+
+    For each alive (s_out, c_out) in the target layer, computes gradient-based
+    attribution strengths from all alive source components.
+    """
+    edges: list[Edge] = []
+    out_pre_detach: Float[Tensor, "1 s C"] = cache[f"{target}_pre_detach"]
+    in_post_detaches: list[Float[Tensor, "1 s C"]] = [
+        cache[f"{source}_post_detach"] for source in sources
+    ]
+
+    for s_out in range(n_seq):
+        s_out_alive_c = [c for c in target_info.alive_c_idxs if target_info.alive_mask[s_out, c]]
+        if not s_out_alive_c:
+            continue
+
+        for c_out in s_out_alive_c:
+            grads = torch.autograd.grad(
+                outputs=out_pre_detach[0, s_out, c_out],
+                inputs=in_post_detaches,
+                retain_graph=True,
+            )
+            with torch.no_grad():
+                for source, source_info, grad, in_post_detach in zip(
+                    sources, source_infos, grads, in_post_detaches, strict=True
+                ):
+                    is_cross_seq = is_kv_to_o_pair(source, target)
+                    weighted: Float[Tensor, "s C"] = (grad * in_post_detach)[0]
+                    if source == "wte":
+                        weighted = weighted.sum(dim=1, keepdim=True)
+
+                    s_in_range = range(s_out + 1) if is_cross_seq else [s_out]
+                    for s_in in s_in_range:
+                        for c_in in source_info.alive_c_idxs:
+                            if not source_info.alive_mask[s_in, c_in]:
+                                continue
+                            edges.append(
+                                Edge(
+                                    source=Node(layer=source, seq_pos=s_in, component_idx=c_in),
+                                    target=Node(layer=target, seq_pos=s_out, component_idx=c_out),
+                                    strength=weighted[s_in, c_in].item(),
+                                    is_cross_seq=is_cross_seq,
+                                )
+                            )
+    return edges
+
+
 def compute_edges_from_ci(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
@@ -244,51 +318,55 @@ def compute_edges_from_ci(
     provided CI values for masking. All components with CI > 0 are included;
     filtering by CI threshold is done at display time.
 
-    Use compute_local_attributions() for automatic CI computation, or
-    compute_local_attributions_optimized() for optimized sparse CI values.
+    For the attribution computation, we use:
+    1. unmasked components. This is because we don't want to have to rely on the CI masks being
+        very accurate, we still want to pick up all the attribution information we can.
+    2. unmasked weight deltas. After all, these are conceptually the same as components that our
+        model is using to approximate the target model.
+
+    We compute CI-masked output probs separately (for display) before running the unmasked
+    forward pass used for gradient computation.
     """
     n_seq = tokens.shape[1]
 
-    ci_masked_infos = make_mask_infos(component_masks=ci_lower_leaky, routing_masks="all")
+    # Compute CI-masked output probs (for display) before the gradient computation
+    with torch.no_grad():
+        ci_masks = make_mask_infos(component_masks=ci_lower_leaky)
+        ci_masked_logits: Tensor = model(tokens, mask_infos=ci_masks)
+        ci_masked_out_probs = torch.softmax(ci_masked_logits, dim=-1)
 
-    # Hook to capture wte output with gradients
-    # this is gross but basedpyright reports unreachable if we make this a `Tensor | None`
-    wte_cached_output: Tensor = torch.tensor([])
-
-    def wte_hook(
-        _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
-    ) -> Any:
-        nonlocal wte_cached_output
-        output.requires_grad_(True)
-        assert wte_cached_output.numel() == 0, "wte output should be cached only once"
-        wte_cached_output = output
-        return output
-
+    # Setup wte hook and run forward pass for gradient computation
+    wte_hook, wte_cache = _setup_wte_hook()
     assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
     wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
 
+    weight_deltas = model.calc_weight_deltas()
+    weight_deltas_and_masks = {
+        k: (v, torch.ones(tokens.shape, device=device)) for k, v in weight_deltas.items()
+    }
+    unmasked_masks = make_mask_infos(
+        component_masks={k: torch.ones_like(v) for k, v in ci_lower_leaky.items()},
+        weight_deltas_and_masks=weight_deltas_and_masks,
+    )
     with torch.enable_grad():
         comp_output_with_cache: OutputWithCache = model(
-            tokens, mask_infos=ci_masked_infos, cache_type="component_acts"
+            tokens, mask_infos=unmasked_masks, cache_type="component_acts"
         )
 
     wte_handle.remove()
-    assert wte_cached_output.numel() > 0, "wte output should be cached"
+    assert len(wte_cache) == 1, "wte output should be cached"
 
     cache = comp_output_with_cache.cache
-    cache["wte_post_detach"] = wte_cached_output
+    cache["wte_post_detach"] = wte_cache[0]
     cache["output_pre_detach"] = comp_output_with_cache.output
-
-    ci_masked_out_probs = torch.softmax(comp_output_with_cache.output, dim=-1)
 
     # Compute alive info for all layers upfront
     all_layers: set[str] = set(sources_by_target.keys())
     for sources in sources_by_target.values():
         all_layers.update(sources)
 
-    alive_info: dict[str, LayerAliveInfo] = {}
-    for layer in all_layers:
-        alive_info[layer] = compute_layer_alive_info(
+    alive_info: dict[str, LayerAliveInfo] = {
+        layer: compute_layer_alive_info(
             layer_name=layer,
             ci_lower_leaky=ci_lower_leaky,
             ci_masked_out_probs=ci_masked_out_probs,
@@ -296,79 +374,35 @@ def compute_edges_from_ci(
             n_seq=n_seq,
             device=device,
         )
+        for layer in all_layers
+    }
 
+    # Compute edges for each target layer
     edges: list[Edge] = []
-
-    target_iter = sources_by_target.items()
     total_source_layers = sum(len(sources) for sources in sources_by_target.values())
     progress_count = 0
+    pbar = (
+        tqdm(total=total_source_layers, desc="Source layers by target", leave=True)
+        if show_progress
+        else None
+    )
 
-    if show_progress:
-        pbar = tqdm(
-            total=total_source_layers,
-            desc="Source layers by target",
-            leave=True,
-        )
-    else:
-        pbar = None
-
-    for target, sources in list(target_iter):
+    for target, sources in sources_by_target.items():
         if pbar is not None:
             pbar.set_description(f"Source layers by target: {target}")
 
-        target_info = alive_info[target]
-        out_pre_detach: Float[Tensor, "1 s C"] = cache[f"{target}_pre_detach"]
+        target_edges = _compute_edges_for_target(
+            target=target,
+            sources=sources,
+            target_info=alive_info[target],
+            source_infos=[alive_info[source] for source in sources],
+            cache=cache,
+            n_seq=n_seq,
+        )
+        edges.extend(target_edges)
 
-        source_infos = [alive_info[source] for source in sources]
-        in_post_detaches: list[Float[Tensor, "1 s C"]] = [
-            cache[f"{source}_post_detach"] for source in sources
-        ]
-
-        for s_out in range(n_seq):
-            s_out_alive_c: list[int] = [
-                c for c in target_info.alive_c_idxs if target_info.alive_mask[s_out, c]
-            ]
-            if not s_out_alive_c:
-                continue
-
-            for c_out in s_out_alive_c:
-                in_post_detach_grads = torch.autograd.grad(
-                    outputs=out_pre_detach[0, s_out, c_out],
-                    inputs=in_post_detaches,
-                    retain_graph=True,
-                )
-                with torch.no_grad():
-                    for source, source_info, grad, in_post_detach in zip(
-                        sources,
-                        source_infos,
-                        in_post_detach_grads,
-                        in_post_detaches,
-                        strict=True,
-                    ):
-                        is_kv_to_o_pair_flag = is_kv_to_o_pair(source, target)
-                        weighted: Float[Tensor, "s C"] = (grad * in_post_detach)[0]
-                        if source == "wte":
-                            # Sum over embedding_dim to get single pseudo-component
-                            # assert weighted.shape == (n_seq, model.C)
-                            weighted = weighted.sum(dim=1, keepdim=True)
-
-                        s_in_range = range(s_out + 1) if is_kv_to_o_pair_flag else [s_out]
-
-                        for s_in in s_in_range:
-                            for c_in in source_info.alive_c_idxs:
-                                if not source_info.alive_mask[s_in, c_in]:
-                                    continue
-                                strength = weighted[s_in, c_in].item()
-                                edge = Edge(
-                                    source=Node(layer=source, seq_pos=s_in, component_idx=c_in),
-                                    target=Node(layer=target, seq_pos=s_out, component_idx=c_out),
-                                    strength=strength,
-                                    is_cross_seq=is_kv_to_o_pair_flag,
-                                )
-                                edges.append(edge)
         progress_count += len(sources)
         if pbar is not None:
-            # different targets have different number of sources so this makes the progress bar more accurate
             pbar.update(len(sources))
         if on_progress is not None:
             on_progress(progress_count, total_source_layers, target)
