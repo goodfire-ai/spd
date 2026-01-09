@@ -172,7 +172,9 @@ ProgressCallback = Callable[[int, int, str], None]
 
 def build_out_probs(
     ci_masked_out_probs: torch.Tensor,
+    ci_masked_out_logits: torch.Tensor,
     target_out_probs: torch.Tensor,
+    target_out_logits: torch.Tensor,
     output_prob_threshold: float,
     token_strings: dict[int, str],
 ) -> dict[str, OutputProbability]:
@@ -182,7 +184,11 @@ def build_out_probs(
 
     Args:
         ci_masked_out_probs: Shape [seq, vocab] - CI-masked model output probabilities
+        ci_masked_out_logits: Shape [seq, vocab] - CI-masked model output logits
         target_out_probs: Shape [seq, vocab] - Target model output probabilities
+        target_out_logits: Shape [seq, vocab] - Target model output logits
+        output_prob_threshold: Threshold for filtering output probabilities
+        token_strings: Dictionary mapping token IDs to strings
     """
     assert ci_masked_out_probs.ndim == 2, f"Expected [seq, vocab], got {ci_masked_out_probs.shape}"
     assert target_out_probs.ndim == 2, f"Expected [seq, vocab], got {target_out_probs.shape}"
@@ -196,11 +202,15 @@ def build_out_probs(
             prob = float(ci_masked_out_probs[s, c_idx].item())
             if prob < output_prob_threshold:
                 continue
+            logit = float(ci_masked_out_logits[s, c_idx].item())
             target_prob = float(target_out_probs[s, c_idx].item())
+            target_logit = float(target_out_logits[s, c_idx].item())
             key = f"{s}:{c_idx}"
             out_probs[key] = OutputProbability(
                 prob=round(prob, 6),
+                logit=round(logit, 4),
                 target_prob=round(target_prob, 6),
+                target_logit=round(target_logit, 4),
                 token=token_strings[c_idx],
             )
     return out_probs
@@ -326,7 +336,9 @@ def compute_graph_stream(
 
         out_probs = build_out_probs(
             ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+            ci_masked_out_logits=result.ci_masked_out_logits.cpu(),
             target_out_probs=result.target_out_probs.cpu(),
+            target_out_logits=result.target_out_logits.cpu(),
             output_prob_threshold=output_prob_threshold,
             token_strings=loaded.token_strings,
         )
@@ -401,7 +413,9 @@ def compute_output_graph(
 
     out_probs = build_out_probs(
         ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+        ci_masked_out_logits=result.ci_masked_out_logits.cpu(),
         target_out_probs=result.target_out_probs.cpu(),
+        target_out_logits=result.target_out_logits.cpu(),
         output_prob_threshold=output_prob_threshold,
         token_strings=loaded.token_strings,
     )
@@ -576,7 +590,9 @@ def compute_graph_optimized_stream(
 
         out_probs = build_out_probs(
             ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
+            ci_masked_out_logits=result.ci_masked_out_logits.cpu(),
             target_out_probs=result.target_out_probs.cpu(),
+            target_out_logits=result.target_out_logits.cpu(),
             output_prob_threshold=output_prob_threshold,
             token_strings=loaded.token_strings,
         )
