@@ -1,3 +1,4 @@
+import fnmatch
 from typing import Literal
 
 import torch
@@ -11,6 +12,8 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
+    ModulePatternInfoConfig,
+    NeuronSparsityLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
@@ -39,6 +42,69 @@ from spd.metrics import (
 from spd.models.component_model import CIOutputs, ComponentModel
 
 
+def neuron_sparsity_loss(
+    model: ComponentModel,
+    ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
+    module_info: list[ModulePatternInfoConfig],
+    pnorm: float,
+) -> Float[Tensor, ""]:
+    """Compute neuron sparsity loss for modules marked as sparse.
+
+    For each module with sparse=True in module_info:
+    1. Take absolute value of each entry in the U matrix
+    2. Raise to pnorm power
+    3. Sum across d_out dimension
+    4. Weight by causal importances
+    5. Sum over C, batch, and sequence dimensions
+
+    Args:
+        model: The component model containing U matrices
+        ci_upper_leaky: Causal importances for each layer (shape: ... C)
+        module_info: List of module pattern configs with sparse flags
+        pnorm: The p value for the Lp norm
+
+    Returns:
+        Scalar tensor with the total neuron sparsity loss
+    """
+    # Build set of module paths that have sparse=True
+    sparse_patterns = [info.module_pattern for info in module_info if info.sparse]
+
+    if not sparse_patterns:
+        # No sparse modules, return zero loss
+        device = next(iter(ci_upper_leaky.values())).device
+        return torch.tensor(0.0, device=device)
+
+    total_loss = torch.tensor(0.0, device=next(iter(ci_upper_leaky.values())).device)
+
+    for module_path in model.components:
+        # Check if this module matches any sparse pattern
+        is_sparse = any(fnmatch.fnmatch(module_path, pattern) for pattern in sparse_patterns)
+        if not is_sparse:
+            continue
+
+        # Get U matrix for this module (shape: C x d_out)
+        U = model.components[module_path].U
+
+        # Take absolute value and raise to pnorm power
+        U_abs_p = torch.abs(U) ** pnorm  # Shape: C x d_out
+
+        # Sum across d_out dimension
+        U_sum_d_out = U_abs_p.sum(dim=-1)  # Shape: C
+
+        # Get causal importances for this module (shape: ... C)
+        ci = ci_upper_leaky[module_path]
+
+        # Weight by causal importances (broadcasts U_sum_d_out to ... C)
+        weighted = ci * U_sum_d_out  # Shape: ... C
+
+        # Sum over all dimensions (C, batch, sequence if present)
+        module_loss = weighted.sum()
+
+        total_loss = total_loss + module_loss
+
+    return total_loss
+
+
 def compute_total_loss(
     loss_metric_configs: list[LossMetricConfigType],
     model: ComponentModel,
@@ -52,6 +118,7 @@ def compute_total_loss(
     use_delta_component: bool,
     n_mask_samples: int,
     output_loss_type: Literal["mse", "kl", "mem"],
+    module_info: list[ModulePatternInfoConfig] | None = None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -75,6 +142,16 @@ def compute_total_loss(
                     p_anneal_start_frac=cfg.p_anneal_start_frac,
                     p_anneal_final_p=cfg.p_anneal_final_p,
                     p_anneal_end_frac=cfg.p_anneal_end_frac,
+                )
+            case NeuronSparsityLossConfig():
+                assert module_info is not None, (
+                    "module_info is required for NeuronSparsityLoss"
+                )
+                loss = neuron_sparsity_loss(
+                    model=model,
+                    ci_upper_leaky=ci.upper_leaky,
+                    module_info=module_info,
+                    pnorm=cfg.pnorm,
                 )
             case UnmaskedReconLossConfig():
                 loss = unmasked_recon_loss(
