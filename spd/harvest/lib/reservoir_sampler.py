@@ -1,3 +1,4 @@
+import heapq
 import random
 from dataclasses import dataclass
 from typing import Generic, TypeVar
@@ -15,18 +16,32 @@ class ReservoirState(Generic[T]):  # noqa: UP046 - PEP 695 syntax breaks picklin
 
     @staticmethod
     def merge(states: list["ReservoirState[T]"]) -> "ReservoirState[T]":
-        """Merge multiple reservoir states via uniform random sampling."""
+        """Merge multiple reservoir states via weighted random sampling.
+
+        Uses Efraimidis-Spirakis algorithm: each sample gets key = random()^(1/weight),
+        take k largest. O(n + k log n) vs O(k*n) for naive weighted sampling.
+        """
         assert len(states) > 0
         k = states[0].k
         assert all(s.k == k for s in states)
-        assert len(set(s.n_seen for s in states)) == 1, "all states must have same n_seen"
 
         total_seen = sum(s.n_seen for s in states)
         if total_seen == 0:
             return ReservoirState(k=k, samples=[], n_seen=0)
 
-        all_samples = [s for state in states for s in state.samples]
-        merged_samples = random.sample(all_samples, k) if len(all_samples) > k else all_samples
+        # Build weighted pool: each sample weighted by its reservoir's n_seen
+        weighted_samples: list[tuple[T, int]] = []
+        for state in states:
+            for sample in state.samples:
+                weighted_samples.append((sample, state.n_seen))
+
+        if len(weighted_samples) <= k:
+            merged_samples = [s for s, _ in weighted_samples]
+        else:
+            # Efraimidis-Spirakis: key = random()^(1/weight), take k largest
+            keys_and_samples = [(random.random() ** (1.0 / w), s) for s, w in weighted_samples]
+            top_k = heapq.nlargest(k, keys_and_samples, key=lambda x: x[0])
+            merged_samples = [s for _, s in top_k]
 
         return ReservoirState(k=k, samples=merged_samples, n_seen=total_seen)
 
