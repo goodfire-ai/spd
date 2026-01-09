@@ -134,23 +134,6 @@
         return card.graphs.find((g) => g.id === card.activeGraphId) ?? null;
     });
 
-    // Sync with backend on mount (in case run was already loaded)
-    $effect(() => {
-        runState.syncStatus();
-    });
-
-    // Clear component-local state when run changes or unloads
-    $effect(() => {
-        const runId = loadedRun?.id;
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-        runId; // dependency
-
-        return () => {
-            promptCards = [];
-            activeCardPromptId = null;
-        };
-    });
-
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
         promptCardLoading = { status: "loading" };
         try {
