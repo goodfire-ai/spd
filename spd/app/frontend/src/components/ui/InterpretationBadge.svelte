@@ -1,15 +1,17 @@
 <script lang="ts">
-    import type { InterpretationState, PromptState } from "../../lib/useComponentData.svelte";
+    import type { Loadable } from "../../lib";
+    import type { InterpretationDetail } from "../../lib/api";
+    import type { InterpretationState } from "../../lib/useComponentData.svelte";
 
     interface Props {
         interpretation: InterpretationState;
-        prompt: PromptState;
+        interpretationDetail: Loadable<InterpretationDetail | null>;
         onGenerate?: () => void;
     }
 
-    let { interpretation, prompt, onGenerate }: Props = $props();
+    let { interpretation, interpretationDetail, onGenerate }: Props = $props();
 
-    let showPrompt = $state(false);
+    let showDetail = $state(false);
 </script>
 
 <div class="interpretation-container">
@@ -29,12 +31,14 @@
                         >{interpretation.data.confidence}</span
                     >
                 </div>
-                {#if interpretation.data.reasoning}
-                    <span class="interpretation-reasoning">{interpretation.data.reasoning}</span>
+                {#if interpretationDetail.status === "loaded" && interpretationDetail.data?.reasoning}
+                    <span class="interpretation-reasoning">{interpretationDetail.data.reasoning}</span>
+                {:else if interpretationDetail.status === "loading"}
+                    <span class="interpretation-reasoning loading-text">Loading reasoning...</span>
                 {/if}
             </div>
-            <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
-                {showPrompt ? "Hide" : "View"} Prompt
+            <button class="detail-toggle" onclick={() => (showDetail = !showDetail)}>
+                {showDetail ? "Hide" : "View"} Prompt
             </button>
         {:else if interpretation?.status === "error"}
             <span class="interpretation-label error-text">{String(interpretation.error)}</span>
@@ -48,14 +52,14 @@
         {/if}
     </div>
 
-    {#if showPrompt && interpretation?.status === "loaded"}
+    {#if showDetail && interpretation?.status === "loaded"}
         <div class="prompt-display">
-            {#if prompt.status === "loading"}
+            {#if interpretationDetail.status === "loading"}
                 <span class="loading-text">Loading prompt...</span>
-            {:else if prompt.status === "error"}
-                <span class="error-text">Error loading prompt: {String(prompt.error)}</span>
-            {:else if prompt.status === "loaded"}
-                <pre>{prompt.data}</pre>
+            {:else if interpretationDetail.status === "error"}
+                <span class="error-text">Error loading prompt: {String(interpretationDetail.error)}</span>
+            {:else if interpretationDetail.status === "loaded" && interpretationDetail.data}
+                <pre>{interpretationDetail.data.prompt}</pre>
             {:else}
                 <span class="loading-text">Loading prompt...</span>
             {/if}
@@ -176,7 +180,7 @@
         border-color: var(--border-strong);
     }
 
-    .prompt-toggle {
+    .detail-toggle {
         margin-left: auto;
         padding: var(--space-1) var(--space-2);
         font-size: var(--text-xs);
@@ -188,7 +192,7 @@
         font-weight: 500;
     }
 
-    .prompt-toggle:hover {
+    .detail-toggle:hover {
         background: var(--bg-surface);
         border-color: var(--border-strong);
     }

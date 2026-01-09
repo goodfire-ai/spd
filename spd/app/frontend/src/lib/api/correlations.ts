@@ -25,20 +25,25 @@ export async function getComponentTokenStats(
     return fetchJson<TokenStats | null>(url.toString());
 }
 
-// Interpretation labels (prompt fetched separately via getInterpretationPrompt)
+// Interpretation headline (bulk-fetched) - lightweight data for badges
 export type Interpretation = {
     label: string;
     confidence: "low" | "medium" | "high";
+};
+
+// Interpretation detail (fetched on-demand) - reasoning and prompt
+export type InterpretationDetail = {
     reasoning: string;
+    prompt: string;
 };
 
 export async function getAllInterpretations(): Promise<Record<string, Interpretation>> {
     return fetchJson<Record<string, Interpretation>>(`${API_URL}/api/correlations/interpretations`);
 }
 
-export async function getInterpretationPrompt(layer: string, componentIdx: number): Promise<string> {
-    return fetchJson<string>(
-        `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}/prompt`,
+export async function getInterpretationDetail(layer: string, componentIdx: number): Promise<InterpretationDetail> {
+    return fetchJson<InterpretationDetail>(
+        `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
     );
 }
 

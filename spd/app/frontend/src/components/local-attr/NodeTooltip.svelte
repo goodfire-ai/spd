@@ -105,16 +105,19 @@
     {:else if isOutput}
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
     {:else if !hideNodeCard}
-        <ComponentNodeCard
-            layer={hoveredNode.layer}
-            cIdx={hoveredNode.cIdx}
-            seqIdx={hoveredNode.seqIdx}
-            {edgesBySource}
-            {edgesByTarget}
-            {tokens}
-            {outputProbs}
-            {onPinComponent}
-        />
+        <!-- Key forces remount when component identity changes, so ComponentNodeCard can load on mount -->
+        {#key `${hoveredNode.layer}:${hoveredNode.cIdx}`}
+            <ComponentNodeCard
+                layer={hoveredNode.layer}
+                cIdx={hoveredNode.cIdx}
+                seqIdx={hoveredNode.seqIdx}
+                {edgesBySource}
+                {edgesByTarget}
+                {tokens}
+                {outputProbs}
+                {onPinComponent}
+            />
+        {/key}
     {/if}
 </div>
 

@@ -4,10 +4,10 @@ import {
     ApiError,
     getComponentCorrelations,
     getComponentTokenStats,
-    getInterpretationPrompt,
+    getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
-import type { Interpretation } from "./api";
+import type { Interpretation, InterpretationDetail } from "./api";
 import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./localAttributionsTypes";
 import { RUN_STATE_KEY, type RunStateContext } from "./runState.svelte";
 
@@ -26,18 +26,13 @@ export type InterpretationState =
     | { status: "loaded"; data: Interpretation }
     | { status: "error"; error: unknown };
 
-/** Prompt state: not requested, loading, loaded, or error */
-export type PromptState =
-    | { status: "none" }
-    | { status: "loading" }
-    | { status: "loaded"; data: string }
-    | { status: "error"; error: unknown };
 
 /**
- * Hook for loading component data (detail, correlations, token stats, prompt).
+ * Hook for loading component data (detail, correlations, token stats, interpretation detail).
  *
  * Call `load(layer, cIdx)` explicitly when you want to fetch data.
- * Interpretation is derived from the global runState cache.
+ * Interpretation headline is derived from the global runState cache.
+ * Interpretation detail (reasoning + prompt) is fetched on-demand.
  */
 export function useComponentData() {
     const runState = getContext<RunStateContext>(RUN_STATE_KEY);
@@ -46,7 +41,7 @@ export function useComponentData() {
     // null inside Loadable means "no data for this component" (404)
     let correlations = $state<Loadable<ComponentCorrelations | null>>({ status: "uninitialized" });
     let tokenStats = $state<Loadable<TokenStats | null>>({ status: "uninitialized" });
-    let prompt = $state<PromptState>({ status: "none" });
+    let interpretationDetail = $state<Loadable<InterpretationDetail | null>>({ status: "uninitialized" });
 
     // Current coords being loaded/displayed (for interpretation lookup)
     let currentCoords = $state<ComponentCoords | null>(null);
@@ -70,7 +65,7 @@ export function useComponentData() {
         componentDetail = { status: "loading" };
         correlations = { status: "loading" };
         tokenStats = { status: "loading" };
-        prompt = { status: "loading" };
+        interpretationDetail = { status: "loading" };
 
         // Clear any previous generation error for different component
         const componentKey = `${layer}:${cIdx}`;
@@ -123,18 +118,18 @@ export function useComponentData() {
                 }
             });
 
-        // Fetch prompt (404 = no interpretation for this component)
-        getInterpretationPrompt(layer, cIdx)
+        // Fetch interpretation detail (404 = no interpretation for this component)
+        getInterpretationDetail(layer, cIdx)
             .then((data) => {
                 if (isStale()) return;
-                prompt = { status: "loaded", data };
+                interpretationDetail = { status: "loaded", data };
             })
             .catch((error) => {
                 if (isStale()) return;
                 if (error instanceof ApiError && error.status === 404) {
-                    prompt = { status: "none" };
+                    interpretationDetail = { status: "loaded", data: null };
                 } else {
-                    prompt = { status: "error", error };
+                    interpretationDetail = { status: "error", error };
                 }
             });
     }
@@ -148,7 +143,7 @@ export function useComponentData() {
         componentDetail = { status: "uninitialized" };
         correlations = { status: "uninitialized" };
         tokenStats = { status: "uninitialized" };
-        prompt = { status: "none" };
+        interpretationDetail = { status: "uninitialized" };
     }
 
     // Interpretation is derived from the global cache - reactive to both coords and cache
@@ -207,8 +202,8 @@ export function useComponentData() {
         get interpretation() {
             return interpretation;
         },
-        get prompt() {
-            return prompt;
+        get interpretationDetail() {
+            return interpretationDetail;
         },
         load,
         reset,

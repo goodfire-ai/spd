@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
     import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/localAttributionsTypes";
@@ -32,11 +33,12 @@
         onPinComponent(clickedLayer, parseInt(clickedCIdx), seqIdx);
     }
 
-    // Component data hook - call load() explicitly when component changes
+    // Component data hook - call load() explicitly on mount.
+    // Parents use {#key} or {#each} keys to remount this component when layer/cIdx change,
+    // so we only need to load once on mount (no effect watching props).
     const componentData = useComponentData();
 
-    // Load on mount and when props change (parent selected different component)
-    $effect(() => {
+    onMount(() => {
         componentData.load(layer, cIdx);
     });
 
@@ -169,7 +171,7 @@
 
     <InterpretationBadge
         interpretation={componentData.interpretation}
-        prompt={componentData.prompt}
+        interpretationDetail={componentData.interpretationDetail}
         onGenerate={componentData.generateInterpretation}
     />
 

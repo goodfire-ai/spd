@@ -149,7 +149,6 @@
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                             </svg>
                         </button>
-                        <div class="tooltip-reasoning">{interp.reasoning}</div>
                         <div class="tooltip-confidence">Confidence: {interp.confidence}</div>
                     </div>
                 {/if}
@@ -288,14 +287,6 @@
 
     .tooltip-label.copyable:hover .copy-icon {
         opacity: 0.8;
-    }
-
-    .tooltip-reasoning {
-        font-family: var(--font-sans);
-        font-size: var(--text-xs);
-        color: var(--text-secondary);
-        line-height: 1.4;
-        margin-bottom: var(--space-1);
     }
 
     .tooltip-confidence {

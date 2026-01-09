@@ -51,6 +51,7 @@
             <button onclick={clearAll}>Clear all</button>
         </div>
 
+        <!-- Key in {#each} ensures ComponentNodeCard remounts when node identity changes -->
         <div class="staged-items">
             {#each stagedNodes as node, idx (`${node.layer}:${node.seqIdx}:${node.cIdx}-${idx}`)}
                 {@const token = getTokenAtPosition(node.seqIdx)}

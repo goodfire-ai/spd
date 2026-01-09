@@ -67,45 +67,50 @@ router = APIRouter(prefix="/api/correlations", tags=["correlations"])
 # =============================================================================
 
 
-class InterpretationResponse(BaseModel):
-    """Interpretation label for a component (prompt fetched separately)."""
+class InterpretationHeadline(BaseModel):
+    """Lightweight interpretation headline for bulk fetching."""
 
     label: str
     confidence: str
+
+
+class InterpretationDetail(BaseModel):
+    """Full interpretation detail fetched on-demand."""
+
     reasoning: str
+    prompt: str
 
 
 @router.get("/interpretations")
 @log_errors
 def get_all_interpretations(
     loaded: DepLoadedRun,
-) -> dict[str, InterpretationResponse]:
-    """Get all interpretation labels (without prompts for efficiency).
+) -> dict[str, InterpretationHeadline]:
+    """Get all interpretation headlines (label + confidence only).
 
     Returns a dict keyed by component_key (layer:cIdx).
-    Prompts are excluded to reduce payload size - fetch individually via
-    GET /interpretations/{layer}/{component_idx}/prompt when needed.
+    Reasoning and prompt are excluded - fetch individually via
+    GET /interpretations/{layer}/{component_idx} when needed.
     """
     return {
-        key: InterpretationResponse(
+        key: InterpretationHeadline(
             label=result.label,
             confidence=result.confidence,
-            reasoning=result.reasoning,
         )
         for key, result in loaded.harvest.interpretations.items()
     }
 
 
-@router.get("/interpretations/{layer}/{component_idx}/prompt")
+@router.get("/interpretations/{layer}/{component_idx}")
 @log_errors
-def get_interpretation_prompt(
+def get_interpretation_detail(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-) -> str:
-    """Get the prompt used to generate an interpretation.
+) -> InterpretationDetail:
+    """Get the full interpretation detail (reasoning + prompt).
 
-    Returns just the prompt string for the specified component.
+    Returns reasoning and prompt for the specified component.
     """
     component_key = f"{layer}:{component_idx}"
     interpretations = loaded.harvest.interpretations
@@ -116,7 +121,8 @@ def get_interpretation_prompt(
             detail=f"No interpretation found for component {component_key}",
         )
 
-    return interpretations[component_key].prompt
+    result = interpretations[component_key]
+    return InterpretationDetail(reasoning=result.reasoning, prompt=result.prompt)
 
 
 @router.post("/interpretations/{layer}/{component_idx}")
@@ -125,11 +131,11 @@ async def request_component_interpretation(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-) -> InterpretationResponse:
+) -> InterpretationHeadline:
     """Generate an interpretation for a component on-demand.
 
     Requires OPENROUTER_API_KEY environment variable.
-    Returns the generated interpretation (prompt available via GET .../prompt endpoint).
+    Returns the headline (label + confidence). Full detail available via GET endpoint.
     """
     import json
     import os
@@ -150,10 +156,9 @@ async def request_component_interpretation(
 
     if component_key in interpretations:
         result = interpretations[component_key]
-        return InterpretationResponse(
+        return InterpretationHeadline(
             label=result.label,
             confidence=result.confidence,
-            reasoning=result.reasoning,
         )
 
     component_data = load_component_activation_contexts(loaded.harvest.run_id, component_key)
@@ -221,10 +226,9 @@ async def request_component_interpretation(
 
     logger.info(f"Generated interpretation for {component_key}: {result.label}")
 
-    return InterpretationResponse(
+    return InterpretationHeadline(
         label=result.label,
         confidence=result.confidence,
-        reasoning=result.reasoning,
     )
 
 

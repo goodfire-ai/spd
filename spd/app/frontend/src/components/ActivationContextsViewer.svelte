@@ -219,7 +219,7 @@
 
         <InterpretationBadge
             interpretation={componentData.interpretation}
-            prompt={componentData.prompt}
+            interpretationDetail={componentData.interpretationDetail}
             onGenerate={componentData.generateInterpretation}
         />
 
