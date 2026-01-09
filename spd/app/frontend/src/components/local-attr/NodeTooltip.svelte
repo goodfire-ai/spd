@@ -1,9 +1,12 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import type { OutputProbEntry, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
-    import { clusterMapping } from "../../lib/clusterMapping.svelte";
+    import { RUN_STATE_KEY, type RunStateContext } from "../../lib/runState.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
+
+    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
 
     type HoveredNode = {
         layer: string;
@@ -61,7 +64,7 @@
 
     // Get cluster ID for component nodes (undefined = no mapping, null = singleton, number = cluster)
     const clusterId = $derived(
-        isComponent ? clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx) : undefined,
+        isComponent ? runState.clusterMapping?.data[`${hoveredNode.layer}:${hoveredNode.cIdx}`] : undefined,
     );
 
     const token = $derived.by(() => {

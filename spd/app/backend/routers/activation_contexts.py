@@ -7,7 +7,7 @@ import time
 from collections import defaultdict
 
 import torch
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from spd.app.backend.compute import compute_ci_only
@@ -47,11 +47,6 @@ def get_activation_contexts_summary(
     start = time.perf_counter()
     summary_data = loaded.harvest.activation_contexts_summary
     load_ms = (time.perf_counter() - start) * 1000
-    if summary_data is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No activation contexts found. Run harvest first.",
-        )
 
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
     for comp in summary_data.values():
@@ -87,8 +82,6 @@ def get_activation_context_detail(
 
     comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
     load_ms = (time.perf_counter() - start) * 1000
-    if comp is None:
-        raise HTTPException(status_code=404, detail=f"Component {component_key} not found")
 
     # Convert token IDs to strings
     PADDING_SENTINEL = -1

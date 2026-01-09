@@ -1,11 +1,14 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import type { Loadable } from "../lib";
     import type { ActivationContextsSummary } from "../lib/localAttributionsTypes";
-    import { runState } from "../lib/runState.svelte";
+    import { RUN_STATE_KEY, type RunStateContext } from "../lib/runState.svelte";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
     import StatusText from "./ui/StatusText.svelte";
 
-    let summary = $state<Loadable<ActivationContextsSummary>>(null);
+    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+
+    let summary = $state<Loadable<ActivationContextsSummary>>({ status: "uninitialized" });
 
     $effect(() => {
         // Re-fetch when run changes
@@ -24,7 +27,7 @@
 </script>
 
 <div class="tab-wrapper">
-    {#if summary === null || summary.status === "loading"}
+    {#if summary.status === "uninitialized" || summary.status === "loading"}
         <div class="loading">Loading activation contexts summary...</div>
     {:else if summary.status === "error"}
         <StatusText>Error loading summary: {String(summary.error)}</StatusText>
@@ -36,10 +39,10 @@
 <style>
     .tab-wrapper {
         height: 100%;
+        padding: var(--space-4);
     }
 
     .loading {
-        padding: var(--space-4);
         text-align: center;
         font-size: var(--text-sm);
         font-family: var(--font-sans);

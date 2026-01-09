@@ -14,10 +14,10 @@
 <div class="interpretation-container">
     <div
         class="interpretation-badge"
-        class:loading={interpretation.status === "loading" || interpretation.status === "generating"}
+        class:loading={interpretation.status === "generating" || interpretation.status === "loading"}
     >
         {#if interpretation.status === "loading"}
-            <span class="interpretation-label loading-text">Loading...</span>
+            <span class="interpretation-label loading-text">Loading interpretations...</span>
         {:else if interpretation.status === "generating"}
             <span class="interpretation-label loading-text">Generating interpretation...</span>
         {:else if interpretation.status === "loaded"}

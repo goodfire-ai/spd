@@ -1,9 +1,12 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import type { EdgeAttribution } from "../../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
     import type { Interpretation } from "../../lib/api";
-    import { runState } from "../../lib/runState.svelte";
+    import { RUN_STATE_KEY, type RunStateContext } from "../../lib/runState.svelte";
     import { lerp } from "../local-attr/graphUtils";
+
+    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
 
     type Props = {
         items: EdgeAttribution[];

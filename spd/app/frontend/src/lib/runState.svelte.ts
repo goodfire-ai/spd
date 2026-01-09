@@ -1,107 +1,195 @@
 /**
- * Global run-scoped state store
+ * Run-scoped state hook
  *
- * Holds state that is tied to the currently loaded run and accessed
- * throughout the component tree. Using a global store eliminates
- * prop drilling for these commonly-needed values.
+ * Call useRunState() in App.svelte and provide via context.
+ * Child components access it via getContext('runState').
  */
 
 import type { Loadable } from ".";
 import * as api from "./api";
 import type { RunState as RunData, Interpretation } from "./api";
-import type { ActivationContextsSummary, ComponentDetail } from "./localAttributionsTypes";
+import type {
+    ActivationContextsSummary,
+    ComponentDetail,
+    PromptPreview,
+    TokenInfo,
+} from "./localAttributionsTypes";
 
-class RunState {
+/** Maps component keys to cluster IDs. Singletons (unclustered components) have null values. */
+export type ClusterMappingData = Record<string, number | null>;
+
+type ClusterMapping = {
+    data: ClusterMappingData;
+    filePath: string;
+    runWandbPath: string;
+};
+
+export function useRunState() {
     /** The currently loaded run */
-    run = $state<Loadable<RunData>>(null);
+    let run = $state<Loadable<RunData>>({ status: "uninitialized" });
 
     /** Interpretation labels keyed by component key (layer:cIdx) */
-    interpretations = $state<Record<string, Interpretation>>({});
+    let interpretations = $state<Loadable<Record<string, Interpretation>>>({ status: "uninitialized" });
+
+    /** Cluster mapping for the current run */
+    let clusterMapping = $state<ClusterMapping | null>(null);
+
+    /** Available prompts for the current run */
+    let prompts = $state<Loadable<PromptPreview[]>>({ status: "uninitialized" });
+
+    /** All tokens in the tokenizer for the current run */
+    let allTokens = $state<Loadable<TokenInfo[]>>({ status: "uninitialized" });
 
     /** Cached component details keyed by component key (layer:cIdx) - non-reactive */
-    private _componentDetailsCache: Record<string, ComponentDetail> = {};
+    let _componentDetailsCache: Record<string, ComponentDetail> = {};
 
-    /** Cached activation contexts summary (non-reactive to avoid dependency cycles) */
-    private _summaryCache: ActivationContextsSummary | null = null;
+    /** Cached activation contexts summary - non-reactive */
+    let _summaryCache: ActivationContextsSummary | null = null;
 
-    /** Load a run by wandb path */
-    async loadRun(wandbPath: string, contextLength: number) {
-        this.clear();
-        this.run = { status: "loading" };
+    /** Reset all run-scoped state */
+    function resetRunScopedState() {
+        prompts = { status: "uninitialized" };
+        allTokens = { status: "uninitialized" };
+        interpretations = { status: "uninitialized" };
+        _componentDetailsCache = {};
+        _summaryCache = null;
+        clusterMapping = null;
+    }
+
+    // Auto-load data when run changes, auto-clear when run unloads
+    $effect(() => {
+        if (run.status === "loaded") {
+            // Run is loaded - fetch run-scoped data
+            prompts = { status: "loading" };
+            allTokens = { status: "loading" };
+            interpretations = { status: "loading" };
+
+            api.listPrompts().then((p) => (prompts = { status: "loaded", data: p }));
+            api.getAllTokens().then((t) => (allTokens = { status: "loaded", data: t }));
+            api.getAllInterpretations().then((i) => (interpretations = { status: "loaded", data: i }));
+        }
+
+        return resetRunScopedState;
+    });
+
+    async function loadRun(wandbPath: string, contextLength: number) {
+        run = { status: "loading" };
         try {
             await api.loadRun(wandbPath, contextLength);
             const status = await api.getStatus();
             if (status) {
-                this.run = { status: "loaded", data: status };
+                run = { status: "loaded", data: status };
             } else {
-                this.run = { status: "error", error: "Failed to load run" };
+                run = { status: "error", error: "Failed to load run" };
             }
         } catch (error) {
-            this.run = { status: "error", error };
+            run = { status: "error", error };
         }
+    }
+
+    function clearRun() {
+        run = { status: "uninitialized" };
+        resetRunScopedState();
     }
 
     /** Check backend status and sync run state */
-    async syncStatus() {
+    async function syncStatus() {
         try {
             const status = await api.getStatus();
-            if (this.run?.status === "loaded" && this.run.data && !status) {
-                this.run = { status: "error", error: "Backend state lost (restarted)" };
+            if (run.status === "loaded" && run.data && !status) {
+                run = { status: "error", error: "Backend state lost (restarted)" };
                 return;
             }
             if (status) {
-                this.run = { status: "loaded", data: status };
+                run = { status: "loaded", data: status };
             } else {
-                this.run = null;
+                run = { status: "uninitialized" };
             }
         } catch {
-            if (this.run?.status === "loaded") {
-                this.run = { status: "error", error: "Backend unreachable" };
+            if (run.status === "loaded") {
+                run = { status: "error", error: "Backend unreachable" };
             }
         }
     }
 
-    /** Load all interpretations from the server */
-    async loadInterpretations() {
-        this.interpretations = await api.getAllInterpretations();
+    /** Refresh prompts list (e.g., after generating new prompts) */
+    async function refreshPrompts() {
+        prompts = { status: "loaded", data: await api.listPrompts() };
     }
 
     /** Get interpretation for a component, if available */
-    getInterpretation(componentKey: string): Interpretation | undefined {
-        return this.interpretations[componentKey];
+    function getInterpretation(componentKey: string): Interpretation | undefined {
+        if (interpretations.status !== "loaded") return undefined;
+        return interpretations.data[componentKey];
+    }
+
+    /** Set interpretation for a component (updates cache without full reload) */
+    function setInterpretation(componentKey: string, interpretation: Interpretation) {
+        if (interpretations.status === "loaded") {
+            interpretations.data[componentKey] = interpretation;
+        }
     }
 
     /** Get component detail (fetches once, then cached) */
-    async getComponentDetail(layer: string, cIdx: number): Promise<ComponentDetail> {
+    async function getComponentDetail(layer: string, cIdx: number): Promise<ComponentDetail> {
         const cacheKey = `${layer}:${cIdx}`;
-        if (cacheKey in this._componentDetailsCache) return this._componentDetailsCache[cacheKey];
+        if (cacheKey in _componentDetailsCache) return _componentDetailsCache[cacheKey];
 
         const detail = await api.getComponentDetail(layer, cIdx);
-        this._componentDetailsCache[cacheKey] = detail;
+        _componentDetailsCache[cacheKey] = detail;
         return detail;
     }
 
     /** Get activation contexts summary (fetches once, then cached) */
-    async getActivationContextsSummary(): Promise<ActivationContextsSummary> {
-        if (this._summaryCache) return this._summaryCache;
+    async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {
+        if (_summaryCache) return _summaryCache;
 
         const summary = await api.getActivationContextsSummary();
-        this._summaryCache = summary;
+        _summaryCache = summary;
         return summary;
     }
 
-    /** Clear all run-scoped cached state (call when run changes) */
-    clear() {
-        this.interpretations = {};
-        this._componentDetailsCache = {};
-        this._summaryCache = null;
+    /** Set cluster mapping for the current run */
+    function setClusterMapping(data: ClusterMappingData, filePath: string, runWandbPath: string) {
+        clusterMapping = { data, filePath, runWandbPath };
     }
 
-    /** Fully reset the store (including run) */
-    reset() {
-        this.run = null;
-        this.clear();
+    /** Clear cluster mapping */
+    function clearClusterMapping() {
+        clusterMapping = null;
     }
+
+    return {
+        get run() {
+            return run;
+        },
+        get interpretations() {
+            return interpretations;
+        },
+        get clusterMapping() {
+            return clusterMapping;
+        },
+        get prompts() {
+            return prompts;
+        },
+        get allTokens() {
+            return allTokens;
+        },
+        loadRun,
+        clearRun,
+        syncStatus,
+        refreshPrompts,
+        getInterpretation,
+        setInterpretation,
+        getComponentDetail,
+        getActivationContextsSummary,
+        setClusterMapping,
+        clearClusterMapping,
+    };
 }
 
-export const runState = new RunState();
+/** Type of the runState returned by useRunState() */
+export type RunStateContext = ReturnType<typeof useRunState>;
+
+/** Context key for runState */
+export const RUN_STATE_KEY = "runState";

@@ -1,8 +1,6 @@
 <script lang="ts">
-    import type { Loadable } from "../lib";
     import { displaySettings } from "../lib/displaySettings.svelte";
-    import type { ActivationContextsSummary, ComponentDetail, ComponentSummary } from "../lib/localAttributionsTypes";
-    import { runState } from "../lib/runState.svelte";
+    import type { ActivationContextsSummary, ComponentSummary } from "../lib/localAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
@@ -30,13 +28,11 @@
     let totalPages = $derived(currentLayerMetadata.length);
     let currentMetadata = $derived<ComponentSummary>(currentLayerMetadata[currentPage]);
 
-    // Fetch correlations, token stats, and interpretation for current component
+    // Fetch all component data (detail, correlations, token stats, interpretation)
     const componentData = useComponentData(() => {
         const cIdx = currentMetadata?.subcomponent_idx;
         return cIdx !== undefined ? { layer: selectedLayer, cIdx } : null;
     });
-
-    let currentComponent = $state<Loadable<ComponentDetail>>(null);
 
     function handlePageInput(event: Event) {
         const target = event.target as HTMLInputElement;
@@ -87,21 +83,6 @@
     $effect(() => {
         selectedLayer; // eslint-disable-line @typescript-eslint/no-unused-expressions
         currentPage = 0;
-    });
-
-    // Lazy-load component data when page or layer changes
-    $effect(() => {
-        const layer = selectedLayer;
-        const cIdx = currentMetadata.subcomponent_idx;
-        currentComponent = { status: "loading" };
-        runState
-            .getComponentDetail(layer, cIdx)
-            .then((data) => {
-                currentComponent = { status: "loaded", data };
-            })
-            .catch((error) => {
-                currentComponent = { status: "error", error };
-            });
     });
 
     // Derive token lists from loaded tokenStats (null if not loaded or no data)
@@ -213,7 +194,7 @@
         />
 
         <div class="token-stats-row">
-            {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
+            {#if componentData.tokenStats.status === "uninitialized" || componentData.tokenStats.status === "loading"}
                 <StatusText>Loading token stats...</StatusText>
             {:else if componentData.tokenStats.status === "error"}
                 <StatusText>Error: {String(componentData.tokenStats.error)}</StatusText>
@@ -236,7 +217,7 @@
         {#if displaySettings.hasAnyCorrelationStatsVisible()}
             <div class="correlations-section">
                 <SectionHeader title="Correlated Components" />
-                {#if componentData.correlations === null || componentData.correlations.status === "loading"}
+                {#if componentData.correlations.status === "uninitialized" || componentData.correlations.status === "loading"}
                     <StatusText>Loading...</StatusText>
                 {:else if componentData.correlations.status === "error"}
                     <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
@@ -250,17 +231,17 @@
 
         <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
 
-        {#if currentComponent?.status === "loading"}
+        {#if componentData.componentDetail?.status === "loading"}
             <div class="loading">Loading component data...</div>
-        {:else if currentComponent?.status === "loaded"}
+        {:else if componentData.componentDetail?.status === "loaded"}
             <ActivationContextsPagedTable
-                exampleTokens={currentComponent.data.example_tokens}
-                exampleCi={currentComponent.data.example_ci}
-                exampleComponentActs={currentComponent.data.example_component_acts}
+                exampleTokens={componentData.componentDetail.data.example_tokens}
+                exampleCi={componentData.componentDetail.data.example_ci}
+                exampleComponentActs={componentData.componentDetail.data.example_component_acts}
                 activatingTokens={inputTopRecall.map(({ token }) => token)}
             />
-        {:else if currentComponent?.status === "error"}
-            <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
+        {:else if componentData.componentDetail?.status === "error"}
+            <StatusText>Error loading component data: {String(componentData.componentDetail.error)}</StatusText>
         {:else}
             <StatusText>Something went wrong loading component data.</StatusText>
         {/if}

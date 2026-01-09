@@ -41,40 +41,32 @@ class HarvestCache:
         self._activation_contexts_summary = _NOT_LOADED
 
     @property
-    def correlations(self) -> CorrelationStorage | None:
+    def correlations(self) -> CorrelationStorage:
         if self._correlations is _NOT_LOADED:
             self._correlations = load_correlations(self.run_id)
-        assert isinstance(self._correlations, CorrelationStorage | None), (
-            "inconsistent state, correlations not loaded"
-        )
+        assert isinstance(self._correlations, CorrelationStorage)
         return self._correlations
 
     @property
-    def token_stats(self) -> TokenStatsStorage | None:
+    def token_stats(self) -> TokenStatsStorage:
         if self._token_stats is _NOT_LOADED:
             self._token_stats = load_token_stats(self.run_id)
-        assert isinstance(self._token_stats, TokenStatsStorage | None), (
-            "inconsistent state, token stats not loaded"
-        )
+        assert isinstance(self._token_stats, TokenStatsStorage)
         return self._token_stats
 
     @property
-    def interpretations(self) -> dict[str, InterpretationResult] | None:
+    def interpretations(self) -> dict[str, InterpretationResult]:
         if self._interpretations is _NOT_LOADED:
             self._interpretations = load_interpretations(self.run_id)
-        assert isinstance(self._interpretations, dict | None), (
-            "inconsistent state, interpretations not loaded"
-        )
+        assert isinstance(self._interpretations, dict)
         return self._interpretations
 
     @property
-    def activation_contexts_summary(self) -> dict[str, ComponentSummary] | None:
+    def activation_contexts_summary(self) -> dict[str, ComponentSummary]:
         """Lightweight summary of activation contexts, keyed by component_key (e.g. 'h.0.mlp.c_fc:5')."""
         if self._activation_contexts_summary is _NOT_LOADED:
             self._activation_contexts_summary = load_activation_contexts_summary(self.run_id)
-        assert isinstance(self._activation_contexts_summary, dict | None), (
-            "inconsistent state, activation contexts summary not loaded"
-        )
+        assert isinstance(self._activation_contexts_summary, dict)
         return self._activation_contexts_summary
 
 

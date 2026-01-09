@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
     import type {
         GraphData,
@@ -10,7 +11,6 @@
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor, getSubcompActColor } from "../lib/colors";
-    import { clusterMapping } from "../lib/clusterMapping.svelte";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
         lerp,
@@ -22,7 +22,9 @@
         type ClusterSpan,
     } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
-    import { runState } from "../lib/runState.svelte";
+    import { RUN_STATE_KEY, type RunStateContext } from "../lib/runState.svelte";
+
+    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -145,11 +147,17 @@
     // For hover, we match by component (layer:cIdx), ignoring seqIdx
     const hoveredComponentKey = $derived(hoveredNode ? `${hoveredNode.layer}:${hoveredNode.cIdx}` : null);
 
+    // Helper to get cluster ID for a component
+    function getClusterId(layer: string, cIdx: number): number | null | undefined {
+        const key = `${layer}:${cIdx}`;
+        return runState.clusterMapping?.data[key];
+    }
+
     // Get cluster ID of hovered node or bar (for cluster-wide rotation effect)
     const hoveredClusterId = $derived.by(() => {
         if (hoveredBarClusterId !== null) return hoveredBarClusterId;
         if (!hoveredNode) return undefined;
-        return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+        return getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
 
     // Filter edges by topK (for rendering)
@@ -280,14 +288,14 @@
 
                 // Output nodes always sort by probability; internal nodes sort by cluster if mapping loaded, else by CI
                 const sorted =
-                    layer === "output" || !clusterMapping.mapping
+                    layer === "output" || !runState.clusterMapping
                         ? sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs)
                         : sortComponentsByCluster(
                               nodes,
                               layer,
                               seqIdx,
                               data.nodeCiVals,
-                              clusterMapping.getClusterId.bind(clusterMapping),
+                              getClusterId,
                           );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
@@ -299,7 +307,7 @@
                 }
 
                 // Compute cluster spans for this layer/seqIdx (skip output layer)
-                if (layer !== "output" && clusterMapping.mapping) {
+                if (layer !== "output" && runState.clusterMapping) {
                     const spans = computeClusterSpans(
                         sorted,
                         layer,
@@ -308,7 +316,7 @@
                         baseY,
                         COMPONENT_SIZE,
                         offsets,
-                        clusterMapping.getClusterId.bind(clusterMapping),
+                        getClusterId,
                     );
                     allClusterSpans.push(...spans);
                 }
@@ -346,7 +354,7 @@
         if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
         const [layer, , cIdxStr] = nodeKey.split(":");
         const cIdx = parseInt(cIdxStr);
-        const nodeClusterId = clusterMapping.getClusterId(layer, cIdx);
+        const nodeClusterId = getClusterId(layer, cIdx);
         return nodeClusterId === hoveredClusterId;
     }
 

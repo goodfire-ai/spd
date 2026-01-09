@@ -30,9 +30,7 @@ def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSu
     return result
 
 
-def load_component_activation_contexts(
-    wandb_run_id: str, component_key: str
-) -> ComponentData | None:
+def load_component_activation_contexts(wandb_run_id: str, component_key: str) -> ComponentData:
     """Load a single component's activation contexts."""
     start = time.perf_counter()
     ctx_dir = get_activation_contexts_dir(wandb_run_id)
@@ -69,29 +67,27 @@ def load_component_activation_contexts(
         f"[PERF] load_component_activation_contexts({component_key}): "
         f"{elapsed_ms:.1f}ms (NOT FOUND, scanned {lines_scanned} lines)"
     )
-    return None
+    raise ValueError(f"Component {component_key} not found in activation contexts")
 
 
-def load_correlations(wandb_run_id: str) -> CorrelationStorage | None:
+def load_correlations(wandb_run_id: str) -> CorrelationStorage:
     """Load component correlations from harvest output."""
     start = time.perf_counter()
     corr_dir = get_correlations_dir(wandb_run_id)
     path = corr_dir / "component_correlations.pt"
-    if not path.exists():
-        return None
+    assert path.exists()
     result = CorrelationStorage.load(path)
     elapsed_ms = (time.perf_counter() - start) * 1000
     logger.info(f"[PERF] load_correlations: {elapsed_ms:.1f}ms")
     return result
 
 
-def load_token_stats(wandb_run_id: str) -> TokenStatsStorage | None:
+def load_token_stats(wandb_run_id: str) -> TokenStatsStorage:
     """Load token statistics from harvest output."""
     start = time.perf_counter()
     corr_dir = get_correlations_dir(wandb_run_id)
     path = corr_dir / "token_stats.pt"
-    if not path.exists():
-        return None
+    assert path.exists()
     result = TokenStatsStorage.load(path)
     elapsed_ms = (time.perf_counter() - start) * 1000
     logger.info(f"[PERF] load_token_stats: {elapsed_ms:.1f}ms")

@@ -1,13 +1,15 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import * as api from "../lib/api";
     import {
         filterInterventableNodes,
         type GraphData,
         type PinnedNode,
         type PromptPreview,
-        type TokenInfo,
     } from "../lib/localAttributionsTypes";
-    import { runState } from "../lib/runState.svelte";
+    import { RUN_STATE_KEY, type RunStateContext } from "../lib/runState.svelte";
+
+    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
     import InterventionsView from "./local-attr/InterventionsView.svelte";
     import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
@@ -26,15 +28,26 @@
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
-    // Server state
-    let loadedRun = $state<api.RunState | null>(null);
-    let serverError = $state<string | null>(null);
+    // Derive from runState
+    const loadedRun = $derived(runState.run?.status === "loaded" ? runState.run.data : null);
+    const serverError = $derived(runState.run?.status === "error" ? String(runState.run.error) : null);
 
-    // Available prompts (for picker)
-    let prompts = $state<PromptPreview[]>([]);
+    // These assert data is loaded - will throw if accessed before ready
+    const prompts = $derived.by(() => {
+        const p = runState.prompts;
+        if (p?.status !== "loaded") throw new Error("prompts accessed before loaded");
+        return p.data;
+    });
+    const allTokens = $derived.by(() => {
+        const t = runState.allTokens;
+        if (t?.status !== "loaded") throw new Error("allTokens accessed before loaded");
+        return t.data;
+    });
 
-    // All tokens for dropdown search
-    let allTokens = $state<TokenInfo[]>([]);
+    // Guard: only render main content when run data is fully loaded
+    const dataReady = $derived(
+        runState.prompts?.status === "loaded" && runState.allTokens?.status === "loaded"
+    );
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
@@ -122,44 +135,22 @@
         return card.graphs.find((g) => g.id === card.activeGraphId) ?? null;
     });
 
-    // Load server status on mount
+    // Sync with backend on mount (in case run was already loaded)
     $effect(() => {
-        loadServerStatus();
+        runState.syncStatus();
     });
 
-    // When loaded run changes, refresh data
-    let previousRunId: number | null = null;
+    // Clear component-local state when run changes or unloads
     $effect(() => {
-        const currentRunId = loadedRun?.id ?? null;
-        if (currentRunId !== null && currentRunId !== previousRunId) {
-            previousRunId = currentRunId;
-            loadPromptsList();
-            loadAllTokens();
-            runState.loadInterpretations();
+        const runId = loadedRun?.id;
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        runId; // dependency
+
+        return () => {
             promptCards = [];
             activeCardPromptId = null;
-        } else if (currentRunId === null && previousRunId !== null) {
-            previousRunId = null;
-            prompts = [];
-            allTokens = [];
-            runState.clear();
-            promptCards = [];
-            activeCardPromptId = null;
-        }
+        };
     });
-
-    async function loadServerStatus() {
-        loadedRun = await api.getStatus();
-        serverError = null;
-    }
-
-    async function loadPromptsList() {
-        prompts = await api.listPrompts();
-    }
-
-    async function loadAllTokens() {
-        allTokens = await api.getAllTokens();
-    }
 
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
         // Fetch stored graphs for this prompt
@@ -600,7 +591,7 @@
                 generateProgress = progress;
                 generateCount = count;
             });
-            await loadPromptsList();
+            await runState.refreshPrompts();
         } finally {
             generatingGraphs = false;
         }
@@ -614,6 +605,10 @@
             {#if serverError}
                 <p class="server-error">{serverError}</p>
             {/if}
+        </div>
+    {:else if !dataReady}
+        <div class="no-run-message">
+            <p>Loading run data...</p>
         </div>
     {:else}
         <div class="main-content">

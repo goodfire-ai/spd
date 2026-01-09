@@ -1,9 +1,12 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import type { OutputProbEntry, PinnedNode, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
-    import { clusterMapping } from "../../lib/clusterMapping.svelte";
+    import { RUN_STATE_KEY, type RunStateContext } from "../../lib/runState.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
+
+    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
 
     type Props = {
         stagedNodes: PinnedNode[];
@@ -54,7 +57,7 @@
                 {@const isOutput = node.layer === "output"}
                 {@const isWte = node.layer === "wte"}
                 {@const isComponent = !isWte && !isOutput}
-                {@const clusterId = isComponent ? clusterMapping.getClusterId(node.layer, node.cIdx) : undefined}
+                {@const clusterId = isComponent ? runState.clusterMapping?.data[`${node.layer}:${node.cIdx}`] : undefined}
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">

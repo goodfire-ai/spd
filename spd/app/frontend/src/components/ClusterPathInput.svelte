@@ -1,8 +1,18 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import { loadClusterMapping } from "../lib/api";
-    import { clusterMapping } from "../lib/clusterMapping.svelte";
-    import { runState } from "../lib/runState.svelte";
+    import { RUN_STATE_KEY, type RunStateContext } from "../lib/runState.svelte";
     import { CANONICAL_RUNS } from "../lib/registry";
+
+    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+
+    const loadedRun = $derived.by(() => {
+        const run = runState.run;
+        if (run?.status !== "loaded") {
+            throw new Error("Run is not loaded");
+        }
+        return run.data;
+    });
 
     let inputPath = $state("");
     let loading = $state(false);
@@ -10,36 +20,27 @@
     let showDropdown = $state(false);
     let showLoadedTooltip = $state(false);
 
-    // Get the loaded run data
-    const loadedRun = $derived(runState.run?.status === "loaded" ? runState.run.data : null);
-
     // Get cluster mappings for the current run from the registry
     const availableClusterMappings = $derived.by(() => {
-        if (!loadedRun) return [];
-        const entry = CANONICAL_RUNS.find((r) => r.wandbRunId === loadedRun.wandb_path);
-        return entry?.clusterMappings ?? [];
+        const canonicalEntry = CANONICAL_RUNS.find((r) => r.wandbRunId === loadedRun.wandb_path);
+        // failover is ok cos we use runs other than canonical ones sometimes
+        return canonicalEntry?.clusterMappings ?? [];
     });
 
     // Lookup notes for the currently loaded cluster (if it's from the registry)
     const loadedClusterNotes = $derived.by(() => {
-        if (!loadedRun) return null;
-        return availableClusterMappings.find((m) => m.path === clusterMapping.filePath)?.notes ?? null;
-    });
-
-    // Clear cluster mapping when run changes
-    $effect(() => {
-        clusterMapping.clearIfRunChanged(loadedRun?.wandb_path ?? null);
+        return availableClusterMappings.find((m) => m.path === runState.clusterMapping?.filePath)?.notes ?? null;
     });
 
     async function handleLoad() {
         const path = inputPath.trim();
-        if (!path || !loadedRun) return;
+        if (!path) return;
 
         loading = true;
         error = null;
         try {
             const result = await loadClusterMapping(path);
-            clusterMapping.setMapping(result.mapping, path, loadedRun.wandb_path);
+            runState.setClusterMapping(result.mapping, path, loadedRun.wandb_path);
             inputPath = "";
         } catch (e) {
             error = e instanceof Error ? e.message : "Failed to load";
@@ -49,7 +50,7 @@
     }
 
     function handleClear() {
-        clusterMapping.clear();
+        runState.clearClusterMapping();
         error = null;
     }
 
@@ -67,7 +68,7 @@
 </script>
 
 <div class="cluster-input-wrapper">
-    {#if clusterMapping.filePath}
+    {#if runState.clusterMapping?.filePath}
         <div
             class="cluster-loaded"
             role="group"
@@ -76,7 +77,7 @@
         >
             <span class="cluster-label">Clusters:</span>
             <span class="cluster-path">
-                {clusterMapping.filePath.split("_").pop()?.replace(".json", "")}
+                {runState.clusterMapping?.filePath.split("_").pop()?.replace(".json", "")}
             </span>
             <button type="button" class="clear-button" onclick={handleClear} title="Clear cluster mapping"> x </button>
             {#if showLoadedTooltip}
@@ -84,7 +85,7 @@
                     {#if loadedClusterNotes}
                         <div class="tooltip-notes">{loadedClusterNotes}</div>
                     {/if}
-                    <div class="tooltip-path">{clusterMapping.filePath}</div>
+                    <div class="tooltip-path">{runState.clusterMapping?.filePath}</div>
                 </div>
             {/if}
         </div>

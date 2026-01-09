@@ -85,10 +85,6 @@ def get_all_interpretations(
 
     Returns a dict keyed by component_key (layer:cIdx).
     """
-    interpretations = loaded.harvest.interpretations
-    if interpretations is None:
-        return {}
-
     return {
         key: InterpretationResponse(
             label=result.label,
@@ -96,46 +92,8 @@ def get_all_interpretations(
             reasoning=result.reasoning,
             prompt=result.prompt,
         )
-        for key, result in interpretations.items()
+        for key, result in loaded.harvest.interpretations.items()
     }
-
-
-@router.get("/interpretations/{layer}/{component_idx}")
-@log_errors
-def get_component_interpretation(
-    layer: str,
-    component_idx: int,
-    loaded: DepLoadedRun,
-) -> InterpretationResponse | None:
-    """Get interpretation label for a component.
-
-    Returns None if no interpretation exists for this component.
-    """
-    start = time.perf_counter()
-    interpretations = loaded.harvest.interpretations
-    load_ms = (time.perf_counter() - start) * 1000
-    if interpretations is None:
-        logger.info(
-            f"[PERF] GET /interpretations/{layer}/{component_idx}: {load_ms:.1f}ms (no interpretations)"
-        )
-        return None
-
-    component_key = f"{layer}:{component_idx}"
-    result = interpretations.get(component_key)
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(
-        f"[PERF] GET /interpretations/{layer}/{component_idx}: {total_ms:.1f}ms "
-        f"(load: {load_ms:.1f}ms, found: {result is not None})"
-    )
-    if result is None:
-        return None
-
-    return InterpretationResponse(
-        label=result.label,
-        confidence=result.confidence,
-        reasoning=result.reasoning,
-        prompt=result.prompt,
-    )
 
 
 @router.post("/interpretations/{layer}/{component_idx}")
@@ -165,9 +123,9 @@ async def request_component_interpretation(
 
     component_key = f"{layer}:{component_idx}"
 
-    # Check if we already have an interpretation
     interpretations = loaded.harvest.interpretations
-    if interpretations is not None and component_key in interpretations:
+
+    if component_key in interpretations:
         result = interpretations[component_key]
         return InterpretationResponse(
             label=result.label,
@@ -177,11 +135,6 @@ async def request_component_interpretation(
         )
 
     component_data = load_component_activation_contexts(loaded.harvest.run_id, component_key)
-    if component_data is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Component {component_key} not found in activation contexts",
-        )
 
     # Get API key
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -196,11 +149,6 @@ async def request_component_interpretation(
 
     # Get token stats
     token_stats = loaded.harvest.token_stats
-    if token_stats is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Token stats not available for this run. Run harvest first.",
-        )
 
     input_token_stats = analysis.get_input_token_stats(
         token_stats, component_key, loaded.tokenizer, top_k=20
@@ -280,12 +228,8 @@ def get_component_token_stats(
     """
     start = time.perf_counter()
     token_stats = loaded.harvest.token_stats
+
     load_ms = (time.perf_counter() - start) * 1000
-    if token_stats is None:
-        logger.info(
-            f"[PERF] GET /token_stats/{layer}/{component_idx}: {load_ms:.1f}ms (no token stats)"
-        )
-        return None
 
     component_key = f"{layer}:{component_idx}"
 
@@ -333,7 +277,7 @@ def get_component_correlations(
     component_idx: int,
     loaded: DepLoadedRun,
     top_k: Annotated[int, Query(ge=1)],
-) -> ComponentCorrelationsResponse | None:
+) -> ComponentCorrelationsResponse:
     """Get correlated components for a specific component.
 
     Returns top-k correlations across different metrics (precision, recall, Jaccard, PMI).
@@ -342,11 +286,6 @@ def get_component_correlations(
     start = time.perf_counter()
     correlations = loaded.harvest.correlations
     load_ms = (time.perf_counter() - start) * 1000
-    if correlations is None:
-        logger.info(
-            f"[PERF] GET /components/{layer}/{component_idx}: {load_ms:.1f}ms (no correlations)"
-        )
-        return None
 
     component_key = f"{layer}:{component_idx}"
 
