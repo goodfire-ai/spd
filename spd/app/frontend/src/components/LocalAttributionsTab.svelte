@@ -1,5 +1,6 @@
 <script lang="ts">
     import { getContext } from "svelte";
+    import type { Loadable } from "../lib";
     import * as api from "../lib/api";
     import {
         filterInterventableNodes,
@@ -58,6 +59,7 @@
     let filteredPrompts = $state<PromptPreview[]>([]);
     let filterLoading = $state(false);
     let isAddingCustomPrompt = $state(false);
+    let promptCardLoading = $state<Loadable<null>>({ status: "uninitialized" });
 
     // Loading state
     let loadingCardId = $state<number | null>(null);
@@ -153,6 +155,16 @@
     });
 
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
+        promptCardLoading = { status: "loading" };
+        try {
+            await addPromptCardInner(promptId, tokens, tokenIds, isCustom);
+            promptCardLoading = { status: "uninitialized" };
+        } catch (error) {
+            promptCardLoading = { status: "error", error };
+        }
+    }
+
+    async function addPromptCardInner(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
         // Fetch stored graphs for this prompt
         const storedGraphs = await api.getGraphs(
             promptId,
@@ -782,6 +794,15 @@
                                 {/if}
                             </div>
                         {/if}
+                    {:else if promptCardLoading.status === "loading"}
+                        <div class="empty-state">
+                            <p>Loading prompt...</p>
+                        </div>
+                    {:else if promptCardLoading.status === "error"}
+                        <div class="empty-state">
+                            <p class="error-text">Error loading prompt: {String(promptCardLoading.error)}</p>
+                            <button onclick={() => (promptCardLoading = { status: "uninitialized" })}>Dismiss</button>
+                        </div>
                     {:else}
                         <div class="empty-state">
                             <p>Click <strong>+ Add Prompt</strong> to get started</p>
@@ -943,6 +964,10 @@
         font-size: var(--text-sm);
         color: var(--text-muted);
         font-family: var(--font-mono);
+    }
+
+    .empty-state .error-text {
+        color: var(--status-negative-bright);
     }
 
     .no-run-message {
