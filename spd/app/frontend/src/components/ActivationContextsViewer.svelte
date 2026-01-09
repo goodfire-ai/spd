@@ -31,18 +31,27 @@
 
     // Component data hook - call load() explicitly when component changes
     const componentData = useComponentData();
+    const DEBOUNCE_MS = 300;
+    let loadTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    // Load data for current component
+    // Load data for current component (debounced to avoid spamming on rapid navigation)
     function loadCurrentComponent() {
-        const cIdx = currentMetadata?.subcomponent_idx;
-        if (cIdx !== undefined) {
-            componentData.load(selectedLayer, cIdx);
-        }
+        if (loadTimeout) clearTimeout(loadTimeout);
+        componentData.reset(); // Clear stale data immediately
+        loadTimeout = setTimeout(() => {
+            const cIdx = currentMetadata?.subcomponent_idx;
+            if (cIdx !== undefined) {
+                componentData.load(selectedLayer, cIdx);
+            }
+        }, DEBOUNCE_MS);
     }
 
-    // Initial load on mount
+    // Initial load on mount, cleanup on unmount
     onMount(() => {
         loadCurrentComponent();
+        return () => {
+            if (loadTimeout) clearTimeout(loadTimeout);
+        };
     });
 
     function handlePageInput(event: Event) {
