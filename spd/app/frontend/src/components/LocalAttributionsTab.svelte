@@ -1,6 +1,5 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import type { Loadable } from "../lib";
     import * as api from "../lib/api";
     import {
         filterInterventableNodes,
@@ -19,6 +18,7 @@
     import StagedNodesPanel from "./local-attr/StagedNodesPanel.svelte";
     import {
         defaultOptimizeConfig,
+        type ActionState,
         type ComposerState,
         type StoredGraph,
         type GraphComputeState,
@@ -60,7 +60,7 @@
     let filteredPrompts = $state<PromptPreview[]>([]);
     let filterLoading = $state(false);
     let isAddingCustomPrompt = $state(false);
-    let promptCardLoading = $state<Loadable<null>>({ status: "uninitialized" });
+    let promptCardLoading = $state<ActionState>({ status: "idle" });
 
     // Graph computation state
     let graphCompute = $state<GraphComputeState>({ status: "idle" });
@@ -155,9 +155,9 @@
         promptCardLoading = { status: "loading" };
         try {
             await addPromptCardInner(promptId, tokens, tokenIds, isCustom);
-            promptCardLoading = { status: "uninitialized" };
+            promptCardLoading = { status: "idle" };
         } catch (error) {
-            promptCardLoading = { status: "error", error };
+            promptCardLoading = { status: "error", error: String(error) };
         }
     }
 
@@ -802,8 +802,8 @@
                         </div>
                     {:else if promptCardLoading.status === "error"}
                         <div class="empty-state">
-                            <p class="error-text">Error loading prompt: {String(promptCardLoading.error)}</p>
-                            <button onclick={() => (promptCardLoading = { status: "uninitialized" })}>Dismiss</button>
+                            <p class="error-text">Error loading prompt: {promptCardLoading.error}</p>
+                            <button onclick={() => (promptCardLoading = { status: "idle" })}>Dismiss</button>
                         </div>
                     {:else}
                         <div class="empty-state">
