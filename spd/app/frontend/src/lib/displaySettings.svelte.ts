@@ -1,8 +1,6 @@
 /**
- * Global display settings store
+ * Global display settings using Svelte 5 runes
  */
-
-import { SvelteSet } from "svelte/reactivity";
 
 // Available correlation stat types
 export type CorrelationStatType = "pmi" | "bottom_pmi" | "precision" | "recall" | "jaccard";
@@ -41,11 +39,13 @@ export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> 
 };
 
 const STORAGE_KEY = "spd-display-settings";
-const ALL_STATS: CorrelationStatType[] = ["pmi", "bottom_pmi", "precision", "recall", "jaccard"];
-const DEFAULT_ON_STATS: CorrelationStatType[] = ["pmi", "precision", "recall", "jaccard"];
 
 type StoredSettings = {
-    visibleCorrelationStats?: string[];
+    showPmi?: boolean;
+    showBottomPmi?: boolean;
+    showPrecision?: boolean;
+    showRecall?: boolean;
+    showJaccard?: boolean;
     showSetOverlapVis?: boolean;
     showEdgeAttributions?: boolean;
     nodeColorMode?: NodeColorMode;
@@ -53,107 +53,126 @@ type StoredSettings = {
 };
 
 function loadFromStorage(): StoredSettings | undefined {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? (JSON.parse(stored) as StoredSettings) : undefined;
-}
-
-function loadCorrelationStats(): CorrelationStatType[] {
-    const stored = loadFromStorage();
-    if (stored == null) return DEFAULT_ON_STATS;
-    // if any invalid stats are present, delete the key from storage
-    if (stored.visibleCorrelationStats?.some((s: string) => !ALL_STATS.includes(s as CorrelationStatType))) {
-        stored.visibleCorrelationStats = DEFAULT_ON_STATS;
-        saveToStorage(stored);
-        return DEFAULT_ON_STATS;
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        return stored ? (JSON.parse(stored) as StoredSettings) : undefined;
+    } catch {
+        return undefined;
     }
-    return stored.visibleCorrelationStats as CorrelationStatType[];
 }
 
-function loadShowSetOverlapVis(): boolean {
-    return loadFromStorage()?.showSetOverlapVis ?? true;
-}
-
-function loadShowEdgeAttributions(): boolean {
-    return loadFromStorage()?.showEdgeAttributions ?? true;
+function saveToStorage(settings: Partial<StoredSettings>) {
+    try {
+        const current = loadFromStorage();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...settings }));
+    } catch (error) {
+        console.error(`Error saving display settings: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }
 
 const VALID_NODE_COLOR_MODES: NodeColorMode[] = ["ci", "subcomp_act"];
 const VALID_EXAMPLE_COLOR_MODES: ExampleColorMode[] = ["ci", "component_act", "both"];
 
-function loadNodeColorMode(): NodeColorMode {
-    const stored = loadFromStorage();
-    const mode = stored?.nodeColorMode;
-    if (mode == null || !VALID_NODE_COLOR_MODES.includes(mode)) {
-        return "ci";
-    }
-    return mode;
-}
+// =============================================================================
+// Reactive state (module-level $state)
+// =============================================================================
 
-function loadExampleColorMode(): ExampleColorMode {
-    const stored = loadFromStorage();
-    const mode = stored?.exampleColorMode;
-    if (mode == null || !VALID_EXAMPLE_COLOR_MODES.includes(mode)) {
-        return "ci";
-    }
-    return mode;
-}
+let _showPmi = $state(loadFromStorage()?.showPmi ?? true);
+let _showBottomPmi = $state(loadFromStorage()?.showBottomPmi ?? false);
+let _showPrecision = $state(loadFromStorage()?.showPrecision ?? true);
+let _showRecall = $state(loadFromStorage()?.showRecall ?? true);
+let _showJaccard = $state(loadFromStorage()?.showJaccard ?? true);
+let _showSetOverlapVis = $state(loadFromStorage()?.showSetOverlapVis ?? true);
+let _showEdgeAttributions = $state(loadFromStorage()?.showEdgeAttributions ?? true);
+let _nodeColorMode = $state<NodeColorMode>(
+    VALID_NODE_COLOR_MODES.includes(loadFromStorage()?.nodeColorMode as NodeColorMode)
+        ? (loadFromStorage()?.nodeColorMode as NodeColorMode)
+        : "ci",
+);
+let _exampleColorMode = $state<ExampleColorMode>(
+    VALID_EXAMPLE_COLOR_MODES.includes(loadFromStorage()?.exampleColorMode as ExampleColorMode)
+        ? (loadFromStorage()?.exampleColorMode as ExampleColorMode)
+        : "ci",
+);
 
-function saveToStorage(settings: StoredSettings) {
-    try {
-        const current = loadFromStorage();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...settings }));
-    } catch (error) {
-        console.error(
-            `Error saving display settings to storage: ${error instanceof Error ? error.message : String(error)}`,
-        );
-    }
-}
+// =============================================================================
+// Exported object with getters/setters
+// =============================================================================
 
-class DisplaySettingsState {
-    // Which correlation stats to show (loaded from storage or all enabled by default)
-    visibleCorrelationStats = new SvelteSet<CorrelationStatType>(loadCorrelationStats());
+export const displaySettings = {
+    get showPmi() {
+        return _showPmi;
+    },
+    set showPmi(v: boolean) {
+        _showPmi = v;
+        saveToStorage({ showPmi: v });
+    },
 
-    // Whether to show set overlap visualizations
-    showSetOverlapVis = $state(loadShowSetOverlapVis());
+    get showBottomPmi() {
+        return _showBottomPmi;
+    },
+    set showBottomPmi(v: boolean) {
+        _showBottomPmi = v;
+        saveToStorage({ showBottomPmi: v });
+    },
 
-    // Whether to show edge attribution lists in hover panel
-    showEdgeAttributions = $state(loadShowEdgeAttributions());
+    get showPrecision() {
+        return _showPrecision;
+    },
+    set showPrecision(v: boolean) {
+        _showPrecision = v;
+        saveToStorage({ showPrecision: v });
+    },
 
-    // Node color mode for graph visualization
-    nodeColorMode = $state<NodeColorMode>(loadNodeColorMode());
+    get showRecall() {
+        return _showRecall;
+    },
+    set showRecall(v: boolean) {
+        _showRecall = v;
+        saveToStorage({ showRecall: v });
+    },
 
-    // Example color mode for activation contexts viewer
-    exampleColorMode = $state<ExampleColorMode>(loadExampleColorMode());
+    get showJaccard() {
+        return _showJaccard;
+    },
+    set showJaccard(v: boolean) {
+        _showJaccard = v;
+        saveToStorage({ showJaccard: v });
+    },
 
-    toggleCorrelationStat(stat: CorrelationStatType) {
-        if (this.visibleCorrelationStats.has(stat)) {
-            this.visibleCorrelationStats.delete(stat);
-        } else {
-            this.visibleCorrelationStats.add(stat);
-        }
-        saveToStorage({ visibleCorrelationStats: [...this.visibleCorrelationStats] });
-    }
+    get showSetOverlapVis() {
+        return _showSetOverlapVis;
+    },
+    set showSetOverlapVis(v: boolean) {
+        _showSetOverlapVis = v;
+        saveToStorage({ showSetOverlapVis: v });
+    },
 
-    toggleSetOverlapVis() {
-        this.showSetOverlapVis = !this.showSetOverlapVis;
-        saveToStorage({ showSetOverlapVis: this.showSetOverlapVis });
-    }
+    get showEdgeAttributions() {
+        return _showEdgeAttributions;
+    },
+    set showEdgeAttributions(v: boolean) {
+        _showEdgeAttributions = v;
+        saveToStorage({ showEdgeAttributions: v });
+    },
 
-    toggleEdgeAttributions() {
-        this.showEdgeAttributions = !this.showEdgeAttributions;
-        saveToStorage({ showEdgeAttributions: this.showEdgeAttributions });
-    }
+    get nodeColorMode() {
+        return _nodeColorMode;
+    },
+    set nodeColorMode(v: NodeColorMode) {
+        _nodeColorMode = v;
+        saveToStorage({ nodeColorMode: v });
+    },
 
-    setNodeColorMode(mode: NodeColorMode) {
-        this.nodeColorMode = mode;
-        saveToStorage({ nodeColorMode: mode });
-    }
+    get exampleColorMode() {
+        return _exampleColorMode;
+    },
+    set exampleColorMode(v: ExampleColorMode) {
+        _exampleColorMode = v;
+        saveToStorage({ exampleColorMode: v });
+    },
 
-    setExampleColorMode(mode: ExampleColorMode) {
-        this.exampleColorMode = mode;
-        saveToStorage({ exampleColorMode: mode });
-    }
-}
-
-// Singleton instance
-export const displaySettings = new DisplaySettingsState();
+    get hasAnyCorrelationStats() {
+        return _showPmi || _showBottomPmi || _showPrecision || _showRecall || _showJaccard;
+    },
+};

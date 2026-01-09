@@ -14,8 +14,7 @@
     const N_TOKENS_TO_DISPLAY_INPUT = 80;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
 
-    // Derived to establish reactive dependency on displaySettings
-    const showCorrelations = $derived(displaySettings.visibleCorrelationStats.size > 0);
+    const showCorrelations = $derived(displaySettings.hasAnyCorrelationStats);
 
     type Props = {
         activationContextsSummary: ActivationContextsSummary;

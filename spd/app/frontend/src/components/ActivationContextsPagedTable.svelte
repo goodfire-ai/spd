@@ -128,7 +128,7 @@
             <select
                 id="color-mode-select"
                 value={displaySettings.exampleColorMode}
-                onchange={(e) => displaySettings.setExampleColorMode(e.currentTarget.value as ExampleColorMode)}
+                onchange={(e) => (displaySettings.exampleColorMode = e.currentTarget.value as ExampleColorMode)}
             >
                 {#each Object.entries(EXAMPLE_COLOR_MODE_LABELS) as [mode, label] (mode)}
                     <option value={mode}>{label}</option>
