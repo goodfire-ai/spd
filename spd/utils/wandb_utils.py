@@ -30,12 +30,11 @@ WORKSPACE_TEMPLATES = {
 }
 
 # Regex patterns for parsing W&B run references
-# Run IDs can be 8 chars (e.g., "d2ec3bfe") or prefixed with char-dash (e.g., "s-d2ec3bfe")
-_RUN_ID_PATTERN = r"(?:[a-z0-9]-)?[a-z0-9]{8}"
-_WANDB_PATH_RE = re.compile(rf"^([^/\s]+)/([^/\s]+)/({_RUN_ID_PATTERN})$")
-_WANDB_PATH_WITH_RUNS_RE = re.compile(rf"^([^/\s]+)/([^/\s]+)/runs/({_RUN_ID_PATTERN})$")
+# Run IDs can be 8 alphanumeric chars (default) or custom IDs with alphanumeric chars and dashes
+_WANDB_PATH_RE = re.compile(r"^([^/\s]+)/([^/\s]+)/([a-z0-9-]+)$")
+_WANDB_PATH_WITH_RUNS_RE = re.compile(r"^([^/\s]+)/([^/\s]+)/runs/([a-z0-9-]+)$")
 _WANDB_URL_RE = re.compile(
-    rf"^https://wandb\.ai/([^/]+)/([^/]+)/runs/({_RUN_ID_PATTERN})(?:/[^?]*)?(?:\?.*)?$"
+    r"^https://wandb\.ai/([^/]+)/([^/]+)/runs/([a-z0-9-]+)(?:/[^?]*)?(?:\?.*)?$"
 )
 
 # Short names for metric classes, used for W&B run names and view names

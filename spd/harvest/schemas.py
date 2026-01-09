@@ -28,7 +28,7 @@ def get_correlations_dir(wandb_run_id: str) -> Path:
 class ActivationExample:
     token_ids: list[int]
     ci_values: list[float]
-    component_acts: list[float]  # Normalized component activations: (v_i^T @ a) * ||u_i||
+    component_acts: list[float]
 
 
 @dataclass
