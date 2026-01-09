@@ -35,6 +35,7 @@
     const LABEL_WIDTH = 100;
     const CLUSTER_BAR_HEIGHT = 3;
     const CLUSTER_BAR_GAP = 2;
+    const LAYER_X_OFFSET = 3; // Horizontal offset per layer to avoid edge overlap
 
     // Row order for layout (qkv share a row, lm_head before output)
     const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
@@ -203,19 +204,27 @@
             return idxA - idxB;
         });
 
-        // Assign Y positions to rows
+        // Assign Y positions (output at top, wte at bottom)
         const rowYPositions: Record<string, number> = {};
-        let currentY = MARGIN.top;
-        for (const row of rows.slice().reverse()) {
-            rowYPositions[row] = currentY;
-            currentY += COMPONENT_SIZE + layerGap;
+        for (let i = 0; i < rows.length; i++) {
+            const distanceFromEnd = rows.length - 1 - i;
+            rowYPositions[rows[i]] = MARGIN.top + distanceFromEnd * (COMPONENT_SIZE + layerGap);
         }
 
-        // Map each layer to its row's Y position
+        // Map each layer to its row's Y position and X offset
+        // X offset: output (last row) at center, others alternate +/- based on distance
         const layerYPositions: Record<string, number> = {};
+        const layerXOffsets: Record<string, number> = {};
         for (const layer of allLayers) {
             const rowKey = getRowKey(layer);
             layerYPositions[layer] = rowYPositions[rowKey];
+            const rowIdx = rows.indexOf(rowKey);
+            const distanceFromOutput = rows.length - 1 - rowIdx;
+            if (distanceFromOutput === 0 || layer === "wte") {
+                layerXOffsets[layer] = 0;
+            } else {
+                layerXOffsets[layer] = distanceFromOutput % 2 === 1 ? LAYER_X_OFFSET : -LAYER_X_OFFSET;
+            }
         }
 
         // Calculate column widths
@@ -271,7 +280,7 @@
                 const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
                 if (!nodes) continue;
 
-                let baseX = seqXStarts[seqIdx] + COL_PADDING;
+                let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
                 // For qkv layers, offset X based on subtype

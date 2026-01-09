@@ -38,6 +38,7 @@
     const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
     const CLUSTER_BAR_HEIGHT = 3;
     const CLUSTER_BAR_GAP = 2;
+    const LAYER_X_OFFSET = 3; // Horizontal offset per layer to avoid edge overlap
 
     // Logits display constants
     const MAX_PREDICTIONS = 5;
@@ -319,17 +320,27 @@
             seqXStarts.push(seqXStarts[i] + seqWidths[i]);
         }
 
-        // Y positions
+        // Assign Y positions (output at top, wte at bottom)
         const rowYPositions: Record<string, number> = {};
-        let currentY = MARGIN.top;
-        for (const row of rows.slice().reverse()) {
-            rowYPositions[row] = currentY;
-            currentY += COMPONENT_SIZE + layerGap;
+        for (let i = 0; i < rows.length; i++) {
+            const distanceFromEnd = rows.length - 1 - i;
+            rowYPositions[rows[i]] = MARGIN.top + distanceFromEnd * (COMPONENT_SIZE + layerGap);
         }
 
+        // Map each layer to its row's Y position and X offset
+        // X offset: output (last row) at center, others alternate +/- based on distance
         const layerYPositions: Record<string, number> = {};
+        const layerXOffsets: Record<string, number> = {};
         for (const layer of allLayers) {
-            layerYPositions[layer] = rowYPositions[getRowKey(layer)];
+            const rowKey = getRowKey(layer);
+            layerYPositions[layer] = rowYPositions[rowKey];
+            const rowIdx = rows.indexOf(rowKey);
+            const distanceFromOutput = rows.length - 1 - rowIdx;
+            if (distanceFromOutput === 0 || layer === "wte") {
+                layerXOffsets[layer] = 0;
+            } else {
+                layerXOffsets[layer] = distanceFromOutput % 2 === 1 ? LAYER_X_OFFSET : -LAYER_X_OFFSET;
+            }
         }
 
         // Position nodes and compute cluster spans
@@ -343,7 +354,7 @@
                 const layerNodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
                 if (!layerNodes) continue;
 
-                let baseX = seqXStarts[seqIdx] + COL_PADDING;
+                let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
                 if (isQkv) {
@@ -471,13 +482,18 @@
     }
 
     // Drag-to-select handlers
+    // Converts mouse event to SVG logical coordinates (accounting for zoom transform)
     function getSvgPoint(event: MouseEvent): { x: number; y: number } | null {
         if (!svgElement) return null;
         const container = svgElement.parentElement!;
         const rect = container.getBoundingClientRect();
+        // Get container-relative position (with scroll offset)
+        const containerX = event.clientX - rect.left + container.scrollLeft;
+        const containerY = event.clientY - rect.top + container.scrollTop;
+        // Convert to logical SVG coordinates by reversing the zoom transform
         return {
-            x: event.clientX - rect.left + container.scrollLeft,
-            y: event.clientY - rect.top + container.scrollTop,
+            x: (containerX - zoom.translateX) / zoom.scale,
+            y: (containerY - zoom.translateY) / zoom.scale,
         };
     }
 
