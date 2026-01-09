@@ -134,14 +134,6 @@ class DisplaySettingsState {
         saveToStorage({ visibleCorrelationStats: [...this.visibleCorrelationStats] });
     }
 
-    isCorrelationStatVisible(stat: CorrelationStatType): boolean {
-        return this.visibleCorrelationStats.has(stat);
-    }
-
-    hasAnyCorrelationStatsVisible(): boolean {
-        return this.visibleCorrelationStats.size > 0;
-    }
-
     toggleSetOverlapVis() {
         this.showSetOverlapVis = !this.showSetOverlapVis;
         saveToStorage({ showSetOverlapVis: this.showSetOverlapVis });

@@ -34,7 +34,7 @@
                         <label class="checkbox-item">
                             <input
                                 type="checkbox"
-                                checked={displaySettings.isCorrelationStatVisible(stat)}
+                                checked={displaySettings.visibleCorrelationStats.has(stat)}
                                 onchange={() => displaySettings.toggleCorrelationStat(stat)}
                             />
                             <span class="stat-label">{CORRELATION_STAT_LABELS[stat]}</span>

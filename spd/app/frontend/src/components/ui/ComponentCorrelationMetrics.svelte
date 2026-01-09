@@ -13,7 +13,7 @@
 </script>
 
 <div class="correlations-grid">
-    {#if displaySettings.isCorrelationStatVisible("pmi")}
+    {#if displaySettings.visibleCorrelationStats.has("pmi")}
         <ComponentCorrelationPills title="PMI" items={correlations.pmi} {onComponentClick} {pageSize}>
             {#snippet mathNotation()}
                 log(P(<span class="color-this">this</span>, <span class="color-that">that</span>) / P(<span
@@ -22,14 +22,14 @@
             {/snippet}
         </ComponentCorrelationPills>
     {/if}
-    {#if displaySettings.isCorrelationStatVisible("bottom_pmi")}
+    {#if displaySettings.visibleCorrelationStats.has("bottom_pmi")}
         <ComponentCorrelationPills title="Bottom PMI" items={correlations.bottom_pmi} {onComponentClick} {pageSize}>
             {#snippet mathNotation()}
                 lowest PMI (anti-correlated)
             {/snippet}
         </ComponentCorrelationPills>
     {/if}
-    {#if displaySettings.isCorrelationStatVisible("precision")}
+    {#if displaySettings.visibleCorrelationStats.has("precision")}
         <ComponentCorrelationPills title="Predictors" items={correlations.precision} {onComponentClick} {pageSize}>
             {#snippet mathNotation()}
                 <span class="color-both">P</span>(<span class="color-this">this</span> |
@@ -37,7 +37,7 @@
             {/snippet}
         </ComponentCorrelationPills>
     {/if}
-    {#if displaySettings.isCorrelationStatVisible("recall")}
+    {#if displaySettings.visibleCorrelationStats.has("recall")}
         <ComponentCorrelationPills title="Predictees" items={correlations.recall} {onComponentClick} {pageSize}>
             {#snippet mathNotation()}
                 <span class="color-both">P</span>(<span class="color-that">that</span> |
@@ -45,7 +45,7 @@
             {/snippet}
         </ComponentCorrelationPills>
     {/if}
-    {#if displaySettings.isCorrelationStatVisible("jaccard")}
+    {#if displaySettings.visibleCorrelationStats.has("jaccard")}
         <ComponentCorrelationPills title="Jaccard" items={correlations.jaccard} {onComponentClick} {pageSize}>
             {#snippet mathNotation()}
                 <span class="color-both">this</span> ∩ <span class="color-both">that</span> / (<span class="color-this"

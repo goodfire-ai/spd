@@ -14,6 +14,9 @@
     const N_TOKENS_TO_DISPLAY_INPUT = 80;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
 
+    // Derived to establish reactive dependency on displaySettings
+    const showCorrelations = $derived(displaySettings.visibleCorrelationStats.size > 0);
+
     type Props = {
         activationContextsSummary: ActivationContextsSummary;
     };
@@ -271,7 +274,7 @@
         </div>
 
         <!-- Component correlations -->
-        {#if displaySettings.hasAnyCorrelationStatsVisible()}
+        {#if showCorrelations}
             <div class="correlations-section">
                 <SectionHeader title="Correlated Components" />
                 {#if componentData.correlations.status === "uninitialized" || componentData.correlations.status === "loading"}

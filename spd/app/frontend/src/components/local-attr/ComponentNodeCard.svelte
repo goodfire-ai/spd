@@ -38,7 +38,7 @@
     // so we only need to load once on mount (no effect watching props).
     // Debounce to avoid bombarding backend when hovering over many nodes quickly.
     const componentData = useComponentData();
-    const HOVER_DEBOUNCE_MS = 300;
+    const HOVER_DEBOUNCE_MS = 200;
 
     onMount(() => {
         const timeout = setTimeout(() => {
