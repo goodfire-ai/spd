@@ -34,65 +34,73 @@ export type PromptState =
     | { status: "error"; error: unknown };
 
 /**
- * Fetches all data for a component: detail, correlations, token stats.
+ * Hook for loading component data (detail, correlations, token stats, prompt).
+ *
+ * Call `load(layer, cIdx)` explicitly when you want to fetch data.
  * Interpretation is derived from the global runState cache.
- * Handles stale request cancellation when coords change.
  */
-export function useComponentData(getCoords: () => ComponentCoords | null) {
+export function useComponentData() {
     const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+
     let componentDetail = $state<Loadable<ComponentDetail>>({ status: "uninitialized" });
     // null inside Loadable means "no data for this component" (404)
     let correlations = $state<Loadable<ComponentCorrelations | null>>({ status: "uninitialized" });
     let tokenStats = $state<Loadable<TokenStats | null>>({ status: "uninitialized" });
+    let prompt = $state<PromptState>({ status: "none" });
+
+    // Current coords being loaded/displayed (for interpretation lookup)
+    let currentCoords = $state<ComponentCoords | null>(null);
 
     // Track which component is currently being generated (local to this hook instance)
     let generatingFor = $state<string | null>(null);
     let generationError = $state<{ key: string; error: unknown } | null>(null);
 
-    // Prompt state (fetched alongside other component data)
-    let prompt = $state<PromptState>({ status: "none" });
+    // Request counter for handling stale responses
+    let requestId = 0;
 
-    // Effect for fetching componentDetail, correlations, tokenStats, prompt
-    // Only re-runs when coords change
-    $effect(() => {
-        const coords = getCoords();
-        if (!coords) {
-            componentDetail = { status: "uninitialized" };
-            correlations = { status: "uninitialized" };
-            tokenStats = { status: "uninitialized" };
-            prompt = { status: "none" };
-            return;
-        }
+    /**
+     * Load all data for the given component.
+     * Call this from event handlers or on mount.
+     */
+    function load(layer: string, cIdx: number) {
+        currentCoords = { layer, cIdx };
+        const thisRequestId = ++requestId;
 
-        const { layer, cIdx } = coords;
-        let stale = false;
-
-        // Set loading state
+        // Set loading states
         componentDetail = { status: "loading" };
         correlations = { status: "loading" };
         tokenStats = { status: "loading" };
         prompt = { status: "loading" };
 
+        // Clear any previous generation error for different component
+        const componentKey = `${layer}:${cIdx}`;
+        if (generationError?.key !== componentKey) {
+            generationError = null;
+        }
+
+        // Helper to check if this request is still current
+        const isStale = () => requestId !== thisRequestId;
+
         // Fetch component detail (cached in runState after first call)
         runState
             .getComponentDetail(layer, cIdx)
             .then((data) => {
-                if (stale) return;
+                if (isStale()) return;
                 componentDetail = { status: "loaded", data };
             })
             .catch((error) => {
-                if (stale) return;
+                if (isStale()) return;
                 componentDetail = { status: "error", error };
             });
 
         // Fetch correlations (404 = no data for this component)
         getComponentCorrelations(layer, cIdx, CORRELATIONS_TOP_K)
             .then((data) => {
-                if (stale) return;
+                if (isStale()) return;
                 correlations = { status: "loaded", data };
             })
             .catch((error) => {
-                if (stale) return;
+                if (isStale()) return;
                 if (error instanceof ApiError && error.status === 404) {
                     correlations = { status: "loaded", data: null };
                 } else {
@@ -103,11 +111,11 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         // Fetch token stats (404 = no data for this component)
         getComponentTokenStats(layer, cIdx, TOKEN_STATS_TOP_K)
             .then((data) => {
-                if (stale) return;
+                if (isStale()) return;
                 tokenStats = { status: "loaded", data };
             })
             .catch((error) => {
-                if (stale) return;
+                if (isStale()) return;
                 if (error instanceof ApiError && error.status === 404) {
                     tokenStats = { status: "loaded", data: null };
                 } else {
@@ -118,29 +126,36 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         // Fetch prompt (404 = no interpretation for this component)
         getInterpretationPrompt(layer, cIdx)
             .then((data) => {
-                if (stale) return;
+                if (isStale()) return;
                 prompt = { status: "loaded", data };
             })
             .catch((error) => {
-                if (stale) return;
+                if (isStale()) return;
                 if (error instanceof ApiError && error.status === 404) {
                     prompt = { status: "none" };
                 } else {
                     prompt = { status: "error", error };
                 }
             });
+    }
 
-        return () => {
-            stale = true;
-        };
-    });
+    /**
+     * Reset all state to uninitialized.
+     */
+    function reset() {
+        requestId++; // Invalidate any in-flight requests
+        currentCoords = null;
+        componentDetail = { status: "uninitialized" };
+        correlations = { status: "uninitialized" };
+        tokenStats = { status: "uninitialized" };
+        prompt = { status: "none" };
+    }
 
     // Interpretation is derived from the global cache - reactive to both coords and cache
     const interpretation = $derived.by((): InterpretationState => {
-        const coords = getCoords();
-        if (!coords) return { status: "none" };
+        if (!currentCoords) return { status: "none" };
 
-        const componentKey = `${coords.layer}:${coords.cIdx}`;
+        const componentKey = `${currentCoords.layer}:${currentCoords.cIdx}`;
 
         // Check if we're currently generating for this component
         if (generatingFor === componentKey) {
@@ -160,10 +175,9 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
     });
 
     async function generateInterpretation() {
-        const coords = getCoords();
-        if (!coords || generatingFor !== null) return;
+        if (!currentCoords || generatingFor !== null) return;
 
-        const { layer, cIdx } = coords;
+        const { layer, cIdx } = currentCoords;
         const componentKey = `${layer}:${cIdx}`;
 
         generatingFor = componentKey;
@@ -196,6 +210,8 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         get prompt() {
             return prompt;
         },
+        load,
+        reset,
         generateInterpretation,
     };
 }

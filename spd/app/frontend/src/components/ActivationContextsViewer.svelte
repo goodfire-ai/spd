@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import type { ActivationContextsSummary, ComponentSummary } from "../lib/localAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
@@ -28,10 +29,20 @@
     let totalPages = $derived(currentLayerMetadata.length);
     let currentMetadata = $derived<ComponentSummary>(currentLayerMetadata[currentPage]);
 
-    // Fetch all component data (detail, correlations, token stats, interpretation)
-    const componentData = useComponentData(() => {
+    // Component data hook - call load() explicitly when component changes
+    const componentData = useComponentData();
+
+    // Load data for current component
+    function loadCurrentComponent() {
         const cIdx = currentMetadata?.subcomponent_idx;
-        return cIdx !== undefined ? { layer: selectedLayer, cIdx } : null;
+        if (cIdx !== undefined) {
+            componentData.load(selectedLayer, cIdx);
+        }
+    }
+
+    // Initial load on mount
+    onMount(() => {
+        loadCurrentComponent();
     });
 
     function handlePageInput(event: Event) {
@@ -40,6 +51,7 @@
         const value = parseInt(target.value);
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
+            loadCurrentComponent();
         }
     }
 
@@ -69,21 +81,29 @@
         }
 
         currentPage = pageIndex;
+        loadCurrentComponent();
     }
 
     function previousPage() {
-        if (currentPage > 0) currentPage--;
+        if (currentPage > 0) {
+            currentPage--;
+            loadCurrentComponent();
+        }
     }
 
     function nextPage() {
-        if (currentPage < totalPages - 1) currentPage++;
+        if (currentPage < totalPages - 1) {
+            currentPage++;
+            loadCurrentComponent();
+        }
     }
 
-    // Reset page when layer changes
-    $effect(() => {
-        selectedLayer; // eslint-disable-line @typescript-eslint/no-unused-expressions
+    function handleLayerChange(event: Event) {
+        const target = event.target as HTMLSelectElement;
+        selectedLayer = target.value;
         currentPage = 0;
-    });
+        loadCurrentComponent();
+    }
 
     // Derive token lists from loaded tokenStats (null if not loaded or no data)
     const inputTokenLists = $derived.by(() => {
@@ -154,7 +174,7 @@
     <div class="controls-row">
         <div class="layer-select">
             <label for="layer-select">Layer:</label>
-            <select id="layer-select" bind:value={selectedLayer}>
+            <select id="layer-select" value={selectedLayer} onchange={handleLayerChange}>
                 {#each availableLayers as layer (layer)}
                     <option value={layer}>{layer}</option>
                 {/each}

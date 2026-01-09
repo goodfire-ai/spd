@@ -32,8 +32,13 @@
         onPinComponent(clickedLayer, parseInt(clickedCIdx), seqIdx);
     }
 
-    // Fetch all component data (correlations, token stats, interpretation)
-    const componentData = useComponentData(() => ({ layer, cIdx }));
+    // Component data hook - call load() explicitly when component changes
+    const componentData = useComponentData();
+
+    // Load on mount and when props change (parent selected different component)
+    $effect(() => {
+        componentData.load(layer, cIdx);
+    });
 
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
