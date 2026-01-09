@@ -96,6 +96,7 @@
                 items: ts.data.input.top_recall
                     .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: 1,
             },
             {
                 title: "Top Precision",
@@ -103,6 +104,7 @@
                 items: ts.data.input.top_precision
                     .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: 1,
             },
         ];
     });
@@ -110,6 +112,11 @@
     const outputTokenLists = $derived.by(() => {
         const ts = componentData.tokenStats;
         if (ts?.status !== "loaded" || ts.data === null) return null;
+        // Compute max absolute PMI for scaling
+        const maxAbsPmi = Math.max(
+            ts.data.output.top_pmi[0]?.[1] ?? 0,
+            Math.abs(ts.data.output.bottom_pmi?.[0]?.[1] ?? 0),
+        );
         return [
             {
                 title: "Top PMI",
@@ -117,6 +124,7 @@
                 items: ts.data.output.top_pmi
                     .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: maxAbsPmi,
             },
             {
                 title: "Bottom PMI",
@@ -124,6 +132,7 @@
                 items: ts.data.output.bottom_pmi
                     .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: maxAbsPmi,
             },
         ];
     });

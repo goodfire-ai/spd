@@ -11,6 +11,8 @@
         title: string;
         mathNotation?: string;
         items: TokenValue[];
+        /** Scale for bar intensity. Use 1 for precision/recall, or max observed for PMI. */
+        maxScale: number;
     };
 
     type Props = {
@@ -42,7 +44,7 @@
                                 <span class="math-notation">{list.mathNotation}</span>
                             {/if}
                         </h5>
-                        <TokenPillList items={list.items} />
+                        <TokenPillList items={list.items} maxScale={list.maxScale} />
                     </div>
                 {/if}
             {/each}
