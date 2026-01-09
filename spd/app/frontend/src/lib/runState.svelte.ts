@@ -98,17 +98,14 @@ export function useRunState() {
     async function syncStatus() {
         try {
             const status = await api.getStatus();
-            if (run.status === "loaded" && run.data && !status) {
-                run = { status: "error", error: "Backend state lost (restarted)" };
-                return;
-            }
             if (status) {
-                const wasLoaded = run.status === "loaded";
                 run = { status: "loaded", data: status };
-                // Fetch run-scoped data if we weren't already loaded (e.g., page refresh with backend still running)
-                if (!wasLoaded) {
+                // Fetch run-scoped data if we don't have it (e.g., page refresh)
+                if (interpretations.status === "uninitialized") {
                     fetchRunScopedData();
                 }
+            } else if (run.status === "loaded") {
+                run = { status: "error", error: "Backend state lost" };
             } else {
                 run = { status: "uninitialized" };
             }
