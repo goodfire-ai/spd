@@ -7,30 +7,67 @@ Creates a scatter plot where:
 """
 
 import argparse
+import json
 from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from spd.harvest.loaders import load_activation_contexts
+from spd.harvest.schemas import (
+    ActivationExample,
+    ComponentData,
+    ComponentTokenPMI,
+    get_activation_contexts_dir,
+)
+
+
+def load_activation_contexts_streaming(
+    run_id: str,
+    max_components: int | None = None,
+) -> dict[str, ComponentData]:
+    """Load activation contexts with optional early stopping."""
+    ctx_dir = get_activation_contexts_dir(run_id)
+    path = ctx_dir / "components.jsonl"
+    assert path.exists(), f"No harvest data found for run {run_id}"
+
+    components: dict[str, ComponentData] = {}
+    with open(path) as f:
+        for i, line in enumerate(f):
+            if max_components is not None and i >= max_components:
+                break
+            data = json.loads(line)
+            data["activation_examples"] = [
+                ActivationExample(
+                    token_ids=ex["token_ids"],
+                    ci_values=ex["ci_values"],
+                    component_acts=ex.get("component_acts", [0.0] * len(ex["token_ids"])),
+                )
+                for ex in data["activation_examples"]
+            ]
+            data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
+            data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
+            comp = ComponentData(**data)
+            components[comp.component_key] = comp
+    return components
 
 
 def extract_activations_above_threshold(
     run_id: str,
     ci_threshold: float,
+    max_components: int | None = None,
 ) -> dict[str, list[float]]:
     """Extract component activations for positions where CI > threshold.
 
     Args:
         run_id: WandB run ID (e.g., "s-7884efcc")
         ci_threshold: Minimum CI value to include
+        max_components: If set, only load this many components (for faster testing)
 
     Returns:
         Dict mapping component_key to list of activation values
     """
-    contexts = load_activation_contexts(run_id)
-    assert contexts is not None, f"No harvest data found for run {run_id}"
+    contexts = load_activation_contexts_streaming(run_id, max_components)
 
     activations_by_component: dict[str, list[float]] = defaultdict(list)
 
@@ -132,10 +169,17 @@ def main():
         type=Path,
         help="Path to save plot (if not provided, displays interactively)",
     )
+    parser.add_argument(
+        "--max-components",
+        type=int,
+        help="Limit to N components (for faster testing)",
+    )
     args = parser.parse_args()
 
     print(f"Loading activation contexts for run {args.run_id}...")
-    activations = extract_activations_above_threshold(args.run_id, args.ci_threshold)
+    activations = extract_activations_above_threshold(
+        args.run_id, args.ci_threshold, args.max_components
+    )
 
     n_components_with_data = len(activations)
     n_total_points = sum(len(v) for v in activations.values())
