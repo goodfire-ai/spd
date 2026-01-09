@@ -23,6 +23,8 @@
     } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
     import { RUN_STATE_KEY, type RunStateContext } from "../lib/runState.svelte";
+    import { useZoomPan } from "../lib/useZoomPan.svelte";
+    import ZoomControls from "../lib/ZoomControls.svelte";
 
     const runState = getContext<RunStateContext>(RUN_STATE_KEY);
 
@@ -100,6 +102,10 @@
 
     // Refs
     let graphContainer: HTMLDivElement;
+    let innerContainer: HTMLDivElement;
+
+    // Zoom/pan
+    const zoom = useZoomPan(() => innerContainer);
 
     // Parse layer name into structured info
     function parseLayer(name: string): LayerInfo {
@@ -339,6 +345,10 @@
         };
     });
 
+    // Derived SVG dimensions (fixes negative translate bug)
+    const svgWidth = $derived(width * zoom.scale + Math.max(zoom.translateX, 0));
+    const svgHeight = $derived(height * zoom.scale + Math.max(zoom.translateY, 0));
+
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
     // Check if a node key matches the currently hovered component (same layer:cIdx, any seqIdx)
@@ -561,6 +571,14 @@
         }
     }
 
+    // Pan start - left-click or middle-click, not on nodes
+    function handlePanStart(event: MouseEvent) {
+        if (event.button !== 0 && event.button !== 1) return;
+        const target = event.target as Element;
+        if (target.closest(".node-group") || target.closest(".cluster-bar")) return;
+        zoom.startPan(event);
+    }
+
     // Update edge classes based on state (DOM manipulation for performance with @html edges)
     $effect(() => {
         if (!graphContainer) return;
@@ -582,137 +600,155 @@
     });
 </script>
 
-<div class="graph-wrapper" bind:this={graphContainer}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+    class="graph-wrapper"
+    class:panning={zoom.isPanning}
+    bind:this={graphContainer}
+    onwheel={zoom.handleWheel}
+    onmousedown={handlePanStart}
+    onmousemove={zoom.updatePan}
+    onmouseup={zoom.endPan}
+    onmouseleave={zoom.endPan}
+>
+    <ZoomControls scale={zoom.scale} onZoomIn={zoom.zoomIn} onZoomOut={zoom.zoomOut} onReset={zoom.reset} />
+
     <div class="layer-labels-container" style="width: {LABEL_WIDTH}px;">
-        <svg width={LABEL_WIDTH} {height} style="display: block;">
-            {#each Object.entries(layerYPositions) as [layer, y] (layer)}
-                {@const info = parseLayer(layer)}
-                {@const yCenter = y + COMPONENT_SIZE / 2}
-                {@const rowKey = getRowKey(layer)}
-                {@const label = rowKey.endsWith(".qkv")
-                    ? `${info.block}.q/k/v`
-                    : layer === "wte" || layer === "output"
-                      ? layer
-                      : layer === "lm_head"
-                        ? "W_U"
-                        : `${info.block}.${info.subtype}`}
-                <text
-                    x={LABEL_WIDTH - 10}
-                    y={yCenter}
-                    text-anchor="end"
-                    dominant-baseline="middle"
-                    font-size="10"
-                    font-weight="500"
-                    font-family="'Berkeley Mono', 'SF Mono', monospace"
-                    fill={colors.textSecondary}
-                >
-                    {label}
-                </text>
-            {/each}
+        <svg width={LABEL_WIDTH} height={svgHeight} style="display: block;">
+            <g transform="translate(0, {zoom.translateY}) scale(1, {zoom.scale})">
+                {#each Object.entries(layerYPositions) as [layer, y] (layer)}
+                    {@const info = parseLayer(layer)}
+                    {@const yCenter = y + COMPONENT_SIZE / 2}
+                    {@const rowKey = getRowKey(layer)}
+                    {@const label = rowKey.endsWith(".qkv")
+                        ? `${info.block}.q/k/v`
+                        : layer === "wte" || layer === "output"
+                          ? layer
+                          : layer === "lm_head"
+                            ? "W_U"
+                            : `${info.block}.${info.subtype}`}
+                    <text
+                        x={LABEL_WIDTH - 10}
+                        y={yCenter}
+                        text-anchor="end"
+                        dominant-baseline="middle"
+                        font-size="10"
+                        font-weight="500"
+                        font-family="'Berkeley Mono', 'SF Mono', monospace"
+                        fill={colors.textSecondary}
+                    >
+                        {label}
+                    </text>
+                {/each}
+            </g>
         </svg>
     </div>
 
-    <div class="graph-container">
-        <svg {width} {height} onmouseover={handleEdgeMouseEnter} onmouseout={handleEdgeMouseLeave}>
-            <!-- Edges (bulk rendered for performance, uses @html for large SVG performance) -->
-            <g class="edges-layer">
-                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-                {@html edgesSvgString}
-            </g>
+    <div class="graph-container" bind:this={innerContainer}>
+        <svg width={svgWidth} height={svgHeight} onmouseover={handleEdgeMouseEnter} onmouseout={handleEdgeMouseLeave}>
+            <g transform="translate({zoom.translateX}, {zoom.translateY}) scale({zoom.scale})">
+                <!-- Edges (bulk rendered for performance, uses @html for large SVG performance) -->
+                <g class="edges-layer">
+                    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                    {@html edgesSvgString}
+                </g>
 
-            <!-- Cluster bars (below nodes) -->
-            <g class="cluster-bars-layer">
-                {#each clusterSpans as span (`${span.layer}:${span.seqIdx}:${span.clusterId}`)}
-                    {@const isHighlighted = hoveredClusterId === span.clusterId}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <rect
-                        class="cluster-bar"
-                        class:highlighted={isHighlighted}
-                        x={span.xStart}
-                        y={span.y + CLUSTER_BAR_GAP}
-                        width={span.xEnd - span.xStart}
-                        height={CLUSTER_BAR_HEIGHT}
-                        rx="1"
-                        onmouseenter={() => (hoveredBarClusterId = span.clusterId)}
-                        onmouseleave={() => (hoveredBarClusterId = null)}
-                    />
-                {/each}
-            </g>
-
-            <!-- Nodes (reactive for interactivity) -->
-            <g class="nodes-layer">
-                {#each Object.entries(nodePositions) as [key, pos] (key)}
-                    {@const [layer, seqIdxStr, cIdxStr] = key.split(":")}
-                    {@const seqIdx = parseInt(seqIdxStr)}
-                    {@const cIdx = parseInt(cIdxStr)}
-                    {@const isHighlighted = isNodeHighlighted(key)}
-                    {@const isPinned = pinnedNodeKeys.has(key)}
-                    {@const inSameCluster = isNodeInSameCluster(key)}
-                    {@const isHoveredComponent = nodeMatchesHoveredComponent(key)}
-                    {@const isDimmed =
-                        (hoveredNode !== null || hoveredBarClusterId !== null) &&
-                        !isHoveredComponent &&
-                        !inSameCluster &&
-                        !isPinned}
-                    {@const style = nodeStyles[key]}
-                    <g
-                        class="node-group"
-                        onmouseenter={(e) => handleNodeMouseEnter(e, layer, seqIdx, cIdx)}
-                        onmouseleave={handleNodeMouseLeave}
-                        onclick={() => handleNodeClick(layer, seqIdx, cIdx)}
-                    >
-                        <!-- Invisible hit area for easier hovering -->
+                <!-- Cluster bars (below nodes) -->
+                <g class="cluster-bars-layer">
+                    {#each clusterSpans as span (`${span.layer}:${span.seqIdx}:${span.clusterId}`)}
+                        {@const isHighlighted = hoveredClusterId === span.clusterId}
+                        <!-- svelte-ignore a11y_no_static_element_interactions -->
                         <rect
-                            x={pos.x - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
-                            y={pos.y - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
-                            width={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
-                            height={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
-                            fill="transparent"
-                        />
-                        <!-- Visible node -->
-                        <rect
-                            class="node"
+                            class="cluster-bar"
                             class:highlighted={isHighlighted}
-                            class:cluster-hovered={inSameCluster}
-                            class:dimmed={isDimmed}
-                            x={pos.x - COMPONENT_SIZE / 2}
-                            y={pos.y - COMPONENT_SIZE / 2}
-                            width={COMPONENT_SIZE}
-                            height={COMPONENT_SIZE}
-                            fill={style.fill}
+                            x={span.xStart}
+                            y={span.y + CLUSTER_BAR_GAP}
+                            width={span.xEnd - span.xStart}
+                            height={CLUSTER_BAR_HEIGHT}
                             rx="1"
-                            opacity={style.opacity}
+                            onmouseenter={() => (hoveredBarClusterId = span.clusterId)}
+                            onmouseleave={() => (hoveredBarClusterId = null)}
                         />
-                    </g>
-                {/each}
+                    {/each}
+                </g>
+
+                <!-- Nodes (reactive for interactivity) -->
+                <g class="nodes-layer">
+                    {#each Object.entries(nodePositions) as [key, pos] (key)}
+                        {@const [layer, seqIdxStr, cIdxStr] = key.split(":")}
+                        {@const seqIdx = parseInt(seqIdxStr)}
+                        {@const cIdx = parseInt(cIdxStr)}
+                        {@const isHighlighted = isNodeHighlighted(key)}
+                        {@const isPinned = pinnedNodeKeys.has(key)}
+                        {@const inSameCluster = isNodeInSameCluster(key)}
+                        {@const isHoveredComponent = nodeMatchesHoveredComponent(key)}
+                        {@const isDimmed =
+                            (hoveredNode !== null || hoveredBarClusterId !== null) &&
+                            !isHoveredComponent &&
+                            !inSameCluster &&
+                            !isPinned}
+                        {@const style = nodeStyles[key]}
+                        <g
+                            class="node-group"
+                            onmouseenter={(e) => handleNodeMouseEnter(e, layer, seqIdx, cIdx)}
+                            onmouseleave={handleNodeMouseLeave}
+                            onclick={() => handleNodeClick(layer, seqIdx, cIdx)}
+                        >
+                            <!-- Invisible hit area for easier hovering -->
+                            <rect
+                                x={pos.x - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
+                                y={pos.y - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
+                                width={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
+                                height={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
+                                fill="transparent"
+                            />
+                            <!-- Visible node -->
+                            <rect
+                                class="node"
+                                class:highlighted={isHighlighted}
+                                class:cluster-hovered={inSameCluster}
+                                class:dimmed={isDimmed}
+                                x={pos.x - COMPONENT_SIZE / 2}
+                                y={pos.y - COMPONENT_SIZE / 2}
+                                width={COMPONENT_SIZE}
+                                height={COMPONENT_SIZE}
+                                fill={style.fill}
+                                rx="1"
+                                opacity={style.opacity}
+                            />
+                        </g>
+                    {/each}
+                </g>
             </g>
         </svg>
 
         <div class="token-labels-container">
-            <svg {width} height="50" style="display: block;">
-                {#each data.tokens as token, i (i)}
-                    {@const colCenter = seqXStarts[i] + seqWidths[i] / 2}
-                    <text
-                        x={colCenter}
-                        y="20"
-                        text-anchor="middle"
-                        font-size="11"
-                        font-family="'Berkeley Mono', 'SF Mono', monospace"
-                        font-weight="500"
-                        fill={colors.textPrimary}
-                        style="white-space: pre"
-                    >
-                        {token}
-                    </text>
-                    <text
-                        x={colCenter}
-                        y="36"
-                        text-anchor="middle"
-                        font-size="9"
-                        font-family="'Berkeley Mono', 'SF Mono', monospace"
-                        fill={colors.textMuted}>[{i}]</text
-                    >
-                {/each}
+            <svg width={svgWidth} height="50" style="display: block;">
+                <g transform="translate({zoom.translateX}, 0) scale({zoom.scale}, 1)">
+                    {#each data.tokens as token, i (i)}
+                        {@const colCenter = seqXStarts[i] + seqWidths[i] / 2}
+                        <text
+                            x={colCenter}
+                            y="20"
+                            text-anchor="middle"
+                            font-size="11"
+                            font-family="'Berkeley Mono', 'SF Mono', monospace"
+                            font-weight="500"
+                            fill={colors.textPrimary}
+                            style="white-space: pre"
+                        >
+                            {token}
+                        </text>
+                        <text
+                            x={colCenter}
+                            y="36"
+                            text-anchor="middle"
+                            font-size="9"
+                            font-family="'Berkeley Mono', 'SF Mono', monospace"
+                            fill={colors.textMuted}>[{i}]</text
+                        >
+                    {/each}
+                </g>
             </svg>
         </div>
     </div>
@@ -764,6 +800,11 @@
         display: flex;
         background: var(--bg-surface);
         overflow: hidden;
+        position: relative;
+    }
+
+    .graph-wrapper.panning {
+        cursor: grabbing;
     }
 
     .layer-labels-container {

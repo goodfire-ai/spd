@@ -81,6 +81,8 @@
                             seqIdx={node.seqIdx}
                             {edgesBySource}
                             {edgesByTarget}
+                            {tokens}
+                            {outputProbs}
                             onPinComponent={toggleComponentPinned}
                         />
                     {/if}

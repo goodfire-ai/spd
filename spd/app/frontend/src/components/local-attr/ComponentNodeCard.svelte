@@ -1,7 +1,7 @@
 <script lang="ts">
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
-    import type { Edge, EdgeAttribution } from "../../lib/localAttributionsTypes";
+    import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
@@ -17,10 +17,12 @@
         seqIdx: number;
         edgesBySource: Map<string, Edge[]>;
         edgesByTarget: Map<string, Edge[]>;
+        tokens: string[];
+        outputProbs: Record<string, OutputProbEntry>;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     };
 
-    let { layer, cIdx, seqIdx, edgesBySource, edgesByTarget, onPinComponent }: Props = $props();
+    let { layer, cIdx, seqIdx, edgesBySource, edgesByTarget, tokens, outputProbs, onPinComponent }: Props = $props();
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -172,6 +174,8 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="positive"
+                                    {tokens}
+                                    {outputProbs}
                                 />
                             </div>
                         {/if}
@@ -183,6 +187,8 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="negative"
+                                    {tokens}
+                                    {outputProbs}
                                 />
                             </div>
                         {/if}
@@ -199,6 +205,8 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="positive"
+                                    {tokens}
+                                    {outputProbs}
                                 />
                             </div>
                         {/if}
@@ -210,6 +218,8 @@
                                     pageSize={10}
                                     onNodeClick={handleEdgeNodeClick}
                                     direction="negative"
+                                    {tokens}
+                                    {outputProbs}
                                 />
                             </div>
                         {/if}

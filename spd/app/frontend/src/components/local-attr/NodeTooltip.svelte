@@ -111,6 +111,8 @@
             seqIdx={hoveredNode.seqIdx}
             {edgesBySource}
             {edgesByTarget}
+            {tokens}
+            {outputProbs}
             {onPinComponent}
         />
     {/if}
