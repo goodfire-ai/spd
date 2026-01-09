@@ -68,6 +68,12 @@ export type LoadingState = {
     currentStage: number; // 0-indexed
 };
 
+/** State for graph computation - tracks which card is computing, progress, and errors */
+export type GraphComputeState =
+    | { status: "idle" }
+    | { status: "computing"; cardId: number; progress: LoadingState }
+    | { status: "error"; error: string };
+
 export function defaultOptimizeConfig(): OptimizeConfig {
     return {
         labelTokenText: "",

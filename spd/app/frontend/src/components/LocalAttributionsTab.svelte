@@ -21,7 +21,7 @@
         defaultOptimizeConfig,
         type ComposerState,
         type StoredGraph,
-        type LoadingState,
+        type GraphComputeState,
         type OptimizeConfig,
         type PromptCard,
         type ViewSettings,
@@ -61,10 +61,8 @@
     let isAddingCustomPrompt = $state(false);
     let promptCardLoading = $state<Loadable<null>>({ status: "uninitialized" });
 
-    // Loading state
-    let loadingCardId = $state<number | null>(null);
-    let loadingState = $state<LoadingState | null>(null);
-    let computeError = $state<string | null>(null);
+    // Graph computation state
+    let graphCompute = $state<GraphComputeState>({ status: "idle" });
 
     // Intervention loading state
     let runningIntervention = $state(false);
@@ -414,107 +412,108 @@
     }
 
     async function computeGraphForCard() {
-        if (!activeCard || !activeCard.tokenIds || loadingCardId) return;
-
-        loadingCardId = activeCard.id;
-        computeError = null;
+        if (!activeCard || !activeCard.tokenIds || graphCompute.status === "computing") return;
 
         const optConfig = activeCard.newGraphConfig;
         const isOptimized = activeCard.useOptimized;
+        const cardId = activeCard.id;
 
-        if (isOptimized) {
-            loadingState = {
-                stages: [
-                    { name: "Optimizing", progress: 0 },
-                    { name: "Computing graph", progress: 0 },
-                ],
-                currentStage: 0,
-            };
-        } else {
-            loadingState = {
-                stages: [{ name: "Computing graph", progress: 0 }],
-                currentStage: 0,
-            };
-        }
+        const initialProgress = isOptimized
+            ? {
+                  stages: [
+                      { name: "Optimizing", progress: 0 },
+                      { name: "Computing graph", progress: 0 },
+                  ],
+                  currentStage: 0,
+              }
+            : {
+                  stages: [{ name: "Computing graph", progress: 0 }],
+                  currentStage: 0,
+              };
 
-        let data: GraphData;
+        graphCompute = { status: "computing", cardId, progress: initialProgress };
 
-        if (isOptimized) {
-            const useCE = optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null;
-            const useKL = optConfig.klLossCoeff > 0;
+        try {
+            let data: GraphData;
 
-            // Validate: at least one loss type must be active
-            if (!useCE && !useKL) {
-                throw new Error("At least one loss type must be active (set coeff > 0)");
-            }
-            // Validate: CE coeff > 0 requires label token
-            if (optConfig.ceLossCoeff > 0 && !optConfig.labelTokenId) {
-                throw new Error("Label token required when ce_coeff > 0");
-            }
+            if (isOptimized) {
+                const useCE = optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null;
+                const useKL = optConfig.klLossCoeff > 0;
 
-            // Build params with optional CE/KL settings
-            const params: api.ComputeGraphOptimizedParams = {
-                promptId: activeCard.id,
-                normalize: defaultViewSettings.normalizeEdges,
-                impMinCoeff: optConfig.impMinCoeff,
-                steps: optConfig.steps,
-                pnorm: optConfig.pnorm,
-                outputProbThreshold: 0.01,
-                ciThreshold: defaultViewSettings.ciThreshold,
-            };
-            if (useCE) {
-                params.labelToken = optConfig.labelTokenId!;
-                params.ceLossCoeff = optConfig.ceLossCoeff;
-            }
-            if (useKL) {
-                params.klLossCoeff = optConfig.klLossCoeff;
-            }
-
-            data = await api.computeGraphOptimizedStreaming(params, (progress) => {
-                if (!loadingState) return;
-                if (progress.stage === "graph") {
-                    loadingState.currentStage = 1;
-                    loadingState.stages[1].progress = progress.current / progress.total;
-                } else {
-                    loadingState.stages[0].progress = progress.current / progress.total;
+                // Validate: at least one loss type must be active
+                if (!useCE && !useKL) {
+                    throw new Error("At least one loss type must be active (set coeff > 0)");
                 }
+                // Validate: CE coeff > 0 requires label token
+                if (optConfig.ceLossCoeff > 0 && !optConfig.labelTokenId) {
+                    throw new Error("Label token required when ce_coeff > 0");
+                }
+
+                // Build params with optional CE/KL settings
+                const params: api.ComputeGraphOptimizedParams = {
+                    promptId: cardId,
+                    normalize: defaultViewSettings.normalizeEdges,
+                    impMinCoeff: optConfig.impMinCoeff,
+                    steps: optConfig.steps,
+                    pnorm: optConfig.pnorm,
+                    outputProbThreshold: 0.01,
+                    ciThreshold: defaultViewSettings.ciThreshold,
+                };
+                if (useCE) {
+                    params.labelToken = optConfig.labelTokenId!;
+                    params.ceLossCoeff = optConfig.ceLossCoeff;
+                }
+                if (useKL) {
+                    params.klLossCoeff = optConfig.klLossCoeff;
+                }
+
+                data = await api.computeGraphOptimizedStreaming(params, (progress) => {
+                    if (graphCompute.status !== "computing") return;
+                    if (progress.stage === "graph") {
+                        graphCompute.progress.currentStage = 1;
+                        graphCompute.progress.stages[1].progress = progress.current / progress.total;
+                    } else {
+                        graphCompute.progress.stages[0].progress = progress.current / progress.total;
+                    }
+                });
+            } else {
+                const params: api.ComputeGraphParams = {
+                    promptId: cardId,
+                    normalize: defaultViewSettings.normalizeEdges,
+                    ciThreshold: defaultViewSettings.ciThreshold,
+                };
+                data = await api.computeGraphStreaming(params, (progress) => {
+                    if (graphCompute.status !== "computing") return;
+                    graphCompute.progress.stages[0].progress = progress.current / progress.total;
+                });
+            }
+
+            const label = isOptimized ? `Optimized (${optConfig.steps} steps)` : "Standard";
+
+            // Initialize composer state for the new graph
+            getComposerState(data.id, Object.keys(data.nodeCiVals));
+
+            promptCards = promptCards.map((card) => {
+                if (card.id !== cardId) return card;
+                return {
+                    ...card,
+                    graphs: [
+                        ...card.graphs,
+                        {
+                            id: data.id,
+                            label,
+                            data,
+                            viewSettings: { ...defaultViewSettings },
+                            interventionRuns: [],
+                        },
+                    ],
+                    activeGraphId: data.id,
+                };
             });
-        } else {
-            const params: api.ComputeGraphParams = {
-                promptId: activeCard.id,
-                normalize: defaultViewSettings.normalizeEdges,
-                ciThreshold: defaultViewSettings.ciThreshold,
-            };
-            data = await api.computeGraphStreaming(params, (progress) => {
-                if (!loadingState) return;
-                loadingState.stages[0].progress = progress.current / progress.total;
-            });
+            graphCompute = { status: "idle" };
+        } catch (error) {
+            graphCompute = { status: "error", error: String(error) };
         }
-
-        const label = isOptimized ? `Optimized (${optConfig.steps} steps)` : "Standard";
-
-        // Initialize composer state for the new graph
-        getComposerState(data.id, Object.keys(data.nodeCiVals));
-
-        promptCards = promptCards.map((card) => {
-            if (card.id !== activeCard.id) return card;
-            return {
-                ...card,
-                graphs: [
-                    ...card.graphs,
-                    {
-                        id: data.id,
-                        label,
-                        data,
-                        viewSettings: { ...defaultViewSettings },
-                        interventionRuns: [],
-                    },
-                ],
-                activeGraphId: data.id,
-            };
-        });
-        loadingCardId = null;
-        loadingState = null;
     }
 
     // Refetch graph data when normalize or ciThreshold changes (these affect server-side filtering)
@@ -657,7 +656,7 @@
                         <!-- Prompt header with compute options and graph tabs -->
                         <PromptCardHeader
                             card={activeCard}
-                            isLoading={loadingCardId === activeCard.id}
+                            isLoading={graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
                             tokens={allTokens}
                             onUseOptimizedChange={handleUseOptimizedChange}
                             onOptimizeConfigChange={handleOptimizeConfigChange}
@@ -777,16 +776,21 @@
                             {/if}
                         {:else}
                             <!-- No graph yet -->
-                            {#if computeError}
+                            {#if graphCompute.status === "error"}
                                 <div class="error-banner">
-                                    {computeError}
+                                    {graphCompute.error}
+                                    <button onclick={() => (graphCompute = { status: "idle" })}>Dismiss</button>
                                     <button onclick={() => computeGraphForCard()}>Retry</button>
                                 </div>
                             {/if}
 
-                            <div class="graph-area" class:loading={loadingCardId === activeCard.id}>
-                                {#if loadingCardId === activeCard.id && loadingState}
-                                    <ComputeProgressOverlay state={loadingState} />
+                            <div
+                                class="graph-area"
+                                class:loading={graphCompute.status === "computing" &&
+                                    graphCompute.cardId === activeCard.id}
+                            >
+                                {#if graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
+                                    <ComputeProgressOverlay state={graphCompute.progress} />
                                 {:else}
                                     <div class="empty-state">
                                         <p>Click <strong>Compute</strong> to generate the attribution graph</p>
