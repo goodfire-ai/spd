@@ -40,7 +40,7 @@ def extract_activations_above_threshold(
                 if ci_val > ci_threshold:
                     activations_by_component[component_key].append(act_val)
 
-    return dict(activations_by_component)
+    return activations_by_component
 
 
 def normalize_per_component(
@@ -65,7 +65,7 @@ def normalize_per_component(
             else:
                 normalized[key] = arr - mean
         elif len(arr) == 1:
-            normalized[key] = arr - arr.mean()
+            normalized[key] = np.zeros(1)
         # Skip empty arrays
     return normalized
 
@@ -81,12 +81,11 @@ def create_scatter_plot(
         output_path: Path to save plot (if None, displays interactively)
     """
     sorted_keys = sorted(normalized_by_component.keys())
-    key_to_id = {key: i for i, key in enumerate(sorted_keys)}
 
     x_vals = []
     y_vals = []
-    for key, acts in normalized_by_component.items():
-        component_id = key_to_id[key]
+    for component_id, key in enumerate(sorted_keys):
+        acts = normalized_by_component[key]
         x_vals.extend([component_id] * len(acts))
         y_vals.extend(acts.tolist())
 
