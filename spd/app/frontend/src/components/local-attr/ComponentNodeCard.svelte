@@ -155,6 +155,7 @@
 
     <InterpretationBadge
         interpretation={componentData.interpretation}
+        prompt={componentData.prompt}
         onGenerate={componentData.generateInterpretation}
     />
 

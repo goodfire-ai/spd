@@ -1,6 +1,12 @@
 import { getContext } from "svelte";
 import type { Loadable } from ".";
-import { ApiError, getComponentCorrelations, getComponentTokenStats, requestComponentInterpretation } from "./api";
+import {
+    ApiError,
+    getComponentCorrelations,
+    getComponentTokenStats,
+    getInterpretationPrompt,
+    requestComponentInterpretation,
+} from "./api";
 import type { Interpretation } from "./api";
 import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./localAttributionsTypes";
 import { RUN_STATE_KEY, type RunStateContext } from "./runState.svelte";
@@ -20,6 +26,13 @@ export type InterpretationState =
     | { status: "loaded"; data: Interpretation }
     | { status: "error"; error: unknown };
 
+/** Prompt state: not requested, loading, loaded, or error */
+export type PromptState =
+    | { status: "none" }
+    | { status: "loading" }
+    | { status: "loaded"; data: string }
+    | { status: "error"; error: unknown };
+
 /**
  * Fetches all data for a component: detail, correlations, token stats.
  * Interpretation is derived from the global runState cache.
@@ -36,7 +49,10 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
     let generatingFor = $state<string | null>(null);
     let generationError = $state<{ key: string; error: unknown } | null>(null);
 
-    // Effect for fetching componentDetail, correlations, tokenStats
+    // Prompt state (fetched alongside other component data)
+    let prompt = $state<PromptState>({ status: "none" });
+
+    // Effect for fetching componentDetail, correlations, tokenStats, prompt
     // Only re-runs when coords change
     $effect(() => {
         const coords = getCoords();
@@ -44,6 +60,7 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
             componentDetail = { status: "uninitialized" };
             correlations = { status: "uninitialized" };
             tokenStats = { status: "uninitialized" };
+            prompt = { status: "none" };
             return;
         }
 
@@ -54,6 +71,7 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         componentDetail = { status: "loading" };
         correlations = { status: "loading" };
         tokenStats = { status: "loading" };
+        prompt = { status: "loading" };
 
         // Fetch component detail (cached in runState after first call)
         runState
@@ -94,6 +112,21 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
                     tokenStats = { status: "loaded", data: null };
                 } else {
                     tokenStats = { status: "error", error };
+                }
+            });
+
+        // Fetch prompt (404 = no interpretation for this component)
+        getInterpretationPrompt(layer, cIdx)
+            .then((data) => {
+                if (stale) return;
+                prompt = { status: "loaded", data };
+            })
+            .catch((error) => {
+                if (stale) return;
+                if (error instanceof ApiError && error.status === 404) {
+                    prompt = { status: "none" };
+                } else {
+                    prompt = { status: "error", error };
                 }
             });
 
@@ -159,6 +192,9 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         },
         get interpretation() {
             return interpretation;
+        },
+        get prompt() {
+            return prompt;
         },
         generateInterpretation,
     };

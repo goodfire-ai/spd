@@ -64,9 +64,15 @@ export function useRunState() {
             allTokens = { status: "loading" };
             interpretations = { status: "loading" };
 
-            api.listPrompts().then((p) => (prompts = { status: "loaded", data: p }));
-            api.getAllTokens().then((t) => (allTokens = { status: "loaded", data: t }));
-            api.getAllInterpretations().then((i) => (interpretations = { status: "loaded", data: i }));
+            api.listPrompts()
+                .then((p) => (prompts = { status: "loaded", data: p }))
+                .catch((error) => (prompts = { status: "error", error }));
+            api.getAllTokens()
+                .then((t) => (allTokens = { status: "loaded", data: t }))
+                .catch((error) => (allTokens = { status: "error", error }));
+            api.getAllInterpretations()
+                .then((i) => (interpretations = { status: "loaded", data: i }))
+                .catch((error) => (interpretations = { status: "error", error }));
         }
 
         return resetRunScopedState;

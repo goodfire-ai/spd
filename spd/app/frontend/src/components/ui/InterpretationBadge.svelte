@@ -1,12 +1,13 @@
 <script lang="ts">
-    import type { InterpretationState } from "../../lib/useComponentData.svelte";
+    import type { InterpretationState, PromptState } from "../../lib/useComponentData.svelte";
 
     interface Props {
         interpretation: InterpretationState;
+        prompt: PromptState;
         onGenerate?: () => void;
     }
 
-    let { interpretation, onGenerate }: Props = $props();
+    let { interpretation, prompt, onGenerate }: Props = $props();
 
     let showPrompt = $state(false);
 </script>
@@ -49,7 +50,15 @@
 
     {#if showPrompt && interpretation?.status === "loaded"}
         <div class="prompt-display">
-            <pre>{interpretation.data.prompt}</pre>
+            {#if prompt.status === "loading"}
+                <span class="loading-text">Loading prompt...</span>
+            {:else if prompt.status === "error"}
+                <span class="error-text">Error loading prompt: {String(prompt.error)}</span>
+            {:else if prompt.status === "loaded"}
+                <pre>{prompt.data}</pre>
+            {:else}
+                <span class="loading-text">Loading prompt...</span>
+            {/if}
         </div>
     {/if}
 </div>

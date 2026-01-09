@@ -68,12 +68,11 @@ router = APIRouter(prefix="/api/correlations", tags=["correlations"])
 
 
 class InterpretationResponse(BaseModel):
-    """Interpretation label for a component."""
+    """Interpretation label for a component (prompt fetched separately)."""
 
     label: str
     confidence: str
     reasoning: str
-    prompt: str
 
 
 @router.get("/interpretations")
@@ -81,19 +80,43 @@ class InterpretationResponse(BaseModel):
 def get_all_interpretations(
     loaded: DepLoadedRun,
 ) -> dict[str, InterpretationResponse]:
-    """Get all interpretation labels.
+    """Get all interpretation labels (without prompts for efficiency).
 
     Returns a dict keyed by component_key (layer:cIdx).
+    Prompts are excluded to reduce payload size - fetch individually via
+    GET /interpretations/{layer}/{component_idx}/prompt when needed.
     """
     return {
         key: InterpretationResponse(
             label=result.label,
             confidence=result.confidence,
             reasoning=result.reasoning,
-            prompt=result.prompt,
         )
         for key, result in loaded.harvest.interpretations.items()
     }
+
+
+@router.get("/interpretations/{layer}/{component_idx}/prompt")
+@log_errors
+def get_interpretation_prompt(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+) -> str:
+    """Get the prompt used to generate an interpretation.
+
+    Returns just the prompt string for the specified component.
+    """
+    component_key = f"{layer}:{component_idx}"
+    interpretations = loaded.harvest.interpretations
+
+    if component_key not in interpretations:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No interpretation found for component {component_key}",
+        )
+
+    return interpretations[component_key].prompt
 
 
 @router.post("/interpretations/{layer}/{component_idx}")
@@ -106,7 +129,7 @@ async def request_component_interpretation(
     """Generate an interpretation for a component on-demand.
 
     Requires OPENROUTER_API_KEY environment variable.
-    Returns the generated interpretation.
+    Returns the generated interpretation (prompt available via GET .../prompt endpoint).
     """
     import json
     import os
@@ -131,7 +154,6 @@ async def request_component_interpretation(
             label=result.label,
             confidence=result.confidence,
             reasoning=result.reasoning,
-            prompt=result.prompt,
         )
 
     component_data = load_component_activation_contexts(loaded.harvest.run_id, component_key)
@@ -203,7 +225,6 @@ async def request_component_interpretation(
         label=result.label,
         confidence=result.confidence,
         reasoning=result.reasoning,
-        prompt=result.prompt,
     )
 
 

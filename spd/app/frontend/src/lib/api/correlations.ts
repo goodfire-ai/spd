@@ -33,12 +33,11 @@ export async function getComponentTokenStats(
     return result;
 }
 
-// Interpretation labels
+// Interpretation labels (prompt fetched separately via getInterpretationPrompt)
 export type Interpretation = {
     label: string;
     confidence: "low" | "medium" | "high";
     reasoning: string;
-    prompt: string;
 };
 
 export async function getAllInterpretations(): Promise<Record<string, Interpretation>> {
@@ -46,6 +45,16 @@ export async function getAllInterpretations(): Promise<Record<string, Interpreta
     const result = await fetchJson<Record<string, Interpretation>>(`${API_URL}/api/correlations/interpretations`);
     const elapsed = performance.now() - start;
     console.log(`[PERF] getAllInterpretations: ${elapsed.toFixed(1)}ms (${Object.keys(result).length} interpretations)`);
+    return result;
+}
+
+export async function getInterpretationPrompt(layer: string, componentIdx: number): Promise<string> {
+    const start = performance.now();
+    const result = await fetchJson<string>(
+        `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}/prompt`,
+    );
+    const elapsed = performance.now() - start;
+    console.log(`[PERF] getInterpretationPrompt(${layer}:${componentIdx}): ${elapsed.toFixed(1)}ms`);
     return result;
 }
 
