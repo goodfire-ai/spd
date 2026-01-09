@@ -3,7 +3,9 @@
 import json
 import math
 import queue
+import sys
 import threading
+import traceback
 from collections.abc import Callable, Generator
 from itertools import groupby
 from typing import Annotated, Any, Literal
@@ -219,6 +221,7 @@ def stream_computation(
             result = work(on_progress)
             progress_queue.put({"type": "result", "result": result})
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             progress_queue.put({"type": "error", "error": str(e)})
 
     def generate() -> Generator[str]:

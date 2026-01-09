@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { EdgeAttribution } from "../../lib/localAttributionsTypes";
+    import type { EdgeAttribution, OutputProbEntry } from "../../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
     import type { Interpretation } from "../../lib/api";
     import { runState } from "../../lib/runState.svelte";
@@ -10,9 +10,11 @@
         onNodeClick: (nodeKey: string) => void;
         pageSize: number;
         direction: "positive" | "negative";
+        tokens: string[];
+        outputProbs: Record<string, OutputProbEntry>;
     };
 
-    let { items, onNodeClick, pageSize, direction }: Props = $props();
+    let { items, onNodeClick, pageSize, direction, tokens, outputProbs }: Props = $props();
 
     // Extract component key (layer:cIdx) from node key (layer:seq:cIdx)
     function getComponentKey(nodeKey: string): string {
@@ -23,6 +25,38 @@
     function getInterpretation(nodeKey: string): Interpretation | undefined {
         const componentKey = getComponentKey(nodeKey);
         return runState.getInterpretation(componentKey);
+    }
+
+    // Get display info for a node - returns label and whether it's a token (pseudo-layer) node
+    // Token nodes (wte/output) show the token string; component nodes show interpretation label
+    function getNodeDisplayInfo(nodeKey: string): { label: string; isTokenNode: boolean } {
+        const parts = nodeKey.split(":");
+        const layer = parts[0];
+        const seqIdx = parseInt(parts[1]);
+        const cIdx = parts[2];
+
+        // wte (input embedding) nodes: show the token at this sequence position
+        if (layer === "wte") {
+            if (seqIdx < 0 || seqIdx >= tokens.length) {
+                throw new Error(
+                    `EdgeAttributionList: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`,
+                );
+            }
+            return { label: tokens[seqIdx], isTokenNode: true };
+        }
+
+        // output nodes: show the predicted token string
+        if (layer === "output") {
+            const entry = outputProbs[`${seqIdx}:${cIdx}`];
+            if (!entry) {
+                throw new Error(`EdgeAttributionList: output node ${nodeKey} not found in outputProbs`);
+            }
+            return { label: entry.token, isTokenNode: true };
+        }
+
+        // Component nodes: show interpretation label or "N/A"
+        const interp = getInterpretation(nodeKey);
+        return { label: interp?.label ?? "N/A", isTokenNode: false };
     }
 
     let currentPage = $state(0);
@@ -76,7 +110,8 @@
         {#each paginatedItems as { nodeKey, value, normalizedMagnitude } (nodeKey)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
-            {@const interp = getInterpretation(nodeKey)}
+            {@const displayInfo = getNodeDisplayInfo(nodeKey)}
+            {@const interp = !displayInfo.isTokenNode ? getInterpretation(nodeKey) : undefined}
             {@const isHovered = hoveredNodeKey === nodeKey}
             <div
                 class="pill-container"
@@ -84,10 +119,10 @@
                 onmouseleave={handleMouseLeave}
             >
                 <button class="edge-pill" style="background: {bgColor};" onclick={() => onNodeClick(nodeKey)}>
-                    <span class="interp-label" style="color: {textColor};">{interp?.label ?? "N/A"}</span>
+                    <span class="interp-label" style="color: {textColor};">{displayInfo.label}</span>
                     <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
                 </button>
-                {#if isHovered && interp && tooltipPosition}
+                {#if isHovered && !displayInfo.isTokenNode && interp && tooltipPosition}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
                         class="tooltip"

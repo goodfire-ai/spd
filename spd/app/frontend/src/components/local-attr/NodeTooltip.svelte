@@ -126,6 +126,8 @@
             detail={runState.getComponentDetail(hoveredNode.layer, hoveredNode.cIdx)}
             {edgesBySource}
             {edgesByTarget}
+            {tokens}
+            {outputProbs}
             {onPinComponent}
         />
     {/if}
