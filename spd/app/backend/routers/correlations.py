@@ -4,7 +4,6 @@ These endpoints serve data produced by the harvest pipeline (spd.harvest),
 which computes component co-occurrence statistics, token associations, and interpretations.
 """
 
-import time
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -251,11 +250,7 @@ def get_component_token_stats(
     and output tokens (what this component predicts).
     Returns None if token stats haven't been harvested for this run.
     """
-    start = time.perf_counter()
     token_stats = loaded.harvest.token_stats
-
-    load_ms = (time.perf_counter() - start) * 1000
-
     component_key = f"{layer}:{component_idx}"
 
     input_stats = analysis.get_input_token_stats(
@@ -263,12 +258,6 @@ def get_component_token_stats(
     )
     output_stats = analysis.get_output_token_stats(
         token_stats, component_key, loaded.tokenizer, top_k
-    )
-
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(
-        f"[PERF] GET /token_stats/{layer}/{component_idx}: {total_ms:.1f}ms "
-        f"(load: {load_ms:.1f}ms, analysis: {total_ms - load_ms:.1f}ms)"
     )
 
     if input_stats is None or output_stats is None:
@@ -308,10 +297,7 @@ def get_component_correlations(
     Returns top-k correlations across different metrics (precision, recall, Jaccard, PMI).
     Returns None if correlations haven't been harvested for this run.
     """
-    start = time.perf_counter()
     correlations = loaded.harvest.correlations
-    load_ms = (time.perf_counter() - start) * 1000
-
     component_key = f"{layer}:{component_idx}"
 
     if not analysis.has_component(correlations, component_key):
@@ -329,7 +315,7 @@ def get_component_correlations(
             n_tokens=c.count_total,
         )
 
-    response = ComponentCorrelationsResponse(
+    return ComponentCorrelationsResponse(
         precision=[
             to_schema(c)
             for c in analysis.get_correlated_components(
@@ -359,10 +345,3 @@ def get_component_correlations(
             )
         ],
     )
-
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(
-        f"[PERF] GET /components/{layer}/{component_idx}: {total_ms:.1f}ms "
-        f"(load: {load_ms:.1f}ms, analysis: {total_ms - load_ms:.1f}ms)"
-    )
-    return response

@@ -75,14 +75,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 async def log_request_timing(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    """Log timing for all requests."""
+    """Log timing for slow requests (>1s)."""
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
-    if duration_ms > 5000:
+    if duration_ms > 1000:
         logger.warning(f"[SLOW] {request.method} {request.url.path} -> {duration_ms:.1f}ms")
-    else:
-        logger.info(f"[TIMING] {request.method} {request.url.path} -> {duration_ms:.1f}ms")
     return response
 
 

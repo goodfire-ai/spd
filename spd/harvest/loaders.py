@@ -2,7 +2,6 @@
 
 import json
 import threading
-import time
 
 from spd.harvest.schemas import (
     ActivationExample,
@@ -13,22 +12,15 @@ from spd.harvest.schemas import (
     get_correlations_dir,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
-from spd.log import logger
 
 
 def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSummary] | None:
     """Load lightweight summary of activation contexts (just metadata, not full examples)."""
-    start = time.perf_counter()
     ctx_dir = get_activation_contexts_dir(wandb_run_id)
     path = ctx_dir / "summary.json"
     if not path.exists():
         return None
-    result = ComponentSummary.load_all(path)
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    logger.info(
-        f"[PERF] load_activation_contexts_summary: {elapsed_ms:.1f}ms ({len(result)} components)"
-    )
-    return result
+    return ComponentSummary.load_all(path)
 
 
 # Cache for component indices (run_id -> {component_key -> byte_offset})
@@ -58,7 +50,6 @@ def _get_component_index(wandb_run_id: str) -> dict[str, int]:
         components_path = ctx_dir / "components.jsonl"
         assert components_path.exists(), f"No activation contexts found at {components_path}"
 
-        start = time.perf_counter()
         index: dict[str, int] = {}
         with open(components_path) as f:
             while True:
@@ -76,15 +67,12 @@ def _get_component_index(wandb_run_id: str) -> dict[str, int]:
                 component_key = line[key_start:key_end]
                 index[component_key] = offset
 
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        logger.info(f"[PERF] Built component index: {elapsed_ms:.1f}ms ({len(index)} components)")
         _component_index_cache[wandb_run_id] = index
         return index
 
 
 def load_component_activation_contexts(wandb_run_id: str, component_key: str) -> ComponentData:
     """Load a single component's activation contexts using index for O(1) lookup."""
-    start = time.perf_counter()
     ctx_dir = get_activation_contexts_dir(wandb_run_id)
     path = ctx_dir / "components.jsonl"
     assert path.exists(), f"No activation contexts found at {path}"
@@ -102,31 +90,20 @@ def load_component_activation_contexts(wandb_run_id: str, component_key: str) ->
     data["activation_examples"] = [ActivationExample(**ex) for ex in data["activation_examples"]]
     data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
     data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"[PERF] load_component_activation_contexts({component_key}): {elapsed_ms:.1f}ms")
     return ComponentData(**data)
 
 
 def load_correlations(wandb_run_id: str) -> CorrelationStorage:
     """Load component correlations from harvest output."""
-    start = time.perf_counter()
     corr_dir = get_correlations_dir(wandb_run_id)
     path = corr_dir / "component_correlations.pt"
     assert path.exists()
-    result = CorrelationStorage.load(path)
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"[PERF] load_correlations: {elapsed_ms:.1f}ms")
-    return result
+    return CorrelationStorage.load(path)
 
 
 def load_token_stats(wandb_run_id: str) -> TokenStatsStorage:
     """Load token statistics from harvest output."""
-    start = time.perf_counter()
     corr_dir = get_correlations_dir(wandb_run_id)
     path = corr_dir / "token_stats.pt"
     assert path.exists()
-    result = TokenStatsStorage.load(path)
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"[PERF] load_token_stats: {elapsed_ms:.1f}ms")
-    return result
+    return TokenStatsStorage.load(path)
