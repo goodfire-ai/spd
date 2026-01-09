@@ -10,9 +10,9 @@
         type NodePosition,
         type TokenInfo,
     } from "../../lib/localAttributionsTypes";
-    import { RUN_STATE_KEY, type RunStateContext } from "../../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
 
-    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+    const runState = getContext<RunContext>(RUN_KEY);
     import {
         calcTooltipPos,
         computeClusterSpans,

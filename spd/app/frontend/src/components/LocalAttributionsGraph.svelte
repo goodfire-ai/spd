@@ -22,11 +22,11 @@
         type ClusterSpan,
     } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
-    import { RUN_STATE_KEY, type RunStateContext } from "../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import { useZoomPan } from "../lib/useZoomPan.svelte";
     import ZoomControls from "../lib/ZoomControls.svelte";
 
-    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+    const runState = getContext<RunContext>(RUN_KEY);
 
     // Constants
     const COMPONENT_SIZE = 8;

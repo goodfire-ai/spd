@@ -1,13 +1,13 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import { RUN_STATE_KEY, type RunStateContext } from "../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ClusterPathInput from "./ClusterPathInput.svelte";
     import DatasetSearchTab from "./DatasetSearchTab.svelte";
     import LocalAttributionsTab from "./LocalAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./ui/DisplaySettingsDropdown.svelte";
     import ActivationContextsTab from "./ActivationContextsTab.svelte";
 
-    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+    const runState = getContext<RunContext>(RUN_KEY);
 
     const onChangeRun = () => {
         runState.clearRun();

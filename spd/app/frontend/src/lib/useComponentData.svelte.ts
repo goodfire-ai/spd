@@ -9,7 +9,7 @@ import {
 } from "./api";
 import type { Interpretation, InterpretationDetail } from "./api";
 import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./localAttributionsTypes";
-import { RUN_STATE_KEY, type RunStateContext } from "./runState.svelte";
+import { RUN_KEY, type RunContext } from "./useRun.svelte";
 
 /** Correlations are paginated in the UI, so fetch more */
 const CORRELATIONS_TOP_K = 100;
@@ -35,7 +35,7 @@ export type InterpretationState =
  * Interpretation detail (reasoning + prompt) is fetched on-demand.
  */
 export function useComponentData() {
-    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+    const runState = getContext<RunContext>(RUN_KEY);
 
     let componentDetail = $state<Loadable<ComponentDetail>>({ status: "uninitialized" });
     // null inside Loadable means "no data for this component" (404)

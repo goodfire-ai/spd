@@ -1,8 +1,8 @@
 /**
  * Run-scoped state hook
  *
- * Call useRunState() in App.svelte and provide via context.
- * Child components access it via getContext('runState').
+ * Call useRun() in App.svelte and provide via context.
+ * Child components access it via getContext('run').
  */
 
 import type { Loadable } from ".";
@@ -24,7 +24,7 @@ type ClusterMapping = {
     runWandbPath: string;
 };
 
-export function useRunState() {
+export function useRun() {
     /** The currently loaded run */
     let run = $state<Loadable<RunData>>({ status: "uninitialized" });
 
@@ -192,8 +192,8 @@ export function useRunState() {
     };
 }
 
-/** Type of the runState returned by useRunState() */
-export type RunStateContext = ReturnType<typeof useRunState>;
+/** Type of the run context returned by useRun() */
+export type RunContext = ReturnType<typeof useRun>;
 
-/** Context key for runState */
-export const RUN_STATE_KEY = "runState";
+/** Context key for run state */
+export const RUN_KEY = "run";

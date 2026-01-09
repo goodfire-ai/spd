@@ -1,14 +1,14 @@
 <script lang="ts">
     import * as api from "./lib/api";
-    import { useRunState, RUN_STATE_KEY } from "./lib/runState.svelte";
+    import { useRun, RUN_KEY } from "./lib/useRun.svelte";
     import type { Loadable } from "./lib";
     import { onMount, setContext } from "svelte";
     import RunSelector from "./components/RunSelector.svelte";
     import RunView from "./components/RunView.svelte";
 
     // Initialize run state and provide via context for all child components
-    const runState = useRunState();
-    setContext(RUN_STATE_KEY, runState);
+    const runState = useRun();
+    setContext(RUN_KEY, runState);
 
     let backendUser = $state<Loadable<string>>({ status: "uninitialized" });
 

@@ -3,10 +3,10 @@
     import type { EdgeAttribution, OutputProbEntry } from "../../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
     import type { Interpretation } from "../../lib/api";
-    import { RUN_STATE_KEY, type RunStateContext } from "../../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../local-attr/graphUtils";
 
-    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+    const runState = getContext<RunContext>(RUN_KEY);
 
     type Props = {
         items: EdgeAttribution[];

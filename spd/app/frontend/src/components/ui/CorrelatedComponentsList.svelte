@@ -2,11 +2,11 @@
     import { getContext } from "svelte";
     import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
     import { displaySettings } from "../../lib/displaySettings.svelte";
-    import { RUN_STATE_KEY, type RunStateContext } from "../../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import SetOverlapVis from "./SetOverlapVis.svelte";
     import { lerp } from "../local-attr/graphUtils";
 
-    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+    const runState = getContext<RunContext>(RUN_KEY);
 
     type Props = {
         items: CorrelatedComponent[];

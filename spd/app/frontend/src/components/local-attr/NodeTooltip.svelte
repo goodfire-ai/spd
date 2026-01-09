@@ -2,11 +2,11 @@
     import { getContext } from "svelte";
     import type { OutputProbEntry, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
-    import { RUN_STATE_KEY, type RunStateContext } from "../../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
-    const runState = getContext<RunStateContext>(RUN_STATE_KEY);
+    const runState = getContext<RunContext>(RUN_KEY);
 
     type HoveredNode = {
         layer: string;
