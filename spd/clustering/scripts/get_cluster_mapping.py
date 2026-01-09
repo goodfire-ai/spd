@@ -9,7 +9,7 @@ Output format:
     {
         "ensemble_id": "e-5f228e5f",
         "notes": "",
-        "spd_run": "spd/goodfire/5cr21lbs",
+        "spd_run": "goodfire/spd/5cr21lbs",
         "clusters": {"h.0.mlp.down_proj:1": 0, "h.0.mlp.down_proj:2": null, ...}
     }
 
@@ -22,9 +22,7 @@ from pathlib import Path
 
 import fire
 import numpy as np
-import yaml
 
-from spd.settings import REPO_ROOT
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -83,26 +81,43 @@ def get_cluster_mapping(
 
 
 def get_spd_run_path(ensemble_dir: Path) -> str:
-    """Extract the SPD run path from the ensemble's pipeline config.
+    """Extract the SPD run path from a clustering run's saved config.
 
-    Follows pipeline_config.yaml -> clustering_run_config_path -> model_path,
-    then parses the wandb path.
+    Looks up the clustering runs in the ensemble registry, then reads the
+    model_path from the first clustering run's saved config file. This ensures
+    we get the actual model_path that was used at clustering time, not the
+    current value in the repo's config file.
 
     Returns:
-        Formatted path like "spd/goodfire/5cr21lbs"
+        Formatted path like "goodfire/spd/5cr21lbs"
     """
-    pipeline_config_path = ensemble_dir / "pipeline_config.yaml"
-    assert pipeline_config_path.exists(), f"Pipeline config not found: {pipeline_config_path}"
+    from spd.clustering.ensemble_registry import get_clustering_runs
+    from spd.clustering.scripts.run_clustering import ClusteringRunStorage
+    from spd.utils.run_utils import ExecutionStamp
 
-    with open(pipeline_config_path) as f:
-        pipeline_config = yaml.safe_load(f)
+    # Get the ensemble ID from the directory name
+    ensemble_id = ensemble_dir.name
 
-    clustering_run_config_path = REPO_ROOT / pipeline_config["clustering_run_config_path"]
-    assert clustering_run_config_path.exists(), (
-        f"Clustering run config not found: {clustering_run_config_path}"
+    # Look up clustering runs in the registry
+    clustering_runs = get_clustering_runs(ensemble_id)
+    assert clustering_runs, f"No clustering runs found for ensemble {ensemble_id}"
+
+    # Use the first clustering run's saved config
+    _idx, clustering_run_id = clustering_runs[0]
+    storage = ClusteringRunStorage(
+        ExecutionStamp(
+            run_id=clustering_run_id,
+            snapshot_branch="<not needed>",
+            commit_hash="<not needed>",
+            run_type="clustering/runs",
+        )
     )
 
-    with open(clustering_run_config_path) as f:
+    assert storage.config_path.exists(), (
+        f"Clustering run config not found: {storage.config_path}"
+    )
+
+    with open(storage.config_path) as f:
         clustering_run_config = json.load(f)
 
     model_path = clustering_run_config["model_path"]
