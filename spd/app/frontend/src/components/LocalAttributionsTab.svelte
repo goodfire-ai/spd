@@ -101,10 +101,10 @@
 
     function handlePinnedNodesChange(nodes: PinnedNode[]) {
         pinnedNodes = nodes;
-        // Load component details for any newly pinned nodes
+        // Warm cache for any newly pinned nodes (fire-and-forget)
         for (const node of nodes) {
             if (node.layer !== "wte" && node.layer !== "output") {
-                runState.loadComponentDetail(node.layer, node.cIdx);
+                runState.getComponentDetail(node.layer, node.cIdx);
             }
         }
     }

@@ -1,7 +1,6 @@
 <script lang="ts">
     import type { OutputProbEntry, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
-    import { runState } from "../../lib/runState.svelte";
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
@@ -107,7 +106,6 @@
             layer={hoveredNode.layer}
             cIdx={hoveredNode.cIdx}
             seqIdx={hoveredNode.seqIdx}
-            detail={runState.getComponentDetail(hoveredNode.layer, hoveredNode.cIdx)}
             {edgesBySource}
             {edgesByTarget}
             {onPinComponent}

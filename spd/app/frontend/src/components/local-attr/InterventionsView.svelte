@@ -447,7 +447,7 @@
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
 
         if (layer !== "output") {
-            runState.loadComponentDetail(layer, cIdx);
+            runState.getComponentDetail(layer, cIdx);
         }
     }
 

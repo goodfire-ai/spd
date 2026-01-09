@@ -1,7 +1,6 @@
 <script lang="ts">
     import type { OutputProbEntry, PinnedNode, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
-    import { runState } from "../../lib/runState.svelte";
     import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
@@ -77,7 +76,6 @@
                             layer={node.layer}
                             cIdx={node.cIdx}
                             seqIdx={node.seqIdx}
-                            detail={runState.getComponentDetail(node.layer, node.cIdx)}
                             {edgesBySource}
                             {edgesByTarget}
                             onPinComponent={toggleComponentPinned}

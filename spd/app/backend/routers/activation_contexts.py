@@ -3,6 +3,7 @@
 These endpoints serve activation context data from the harvest pipeline output.
 """
 
+import time
 from collections import defaultdict
 
 import torch
@@ -14,6 +15,7 @@ from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
 from spd.harvest.loaders import load_component_activation_contexts
+from spd.log import logger
 from spd.utils.distributed_utils import get_device
 
 
@@ -42,7 +44,9 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
+    start = time.perf_counter()
     summary_data = loaded.harvest.activation_contexts_summary
+    load_ms = (time.perf_counter() - start) * 1000
     if summary_data is None:
         raise HTTPException(
             status_code=404,
@@ -62,6 +66,11 @@ def get_activation_contexts_summary(
     for layer in summary:
         summary[layer].sort(key=lambda x: x.mean_ci, reverse=True)
 
+    total_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        f"[PERF] GET /activation_contexts/summary: {total_ms:.1f}ms total "
+        f"(load: {load_ms:.1f}ms, transform: {total_ms - load_ms:.1f}ms)"
+    )
     return dict(summary)
 
 
@@ -73,9 +82,11 @@ def get_activation_context_detail(
     loaded: DepLoadedRun,
 ) -> SubcomponentActivationContexts:
     """Return full activation context data for a single component."""
+    start = time.perf_counter()
     component_key = f"{layer}:{component_idx}"
 
     comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
+    load_ms = (time.perf_counter() - start) * 1000
     if comp is None:
         raise HTTPException(status_code=404, detail=f"Component {component_key} not found")
 
@@ -93,6 +104,11 @@ def get_activation_context_detail(
     example_ci = [ex.ci_values for ex in comp.activation_examples]
     example_component_acts = [ex.component_acts for ex in comp.activation_examples]
 
+    total_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        f"[PERF] GET /activation_contexts/{layer}/{component_idx}: {total_ms:.1f}ms total "
+        f"(load: {load_ms:.1f}ms, transform: {total_ms - load_ms:.1f}ms)"
+    )
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,
         mean_ci=comp.mean_ci,

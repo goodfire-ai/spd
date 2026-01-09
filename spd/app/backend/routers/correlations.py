@@ -4,6 +4,7 @@ These endpoints serve data produced by the harvest pipeline (spd.harvest),
 which computes component co-occurrence statistics, token associations, and interpretations.
 """
 
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -110,12 +111,22 @@ def get_component_interpretation(
 
     Returns None if no interpretation exists for this component.
     """
+    start = time.perf_counter()
     interpretations = loaded.harvest.interpretations
+    load_ms = (time.perf_counter() - start) * 1000
     if interpretations is None:
+        logger.info(
+            f"[PERF] GET /interpretations/{layer}/{component_idx}: {load_ms:.1f}ms (no interpretations)"
+        )
         return None
 
     component_key = f"{layer}:{component_idx}"
     result = interpretations.get(component_key)
+    total_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        f"[PERF] GET /interpretations/{layer}/{component_idx}: {total_ms:.1f}ms "
+        f"(load: {load_ms:.1f}ms, found: {result is not None})"
+    )
     if result is None:
         return None
 
@@ -267,8 +278,13 @@ def get_component_token_stats(
     and output tokens (what this component predicts).
     Returns None if token stats haven't been harvested for this run.
     """
+    start = time.perf_counter()
     token_stats = loaded.harvest.token_stats
+    load_ms = (time.perf_counter() - start) * 1000
     if token_stats is None:
+        logger.info(
+            f"[PERF] GET /token_stats/{layer}/{component_idx}: {load_ms:.1f}ms (no token stats)"
+        )
         return None
 
     component_key = f"{layer}:{component_idx}"
@@ -278,6 +294,12 @@ def get_component_token_stats(
     )
     output_stats = analysis.get_output_token_stats(
         token_stats, component_key, loaded.tokenizer, top_k
+    )
+
+    total_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        f"[PERF] GET /token_stats/{layer}/{component_idx}: {total_ms:.1f}ms "
+        f"(load: {load_ms:.1f}ms, analysis: {total_ms - load_ms:.1f}ms)"
     )
 
     if input_stats is None or output_stats is None:
@@ -317,8 +339,13 @@ def get_component_correlations(
     Returns top-k correlations across different metrics (precision, recall, Jaccard, PMI).
     Returns None if correlations haven't been harvested for this run.
     """
+    start = time.perf_counter()
     correlations = loaded.harvest.correlations
+    load_ms = (time.perf_counter() - start) * 1000
     if correlations is None:
+        logger.info(
+            f"[PERF] GET /components/{layer}/{component_idx}: {load_ms:.1f}ms (no correlations)"
+        )
         return None
 
     component_key = f"{layer}:{component_idx}"
@@ -369,4 +396,9 @@ def get_component_correlations(
         ],
     )
 
+    total_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        f"[PERF] GET /components/{layer}/{component_idx}: {total_ms:.1f}ms "
+        f"(load: {load_ms:.1f}ms, analysis: {total_ms - load_ms:.1f}ms)"
+    )
     return response

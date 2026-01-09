@@ -15,19 +15,32 @@ export type SubcomponentActivationContexts = {
 };
 
 export async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {
-    return fetchJson<ActivationContextsSummary>(`${API_URL}/api/activation_contexts/summary`);
+    const start = performance.now();
+    const result = await fetchJson<ActivationContextsSummary>(`${API_URL}/api/activation_contexts/summary`);
+    const elapsed = performance.now() - start;
+    const componentCount = Object.values(result).reduce((sum, arr) => sum + arr.length, 0);
+    console.log(`[PERF] getActivationContextsSummary: ${elapsed.toFixed(1)}ms (${componentCount} components)`);
+    return result;
 }
 
 export async function getComponentDetail(layer: string, componentIdx: number): Promise<ComponentDetail> {
-    return fetchJson<ComponentDetail>(
+    const start = performance.now();
+    const result = await fetchJson<ComponentDetail>(
         `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`,
     );
+    const elapsed = performance.now() - start;
+    console.log(`[PERF] getComponentDetail(${layer}:${componentIdx}): ${elapsed.toFixed(1)}ms`);
+    return result;
 }
 
 export async function probeComponent(text: string, layer: string, componentIdx: number): Promise<ComponentProbeResult> {
-    return fetchJson<ComponentProbeResult>(`${API_URL}/api/activation_contexts/probe`, {
+    const start = performance.now();
+    const result = await fetchJson<ComponentProbeResult>(`${API_URL}/api/activation_contexts/probe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, layer, component_idx: componentIdx }),
     });
+    const elapsed = performance.now() - start;
+    console.log(`[PERF] probeComponent(${layer}:${componentIdx}): ${elapsed.toFixed(1)}ms`);
+    return result;
 }

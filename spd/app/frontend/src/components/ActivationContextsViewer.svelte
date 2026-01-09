@@ -1,6 +1,7 @@
 <script lang="ts">
+    import type { Loadable } from "../lib";
     import { displaySettings } from "../lib/displaySettings.svelte";
-    import type { ActivationContextsSummary, ComponentSummary } from "../lib/localAttributionsTypes";
+    import type { ActivationContextsSummary, ComponentDetail, ComponentSummary } from "../lib/localAttributionsTypes";
     import { runState } from "../lib/runState.svelte";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
@@ -35,7 +36,7 @@
         return cIdx !== undefined ? { layer: selectedLayer, cIdx } : null;
     });
 
-    let currentComponent = $derived(runState.getComponentDetail(selectedLayer, currentMetadata.subcomponent_idx));
+    let currentComponent = $state<Loadable<ComponentDetail>>(null);
 
     function handlePageInput(event: Event) {
         const target = event.target as HTMLInputElement;
@@ -90,7 +91,17 @@
 
     // Lazy-load component data when page or layer changes
     $effect(() => {
-        runState.loadComponentDetail(selectedLayer, currentMetadata.subcomponent_idx);
+        const layer = selectedLayer;
+        const cIdx = currentMetadata.subcomponent_idx;
+        currentComponent = { status: "loading" };
+        runState
+            .getComponentDetail(layer, cIdx)
+            .then((data) => {
+                currentComponent = { status: "loaded", data };
+            })
+            .catch((error) => {
+                currentComponent = { status: "error", error };
+            });
     });
 
     // Derive token lists from loaded tokenStats (null if not loaded or no data)

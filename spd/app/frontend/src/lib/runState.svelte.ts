@@ -9,7 +9,7 @@
 import type { Loadable } from ".";
 import * as api from "./api";
 import type { RunState as RunData, Interpretation } from "./api";
-import type { ComponentDetail } from "./localAttributionsTypes";
+import type { ActivationContextsSummary, ComponentDetail } from "./localAttributionsTypes";
 
 class RunState {
     /** The currently loaded run */
@@ -18,8 +18,11 @@ class RunState {
     /** Interpretation labels keyed by component key (layer:cIdx) */
     interpretations = $state<Record<string, Interpretation>>({});
 
-    /** Lazy-loaded component details keyed by component key (layer:cIdx) */
-    componentDetails = $state<Record<string, Loadable<ComponentDetail>>>({});
+    /** Cached component details keyed by component key (layer:cIdx) - non-reactive */
+    private _componentDetailsCache: Record<string, ComponentDetail> = {};
+
+    /** Cached activation contexts summary (non-reactive to avoid dependency cycles) */
+    private _summaryCache: ActivationContextsSummary | null = null;
 
     /** Load a run by wandb path */
     async loadRun(wandbPath: string, contextLength: number) {
@@ -68,30 +71,30 @@ class RunState {
         return this.interpretations[componentKey];
     }
 
-    /** Load component detail (lazy, with caching) */
-    async loadComponentDetail(layer: string, cIdx: number) {
+    /** Get component detail (fetches once, then cached) */
+    async getComponentDetail(layer: string, cIdx: number): Promise<ComponentDetail> {
         const cacheKey = `${layer}:${cIdx}`;
-        if (this.componentDetails[cacheKey]?.status === "loading") return;
+        if (cacheKey in this._componentDetailsCache) return this._componentDetailsCache[cacheKey];
 
-        this.componentDetails[cacheKey] = { status: "loading" };
-        try {
-            const detail = await api.getComponentDetail(layer, cIdx);
-            this.componentDetails[cacheKey] = { status: "loaded", data: detail };
-        } catch (error) {
-            this.componentDetails[cacheKey] = { status: "error", error };
-        }
+        const detail = await api.getComponentDetail(layer, cIdx);
+        this._componentDetailsCache[cacheKey] = detail;
+        return detail;
     }
 
-    /** Get component detail from cache */
-    getComponentDetail(layer: string, cIdx: number): Loadable<ComponentDetail> {
-        const cacheKey = `${layer}:${cIdx}`;
-        return this.componentDetails[cacheKey] ?? null;
+    /** Get activation contexts summary (fetches once, then cached) */
+    async getActivationContextsSummary(): Promise<ActivationContextsSummary> {
+        if (this._summaryCache) return this._summaryCache;
+
+        const summary = await api.getActivationContextsSummary();
+        this._summaryCache = summary;
+        return summary;
     }
 
     /** Clear all run-scoped cached state (call when run changes) */
     clear() {
         this.interpretations = {};
-        this.componentDetails = {};
+        this._componentDetailsCache = {};
+        this._summaryCache = null;
     }
 
     /** Fully reset the store (including run) */

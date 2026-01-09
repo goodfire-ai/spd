@@ -1,12 +1,11 @@
 import type { Loadable } from ".";
 import {
-    getActivationContextsSummary,
     getComponentCorrelations,
     getComponentInterpretation,
     getComponentTokenStats,
     requestComponentInterpretation,
 } from "./api";
-import type { ComponentCorrelations, ComponentSummary, TokenStats } from "./localAttributionsTypes";
+import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./localAttributionsTypes";
 import { runState } from "./runState.svelte";
 
 /** Correlations are paginated in the UI, so fetch more */
@@ -31,7 +30,7 @@ import type { Interpretation } from "./api";
  * Handles stale request cancellation when coords change.
  */
 export function useComponentData(getCoords: () => ComponentCoords | null) {
-    let componentSummary = $state<Loadable<ComponentSummary>>(null);
+    let componentDetail = $state<Loadable<ComponentDetail>>(null);
 
     // TODO why are these inner type nullable? this semantically conflicts with null as uninitialized
     let correlations = $state<Loadable<ComponentCorrelations | null>>(null);
@@ -42,7 +41,7 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
     $effect(() => {
         const coords = getCoords();
         if (!coords) {
-            componentSummary = null;
+            componentDetail = null;
             correlations = null;
             tokenStats = null;
             interpretation = { status: "none" };
@@ -53,28 +52,22 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         let stale = false;
 
         // Set loading state
-        componentSummary = { status: "loading" };
+        componentDetail = { status: "loading" };
         correlations = { status: "loading" };
         tokenStats = { status: "loading" };
         interpretation = { status: "loading" };
 
-        // Fetch component summary
-        getActivationContextsSummary()
+        // Fetch component detail (cached in runState after first call)
+        // Note: componentDetail includes mean_ci, so no separate fetch needed
+        runState
+            .getComponentDetail(layer, cIdx)
             .then((data) => {
                 if (stale) return;
-                const summary = data[layer].find((s) => s.subcomponent_idx === cIdx);
-                if (!summary) {
-                    componentSummary = {
-                        status: "error",
-                        error: new Error(`Component summary not found for ${layer}:${cIdx}`),
-                    };
-                    return;
-                }
-                componentSummary = { status: "loaded", data: summary };
+                componentDetail = { status: "loaded", data };
             })
             .catch((error) => {
                 if (stale) return;
-                componentSummary = { status: "error", error };
+                componentDetail = { status: "error", error };
             });
 
         // Fetch correlations
@@ -131,8 +124,8 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
     }
 
     return {
-        get componentSummary() {
-            return componentSummary;
+        get componentDetail() {
+            return componentDetail;
         },
         get correlations() {
             return correlations;

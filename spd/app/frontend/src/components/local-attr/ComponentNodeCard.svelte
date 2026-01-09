@@ -1,7 +1,7 @@
 <script lang="ts">
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
-    import type { ComponentDetail, Edge, EdgeAttribution } from "../../lib/localAttributionsTypes";
+    import type { Edge, EdgeAttribution } from "../../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
@@ -10,7 +10,6 @@
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
-    import type { Loadable } from "../../lib/index";
 
     type Props = {
         layer: string;
@@ -18,11 +17,10 @@
         seqIdx: number;
         edgesBySource: Map<string, Edge[]>;
         edgesByTarget: Map<string, Edge[]>;
-        detail: Loadable<ComponentDetail>;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     };
 
-    let { layer, cIdx, seqIdx, edgesBySource, edgesByTarget, onPinComponent, detail }: Props = $props();
+    let { layer, cIdx, seqIdx, edgesBySource, edgesByTarget, onPinComponent }: Props = $props();
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -148,8 +146,8 @@
 
 <div class="component-node-card">
     <SectionHeader title="Position {seqIdx}" level="h4">
-        {#if componentData.componentSummary?.status === "loaded"}
-            <span class="mean-ci">Mean CI: {formatNumericalValue(componentData.componentSummary.data.mean_ci)}</span>
+        {#if componentData.componentDetail?.status === "loaded"}
+            <span class="mean-ci">Mean CI: {formatNumericalValue(componentData.componentDetail.data.mean_ci)}</span>
         {/if}
     </SectionHeader>
 
@@ -263,20 +261,19 @@
 
     <div class="activating-examples-section">
         <SectionHeader title="Activating Examples" />
-        {#if detail?.status === "loading"}
+        {#if componentData.componentDetail?.status === "loading"}
             <StatusText>Loading details...</StatusText>
-        {:else if detail?.status === "loaded"}
-            {#if detail?.data.example_tokens.length > 0}
-                <!-- Full mode: paged table with filtering -->
+        {:else if componentData.componentDetail?.status === "loaded"}
+            {#if componentData.componentDetail.data.example_tokens.length > 0}
                 <ActivationContextsPagedTable
-                    exampleTokens={detail.data.example_tokens}
-                    exampleCi={detail.data.example_ci}
-                    exampleComponentActs={detail.data.example_component_acts}
+                    exampleTokens={componentData.componentDetail.data.example_tokens}
+                    exampleCi={componentData.componentDetail.data.example_ci}
+                    exampleComponentActs={componentData.componentDetail.data.example_component_acts}
                     {activatingTokens}
                 />
             {/if}
-        {:else if detail?.status === "error"}
-            <StatusText>Error loading details: {String(detail?.error)}</StatusText>
+        {:else if componentData.componentDetail?.status === "error"}
+            <StatusText>Error loading details: {String(componentData.componentDetail.error)}</StatusText>
         {:else}
             <StatusText>Something went wrong loading details.</StatusText>
         {/if}

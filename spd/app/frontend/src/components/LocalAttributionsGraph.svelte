@@ -502,9 +502,9 @@
         hoveredNode = { layer, seqIdx, cIdx };
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
 
-        // Lazy load component details if needed
+        // Lazy load component details if needed (fire-and-forget to warm cache)
         if (layer !== "output") {
-            runState.loadComponentDetail(layer, cIdx);
+            runState.getComponentDetail(layer, cIdx);
         }
     }
 

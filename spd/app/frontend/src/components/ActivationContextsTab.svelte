@@ -1,15 +1,19 @@
 <script lang="ts">
     import type { Loadable } from "../lib";
-    import * as api from "../lib/api";
     import type { ActivationContextsSummary } from "../lib/localAttributionsTypes";
+    import { runState } from "../lib/runState.svelte";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
     import StatusText from "./ui/StatusText.svelte";
 
     let summary = $state<Loadable<ActivationContextsSummary>>(null);
 
     $effect(() => {
+        // Re-fetch when run changes
+        if (runState.run?.status !== "loaded") return;
+
         summary = { status: "loading" };
-        api.getActivationContextsSummary()
+        runState
+            .getActivationContextsSummary()
             .then((data) => {
                 summary = { status: "loaded", data };
             })
