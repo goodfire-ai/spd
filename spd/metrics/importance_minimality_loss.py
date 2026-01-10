@@ -104,7 +104,7 @@ def _importance_minimality_loss_compute(
     total_loss = None
     for layer_sums in per_component_sums.values():
         per_component_mean = layer_sums / total_params
-        layer_loss = (per_component_mean**pnorm_2).sum()
+        layer_loss = (per_component_mean+50.0*per_component_mean**pnorm_2).sum()
         total_loss = layer_loss if total_loss is None else total_loss + layer_loss
     assert total_loss is not None, "Empty per_component_sums"
     return total_loss
