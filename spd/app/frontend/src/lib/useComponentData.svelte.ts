@@ -144,6 +144,14 @@ export function useComponentData() {
             runState.setInterpretation(componentKey, { status: "generating" });
             const result = await requestComponentInterpretation(layer, cIdx);
             runState.setInterpretation(componentKey, { status: "generated", data: result });
+
+            // Fetch the detail (reasoning + prompt) now that it exists
+            try {
+                const detail = await getInterpretationDetail(layer, cIdx);
+                interpretationDetail = { status: "loaded", data: detail };
+            } catch (detailError) {
+                interpretationDetail = { status: "error", error: detailError };
+            }
         } catch (e) {
             runState.setInterpretation(componentKey, {
                 status: "generation-error",
