@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { displaySettings } from "../lib/displaySettings.svelte";
+    import { hasAnyCorrelationStats } from "../lib/displaySettings.svelte";
     import type { ActivationContextsSummary, ComponentSummary } from "../lib/localAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
@@ -14,7 +14,7 @@
     const N_TOKENS_TO_DISPLAY_INPUT = 80;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
 
-    const showCorrelations = $derived(displaySettings.hasAnyCorrelationStats);
+    const showCorrelations = $derived(hasAnyCorrelationStats);
 
     type Props = {
         activationContextsSummary: ActivationContextsSummary;
