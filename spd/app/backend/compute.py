@@ -87,7 +87,9 @@ class LocalAttributionResult:
 
     edges: list[Edge]
     ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
+    ci_masked_out_logits: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) raw logits
     target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
+    target_out_logits: Float[Tensor, "seq vocab"]  # Target model raw logits
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
     node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
 
@@ -98,7 +100,9 @@ class OptimizedLocalAttributionResult:
 
     edges: list[Edge]
     ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
+    ci_masked_out_logits: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) raw logits
     target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
+    target_out_logits: Float[Tensor, "seq vocab"]  # Target model raw logits
     label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
     node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
@@ -307,6 +311,7 @@ def compute_edges_from_ci(
     pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
     sources_by_target: dict[str, list[str]],
     target_out_probs: Float[Tensor, "1 seq vocab"],
+    target_out_logits: Float[Tensor, "1 seq vocab"],
     output_prob_threshold: float,
     device: str,
     show_progress: bool,
@@ -419,7 +424,9 @@ def compute_edges_from_ci(
     return LocalAttributionResult(
         edges=edges,
         ci_masked_out_probs=ci_masked_out_probs[0],
+        ci_masked_out_logits=comp_output_with_cache.output[0],
         target_out_probs=target_out_probs[0],
+        target_out_logits=target_out_logits[0],
         node_ci_vals=node_ci_vals,
         node_subcomp_acts=node_subcomp_acts,
     )
@@ -443,7 +450,8 @@ def compute_local_attributions(
     with torch.no_grad():
         output_with_cache = model(tokens, cache_type="input")
         pre_weight_acts = output_with_cache.cache
-        target_out_probs = torch.softmax(output_with_cache.output, dim=-1)
+        target_out_logits = output_with_cache.output
+        target_out_probs = torch.softmax(target_out_logits, dim=-1)
         ci = model.calc_causal_importances(
             pre_weight_acts=pre_weight_acts,
             sampling=sampling,
@@ -457,6 +465,7 @@ def compute_local_attributions(
         pre_weight_acts=pre_weight_acts,
         sources_by_target=sources_by_target,
         target_out_probs=target_out_probs,
+        target_out_logits=target_out_logits,
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
@@ -519,6 +528,7 @@ def compute_local_attributions_optimized(
         pre_weight_acts=pre_weight_acts,
         sources_by_target=sources_by_target,
         target_out_probs=target_out_probs,
+        target_out_logits=target_logits,
         output_prob_threshold=output_prob_threshold,
         device=device,
         show_progress=show_progress,
@@ -528,7 +538,9 @@ def compute_local_attributions_optimized(
     return OptimizedLocalAttributionResult(
         edges=result.edges,
         ci_masked_out_probs=result.ci_masked_out_probs,
+        ci_masked_out_logits=result.ci_masked_out_logits,
         target_out_probs=result.target_out_probs,
+        target_out_logits=result.target_out_logits,
         label_prob=label_prob,
         node_ci_vals=result.node_ci_vals,
         node_subcomp_acts=result.node_subcomp_acts,
@@ -705,8 +717,8 @@ class InterventionResult:
 
     input_tokens: list[str]
     predictions_per_position: list[
-        list[tuple[str, int, float, float, float]]
-    ]  # [(token, id, spd_prob, logit, target_prob)]
+        list[tuple[str, int, float, float, float, float]]
+    ]  # [(token, id, spd_prob, logit, target_prob, target_logit)]
 
 
 def compute_intervention_forward(
@@ -757,18 +769,20 @@ def compute_intervention_forward(
         target_out_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(target_logits, dim=-1)
 
     # Get top-k predictions per position (based on SPD model's top-k)
-    predictions_per_position: list[list[tuple[str, int, float, float, float]]] = []
+    predictions_per_position: list[list[tuple[str, int, float, float, float, float]]] = []
     for pos in range(seq_len):
         pos_spd_probs = spd_probs[0, pos]
         pos_spd_logits = spd_logits[0, pos]
         pos_target_out_probs = target_out_probs[0, pos]
+        pos_target_logits = target_logits[0, pos]
         top_probs, top_ids = torch.topk(pos_spd_probs, top_k)
 
-        pos_predictions: list[tuple[str, int, float, float, float]] = []
+        pos_predictions: list[tuple[str, int, float, float, float, float]] = []
         for spd_prob, token_id in zip(top_probs, top_ids, strict=True):
             tid = int(token_id.item())
             token_str = tokenizer.decode([tid])
             target_prob = float(pos_target_out_probs[tid].item())
+            target_logit = float(pos_target_logits[tid].item())
             pos_predictions.append(
                 (
                     token_str,
@@ -776,6 +790,7 @@ def compute_intervention_forward(
                     float(spd_prob.item()),
                     float(pos_spd_logits[tid].item()),
                     target_prob,
+                    target_logit,
                 )
             )
         predictions_per_position.append(pos_predictions)

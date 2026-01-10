@@ -16,7 +16,9 @@ class OutputProbability(BaseModel):
     """Output probability for a specific token at a specific position."""
 
     prob: float  # CI-masked (SPD model) probability
+    logit: float  # CI-masked (SPD model) raw logit
     target_prob: float  # Target model probability
+    target_logit: float  # Target model raw logit
     token: str
 
 
