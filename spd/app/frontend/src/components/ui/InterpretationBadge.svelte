@@ -6,12 +6,12 @@
     interface Props {
         interpretation: InterpretationState;
         interpretationDetail: Loadable<InterpretationDetail | null>;
-        onGenerate?: () => void;
+        onGenerate: () => void;
     }
 
     let { interpretation, interpretationDetail, onGenerate }: Props = $props();
 
-    let showDetail = $state(false);
+    let showPrompt = $state(false);
 </script>
 
 <div class="interpretation-container">
@@ -37,22 +37,18 @@
                     <span class="interpretation-reasoning loading-text">Loading reasoning...</span>
                 {/if}
             </div>
-            <button class="detail-toggle" onclick={() => (showDetail = !showDetail)}>
-                {showDetail ? "Hide" : "View"} Prompt
+            <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
+                {showPrompt ? "Hide Prompt" : "View Prompt"}
             </button>
         {:else if interpretation?.status === "error"}
             <span class="interpretation-label error-text">{String(interpretation.error)}</span>
-            {#if onGenerate}
-                <button class="retry-btn" onclick={onGenerate}>Retry</button>
-            {/if}
-        {:else if interpretation.status === "none" && onGenerate}
-            <button class="generate-btn" onclick={onGenerate}>Generate Interpretation</button>
+            <button class="retry-btn" onclick={onGenerate}>Retry</button>
         {:else if interpretation.status === "none"}
-            <span class="interpretation-label muted">No interpretation available</span>
+            <button class="generate-btn" onclick={onGenerate}>Generate Interpretation</button>
         {/if}
     </div>
 
-    {#if showDetail && interpretation?.status === "loaded"}
+    {#if showPrompt && interpretation?.status === "loaded"}
         <div class="prompt-display">
             {#if interpretationDetail.status === "loading"}
                 <span class="loading-text">Loading prompt...</span>
@@ -180,7 +176,7 @@
         border-color: var(--border-strong);
     }
 
-    .detail-toggle {
+    .prompt-toggle {
         margin-left: auto;
         padding: var(--space-1) var(--space-2);
         font-size: var(--text-xs);
@@ -192,7 +188,7 @@
         font-weight: 500;
     }
 
-    .detail-toggle:hover {
+    .prompt-toggle:hover {
         background: var(--bg-surface);
         border-color: var(--border-strong);
     }

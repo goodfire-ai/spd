@@ -575,133 +575,76 @@
 
 <div class="local-attributions-tab">
     <div class="main-content">
-            <div class="graph-container">
-                <div class="card-tabs-row">
-                    <PromptCardTabs
-                        cards={promptCards}
-                        activeCardId={activeCardPromptId}
-                        onSelectCard={(id) => (activeCardPromptId = id)}
-                        onCloseCard={handleCloseCard}
-                        onAddClick={() => (showPromptPicker = !showPromptPicker)}
+        <div class="graph-container">
+            <div class="card-tabs-row">
+                <PromptCardTabs
+                    cards={promptCards}
+                    activeCardId={activeCardPromptId}
+                    onSelectCard={(id) => (activeCardPromptId = id)}
+                    onCloseCard={handleCloseCard}
+                    onAddClick={() => (showPromptPicker = !showPromptPicker)}
+                />
+                <PromptPicker
+                    {prompts}
+                    {filteredPrompts}
+                    stagedNodes={pinnedNodes}
+                    filterByStaged={false}
+                    {filterLoading}
+                    {promptGenerate}
+                    {isAddingCustomPrompt}
+                    show={showPromptPicker}
+                    onSelectPrompt={handleSelectPrompt}
+                    onAddCustom={handleAddCustomPrompt}
+                    onFilterToggle={() => {}}
+                    onGenerate={handleGeneratePrompts}
+                    onClose={() => (showPromptPicker = false)}
+                />
+            </div>
+
+            <div class="card-content">
+                {#if activeCard}
+                    <!-- Prompt header with compute options and graph tabs -->
+                    <PromptCardHeader
+                        card={activeCard}
+                        isLoading={graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
+                        tokens={allTokens}
+                        onUseOptimizedChange={handleUseOptimizedChange}
+                        onOptimizeConfigChange={handleOptimizeConfigChange}
+                        onCompute={computeGraphForCard}
+                        onSelectGraph={handleSelectGraph}
+                        onCloseGraph={handleCloseGraph}
+                        onNewGraph={handleEnterNewGraphMode}
                     />
-                    <PromptPicker
-                        {prompts}
-                        {filteredPrompts}
-                        stagedNodes={pinnedNodes}
-                        filterByStaged={false}
-                        {filterLoading}
-                        {promptGenerate}
-                        {isAddingCustomPrompt}
-                        show={showPromptPicker}
-                        onSelectPrompt={handleSelectPrompt}
-                        onAddCustom={handleAddCustomPrompt}
-                        onFilterToggle={() => {}}
-                        onGenerate={handleGeneratePrompts}
-                        onClose={() => (showPromptPicker = false)}
-                    />
-                </div>
 
-                <div class="card-content">
-                    {#if activeCard}
-                        <!-- Prompt header with compute options and graph tabs -->
-                        <PromptCardHeader
-                            card={activeCard}
-                            isLoading={graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
-                            tokens={allTokens}
-                            onUseOptimizedChange={handleUseOptimizedChange}
-                            onOptimizeConfigChange={handleOptimizeConfigChange}
-                            onCompute={computeGraphForCard}
-                            onSelectGraph={handleSelectGraph}
-                            onCloseGraph={handleCloseGraph}
-                            onNewGraph={handleEnterNewGraphMode}
-                        />
+                    {#if activeGraph}
+                        <!-- Sub-tabs within the selected graph -->
+                        <div class="graph-view-tabs">
+                            <button
+                                class="graph-view-tab"
+                                class:active={activeCard.activeView === "graph"}
+                                onclick={() => handleViewChange("graph")}
+                            >
+                                Attributions
+                            </button>
+                            <button
+                                class="graph-view-tab"
+                                class:active={activeCard.activeView === "interventions"}
+                                onclick={() => handleViewChange("interventions")}
+                            >
+                                Interventions
+                                {#if activeGraph.interventionRuns.length > 0}
+                                    <span class="badge">{activeGraph.interventionRuns.length}</span>
+                                {/if}
+                            </button>
+                        </div>
 
-                        {#if activeGraph}
-                            <!-- Sub-tabs within the selected graph -->
-                            <div class="graph-view-tabs">
-                                <button
-                                    class="graph-view-tab"
-                                    class:active={activeCard.activeView === "graph"}
-                                    onclick={() => handleViewChange("graph")}
-                                >
-                                    Attributions
-                                </button>
-                                <button
-                                    class="graph-view-tab"
-                                    class:active={activeCard.activeView === "interventions"}
-                                    onclick={() => handleViewChange("interventions")}
-                                >
-                                    Interventions
-                                    {#if activeGraph.interventionRuns.length > 0}
-                                        <span class="badge">{activeGraph.interventionRuns.length}</span>
-                                    {/if}
-                                </button>
-                            </div>
-
-                            {#if activeCard.activeView === "graph"}
-                                <div class="graph-area">
-                                    <ViewControls
-                                        topK={activeGraph.viewSettings.topK}
-                                        componentGap={activeGraph.viewSettings.componentGap}
-                                        layerGap={activeGraph.viewSettings.layerGap}
-                                        {filteredEdgeCount}
-                                        normalizeEdges={activeGraph.viewSettings.normalizeEdges}
-                                        ciThreshold={refetchingGraphId === activeGraph.id
-                                            ? { status: "loading" }
-                                            : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
-                                        {hideUnpinnedEdges}
-                                        {hideNodeCard}
-                                        onTopKChange={handleTopKChange}
-                                        onComponentGapChange={handleComponentGapChange}
-                                        onLayerGapChange={handleLayerGapChange}
-                                        onNormalizeChange={handleNormalizeChange}
-                                        onCiThresholdChange={handleCiThresholdChange}
-                                        onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
-                                        onHideNodeCardChange={(v) => (hideNodeCard = v)}
-                                    />
-                                    <div class="graph-info">
-                                        <span class="l0-info"
-                                            ><strong>L0:</strong>
-                                            {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
-                                                .viewSettings.ciThreshold}</span
-                                        >
-                                        {#if pinnedNodes.length > 0}
-                                            <span class="pinned-count">{pinnedNodes.length} pinned</span>
-                                        {/if}
-                                    </div>
-                                    {#key activeGraph.id}
-                                        <LocalAttributionsGraph
-                                            data={activeGraph.data}
-                                            topK={activeGraph.viewSettings.topK}
-                                            componentGap={activeGraph.viewSettings.componentGap}
-                                            layerGap={activeGraph.viewSettings.layerGap}
-                                            {hideUnpinnedEdges}
-                                            {hideNodeCard}
-                                            stagedNodes={pinnedNodes}
-                                            onStagedNodesChange={handlePinnedNodesChange}
-                                            onEdgeCountChange={(count) => (filteredEdgeCount = count)}
-                                        />
-                                    {/key}
-                                </div>
-                                <StagedNodesPanel
-                                    stagedNodes={pinnedNodes}
-                                    outputProbs={activeGraph.data.outputProbs}
-                                    tokens={activeCard.tokens}
-                                    edgesBySource={activeGraph.data.edgesBySource}
-                                    edgesByTarget={activeGraph.data.edgesByTarget}
-                                    onStagedNodesChange={handlePinnedNodesChange}
-                                />
-                            {:else if activeComposerState}
-                                <InterventionsView
-                                    graph={activeGraph}
-                                    composerSelection={activeComposerState.selection}
-                                    activeRunId={activeComposerState.activeRunId}
-                                    tokens={activeCard.tokens}
-                                    tokenIds={activeCard.tokenIds}
-                                    {allTokens}
+                        {#if activeCard.activeView === "graph"}
+                            <div class="graph-area">
+                                <ViewControls
                                     topK={activeGraph.viewSettings.topK}
                                     componentGap={activeGraph.viewSettings.componentGap}
                                     layerGap={activeGraph.viewSettings.layerGap}
+                                    {filteredEdgeCount}
                                     normalizeEdges={activeGraph.viewSettings.normalizeEdges}
                                     ciThreshold={refetchingGraphId === activeGraph.id
                                         ? { status: "loading" }
@@ -715,57 +658,113 @@
                                     onCiThresholdChange={handleCiThresholdChange}
                                     onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
-                                    {runningIntervention}
-                                    onSelectionChange={handleComposerSelectionChange}
-                                    onRunIntervention={handleRunIntervention}
-                                    onSelectRun={handleSelectRun}
-                                    onDeleteRun={handleDeleteRun}
-                                    onForkRun={handleForkRun}
-                                    onDeleteFork={handleDeleteFork}
                                 />
-                            {/if}
-                        {:else}
-                            <!-- No graph yet -->
-                            {#if graphCompute.status === "error"}
-                                <div class="error-banner">
-                                    {graphCompute.error}
-                                    <button onclick={() => (graphCompute = { status: "idle" })}>Dismiss</button>
-                                    <button onclick={() => computeGraphForCard()}>Retry</button>
+                                <div class="graph-info">
+                                    <span class="l0-info"
+                                        ><strong>L0:</strong>
+                                        {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
+                                            .viewSettings.ciThreshold}</span
+                                    >
+                                    {#if pinnedNodes.length > 0}
+                                        <span class="pinned-count">{pinnedNodes.length} pinned</span>
+                                    {/if}
                                 </div>
-                            {/if}
-
-                            <div
-                                class="graph-area"
-                                class:loading={graphCompute.status === "computing" &&
-                                    graphCompute.cardId === activeCard.id}
-                            >
-                                {#if graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
-                                    <ComputeProgressOverlay state={graphCompute.progress} />
-                                {:else}
-                                    <div class="empty-state">
-                                        <p>Click <strong>Compute</strong> to generate the attribution graph</p>
-                                    </div>
-                                {/if}
+                                {#key activeGraph.id}
+                                    <LocalAttributionsGraph
+                                        data={activeGraph.data}
+                                        topK={activeGraph.viewSettings.topK}
+                                        componentGap={activeGraph.viewSettings.componentGap}
+                                        layerGap={activeGraph.viewSettings.layerGap}
+                                        {hideUnpinnedEdges}
+                                        {hideNodeCard}
+                                        stagedNodes={pinnedNodes}
+                                        onStagedNodesChange={handlePinnedNodesChange}
+                                        onEdgeCountChange={(count) => (filteredEdgeCount = count)}
+                                    />
+                                {/key}
+                            </div>
+                            <StagedNodesPanel
+                                stagedNodes={pinnedNodes}
+                                outputProbs={activeGraph.data.outputProbs}
+                                tokens={activeCard.tokens}
+                                edgesBySource={activeGraph.data.edgesBySource}
+                                edgesByTarget={activeGraph.data.edgesByTarget}
+                                onStagedNodesChange={handlePinnedNodesChange}
+                            />
+                        {:else if activeComposerState}
+                            <InterventionsView
+                                graph={activeGraph}
+                                composerSelection={activeComposerState.selection}
+                                activeRunId={activeComposerState.activeRunId}
+                                tokens={activeCard.tokens}
+                                tokenIds={activeCard.tokenIds}
+                                {allTokens}
+                                topK={activeGraph.viewSettings.topK}
+                                componentGap={activeGraph.viewSettings.componentGap}
+                                layerGap={activeGraph.viewSettings.layerGap}
+                                normalizeEdges={activeGraph.viewSettings.normalizeEdges}
+                                ciThreshold={refetchingGraphId === activeGraph.id
+                                    ? { status: "loading" }
+                                    : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
+                                {hideUnpinnedEdges}
+                                {hideNodeCard}
+                                onTopKChange={handleTopKChange}
+                                onComponentGapChange={handleComponentGapChange}
+                                onLayerGapChange={handleLayerGapChange}
+                                onNormalizeChange={handleNormalizeChange}
+                                onCiThresholdChange={handleCiThresholdChange}
+                                onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
+                                onHideNodeCardChange={(v) => (hideNodeCard = v)}
+                                {runningIntervention}
+                                onSelectionChange={handleComposerSelectionChange}
+                                onRunIntervention={handleRunIntervention}
+                                onSelectRun={handleSelectRun}
+                                onDeleteRun={handleDeleteRun}
+                                onForkRun={handleForkRun}
+                                onDeleteFork={handleDeleteFork}
+                            />
+                        {/if}
+                    {:else}
+                        <!-- No graph yet -->
+                        {#if graphCompute.status === "error"}
+                            <div class="error-banner">
+                                {graphCompute.error}
+                                <button onclick={() => (graphCompute = { status: "idle" })}>Dismiss</button>
+                                <button onclick={() => computeGraphForCard()}>Retry</button>
                             </div>
                         {/if}
-                    {:else if promptCardLoading.status === "loading"}
-                        <div class="empty-state">
-                            <p>Loading prompt...</p>
-                        </div>
-                    {:else if promptCardLoading.status === "error"}
-                        <div class="empty-state">
-                            <p class="error-text">Error loading prompt: {promptCardLoading.error}</p>
-                            <button onclick={() => (promptCardLoading = { status: "idle" })}>Dismiss</button>
-                        </div>
-                    {:else}
-                        <div class="empty-state">
-                            <p>Click <strong>+ Add Prompt</strong> to get started</p>
-                            <p class="hint">{prompts.length} prompts available</p>
+
+                        <div
+                            class="graph-area"
+                            class:loading={graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
+                        >
+                            {#if graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
+                                <ComputeProgressOverlay state={graphCompute.progress} />
+                            {:else}
+                                <div class="empty-state">
+                                    <p>Click <strong>Compute</strong> to generate the attribution graph</p>
+                                </div>
+                            {/if}
                         </div>
                     {/if}
-                </div>
+                {:else if promptCardLoading.status === "loading"}
+                    <div class="empty-state">
+                        <p>Loading prompt...</p>
+                    </div>
+                {:else if promptCardLoading.status === "error"}
+                    <div class="empty-state">
+                        <p class="error-text">Error loading prompt: {promptCardLoading.error}</p>
+                        <button onclick={() => (promptCardLoading = { status: "idle" })}>Dismiss</button>
+                    </div>
+                {:else}
+                    <div class="empty-state">
+                        <p>Click <strong>+ Add Prompt</strong> to get started</p>
+                        <p class="hint">{prompts.length} prompts available</p>
+                    </div>
+                {/if}
             </div>
         </div>
+    </div>
 </div>
 
 <style>

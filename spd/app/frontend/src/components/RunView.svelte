@@ -9,10 +9,6 @@
 
     const runState = getContext<RunContext>(RUN_KEY);
 
-    const onChangeRun = () => {
-        runState.clearRun();
-    };
-
     let activeTab = $state<"prompts" | "components" | "dataset-search" | null>(null);
     let showRunMenu = $state(false);
 </script>
@@ -27,7 +23,9 @@
                 {#if showRunMenu}
                     <div class="run-menu-dropdown">
                         <pre class="config-yaml">{runState.run.data.config_yaml}</pre>
-                        <button type="button" class="change-run-button" onclick={onChangeRun}>Change Run</button>
+                        <button type="button" class="change-run-button" onclick={() => runState.clearRun()}
+                            >Change Run</button
+                        >
                     </div>
                 {/if}
             </div>
