@@ -7,9 +7,9 @@ import {
     getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
-import type { Interpretation, InterpretationDetail } from "./api";
+import type { InterpretationDetail } from "./api";
 import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./localAttributionsTypes";
-import { RUN_KEY, type RunContext } from "./useRun.svelte";
+import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./useRun.svelte";
 
 /** Correlations are paginated in the UI, so fetch more */
 const CORRELATIONS_TOP_K = 100;
@@ -17,14 +17,6 @@ const CORRELATIONS_TOP_K = 100;
 const TOKEN_STATS_TOP_K = 50;
 
 export type ComponentCoords = { layer: string; cIdx: number };
-
-/** Interpretation can be: none, loading, generating, loaded, or error */
-export type InterpretationState =
-    | { status: "none" }
-    | { status: "loading" }
-    | { status: "generating" }
-    | { status: "loaded"; data: Interpretation }
-    | { status: "error"; error: unknown };
 
 /**
  * Hook for loading component data (detail, correlations, token stats, interpretation detail).
@@ -40,14 +32,11 @@ export function useComponentData() {
     // null inside Loadable means "no data for this component" (404)
     let correlations = $state<Loadable<ComponentCorrelations | null>>({ status: "uninitialized" });
     let tokenStats = $state<Loadable<TokenStats | null>>({ status: "uninitialized" });
+
     let interpretationDetail = $state<Loadable<InterpretationDetail | null>>({ status: "uninitialized" });
 
     // Current coords being loaded/displayed (for interpretation lookup)
     let currentCoords = $state<ComponentCoords | null>(null);
-
-    // Track which component is currently being generated (local to this hook instance)
-    let generatingFor = $state<string | null>(null);
-    let generationError = $state<{ key: string; error: unknown } | null>(null);
 
     // Request counter for handling stale responses
     let requestId = 0;
@@ -65,12 +54,6 @@ export function useComponentData() {
         correlations = { status: "loading" };
         tokenStats = { status: "loading" };
         interpretationDetail = { status: "loading" };
-
-        // Clear any previous generation error for different component
-        const componentKey = `${layer}:${cIdx}`;
-        if (generationError?.key !== componentKey) {
-            generationError = null;
-        }
 
         // Helper to check if this request is still current
         const isStale = () => requestId !== thisRequestId;
@@ -146,45 +129,26 @@ export function useComponentData() {
     }
 
     // Interpretation is derived from the global cache - reactive to both coords and cache
-    const interpretation = $derived.by((): InterpretationState => {
-        if (!currentCoords) return { status: "none" };
-
-        const componentKey = `${currentCoords.layer}:${currentCoords.cIdx}`;
-
-        // Check if we're currently generating for this component
-        if (generatingFor === componentKey) {
-            return { status: "generating" };
-        }
-
-        // Check if there was a generation error for this component
-        if (generationError?.key === componentKey) {
-            return { status: "error", error: generationError.error };
-        }
-
-        // Show loading while global cache is loading
-        if (runState.interpretations.status === "loading") return { status: "loading" };
-        if (runState.interpretations.status !== "loaded") return { status: "none" };
-        const cached = runState.interpretations.data[componentKey];
-        return cached ? { status: "loaded", data: cached } : { status: "none" };
+    const interpretation = $derived.by((): Loadable<InterpretationBackendState> => {
+        if (!currentCoords) return { status: "uninitialized" };
+        return runState.getInterpretation(`${currentCoords.layer}:${currentCoords.cIdx}`);
     });
 
     async function generateInterpretation() {
-        if (!currentCoords || generatingFor !== null) return;
+        if (!currentCoords) return;
 
         const { layer, cIdx } = currentCoords;
         const componentKey = `${layer}:${cIdx}`;
 
-        generatingFor = componentKey;
-        generationError = null;
-
         try {
+            runState.setInterpretation(componentKey, { status: "generating" });
             const result = await requestComponentInterpretation(layer, cIdx);
-            // Update the global cache - this will reactively update the derived interpretation
-            runState.setInterpretation(componentKey, result);
+            runState.setInterpretation(componentKey, { status: "generated", data: result });
         } catch (e) {
-            generationError = { key: componentKey, error: e instanceof Error ? e.message : String(e) };
-        } finally {
-            generatingFor = null;
+            runState.setInterpretation(componentKey, {
+                status: "generation-error",
+                error: e instanceof Error ? e.message : String(e),
+            });
         }
     }
 

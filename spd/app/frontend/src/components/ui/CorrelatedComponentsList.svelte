@@ -17,7 +17,9 @@
     let { items, onComponentClick, pageSize = 40 }: Props = $props();
 
     function getInterpretationLabel(componentKey: string): string | null {
-        return runState.getInterpretation(componentKey)?.label ?? null;
+        const interp = runState.getInterpretation(componentKey);
+        if (interp.status === "loaded" && interp.data.status === "generated") return interp.data.data.label;
+        return null;
     }
 
     let currentPage = $state(0);

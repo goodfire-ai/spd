@@ -2,8 +2,7 @@
     import { getContext } from "svelte";
     import type { EdgeAttribution, OutputProbEntry } from "../../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
-    import type { Interpretation } from "../../lib/api";
-    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
+    import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../local-attr/graphUtils";
 
     const runState = getContext<RunContext>(RUN_KEY);
@@ -25,9 +24,11 @@
         return `${parts[0]}:${parts[2]}`; // layer:cIdx
     }
 
-    function getInterpretation(nodeKey: string): Interpretation | undefined {
+    function getInterpretation(nodeKey: string): InterpretationBackendState {
         const componentKey = getComponentKey(nodeKey);
-        return runState.getInterpretation(componentKey);
+        const interp = runState.getInterpretation(componentKey);
+        if (interp.status === "loaded" && interp.data.status === "generated") return interp.data;
+        return { status: "none" };
     }
 
     // Get display info for a node - returns label and whether it's a token (pseudo-layer) node
@@ -59,7 +60,16 @@
 
         // Component nodes: show interpretation label or "N/A"
         const interp = getInterpretation(nodeKey);
-        return { label: interp?.label ?? "N/A", isTokenNode: false };
+
+        if (interp.status === "generated")
+            return {
+                label: interp.data.label,
+                isTokenNode: false,
+            };
+
+        if (interp.status === "generating") return { label: "Generating...", isTokenNode: false };
+
+        return { label: "N/A", isTokenNode: false };
     }
 
     let currentPage = $state(0);
@@ -125,7 +135,7 @@
                     <span class="interp-label" style="color: {textColor};">{displayInfo.label}</span>
                     <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
                 </button>
-                {#if isHovered && !displayInfo.isTokenNode && interp && tooltipPosition}
+                {#if isHovered && !displayInfo.isTokenNode && interp?.status === "generated" && tooltipPosition}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
                         class="tooltip"
@@ -134,8 +144,8 @@
                         onmouseleave={handleMouseLeave}
                     >
                         <div class="tooltip-key">{formatNodeKeyForDisplay(nodeKey)}</div>
-                        <button class="tooltip-label copyable" onclick={() => copyToClipboard(interp.label)}>
-                            {interp.label}
+                        <button class="tooltip-label copyable" onclick={() => copyToClipboard(interp.data.label)}>
+                            {interp.data.label}
                             <svg
                                 class="copy-icon"
                                 width="12"
@@ -149,7 +159,7 @@
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                             </svg>
                         </button>
-                        <div class="tooltip-confidence">Confidence: {interp.confidence}</div>
+                        <div class="tooltip-confidence">Confidence: {interp.data.confidence}</div>
                     </div>
                 {/if}
             </div>

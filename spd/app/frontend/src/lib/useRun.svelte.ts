@@ -19,12 +19,24 @@ type ClusterMapping = {
     runWandbPath: string;
 };
 
+/**
+ * Per-component interpretation status. Nested inside Loadable<> because:
+ * - Outer Loadable tracks fetching the interpretations cache from the server
+ * - Inner state tracks each component's interpretation (none/generating/generated/error)
+ * These are distinct concerns; conflating them would lose semantic clarity.
+ */
+export type InterpretationBackendState =
+    | { status: "none" }
+    | { status: "generating" }
+    | { status: "generated"; data: Interpretation }
+    | { status: "generation-error"; error: unknown };
+
 export function useRun() {
     /** The currently loaded run */
     let run = $state<Loadable<RunData>>({ status: "uninitialized" });
 
     /** Interpretation labels keyed by component key (layer:cIdx) */
-    let interpretations = $state<Loadable<Record<string, Interpretation>>>({ status: "uninitialized" });
+    let interpretations = $state<Loadable<Record<string, InterpretationBackendState>>>({ status: "uninitialized" });
 
     /** Cluster mapping for the current run */
     let clusterMapping = $state<ClusterMapping | null>(null);
@@ -64,7 +76,20 @@ export function useRun() {
             .then((t) => (allTokens = { status: "loaded", data: t }))
             .catch((error) => (allTokens = { status: "error", error }));
         api.getAllInterpretations()
-            .then((i) => (interpretations = { status: "loaded", data: i }))
+            .then((i) => {
+                interpretations = {
+                    status: "loaded",
+                    data: Object.fromEntries(
+                        Object.entries(i).map(([key, interpretation]): [string, InterpretationBackendState] => [
+                            key,
+                            {
+                                status: "generated",
+                                data: interpretation,
+                            },
+                        ]),
+                    ),
+                };
+            })
             .catch((error) => (interpretations = { status: "error", error }));
     }
 
@@ -117,13 +142,21 @@ export function useRun() {
     }
 
     /** Get interpretation for a component, if available */
-    function getInterpretation(componentKey: string): Interpretation | undefined {
-        if (interpretations.status !== "loaded") return undefined;
-        return interpretations.data[componentKey];
+    function getInterpretation(componentKey: string): Loadable<InterpretationBackendState> {
+        switch (interpretations.status) {
+            case "uninitialized":
+                return { status: "uninitialized" };
+            case "loading":
+                return { status: "loading" };
+            case "error":
+                return { status: "error", error: interpretations.error };
+            case "loaded":
+                return { status: "loaded", data: interpretations.data[componentKey] ?? { status: "none" } };
+        }
     }
 
     /** Set interpretation for a component (updates cache without full reload) */
-    function setInterpretation(componentKey: string, interpretation: Interpretation) {
+    function setInterpretation(componentKey: string, interpretation: InterpretationBackendState) {
         if (interpretations.status === "loaded") {
             interpretations.data[componentKey] = interpretation;
         }
