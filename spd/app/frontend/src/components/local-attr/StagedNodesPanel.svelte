@@ -1,20 +1,15 @@
 <script lang="ts">
-    import type {
-        ActivationContextsSummary,
-        ComponentSummary,
-        OutputProbEntry,
-        PinnedNode,
-        Edge,
-    } from "../../lib/localAttributionsTypes";
+    import { getContext } from "svelte";
+    import type { OutputProbEntry, PinnedNode, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
-    import { runState } from "../../lib/runState.svelte";
-    import { clusterMapping } from "../../lib/clusterMapping.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
+    const runState = getContext<RunContext>(RUN_KEY);
+
     type Props = {
         stagedNodes: PinnedNode[];
-        activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         tokens: string[];
         edgesBySource: Map<string, Edge[]>;
@@ -22,15 +17,7 @@
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
     };
 
-    let {
-        stagedNodes,
-        activationContextsSummary,
-        outputProbs,
-        tokens,
-        edgesBySource,
-        edgesByTarget,
-        onStagedNodesChange,
-    }: Props = $props();
+    let { stagedNodes, outputProbs, tokens, edgesBySource, edgesByTarget, onStagedNodesChange }: Props = $props();
 
     function clearAll() {
         onStagedNodesChange([]);
@@ -55,14 +42,6 @@
         }
         return tokens[seqIdx];
     }
-
-    // Returns null if: not yet loaded, layer not in harvest, or component not above threshold
-    function findComponentSummary(layer: string, cIdx: number): ComponentSummary | null {
-        if (!activationContextsSummary) return null;
-        const layerSummaries = activationContextsSummary[layer];
-        if (!layerSummaries) return null;
-        return layerSummaries.find((s) => s.subcomponent_idx === cIdx) ?? null;
-    }
 </script>
 
 {#if stagedNodes.length > 0}
@@ -72,13 +51,16 @@
             <button onclick={clearAll}>Clear all</button>
         </div>
 
+        <!-- Key in {#each} ensures ComponentNodeCard remounts when node identity changes -->
         <div class="staged-items">
             {#each stagedNodes as node, idx (`${node.layer}:${node.seqIdx}:${node.cIdx}-${idx}`)}
                 {@const token = getTokenAtPosition(node.seqIdx)}
                 {@const isOutput = node.layer === "output"}
                 {@const isWte = node.layer === "wte"}
                 {@const isComponent = !isWte && !isOutput}
-                {@const clusterId = isComponent ? clusterMapping.getClusterId(node.layer, node.cIdx) : undefined}
+                {@const clusterId = isComponent
+                    ? runState.clusterMapping?.data[`${node.layer}:${node.cIdx}`]
+                    : undefined}
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">
@@ -96,13 +78,10 @@
                     {:else if isOutput}
                         <OutputNodeCard cIdx={node.cIdx} {outputProbs} seqIdx={node.seqIdx} />
                     {:else}
-                        {@const summary = findComponentSummary(node.layer, node.cIdx)}
                         <ComponentNodeCard
                             layer={node.layer}
                             cIdx={node.cIdx}
                             seqIdx={node.seqIdx}
-                            {summary}
-                            detail={runState.getComponentDetail(node.layer, node.cIdx)}
                             {edgesBySource}
                             {edgesByTarget}
                             {tokens}

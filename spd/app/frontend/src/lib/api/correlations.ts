@@ -9,10 +9,10 @@ export async function getComponentCorrelations(
     layer: string,
     componentIdx: number,
     topK: number,
-): Promise<ComponentCorrelations | null> {
+): Promise<ComponentCorrelations> {
     const url = new URL(`${API_URL}/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
-    return fetchJson<ComponentCorrelations | null>(url.toString());
+    return fetchJson<ComponentCorrelations>(url.toString());
 }
 
 export async function getComponentTokenStats(
@@ -25,10 +25,14 @@ export async function getComponentTokenStats(
     return fetchJson<TokenStats | null>(url.toString());
 }
 
-// Interpretation labels
+// Interpretation headline (bulk-fetched) - lightweight data for badges
 export type Interpretation = {
     label: string;
     confidence: "low" | "medium" | "high";
+};
+
+// Interpretation detail (fetched on-demand) - reasoning and prompt
+export type InterpretationDetail = {
     reasoning: string;
     prompt: string;
 };
@@ -37,19 +41,13 @@ export async function getAllInterpretations(): Promise<Record<string, Interpreta
     return fetchJson<Record<string, Interpretation>>(`${API_URL}/api/correlations/interpretations`);
 }
 
-export async function getComponentInterpretation(
-    layer: string,
-    componentIdx: number,
-): Promise<Interpretation | null> {
-    return fetchJson<Interpretation | null>(
+export async function getInterpretationDetail(layer: string, componentIdx: number): Promise<InterpretationDetail> {
+    return fetchJson<InterpretationDetail>(
         `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
     );
 }
 
-export async function requestComponentInterpretation(
-    layer: string,
-    componentIdx: number,
-): Promise<Interpretation> {
+export async function requestComponentInterpretation(layer: string, componentIdx: number): Promise<Interpretation> {
     return fetchJson<Interpretation>(
         `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
         { method: "POST" },

@@ -1,50 +1,72 @@
 <script lang="ts">
-    import type { InterpretationState } from "../../lib/useComponentData.svelte";
+    import type { Loadable } from "../../lib";
+    import type { InterpretationDetail } from "../../lib/api";
+    import type { InterpretationBackendState } from "../../lib/useRun.svelte";
 
     interface Props {
-        interpretation: InterpretationState;
-        onGenerate?: () => void;
+        interpretation: Loadable<InterpretationBackendState>;
+        interpretationDetail: Loadable<InterpretationDetail | null>;
+        onGenerate: () => void;
     }
 
-    let { interpretation, onGenerate }: Props = $props();
+    let { interpretation, interpretationDetail, onGenerate }: Props = $props();
 
     let showPrompt = $state(false);
 </script>
 
 <div class="interpretation-container">
-    <div class="interpretation-badge" class:loading={interpretation.status === "loading" || interpretation.status === "generating"}>
+    <div
+        class="interpretation-badge"
+        class:loading={(interpretation.status === "loaded" && interpretation.data.status === "generating") ||
+            interpretation.status === "loading"}
+    >
         {#if interpretation.status === "loading"}
-            <span class="interpretation-label loading-text">Loading...</span>
-        {:else if interpretation.status === "generating"}
-            <span class="interpretation-label loading-text">Generating interpretation...</span>
+            <span class="interpretation-label loading-text">Loading interpretations...</span>
         {:else if interpretation.status === "loaded"}
-            <div class="interpretation-content">
-                <div class="interpretation-header">
-                    <span class="interpretation-label">{interpretation.data.label}</span>
-                    <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
+            {@const interpretationData = interpretation.data}
+            {#if interpretationData.status === "none"}
+                <button class="generate-btn" onclick={onGenerate}>Generate Interpretation</button>
+            {:else if interpretationData.status === "generating"}
+                <span class="interpretation-label loading-text">Generating interpretation...</span>
+            {:else if interpretationData.status === "generated"}
+                <div class="interpretation-content">
+                    <div class="interpretation-header">
+                        <span class="interpretation-label">{interpretationData.data.label}</span>
+                        <span class="confidence confidence-{interpretationData.data.confidence}"
+                            >{interpretationData.data.confidence}</span
+                        >
+                    </div>
+                    {#if interpretationDetail.status === "loaded" && interpretationDetail.data?.reasoning}
+                        <span class="interpretation-reasoning">{interpretationDetail.data.reasoning}</span>
+                    {:else if interpretationDetail.status === "loading"}
+                        <span class="interpretation-reasoning loading-text">Loading reasoning...</span>
+                    {/if}
                 </div>
-                {#if interpretation.data.reasoning}
-                    <span class="interpretation-reasoning">{interpretation.data.reasoning}</span>
-                {/if}
-            </div>
-            <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
-                {showPrompt ? "Hide" : "View"} Prompt
-            </button>
-        {:else if interpretation?.status === "error"}
-            <span class="interpretation-label error-text">{String(interpretation.error)}</span>
-            {#if onGenerate}
+                <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
+                    {showPrompt ? "Hide" : "View" } Autointerp Prompt
+                </button>
+                <!-- Error state for generating -->
+            {:else if interpretationData.status === "generation-error"}
+                <span class="interpretation-label error-text">{String(interpretationData.error)}</span>
                 <button class="retry-btn" onclick={onGenerate}>Retry</button>
             {/if}
-        {:else if interpretation.status === "none" && onGenerate}
-            <button class="generate-btn" onclick={onGenerate}>Generate Interpretation</button>
-        {:else if interpretation.status === "none"}
-            <span class="interpretation-label muted">No interpretation available</span>
+            <!-- Error state for fetching -->
+        {:else if interpretation?.status === "error"}
+            <span class="interpretation-label error-text">{String(interpretation.error)}</span>
         {/if}
     </div>
 
-    {#if showPrompt && interpretation?.status === "loaded"}
+    {#if showPrompt}
         <div class="prompt-display">
-            <pre>{interpretation.data.prompt}</pre>
+            {#if interpretationDetail.status === "loading"}
+                <span class="loading-text">Loading prompt...</span>
+            {:else if interpretationDetail.status === "error"}
+                <span class="error-text">Error loading prompt: {String(interpretationDetail.error)}</span>
+            {:else if interpretationDetail.status === "loaded" && interpretationDetail.data}
+                <pre>{interpretationDetail.data.prompt}</pre>
+            {:else}
+                <span class="loading-text">Loading prompt...</span>
+            {/if}
         </div>
     {/if}
 </div>

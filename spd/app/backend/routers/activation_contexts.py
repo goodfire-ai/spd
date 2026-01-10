@@ -13,6 +13,7 @@ from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
+from spd.harvest.loaders import load_component_activation_contexts
 from spd.utils.distributed_utils import get_device
 
 
@@ -41,16 +42,12 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    contexts = loaded.harvest.activation_contexts
-    if contexts is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No activation contexts found. Run harvest first.",
-        )
+    summary_data = loaded.harvest.activation_contexts_summary
+    if summary_data is None:
+        raise HTTPException(status_code=404, detail="No activation contexts summary found")
 
-    # Group by layer
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
-    for comp in contexts.values():
+    for comp in summary_data.values():
         summary[comp.layer].append(
             SubcomponentMetadata(
                 subcomponent_idx=comp.component_idx,
@@ -73,17 +70,8 @@ def get_activation_context_detail(
     loaded: DepLoadedRun,
 ) -> SubcomponentActivationContexts:
     """Return full activation context data for a single component."""
-    contexts = loaded.harvest.activation_contexts
-    if contexts is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No activation contexts found. Run harvest first.",
-        )
-
     component_key = f"{layer}:{component_idx}"
-    comp = contexts.get(component_key)
-    if comp is None:
-        raise HTTPException(status_code=404, detail=f"Component {component_key} not found")
+    comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
 
     # Convert token IDs to strings
     PADDING_SENTINEL = -1

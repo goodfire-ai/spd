@@ -1,8 +1,8 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
     import type {
         GraphData,
-        ActivationContextsSummary,
         PinnedNode,
         HoveredNode,
         HoveredEdge,
@@ -11,7 +11,6 @@
     } from "../lib/localAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor, getSubcompActColor } from "../lib/colors";
-    import { clusterMapping } from "../lib/clusterMapping.svelte";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
         lerp,
@@ -23,9 +22,11 @@
         type ClusterSpan,
     } from "./local-attr/graphUtils";
     import NodeTooltip from "./local-attr/NodeTooltip.svelte";
-    import { runState } from "../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import { useZoomPan } from "../lib/useZoomPan.svelte";
     import ZoomControls from "../lib/ZoomControls.svelte";
+
+    const runState = getContext<RunContext>(RUN_KEY);
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -46,7 +47,6 @@
         layerGap: number;
         hideUnpinnedEdges: boolean;
         hideNodeCard: boolean;
-        activationContextsSummary: ActivationContextsSummary | null;
         stagedNodes: PinnedNode[];
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
         onEdgeCountChange?: (count: number) => void;
@@ -59,7 +59,6 @@
         layerGap,
         hideUnpinnedEdges,
         hideNodeCard,
-        activationContextsSummary,
         stagedNodes,
         onStagedNodesChange,
         onEdgeCountChange,
@@ -158,7 +157,7 @@
     const hoveredClusterId = $derived.by(() => {
         if (hoveredBarClusterId !== null) return hoveredBarClusterId;
         if (!hoveredNode) return undefined;
-        return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+        return runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
 
     // Filter edges by topK (for rendering)
@@ -289,15 +288,9 @@
 
                 // Output nodes always sort by probability; internal nodes sort by cluster if mapping loaded, else by CI
                 const sorted =
-                    layer === "output" || !clusterMapping.mapping
+                    layer === "output" || !runState.clusterMapping
                         ? sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs)
-                        : sortComponentsByCluster(
-                              nodes,
-                              layer,
-                              seqIdx,
-                              data.nodeCiVals,
-                              clusterMapping.getClusterId.bind(clusterMapping),
-                          );
+                        : sortComponentsByCluster(nodes, layer, seqIdx, data.nodeCiVals, runState.getClusterId);
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
                 for (const cIdx of nodes) {
@@ -308,7 +301,7 @@
                 }
 
                 // Compute cluster spans for this layer/seqIdx (skip output layer)
-                if (layer !== "output" && clusterMapping.mapping) {
+                if (layer !== "output" && runState.clusterMapping) {
                     const spans = computeClusterSpans(
                         sorted,
                         layer,
@@ -317,7 +310,7 @@
                         baseY,
                         COMPONENT_SIZE,
                         offsets,
-                        clusterMapping.getClusterId.bind(clusterMapping),
+                        runState.getClusterId,
                     );
                     allClusterSpans.push(...spans);
                 }
@@ -359,7 +352,7 @@
         if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
         const [layer, , cIdxStr] = nodeKey.split(":");
         const cIdx = parseInt(cIdxStr);
-        const nodeClusterId = clusterMapping.getClusterId(layer, cIdx);
+        const nodeClusterId = runState.getClusterId(layer, cIdx);
         return nodeClusterId === hoveredClusterId;
     }
 
@@ -514,11 +507,6 @@
 
         hoveredNode = { layer, seqIdx, cIdx };
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
-
-        // Lazy load component details if needed
-        if (layer !== "output" && activationContextsSummary) {
-            runState.loadComponentDetail(layer, cIdx);
-        }
     }
 
     function handleNodeMouseLeave() {
@@ -774,7 +762,6 @@
             {hoveredNode}
             {tooltipPos}
             {hideNodeCard}
-            {activationContextsSummary}
             outputProbs={data.outputProbs}
             nodeCiVals={data.nodeCiVals}
             nodeSubcompActs={data.nodeSubcompActs}

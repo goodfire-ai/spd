@@ -4,7 +4,6 @@ These endpoints serve data produced by the harvest pipeline (spd.harvest),
 which computes component co-occurrence statistics, token associations, and interpretations.
 """
 
-import time
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
@@ -13,6 +12,7 @@ from pydantic import BaseModel
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
 from spd.harvest import analysis
+from spd.harvest.loaders import load_component_activation_contexts
 from spd.log import logger
 
 
@@ -66,11 +66,16 @@ router = APIRouter(prefix="/api/correlations", tags=["correlations"])
 # =============================================================================
 
 
-class InterpretationResponse(BaseModel):
-    """Interpretation label for a component."""
+class InterpretationHeadline(BaseModel):
+    """Lightweight interpretation headline for bulk fetching."""
 
     label: str
     confidence: str
+
+
+class InterpretationDetail(BaseModel):
+    """Full interpretation detail fetched on-demand."""
+
     reasoning: str
     prompt: str
 
@@ -79,52 +84,44 @@ class InterpretationResponse(BaseModel):
 @log_errors
 def get_all_interpretations(
     loaded: DepLoadedRun,
-) -> dict[str, InterpretationResponse]:
-    """Get all interpretation labels.
+) -> dict[str, InterpretationHeadline]:
+    """Get all interpretation headlines (label + confidence only).
 
     Returns a dict keyed by component_key (layer:cIdx).
+    Reasoning and prompt are excluded - fetch individually via
+    GET /interpretations/{layer}/{component_idx} when needed.
     """
-    interpretations = loaded.harvest.interpretations
-    if interpretations is None:
-        return {}
-
     return {
-        key: InterpretationResponse(
+        key: InterpretationHeadline(
             label=result.label,
             confidence=result.confidence,
-            reasoning=result.reasoning,
-            prompt=result.prompt,
         )
-        for key, result in interpretations.items()
+        for key, result in loaded.harvest.interpretations.items()
     }
 
 
 @router.get("/interpretations/{layer}/{component_idx}")
 @log_errors
-def get_component_interpretation(
+def get_interpretation_detail(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-) -> InterpretationResponse | None:
-    """Get interpretation label for a component.
+) -> InterpretationDetail:
+    """Get the full interpretation detail (reasoning + prompt).
 
-    Returns None if no interpretation exists for this component.
+    Returns reasoning and prompt for the specified component.
     """
-    interpretations = loaded.harvest.interpretations
-    if interpretations is None:
-        return None
-
     component_key = f"{layer}:{component_idx}"
-    result = interpretations.get(component_key)
-    if result is None:
-        return None
+    interpretations = loaded.harvest.interpretations
 
-    return InterpretationResponse(
-        label=result.label,
-        confidence=result.confidence,
-        reasoning=result.reasoning,
-        prompt=result.prompt,
-    )
+    if component_key not in interpretations:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No interpretation found for component {component_key}",
+        )
+
+    result = interpretations[component_key]
+    return InterpretationDetail(reasoning=result.reasoning, prompt=result.prompt)
 
 
 @router.post("/interpretations/{layer}/{component_idx}")
@@ -133,11 +130,11 @@ async def request_component_interpretation(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-) -> InterpretationResponse:
+) -> InterpretationHeadline:
     """Generate an interpretation for a component on-demand.
 
     Requires OPENROUTER_API_KEY environment variable.
-    Returns the generated interpretation.
+    Returns the headline (label + confidence). Full detail available via GET endpoint.
     """
     import json
     import os
@@ -154,31 +151,16 @@ async def request_component_interpretation(
 
     component_key = f"{layer}:{component_idx}"
 
-    # Check if we already have an interpretation
     interpretations = loaded.harvest.interpretations
-    if interpretations is not None and component_key in interpretations:
+
+    if component_key in interpretations:
         result = interpretations[component_key]
-        return InterpretationResponse(
+        return InterpretationHeadline(
             label=result.label,
             confidence=result.confidence,
-            reasoning=result.reasoning,
-            prompt=result.prompt,
         )
 
-    # Get component data from harvest
-    activation_contexts = loaded.harvest.activation_contexts
-    if activation_contexts is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Activation contexts not available for this run. Run harvest first.",
-        )
-
-    component_data = activation_contexts.get(component_key)
-    if component_data is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Component {component_key} not found in activation contexts",
-        )
+    component_data = load_component_activation_contexts(loaded.harvest.run_id, component_key)
 
     # Get API key
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -193,11 +175,6 @@ async def request_component_interpretation(
 
     # Get token stats
     token_stats = loaded.harvest.token_stats
-    if token_stats is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Token stats not available for this run. Run harvest first.",
-        )
 
     input_token_stats = analysis.get_input_token_stats(
         token_stats, component_key, loaded.tokenizer, top_k=20
@@ -248,11 +225,9 @@ async def request_component_interpretation(
 
     logger.info(f"Generated interpretation for {component_key}: {result.label}")
 
-    return InterpretationResponse(
+    return InterpretationHeadline(
         label=result.label,
         confidence=result.confidence,
-        reasoning=result.reasoning,
-        prompt=result.prompt,
     )
 
 
@@ -276,9 +251,6 @@ def get_component_token_stats(
     Returns None if token stats haven't been harvested for this run.
     """
     token_stats = loaded.harvest.token_stats
-    if token_stats is None:
-        return None
-
     component_key = f"{layer}:{component_idx}"
 
     input_stats = analysis.get_input_token_stats(
@@ -319,18 +291,13 @@ def get_component_correlations(
     component_idx: int,
     loaded: DepLoadedRun,
     top_k: Annotated[int, Query(ge=1)],
-) -> ComponentCorrelationsResponse | None:
+) -> ComponentCorrelationsResponse:
     """Get correlated components for a specific component.
 
     Returns top-k correlations across different metrics (precision, recall, Jaccard, PMI).
     Returns None if correlations haven't been harvested for this run.
     """
-    start = time.perf_counter()
-
     correlations = loaded.harvest.correlations
-    if correlations is None:
-        return None
-
     component_key = f"{layer}:{component_idx}"
 
     if not analysis.has_component(correlations, component_key):
@@ -348,7 +315,7 @@ def get_component_correlations(
             n_tokens=c.count_total,
         )
 
-    response = ComponentCorrelationsResponse(
+    return ComponentCorrelationsResponse(
         precision=[
             to_schema(c)
             for c in analysis.get_correlated_components(
@@ -378,7 +345,3 @@ def get_component_correlations(
             )
         ],
     )
-
-    total_ms = (time.perf_counter() - start) * 1000
-    logger.info(f"get_component_correlations: {component_key} in {total_ms:.1f}ms")
-    return response

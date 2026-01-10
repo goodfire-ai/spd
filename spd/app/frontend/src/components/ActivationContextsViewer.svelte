@@ -1,8 +1,7 @@
 <script lang="ts">
-    import type { Loadable } from "../lib";
-    import type { SubcomponentActivationContexts, HarvestMetadata } from "../lib/api";
-    import * as api from "../lib/api";
-    import { displaySettings } from "../lib/displaySettings.svelte";
+    import { onMount } from "svelte";
+    import { hasAnyCorrelationStats } from "../lib/displaySettings.svelte";
+    import type { ActivationContextsSummary, ComponentSummary } from "../lib/localAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
@@ -12,41 +11,49 @@
     import StatusText from "./ui/StatusText.svelte";
     import TokenStatsSection from "./ui/TokenStatsSection.svelte";
 
-    interface Props {
-        harvestMetadata: HarvestMetadata;
-    }
-
-    let { harvestMetadata }: Props = $props();
-
     const N_TOKENS_TO_DISPLAY_INPUT = 80;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
 
-    let availableLayers = $derived(Object.keys(harvestMetadata.layers).sort());
-    let currentPage = $state(0);
-    let selectedLayer = $state<string>(Object.keys(harvestMetadata.layers)[0]);
+    const showCorrelations = $derived(hasAnyCorrelationStats());
 
-    let componentCache = $state<Record<string, Loadable<SubcomponentActivationContexts>>>({});
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive, just for deduplication
-    const requestedKeys = new Set<string>();
+    type Props = {
+        activationContextsSummary: ActivationContextsSummary;
+    };
+
+    let { activationContextsSummary }: Props = $props();
+
+    let availableLayers = $derived(Object.keys(activationContextsSummary).sort());
+    let currentPage = $state(0);
+    let selectedLayer = $state<string>(Object.keys(activationContextsSummary)[0]);
 
     // Layer metadata is already sorted by mean_ci desc from backend
-    let currentLayerMetadata = $derived(harvestMetadata.layers[selectedLayer]);
+    let currentLayerMetadata = $derived(activationContextsSummary[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
-    let currentMetadata = $derived<api.SubcomponentMetadata>(currentLayerMetadata[currentPage]);
+    let currentMetadata = $derived<ComponentSummary>(currentLayerMetadata[currentPage]);
 
-    // Fetch correlations, token stats, and interpretation for current component
-    const componentData = useComponentData(() => {
-        const cIdx = currentMetadata?.subcomponent_idx;
-        return cIdx !== undefined ? { layer: selectedLayer, cIdx } : null;
-    });
+    // Component data hook - call load() explicitly when component changes
+    const componentData = useComponentData();
+    const DEBOUNCE_MS = 300;
+    let loadTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    function getCacheKey(layer: string, componentIdx: number) {
-        return `${layer}:${componentIdx}`;
+    // Load data for current component (debounced to avoid spamming on rapid navigation)
+    function loadCurrentComponent() {
+        if (loadTimeout) clearTimeout(loadTimeout);
+        componentData.reset(); // Clear stale data immediately
+        loadTimeout = setTimeout(() => {
+            const cIdx = currentMetadata?.subcomponent_idx;
+            if (cIdx !== undefined) {
+                componentData.load(selectedLayer, cIdx);
+            }
+        }, DEBOUNCE_MS);
     }
 
-    let currentComponent = $derived.by(() => {
-        const cacheKey = getCacheKey(selectedLayer, currentMetadata.subcomponent_idx);
-        return componentCache[cacheKey] ?? null;
+    // Initial load on mount, cleanup on unmount
+    onMount(() => {
+        loadCurrentComponent();
+        return () => {
+            if (loadTimeout) clearTimeout(loadTimeout);
+        };
     });
 
     function handlePageInput(event: Event) {
@@ -55,6 +62,7 @@
         const value = parseInt(target.value);
         if (!isNaN(value) && value >= 1 && value <= totalPages) {
             currentPage = value - 1;
+            loadCurrentComponent();
         }
     }
 
@@ -84,54 +92,29 @@
         }
 
         currentPage = pageIndex;
+        loadCurrentComponent();
     }
 
     function previousPage() {
-        if (currentPage > 0) currentPage--;
+        if (currentPage > 0) {
+            currentPage--;
+            loadCurrentComponent();
+        }
     }
 
     function nextPage() {
-        if (currentPage < totalPages - 1) currentPage++;
+        if (currentPage < totalPages - 1) {
+            currentPage++;
+            loadCurrentComponent();
+        }
     }
 
-    // Reset page when layer changes
-    $effect(() => {
-        selectedLayer; // eslint-disable-line @typescript-eslint/no-unused-expressions
+    function handleLayerChange(event: Event) {
+        const target = event.target as HTMLSelectElement;
+        selectedLayer = target.value;
         currentPage = 0;
-    });
-
-    // Lazy-load component data when page or layer changes
-    $effect(() => {
-        const meta = currentMetadata;
-        const layer = selectedLayer;
-
-        if (!meta) return;
-
-        const cacheKey = getCacheKey(layer, meta.subcomponent_idx);
-
-        if (requestedKeys.has(cacheKey)) return;
-        requestedKeys.add(cacheKey);
-
-        let cancelled = false;
-        componentCache[cacheKey] = { status: "loading" };
-
-        const load = async () => {
-            try {
-                const detail = await api.getComponentDetail(layer, meta.subcomponent_idx);
-
-                if (cancelled) return;
-                componentCache[cacheKey] = { status: "loaded", data: detail };
-            } catch (error) {
-                if (!cancelled) componentCache[cacheKey] = { status: "error", error };
-            }
-        };
-
-        load();
-
-        return () => {
-            cancelled = true;
-        };
-    });
+        loadCurrentComponent();
+    }
 
     // Derive token lists from loaded tokenStats (null if not loaded or no data)
     const inputTokenLists = $derived.by(() => {
@@ -144,6 +127,7 @@
                 items: ts.data.input.top_recall
                     .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: 1,
             },
             {
                 title: "Top Precision",
@@ -151,6 +135,7 @@
                 items: ts.data.input.top_precision
                     .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: 1,
             },
         ];
     });
@@ -158,6 +143,11 @@
     const outputTokenLists = $derived.by(() => {
         const ts = componentData.tokenStats;
         if (ts?.status !== "loaded" || ts.data === null) return null;
+        // Compute max absolute PMI for scaling
+        const maxAbsPmi = Math.max(
+            ts.data.output.top_pmi[0]?.[1] ?? 0,
+            Math.abs(ts.data.output.bottom_pmi?.[0]?.[1] ?? 0),
+        );
         return [
             {
                 title: "Top PMI",
@@ -165,6 +155,7 @@
                 items: ts.data.output.top_pmi
                     .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: maxAbsPmi,
             },
             {
                 title: "Bottom PMI",
@@ -172,6 +163,7 @@
                 items: ts.data.output.bottom_pmi
                     .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: maxAbsPmi,
             },
         ];
     });
@@ -193,7 +185,7 @@
     <div class="controls-row">
         <div class="layer-select">
             <label for="layer-select">Layer:</label>
-            <select id="layer-select" bind:value={selectedLayer}>
+            <select id="layer-select" value={selectedLayer} onchange={handleLayerChange}>
                 {#each availableLayers as layer (layer)}
                     <option value={layer}>{layer}</option>
                 {/each}
@@ -229,7 +221,6 @@
                 <span class="search-error">{searchError}</span>
             {/if}
         </div>
-
     </div>
 
     <div class="component-section">
@@ -237,10 +228,32 @@
             <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
         </SectionHeader>
 
-        <InterpretationBadge interpretation={componentData.interpretation} onGenerate={componentData.generateInterpretation} />
+        <InterpretationBadge
+            interpretation={componentData.interpretation}
+            interpretationDetail={componentData.interpretationDetail}
+            onGenerate={componentData.generateInterpretation}
+        />
+
+        <!-- Activation examples -->
+        {#if componentData.componentDetail?.status === "loading"}
+            <div class="loading">Loading component data...</div>
+        {:else if componentData.componentDetail?.status === "loaded"}
+            <ActivationContextsPagedTable
+                exampleTokens={componentData.componentDetail.data.example_tokens}
+                exampleCi={componentData.componentDetail.data.example_ci}
+                exampleComponentActs={componentData.componentDetail.data.example_component_acts}
+                activatingTokens={inputTopRecall.map(({ token }) => token)}
+            />
+        {:else if componentData.componentDetail?.status === "error"}
+            <StatusText>Error loading component data: {String(componentData.componentDetail.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading component data.</StatusText>
+        {/if}
+
+        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
 
         <div class="token-stats-row">
-            {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
+            {#if componentData.tokenStats.status === "uninitialized" || componentData.tokenStats.status === "loading"}
                 <StatusText>Loading token stats...</StatusText>
             {:else if componentData.tokenStats.status === "error"}
                 <StatusText>Error: {String(componentData.tokenStats.error)}</StatusText>
@@ -260,36 +273,19 @@
         </div>
 
         <!-- Component correlations -->
-        {#if displaySettings.hasAnyCorrelationStatsVisible()}
+        {#if showCorrelations}
             <div class="correlations-section">
                 <SectionHeader title="Correlated Components" />
-                {#if componentData.correlations === null || componentData.correlations.status === "loading"}
+                {#if componentData.correlations.status === "uninitialized" || componentData.correlations.status === "loading"}
                     <StatusText>Loading...</StatusText>
                 {:else if componentData.correlations.status === "error"}
                     <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
                 {:else if componentData.correlations.data === null}
                     <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
                 {:else}
-                    <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={40} />
+                    <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={10} />
                 {/if}
             </div>
-        {/if}
-
-        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
-
-        {#if currentComponent?.status === "loading"}
-            <div class="loading">Loading component data...</div>
-        {:else if currentComponent?.status === "loaded"}
-            <ActivationContextsPagedTable
-                exampleTokens={currentComponent.data.example_tokens}
-                exampleCi={currentComponent.data.example_ci}
-                exampleComponentActs={currentComponent.data.example_component_acts}
-                activatingTokens={inputTopRecall.map(({ token }) => token)}
-            />
-        {:else if currentComponent?.status === "error"}
-            <StatusText>Error loading component data: {String(currentComponent.error)}</StatusText>
-        {:else}
-            <StatusText>Something went wrong loading component data.</StatusText>
         {/if}
     </div>
 </div>
@@ -374,7 +370,7 @@
     }
 
     .search-input {
-        width: 70px;
+        width: 80px;
         padding: var(--space-1) var(--space-2);
         border: 1px solid var(--border-default);
         font-size: var(--text-sm);

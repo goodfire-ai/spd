@@ -1,17 +1,18 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
     import {
         isInterventableNode,
-        type ActivationContextsSummary,
         type LayerInfo,
         type NodePosition,
         type TokenInfo,
     } from "../../lib/localAttributionsTypes";
-    import { runState } from "../../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
+
+    const runState = getContext<RunContext>(RUN_KEY);
     import {
         calcTooltipPos,
         computeClusterSpans,
@@ -66,7 +67,6 @@
         onHideUnpinnedEdgesChange: (value: boolean) => void;
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
-        activationContextsSummary: ActivationContextsSummary | null;
         runningIntervention: boolean;
         onSelectionChange: (selection: Set<string>) => void;
         onRunIntervention: () => void;
@@ -97,7 +97,6 @@
         onCiThresholdChange,
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
-        activationContextsSummary,
         runningIntervention,
         onSelectionChange,
         onRunIntervention,
@@ -178,7 +177,7 @@
     const hoveredClusterId = $derived.by(() => {
         if (hoveredBarClusterId !== null) return hoveredBarClusterId;
         if (!hoveredNode) return undefined;
-        return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+        return runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
 
     // Check if a node is in the same cluster as the hovered node (for cluster rotation effect)
@@ -187,7 +186,7 @@
         if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
         const [layer, , cIdxStr] = nodeKey.split(":");
         const cIdx = parseInt(cIdxStr);
-        const nodeClusterId = clusterMapping.getClusterId(layer, cIdx);
+        const nodeClusterId = runState.getClusterId(layer, cIdx);
         return nodeClusterId === hoveredClusterId;
     }
 
@@ -359,7 +358,7 @@
 
                 // Output nodes always sort by probability; internal nodes sort by cluster if mapping loaded, else by CI
                 const sorted =
-                    layer === "output" || !clusterMapping.mapping
+                    layer === "output" || !runState.clusterMapping
                         ? sortComponentsByImportance(
                               layerNodes,
                               layer,
@@ -372,7 +371,7 @@
                               layer,
                               seqIdx,
                               graph.data.nodeCiVals,
-                              clusterMapping.getClusterId.bind(clusterMapping),
+                              runState.getClusterId,
                           );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
                 for (const cIdx of layerNodes) {
@@ -383,7 +382,7 @@
                 }
 
                 // Compute cluster spans for this layer/seqIdx (skip output layer)
-                if (layer !== "output" && clusterMapping.mapping) {
+                if (layer !== "output" && runState.clusterMapping) {
                     const spans = computeClusterSpans(
                         sorted,
                         layer,
@@ -392,7 +391,7 @@
                         baseY,
                         COMPONENT_SIZE,
                         offsets,
-                        clusterMapping.getClusterId.bind(clusterMapping),
+                        runState.getClusterId,
                     );
                     allClusterSpans.push(...spans);
                 }
@@ -456,10 +455,6 @@
         }
         hoveredNode = { layer, seqIdx, cIdx };
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
-
-        if (layer !== "output" && activationContextsSummary) {
-            runState.loadComponentDetail(layer, cIdx);
-        }
     }
 
     function handleNodeMouseLeave() {
@@ -1029,7 +1024,6 @@
             {hoveredNode}
             {tooltipPos}
             {hideNodeCard}
-            {activationContextsSummary}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
             nodeSubcompActs={graph.data.nodeSubcompActs}

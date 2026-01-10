@@ -1,6 +1,7 @@
 """Data types for harvest pipeline."""
 
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from spd.settings import SPD_OUT_DIR
@@ -35,6 +36,27 @@ class ActivationExample:
 class ComponentTokenPMI:
     top: list[tuple[int, float]]
     bottom: list[tuple[int, float]]
+
+
+@dataclass
+class ComponentSummary:
+    """Lightweight summary of a component (for /summary endpoint)."""
+
+    layer: str
+    component_idx: int
+    mean_ci: float
+
+    @staticmethod
+    def save_all(summaries: dict[str, "ComponentSummary"], path: Path) -> None:
+        """Save component summaries to JSON file."""
+        data = {key: asdict(s) for key, s in summaries.items()}
+        path.write_text(json.dumps(data))
+
+    @staticmethod
+    def load_all(path: Path) -> dict[str, "ComponentSummary"]:
+        """Load component summaries from JSON file."""
+        data = json.loads(path.read_text())
+        return {key: ComponentSummary(**val) for key, val in data.items()}
 
 
 @dataclass

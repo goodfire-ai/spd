@@ -1,15 +1,12 @@
 <script lang="ts">
-    import type {
-        ActivationContextsSummary,
-        ComponentSummary,
-        OutputProbEntry,
-        Edge,
-    } from "../../lib/localAttributionsTypes";
+    import { getContext } from "svelte";
+    import type { OutputProbEntry, Edge } from "../../lib/localAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
-    import { runState } from "../../lib/runState.svelte";
-    import { clusterMapping } from "../../lib/clusterMapping.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
+
+    const runState = getContext<RunContext>(RUN_KEY);
 
     type HoveredNode = {
         layer: string;
@@ -21,7 +18,6 @@
         hoveredNode: HoveredNode;
         tooltipPos: { x: number; y: number };
         hideNodeCard?: boolean;
-        activationContextsSummary: ActivationContextsSummary | null;
         outputProbs: Record<string, OutputProbEntry>;
         nodeCiVals: Record<string, number>;
         nodeSubcompActs: Record<string, number>;
@@ -37,7 +33,6 @@
         hoveredNode,
         tooltipPos,
         hideNodeCard = false,
-        activationContextsSummary,
         outputProbs,
         nodeCiVals,
         nodeSubcompActs,
@@ -48,14 +43,6 @@
         onMouseLeave,
         onPinComponent,
     }: Props = $props();
-
-    // Returns null if: not yet loaded, layer not in harvest, or component not above threshold
-    function findComponentSummary(layer: string, cIdx: number): ComponentSummary | null {
-        if (!activationContextsSummary) return null;
-        const layerSummaries = activationContextsSummary[layer];
-        if (!layerSummaries) return null;
-        return layerSummaries.find((s) => s.subcomponent_idx === cIdx) ?? null;
-    }
 
     const isWte = $derived(hoveredNode.layer === "wte");
     const isOutput = $derived(hoveredNode.layer === "output");
@@ -77,7 +64,7 @@
 
     // Get cluster ID for component nodes (undefined = no mapping, null = singleton, number = cluster)
     const clusterId = $derived(
-        isComponent ? clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx) : undefined,
+        isComponent ? runState.clusterMapping?.data[`${hoveredNode.layer}:${hoveredNode.cIdx}`] : undefined,
     );
 
     const token = $derived.by(() => {
@@ -119,18 +106,19 @@
     {:else if isOutput}
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
     {:else if !hideNodeCard}
-        <ComponentNodeCard
-            layer={hoveredNode.layer}
-            cIdx={hoveredNode.cIdx}
-            seqIdx={hoveredNode.seqIdx}
-            summary={findComponentSummary(hoveredNode.layer, hoveredNode.cIdx)}
-            detail={runState.getComponentDetail(hoveredNode.layer, hoveredNode.cIdx)}
-            {edgesBySource}
-            {edgesByTarget}
-            {tokens}
-            {outputProbs}
-            {onPinComponent}
-        />
+        <!-- Key forces remount when component identity changes, so ComponentNodeCard can load on mount -->
+        {#key `${hoveredNode.layer}:${hoveredNode.cIdx}`}
+            <ComponentNodeCard
+                layer={hoveredNode.layer}
+                cIdx={hoveredNode.cIdx}
+                seqIdx={hoveredNode.seqIdx}
+                {edgesBySource}
+                {edgesByTarget}
+                {tokens}
+                {outputProbs}
+                {onPinComponent}
+            />
+        {/key}
     {/if}
 </div>
 

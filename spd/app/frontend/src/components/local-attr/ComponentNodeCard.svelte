@@ -1,13 +1,8 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
-    import type {
-        ComponentDetail,
-        ComponentSummary,
-        Edge,
-        EdgeAttribution,
-        OutputProbEntry,
-    } from "../../lib/localAttributionsTypes";
+    import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/localAttributionsTypes";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
@@ -16,33 +11,19 @@
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
-    import type { Loadable } from "../../lib/index";
 
     type Props = {
         layer: string;
         cIdx: number;
         seqIdx: number;
-        summary: ComponentSummary | null;
         edgesBySource: Map<string, Edge[]>;
         edgesByTarget: Map<string, Edge[]>;
-        detail: Loadable<ComponentDetail>;
         tokens: string[];
         outputProbs: Record<string, OutputProbEntry>;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     };
 
-    let {
-        layer,
-        cIdx,
-        seqIdx,
-        summary,
-        edgesBySource,
-        edgesByTarget,
-        detail,
-        tokens,
-        outputProbs,
-        onPinComponent,
-    }: Props = $props();
+    let { layer, cIdx, seqIdx, edgesBySource, edgesByTarget, tokens, outputProbs, onPinComponent }: Props = $props();
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -52,8 +33,19 @@
         onPinComponent(clickedLayer, parseInt(clickedCIdx), seqIdx);
     }
 
-    // Fetch all component data (correlations, token stats, interpretation)
-    const componentData = useComponentData(() => ({ layer, cIdx }));
+    // Component data hook - call load() explicitly on mount.
+    // Parents use {#key} or {#each} keys to remount this component when layer/cIdx change,
+    // so we only need to load once on mount (no effect watching props).
+    // Debounce to avoid bombarding backend when hovering over many nodes quickly.
+    const componentData = useComponentData();
+    const HOVER_DEBOUNCE_MS = 200;
+
+    onMount(() => {
+        const timeout = setTimeout(() => {
+            componentData.load(layer, cIdx);
+        }, HOVER_DEBOUNCE_MS);
+        return () => clearTimeout(timeout);
+    });
 
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
@@ -69,6 +61,7 @@
                 items: tokenStats.data.input.top_recall
                     .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: 1,
             },
             {
                 title: "Top Precision",
@@ -76,6 +69,7 @@
                 items: tokenStats.data.input.top_precision
                     .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: 1,
             },
         ];
     });
@@ -83,6 +77,11 @@
     const outputTokenLists = $derived.by(() => {
         const tokenStats = componentData.tokenStats;
         if (tokenStats?.status !== "loaded" || tokenStats.data === null) return null;
+        // Compute max absolute PMI for scaling
+        const maxAbsPmi = Math.max(
+            tokenStats.data.output.top_pmi[0]?.[1] ?? 0,
+            Math.abs(tokenStats.data.output.bottom_pmi?.[0]?.[1] ?? 0),
+        );
         return [
             {
                 title: "Top PMI",
@@ -90,6 +89,7 @@
                 items: tokenStats.data.output.top_pmi
                     .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: maxAbsPmi,
             },
             {
                 title: "Bottom PMI",
@@ -97,6 +97,7 @@
                 items: tokenStats.data.output.bottom_pmi
                     .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
                     .map(([token, value]) => ({ token, value })),
+                maxScale: maxAbsPmi,
             },
         ];
     });
@@ -168,15 +169,39 @@
 
 <div class="component-node-card">
     <SectionHeader title="Position {seqIdx}" level="h4">
-        {#if summary}
-            <span class="mean-ci">Mean CI: {formatNumericalValue(summary.mean_ci)}</span>
+        {#if componentData.componentDetail?.status === "loaded"}
+            <span class="mean-ci">Mean CI: {formatNumericalValue(componentData.componentDetail.data.mean_ci)}</span>
         {/if}
     </SectionHeader>
 
     <InterpretationBadge
         interpretation={componentData.interpretation}
+        interpretationDetail={componentData.interpretationDetail}
         onGenerate={componentData.generateInterpretation}
     />
+
+    <!-- Activating examples (from harvest data) -->
+    <div class="activating-examples-section">
+        <SectionHeader title="Activating Examples" />
+        {#if componentData.componentDetail?.status === "loading"}
+            <StatusText>Loading details...</StatusText>
+        {:else if componentData.componentDetail?.status === "loaded"}
+            {#if componentData.componentDetail.data.example_tokens.length > 0}
+                <ActivationContextsPagedTable
+                    exampleTokens={componentData.componentDetail.data.example_tokens}
+                    exampleCi={componentData.componentDetail.data.example_ci}
+                    exampleComponentActs={componentData.componentDetail.data.example_component_acts}
+                    {activatingTokens}
+                />
+            {/if}
+        {:else if componentData.componentDetail?.status === "error"}
+            <StatusText>Error loading details: {String(componentData.componentDetail.error)}</StatusText>
+        {:else}
+            <StatusText>Something went wrong loading details.</StatusText>
+        {/if}
+    </div>
+
+    <ComponentProbeInput {layer} componentIdx={cIdx} />
 
     <!-- Edge attributions (local, for this datapoint) -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
@@ -284,29 +309,6 @@
             <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
         {:else}
             <StatusText>No correlations available.</StatusText>
-        {/if}
-    </div>
-
-    <ComponentProbeInput {layer} componentIdx={cIdx} />
-
-    <div class="activating-examples-section">
-        <SectionHeader title="Activating Examples" />
-        {#if detail?.status === "loading"}
-            <StatusText>Loading details...</StatusText>
-        {:else if detail?.status === "loaded"}
-            {#if detail?.data.example_tokens.length > 0}
-                <!-- Full mode: paged table with filtering -->
-                <ActivationContextsPagedTable
-                    exampleTokens={detail.data.example_tokens}
-                    exampleCi={detail.data.example_ci}
-                    exampleComponentActs={detail.data.example_component_acts}
-                    {activatingTokens}
-                />
-            {/if}
-        {:else if detail?.status === "error"}
-            <StatusText>Error loading details: {String(detail?.error)}</StatusText>
-        {:else}
-            <StatusText>Something went wrong loading details.</StatusText>
         {/if}
     </div>
 </div>

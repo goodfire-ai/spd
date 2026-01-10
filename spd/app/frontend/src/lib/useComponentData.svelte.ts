@@ -1,12 +1,15 @@
+import { getContext } from "svelte";
 import type { Loadable } from ".";
 import {
+    ApiError,
     getComponentCorrelations,
-    getComponentInterpretation,
     getComponentTokenStats,
+    getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
-import type { ComponentCorrelations, TokenStats } from "./localAttributionsTypes";
-import { runState } from "./runState.svelte";
+import type { InterpretationDetail } from "./api";
+import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./localAttributionsTypes";
+import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./useRun.svelte";
 
 /** Correlations are paginated in the UI, so fetch more */
 const CORRELATIONS_TOP_K = 100;
@@ -15,96 +18,152 @@ const TOKEN_STATS_TOP_K = 50;
 
 export type ComponentCoords = { layer: string; cIdx: number };
 
-/** Interpretation can be: none, loading, generating, loaded, or error */
-export type InterpretationState =
-    | { status: "none" }
-    | { status: "loading" }
-    | { status: "generating" }
-    | { status: "loaded"; data: Interpretation }
-    | { status: "error"; error: unknown };
-
-import type { Interpretation } from "./api";
-
 /**
- * Fetches all data for a component: correlations, token stats, and interpretation.
- * Handles stale request cancellation when coords change.
+ * Hook for loading component data (detail, correlations, token stats, interpretation detail).
+ *
+ * Call `load(layer, cIdx)` explicitly when you want to fetch data.
+ * Interpretation headline is derived from the global runState cache.
+ * Interpretation detail (reasoning + prompt) is fetched on-demand.
  */
-export function useComponentData(getCoords: () => ComponentCoords | null) {
-    let correlations = $state<Loadable<ComponentCorrelations | null>>(null);
-    let tokenStats = $state<Loadable<TokenStats | null>>(null);
-    let interpretation = $state<InterpretationState>({ status: "none" });
+export function useComponentData() {
+    const runState = getContext<RunContext>(RUN_KEY);
 
-    $effect(() => {
-        const coords = getCoords();
-        if (!coords) {
-            correlations = null;
-            tokenStats = null;
-            interpretation = { status: "none" };
-            return;
-        }
+    let componentDetail = $state<Loadable<ComponentDetail>>({ status: "uninitialized" });
+    // null inside Loadable means "no data for this component" (404)
+    let correlations = $state<Loadable<ComponentCorrelations | null>>({ status: "uninitialized" });
+    let tokenStats = $state<Loadable<TokenStats | null>>({ status: "uninitialized" });
 
-        const { layer, cIdx } = coords;
-        let stale = false;
+    let interpretationDetail = $state<Loadable<InterpretationDetail | null>>({ status: "uninitialized" });
 
-        // Set loading state
+    // Current coords being loaded/displayed (for interpretation lookup)
+    let currentCoords = $state<ComponentCoords | null>(null);
+
+    // Request counter for handling stale responses
+    let requestId = 0;
+
+    /**
+     * Load all data for the given component.
+     * Call this from event handlers or on mount.
+     */
+    function load(layer: string, cIdx: number) {
+        currentCoords = { layer, cIdx };
+        const thisRequestId = ++requestId;
+
+        // Set loading states
+        componentDetail = { status: "loading" };
         correlations = { status: "loading" };
         tokenStats = { status: "loading" };
-        interpretation = { status: "loading" };
+        interpretationDetail = { status: "loading" };
 
-        // Fetch correlations
+        // Helper to check if this request is still current
+        const isStale = () => requestId !== thisRequestId;
+
+        // Fetch component detail (cached in runState after first call)
+        runState
+            .getComponentDetail(layer, cIdx)
+            .then((data) => {
+                if (isStale()) return;
+                componentDetail = { status: "loaded", data };
+            })
+            .catch((error) => {
+                if (isStale()) return;
+                componentDetail = { status: "error", error };
+            });
+
+        // Fetch correlations (404 = no data for this component)
         getComponentCorrelations(layer, cIdx, CORRELATIONS_TOP_K)
             .then((data) => {
-                if (stale) return;
+                if (isStale()) return;
                 correlations = { status: "loaded", data };
             })
             .catch((error) => {
-                if (stale) return;
-                correlations = { status: "error", error };
+                if (isStale()) return;
+                if (error instanceof ApiError && error.status === 404) {
+                    correlations = { status: "loaded", data: null };
+                } else {
+                    correlations = { status: "error", error };
+                }
             });
 
-        // Fetch token stats
+        // Fetch token stats (404 = no data for this component)
         getComponentTokenStats(layer, cIdx, TOKEN_STATS_TOP_K)
             .then((data) => {
-                if (stale) return;
+                if (isStale()) return;
                 tokenStats = { status: "loaded", data };
             })
             .catch((error) => {
-                if (stale) return;
-                tokenStats = { status: "error", error };
+                if (isStale()) return;
+                if (error instanceof ApiError && error.status === 404) {
+                    tokenStats = { status: "loaded", data: null };
+                } else {
+                    tokenStats = { status: "error", error };
+                }
             });
 
-        // Fetch interpretation
-        getComponentInterpretation(layer, cIdx)
+        // Fetch interpretation detail (404 = no interpretation for this component)
+        getInterpretationDetail(layer, cIdx)
             .then((data) => {
-                if (stale) return;
-                interpretation = data ? { status: "loaded", data } : { status: "none" };
+                if (isStale()) return;
+                interpretationDetail = { status: "loaded", data };
             })
             .catch((error) => {
-                if (stale) return;
-                interpretation = { status: "error", error };
+                if (isStale()) return;
+                if (error instanceof ApiError && error.status === 404) {
+                    interpretationDetail = { status: "loaded", data: null };
+                } else {
+                    interpretationDetail = { status: "error", error };
+                }
             });
+    }
 
-        return () => {
-            stale = true;
-        };
+    /**
+     * Reset all state to uninitialized.
+     */
+    function reset() {
+        requestId++; // Invalidate any in-flight requests
+        currentCoords = null;
+        componentDetail = { status: "uninitialized" };
+        correlations = { status: "uninitialized" };
+        tokenStats = { status: "uninitialized" };
+        interpretationDetail = { status: "uninitialized" };
+    }
+
+    // Interpretation is derived from the global cache - reactive to both coords and cache
+    const interpretation = $derived.by((): Loadable<InterpretationBackendState> => {
+        if (!currentCoords) return { status: "uninitialized" };
+        return runState.getInterpretation(`${currentCoords.layer}:${currentCoords.cIdx}`);
     });
 
     async function generateInterpretation() {
-        const coords = getCoords();
-        if (!coords || interpretation?.status === "generating") return;
-        const { layer, cIdx } = coords;
+        if (!currentCoords) return;
 
-        interpretation = { status: "generating" };
+        const { layer, cIdx } = currentCoords;
+        const componentKey = `${layer}:${cIdx}`;
+
         try {
+            runState.setInterpretation(componentKey, { status: "generating" });
             const result = await requestComponentInterpretation(layer, cIdx);
-            interpretation = { status: "loaded", data: result };
-            runState.loadInterpretations();
+            runState.setInterpretation(componentKey, { status: "generated", data: result });
+
+            // Fetch the detail (reasoning + prompt) now that it exists
+            try {
+                const detail = await getInterpretationDetail(layer, cIdx);
+                interpretationDetail = { status: "loaded", data: detail };
+            } catch (detailError) {
+                interpretationDetail = { status: "error", error: detailError };
+            }
         } catch (e) {
-            interpretation = { status: "error", error: e instanceof Error ? e.message : String(e) };
+            runState.setInterpretation(componentKey, {
+                status: "generation-error",
+                error: e instanceof Error ? e.message : String(e),
+            });
         }
     }
 
     return {
+        get componentDetail() {
+            return componentDetail;
+        },
         get correlations() {
             return correlations;
         },
@@ -114,6 +173,11 @@ export function useComponentData(getCoords: () => ComponentCoords | null) {
         get interpretation() {
             return interpretation;
         },
+        get interpretationDetail() {
+            return interpretationDetail;
+        },
+        load,
+        reset,
         generateInterpretation,
     };
 }
