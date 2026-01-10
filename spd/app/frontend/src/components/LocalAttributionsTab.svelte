@@ -47,9 +47,7 @@
     });
 
     // Guard: only render main content when run data is fully loaded
-    const dataReady = $derived(
-        runState.prompts?.status === "loaded" && runState.allTokens?.status === "loaded"
-    );
+    const dataReady = $derived(runState.prompts?.status === "loaded" && runState.allTokens?.status === "loaded");
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);

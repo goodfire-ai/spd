@@ -20,11 +20,7 @@
 <div class="app-layout">
     <header class="top-bar">
         {#if runState.run?.status === "loaded" && runState.run.data}
-            <div
-                class="run-menu"
-                onmouseenter={() => (showRunMenu = true)}
-                onmouseleave={() => (showRunMenu = false)}
-            >
+            <div class="run-menu" onmouseenter={() => (showRunMenu = true)} onmouseleave={() => (showRunMenu = false)}>
                 <button type="button" class="run-menu-trigger">
                     <span class="run-path">{runState.run.data.wandb_path}</span>
                 </button>

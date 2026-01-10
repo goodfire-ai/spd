@@ -69,10 +69,7 @@ export type LoadingState = {
 };
 
 /** Generic state for async actions without a meaningful result */
-export type ActionState =
-    | { status: "idle" }
-    | { status: "loading" }
-    | { status: "error"; error: string };
+export type ActionState = { status: "idle" } | { status: "loading" } | { status: "error"; error: string };
 
 /** State for graph computation - tracks which card is computing, progress, and errors */
 export type GraphComputeState =

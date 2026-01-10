@@ -372,13 +372,7 @@
                               graph.data.nodeCiVals,
                               graph.data.outputProbs,
                           )
-                        : sortComponentsByCluster(
-                              layerNodes,
-                              layer,
-                              seqIdx,
-                              graph.data.nodeCiVals,
-                              getClusterId,
-                          );
+                        : sortComponentsByCluster(layerNodes, layer, seqIdx, graph.data.nodeCiVals, getClusterId);
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
                 for (const cIdx of layerNodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {

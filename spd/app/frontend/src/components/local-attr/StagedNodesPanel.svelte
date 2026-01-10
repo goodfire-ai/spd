@@ -58,7 +58,9 @@
                 {@const isOutput = node.layer === "output"}
                 {@const isWte = node.layer === "wte"}
                 {@const isComponent = !isWte && !isOutput}
-                {@const clusterId = isComponent ? runState.clusterMapping?.data[`${node.layer}:${node.cIdx}`] : undefined}
+                {@const clusterId = isComponent
+                    ? runState.clusterMapping?.data[`${node.layer}:${node.cIdx}`]
+                    : undefined}
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">

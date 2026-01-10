@@ -296,13 +296,7 @@
                 const sorted =
                     layer === "output" || !runState.clusterMapping
                         ? sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs)
-                        : sortComponentsByCluster(
-                              nodes,
-                              layer,
-                              seqIdx,
-                              data.nodeCiVals,
-                              getClusterId,
-                          );
+                        : sortComponentsByCluster(nodes, layer, seqIdx, data.nodeCiVals, getClusterId);
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
                 for (const cIdx of nodes) {

@@ -90,7 +90,8 @@
                         <input
                             type="checkbox"
                             checked={displaySettings.showEdgeAttributions}
-                            onchange={() => (displaySettings.showEdgeAttributions = !displaySettings.showEdgeAttributions)}
+                            onchange={() =>
+                                (displaySettings.showEdgeAttributions = !displaySettings.showEdgeAttributions)}
                         />
                         <span class="stat-label">Edge attributions</span>
                     </label>

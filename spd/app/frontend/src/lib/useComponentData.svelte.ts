@@ -26,7 +26,6 @@ export type InterpretationState =
     | { status: "loaded"; data: Interpretation }
     | { status: "error"; error: unknown };
 
-
 /**
  * Hook for loading component data (detail, correlations, token stats, interpretation detail).
  *
