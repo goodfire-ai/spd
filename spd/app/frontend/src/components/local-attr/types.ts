@@ -68,6 +68,21 @@ export type LoadingState = {
     currentStage: number; // 0-indexed
 };
 
+/** Generic state for async actions without a meaningful result */
+export type ActionState = { status: "idle" } | { status: "loading" } | { status: "error"; error: string };
+
+/** State for graph computation - tracks which card is computing, progress, and errors */
+export type GraphComputeState =
+    | { status: "idle" }
+    | { status: "computing"; cardId: number; progress: LoadingState }
+    | { status: "error"; error: string };
+
+/** State for prompt generation - tracks progress and count */
+export type PromptGenerateState =
+    | { status: "idle" }
+    | { status: "generating"; progress: number; count: number }
+    | { status: "error"; error: string };
+
 export function defaultOptimizeConfig(): OptimizeConfig {
     return {
         labelTokenText: "",

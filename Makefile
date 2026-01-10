@@ -39,13 +39,13 @@ copy-templates:
 # checks
 .PHONY: type
 type:
-	basedpyright
+	uv run basedpyright
 
 .PHONY: format
 format:
 	# Fix all autofixable problems (which sorts imports) then format errors
-	ruff check --fix
-	ruff format
+	uv run ruff check --fix
+	uv run ruff format
 
 .PHONY: check
 check: format type
@@ -58,14 +58,14 @@ check-pre-commit:
 
 .PHONY: test
 test:
-	pytest tests/ --durations 10
+	uv run pytest tests/ --durations 10
 
 # Use min(4, nproc) for numprocesses. Any more and it slows down the tests.
 NUM_PROCESSES ?= $(shell nproc | awk '{print ($$1<4?$$1:4)}')
 
 .PHONY: test-all
 test-all:
-	pytest tests/ --runslow --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
+	uv run pytest tests/ --runslow --durations 10 --numprocesses $(NUM_PROCESSES) --dist worksteal
 
 COVERAGE_DIR=docs/coverage
 

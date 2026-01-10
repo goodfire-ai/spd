@@ -1,15 +1,16 @@
 <script lang="ts">
     import {
-        type CorrelationStatType,
+        type NodeColorMode,
         displaySettings,
         CORRELATION_STAT_LABELS,
         CORRELATION_STAT_DESCRIPTIONS,
+        NODE_COLOR_MODE_LABELS,
     } from "../../lib/displaySettings.svelte";
     import GearIcon from "./icons/GearIcon.svelte";
 
     let showDropdown = $state(false);
 
-    const statTypes: CorrelationStatType[] = ["pmi", "precision", "recall", "jaccard"];
+    const colorModes: NodeColorMode[] = ["ci", "subcomp_act"];
 </script>
 
 <div
@@ -27,17 +28,42 @@
                 <h4>Correlation Stats</h4>
                 <p class="settings-hint">Select which correlation metrics to display</p>
                 <div class="checkbox-list">
-                    {#each statTypes as stat (stat)}
-                        <label class="checkbox-item">
-                            <input
-                                type="checkbox"
-                                checked={displaySettings.isCorrelationStatVisible(stat)}
-                                onchange={() => displaySettings.toggleCorrelationStat(stat)}
-                            />
-                            <span class="stat-label">{CORRELATION_STAT_LABELS[stat]}</span>
-                            <span class="stat-desc">{CORRELATION_STAT_DESCRIPTIONS[stat]}</span>
-                        </label>
-                    {/each}
+                    <label class="checkbox-item">
+                        <input
+                            type="checkbox"
+                            checked={displaySettings.showPmi}
+                            onchange={() => (displaySettings.showPmi = !displaySettings.showPmi)}
+                        />
+                        <span class="stat-label">{CORRELATION_STAT_LABELS["pmi"]}</span>
+                        <span class="stat-desc">{CORRELATION_STAT_DESCRIPTIONS["pmi"]}</span>
+                    </label>
+                    <label class="checkbox-item">
+                        <input
+                            type="checkbox"
+                            checked={displaySettings.showPrecision}
+                            onchange={() => (displaySettings.showPrecision = !displaySettings.showPrecision)}
+                        />
+                        <span class="stat-label">{CORRELATION_STAT_LABELS["precision"]}</span>
+                        <span class="stat-desc">{CORRELATION_STAT_DESCRIPTIONS["precision"]}</span>
+                    </label>
+                    <label class="checkbox-item">
+                        <input
+                            type="checkbox"
+                            checked={displaySettings.showRecall}
+                            onchange={() => (displaySettings.showRecall = !displaySettings.showRecall)}
+                        />
+                        <span class="stat-label">{CORRELATION_STAT_LABELS["recall"]}</span>
+                        <span class="stat-desc">{CORRELATION_STAT_DESCRIPTIONS["recall"]}</span>
+                    </label>
+                    <label class="checkbox-item">
+                        <input
+                            type="checkbox"
+                            checked={displaySettings.showJaccard}
+                            onchange={() => (displaySettings.showJaccard = !displaySettings.showJaccard)}
+                        />
+                        <span class="stat-label">{CORRELATION_STAT_LABELS["jaccard"]}</span>
+                        <span class="stat-desc">{CORRELATION_STAT_DESCRIPTIONS["jaccard"]}</span>
+                    </label>
                 </div>
             </div>
             <div class="settings-section">
@@ -47,7 +73,7 @@
                         <input
                             type="checkbox"
                             checked={displaySettings.showSetOverlapVis}
-                            onchange={() => displaySettings.toggleSetOverlapVis()}
+                            onchange={() => (displaySettings.showSetOverlapVis = !displaySettings.showSetOverlapVis)}
                         />
                         <span class="stat-label">Set overlap bars</span>
                     </label>
@@ -55,10 +81,28 @@
                         <input
                             type="checkbox"
                             checked={displaySettings.showEdgeAttributions}
-                            onchange={() => displaySettings.toggleEdgeAttributions()}
+                            onchange={() =>
+                                (displaySettings.showEdgeAttributions = !displaySettings.showEdgeAttributions)}
                         />
                         <span class="stat-label">Edge attributions</span>
                     </label>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h4>Node Color</h4>
+                <p class="settings-hint">Color intensity based on</p>
+                <div class="radio-list">
+                    {#each colorModes as mode (mode)}
+                        <label class="radio-item">
+                            <input
+                                type="radio"
+                                name="node-color-mode"
+                                checked={displaySettings.nodeColorMode === mode}
+                                onchange={() => (displaySettings.nodeColorMode = mode)}
+                            />
+                            <span class="stat-label">{NODE_COLOR_MODE_LABELS[mode]}</span>
+                        </label>
+                    {/each}
                 </div>
             </div>
         </div>
@@ -84,7 +128,9 @@
         border-radius: var(--radius-sm);
         cursor: pointer;
         color: var(--text-muted);
-        transition: color 0.15s, background 0.15s;
+        transition:
+            color 0.15s,
+            background 0.15s;
     }
 
     .settings-button:hover {
@@ -170,5 +216,29 @@
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-family: var(--font-mono);
+    }
+
+    .radio-list {
+        display: flex;
+        gap: var(--space-3);
+    }
+
+    .radio-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        cursor: pointer;
+        padding: var(--space-1);
+        border-radius: var(--radius-sm);
+    }
+
+    .radio-item:hover {
+        background: var(--bg-inset);
+    }
+
+    .radio-item input {
+        margin: 0;
+        cursor: pointer;
+        accent-color: var(--accent-primary);
     }
 </style>

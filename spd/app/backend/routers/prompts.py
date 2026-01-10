@@ -145,12 +145,12 @@ def generate_prompts(
 
                 # Slice CI for this single sequence
                 ci_single = {k: v[i : i + 1] for k, v in ci_result.ci_lower_leaky.items()}
-                probs_single = ci_result.output_probs[i : i + 1]
+                target_out_probs_single = ci_result.target_out_probs[i : i + 1]
 
                 # Extract active components for inverted index
                 active_components = extract_active_from_ci(
                     ci_lower_leaky=ci_single,
-                    output_probs=probs_single,
+                    target_out_probs=target_out_probs_single,
                     ci_threshold=0.0,
                     output_prob_threshold=0.01,
                     n_seq=n_seq,
@@ -247,7 +247,7 @@ def create_custom_prompt(
     # Extract active components for inverted index
     active_components = extract_active_from_ci(
         ci_lower_leaky=ci_result.ci_lower_leaky,
-        output_probs=ci_result.output_probs,
+        target_out_probs=ci_result.target_out_probs,
         ci_threshold=0.0,
         output_prob_threshold=0.01,
         n_seq=n_seq,

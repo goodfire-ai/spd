@@ -45,10 +45,24 @@ export function getEdgeColor(val: number): string {
     return val > 0 ? colors.positive : colors.negative;
 }
 
-/** Get token highlight background */
+/** Get node color for subcomponent activation (blue=positive, red=negative) */
+export function getSubcompActColor(val: number): string {
+    return val >= 0 ? colors.positive : colors.negative;
+}
+
+/** Get token highlight background for CI values (0-1, green) */
 export function getTokenHighlightBg(ci: number): string {
     const { r, g, b } = colors.tokenHighlight;
     return `rgba(${r},${g},${b},${ci * colors.tokenHighlightOpacity})`;
+}
+
+/** Get color for component activations (blue for positive, red for negative) */
+export function getComponentActivationColor(value: number, normalizedAbs: number): string {
+    if (value >= 0) {
+        return `rgba(37, 99, 235, ${normalizedAbs})`; // blue
+    } else {
+        return `rgba(220, 38, 38, ${normalizedAbs})`; // red
+    }
 }
 
 /** Get output header gradient background based on probability */

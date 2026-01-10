@@ -12,6 +12,7 @@ export type TokenPrediction = {
     spd_prob: number;
     target_prob: number;
     logit: number;
+    target_logit: number;
 };
 
 export type InterventionResponse = {

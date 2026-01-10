@@ -30,3 +30,4 @@ class InterpretationResult:
     confidence: str
     reasoning: str
     raw_response: str
+    prompt: str

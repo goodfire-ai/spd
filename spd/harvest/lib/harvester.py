@@ -16,8 +16,8 @@ from spd.harvest.schemas import ActivationExample, ComponentData, ComponentToken
 # Sentinel for padding token windows at sequence boundaries.
 WINDOW_PAD_SENTINEL = -1
 
-# Entry: (token_ids, ci_values_in_window)
-ActivationExampleTuple = tuple[list[int], list[float]]
+# Entry: (token_ids, ci_values_in_window, component_acts_in_window)
+ActivationExampleTuple = tuple[list[int], list[float], list[float]]
 
 
 @dataclass
@@ -160,8 +160,16 @@ class Harvester:
         batch: Int[Tensor, "B S"],
         ci: Float[Tensor, "B S n_comp"],
         output_probs: Float[Tensor, "B S V"],
+        subcomp_acts: Float[Tensor, "B S n_comp"],
     ) -> None:
-        """Accumulate stats from a single batch."""
+        """Accumulate stats from a single batch.
+
+        Args:
+            batch: Token IDs
+            ci: Causal importance values per component
+            output_probs: Output probabilities
+            subcomp_acts: Normalized subcomponent activations: (v_i^T @ a) * ||u_i||.
+        """
         self.total_tokens_processed += batch.numel()
 
         firing = (ci > self.ci_threshold).float()
@@ -174,7 +182,7 @@ class Harvester:
         self._accumulate_cooccurrence_stats(firing_flat)
         self._accumulate_input_token_stats(batch_flat, firing_flat)
         self._accumulate_output_token_stats(output_probs_flat, firing_flat)
-        self._collect_activation_examples(batch, ci)
+        self._collect_activation_examples(batch, ci, subcomp_acts)
 
     def _accumulate_firing_stats(
         self,
@@ -235,6 +243,7 @@ class Harvester:
         self,
         batch: Int[Tensor, "B S"],
         ci: Float[Tensor, "B S n_comp"],
+        subcomp_acts: Float[Tensor, "B S n_comp"],
     ) -> None:
         """Reservoir sample activation examples from high-CI firings."""
         firing = ci > self.ci_threshold
@@ -261,6 +270,11 @@ class Harvester:
         ci_padded = torch.nn.functional.pad(
             ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
         )
+        subcomp_acts_padded = torch.nn.functional.pad(
+            subcomp_acts,
+            (0, 0, self.context_tokens_per_side, self.context_tokens_per_side),
+            value=0.0,
+        )
 
         # Build indices to extract [n_firings, window_size] windows via advanced indexing.
         # For each firing, we want tokens at [seq_idx - k, ..., seq_idx, ..., seq_idx + k]
@@ -276,15 +290,19 @@ class Harvester:
         # Advanced indexing: token_windows[i, j] = batch_padded[batch_idx[i], window_seq_indices[i, j]]
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
+        component_act_windows = subcomp_acts_padded[
+            batch_idx_expanded, window_seq_indices, component_idx_expanded
+        ]
 
         # Add to reservoir samplers
-        for comp_idx, tokens, ci_vals in zip(
+        for comp_idx, tokens, ci_vals, component_acts in zip(
             cast(list[int], component_idx.cpu().tolist()),
             cast(list[list[int]], token_windows.cpu().tolist()),
             cast(list[list[float]], ci_windows.cpu().tolist()),
+            cast(list[list[float]], component_act_windows.cpu().tolist()),
             strict=True,
         ):
-            self.activation_example_samplers[comp_idx].add((tokens, ci_vals))
+            self.activation_example_samplers[comp_idx].add((tokens, ci_vals, component_acts))
 
     def get_state(self) -> HarvesterState:
         """Extract serializable state for parallel merging."""
@@ -363,8 +381,10 @@ class Harvester:
                 # Build activation examples from reservoir (uniform random sample)
                 sampler = self.activation_example_samplers[flat_idx]
                 activation_examples = [
-                    ActivationExample(token_ids=token_ids, ci_values=ci_values)
-                    for token_ids, ci_values in sampler.samples
+                    ActivationExample(
+                        token_ids=token_ids, ci_values=ci_values, component_acts=component_acts
+                    )
+                    for token_ids, ci_values, component_acts in sampler.samples
                 ]
 
                 input_token_pmi = _compute_token_pmi(

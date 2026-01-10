@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { PromptPreview, PinnedNode, TokenizeResult } from "../../lib/localAttributionsTypes";
     import { tokenizeText } from "../../lib/api";
+    import type { PromptGenerateState } from "./types";
 
     type Props = {
         prompts: PromptPreview[];
@@ -8,9 +9,7 @@
         stagedNodes: PinnedNode[];
         filterByStaged: boolean;
         filterLoading: boolean;
-        generatingGraphs: boolean;
-        generateProgress: number;
-        generateCount: number;
+        promptGenerate: PromptGenerateState;
         isAddingCustomPrompt: boolean;
         show: boolean;
         onSelectPrompt: (prompt: PromptPreview) => void;
@@ -26,9 +25,7 @@
         stagedNodes,
         filterByStaged,
         filterLoading,
-        generatingGraphs,
-        generateProgress,
-        generateCount,
+        promptGenerate,
         isAddingCustomPrompt,
         show,
         onSelectPrompt,
@@ -142,13 +139,15 @@
         </div>
 
         <div class="picker-footer">
-            {#if generatingGraphs}
+            {#if promptGenerate.status === "generating"}
                 <div class="generate-progress">
                     <div class="mini-progress-bar">
-                        <div class="mini-progress-fill" style="width: {generateProgress * 100}%"></div>
+                        <div class="mini-progress-fill" style="width: {promptGenerate.progress * 100}%"></div>
                     </div>
-                    <span>{generateCount}</span>
+                    <span>{promptGenerate.count}</span>
                 </div>
+            {:else if promptGenerate.status === "error"}
+                <div class="generate-error">{promptGenerate.error}</div>
             {:else}
                 <button class="btn-generate" onclick={() => onGenerate(50)}> + Generate 50 </button>
             {/if}
@@ -370,5 +369,11 @@
         height: 100%;
         background: var(--status-positive);
         transition: width 0.1s ease;
+    }
+
+    .generate-error {
+        font-size: var(--text-sm);
+        color: var(--status-negative-bright);
+        font-family: var(--font-mono);
     }
 </style>

@@ -25,11 +25,40 @@ from spd.harvest.lib.harvester import Harvester, HarvesterState
 from spd.harvest.schemas import (
     ActivationExample,
     ComponentData,
+    ComponentSummary,
     ComponentTokenPMI,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data
+
+
+def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
+    """Compute ||U[c,:]|| for each component c in each layer.
+
+    Component activations (v_i^T @ a) have a scale invariance: scaling V by α and U by 1/α
+    leaves the weight matrix unchanged but scales component activations by α. To make component
+    activations reflect actual output contribution, we multiply by the U row norms.
+    This gives a value proportional to the magnitude of the component's output vector.
+    """
+    u_norms: dict[str, Float[Tensor, " C"]] = {}
+    for layer_name, component in model.components.items():
+        # U has shape (C, d_out) for LinearComponents
+        u_norms[layer_name] = component.U.norm(dim=1)  # [C]
+    return u_norms
+
+
+def _normalize_component_acts(
+    component_acts: dict[str, Float[Tensor, "B S C"]],
+    u_norms: dict[str, Float[Tensor, " C"]],
+) -> dict[str, Float[Tensor, "B S C"]]:
+    """Normalize component activations by U column norms (output magnitude)."""
+    normalized = {}
+    for layer_name, acts in component_acts.items():
+        norms = u_norms[layer_name].to(acts.device)
+        normalized[layer_name] = acts * norms
+    return normalized
 
 
 @dataclass
@@ -66,6 +95,19 @@ class HarvestResult:
                 f.write(json.dumps(asdict(comp)) + "\n")
         logger.info(f"Saved {len(self.components)} components to {components_path}")
 
+        # Save lightweight summary for fast /summary endpoint
+        summaries = {
+            comp.component_key: ComponentSummary(
+                layer=comp.layer,
+                component_idx=comp.component_idx,
+                mean_ci=comp.mean_ci,
+            )
+            for comp in self.components
+        }
+        summary_path = activation_contexts_dir / "summary.json"
+        ComponentSummary.save_all(summaries, summary_path)
+        logger.info(f"Saved summary to {summary_path}")
+
         # Save correlations (.pt)
         self.correlations.save(correlations_dir / "component_correlations.pt")
 
@@ -97,9 +139,9 @@ def _build_harvest_result(
     config: HarvestConfig,
 ) -> HarvestResult:
     """Build HarvestResult from a harvester."""
-    print("Building component results...")
+    logger.info("Building component results...")
     components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
-    print(f"Built {len(components)} components (skipped components with no firings)")
+    logger.info(f"Built {len(components)} components (skipped components with no firings)")
 
     # Build component keys list (same ordering as tensors)
     component_keys = [
@@ -141,11 +183,11 @@ def harvest(
 ) -> None:
     """Single-pass harvest of token stats, activation contexts, and correlations."""
     from spd.data import train_loader_and_tokenizer
-    from spd.models.component_model import ComponentModel, SPDRunInfo
+    from spd.models.component_model import SPDRunInfo
     from spd.utils.distributed_utils import get_device
 
     device = torch.device(get_device())
-    print(f"Loading model on {device}")
+    logger.info(f"Loading model on {device}")
 
     run_info = SPDRunInfo.from_path(config.wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
@@ -157,6 +199,9 @@ def harvest(
     layer_names = list(model.target_module_paths)
     vocab_size = tokenizer.vocab_size
     assert isinstance(vocab_size, int)
+
+    # Precompute U norms for normalizing component activations
+    u_norms = _compute_u_norms(model)
 
     harvester = Harvester(
         layer_names=layer_names,
@@ -173,7 +218,9 @@ def harvest(
         try:
             batch = extract_batch_data(next(train_iter)).to(device)
         except StopIteration:
-            print(f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early.")
+            logger.info(
+                f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early."
+            )
             break
 
         with torch.no_grad():
@@ -192,13 +239,20 @@ def harvest(
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
 
-            harvester.process_batch(batch, ci, probs)
+            component_acts = model.get_all_component_acts(out.cache)
+            normalized_acts = _normalize_component_acts(component_acts, u_norms)
+            subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
+                [normalized_acts[layer] for layer in layer_names],
+                dim=2,
+            )
 
-    print(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
+            harvester.process_batch(batch, ci, probs, subcomp_acts)
+
+    logger.info(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
 
     result = _build_harvest_result(harvester, config)
     result.save(activation_contexts_dir, correlations_dir)
-    print(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
+    logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
 
 
 def _harvest_worker(
@@ -214,10 +268,9 @@ def _harvest_worker(
 ) -> None:
     """Worker function for parallel harvesting. Runs in subprocess."""
     from spd.data import train_loader_and_tokenizer
-    from spd.models.component_model import ComponentModel, SPDRunInfo
 
     device = torch.device(f"cuda:{rank}")
-    print(f"[Worker {rank}] Starting on {device}", flush=True)
+    logger.info(f"[Worker {rank}] Starting on {device}")
 
     run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
@@ -229,6 +282,8 @@ def _harvest_worker(
     layer_names = list(model.target_module_paths)
     vocab_size = tokenizer.vocab_size
     assert isinstance(vocab_size, int)
+
+    u_norms = _compute_u_norms(model)
 
     harvester = Harvester(
         layer_names=layer_names,
@@ -247,10 +302,9 @@ def _harvest_worker(
         try:
             batch_data = extract_batch_data(next(train_iter))
         except StopIteration:
-            print(
+            logger.info(
                 f"[Worker {rank}] Dataset exhausted at batch {batch_idx}/{n_batches}. "
                 f"Finishing early.",
-                flush=True,
             )
             break
         if batch_idx % world_size != rank:
@@ -271,23 +325,34 @@ def _harvest_worker(
             )
             expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
             assert ci.shape[2] == expected_n_comp
-            harvester.process_batch(batch, ci, probs)
+
+            component_acts = model.get_all_component_acts(out.cache)
+            normalized_acts = _normalize_component_acts(component_acts, u_norms)
+            subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
+                [normalized_acts[layer] for layer in layer_names],
+                dim=2,
+            )
+
+            harvester.process_batch(batch, ci, probs, subcomp_acts)
 
         batches_processed += 1
         now = time.time()
         if now - last_log_time >= 10:
-            print(f"[Worker {rank}] {batches_processed} batches", flush=True)
+            logger.info(f"[Worker {rank}] {batches_processed} batches")
             last_log_time = now
 
-    print(
+    logger.info(
         f"[Worker {rank}] Done. {batches_processed} batches, "
         f"{harvester.total_tokens_processed:,} tokens",
-        flush=True,
     )
     state = harvester.get_state()
     state_path = state_dir / f"worker_{rank}.pt"
     torch.save(state, state_path)
-    print(f"[Worker {rank}] Saved state to {state_path}", flush=True)
+    logger.info(f"[Worker {rank}] Saved state to {state_path}")
+
+    # Explicitly clean up CUDA resources to avoid slow process exit
+    del model, harvester
+    torch.cuda.empty_cache()
 
 
 def harvest_parallel(
@@ -301,13 +366,15 @@ def harvest_parallel(
 
     import torch.multiprocessing as mp
 
+    from spd.data import train_loader_and_tokenizer
     from spd.models.component_model import ComponentModel, SPDRunInfo
 
-    # Pre-cache wandb files before spawning workers
-    print("Pre-caching model files from wandb...")
+    # Pre-cache model and dataset before spawning workers
+    logger.info("Pre-caching model and dataset...")
     run_info = SPDRunInfo.from_path(config.wandb_path)
     _ = ComponentModel.from_run_info(run_info)
-    print("Model files cached. Spawning workers...")
+    _, _ = train_loader_and_tokenizer(run_info.config, config.batch_size)
+    logger.info("Pre-caching complete. Spawning workers...")
 
     mp.set_start_method("spawn", force=True)
 
@@ -333,9 +400,11 @@ def harvest_parallel(
             p.start()
             processes.append(p)
 
-        print(f"Launched {n_gpus} workers. Waiting for completion...")
+        logger.info(f"Launched {n_gpus} workers. Waiting for completion...")
         for i, p in enumerate(processes):
+            logger.info(f"Joining worker {i}...")
             p.join()
+            logger.info(f"Worker {i} joined (exit code {p.exitcode})")
             if p.exitcode != 0:
                 # Kill remaining workers and fail fast
                 for remaining in processes[i + 1 :]:
@@ -346,18 +415,18 @@ def harvest_parallel(
                     "Check stderr above for traceback."
                 )
 
-        print("All workers finished. Loading states from disk...")
+        logger.info("All workers finished. Loading states from disk...")
         states = []
         for rank in range(n_gpus):
             state_path = state_dir_path / f"worker_{rank}.pt"
             states.append(torch.load(state_path, weights_only=False))
 
-    print("Merging states...")
+    logger.info("Merging states...")
     merged_state = HarvesterState.merge(states)
-    print(f"Merged. Total tokens: {merged_state.total_tokens_processed:,}")
+    logger.info(f"Merged. Total tokens: {merged_state.total_tokens_processed:,}")
 
     harvester = Harvester.from_state(merged_state, torch.device("cpu"))
 
     result = _build_harvest_result(harvester, config)
     result.save(activation_contexts_dir, correlations_dir)
-    print(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
+    logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")

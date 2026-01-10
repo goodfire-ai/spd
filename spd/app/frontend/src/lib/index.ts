@@ -1,12 +1,17 @@
 /**
- * A type that represents a value that may be loading, loaded, or in an error state.
+ * A type that represents a value that may be uninitialized, loading, loaded, or in an error state.
  * This is useful for handling asynchronous data in a type-safe way.
- *
- * The reason to have a null state is to allow for initial state before the loading starts.
- * This is distinct from having `T = null` which would also be valid, but is semantically different.
  */
 export type Loadable<T> =
-    | null // uninitialized
+    | { status: "uninitialized" }
     | { status: "loading" }
     | { status: "loaded"; data: T }
     | { status: "error"; error: unknown };
+
+/** Map over the data inside a Loadable, preserving uninitialized/loading/error states */
+export function mapLoadable<T, U>(loadable: Loadable<T>, fn: (data: T) => U): Loadable<U> {
+    if (loadable.status === "uninitialized") return { status: "uninitialized" };
+    if (loadable.status === "loading") return { status: "loading" };
+    if (loadable.status === "error") return { status: "error", error: loadable.error };
+    return { status: "loaded", data: fn(loadable.data) };
+}
