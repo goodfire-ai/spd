@@ -40,15 +40,6 @@
                     <label class="checkbox-item">
                         <input
                             type="checkbox"
-                            checked={displaySettings.showBottomPmi}
-                            onchange={() => (displaySettings.showBottomPmi = !displaySettings.showBottomPmi)}
-                        />
-                        <span class="stat-label">{CORRELATION_STAT_LABELS["bottom_pmi"]}</span>
-                        <span class="stat-desc">{CORRELATION_STAT_DESCRIPTIONS["bottom_pmi"]}</span>
-                    </label>
-                    <label class="checkbox-item">
-                        <input
-                            type="checkbox"
                             checked={displaySettings.showPrecision}
                             onchange={() => (displaySettings.showPrecision = !displaySettings.showPrecision)}
                         />

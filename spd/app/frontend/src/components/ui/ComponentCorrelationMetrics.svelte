@@ -22,13 +22,6 @@
             {/snippet}
         </ComponentCorrelationPills>
     {/if}
-    {#if displaySettings.showBottomPmi}
-        <ComponentCorrelationPills title="Bottom PMI" items={correlations.bottom_pmi} {onComponentClick} {pageSize}>
-            {#snippet mathNotation()}
-                lowest PMI (anti-correlated)
-            {/snippet}
-        </ComponentCorrelationPills>
-    {/if}
     {#if displaySettings.showPrecision}
         <ComponentCorrelationPills title="Predictors" items={correlations.precision} {onComponentClick} {pageSize}>
             {#snippet mathNotation()}

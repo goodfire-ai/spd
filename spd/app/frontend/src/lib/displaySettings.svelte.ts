@@ -3,7 +3,7 @@
  */
 
 // Available correlation stat types
-export type CorrelationStatType = "pmi" | "bottom_pmi" | "precision" | "recall" | "jaccard";
+export type CorrelationStatType = "pmi" | "precision" | "recall" | "jaccard";
 
 // Node color mode for graph visualization
 export type NodeColorMode = "ci" | "subcomp_act";
@@ -24,7 +24,6 @@ export const EXAMPLE_COLOR_MODE_LABELS: Record<ExampleColorMode, string> = {
 
 export const CORRELATION_STAT_LABELS: Record<CorrelationStatType, string> = {
     pmi: "PMI",
-    bottom_pmi: "Bottom PMI",
     precision: "Precision",
     recall: "Recall",
     jaccard: "Jaccard",
@@ -32,7 +31,6 @@ export const CORRELATION_STAT_LABELS: Record<CorrelationStatType, string> = {
 
 export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> = {
     pmi: "log(P(both) / P(A)P(B))",
-    bottom_pmi: "Lowest PMI (anti-correlated)",
     precision: "P(that | this)",
     recall: "P(this | that)",
     jaccard: "Intersection over union",
@@ -40,7 +38,6 @@ export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> 
 
 export const displaySettings = $state({
     showPmi: true,
-    showBottomPmi: false,
     showPrecision: true,
     showRecall: true,
     showJaccard: true,
@@ -53,7 +50,6 @@ export const displaySettings = $state({
 export function hasAnyCorrelationStats() {
     return (
         displaySettings.showPmi ||
-        displaySettings.showBottomPmi ||
         displaySettings.showPrecision ||
         displaySettings.showRecall ||
         displaySettings.showJaccard
