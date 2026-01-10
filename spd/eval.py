@@ -23,6 +23,7 @@ from spd.configs import (
     IdentityCIErrorConfig,
     ImportanceMinimalityLossConfig,
     MetricConfigType,
+    NeuronSparsityLossConfig,
     PermutedCIPlotsConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
@@ -50,6 +51,7 @@ from spd.metrics.component_activation_density import ComponentActivationDensity
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
+from spd.metrics.neuron_sparsity_loss import NeuronSparsityLoss
 from spd.metrics.permuted_ci_plots import PermutedCIPlots
 from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
 from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
@@ -132,6 +134,13 @@ def init_metric(
                 p_anneal_start_frac=cfg.p_anneal_start_frac,
                 p_anneal_final_p=cfg.p_anneal_final_p,
                 p_anneal_end_frac=cfg.p_anneal_end_frac,
+            )
+        case NeuronSparsityLossConfig():
+            metric = NeuronSparsityLoss(
+                model=model,
+                device=device,
+                module_info=run_config.module_info,
+                pnorm=cfg.pnorm,
             )
         case FaithfulnessLossConfig():
             metric = FaithfulnessLoss(
