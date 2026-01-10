@@ -14,7 +14,7 @@
     const N_TOKENS_TO_DISPLAY_INPUT = 80;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
 
-    const showCorrelations = $derived(hasAnyCorrelationStats);
+    const showCorrelations = $derived(hasAnyCorrelationStats());
 
     type Props = {
         activationContextsSummary: ActivationContextsSummary;

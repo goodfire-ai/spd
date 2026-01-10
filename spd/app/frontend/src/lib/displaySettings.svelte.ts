@@ -50,10 +50,12 @@ export const displaySettings = $state({
     exampleColorMode: "ci" as ExampleColorMode,
 });
 
-export const hasAnyCorrelationStats = $derived(
-    displaySettings.showPmi ||
+export function hasAnyCorrelationStats() {
+    return (
+        displaySettings.showPmi ||
         displaySettings.showBottomPmi ||
         displaySettings.showPrecision ||
         displaySettings.showRecall ||
-        displaySettings.showJaccard,
-);
+        displaySettings.showJaccard
+    );
+}
