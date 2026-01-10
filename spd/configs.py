@@ -180,6 +180,10 @@ class ModulePatternInfoConfig(BaseConfig):
     C: PositiveInt = Field(
         ..., description="Number of components for modules matching this pattern"
     )
+    sparse: bool = Field(
+        default=False,
+        description="If True, apply neuron sparsity loss to modules matching this pattern",
+    )
 
 
 #### Metrics that can be used as losses in training or eval ####
@@ -202,6 +206,17 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     p_anneal_final_p: float | None = None
     p_anneal_end_frac: float = 1.0
     eps: float = 1e-12
+
+
+class NeuronSparsityLossConfig(LossMetricConfig):
+    """Loss that encourages sparsity in U matrices of components marked as sparse.
+
+    This loss computes the Lp norm of U matrix entries, weighted by causal importances.
+    Only applied to modules with sparse=True in their module_info config.
+    """
+
+    classname: Literal["NeuronSparsityLoss"] = "NeuronSparsityLoss"
+    pnorm: float = Field(..., description="The p value for the Lp norm")
 
 
 class UniformKSubsetRoutingConfig(BaseConfig):
@@ -367,7 +382,9 @@ ReconLossConfigType = (
     | StochasticHiddenActsReconLossConfig
 )
 
-LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
+LossMetricConfigType = (
+    FaithfulnessLossConfig | ImportanceMinimalityLossConfig | NeuronSparsityLossConfig | ReconLossConfigType
+)
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
