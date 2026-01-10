@@ -153,17 +153,11 @@
     // For hover, we match by component (layer:cIdx), ignoring seqIdx
     const hoveredComponentKey = $derived(hoveredNode ? `${hoveredNode.layer}:${hoveredNode.cIdx}` : null);
 
-    // Helper to get cluster ID for a component
-    function getClusterId(layer: string, cIdx: number): number | null | undefined {
-        const key = `${layer}:${cIdx}`;
-        return runState.clusterMapping?.data[key];
-    }
-
     // Get cluster ID of hovered node or bar (for cluster-wide rotation effect)
     const hoveredClusterId = $derived.by(() => {
         if (hoveredBarClusterId !== null) return hoveredBarClusterId;
         if (!hoveredNode) return undefined;
-        return getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+        return runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
 
     // Filter edges by topK (for rendering)
@@ -296,7 +290,7 @@
                 const sorted =
                     layer === "output" || !runState.clusterMapping
                         ? sortComponentsByImportance(nodes, layer, seqIdx, data.nodeCiVals, data.outputProbs)
-                        : sortComponentsByCluster(nodes, layer, seqIdx, data.nodeCiVals, getClusterId);
+                        : sortComponentsByCluster(nodes, layer, seqIdx, data.nodeCiVals, runState.getClusterId);
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
 
                 for (const cIdx of nodes) {
@@ -316,7 +310,7 @@
                         baseY,
                         COMPONENT_SIZE,
                         offsets,
-                        getClusterId,
+                        runState.getClusterId,
                     );
                     allClusterSpans.push(...spans);
                 }
@@ -358,7 +352,7 @@
         if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
         const [layer, , cIdxStr] = nodeKey.split(":");
         const cIdx = parseInt(cIdxStr);
-        const nodeClusterId = getClusterId(layer, cIdx);
+        const nodeClusterId = runState.getClusterId(layer, cIdx);
         return nodeClusterId === hoveredClusterId;
     }
 

@@ -11,7 +11,7 @@
         title: string;
         mathNotation?: string;
         items: TokenValue[];
-        /** Scale for bar intensity. Use 1 for precision/recall, or max observed for PMI. */
+        /** Scale for bar intensity. Use 1 for precision/recall, or max abs observed for PMI. */
         maxScale: number;
     };
 

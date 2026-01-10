@@ -167,12 +167,6 @@
     let tooltipPos = $state({ x: 0, y: 0 });
     let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    // Helper to get cluster ID for a component
-    function getClusterId(layer: string, cIdx: number): number | null | undefined {
-        const key = `${layer}:${cIdx}`;
-        return runState.clusterMapping?.data[key];
-    }
-
     // Refs
     let graphContainer: HTMLDivElement;
 
@@ -183,7 +177,7 @@
     const hoveredClusterId = $derived.by(() => {
         if (hoveredBarClusterId !== null) return hoveredBarClusterId;
         if (!hoveredNode) return undefined;
-        return getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+        return runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
 
     // Check if a node is in the same cluster as the hovered node (for cluster rotation effect)
@@ -192,7 +186,7 @@
         if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
         const [layer, , cIdxStr] = nodeKey.split(":");
         const cIdx = parseInt(cIdxStr);
-        const nodeClusterId = getClusterId(layer, cIdx);
+        const nodeClusterId = runState.getClusterId(layer, cIdx);
         return nodeClusterId === hoveredClusterId;
     }
 
@@ -372,7 +366,13 @@
                               graph.data.nodeCiVals,
                               graph.data.outputProbs,
                           )
-                        : sortComponentsByCluster(layerNodes, layer, seqIdx, graph.data.nodeCiVals, getClusterId);
+                        : sortComponentsByCluster(
+                              layerNodes,
+                              layer,
+                              seqIdx,
+                              graph.data.nodeCiVals,
+                              runState.getClusterId,
+                          );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
                 for (const cIdx of layerNodes) {
                     nodePositions[`${layer}:${seqIdx}:${cIdx}`] = {
@@ -391,7 +391,7 @@
                         baseY,
                         COMPONENT_SIZE,
                         offsets,
-                        getClusterId,
+                        runState.getClusterId,
                     );
                     allClusterSpans.push(...spans);
                 }

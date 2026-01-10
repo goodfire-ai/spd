@@ -6,6 +6,7 @@
         type GraphData,
         type PinnedNode,
         type PromptPreview,
+        type TokenInfo,
     } from "../lib/localAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
 
@@ -30,24 +31,12 @@
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
 
-    // Derive from runState
-    const loadedRun = $derived(runState.run?.status === "loaded" ? runState.run.data : null);
-    const serverError = $derived(runState.run?.status === "error" ? String(runState.run.error) : null);
+    type Props = {
+        prompts: PromptPreview[];
+        allTokens: TokenInfo[];
+    };
 
-    // These assert data is loaded - will throw if accessed before ready
-    const prompts = $derived.by(() => {
-        const p = runState.prompts;
-        if (p?.status !== "loaded") throw new Error("prompts accessed before loaded");
-        return p.data;
-    });
-    const allTokens = $derived.by(() => {
-        const t = runState.allTokens;
-        if (t?.status !== "loaded") throw new Error("allTokens accessed before loaded");
-        return t.data;
-    });
-
-    // Guard: only render main content when run data is fully loaded
-    const dataReady = $derived(runState.prompts?.status === "loaded" && runState.allTokens?.status === "loaded");
+    let { prompts, allTokens }: Props = $props();
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
@@ -585,19 +574,7 @@
 </script>
 
 <div class="local-attributions-tab">
-    {#if !loadedRun}
-        <div class="no-run-message">
-            <p>No run loaded. Select a run from the sidebar to view local attributions.</p>
-            {#if serverError}
-                <p class="server-error">{serverError}</p>
-            {/if}
-        </div>
-    {:else if !dataReady}
-        <div class="no-run-message">
-            <p>Loading run data...</p>
-        </div>
-    {:else}
-        <div class="main-content">
+    <div class="main-content">
             <div class="graph-container">
                 <div class="card-tabs-row">
                     <PromptCardTabs
@@ -789,7 +766,6 @@
                 </div>
             </div>
         </div>
-    {/if}
 </div>
 
 <style>
@@ -945,24 +921,6 @@
 
     .empty-state .error-text {
         color: var(--status-negative-bright);
-    }
-
-    .no-run-message {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        flex: 1;
-        color: var(--text-muted);
-        text-align: center;
-        padding: var(--space-4);
-        font-family: var(--font-sans);
-    }
-
-    .no-run-message .server-error {
-        color: var(--status-negative-bright);
-        margin-top: var(--space-2);
-        font-family: var(--font-mono);
     }
 
     .error-banner {

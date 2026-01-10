@@ -81,15 +81,15 @@
         <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
             <DatasetSearchTab />
         </div>
-        {#if runState.run?.status === "loaded"}
+        {#if runFullyLoaded && runState.prompts.status === "loaded" && runState.allTokens.status === "loaded"}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>
-                <LocalAttributionsTab />
+                <LocalAttributionsTab prompts={runState.prompts.data} allTokens={runState.allTokens.data} />
             </div>
             <div class="tab-content" class:hidden={activeTab !== "components"}>
                 <ActivationContextsTab />
             </div>
-        {:else if runState.run?.status === "loading"}
+        {:else if runState.run.status === "loading" || runState.prompts.status === "loading" || runState.allTokens.status === "loading"}
             <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
                 <p>Loading run...</p>
             </div>
