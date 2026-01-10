@@ -35,19 +35,19 @@ export function useRun() {
     /** All tokens in the tokenizer for the current run */
     let allTokens = $state<Loadable<TokenInfo[]>>({ status: "uninitialized" });
 
+    /** Activation contexts summary */
+    let activationContextsSummary = $state<Loadable<ActivationContextsSummary>>({ status: "uninitialized" });
+
     /** Cached component details keyed by component key (layer:cIdx) - non-reactive */
     let _componentDetailsCache: Record<string, ComponentDetail> = {};
-
-    /** Cached activation contexts summary - non-reactive */
-    let _summaryCache: ActivationContextsSummary | null = null;
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {
         prompts = { status: "uninitialized" };
         allTokens = { status: "uninitialized" };
         interpretations = { status: "uninitialized" };
+        activationContextsSummary = { status: "uninitialized" };
         _componentDetailsCache = {};
-        _summaryCache = null;
         clusterMapping = null;
     }
 
@@ -139,13 +139,14 @@ export function useRun() {
         return detail;
     }
 
-    /** Get activation contexts summary (fetches once, then cached) */
-    async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {
-        if (_summaryCache) return _summaryCache;
+    /** Load activation contexts summary (fire-and-forget, updates state) */
+    function loadActivationContextsSummary() {
+        if (activationContextsSummary.status === "loaded" || activationContextsSummary.status === "loading") return;
 
-        const summary = await api.getActivationContextsSummary();
-        _summaryCache = summary;
-        return summary;
+        activationContextsSummary = { status: "loading" };
+        api.getActivationContextsSummary()
+            .then((data) => (activationContextsSummary = { status: "loaded", data }))
+            .catch((error) => (activationContextsSummary = { status: "error", error }));
     }
 
     /** Set cluster mapping for the current run */
@@ -156,6 +157,11 @@ export function useRun() {
     /** Clear cluster mapping */
     function clearClusterMapping() {
         clusterMapping = null;
+    }
+
+    function getClusterId(layer: string, cIdx: number): number | null {
+        const key = `${layer}:${cIdx}`;
+        return clusterMapping?.data[key] ?? null;
     }
 
     return {
@@ -174,6 +180,9 @@ export function useRun() {
         get allTokens() {
             return allTokens;
         },
+        get activationContextsSummary() {
+            return activationContextsSummary;
+        },
         loadRun,
         clearRun,
         syncStatus,
@@ -181,9 +190,10 @@ export function useRun() {
         getInterpretation,
         setInterpretation,
         getComponentDetail,
-        getActivationContextsSummary,
+        loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,
+        getClusterId,
     };
 }
 

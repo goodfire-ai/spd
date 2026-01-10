@@ -1,29 +1,16 @@
 <script lang="ts">
-    import { getContext } from "svelte";
-    import type { Loadable } from "../lib";
-    import type { ActivationContextsSummary } from "../lib/localAttributionsTypes";
+    import { getContext, onMount } from "svelte";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ActivationContextsViewer from "./ActivationContextsViewer.svelte";
     import StatusText from "./ui/StatusText.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
-    let summary = $state<Loadable<ActivationContextsSummary>>({ status: "uninitialized" });
-
-    $effect(() => {
-        // Re-fetch when run changes
-        if (runState.run?.status !== "loaded") return;
-
-        summary = { status: "loading" };
-        runState
-            .getActivationContextsSummary()
-            .then((data) => {
-                summary = { status: "loaded", data };
-            })
-            .catch((error) => {
-                summary = { status: "error", error };
-            });
+    onMount(() => {
+        runState.loadActivationContextsSummary();
     });
+
+    const summary = $derived(runState.activationContextsSummary);
 </script>
 
 <div class="tab-wrapper">
