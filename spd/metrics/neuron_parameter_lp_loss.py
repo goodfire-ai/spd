@@ -2,7 +2,7 @@ import fnmatch
 from typing import Any, ClassVar, override
 
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
@@ -80,9 +80,10 @@ def _neuron_parameter_lp_loss_update(
 
 
 def _neuron_parameter_lp_loss_compute(
-    sum_loss: Float[Tensor, ""], total_components: int
+    sum_loss: Float[Tensor, ""], total_components: Int[Tensor, ""] | int
 ) -> Float[Tensor, ""]:
     """Normalize loss by number of components."""
+    assert total_components > 0, "total_components must be positive"
     return sum_loss / total_components
 
 
@@ -160,4 +161,4 @@ class NeuronParameterLpLoss(Metric):
         """Compute final averaged loss, synchronized across distributed processes."""
         sum_loss = all_reduce(self.sum_loss, op=ReduceOp.SUM)
         total_components = all_reduce(self.total_components, op=ReduceOp.SUM)
-        return _neuron_parameter_lp_loss_compute(sum_loss, int(total_components.item()))
+        return _neuron_parameter_lp_loss_compute(sum_loss, total_components)
