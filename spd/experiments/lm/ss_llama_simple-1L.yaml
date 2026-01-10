@@ -26,6 +26,9 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
+- coeff: 0
+  classname: NeuronSparsityLoss
+  pnorm: 0.9
 - coeff: 0.001
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
@@ -87,6 +90,9 @@ eval_metric_configs:
   n_steps: 20
   mask_scope: shared_across_batch
   classname: PGDReconLoss
+- coeff: null
+  classname: NeuronSparsityLoss
+  pnorm: 0.05
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
