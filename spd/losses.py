@@ -11,6 +11,7 @@ from spd.configs import (
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
+    NeuronParameterLpLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
@@ -27,6 +28,7 @@ from spd.metrics import (
     ci_masked_recon_subset_loss,
     faithfulness_loss,
     importance_minimality_loss,
+    neuron_parameter_lp_loss,
     pgd_recon_layerwise_loss,
     pgd_recon_loss,
     pgd_recon_subset_loss,
@@ -74,6 +76,12 @@ def compute_total_loss(
                     p_anneal_start_frac=cfg.p_anneal_start_frac,
                     p_anneal_final_p=cfg.p_anneal_final_p,
                     p_anneal_end_frac=cfg.p_anneal_end_frac,
+                )
+            case NeuronParameterLpLossConfig():
+                loss = neuron_parameter_lp_loss(
+                    model=model,
+                    p=cfg.p,
+                    module_patterns=cfg.module_patterns,
                 )
             case UnmaskedReconLossConfig():
                 loss = unmasked_recon_loss(

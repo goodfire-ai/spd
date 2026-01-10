@@ -17,6 +17,8 @@ from .faithfulness_loss import faithfulness_loss as faithfulness_loss
 from .identity_ci_error import IdentityCIError as IdentityCIError
 from .importance_minimality_loss import ImportanceMinimalityLoss as ImportanceMinimalityLoss
 from .importance_minimality_loss import importance_minimality_loss as importance_minimality_loss
+from .neuron_parameter_lp_loss import NeuronParameterLpLoss as NeuronParameterLpLoss
+from .neuron_parameter_lp_loss import neuron_parameter_lp_loss as neuron_parameter_lp_loss
 from .permuted_ci_plots import PermutedCIPlots as PermutedCIPlots
 from .pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss as PGDReconLayerwiseLoss
 from .pgd_masked_recon_layerwise_loss import (

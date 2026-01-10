@@ -182,6 +182,15 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     eps: float = 1e-12
 
 
+class NeuronParameterLpLossConfig(LossMetricConfig):
+    classname: Literal["NeuronParameterLpLoss"] = "NeuronParameterLpLoss"
+    p: PositiveFloat = Field(..., description="L_p norm exponent (e.g., 1.0 for L1, 2.0 for L2)")
+    module_patterns: list[str] | None = Field(
+        default=None,
+        description="fnmatch-style patterns to filter modules. If None, applies to all modules.",
+    )
+
+
 class UniformKSubsetRoutingConfig(BaseConfig):
     type: Literal["uniform_k_subset"] = "uniform_k_subset"
 
@@ -345,7 +354,12 @@ ReconLossConfigType = (
     | StochasticHiddenActsReconLossConfig
 )
 
-LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
+LossMetricConfigType = (
+    FaithfulnessLossConfig
+    | ImportanceMinimalityLossConfig
+    | NeuronParameterLpLossConfig
+    | ReconLossConfigType
+)
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
