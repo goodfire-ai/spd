@@ -43,6 +43,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     # Loss metrics
     "FaithfulnessLoss": "Faith",
     "ImportanceMinimalityLoss": "ImpMin",
+    "NeuronSparsityLoss": "NeuronSpars",
     "StochasticReconLoss": "StochRecon",
     "StochasticReconSubsetLoss": "StochReconSub",
     "StochasticReconLayerwiseLoss": "StochReconLayer",
