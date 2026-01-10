@@ -5,14 +5,15 @@ seed: 0
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-- 550
+- 1000
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
   - module_pattern: "h.*.mlp.c_fc"
-    C: 650
+    C: 800
+    sparse: true
   - module_pattern: "h.*.mlp.down_proj"
-    C: 600
+    C: 800
   - module_pattern: "h.*.attn.q_proj"
     C: 150
   - module_pattern: "h.*.attn.k_proj"
@@ -24,9 +25,13 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.002
+- coeff: 0.0001
+  classname: NeuronSparsityLoss
+  pnorm: 0.9
+- coeff: 0.01
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
+  pnorm_2: 1.0
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.3
   p_anneal_end_frac: 1.0
@@ -39,10 +44,10 @@ loss_metric_configs:
   n_steps: 1
   mask_scope: shared_across_batch
   classname: PGDReconSubsetLoss
-- coeff: 1000000.0
+- coeff: 100000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
-steps: 400000
+steps: 100000
 batch_size: 64
 gradient_accumulation_steps: 1
 faithfulness_warmup_steps: 200
@@ -81,6 +86,9 @@ eval_metric_configs:
   n_steps: 20
   mask_scope: shared_across_batch
   classname: PGDReconLoss
+- coeff: null
+  classname: NeuronSparsityLoss
+  pnorm: 0.05
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 pretrained_model_class: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP
