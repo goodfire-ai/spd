@@ -455,10 +455,6 @@
         }
         hoveredNode = { layer, seqIdx, cIdx };
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
-
-        if (layer !== "output") {
-            runState.getComponentDetail(layer, cIdx);
-        }
     }
 
     function handleNodeMouseLeave() {
