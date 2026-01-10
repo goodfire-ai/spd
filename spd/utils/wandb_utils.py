@@ -54,6 +54,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconLayerwiseLoss": "PGDReconLayer",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
     "UnmaskedReconLoss": "UnmaskedRecon",
+    "NeuronParameterLpLoss": "NeuronParamLp",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
     "CIHistograms": "CIHist",
