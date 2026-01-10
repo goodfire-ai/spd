@@ -51,7 +51,7 @@
                 <button class="retry-btn" onclick={onGenerate}>Retry</button>
             {/if}
             <!-- Error state for fetching -->
-        {:else if interpretation?.status === "error"}
+        {:else if interpretation.status === "error"}
             <span class="interpretation-label error-text">{String(interpretation.error)}</span>
         {/if}
     </div>

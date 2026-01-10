@@ -176,7 +176,6 @@ class FaithfulnessLossConfig(LossMetricConfig):
 class ImportanceMinimalityLossConfig(LossMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
     pnorm: float
-    pnorm_2: float = 1.0  # TODO: remove this
     p_anneal_start_frac: float = 1.0
     p_anneal_final_p: float | None = None
     p_anneal_end_frac: float = 1.0
