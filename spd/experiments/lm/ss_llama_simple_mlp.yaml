@@ -1,5 +1,5 @@
 wandb_project: spd
-wandb_run_name: null
+wandb_run_name: lp_param_nrn
 wandb_run_name_prefix: ''
 seed: 0
 n_mask_samples: 1
@@ -10,26 +10,27 @@ sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
   - module_pattern: "h.*.mlp.c_fc"
-    C: 650
+    C: 1500
   - module_pattern: "h.*.mlp.down_proj"
-    C: 580
+    C: 1500
   - module_pattern: "h.*.attn.q_proj"
-    C: 250
+    C: 200
   - module_pattern: "h.*.attn.k_proj"
     C: 200
   - module_pattern: "h.*.attn.v_proj"
-    C: 350
+    C: 300
   - module_pattern: "h.*.attn.o_proj"
     C: 300
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.004
+- coeff: 0.005
   classname: ImportanceMinimalityLoss
-  pnorm: 2.0
-  p_anneal_start_frac: 0.0
-  p_anneal_final_p: 0.5
-  p_anneal_end_frac: 1.0
+  pnorm: 2
+  pnorm_2: 1.4
+  p_anneal_start_frac: 0
+  p_anneal_final_p: 0.4
+  p_anneal_end_frac: 1
   eps: 1.0e-12
 - coeff: 0.5
   classname: StochasticReconSubsetLoss
@@ -39,8 +40,13 @@ loss_metric_configs:
   n_steps: 4
   mask_scope: shared_across_batch
   classname: PGDReconSubsetLoss
-- coeff: 100000.0
+- coeff: 100000
   classname: FaithfulnessLoss
+- coeff: 0.000000001
+  classname: NeuronParameterLpLoss
+  p: 0.9
+  module_patterns:
+    - "h.*.mlp.c_fc"
 output_loss_type: kl
 steps: 400000
 batch_size: 128
@@ -53,7 +59,7 @@ faithfulness_warmup_weight_decay: 0.0
 lr_schedule:
   start_val: 0.0005
   fn_type: cosine
-  warmup_pct: 0.0
+  warmup_pct: 0
   final_val_frac: 0.1
 train_log_freq: 200
 eval_freq: 1000
