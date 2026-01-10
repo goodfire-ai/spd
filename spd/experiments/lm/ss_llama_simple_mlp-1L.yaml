@@ -5,28 +5,33 @@ seed: 0
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-- 550
+- 1600
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
   - module_pattern: "h.*.mlp.c_fc"
-    C: 650
+    C: 1600
+    sparse: true
   - module_pattern: "h.*.mlp.down_proj"
-    C: 600
-  - module_pattern: "h.*.attn.q_proj"
-    C: 150
-  - module_pattern: "h.*.attn.k_proj"
-    C: 150
-  - module_pattern: "h.*.attn.v_proj"
-    C: 250
-  - module_pattern: "h.*.attn.o_proj"
-    C: 300
+    C: 1600
+  # - module_pattern: "h.*.attn.q_proj"
+  #   C: 150
+  # - module_pattern: "h.*.attn.k_proj"
+  #   C: 150
+  # - module_pattern: "h.*.attn.v_proj"
+  #   C: 250
+  # - module_pattern: "h.*.attn.o_proj"
+  #   C: 300
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.002
+# - coeff: 0.000001
+#   classname: NeuronSparsityLoss
+#   pnorm: 0.9
+- coeff: 0.01
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
+  pnorm_2: 1.3
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.3
   p_anneal_end_frac: 1.0
@@ -42,7 +47,7 @@ loss_metric_configs:
 - coeff: 1000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
-steps: 400000
+steps: 20000
 batch_size: 64
 gradient_accumulation_steps: 1
 faithfulness_warmup_steps: 200
