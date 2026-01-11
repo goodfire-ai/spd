@@ -53,6 +53,7 @@ METRIC_CONFIG_SHORT_NAMES: dict[str, str] = {
     "PGDReconLayerwiseLoss": "PGDReconLayer",
     "StochasticHiddenActsReconLoss": "StochHiddenRecon",
     "UnmaskedReconLoss": "UnmaskedRecon",
+    "SchattenLoss": "Schatten",
     # Eval metrics
     "CEandKLLosses": "CEandKL",
     "CIHistograms": "CIHist",
