@@ -5,13 +5,22 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.configs import UniformKSubsetRoutingConfig
+from spd.configs import (
+    FaithfulnessLossConfig,
+    ImportanceMinimalityLossConfig,
+    LossMetricConfigType,
+    SchattenLossConfig,
+    UniformKSubsetRoutingConfig,
+    UnmaskedReconLossConfig,
+)
+from spd.losses import compute_total_loss
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
     ci_masked_recon_subset_loss,
     faithfulness_loss,
     importance_minimality_loss,
+    schatten_loss,
     stochastic_recon_layerwise_loss,
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
@@ -648,3 +657,321 @@ class TestStochasticReconSubsetLoss:
 
         # All should be valid
         assert all(loss >= 0.0 for loss in losses)
+
+
+class TestSchattenLoss:
+    def test_basic_computation(self: object) -> None:
+        # Test basic Schatten loss computation
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        # CI values
+        ci_upper_leaky = {"fc": torch.tensor([[0.5]], dtype=torch.float32)}
+
+        result = schatten_loss(
+            ci_upper_leaky=ci_upper_leaky,
+            components=model.components,
+            pnorm=1.0,
+        )
+
+        # Should be a scalar tensor
+        assert result.dim() == 0
+        assert result >= 0.0
+
+    def test_different_pnorms(self: object) -> None:
+        # Test with different p-norms
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        ci_upper_leaky = {"fc": torch.tensor([[0.8]], dtype=torch.float32)}
+
+        for pnorm in [0.5, 1.0, 2.0]:
+            result = schatten_loss(
+                ci_upper_leaky=ci_upper_leaky,
+                components=model.components,
+                pnorm=pnorm,
+            )
+            assert result >= 0.0
+
+    def test_zero_ci_produces_zero_loss(self: object) -> None:
+        # Test that zero CI produces zero loss
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        ci_upper_leaky = {"fc": torch.tensor([[0.0]], dtype=torch.float32)}
+
+        result = schatten_loss(
+            ci_upper_leaky=ci_upper_leaky,
+            components=model.components,
+            pnorm=1.0,
+        )
+
+        # Zero CI should produce zero loss
+        assert torch.allclose(result, torch.tensor(0.0))
+
+
+class TestComputeTotalLossWithSchattenLoss:
+    def test_schatten_loss_in_total_loss(self: object) -> None:
+        # Test that SchattenLoss is correctly integrated into compute_total_loss
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        # Create batch
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+
+        # Forward pass with caching to get pre-weight activations
+        output_with_cache = model(batch, cache_type="input")
+        assert hasattr(output_with_cache, "cache"), "Expected OutputWithCache"
+        target_out = output_with_cache.output
+
+        # Compute CI outputs
+        ci = model.calc_causal_importances(
+            pre_weight_acts=output_with_cache.cache,
+            detach_inputs=False,
+            sampling="continuous",
+        )
+
+        # Get weight deltas
+        weight_deltas = model.calc_weight_deltas()
+
+        # Create loss configs including SchattenLoss
+        loss_configs: list[LossMetricConfigType] = [
+            SchattenLossConfig(pnorm=1.0, coeff=0.1),
+        ]
+
+        # Compute total loss
+        total_loss, terms = compute_total_loss(
+            loss_metric_configs=loss_configs,
+            model=model,
+            batch=batch,
+            ci=ci,
+            target_out=target_out,
+            weight_deltas=weight_deltas,
+            pre_weight_acts=output_with_cache.cache,
+            current_frac_of_training=0.0,
+            sampling="continuous",
+            use_delta_component=True,
+            n_mask_samples=1,
+            output_loss_type="mse",
+        )
+
+        # Verify total loss is valid
+        assert total_loss >= 0.0
+        assert "loss/SchattenLoss" in terms
+        assert terms["loss/SchattenLoss"] >= 0.0
+        assert "loss/total" in terms
+        # Total should be weighted by coeff (0.1)
+        assert torch.allclose(total_loss, torch.tensor(terms["loss/total"]))
+
+    def test_schatten_loss_with_multiple_losses(self: object) -> None:
+        # Test SchattenLoss combined with other losses
+        fc_weight = torch.tensor([[1.0, 0.5], [0.5, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        output_with_cache = model(batch, cache_type="input")
+        target_out = output_with_cache.output
+        ci = model.calc_causal_importances(
+            pre_weight_acts=output_with_cache.cache,
+            detach_inputs=False,
+            sampling="continuous",
+        )
+        weight_deltas = model.calc_weight_deltas()
+
+        # Multiple loss configs
+        loss_configs: list[LossMetricConfigType] = [
+            FaithfulnessLossConfig(coeff=0.5),
+            SchattenLossConfig(pnorm=1.0, coeff=0.1),
+            ImportanceMinimalityLossConfig(pnorm=1.0, coeff=0.2),
+        ]
+
+        total_loss, terms = compute_total_loss(
+            loss_metric_configs=loss_configs,
+            model=model,
+            batch=batch,
+            ci=ci,
+            target_out=target_out,
+            weight_deltas=weight_deltas,
+            pre_weight_acts=output_with_cache.cache,
+            current_frac_of_training=0.0,
+            sampling="continuous",
+            use_delta_component=True,
+            n_mask_samples=1,
+            output_loss_type="mse",
+        )
+
+        # Verify all losses are present
+        assert "loss/FaithfulnessLoss" in terms
+        assert "loss/SchattenLoss" in terms
+        assert "loss/ImportanceMinimalityLoss" in terms
+        assert "loss/total" in terms
+
+        # Verify total is sum of weighted individual losses
+        expected_total = (
+            0.5 * terms["loss/FaithfulnessLoss"]
+            + 0.1 * terms["loss/SchattenLoss"]
+            + 0.2 * terms["loss/ImportanceMinimalityLoss"]
+        )
+        assert torch.allclose(total_loss, torch.tensor(expected_total), rtol=1e-5)
+
+    def test_schatten_loss_with_reconstruction_loss(self: object) -> None:
+        # Test SchattenLoss combined with reconstruction loss
+        fc_weight = torch.tensor([[2.0, 0.0], [0.0, 2.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        output_with_cache = model(batch, cache_type="input")
+        target_out = output_with_cache.output
+        ci = model.calc_causal_importances(
+            pre_weight_acts=output_with_cache.cache,
+            detach_inputs=False,
+            sampling="continuous",
+        )
+        weight_deltas = model.calc_weight_deltas()
+
+        loss_configs: list[LossMetricConfigType] = [
+            UnmaskedReconLossConfig(coeff=1.0),
+            SchattenLossConfig(pnorm=2.0, coeff=0.05),
+        ]
+
+        total_loss, terms = compute_total_loss(
+            loss_metric_configs=loss_configs,
+            model=model,
+            batch=batch,
+            ci=ci,
+            target_out=target_out,
+            weight_deltas=weight_deltas,
+            pre_weight_acts=output_with_cache.cache,
+            current_frac_of_training=0.0,
+            sampling="continuous",
+            use_delta_component=True,
+            n_mask_samples=1,
+            output_loss_type="mse",
+        )
+
+        # Verify both losses are present and valid
+        assert "loss/UnmaskedReconLoss" in terms
+        assert "loss/SchattenLoss" in terms
+        assert terms["loss/UnmaskedReconLoss"] >= 0.0
+        assert terms["loss/SchattenLoss"] >= 0.0
+
+        # Verify total matches expected weighted sum
+        expected_total = 1.0 * terms["loss/UnmaskedReconLoss"] + 0.05 * terms["loss/SchattenLoss"]
+        assert torch.allclose(total_loss, torch.tensor(expected_total), rtol=1e-5)
+
+    def test_schatten_loss_different_pnorms_in_total_loss(self: object) -> None:
+        # Test different p-norm values in SchattenLoss
+        fc_weight = torch.tensor([[1.5, 0.5], [0.5, 1.5]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        batch = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
+        output_with_cache = model(batch, cache_type="input")
+        target_out = output_with_cache.output
+        ci = model.calc_causal_importances(
+            pre_weight_acts=output_with_cache.cache,
+            detach_inputs=False,
+            sampling="continuous",
+        )
+        weight_deltas = model.calc_weight_deltas()
+
+        for pnorm in [0.5, 1.0, 1.5, 2.0]:
+            loss_configs: list[LossMetricConfigType] = [SchattenLossConfig(pnorm=pnorm, coeff=0.1)]
+
+            total_loss, terms = compute_total_loss(
+                loss_metric_configs=loss_configs,
+                model=model,
+                batch=batch,
+                ci=ci,
+                target_out=target_out,
+                weight_deltas=weight_deltas,
+                pre_weight_acts=output_with_cache.cache,
+                current_frac_of_training=0.0,
+                sampling="continuous",
+                use_delta_component=True,
+                n_mask_samples=1,
+                output_loss_type="mse",
+            )
+
+            # All should produce valid losses
+            assert total_loss >= 0.0
+            assert terms["loss/SchattenLoss"] >= 0.0
+
+    def test_schatten_loss_e2e_training_scenario(self: object) -> None:
+        # End-to-end test simulating a training scenario like in run_spd.py
+        # This tests the happy path: model forward, CI calculation, loss computation
+        fc_weight = torch.tensor([[1.5, 0.3], [0.3, 1.5]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        # Simulate multiple training steps
+        for step in range(3):
+            batch = torch.randn(2, 2)  # Random batch
+
+            # Step 1: Forward pass with caching (like in run_spd.py line 261)
+            output_with_cache = model(batch, cache_type="input")
+            target_out = output_with_cache.output
+
+            # Step 2: Calculate causal importances (like in run_spd.py line 263-267)
+            ci = model.calc_causal_importances(
+                pre_weight_acts=output_with_cache.cache,
+                detach_inputs=False,
+                sampling="continuous",
+            )
+
+            # Step 3: Get weight deltas (like in run_spd.py line 251)
+            weight_deltas = model.calc_weight_deltas()
+
+            # Step 4: Compute total loss with multiple loss types including Schatten
+            # (like in run_spd.py line 271-284)
+            loss_configs: list[LossMetricConfigType] = [
+                FaithfulnessLossConfig(coeff=0.5),
+                ImportanceMinimalityLossConfig(pnorm=1.0, coeff=0.2),
+                SchattenLossConfig(pnorm=1.0, coeff=0.1),
+                UnmaskedReconLossConfig(coeff=1.0),
+            ]
+
+            total_loss, terms = compute_total_loss(
+                loss_metric_configs=loss_configs,
+                model=model,
+                batch=batch,
+                ci=ci,
+                target_out=target_out,
+                weight_deltas=weight_deltas,
+                pre_weight_acts=output_with_cache.cache,
+                current_frac_of_training=step / 3.0,
+                sampling="continuous",
+                use_delta_component=True,
+                n_mask_samples=2,
+                output_loss_type="mse",
+            )
+
+            # Verify all losses are computed correctly
+            assert total_loss >= 0.0
+            assert "loss/FaithfulnessLoss" in terms
+            assert "loss/ImportanceMinimalityLoss" in terms
+            assert "loss/SchattenLoss" in terms
+            assert "loss/UnmaskedReconLoss" in terms
+            assert "loss/total" in terms
+
+            # Verify all individual losses are valid
+            for loss_name, loss_value in terms.items():
+                if loss_name != "loss/total":
+                    assert loss_value >= 0.0, f"{loss_name} should be non-negative"
+
+            # Verify total matches weighted sum
+            expected_total = (
+                0.5 * terms["loss/FaithfulnessLoss"]
+                + 0.2 * terms["loss/ImportanceMinimalityLoss"]
+                + 0.1 * terms["loss/SchattenLoss"]
+                + 1.0 * terms["loss/UnmaskedReconLoss"]
+            )
+            assert torch.allclose(total_loss, torch.tensor(expected_total), rtol=1e-5)
+
+            # Verify loss is differentiable (can compute gradients)
+            total_loss.backward()
+
+            # Check that gradients were computed for component parameters
+            for param in model.components["fc"].parameters():
+                assert param.grad is not None, "Components should have gradients"
+
+            # Reset gradients for next iteration
+            model.zero_grad()
