@@ -120,4 +120,7 @@ class SchattenLoss(Metric):
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        return all_reduce(self.accumulated_loss, op=ReduceOp.SUM)
+        # Clone to avoid returning a reference to internal state
+        # Without cloning, callers would get a reference to accumulated_loss,
+        # which would be updated by subsequent update() calls
+        return all_reduce(self.accumulated_loss.clone(), op=ReduceOp.SUM)
