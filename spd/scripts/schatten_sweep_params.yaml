@@ -1,0 +1,6 @@
+# Sweep params for Schatten loss coefficient experiment
+global:
+  loss_metric_configs:
+    - classname: "SchattenLoss"
+      coeff:
+        values: [0.0, 1e-4, 1e-6, 1e-8, 1e-10]

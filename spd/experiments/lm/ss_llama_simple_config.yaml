@@ -36,6 +36,10 @@ loss_metric_configs:
     p_anneal_final_p: 0.3
     p_anneal_end_frac: 1.0
 
+  - classname: "SchattenLoss"
+    coeff: 0.0  # Swept in sweep_params.yaml
+    pnorm: 1.0
+
   - classname: "StochasticReconSubsetLoss"
     routing:
       type: uniform_k_subset
