@@ -29,6 +29,7 @@ from spd.configs import (
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
+    SchattenLossConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -55,6 +56,7 @@ from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
 from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
 from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
+from spd.metrics.schatten_loss import SchattenLoss
 from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
@@ -137,6 +139,12 @@ def init_metric(
             metric = FaithfulnessLoss(
                 model=model,
                 device=device,
+            )
+        case SchattenLossConfig():
+            metric = SchattenLoss(
+                model=model,
+                device=device,
+                pnorm=cfg.pnorm,
             )
         case CEandKLLossesConfig():
             metric = CEandKLLosses(
