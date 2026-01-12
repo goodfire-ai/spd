@@ -1,0 +1,5 @@
+resid_mlp2:
+  loss_metric_configs:
+    - classname: "NeuronParameterLpLoss"
+      coeff:
+        values: [0.0, 1e-10, 1e-8, 1e-6, 1e-5, 1e-4, 1e-2]

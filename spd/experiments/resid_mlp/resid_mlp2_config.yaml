@@ -23,6 +23,10 @@ loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 0.0001
     pnorm: 2.0
+  - classname: "NeuronParameterLpLoss"
+    coeff: 0.0
+    p: 1.0
+    module_patterns: ["layers.*.mlp_in"]
   - classname: "StochasticReconSubsetLoss"
     coeff: 2.0
   - classname: "PGDReconSubsetLoss"
