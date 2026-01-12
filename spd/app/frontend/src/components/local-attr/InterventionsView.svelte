@@ -923,10 +923,14 @@
                                                     {#if pred}
                                                         <span class="pred-token">"{pred.token}"</span>
                                                         <span class="pred-prob spd"
-                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(pred.logit)})</span
+                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(
+                                                                pred.logit,
+                                                            )})</span
                                                         >
                                                         <span class="pred-prob targ"
-                                                            >Targ: {formatProb(pred.target_prob)} (logit: {formatLogit(pred.target_logit)})</span
+                                                            >Targ: {formatProb(pred.target_prob)} (logit: {formatLogit(
+                                                                pred.target_logit,
+                                                            )})</span
                                                         >
                                                     {:else}
                                                         -
@@ -993,10 +997,13 @@
                                                                     {#if pred}
                                                                         <span class="pred-token">"{pred.token}"</span>
                                                                         <span class="pred-prob spd"
-                                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(pred.logit)})</span
+                                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(
+                                                                                pred.logit,
+                                                                            )})</span
                                                                         >
                                                                         <span class="pred-prob targ"
-                                                                            >Targ: {formatProb(pred.target_prob)} (logit: {formatLogit(pred.target_logit)})</span
+                                                                            >Targ: {formatProb(pred.target_prob)} (logit:
+                                                                            {formatLogit(pred.target_logit)})</span
                                                                         >
                                                                     {:else}
                                                                         -

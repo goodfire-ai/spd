@@ -45,8 +45,14 @@
     {#if singlePosEntry}
         <div class="output-header" style="background: {getOutputHeaderColor(singlePosEntry.prob)};">
             <div class="output-token">"{escapeHtml(singlePosEntry.token)}"</div>
-            <div class="output-prob">CI-masked: {(singlePosEntry.prob * 100).toFixed(1)}% (logit: {singlePosEntry.logit.toFixed(2)})</div>
-            <div class="output-prob">Target: {(singlePosEntry.target_prob * 100).toFixed(1)}% (logit: {singlePosEntry.target_logit.toFixed(2)})</div>
+            <div class="output-prob">
+                CI-masked: {(singlePosEntry.prob * 100).toFixed(1)}% (logit: {singlePosEntry.logit.toFixed(2)})
+            </div>
+            <div class="output-prob">
+                Target: {(singlePosEntry.target_prob * 100).toFixed(1)}% (logit: {singlePosEntry.target_logit.toFixed(
+                    2,
+                )})
+            </div>
         </div>
         <p class="stats">
             <strong>Position:</strong>

@@ -43,7 +43,7 @@
                     {/if}
                 </div>
                 <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
-                    {showPrompt ? "Hide" : "View" } Autointerp Prompt
+                    {showPrompt ? "Hide" : "View"} Autointerp Prompt
                 </button>
                 <!-- Error state for generating -->
             {:else if interpretationData.status === "generation-error"}
