@@ -71,6 +71,8 @@ export function buildEdgeIndexes(edges: Edge[]): {
     return { edgesBySource, edgesByTarget };
 }
 
+export type MaskType = "stochastic" | "ci";
+
 export type OptimizationResult = {
     imp_min_coeff: number;
     steps: number;
@@ -82,6 +84,7 @@ export type OptimizationResult = {
     label_prob: number | null;
     // KL loss param (optional)
     kl_loss_coeff: number | null;
+    mask_type: MaskType;
 };
 
 export type ComponentSummary = {
@@ -221,9 +224,5 @@ export function isInterventableNode(nodeKey: string): boolean {
 }
 
 export function filterInterventableNodes(nodeKeys: Iterable<string>): Set<string> {
-    const result = new Set<string>();
-    for (const key of nodeKeys) {
-        if (isInterventableNode(key)) result.add(key);
-    }
-    return result;
+    return new Set([...nodeKeys].filter(isInterventableNode));
 }

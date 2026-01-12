@@ -2,6 +2,8 @@ import type { GraphData } from "../../lib/localAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/api";
 
+export type MaskType = "stochastic" | "ci";
+
 export type ViewSettings = {
     topK: number;
     componentGap: number;
@@ -50,6 +52,7 @@ export type OptimizeConfig = {
     impMinCoeff: number;
     steps: number;
     pnorm: number;
+    maskType: MaskType;
 };
 
 export type ComputeOptions = {
@@ -93,5 +96,6 @@ export function defaultOptimizeConfig(): OptimizeConfig {
         impMinCoeff: 0.1,
         steps: 2000,
         pnorm: 0.3,
+        maskType: "stochastic",
     };
 }

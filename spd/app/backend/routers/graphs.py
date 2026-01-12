@@ -22,7 +22,7 @@ from spd.app.backend.compute import (
 )
 from spd.app.backend.database import OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
-from spd.app.backend.optim_cis import OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
+from spd.app.backend.optim_cis import MaskType, OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
 from spd.app.backend.schemas import OutputProbability
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
@@ -69,6 +69,7 @@ class OptimizationResult(BaseModel):
     imp_min_coeff: float
     steps: int
     pnorm: float
+    mask_type: MaskType = "stochastic"
     # CE loss params (optional - required together)
     label_token: int | None = None
     label_str: str | None = None
@@ -287,16 +288,15 @@ NormalizeType = Literal["none", "target", "layer"]
 
 def compute_max_abs_attr(edges: list[Edge]) -> float:
     """Compute max absolute edge strength for normalization."""
-    max_abs_attr = 0.0
-    for edge in edges:
-        abs_val = abs(edge.strength)
-        if abs_val > max_abs_attr:
-            max_abs_attr = abs_val
-    return max_abs_attr
+    if not edges:
+        return 0.0
+    return max(abs(edge.strength) for edge in edges)
 
 
 def compute_max_abs_subcomp_act(node_subcomp_acts: dict[str, float]) -> float:
     """Compute max absolute subcomponent activation for normalization."""
+    if not node_subcomp_acts:
+        return 0.0
     return max(abs(v) for v in node_subcomp_acts.values())
 
 
@@ -431,6 +431,7 @@ def compute_graph_optimized_stream(
     loaded: DepLoadedRun,
     manager: DepStateManager,
     ci_threshold: Annotated[float, Query()],
+    mask_type: Annotated[MaskType, Query()] = "stochastic",
     # Optional CE loss params (required together)
     label_token: Annotated[int | None, Query()] = None,
     ce_loss_coeff: Annotated[float | None, Query(gt=0)] = None,
@@ -497,6 +498,7 @@ def compute_graph_optimized_stream(
         kl_loss_config=kl_loss_config,
         sampling=loaded.config.sampling,
         ce_kl_rounding_threshold=0.5,
+        mask_type=mask_type,
     )
 
     def work(on_progress: ProgressCallback) -> GraphDataWithOptimization:
@@ -562,6 +564,7 @@ def compute_graph_optimized_stream(
                 ce_loss_coeff=ce_loss_coeff,
                 label_prob=result.label_prob,
                 kl_loss_coeff=kl_loss_coeff,
+                mask_type=mask_type,
             ),
         )
 

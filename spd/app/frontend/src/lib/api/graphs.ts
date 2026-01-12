@@ -20,21 +20,14 @@ export type ComputeGraphParams = {
     ciThreshold: number;
 };
 
-export async function computeGraphStreaming(
-    params: ComputeGraphParams,
+/**
+ * Parse SSE stream and return GraphData result.
+ * Handles progress updates, errors, and completion messages.
+ */
+async function parseGraphSSEStream(
+    response: Response,
     onProgress?: (progress: GraphProgress) => void,
 ): Promise<GraphData> {
-    const url = new URL(`${API_URL}/api/graphs`);
-    url.searchParams.set("prompt_id", String(params.promptId));
-    url.searchParams.set("normalize", String(params.normalize));
-    url.searchParams.set("ci_threshold", String(params.ciThreshold));
-
-    const response = await fetch(url.toString(), { method: "POST" });
-    if (!response.ok) {
-        const error = await response.json();
-        throw new ApiError(error.error || `HTTP ${response.status}`, response.status);
-    }
-
     const reader = response.body?.getReader();
     if (!reader) {
         throw new Error("Response body is not readable");
@@ -80,6 +73,26 @@ export async function computeGraphStreaming(
     return result;
 }
 
+export async function computeGraphStreaming(
+    params: ComputeGraphParams,
+    onProgress?: (progress: GraphProgress) => void,
+): Promise<GraphData> {
+    const url = new URL(`${API_URL}/api/graphs`);
+    url.searchParams.set("prompt_id", String(params.promptId));
+    url.searchParams.set("normalize", String(params.normalize));
+    url.searchParams.set("ci_threshold", String(params.ciThreshold));
+
+    const response = await fetch(url.toString(), { method: "POST" });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new ApiError(error.error || `HTTP ${response.status}`, response.status);
+    }
+
+    return parseGraphSSEStream(response, onProgress);
+}
+
+export type MaskType = "stochastic" | "ci";
+
 export type ComputeGraphOptimizedParams = {
     promptId: number;
     impMinCoeff: number;
@@ -91,6 +104,7 @@ export type ComputeGraphOptimizedParams = {
     labelToken?: number;
     ceLossCoeff?: number;
     klLossCoeff?: number;
+    maskType: MaskType;
 };
 
 export async function computeGraphOptimizedStreaming(
@@ -115,6 +129,7 @@ export async function computeGraphOptimizedStreaming(
     if (params.klLossCoeff !== undefined) {
         url.searchParams.set("kl_loss_coeff", String(params.klLossCoeff));
     }
+    url.searchParams.set("mask_type", params.maskType);
 
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
@@ -122,49 +137,7 @@ export async function computeGraphOptimizedStreaming(
         throw new ApiError(error.error || `HTTP ${response.status}`, response.status);
     }
 
-    const reader = response.body?.getReader();
-    if (!reader) {
-        throw new Error("Response body is not readable");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let result: GraphData | null = null;
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-            if (!line.trim() || !line.startsWith("data: ")) continue;
-
-            const data = JSON.parse(line.substring(6));
-
-            if (data.type === "progress" && onProgress) {
-                onProgress({ current: data.current, total: data.total, stage: data.stage });
-            } else if (data.type === "error") {
-                throw new ApiError(data.error, 500);
-            } else if (data.type === "complete") {
-                const { edgesBySource, edgesByTarget } = buildEdgeIndexes(data.data.edges);
-                result = { ...data.data, edgesBySource, edgesByTarget };
-                await reader.cancel();
-                break;
-            }
-        }
-
-        if (result) break;
-    }
-
-    if (!result) {
-        throw new Error("No result received from stream");
-    }
-
-    return result;
+    return parseGraphSSEStream(response, onProgress);
 }
 
 export async function getGraphs(promptId: number, normalize: NormalizeType, ciThreshold: number): Promise<GraphData[]> {

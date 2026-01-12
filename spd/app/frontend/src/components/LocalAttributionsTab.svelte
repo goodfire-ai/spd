@@ -421,6 +421,7 @@
                     pnorm: optConfig.pnorm,
                     outputProbThreshold: 0.01,
                     ciThreshold: defaultViewSettings.ciThreshold,
+                    maskType: optConfig.maskType,
                 };
                 if (useCE) {
                     params.labelToken = optConfig.labelTokenId!;
