@@ -14,8 +14,12 @@ from spd.app.backend.database import LocalAttrDB, Run
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
-from spd.harvest.loaders import load_activation_contexts, load_correlations, load_token_stats
-from spd.harvest.schemas import ComponentData
+from spd.harvest.loaders import (
+    load_activation_contexts_summary,
+    load_correlations,
+    load_token_stats,
+)
+from spd.harvest.schemas import ComponentSummary
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.models.component_model import ComponentModel
 
@@ -34,43 +38,38 @@ class HarvestCache:
         self._correlations = _NOT_LOADED
         self._token_stats = _NOT_LOADED
         self._interpretations = _NOT_LOADED
-        self._activation_contexts = _NOT_LOADED
+        self._activation_contexts_summary = _NOT_LOADED
 
     @property
-    def correlations(self) -> CorrelationStorage | None:
+    def correlations(self) -> CorrelationStorage:
         if self._correlations is _NOT_LOADED:
             self._correlations = load_correlations(self.run_id)
-        assert isinstance(self._correlations, CorrelationStorage | None), (
-            "inconsistent state, correlations not loaded"
-        )
+        assert isinstance(self._correlations, CorrelationStorage)
         return self._correlations
 
     @property
-    def token_stats(self) -> TokenStatsStorage | None:
+    def token_stats(self) -> TokenStatsStorage:
         if self._token_stats is _NOT_LOADED:
             self._token_stats = load_token_stats(self.run_id)
-        assert isinstance(self._token_stats, TokenStatsStorage | None), (
-            "inconsistent state, token stats not loaded"
-        )
+        assert isinstance(self._token_stats, TokenStatsStorage)
         return self._token_stats
 
     @property
-    def interpretations(self) -> dict[str, InterpretationResult] | None:
+    def interpretations(self) -> dict[str, InterpretationResult]:
         if self._interpretations is _NOT_LOADED:
             self._interpretations = load_interpretations(self.run_id)
-        assert isinstance(self._interpretations, dict | None), (
-            "inconsistent state, interpretations not loaded"
-        )
+        assert isinstance(self._interpretations, dict)
         return self._interpretations
 
     @property
-    def activation_contexts(self) -> dict[str, ComponentData] | None:
-        if self._activation_contexts is _NOT_LOADED:
-            self._activation_contexts = load_activation_contexts(self.run_id)
-        assert isinstance(self._activation_contexts, dict | None), (
-            "inconsistent state, activation contexts not loaded"
-        )
-        return self._activation_contexts
+    def activation_contexts_summary(self) -> dict[str, ComponentSummary] | None:
+        """Lightweight summary of activation contexts, keyed by component_key (e.g. 'h.0.mlp.c_fc:5')."""
+        if self._activation_contexts_summary is _NOT_LOADED:
+            self._activation_contexts_summary = load_activation_contexts_summary(self.run_id)
+        if self._activation_contexts_summary is None:
+            return None
+        assert isinstance(self._activation_contexts_summary, dict)
+        return self._activation_contexts_summary
 
 
 @dataclass

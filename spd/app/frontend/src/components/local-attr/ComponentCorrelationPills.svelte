@@ -2,7 +2,7 @@
     import type { Snippet } from "svelte";
     import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
     import { colors } from "../../lib/colors";
-    import ComponentPillList from "../ui/ComponentPillList.svelte";
+    import CorrelatedComponentsList from "../ui/CorrelatedComponentsList.svelte";
 
     type Props = {
         title: string;
@@ -27,7 +27,7 @@
                 <span class="math-notation">{@render mathNotation()}</span>
             {/if}
         </h5>
-        <ComponentPillList {items} {onComponentClick} {pageSize} />
+        <CorrelatedComponentsList {items} {onComponentClick} {pageSize} />
     </div>
 {/if}
 

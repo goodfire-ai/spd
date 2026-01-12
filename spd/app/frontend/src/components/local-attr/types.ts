@@ -2,6 +2,8 @@ import type { GraphData } from "../../lib/localAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/api";
 
+export type MaskType = "stochastic" | "ci";
+
 export type ViewSettings = {
     topK: number;
     componentGap: number;
@@ -50,6 +52,7 @@ export type OptimizeConfig = {
     impMinCoeff: number;
     steps: number;
     pnorm: number;
+    maskType: MaskType;
 };
 
 export type ComputeOptions = {
@@ -68,6 +71,21 @@ export type LoadingState = {
     currentStage: number; // 0-indexed
 };
 
+/** Generic state for async actions without a meaningful result */
+export type ActionState = { status: "idle" } | { status: "loading" } | { status: "error"; error: string };
+
+/** State for graph computation - tracks which card is computing, progress, and errors */
+export type GraphComputeState =
+    | { status: "idle" }
+    | { status: "computing"; cardId: number; progress: LoadingState }
+    | { status: "error"; error: string };
+
+/** State for prompt generation - tracks progress and count */
+export type PromptGenerateState =
+    | { status: "idle" }
+    | { status: "generating"; progress: number; count: number }
+    | { status: "error"; error: string };
+
 export function defaultOptimizeConfig(): OptimizeConfig {
     return {
         labelTokenText: "",
@@ -78,5 +96,6 @@ export function defaultOptimizeConfig(): OptimizeConfig {
         impMinCoeff: 0.1,
         steps: 2000,
         pnorm: 0.3,
+        maskType: "stochastic",
     };
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { TokenInfo } from "../../lib/localAttributionsTypes";
-    import type { PromptCard, OptimizeConfig, StoredGraph } from "./types";
+    import type { PromptCard, OptimizeConfig, StoredGraph, MaskType } from "./types";
     import TokenDropdown from "./TokenDropdown.svelte";
 
     type Props = {
@@ -44,6 +44,7 @@
                 labelTokenId: opt.label_token,
                 labelTokenText: opt.label_str ?? "",
                 labelTokenPreview: opt.label_str,
+                maskType: opt.mask_type ?? "stochastic",
             };
         }
         return card.newGraphConfig;
@@ -99,7 +100,8 @@
             const pnormMatch = Math.abs(opt.pnorm - config.pnorm) < 0.001;
             const ceMatch = (opt.ce_loss_coeff ?? 0) === config.ceLossCoeff && opt.label_token === config.labelTokenId;
             const klMatch = (opt.kl_loss_coeff ?? 0) === config.klLossCoeff;
-            return stepsMatch && impMinMatch && pnormMatch && ceMatch && klMatch;
+            const maskTypeMatch = (opt.mask_type ?? "stochastic") === config.maskType;
+            return stepsMatch && impMinMatch && pnormMatch && ceMatch && klMatch && maskTypeMatch;
         });
     }
 
@@ -241,6 +243,17 @@
                             step={0.1}
                         />
                     </label>
+                    <!-- Mask type dropdown -->
+                    <label>
+                        <span>mask_type</span>
+                        <select
+                            value={optConfig.maskType}
+                            onchange={(e) => onOptimizeConfigChange({ maskType: e.currentTarget.value as MaskType })}
+                        >
+                            <option value="stochastic">stochastic</option>
+                            <option value="ci">ci</option>
+                        </select>
+                    </label>
                 {/if}
 
                 {#if showComputeButton}
@@ -288,6 +301,10 @@
                         <input type="number" value={displayConfig.klLossCoeff} disabled />
                     </label>
                 {/if}
+                <label>
+                    <span>mask_type</span>
+                    <input type="text" value={displayConfig.maskType} disabled />
+                </label>
             </div>
         </div>
     {:else if activeGraph}
@@ -346,42 +363,6 @@
         flex-wrap: wrap;
     }
 
-    .info-icon {
-        position: relative;
-        cursor: help;
-        color: var(--text-muted);
-        font-size: var(--text-xs);
-        width: 14px;
-        height: 14px;
-        line-height: 14px;
-        text-align: center;
-        border: 1px solid var(--border-default);
-        border-radius: 50%;
-    }
-
-    .info-icon::after {
-        content: attr(data-tooltip);
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-top: 4px;
-        padding: var(--space-1) var(--space-2);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-default);
-        color: var(--text-secondary);
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        white-space: nowrap;
-        opacity: 0;
-        pointer-events: none;
-        z-index: 100;
-    }
-
-    .info-icon:hover::after {
-        opacity: 1;
-    }
-
     .compute-options label {
         display: flex;
         align-items: center;
@@ -409,6 +390,21 @@
     }
 
     .compute-options input[type="number"]:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .compute-options select {
+        padding: var(--space-1);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        cursor: pointer;
+    }
+
+    .compute-options select:focus {
         outline: none;
         border-color: var(--accent-primary-dim);
     }
