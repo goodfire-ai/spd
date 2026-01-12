@@ -1,0 +1,5 @@
+global:
+  loss_metric_configs:
+    - classname: "NeuronParameterLpLoss"
+      coeff:
+        values: [0.0, 1e-3, 1e-6, 1e-9]
