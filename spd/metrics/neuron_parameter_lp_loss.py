@@ -84,7 +84,7 @@ def _neuron_parameter_lp_loss_compute(
 ) -> Float[Tensor, ""]:
     """Normalize loss by number of components."""
     assert total_components > 0, "total_components must be positive"
-    return sum_loss / total_components
+    return sum_loss
 
 
 def neuron_parameter_lp_loss(
