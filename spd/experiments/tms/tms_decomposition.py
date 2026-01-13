@@ -95,8 +95,8 @@ def main(
     )
 
     tied_weights = None
-    if target_model.config.tied_weights:
-        tied_weights = [("linear1", "linear2")]
+    # if target_model.config.tied_weights:
+    #     tied_weights = [("linear1", "linear2")]
 
     optimize(
         target_model=target_model,
