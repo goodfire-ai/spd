@@ -12,6 +12,11 @@ from torch import Tensor
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 
+# Number of targets to process per forward pass. Controls memory vs compute tradeoff.
+# Each forward pass creates a new computation graph, so we only retain_graph within
+# a chunk, not across chunks. This bounds memory usage regardless of total alive targets.
+FORWARD_CHUNK_SIZE = 50
+
 
 def compute_batch_attributions(
     model: ComponentModel,
@@ -26,6 +31,10 @@ def compute_batch_attributions(
 
     Uses unmasked components + weight deltas for gradient computation.
     Only computes attributions for components with CI > threshold.
+
+    Memory optimization: Instead of retaining the computation graph for all targets
+    (which causes OOM with many components), we process targets in chunks. Each chunk
+    gets a fresh forward pass, and we only retain_graph within the chunk.
 
     Args:
         model: ComponentModel with target model
@@ -63,30 +72,16 @@ def compute_batch_attributions(
         weight_deltas_and_masks=weight_deltas_and_masks,
     )
 
-    # Forward pass with gradients enabled
-    with torch.enable_grad():
-        comp_output = model(batch, mask_infos=unmasked_masks, cache_type="component_acts")
-
-    cache = comp_output.cache
-
     # Source layers are all component layers (no wte pseudo-component)
     source_layers = layer_names
-    in_post_detaches = [cache[f"{layer}_post_detach"] for layer in source_layers]
 
-    # Collect all edges
-    all_source_indices: list[Tensor] = []
-    all_target_indices: list[Tensor] = []
-    all_values: list[Tensor] = []
+    # Step 1: Collect ALL alive targets across all layers
+    # Each target is (layer_name, batch_idx, seq_pos, component_idx, target_flat_idx)
+    all_alive_targets: list[tuple[str, int, int, int, int]] = []
 
-    # Count total alive targets to know when to release the graph
-    total_alive = int(alive_mask.sum().item())
-    grad_count = 0
-
-    # For each target layer
     for target_layer in layer_names:
         target_offset = layer_offsets[target_layer]
         n_components_target = model.module_to_c[target_layer]
-        out_pre_detach: Float[Tensor, "B S C"] = cache[f"{target_layer}_pre_detach"]
 
         # Find alive (batch, seq, component) for this target layer
         layer_idx = layer_names.index(target_layer)
@@ -95,70 +90,81 @@ def compute_batch_attributions(
         target_alive = alive_mask[:, :, layer_start:layer_end]
 
         alive_b, alive_s, alive_c = torch.where(target_alive)
-        if len(alive_b) == 0:
-            continue
+        for b, s, c in zip(alive_b.tolist(), alive_s.tolist(), alive_c.tolist(), strict=True):
+            target_flat_idx = target_offset + c
+            all_alive_targets.append((target_layer, b, s, c, target_flat_idx))
 
-        # Process each alive target in chunks to manage memory
-        CHUNK_SIZE = 100  # Process up to 100 targets at once
-        for chunk_start in range(0, len(alive_b), CHUNK_SIZE):
-            chunk_end = min(chunk_start + CHUNK_SIZE, len(alive_b))
-            chunk_b = alive_b[chunk_start:chunk_end]
-            chunk_s = alive_s[chunk_start:chunk_end]
-            chunk_c = alive_c[chunk_start:chunk_end]
+    # Early exit if no alive targets
+    if not all_alive_targets:
+        empty = torch.empty(0, dtype=torch.long, device=device)
+        empty_float = torch.empty(0, dtype=torch.float, device=device)
+        return empty, empty, empty_float
 
-            # Compute gradients for this chunk
-            targets = out_pre_detach[chunk_b, chunk_s, chunk_c]
+    # Collect all edges
+    all_source_indices: list[Tensor] = []
+    all_target_indices: list[Tensor] = []
+    all_values: list[Tensor] = []
 
-            for i, (b, s, c) in enumerate(
-                zip(chunk_b.tolist(), chunk_s.tolist(), chunk_c.tolist(), strict=True)
-            ):
-                grad_count += 1
-                # Only retain graph if more gradients need to be computed
-                retain = grad_count < total_alive
+    # Step 2: Process targets in chunks, with a fresh forward pass per chunk
+    for chunk_start in range(0, len(all_alive_targets), FORWARD_CHUNK_SIZE):
+        chunk_end = min(chunk_start + FORWARD_CHUNK_SIZE, len(all_alive_targets))
+        chunk = all_alive_targets[chunk_start:chunk_end]
 
-                grads = torch.autograd.grad(
-                    outputs=targets[i],
-                    inputs=in_post_detaches,
-                    retain_graph=retain,
-                    allow_unused=True,  # Some source layers may not connect to target
-                )
+        # Fresh forward pass for this chunk
+        with torch.enable_grad():
+            comp_output = model(batch, mask_infos=unmasked_masks, cache_type="component_acts")
 
-                target_flat_idx = target_offset + c
+        cache = comp_output.cache
+        in_post_detaches = [cache[f"{layer}_post_detach"] for layer in source_layers]
 
-                with torch.no_grad():
-                    for src_layer, grad, in_post_detach in zip(
-                        source_layers, grads, in_post_detaches, strict=True
-                    ):
-                        # Skip if no gradient (source layer not connected to target)
-                        # Note: allow_unused=True makes grad optional but types don't reflect this
-                        if grad is None:  # pyright: ignore[reportUnnecessaryComparison]
-                            continue
+        # Process each target in the chunk
+        for idx_in_chunk, (target_layer, b, s, c, target_flat_idx) in enumerate(chunk):
+            # Only retain graph if more targets in this chunk need processing
+            retain = idx_in_chunk < len(chunk) - 1
 
-                        # Compute attribution: grad * activation
-                        weighted: Float[Tensor, "S C"] = (grad * in_post_detach)[b]
+            target_val = cache[f"{target_layer}_pre_detach"][b, s, c]
 
-                        src_offset = layer_offsets[src_layer]
-                        n_src_components = model.module_to_c[src_layer]
+            grads = torch.autograd.grad(
+                outputs=target_val,
+                inputs=in_post_detaches,
+                retain_graph=retain,
+                allow_unused=True,  # Some source layers may not connect to target
+            )
 
-                        # Get sources at same sequence position
-                        src_values = weighted[s, :n_src_components]  # [C]
+            with torch.no_grad():
+                for src_layer, grad, in_post_detach in zip(
+                    source_layers, grads, in_post_detaches, strict=True
+                ):
+                    # Skip if no gradient (source layer not connected to target)
+                    # Note: allow_unused=True makes grad optional but types don't reflect this
+                    if grad is None:  # pyright: ignore[reportUnnecessaryComparison]
+                        continue
 
-                        # Find non-zero attributions
-                        nonzero = src_values != 0
-                        if not nonzero.any():
-                            continue
+                    # Compute attribution: grad * activation
+                    weighted: Float[Tensor, "S C"] = (grad * in_post_detach)[b]
 
-                        nonzero_indices = torch.where(nonzero)[0]
-                        nonzero_values = src_values[nonzero]
+                    src_offset = layer_offsets[src_layer]
+                    n_src_components = model.module_to_c[src_layer]
 
-                        src_flat_indices = (src_offset + nonzero_indices).to(torch.long)
-                        tgt_flat_indices = torch.full_like(
-                            src_flat_indices, target_flat_idx, dtype=torch.long
-                        )
+                    # Get sources at same sequence position
+                    src_values = weighted[s, :n_src_components]  # [C]
 
-                        all_source_indices.append(src_flat_indices)
-                        all_target_indices.append(tgt_flat_indices)
-                        all_values.append(nonzero_values)
+                    # Find non-zero attributions
+                    nonzero = src_values != 0
+                    if not nonzero.any():
+                        continue
+
+                    nonzero_indices = torch.where(nonzero)[0]
+                    nonzero_values = src_values[nonzero]
+
+                    src_flat_indices = (src_offset + nonzero_indices).to(torch.long)
+                    tgt_flat_indices = torch.full_like(
+                        src_flat_indices, target_flat_idx, dtype=torch.long
+                    )
+
+                    all_source_indices.append(src_flat_indices)
+                    all_target_indices.append(tgt_flat_indices)
+                    all_values.append(nonzero_values)
 
     # Concatenate all edges
     if not all_source_indices:
