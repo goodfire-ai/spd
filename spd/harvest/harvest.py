@@ -238,9 +238,9 @@ def harvest(
         device=device,
     )
 
-    # Precompute layer offsets for attribution computation
+    # Precompute layer offsets for attribution computation (matches harvester.layer_offsets)
     layer_offsets: dict[str, int] = {}
-    offset = 1  # Start at 1 to reserve 0 for wte pseudo-component
+    offset = 0
     for layer in layer_names:
         layer_offsets[layer] = offset
         offset += model.module_to_c[layer]

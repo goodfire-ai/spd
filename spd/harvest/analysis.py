@@ -177,6 +177,65 @@ class AttributingComponent:
     """Sum of (grad * activation) over the dataset"""
 
 
+def _get_top_attributions(
+    component_keys: list[str],
+    component_indices: Tensor,
+    attr_values: Tensor,
+    top_k: int,
+) -> tuple[list[AttributingComponent], list[AttributingComponent]]:
+    """Extract top positive and negative attributions from filtered edges.
+
+    Args:
+        component_keys: List mapping indices to component keys
+        component_indices: Indices of source/target components for filtered edges
+        attr_values: Attribution values for filtered edges
+        top_k: Number of top results to return for each sign
+
+    Returns:
+        Tuple of (top_positive, top_negative) AttributingComponent lists
+    """
+    if len(attr_values) == 0:
+        return [], []
+
+    # Get top positive
+    positive_mask = attr_values > 0
+    if positive_mask.any():
+        positive_vals = attr_values[positive_mask]
+        positive_indices = component_indices[positive_mask]
+        k_pos = min(top_k, len(positive_vals))
+        top_pos_vals, top_pos_local_idx = torch.topk(positive_vals, k_pos, largest=True)
+        top_pos_indices = positive_indices[top_pos_local_idx]
+        top_positive = [
+            AttributingComponent(
+                component_key=component_keys[int(idx.item())],
+                attribution=float(val.item()),
+            )
+            for idx, val in zip(top_pos_indices, top_pos_vals, strict=True)
+        ]
+    else:
+        top_positive = []
+
+    # Get top negative (most negative = smallest values)
+    negative_mask = attr_values < 0
+    if negative_mask.any():
+        negative_vals = attr_values[negative_mask]
+        negative_indices = component_indices[negative_mask]
+        k_neg = min(top_k, len(negative_vals))
+        top_neg_vals, top_neg_local_idx = torch.topk(negative_vals, k_neg, largest=False)
+        top_neg_indices = negative_indices[top_neg_local_idx]
+        top_negative = [
+            AttributingComponent(
+                component_key=component_keys[int(idx.item())],
+                attribution=float(val.item()),
+            )
+            for idx, val in zip(top_neg_indices, top_neg_vals, strict=True)
+        ]
+    else:
+        top_negative = []
+
+    return top_positive, top_negative
+
+
 def get_top_attribution_sources(
     storage: GlobalAttributionStorage,
     component_key: str,
@@ -200,47 +259,7 @@ def get_top_attribution_sources(
     source_indices = storage.indices[0, target_mask]
     attr_values = storage.values[target_mask]
 
-    if len(attr_values) == 0:
-        return [], []
-
-    # Get top positive sources
-    positive_mask = attr_values > 0
-    if positive_mask.any():
-        positive_vals = attr_values[positive_mask]
-        positive_srcs = source_indices[positive_mask]
-        k_pos = min(top_k, len(positive_vals))
-        top_pos_vals, top_pos_local_idx = torch.topk(positive_vals, k_pos, largest=True)
-        top_pos_srcs = positive_srcs[top_pos_local_idx]
-        top_positive = [
-            AttributingComponent(
-                component_key=storage.component_keys[int(src.item())],
-                attribution=float(val.item()),
-            )
-            for src, val in zip(top_pos_srcs, top_pos_vals, strict=True)
-        ]
-    else:
-        top_positive = []
-
-    # Get top negative sources (most negative = largest magnitude negative)
-    negative_mask = attr_values < 0
-    if negative_mask.any():
-        negative_vals = attr_values[negative_mask]
-        negative_srcs = source_indices[negative_mask]
-        k_neg = min(top_k, len(negative_vals))
-        # Use largest=False to get most negative values
-        top_neg_vals, top_neg_local_idx = torch.topk(negative_vals, k_neg, largest=False)
-        top_neg_srcs = negative_srcs[top_neg_local_idx]
-        top_negative = [
-            AttributingComponent(
-                component_key=storage.component_keys[int(src.item())],
-                attribution=float(val.item()),
-            )
-            for src, val in zip(top_neg_srcs, top_neg_vals, strict=True)
-        ]
-    else:
-        top_negative = []
-
-    return top_positive, top_negative
+    return _get_top_attributions(storage.component_keys, source_indices, attr_values, top_k)
 
 
 def get_top_attribution_targets(
@@ -266,46 +285,7 @@ def get_top_attribution_targets(
     target_indices = storage.indices[1, source_mask]
     attr_values = storage.values[source_mask]
 
-    if len(attr_values) == 0:
-        return [], []
-
-    # Get top positive targets
-    positive_mask = attr_values > 0
-    if positive_mask.any():
-        positive_vals = attr_values[positive_mask]
-        positive_tgts = target_indices[positive_mask]
-        k_pos = min(top_k, len(positive_vals))
-        top_pos_vals, top_pos_local_idx = torch.topk(positive_vals, k_pos, largest=True)
-        top_pos_tgts = positive_tgts[top_pos_local_idx]
-        top_positive = [
-            AttributingComponent(
-                component_key=storage.component_keys[int(tgt.item())],
-                attribution=float(val.item()),
-            )
-            for tgt, val in zip(top_pos_tgts, top_pos_vals, strict=True)
-        ]
-    else:
-        top_positive = []
-
-    # Get top negative targets
-    negative_mask = attr_values < 0
-    if negative_mask.any():
-        negative_vals = attr_values[negative_mask]
-        negative_tgts = target_indices[negative_mask]
-        k_neg = min(top_k, len(negative_vals))
-        top_neg_vals, top_neg_local_idx = torch.topk(negative_vals, k_neg, largest=False)
-        top_neg_tgts = negative_tgts[top_neg_local_idx]
-        top_negative = [
-            AttributingComponent(
-                component_key=storage.component_keys[int(tgt.item())],
-                attribution=float(val.item()),
-            )
-            for tgt, val in zip(top_neg_tgts, top_neg_vals, strict=True)
-        ]
-    else:
-        top_negative = []
-
-    return top_positive, top_negative
+    return _get_top_attributions(storage.component_keys, target_indices, attr_values, top_k)
 
 
 def _compute_token_stats(

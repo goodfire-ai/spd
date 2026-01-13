@@ -5,33 +5,12 @@ accumulation into global attributions. Uses unmasked components + weight deltas
 for gradient computation (per commit b76e4d9e).
 """
 
-from collections.abc import Callable
-from typing import Any
-
 import torch
 from jaxtyping import Bool, Float, Int
-from torch import Tensor, nn
+from torch import Tensor
 
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
-
-
-def _setup_wte_hook() -> tuple[Callable[..., Any], list[Tensor]]:
-    """Create hook to capture wte output with gradients.
-
-    Returns the hook function and a mutable container for the cached output.
-    """
-    wte_cache: list[Tensor] = []
-
-    def wte_hook(
-        _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
-    ) -> Any:
-        output.requires_grad_(True)
-        wte_cache.clear()  # Clear any previous cache
-        wte_cache.append(output)
-        return output
-
-    return wte_hook, wte_cache
 
 
 def compute_batch_attributions(
@@ -84,29 +63,24 @@ def compute_batch_attributions(
         weight_deltas_and_masks=weight_deltas_and_masks,
     )
 
-    # Setup wte hook for gradient capture
-    wte_hook, wte_cache = _setup_wte_hook()
-    assert isinstance(model.target_model.wte, nn.Module)
-    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
-
     # Forward pass with gradients enabled
     with torch.enable_grad():
         comp_output = model(batch, mask_infos=unmasked_masks, cache_type="component_acts")
 
-    wte_handle.remove()
-    assert len(wte_cache) == 1, "wte output should be cached"
-
     cache = comp_output.cache
-    cache["wte_post_detach"] = wte_cache[0]
 
-    # Build source layer list (post_detach activations)
-    source_layers = ["wte"] + layer_names
+    # Source layers are all component layers (no wte pseudo-component)
+    source_layers = layer_names
     in_post_detaches = [cache[f"{layer}_post_detach"] for layer in source_layers]
 
     # Collect all edges
     all_source_indices: list[Tensor] = []
     all_target_indices: list[Tensor] = []
     all_values: list[Tensor] = []
+
+    # Count total alive targets to know when to release the graph
+    total_alive = int(alive_mask.sum().item())
+    grad_count = 0
 
     # For each target layer
     for target_layer in layer_names:
@@ -138,10 +112,14 @@ def compute_batch_attributions(
             for i, (b, s, c) in enumerate(
                 zip(chunk_b.tolist(), chunk_s.tolist(), chunk_c.tolist(), strict=True)
             ):
+                grad_count += 1
+                # Only retain graph if more gradients need to be computed
+                retain = grad_count < total_alive
+
                 grads = torch.autograd.grad(
                     outputs=targets[i],
                     inputs=in_post_detaches,
-                    retain_graph=True,
+                    retain_graph=retain,
                 )
 
                 target_flat_idx = target_offset + c
@@ -153,17 +131,10 @@ def compute_batch_attributions(
                         # Compute attribution: grad * activation
                         weighted: Float[Tensor, "S C"] = (grad * in_post_detach)[b]
 
-                        if src_layer == "wte":
-                            # Sum over embedding dim for pseudo-component
-                            weighted = weighted.sum(dim=1, keepdim=True)
-                            src_offset = 0  # wte is a special pseudo-layer
-                            n_src_components = 1
-                        else:
-                            src_offset = layer_offsets[src_layer]
-                            n_src_components = model.module_to_c[src_layer]
+                        src_offset = layer_offsets[src_layer]
+                        n_src_components = model.module_to_c[src_layer]
 
-                        # Get alive sources at same position (or all positions for cross-seq)
-                        # For simplicity, only use same-position sources
+                        # Get sources at same sequence position
                         src_values = weighted[s, :n_src_components]  # [C]
 
                         # Find non-zero attributions

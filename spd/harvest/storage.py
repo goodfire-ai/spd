@@ -146,11 +146,30 @@ class GlobalAttributionStorage:
     @classmethod
     def load(cls, path: Path) -> "GlobalAttributionStorage":
         data = torch.load(path, weights_only=True, mmap=True)
+        indices = data["indices"]
+        values = data["values"]
+        n_components = data["n_components"]
+        component_keys = data["component_keys"]
+
+        # Validate data integrity
+        assert indices.shape[0] == 2, f"indices must be 2xN, got {indices.shape}"
+        assert indices.shape[1] == values.shape[0], (
+            f"indices and values length mismatch: {indices.shape[1]} vs {values.shape[0]}"
+        )
+        assert len(component_keys) == n_components, (
+            f"component_keys length {len(component_keys)} != n_components {n_components}"
+        )
+        if indices.numel() > 0:
+            assert indices.min() >= 0, f"indices must be non-negative, got min {indices.min()}"
+            assert indices.max() < n_components, (
+                f"indices must be < n_components ({n_components}), got max {indices.max()}"
+            )
+
         return cls(
-            component_keys=data["component_keys"],
-            indices=data["indices"],
-            values=data["values"],
-            n_components=data["n_components"],
+            component_keys=component_keys,
+            indices=indices,
+            values=values,
+            n_components=n_components,
             n_samples=data["n_samples"],
         )
 
