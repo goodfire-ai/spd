@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from spd.app.backend.compute import Edge, Node
+from spd.app.backend.optim_cis import MaskType
 from spd.app.backend.schemas import OutputProbability
 from spd.settings import REPO_ROOT
 
@@ -45,6 +46,7 @@ class OptimizationParams(BaseModel):
     imp_min_coeff: float
     steps: int
     pnorm: float
+    mask_type: MaskType
     # CE loss params (optional, must be set together)
     label_token: int | None = None
     ce_loss_coeff: float | None = None
@@ -176,6 +178,7 @@ class LocalAttrDB:
                 kl_loss_coeff REAL,
                 steps INTEGER,
                 pnorm REAL,
+                mask_type TEXT,
 
                 -- The actual graph data (JSON)
                 edges_data TEXT NOT NULL,
@@ -197,7 +200,7 @@ class LocalAttrDB:
                 WHERE is_optimized = 0;
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm)
+                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, mask_type)
                 WHERE is_optimized = 1;
 
             CREATE INDEX IF NOT EXISTS idx_graphs_prompt
@@ -470,6 +473,7 @@ class LocalAttrDB:
         kl_loss_coeff = None
         steps = None
         pnorm = None
+        mask_type = None
         label_prob = None
 
         if graph.optimization_params:
@@ -479,16 +483,17 @@ class LocalAttrDB:
             kl_loss_coeff = graph.optimization_params.kl_loss_coeff
             steps = graph.optimization_params.steps
             pnorm = graph.optimization_params.pnorm
+            mask_type = graph.optimization_params.mask_type
             label_prob = graph.label_prob  # May be None for KL-only optimization
 
         try:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, is_optimized,
-                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
+                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, mask_type,
                     edges_data, output_probs_data, node_ci_vals, node_subcomp_acts,
                     label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
@@ -498,6 +503,7 @@ class LocalAttrDB:
                     kl_loss_coeff,
                     steps,
                     pnorm,
+                    mask_type,
                     edges_json,
                     probs_json,
                     node_ci_vals_json,
@@ -528,7 +534,7 @@ class LocalAttrDB:
 
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals, node_subcomp_acts,
-                      label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
+                      label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, mask_type,
                       label_prob
                FROM graphs
                WHERE prompt_id = ?
@@ -562,6 +568,7 @@ class LocalAttrDB:
                     imp_min_coeff=row["imp_min_coeff"],
                     steps=row["steps"],
                     pnorm=row["pnorm"],
+                    mask_type=row["mask_type"],
                     label_token=row["label_token"],
                     ce_loss_coeff=row["ce_loss_coeff"],
                     kl_loss_coeff=row["kl_loss_coeff"],
