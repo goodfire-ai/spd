@@ -19,6 +19,7 @@ class TestImportanceMinimalityLoss:
             current_frac_of_training=0.0,
             pnorm=1.0,
             pnorm_2=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
@@ -37,6 +38,7 @@ class TestImportanceMinimalityLoss:
             current_frac_of_training=0.0,
             pnorm=2.0,
             pnorm_2=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
@@ -57,6 +59,7 @@ class TestImportanceMinimalityLoss:
             current_frac_of_training=0.0,
             pnorm=0.5,
             pnorm_2=1.0,
+            beta=0.0,
             eps=eps,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
@@ -73,6 +76,7 @@ class TestImportanceMinimalityLoss:
             current_frac_of_training=0.3,
             pnorm=2.0,
             pnorm_2=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=0.5,
             p_anneal_final_p=1.0,
@@ -92,6 +96,7 @@ class TestImportanceMinimalityLoss:
             current_frac_of_training=0.25,
             pnorm=2.0,
             pnorm_2=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=0.0,
             p_anneal_final_p=1.0,
@@ -109,6 +114,7 @@ class TestImportanceMinimalityLoss:
             current_frac_of_training=0.9,
             pnorm=2.0,
             pnorm_2=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=0.0,
             p_anneal_final_p=1.0,
@@ -126,6 +132,7 @@ class TestImportanceMinimalityLoss:
             current_frac_of_training=0.9,
             pnorm=2.0,
             pnorm_2=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=0.0,
             p_anneal_final_p=None,
@@ -146,6 +153,7 @@ class TestImportanceMinimalityLoss:
             current_frac_of_training=0.0,
             pnorm=1.0,
             pnorm_2=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
@@ -162,18 +170,21 @@ class TestImportanceMinimalityLoss:
         ci_upper_leaky = {
             "layer1": torch.tensor([[1.0, 2.0, 4.0]], dtype=torch.float32),
         }
-        # With p=1, pnorm_2=2: per_component_mean = [1, 2, 4], then ^2 = [1, 4, 16], sum = 21
+        # With p=1, pnorm_2=2, beta=1: per_component_mean = [1, 2, 4]
+        # Formula: per_component_mean + beta * per_component_mean^pnorm_2
+        # = [1+1, 2+4, 4+16] = [2, 6, 20], sum = 28
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
             pnorm=1.0,
             pnorm_2=2.0,
+            beta=1.0,
             eps=0.0,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
             p_anneal_end_frac=1.0,
         )
-        expected = torch.tensor(21.0)
+        expected = torch.tensor(28.0)
         assert torch.allclose(result, expected)
 
     def test_batch_averaging_then_pnorm_2(self: object) -> None:
@@ -182,20 +193,22 @@ class TestImportanceMinimalityLoss:
             "layer1": torch.tensor([[2.0, 4.0], [4.0, 8.0]], dtype=torch.float32),
         }
         # Shape: [2, 2] (batch=2, C=2)
-        # With p=1, pnorm_2=2:
+        # With p=1, pnorm_2=2, beta=1:
         # per_component_sum = [6, 12]
         # per_component_mean = [3, 6]
-        # after ^2 = [9, 36]
-        # sum = 45
+        # Formula: per_component_mean + beta * per_component_mean^pnorm_2
+        # = [3+9, 6+36] = [12, 42]
+        # sum = 54
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
             pnorm=1.0,
             pnorm_2=2.0,
+            beta=1.0,
             eps=0.0,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
             p_anneal_end_frac=1.0,
         )
-        expected = torch.tensor(45.0)
+        expected = torch.tensor(54.0)
         assert torch.allclose(result, expected)

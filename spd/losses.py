@@ -71,6 +71,7 @@ def compute_total_loss(
                     current_frac_of_training=current_frac_of_training,
                     pnorm=cfg.pnorm,
                     pnorm_2=cfg.pnorm_2,
+                    beta=cfg.beta,
                     eps=cfg.eps,
                     p_anneal_start_frac=cfg.p_anneal_start_frac,
                     p_anneal_final_p=cfg.p_anneal_final_p,

@@ -91,6 +91,7 @@ def _importance_minimality_loss_compute(
     per_component_sums: dict[str, Float[Tensor, " C"]],
     total_params: Int[Tensor, ""] | int,
     pnorm_2: float,
+    beta: float,
 ) -> Float[Tensor, ""]:
     """Compute final loss from accumulated per-component sums.
 
@@ -104,7 +105,7 @@ def _importance_minimality_loss_compute(
     total_loss = None
     for layer_sums in per_component_sums.values():
         per_component_mean = layer_sums / total_params
-        layer_loss = (per_component_mean + 10 * per_component_mean**pnorm_2).sum()
+        layer_loss = (per_component_mean + beta * per_component_mean**pnorm_2).sum()
         total_loss = layer_loss if total_loss is None else total_loss + layer_loss
     assert total_loss is not None, "Empty per_component_sums"
     return total_loss
@@ -116,6 +117,7 @@ def importance_minimality_loss(
     eps: float,
     pnorm: float,
     pnorm_2: float,
+    beta: float,
     p_anneal_start_frac: float,
     p_anneal_final_p: float | None,
     p_anneal_end_frac: float,
@@ -129,7 +131,7 @@ def importance_minimality_loss(
         p_anneal_end_frac=p_anneal_end_frac,
         current_frac_of_training=current_frac_of_training,
     )
-    return _importance_minimality_loss_compute(per_component_sums, total_params, pnorm_2)
+    return _importance_minimality_loss_compute(per_component_sums, total_params, pnorm_2, beta)
 
 
 class ImportanceMinimalityLoss(Metric):
@@ -158,6 +160,7 @@ class ImportanceMinimalityLoss(Metric):
         device: str,
         pnorm: float,
         pnorm_2: float = 1.0,
+        beta: float = 80.0,
         p_anneal_start_frac: float = 1.0,
         p_anneal_final_p: float | None = None,
         p_anneal_end_frac: float = 1.0,
@@ -165,6 +168,7 @@ class ImportanceMinimalityLoss(Metric):
     ) -> None:
         self.pnorm = pnorm
         self.pnorm_2 = pnorm_2
+        self.beta = beta
         self.eps = eps
         self.p_anneal_start_frac = p_anneal_start_frac
         self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
@@ -205,4 +209,6 @@ class ImportanceMinimalityLoss(Metric):
         for layer_name, layer_sums in self.per_component_sums.items():
             reduced_sums[layer_name] = all_reduce(layer_sums, op=ReduceOp.SUM)
         n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
-        return _importance_minimality_loss_compute(reduced_sums, n_examples, self.pnorm_2)
+        return _importance_minimality_loss_compute(
+            reduced_sums, n_examples, self.pnorm_2, self.beta
+        )
