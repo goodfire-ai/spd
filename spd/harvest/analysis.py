@@ -12,7 +12,7 @@ from jaxtyping import Float
 from torch import Tensor
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+from spd.harvest.storage import CorrelationStorage, GlobalAttributionStorage, TokenStatsStorage
 
 Metric = Literal["precision", "recall", "jaccard", "pmi"]
 
@@ -166,6 +166,146 @@ def get_output_token_stats(
         tokenizer=tokenizer,
         top_k=top_k,
     )
+
+
+@dataclass
+class AttributingComponent:
+    """A component with attribution to/from a query component."""
+
+    component_key: str
+    attribution: float
+    """Sum of (grad * activation) over the dataset"""
+
+
+def get_top_attribution_sources(
+    storage: GlobalAttributionStorage,
+    component_key: str,
+    top_k: int,
+) -> tuple[list[AttributingComponent], list[AttributingComponent]]:
+    """Get top components that attribute TO the query component.
+
+    Returns:
+        Tuple of (top_positive, top_negative) attribution sources.
+        Positive: components that increase the query component's activation.
+        Negative: components that decrease the query component's activation.
+    """
+    key_to_idx = _build_key_to_idx(storage.component_keys)
+    if component_key not in key_to_idx:
+        return [], []
+
+    target_idx = key_to_idx[component_key]
+
+    # Find all edges where this component is the target
+    target_mask = storage.indices[1] == target_idx
+    source_indices = storage.indices[0, target_mask]
+    attr_values = storage.values[target_mask]
+
+    if len(attr_values) == 0:
+        return [], []
+
+    # Get top positive sources
+    positive_mask = attr_values > 0
+    if positive_mask.any():
+        positive_vals = attr_values[positive_mask]
+        positive_srcs = source_indices[positive_mask]
+        k_pos = min(top_k, len(positive_vals))
+        top_pos_vals, top_pos_local_idx = torch.topk(positive_vals, k_pos, largest=True)
+        top_pos_srcs = positive_srcs[top_pos_local_idx]
+        top_positive = [
+            AttributingComponent(
+                component_key=storage.component_keys[int(src.item())],
+                attribution=float(val.item()),
+            )
+            for src, val in zip(top_pos_srcs, top_pos_vals, strict=True)
+        ]
+    else:
+        top_positive = []
+
+    # Get top negative sources (most negative = largest magnitude negative)
+    negative_mask = attr_values < 0
+    if negative_mask.any():
+        negative_vals = attr_values[negative_mask]
+        negative_srcs = source_indices[negative_mask]
+        k_neg = min(top_k, len(negative_vals))
+        # Use largest=False to get most negative values
+        top_neg_vals, top_neg_local_idx = torch.topk(negative_vals, k_neg, largest=False)
+        top_neg_srcs = negative_srcs[top_neg_local_idx]
+        top_negative = [
+            AttributingComponent(
+                component_key=storage.component_keys[int(src.item())],
+                attribution=float(val.item()),
+            )
+            for src, val in zip(top_neg_srcs, top_neg_vals, strict=True)
+        ]
+    else:
+        top_negative = []
+
+    return top_positive, top_negative
+
+
+def get_top_attribution_targets(
+    storage: GlobalAttributionStorage,
+    component_key: str,
+    top_k: int,
+) -> tuple[list[AttributingComponent], list[AttributingComponent]]:
+    """Get top components that the query component attributes TO.
+
+    Returns:
+        Tuple of (top_positive, top_negative) attribution targets.
+        Positive: components that this component increases.
+        Negative: components that this component decreases.
+    """
+    key_to_idx = _build_key_to_idx(storage.component_keys)
+    if component_key not in key_to_idx:
+        return [], []
+
+    source_idx = key_to_idx[component_key]
+
+    # Find all edges where this component is the source
+    source_mask = storage.indices[0] == source_idx
+    target_indices = storage.indices[1, source_mask]
+    attr_values = storage.values[source_mask]
+
+    if len(attr_values) == 0:
+        return [], []
+
+    # Get top positive targets
+    positive_mask = attr_values > 0
+    if positive_mask.any():
+        positive_vals = attr_values[positive_mask]
+        positive_tgts = target_indices[positive_mask]
+        k_pos = min(top_k, len(positive_vals))
+        top_pos_vals, top_pos_local_idx = torch.topk(positive_vals, k_pos, largest=True)
+        top_pos_tgts = positive_tgts[top_pos_local_idx]
+        top_positive = [
+            AttributingComponent(
+                component_key=storage.component_keys[int(tgt.item())],
+                attribution=float(val.item()),
+            )
+            for tgt, val in zip(top_pos_tgts, top_pos_vals, strict=True)
+        ]
+    else:
+        top_positive = []
+
+    # Get top negative targets
+    negative_mask = attr_values < 0
+    if negative_mask.any():
+        negative_vals = attr_values[negative_mask]
+        negative_tgts = target_indices[negative_mask]
+        k_neg = min(top_k, len(negative_vals))
+        top_neg_vals, top_neg_local_idx = torch.topk(negative_vals, k_neg, largest=False)
+        top_neg_tgts = negative_tgts[top_neg_local_idx]
+        top_negative = [
+            AttributingComponent(
+                component_key=storage.component_keys[int(tgt.item())],
+                attribution=float(val.item()),
+            )
+            for tgt, val in zip(top_neg_tgts, top_neg_vals, strict=True)
+        ]
+    else:
+        top_negative = []
+
+    return top_positive, top_negative
 
 
 def _compute_token_stats(

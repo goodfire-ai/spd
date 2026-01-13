@@ -4,10 +4,11 @@ import {
     ApiError,
     getComponentCorrelations,
     getComponentTokenStats,
+    getGlobalAttributions,
     getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
-import type { InterpretationDetail } from "./api";
+import type { GlobalAttributions, InterpretationDetail } from "./api";
 import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./localAttributionsTypes";
 import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./useRun.svelte";
 
@@ -15,6 +16,8 @@ import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./use
 const CORRELATIONS_TOP_K = 100;
 /** Token stats are displayed directly (max 50 shown) */
 const TOKEN_STATS_TOP_K = 50;
+/** Global attributions - top sources/targets */
+const GLOBAL_ATTRIBUTIONS_TOP_K = 20;
 
 export type ComponentCoords = { layer: string; cIdx: number };
 
@@ -32,6 +35,7 @@ export function useComponentData() {
     // null inside Loadable means "no data for this component" (404)
     let correlations = $state<Loadable<ComponentCorrelations | null>>({ status: "uninitialized" });
     let tokenStats = $state<Loadable<TokenStats | null>>({ status: "uninitialized" });
+    let globalAttributions = $state<Loadable<GlobalAttributions | null>>({ status: "uninitialized" });
 
     let interpretationDetail = $state<Loadable<InterpretationDetail | null>>({ status: "uninitialized" });
 
@@ -53,6 +57,7 @@ export function useComponentData() {
         componentDetail = { status: "loading" };
         correlations = { status: "loading" };
         tokenStats = { status: "loading" };
+        globalAttributions = { status: "loading" };
         interpretationDetail = { status: "loading" };
 
         // Helper to check if this request is still current
@@ -114,6 +119,21 @@ export function useComponentData() {
                     interpretationDetail = { status: "error", error };
                 }
             });
+
+        // Fetch global attributions (null = not harvested for this run)
+        getGlobalAttributions(layer, cIdx, GLOBAL_ATTRIBUTIONS_TOP_K)
+            .then((data) => {
+                if (isStale()) return;
+                globalAttributions = { status: "loaded", data };
+            })
+            .catch((error) => {
+                if (isStale()) return;
+                if (error instanceof ApiError && error.status === 404) {
+                    globalAttributions = { status: "loaded", data: null };
+                } else {
+                    globalAttributions = { status: "error", error };
+                }
+            });
     }
 
     /**
@@ -125,6 +145,7 @@ export function useComponentData() {
         componentDetail = { status: "uninitialized" };
         correlations = { status: "uninitialized" };
         tokenStats = { status: "uninitialized" };
+        globalAttributions = { status: "uninitialized" };
         interpretationDetail = { status: "uninitialized" };
     }
 
@@ -169,6 +190,9 @@ export function useComponentData() {
         },
         get tokenStats() {
             return tokenStats;
+        },
+        get globalAttributions() {
+            return globalAttributions;
         },
         get interpretation() {
             return interpretation;

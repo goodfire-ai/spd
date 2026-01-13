@@ -3,18 +3,22 @@
 
     type Props = {
         title: string;
+        subtitle?: string;
         mathNotation?: string;
         /** Use h4 (larger) or h5 (smaller) */
         level?: "h4" | "h5";
         children?: Snippet;
     };
 
-    let { title, mathNotation, level = "h5", children }: Props = $props();
+    let { title, subtitle, mathNotation, level = "h5", children }: Props = $props();
 </script>
 
 {#if level === "h4"}
     <h4>
         {title}
+        {#if subtitle}
+            <span class="subtitle">{subtitle}</span>
+        {/if}
         {#if mathNotation}
             <span class="math-notation">{mathNotation}</span>
         {/if}
@@ -25,6 +29,9 @@
 {:else}
     <h5>
         {title}
+        {#if subtitle}
+            <span class="subtitle">{subtitle}</span>
+        {/if}
         {#if mathNotation}
             <span class="math-notation">{mathNotation}</span>
         {/if}
@@ -49,6 +56,13 @@
 
     h5 {
         font-size: var(--text-sm);
+    }
+
+    .subtitle {
+        font-weight: 400;
+        color: var(--text-muted);
+        font-size: var(--text-xs);
+        margin-left: var(--space-1);
     }
 
     .math-notation {

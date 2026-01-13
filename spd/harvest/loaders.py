@@ -11,7 +11,7 @@ from spd.harvest.schemas import (
     get_activation_contexts_dir,
     get_correlations_dir,
 )
-from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+from spd.harvest.storage import CorrelationStorage, GlobalAttributionStorage, TokenStatsStorage
 
 
 def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSummary] | None:
@@ -107,3 +107,15 @@ def load_token_stats(wandb_run_id: str) -> TokenStatsStorage:
     path = corr_dir / "token_stats.pt"
     assert path.exists()
     return TokenStatsStorage.load(path)
+
+
+def load_global_attributions(wandb_run_id: str) -> GlobalAttributionStorage | None:
+    """Load global attributions from harvest output.
+
+    Returns None if the file doesn't exist (e.g., older harvest runs without this data).
+    """
+    corr_dir = get_correlations_dir(wandb_run_id)
+    path = corr_dir / "global_attributions.pt"
+    if not path.exists():
+        return None
+    return GlobalAttributionStorage.load(path)

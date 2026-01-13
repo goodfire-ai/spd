@@ -232,6 +232,70 @@ async def request_component_interpretation(
 
 
 # =============================================================================
+# Global Attributions Endpoint
+# =============================================================================
+
+
+class AttributingComponent(BaseModel):
+    """A component with attribution to/from a query component."""
+
+    component_key: str
+    attribution: float
+
+
+class GlobalAttributionsResponse(BaseModel):
+    """Global attribution data for a component (sources and targets)."""
+
+    top_positive_sources: list[AttributingComponent]
+    top_negative_sources: list[AttributingComponent]
+    top_positive_targets: list[AttributingComponent]
+    top_negative_targets: list[AttributingComponent]
+
+
+@router.get("/global_attributions/{layer}/{component_idx}")
+@log_errors
+def get_global_attributions(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+    top_k: Annotated[int, Query(ge=1)],
+) -> GlobalAttributionsResponse | None:
+    """Get global attribution sources and targets for a component.
+
+    Returns the top-k components that attribute TO this component (sources)
+    and the top-k components that this component attributes TO (targets),
+    split into positive and negative attribution values.
+
+    Returns None if global attributions haven't been harvested for this run.
+    """
+    global_attributions = loaded.harvest.global_attributions
+    if global_attributions is None:
+        return None
+
+    component_key = f"{layer}:{component_idx}"
+
+    def to_schema(c: analysis.AttributingComponent) -> AttributingComponent:
+        return AttributingComponent(
+            component_key=c.component_key,
+            attribution=c.attribution,
+        )
+
+    top_positive_sources, top_negative_sources = analysis.get_top_attribution_sources(
+        global_attributions, component_key, top_k
+    )
+    top_positive_targets, top_negative_targets = analysis.get_top_attribution_targets(
+        global_attributions, component_key, top_k
+    )
+
+    return GlobalAttributionsResponse(
+        top_positive_sources=[to_schema(c) for c in top_positive_sources],
+        top_negative_sources=[to_schema(c) for c in top_negative_sources],
+        top_positive_targets=[to_schema(c) for c in top_positive_targets],
+        top_negative_targets=[to_schema(c) for c in top_negative_targets],
+    )
+
+
+# =============================================================================
 # Component Correlation Data Endpoints
 # =============================================================================
 

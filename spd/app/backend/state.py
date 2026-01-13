@@ -17,10 +17,11 @@ from spd.configs import Config
 from spd.harvest.loaders import (
     load_activation_contexts_summary,
     load_correlations,
+    load_global_attributions,
     load_token_stats,
 )
 from spd.harvest.schemas import ComponentSummary
-from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+from spd.harvest.storage import CorrelationStorage, GlobalAttributionStorage, TokenStatsStorage
 from spd.models.component_model import ComponentModel
 
 _NOT_LOADED = object()
@@ -39,6 +40,7 @@ class HarvestCache:
         self._token_stats = _NOT_LOADED
         self._interpretations = _NOT_LOADED
         self._activation_contexts_summary = _NOT_LOADED
+        self._global_attributions = _NOT_LOADED
 
     @property
     def correlations(self) -> CorrelationStorage:
@@ -70,6 +72,16 @@ class HarvestCache:
             return None
         assert isinstance(self._activation_contexts_summary, dict)
         return self._activation_contexts_summary
+
+    @property
+    def global_attributions(self) -> GlobalAttributionStorage | None:
+        """Global (dataset-summed) attribution data between components."""
+        if self._global_attributions is _NOT_LOADED:
+            self._global_attributions = load_global_attributions(self.run_id)
+        if self._global_attributions is None:
+            return None
+        assert isinstance(self._global_attributions, GlobalAttributionStorage)
+        return self._global_attributions
 
 
 @dataclass

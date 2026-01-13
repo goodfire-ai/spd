@@ -21,6 +21,7 @@ import tqdm
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.harvest.lib.attribution_compute import compute_batch_attributions
 from spd.harvest.lib.harvester import Harvester, HarvesterState
 from spd.harvest.schemas import (
     ActivationExample,
@@ -28,7 +29,7 @@ from spd.harvest.schemas import (
     ComponentSummary,
     ComponentTokenPMI,
 )
-from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+from spd.harvest.storage import CorrelationStorage, GlobalAttributionStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.general_utils import extract_batch_data
@@ -70,6 +71,7 @@ class HarvestConfig:
     activation_examples_per_component: int
     activation_context_tokens_per_side: int
     pmi_token_top_k: int
+    compute_global_attributions: bool = False
 
 
 @dataclass
@@ -79,6 +81,7 @@ class HarvestResult:
     components: list[ComponentData]
     correlations: CorrelationStorage
     token_stats: TokenStatsStorage
+    global_attributions: GlobalAttributionStorage | None
     config: HarvestConfig
 
     def save(self, activation_contexts_dir: Path, correlations_dir: Path) -> None:
@@ -109,10 +112,15 @@ class HarvestResult:
         logger.info(f"Saved summary to {summary_path}")
 
         # Save correlations (.pt)
+        correlations_dir.mkdir(parents=True, exist_ok=True)
         self.correlations.save(correlations_dir / "component_correlations.pt")
 
         # Save token stats (.pt)
         self.token_stats.save(correlations_dir / "token_stats.pt")
+
+        # Save global attributions (.pt)
+        if self.global_attributions is not None:
+            self.global_attributions.save(correlations_dir / "global_attributions.pt")
 
     @staticmethod
     def load_components(activation_contexts_dir: Path) -> list[ComponentData]:
@@ -149,6 +157,7 @@ def _build_harvest_result(
         for layer in harvester.layer_names
         for c in range(harvester.c_per_layer[layer])
     ]
+    n_components = len(component_keys)
 
     correlations = CorrelationStorage(
         component_keys=component_keys,
@@ -168,10 +177,26 @@ def _build_harvest_result(
         firing_counts=harvester.firing_counts.cpu(),
     )
 
+    # Build global attributions from sparse format
+    global_attributions: GlobalAttributionStorage | None = None
+    state = harvester.get_state()
+    if state.attribution_indices is not None and state.attribution_values is not None:
+        global_attributions = GlobalAttributionStorage(
+            component_keys=component_keys,
+            indices=state.attribution_indices,
+            values=state.attribution_values,
+            n_components=n_components,
+            n_samples=harvester.total_tokens_processed,
+        )
+        logger.info(
+            f"Built global attributions: {state.attribution_values.numel():,} non-zero entries"
+        )
+
     return HarvestResult(
         components=components,
         correlations=correlations,
         token_stats=token_stats,
+        global_attributions=global_attributions,
         config=config,
     )
 
@@ -213,6 +238,13 @@ def harvest(
         device=device,
     )
 
+    # Precompute layer offsets for attribution computation
+    layer_offsets: dict[str, int] = {}
+    offset = 1  # Start at 1 to reserve 0 for wte pseudo-component
+    for layer in layer_names:
+        layer_offsets[layer] = offset
+        offset += model.module_to_c[layer]
+
     train_iter = iter(train_loader)
     for batch_idx in tqdm.tqdm(range(config.n_batches), desc="Harvesting"):
         try:
@@ -223,6 +255,7 @@ def harvest(
             )
             break
 
+        # Compute CI values (no grad needed)
         with torch.no_grad():
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
@@ -247,6 +280,20 @@ def harvest(
             )
 
             harvester.process_batch(batch, ci, probs, subcomp_acts)
+
+        # Compute global attributions if enabled (requires separate forward pass with gradients)
+        if config.compute_global_attributions:
+            src_idx, tgt_idx, attr_vals = compute_batch_attributions(
+                model=model,
+                batch=batch,
+                ci_dict=ci_dict,  # Use CI values computed above to determine alive components
+                ci_threshold=config.ci_threshold,
+                layer_names=layer_names,
+                layer_offsets=layer_offsets,
+                device=device,
+            )
+            if len(attr_vals) > 0:
+                harvester.accumulate_attributions(src_idx, tgt_idx, attr_vals)
 
     logger.info(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
 

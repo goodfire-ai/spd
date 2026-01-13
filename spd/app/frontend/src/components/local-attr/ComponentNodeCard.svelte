@@ -7,6 +7,7 @@
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
     import EdgeAttributionList from "../ui/EdgeAttributionList.svelte";
+    import GlobalAttributionSection from "../ui/GlobalAttributionSection.svelte";
     import InterpretationBadge from "../ui/InterpretationBadge.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
@@ -294,6 +295,24 @@
         {/if}
     </div>
 
+    <!-- Global attributions (dataset-summed) -->
+    <div class="global-attributions-section">
+        <SectionHeader title="Global Attributions" subtitle="(summed over dataset)" />
+        {#if componentData.globalAttributions?.status === "loading"}
+            <StatusText>Loading...</StatusText>
+        {:else if componentData.globalAttributions?.status === "loaded" && componentData.globalAttributions.data}
+            <GlobalAttributionSection
+                data={componentData.globalAttributions.data}
+                pageSize={10}
+                onComponentClick={handleCorrelationClick}
+            />
+        {:else if componentData.globalAttributions?.status === "error"}
+            <StatusText>Error loading global attributions: {String(componentData.globalAttributions.error)}</StatusText>
+        {:else}
+            <StatusText>No global attributions available.</StatusText>
+        {/if}
+    </div>
+
     <!-- Component correlations -->
     <div class="correlations-section">
         <SectionHeader title="Correlated Components" />
@@ -339,7 +358,8 @@
         min-width: 0;
     }
 
-    .correlations-section {
+    .correlations-section,
+    .global-attributions-section {
         display: flex;
         flex-direction: column;
         gap: var(--space-2);

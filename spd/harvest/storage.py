@@ -101,3 +101,61 @@ class TokenStatsStorage:
             output_totals=data["output_totals"],
             firing_counts=data["firing_counts"],
         )
+
+
+@dataclass
+class GlobalAttributionStorage:
+    """Global (dataset-summed) attribution data between components.
+
+    Stores the sum of attribution values (grad * activation) between component pairs
+    over the entire dataset. Uses sparse COO format since most pairs have zero attribution.
+
+    Attribution from source i to target j: attribution_matrix[i, j] = sum over dataset of
+    (d_target_j / d_source_i) * activation_source_i
+    """
+
+    component_keys: list[str]
+    """Ordered list of component keys (e.g., 'h.0.mlp.c_fc:5')"""
+    indices: Int[Tensor, "2 nnz"]
+    """COO format: indices[0] = source indices, indices[1] = target indices"""
+    values: Float[Tensor, " nnz"]
+    """Attribution values for each (source, target) pair"""
+    n_components: int
+    """Total number of components (matrix dimension)"""
+    n_samples: int
+    """Number of samples (tokens * seq_len) processed"""
+
+    def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "component_keys": self.component_keys,
+                "indices": self.indices.cpu(),
+                "values": self.values.cpu(),
+                "n_components": self.n_components,
+                "n_samples": self.n_samples,
+            },
+            path,
+        )
+        size_mb = path.stat().st_size / (1024 * 1024)
+        nnz = self.values.numel()
+        logger.info(
+            f"Saved global attributions to {path} ({size_mb:.1f} MB, {nnz:,} non-zero entries)"
+        )
+
+    @classmethod
+    def load(cls, path: Path) -> "GlobalAttributionStorage":
+        data = torch.load(path, weights_only=True, mmap=True)
+        return cls(
+            component_keys=data["component_keys"],
+            indices=data["indices"],
+            values=data["values"],
+            n_components=data["n_components"],
+            n_samples=data["n_samples"],
+        )
+
+    def to_dense(self) -> Float[Tensor, "n_components n_components"]:
+        """Convert to dense matrix for analysis."""
+        dense = torch.zeros(self.n_components, self.n_components)
+        dense[self.indices[0], self.indices[1]] = self.values
+        return dense

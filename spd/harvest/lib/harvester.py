@@ -44,6 +44,10 @@ class HarvesterState:
     # Reservoir states
     reservoir_states: list[ReservoirState[ActivationExampleTuple]]
 
+    # Global attributions (sparse COO format)
+    attribution_indices: Tensor | None  # [2, nnz] source/target component indices
+    attribution_values: Tensor | None  # [nnz] summed attribution values
+
     @staticmethod
     def merge(states: list["HarvesterState"]) -> "HarvesterState":
         """Merge multiple HarvesterStates from parallel workers into one."""
@@ -78,6 +82,30 @@ class HarvesterState:
             for i in range(n_components)
         ]
 
+        # Merge global attributions (sparse COO format)
+        # Collect all sparse attribution tensors and merge by summing duplicate indices
+        attribution_indices: Tensor | None = None
+        attribution_values: Tensor | None = None
+        if any(s.attribution_indices is not None for s in states):
+            # Collect all non-None attribution data
+            all_indices = []
+            all_values = []
+            for s in states:
+                if s.attribution_indices is not None and s.attribution_values is not None:
+                    all_indices.append(s.attribution_indices)
+                    all_values.append(s.attribution_values)
+
+            if all_indices:
+                # Concatenate all sparse entries
+                combined_indices = torch.cat(all_indices, dim=1)  # [2, total_nnz]
+                combined_values = torch.cat(all_values, dim=0)  # [total_nnz]
+
+                # Merge duplicate indices by summing their values
+                n_comp = sum(first.c_per_layer[layer] for layer in first.layer_names)
+                attribution_indices, attribution_values = _merge_sparse_coo(
+                    combined_indices, combined_values, n_comp
+                )
+
         return HarvesterState(
             layer_names=first.layer_names,
             c_per_layer=first.c_per_layer,
@@ -94,7 +122,35 @@ class HarvesterState:
             output_token_prob_totals=output_token_prob_totals,
             total_tokens_processed=total_tokens_processed,
             reservoir_states=merged_reservoirs,
+            attribution_indices=attribution_indices,
+            attribution_values=attribution_values,
         )
+
+
+def _merge_sparse_coo(indices: Tensor, values: Tensor, n_components: int) -> tuple[Tensor, Tensor]:
+    """Merge sparse COO tensor by summing duplicate indices.
+
+    Args:
+        indices: [2, nnz] tensor of (source, target) component indices
+        values: [nnz] tensor of attribution values
+
+    Returns:
+        Tuple of (unique_indices, summed_values)
+    """
+    # Convert (src, tgt) pairs to flat indices for efficient grouping
+    flat_indices = indices[0] * n_components + indices[1]
+
+    # Use scatter_add to sum values with the same flat index
+    unique_flat, inverse = flat_indices.unique(return_inverse=True)
+    summed_values = torch.zeros(len(unique_flat), dtype=values.dtype, device=values.device)
+    summed_values.scatter_add_(0, inverse, values)
+
+    # Convert back to (src, tgt) indices
+    unique_src = unique_flat // n_components
+    unique_tgt = unique_flat % n_components
+    unique_indices = torch.stack([unique_src, unique_tgt], dim=0)
+
+    return unique_indices, summed_values
 
 
 class Harvester:
@@ -155,6 +211,12 @@ class Harvester:
 
         self.total_tokens_processed = 0
 
+        # Global attribution accumulator (dense, converted to sparse on save)
+        # Attribution from source i to target j: attribution_sums[i, j]
+        self.attribution_sums: Float[Tensor, "n_components n_components"] = torch.zeros(
+            n_components, n_components, device=device
+        )
+
     def process_batch(
         self,
         batch: Int[Tensor, "B S"],
@@ -183,6 +245,23 @@ class Harvester:
         self._accumulate_input_token_stats(batch_flat, firing_flat)
         self._accumulate_output_token_stats(output_probs_flat, firing_flat)
         self._collect_activation_examples(batch, ci, subcomp_acts)
+
+    def accumulate_attributions(
+        self,
+        source_indices: Int[Tensor, " n_edges"],
+        target_indices: Int[Tensor, " n_edges"],
+        attribution_values: Float[Tensor, " n_edges"],
+    ) -> None:
+        """Accumulate global attribution values from edges.
+
+        Args:
+            source_indices: Flat component indices for edge sources
+            target_indices: Flat component indices for edge targets
+            attribution_values: Attribution strength (grad * activation) for each edge
+        """
+        # Use index_put_ with accumulate=True to sum values at the same indices
+        indices = (source_indices, target_indices)
+        self.attribution_sums.index_put_(indices, attribution_values, accumulate=True)
 
     def _accumulate_firing_stats(
         self,
@@ -306,6 +385,9 @@ class Harvester:
 
     def get_state(self) -> HarvesterState:
         """Extract serializable state for parallel merging."""
+        # Convert dense attribution matrix to sparse COO format
+        attr_indices, attr_values = self._attribution_sums_to_sparse()
+
         return HarvesterState(
             layer_names=self.layer_names,
             c_per_layer=self.c_per_layer,
@@ -322,7 +404,22 @@ class Harvester:
             output_token_prob_totals=self.output_token_prob_totals.cpu(),
             total_tokens_processed=self.total_tokens_processed,
             reservoir_states=[s.get_state() for s in self.activation_example_samplers],
+            attribution_indices=attr_indices,
+            attribution_values=attr_values,
         )
+
+    def _attribution_sums_to_sparse(self) -> tuple[Tensor | None, Tensor | None]:
+        """Convert dense attribution matrix to sparse COO format."""
+        # Find non-zero entries
+        nonzero_mask = self.attribution_sums != 0
+        if not nonzero_mask.any():
+            return None, None
+
+        src_indices, tgt_indices = torch.where(nonzero_mask)
+        values = self.attribution_sums[src_indices, tgt_indices]
+
+        indices = torch.stack([src_indices, tgt_indices], dim=0).cpu()
+        return indices, values.cpu()
 
     @staticmethod
     def from_state(state: HarvesterState, device: torch.device) -> "Harvester":
@@ -347,6 +444,15 @@ class Harvester:
         harvester.activation_example_samplers = [
             ReservoirSampler.from_state(s) for s in state.reservoir_states
         ]
+
+        # Restore attributions from sparse COO format
+        if state.attribution_indices is not None and state.attribution_values is not None:
+            indices = state.attribution_indices.to(device)
+            values = state.attribution_values.to(device)
+            harvester.attribution_sums.index_put_(
+                (indices[0], indices[1]), values, accumulate=False
+            )
+
         return harvester
 
     def build_results(self, pmi_top_k_tokens: int) -> list[ComponentData]:

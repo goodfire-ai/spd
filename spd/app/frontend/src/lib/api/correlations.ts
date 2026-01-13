@@ -53,3 +53,28 @@ export async function requestComponentInterpretation(layer: string, componentIdx
         { method: "POST" },
     );
 }
+
+// Global attributions types
+export type AttributingComponent = {
+    component_key: string;
+    attribution: number;
+};
+
+export type GlobalAttributions = {
+    top_positive_sources: AttributingComponent[];
+    top_negative_sources: AttributingComponent[];
+    top_positive_targets: AttributingComponent[];
+    top_negative_targets: AttributingComponent[];
+};
+
+export async function getGlobalAttributions(
+    layer: string,
+    componentIdx: number,
+    topK: number,
+): Promise<GlobalAttributions | null> {
+    const url = new URL(
+        `${API_URL}/api/correlations/global_attributions/${encodeURIComponent(layer)}/${componentIdx}`,
+    );
+    url.searchParams.set("top_k", String(topK));
+    return fetchJson<GlobalAttributions | null>(url.toString());
+}
