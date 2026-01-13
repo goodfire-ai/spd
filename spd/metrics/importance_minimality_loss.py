@@ -160,7 +160,7 @@ class ImportanceMinimalityLoss(Metric):
         device: str,
         pnorm: float,
         pnorm_2: float = 1.0,
-        beta: float = 80.0,
+        beta: float = 0.0,
         p_anneal_start_frac: float = 1.0,
         p_anneal_final_p: float | None = None,
         p_anneal_end_frac: float = 1.0,
