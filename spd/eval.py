@@ -29,6 +29,7 @@ from spd.configs import (
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
+    StochasticAccuracyLayerwiseConfig,
     StochasticHiddenActsReconLossConfig,
     StochasticReconLayerwiseLossConfig,
     StochasticReconLossConfig,
@@ -55,6 +56,7 @@ from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
 from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
 from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
+from spd.metrics.stochastic_accuracy_layerwise import StochasticAccuracyLayerwise
 from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
 from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
 from spd.metrics.stochastic_recon_loss import StochasticReconLoss
@@ -253,6 +255,14 @@ def init_metric(
             )
         case StochasticHiddenActsReconLossConfig():
             metric = StochasticHiddenActsReconLoss(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+            )
+        case StochasticAccuracyLayerwiseConfig():
+            metric = StochasticAccuracyLayerwise(
                 model=model,
                 device=device,
                 sampling=run_config.sampling,

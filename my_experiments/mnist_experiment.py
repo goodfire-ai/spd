@@ -14,12 +14,20 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 
 from spd.configs import (
+    CI_L0Config,
+    CIHistogramsConfig,
+    CIMeanPerComponentConfig,
+    ComponentActivationDensityConfig,
     Config,
+    FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
+    PGDReconSubsetLossConfig,
     ScheduleConfig,
+    StochasticAccuracyLayerwiseConfig,
     StochasticReconLayerwiseLossConfig,
-    StochasticReconLossConfig,
+    StochasticReconSubsetLossConfig,
     TMSTaskConfig,
+    UVPlotsConfig,
 )
 from spd.log import logger
 from spd.models.component_model import ComponentModel
@@ -89,6 +97,7 @@ def train_mlp(
     device: str,
     epochs: int = 20,
     lr: float = 0.001,
+    weight_decay: float = 0.0,
     log_wandb: bool = False,
 ) -> int:
     """Train the MLP on MNIST.
@@ -97,7 +106,7 @@ def train_mlp(
         Total number of training steps completed
     """
     model.train()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss()
 
     logger.info(f"Training MLP for {epochs} epochs...")
@@ -163,11 +172,12 @@ def train_mlp(
 
 def main(
     hidden_size: int = 128,
-    train_epochs: int = 25,
+    train_epochs: int = 50,
     train_lr: float = 0.001,
-    spd_steps: int = 250000,
+    train_weight_decay: float = 5e-4,
+    spd_steps: int = 100000,
     spd_lr: float = 0.001,
-    n_components: int = 50,
+    n_components: int = 500,
     seed: int = 42,
     output_dir: str | None = None,
     wandb_project: str | None = None,
@@ -178,6 +188,7 @@ def main(
         hidden_size: Hidden layer size for the MLP
         train_epochs: Number of epochs to train the MLP
         train_lr: Learning rate for MLP training
+        train_weight_decay: Weight decay for MLP training
         spd_steps: Number of steps for SPD decomposition
         spd_lr: Learning rate for SPD decomposition
         n_components: Number of components per layer for decomposition
@@ -223,6 +234,7 @@ def main(
                 "hidden_size": hidden_size,
                 "train_epochs": train_epochs,
                 "train_lr": train_lr,
+                "train_weight_decay": train_weight_decay,
                 "spd_steps": spd_steps,
                 "spd_lr": spd_lr,
                 "n_components": n_components,
@@ -252,6 +264,7 @@ def main(
         device,
         epochs=train_epochs,
         lr=train_lr,
+        weight_decay=train_weight_decay,
         log_wandb=wandb_project is not None,
     )
 
@@ -309,8 +322,8 @@ def main(
         wandb_project=wandb_project,  # Use same wandb project
         seed=seed,
         n_mask_samples=1,
-        ci_fn_type="mlp",  # shared MLP
-        ci_fn_hidden_dims=[16],  # and make this a lot wider 256/512
+        ci_fn_type="shared_mlp",
+        ci_fn_hidden_dims=[256],
         sigmoid_type="leaky_hard",
         module_info=[
             {"module_pattern": "fc1", "C": n_components},
@@ -318,16 +331,28 @@ def main(
         ],
         use_delta_component=True,
         loss_metric_configs=[
-            ImportanceMinimalityLossConfig(coeff=1e-5, pnorm=2.0),  # anneal from 2.0 to 0.5/0.3
-            StochasticReconLossConfig(coeff=1.0),  # SubsetLoss
+            ImportanceMinimalityLossConfig(
+                coeff=1e-4,
+                pnorm=2.0,
+                p_anneal_start_frac=0.0,
+                p_anneal_final_p=0.5,
+                p_anneal_end_frac=0.5,
+            ),
+            StochasticReconSubsetLossConfig(coeff=1.0),
             StochasticReconLayerwiseLossConfig(coeff=1.0),
-            # faithfullnessloss
-            # PGDSubset loss #stepsize 1.0 #1 gradient step
+            FaithfulnessLossConfig(coeff=1.0),
+            PGDReconSubsetLossConfig(
+                coeff=1.0,
+                init="random",
+                step_size=1.0,
+                n_steps=1,
+                mask_scope="unique_per_datapoint",
+            ),
         ],
-        output_loss_type="mse",  # Change to KLDivergence
+        output_loss_type="kl",
         lr_schedule=ScheduleConfig(start_val=spd_lr, fn_type="cosine", final_val_frac=0.0),
         steps=spd_steps,
-        batch_size=128,  # on the small side (maybe 10x larger)
+        batch_size=1024,
         gradient_accumulation_steps=1,
         faithfulness_warmup_steps=200,
         faithfulness_warmup_lr=0.01,
@@ -339,7 +364,20 @@ def main(
         n_eval_steps=50,
         slow_eval_on_first_step=True,
         save_freq=None,
-        eval_metric_configs=[],  # PGD 20 gradient steps
+        eval_metric_configs=[
+            PGDReconSubsetLossConfig(
+                init="random",
+                step_size=1.0,
+                n_steps=20,
+                mask_scope="unique_per_datapoint",
+            ),
+            CIMeanPerComponentConfig(),
+            CIHistogramsConfig(n_batches_accum=5),
+            ComponentActivationDensityConfig(),
+            CI_L0Config(groups=None),
+            UVPlotsConfig(identity_patterns=None, dense_patterns=None),
+            StochasticAccuracyLayerwiseConfig(),
+        ],
         ci_alive_threshold=0.1,
         n_examples_until_dead=1000000,
         pretrained_model_class="__main__.TwoLayerMLP",

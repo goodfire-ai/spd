@@ -325,6 +325,10 @@ class StochasticReconSubsetCEAndKLConfig(BaseConfig):
     exclude_patterns: dict[str, list[str]] | None
 
 
+class StochasticAccuracyLayerwiseConfig(BaseConfig):
+    classname: Literal["StochasticAccuracyLayerwise"] = "StochasticAccuracyLayerwise"
+
+
 class UVPlotsConfig(BaseConfig):
     classname: Literal["UVPlots"] = "UVPlots"
     identity_patterns: list[str] | None
@@ -357,6 +361,7 @@ EvalOnlyMetricConfigType = (
     | PermutedCIPlotsConfig
     | UVPlotsConfig
     | StochasticReconSubsetCEAndKLConfig
+    | StochasticAccuracyLayerwiseConfig
     | PGDMultiBatchReconLossConfig
     | PGDMultiBatchReconSubsetLossConfig
 )

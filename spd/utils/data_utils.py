@@ -16,10 +16,17 @@ class DatasetGeneratedDataLoader[Q](DataLoader[Q]):
         batch_size: int = 1,
         shuffle: bool = False,
         num_workers: int = 0,
+        generator: torch.Generator | None = None,
     ):
         # assert that dataset has a generate_batch method
         assert hasattr(dataset, "generate_batch")
-        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        super().__init__(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            generator=generator,
+        )
 
     @override
     def __iter__(  # pyright: ignore[reportIncompatibleMethodOverride]

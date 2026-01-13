@@ -226,11 +226,29 @@ def optimize(
 
     # Track which components are alive based on firing frequency
     sample_batch = extract_batch_data(next(train_iterator))
-    batch_dims = (
-        sample_batch.shape[:-1]
-        if config.output_loss_type == "mse"  # if mse then input is a vector
-        else sample_batch.shape  # else it's a batch of token ids
-    )
+    # Determine batch_dims based on input shape and loss type
+    # - MSE loss: always vector inputs, so batch_dims = shape[:-1] (removes feature dim)
+    # - KL loss with 2D input: could be (batch, features) or (batch, seq_len)
+    #   - If last dim >= 500: likely features (vector input) -> batch_dims = shape[:-1]
+    #     (MNIST: 784, other vision: often 1024+, while LM seq_len typically < 512)
+    #   - If last dim < 500: likely seq_len (token sequence) -> batch_dims = shape
+    # - KL loss with 3D+ input: token sequence -> batch_dims = shape[:-1] (removes vocab dim)
+    if config.output_loss_type == "mse":
+        # MSE always uses vector inputs
+        batch_dims = sample_batch.shape[:-1]
+    else:
+        # KL loss
+        if sample_batch.ndim == 2:
+            # 2D input: could be (batch, features) or (batch, seq_len)
+            # Heuristic: if last dim >= 500, likely features (e.g., MNIST: 784, vision: 1024+)
+            # Otherwise, likely seq_len (typical LM sequences are often 128-512)
+            if sample_batch.shape[-1] >= 500:
+                batch_dims = sample_batch.shape[:-1]  # Vector input
+            else:
+                batch_dims = sample_batch.shape  # Token sequence
+        else:
+            # 3D+ input: token sequence format (batch, seq_len, ...)
+            batch_dims = sample_batch.shape[:-1]
     alive_tracker = AliveComponentsTracker(
         module_to_c=model.module_to_c,
         device=device,
