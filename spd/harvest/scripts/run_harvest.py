@@ -24,6 +24,7 @@ def main(
     activation_examples_per_component: int = 1000,
     activation_context_tokens_per_side: int = 10,
     pmi_token_top_k: int = 40,
+    compute_global_attributions: bool = False,
 ) -> None:
     """Harvest correlations and activation contexts.
 
@@ -36,6 +37,7 @@ def main(
         activation_examples_per_component: Number of activation examples per component.
         activation_context_tokens_per_side: Number of tokens per side of the activation context.
         pmi_token_top_k: Number of top- and bottom-k tokens by PMI to include.
+        compute_global_attributions: Whether to compute global (dataset-summed) attributions.
     """
     from spd.harvest.harvest import HarvestConfig, harvest, harvest_parallel
 
@@ -49,6 +51,7 @@ def main(
         activation_examples_per_component=activation_examples_per_component,
         activation_context_tokens_per_side=activation_context_tokens_per_side,
         pmi_token_top_k=pmi_token_top_k,
+        compute_global_attributions=compute_global_attributions,
     )
 
     # Output directories for harvest results
