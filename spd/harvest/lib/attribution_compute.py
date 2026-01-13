@@ -120,6 +120,7 @@ def compute_batch_attributions(
                     outputs=targets[i],
                     inputs=in_post_detaches,
                     retain_graph=retain,
+                    allow_unused=True,  # Some source layers may not connect to target
                 )
 
                 target_flat_idx = target_offset + c
@@ -128,6 +129,11 @@ def compute_batch_attributions(
                     for src_layer, grad, in_post_detach in zip(
                         source_layers, grads, in_post_detaches, strict=True
                     ):
+                        # Skip if no gradient (source layer not connected to target)
+                        # Note: allow_unused=True makes grad optional but types don't reflect this
+                        if grad is None:  # pyright: ignore[reportUnnecessaryComparison]
+                            continue
+
                         # Compute attribution: grad * activation
                         weighted: Float[Tensor, "S C"] = (grad * in_post_detach)[b]
 
