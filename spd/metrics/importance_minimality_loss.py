@@ -103,7 +103,7 @@ def _importance_minimality_loss_compute(
     total_loss = torch.tensor(0.0, device=next(iter(per_component_sums.values())).device)
     for layer_sums in per_component_sums.values():
         per_component_mean = layer_sums / n_examples
-        layer_loss = (per_component_mean + beta * per_component_mean**pnorm_2).sum()
+        layer_loss = (beta * per_component_mean*torch.log2(layer_sums + 1.0)).sum()
         total_loss += layer_loss
     return total_loss
 
