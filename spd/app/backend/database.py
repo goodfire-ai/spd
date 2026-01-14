@@ -45,7 +45,9 @@ class OptimizationParams(BaseModel):
 
     imp_min_coeff: float
     steps: int
-    pnorm: float
+    pnorm_1: float
+    pnorm_2: float
+    beta: float
     mask_type: MaskType
     # CE loss params (optional, must be set together)
     label_token: int | None = None
@@ -177,7 +179,9 @@ class LocalAttrDB:
                 ce_loss_coeff REAL,
                 kl_loss_coeff REAL,
                 steps INTEGER,
-                pnorm REAL,
+                pnorm_1 REAL,
+                pnorm_2 REAL,
+                beta REAL,
                 mask_type TEXT,
 
                 -- The actual graph data (JSON)
@@ -200,7 +204,7 @@ class LocalAttrDB:
                 WHERE is_optimized = 0;
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, mask_type)
+                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1, pnorm_2, beta, mask_type)
                 WHERE is_optimized = 1;
 
             CREATE INDEX IF NOT EXISTS idx_graphs_prompt
@@ -472,7 +476,9 @@ class LocalAttrDB:
         ce_loss_coeff = None
         kl_loss_coeff = None
         steps = None
-        pnorm = None
+        pnorm_1 = None
+        pnorm_2 = None
+        beta = None
         mask_type = None
         label_prob = None
 
@@ -482,7 +488,9 @@ class LocalAttrDB:
             ce_loss_coeff = graph.optimization_params.ce_loss_coeff
             kl_loss_coeff = graph.optimization_params.kl_loss_coeff
             steps = graph.optimization_params.steps
-            pnorm = graph.optimization_params.pnorm
+            pnorm_1 = graph.optimization_params.pnorm_1
+            pnorm_2 = graph.optimization_params.pnorm_2
+            beta = graph.optimization_params.beta
             mask_type = graph.optimization_params.mask_type
             label_prob = graph.label_prob  # May be None for KL-only optimization
 
@@ -490,8 +498,8 @@ class LocalAttrDB:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, is_optimized,
-                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, mask_type,
-                    edges_data, output_probs_data, node_ci_vals, node_subcomp_acts,
+                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1,
+                    pnorm_2, beta, mask_type, edges_data, output_probs_data, node_ci_vals,
                     label_prob)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
@@ -502,7 +510,9 @@ class LocalAttrDB:
                     ce_loss_coeff,
                     kl_loss_coeff,
                     steps,
-                    pnorm,
+                    pnorm_1,
+                    pnorm_2,
+                    beta,
                     mask_type,
                     edges_json,
                     probs_json,
@@ -533,9 +543,9 @@ class LocalAttrDB:
         conn = self._get_conn()
 
         rows = conn.execute(
-            """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals, node_subcomp_acts,
-                      label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, mask_type,
-                      label_prob
+            """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
+                      label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps,
+                      pnorm_1, pnorm_2, beta, mask_type, label_prob
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
@@ -567,7 +577,9 @@ class LocalAttrDB:
                 opt_params = OptimizationParams(
                     imp_min_coeff=row["imp_min_coeff"],
                     steps=row["steps"],
-                    pnorm=row["pnorm"],
+                    pnorm_1=row["pnorm_1"],
+                    pnorm_2=row["pnorm_2"],
+                    beta=row["beta"],
                     mask_type=row["mask_type"],
                     label_token=row["label_token"],
                     ce_loss_coeff=row["ce_loss_coeff"],

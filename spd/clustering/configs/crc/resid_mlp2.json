@@ -10,7 +10,7 @@
   },
   "experiment_key": "resid_mlp2",
   "batch_size": 1024,
-  "wandb_project": "spd-cluster",
+  "wandb_project": "spd",
   "logging_intervals": {
     "stat": 1,
     "tensor": 5,

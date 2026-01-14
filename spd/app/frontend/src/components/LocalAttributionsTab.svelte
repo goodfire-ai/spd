@@ -402,13 +402,12 @@
             if (isOptimized) {
                 const useCE = optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null;
                 const useKL = optConfig.klLossCoeff > 0;
-
                 // Validate: at least one loss type must be active
                 if (!useCE && !useKL) {
                     throw new Error("At least one loss type must be active (set coeff > 0)");
                 }
                 // Validate: CE coeff > 0 requires label token
-                if (optConfig.ceLossCoeff > 0 && !optConfig.labelTokenId) {
+                if (optConfig.ceLossCoeff > 0 && optConfig.labelTokenId === null) {
                     throw new Error("Label token required when ce_coeff > 0");
                 }
 
@@ -418,7 +417,9 @@
                     normalize: defaultViewSettings.normalizeEdges,
                     impMinCoeff: optConfig.impMinCoeff,
                     steps: optConfig.steps,
-                    pnorm: optConfig.pnorm,
+                    pnorm_1: optConfig.pnorm_1,
+                    pnorm_2: optConfig.pnorm_2,
+                    beta: optConfig.beta,
                     outputProbThreshold: 0.01,
                     ciThreshold: defaultViewSettings.ciThreshold,
                     maskType: optConfig.maskType,

@@ -51,7 +51,9 @@ export type OptimizeConfig = {
     // Common settings
     impMinCoeff: number;
     steps: number;
-    pnorm: number;
+    pnorm_1: number;
+    pnorm_2: number;
+    beta: number;
     maskType: MaskType;
 };
 
@@ -95,7 +97,9 @@ export function defaultOptimizeConfig(): OptimizeConfig {
         klLossCoeff: 0,
         impMinCoeff: 0.1,
         steps: 2000,
-        pnorm: 0.3,
+        pnorm_1: 0.3,
+        pnorm_2: 0,
+        beta: 0,
         maskType: "stochastic",
     };
 }
