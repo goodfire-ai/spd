@@ -199,7 +199,11 @@ def optimize(
     ci_fn_params: list[torch.nn.Parameter] = []
     for name in component_model.target_module_paths:
         component_params.extend(component_model.components[name].parameters())
-        ci_fn_params.extend(component_model.ci_fns[name].parameters())
+        if not component_model.is_global_ci:
+            ci_fn_params.extend(component_model.ci_fns[name].parameters())
+
+    if component_model.is_global_ci and component_model.global_ci_fn is not None:
+        ci_fn_params.extend(component_model.global_ci_fn.parameters())
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 

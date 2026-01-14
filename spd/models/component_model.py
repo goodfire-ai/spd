@@ -564,36 +564,17 @@ class ComponentModel(LoadableModule):
         else:
             return self._calc_layerwise_causal_importances(pre_weight_acts, sampling, detach_inputs)
 
-    def _calc_layerwise_causal_importances(
+    def _apply_sigmoid_to_ci_outputs(
         self,
-        pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+        ci_fn_outputs: dict[str, Float[Tensor, "... C"]],
         sampling: SamplingType,
-        detach_inputs: bool,
     ) -> CIOutputs:
-        """Calculate causal importances using layerwise CI functions."""
+        """Apply sigmoid functions to CI function outputs."""
         causal_importances_lower_leaky = {}
         causal_importances_upper_leaky = {}
         pre_sigmoid = {}
 
-        for target_module_name in pre_weight_acts:
-            input_activations = pre_weight_acts[target_module_name]
-            ci_fn = self.ci_fns[target_module_name]
-
-            match ci_fn:
-                case MLPCiFn():
-                    ci_fn_input = self.components[target_module_name].get_component_acts(
-                        input_activations
-                    )
-                case VectorMLPCiFn() | VectorSharedMLPCiFn():
-                    ci_fn_input = input_activations
-                case _:
-                    raise ValueError(f"Unknown ci_fn type: {type(ci_fn)}")
-
-            if detach_inputs:
-                ci_fn_input = ci_fn_input.detach()
-
-            ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input))
-
+        for target_module_name, ci_fn_output in ci_fn_outputs.items():
             if sampling == "binomial":
                 ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
                     ci_fn_output
@@ -616,6 +597,36 @@ class ComponentModel(LoadableModule):
             upper_leaky=causal_importances_upper_leaky,
             pre_sigmoid=pre_sigmoid,
         )
+
+    def _calc_layerwise_causal_importances(
+        self,
+        pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+        sampling: SamplingType,
+        detach_inputs: bool,
+    ) -> CIOutputs:
+        """Calculate causal importances using layerwise CI functions."""
+        ci_fn_outputs: dict[str, Float[Tensor, "... C"]] = {}
+
+        for target_module_name in pre_weight_acts:
+            input_activations = pre_weight_acts[target_module_name]
+            ci_fn = self.ci_fns[target_module_name]
+
+            match ci_fn:
+                case MLPCiFn():
+                    ci_fn_input = self.components[target_module_name].get_component_acts(
+                        input_activations
+                    )
+                case VectorMLPCiFn() | VectorSharedMLPCiFn():
+                    ci_fn_input = input_activations
+                case _:
+                    raise ValueError(f"Unknown ci_fn type: {type(ci_fn)}")
+
+            if detach_inputs:
+                ci_fn_input = ci_fn_input.detach()
+
+            ci_fn_outputs[target_module_name] = runtime_cast(Tensor, ci_fn(ci_fn_input))
+
+        return self._apply_sigmoid_to_ci_outputs(ci_fn_outputs, sampling)
 
     def _calc_global_causal_importances(
         self,
@@ -645,34 +656,7 @@ class ComponentModel(LoadableModule):
         # Run global CI function
         ci_fn_outputs: dict[str, Float[Tensor, "... C"]] = self.global_ci_fn(ci_fn_inputs)
 
-        # Apply sigmoid functions to get causal importances
-        causal_importances_lower_leaky = {}
-        causal_importances_upper_leaky = {}
-        pre_sigmoid = {}
-
-        for target_module_name, ci_fn_output in ci_fn_outputs.items():
-            if sampling == "binomial":
-                ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
-                    ci_fn_output
-                )
-            else:
-                ci_fn_output_for_lower_leaky = ci_fn_output
-
-            lower_leaky_output = self.lower_leaky_fn(ci_fn_output_for_lower_leaky)
-            assert lower_leaky_output.all() <= 1.0
-            causal_importances_lower_leaky[target_module_name] = lower_leaky_output
-
-            upper_leaky_output = self.upper_leaky_fn(ci_fn_output)
-            assert upper_leaky_output.all() >= 0
-            causal_importances_upper_leaky[target_module_name] = upper_leaky_output
-
-            pre_sigmoid[target_module_name] = ci_fn_output
-
-        return CIOutputs(
-            lower_leaky=causal_importances_lower_leaky,
-            upper_leaky=causal_importances_upper_leaky,
-            pre_sigmoid=pre_sigmoid,
-        )
+        return self._apply_sigmoid_to_ci_outputs(ci_fn_outputs, sampling)
 
     def calc_weight_deltas(self) -> dict[str, Float[Tensor, "d_out d_in"]]:
         """Calculate the weight differences between the target and component weights (V@U) for each layer."""

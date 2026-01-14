@@ -150,8 +150,20 @@ class GlobalSharedMLPCiFn(nn.Module):
         inputs_list = [input_acts[name] for name in self.layer_order]
         concatenated = torch.cat(inputs_list, dim=-1)
 
+        # Assert concatenated input has expected dimension
+        expected_input_dim = sum(self.layer_configs[name][0] for name in self.layer_order)
+        assert concatenated.shape[-1] == expected_input_dim, (
+            f"Expected input dim {expected_input_dim}, got {concatenated.shape[-1]}"
+        )
+
         # Run through MLP
         output = self.layers(concatenated)
+
+        # Assert output has expected total C dimension
+        expected_total_c = sum(self.split_sizes)
+        assert output.shape[-1] == expected_total_c, (
+            f"Expected output dim {expected_total_c}, got {output.shape[-1]}"
+        )
 
         # Split output back into per-layer dict
         split_outputs = torch.split(output, self.split_sizes, dim=-1)
