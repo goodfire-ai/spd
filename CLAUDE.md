@@ -7,30 +7,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 source .venv/bin/activate
 ```
-Repo requires `.env` file with WandB credentials (see `.env.example`)
 
+## Git Worktrees (Multi-Agent Setup)
+
+This repo uses git worktrees to allow multiple agents to work on different branches simultaneously:
+
+```
+~/spd/                          # Main repo (use for reviews, merges, or active work)
+~/spd-worktrees/
+  ├── worktree-1/               # Agent slot 1
+  ├── worktree-2/               # Agent slot 2
+  └── worktree-3/               # Agent slot 3
+```
+
+Each worktree is a fully independent working directory with its own `.venv` and `.env`, but they all share git history.
+
+**Key points:**
+- Two worktrees cannot have the same branch checked out simultaneously
+- Always `source .venv/bin/activate` in whichever worktree you're working in
+- Switch branches within a worktree with normal `git checkout` / `git switch`
+- List all worktrees: `git worktree list`
+
+**If you need to set up a fresh worktree venv:**
+```bash
+cd ~/spd-worktrees/worktree-N
+uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
+cp ~/spd/.env .env
+```
 
 ## Project Overview
-SPD (Stochastic Parameter Decomposition) is a research framework for analyzing neural network components and their interactions through sparse parameter decomposition techniques.
-
-- Target model parameters are decomposed as a sum of `parameter components`
-- Parameter components approximate target model outputs despite differentiable stochastic masks
-- Causal importance functions quantify how much each component can be masked on each datapoint
-- Multiple loss terms balance faithfulness, output reconstruction quality, and component activation sparsity
-
-The codebase supports three experimental domains: TMS (Toy Model of Superposition), ResidualMLP (residual MLP analysis), and Language Models.
+SPD (Stochastic Parameter Decomposition) is a research framework for analyzing neural network components and their interactions through sparse parameter decomposition techniques. The codebase supports three experimental domains: TMS (Toy Model of Superposition), ResidualMLP (residual MLP analysis), and Language Models.
 
 **Available experiments** (defined in `spd/registry.py`):
 
 - **TMS (Toy Model of Superposition)**:
   - `tms_5-2` - TMS with 5 features, 2 hidden dimensions
   - `tms_5-2-id` - TMS with 5 features, 2 hidden dimensions (fixed identity in-between)
-  - `tms_40-10`
-  - `tms_40-10-id`
+  - `tms_40-10` - TMS with 40 features, 10 hidden dimensions
+  - `tms_40-10-id` - TMS with 40 features, 10 hidden dimensions (fixed identity in-between)
 - **ResidualMLP**:
-  - `resid_mlp1` - 1 layer
-  - `resid_mlp2` - 2 layers
-  - `resid_mlp3` - 3 layers
+  - `resid_mlp1` - ResidualMLP with 1 layer
+  - `resid_mlp2` - ResidualMLP with 2 layers
+  - `resid_mlp3` - ResidualMLP with 3 layers
 - **Language Models**:
   - `ss_llama_simple`, `ss_llama_simple-1L`, `ss_llama_simple-2L` - Simple Stories Llama variants
   - `ss_llama_simple_mlp`, `ss_llama_simple_mlp-1L`, `ss_llama_simple_mlp-2L` - Llama MLP-only variants
@@ -54,9 +72,9 @@ This repository implements methods from two key research papers on parameter dec
 **Attribution-based Parameter Decomposition (APD)**
 
 - [`papers/Attribution_based_Parameter_Decomposition/apd_paper.md`](papers/Attribution_based_Parameter_Decomposition/apd_paper.md)
-- This paper was the precursor to SPD.
-- It introduced the concept of linear parameter decomposition.
-- Contains theoretical foundations, broader context, and high-level conceptual insights of parameter decomposition methods.
+- This paper was the first to introduce the concept of linear parameter decomposition. It's the precursor to SPD.
+- Contains **high-level conceptual insights** of parameter decompositions
+- Provides theoretical foundations and broader context for parameter decomposition approaches
 - Useful for understanding the conceptual framework and motivation behind SPD
 
 ## Development Commands
@@ -128,6 +146,13 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 - Supports both local paths and `wandb:project/runs/run_id` format for model loading
 - Centralized experiment registry (`spd/registry.py`) manages all experiment configurations
 
+**Component Analysis:**
+
+- Components represent sparse decompositions of target model parameters
+- Stochastic masking enables differentiable sparsity
+- Causal importance quantifies component contributions to model outputs
+- Multiple loss terms balance faithfulness, reconstruction quality, and sparsity
+
 **Harvest & Autointerp Modules:**
 
 - `spd/harvest/` - Offline GPU pipeline for collecting component statistics (correlations, token stats, activation examples)
@@ -142,88 +167,11 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 - Off cluster: `~/spd_out/`
 - Contains: runs, SLURM logs, sbatch scripts, clustering outputs, harvest data, autointerp results
 
-**Experiment Logging:**
+**Environment setup:**
 
+- Requires `.env` file with WandB credentials (see `.env.example`)
 - Uses WandB for experiment tracking and model storage
 - All runs generate timestamped output directories with configs, models, and plots
-
-## Directory Structure
-
-```
-<repo-root>/
-├── papers/                          # Research papers (SPD, APD)
-├── scripts/                         # Standalone utility scripts
-├── tests/                           # Test suite
-├── spd/                             # Main source code
-│   ├── app/                         # Web visualization app (see app/CLAUDE.md)
-│   ├── autointerp/                  # LLM interpretation (see autointerp/CLAUDE.md)
-│   ├── clustering/                  # Component clustering (see clustering/CLAUDE.md)
-│   ├── harvest/                     # Statistics collection (see harvest/CLAUDE.md)
-│   ├── experiments/                 # Experiment implementations
-│   │   ├── tms/                     # Toy Model of Superposition
-│   │   ├── resid_mlp/               # Residual MLP
-│   │   ├── lm/                      # Language models
-│   │   └── ih/                      # Induction heads
-│   ├── metrics/                     # Metrics - both for use as losses and as eval metrics
-│   ├── models/
-│   │   ├── component_model.py       # ComponentModel, SPDRunInfo, from_pretrained()
-│   │   └── components.py            # LinearComponent, EmbeddingComponent, etc.
-│   ├── scripts/                     # CLI entry points (spd-run, spd-local)
-│   ├── utils/
-│   │   └── slurm.py                 # SlurmConfig, submit functions
-│   ├── configs.py                   # Pydantic configs (Config, ModuleInfo, etc.)
-│   ├── registry.py                  # Experiment registry (name → config)
-│   ├── run_spd.py                   # Main optimization loop
-│   ├── losses.py                    # Loss functions (faithfulness, reconstruction, etc.)
-│   ├── figures.py                   # WandB figure generation
-│   └── settings.py                  # SPD_OUT_DIR, SLURM_LOGS_DIR, SBATCH_SCRIPTS_DIR
-├── Makefile                         # Dev commands (make check, make test)
-└── pyproject.toml                   # Package config
-```
-
-## Quick Navigation
-
-### CLI Entry Points
-
-| Command | Entry Point | Description |
-|---------|-------------|-------------|
-| `spd-run` | `spd/scripts/run.py` | SLURM-based experiment runner |
-| `spd-local` | `spd/scripts/run_local.py` | Local experiment runner |
-| `spd-harvest` | `spd/harvest/scripts/cli.py` | Submit harvest SLURM job |
-| `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
-| `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
-
-### Files to Skip When Searching
-
-Use `spd/` as the search root (not repo root) to avoid noise.
-
-**Always skip:**
-- `.venv/` - Virtual environment
-- `__pycache__/`, `.pytest_cache/`, `.ruff_cache/` - Build artifacts
-- `node_modules/` - Frontend dependencies
-- `.git/` - Version control
-- `.data/` - Runtime data/caches
-- `notebooks/` - Analysis notebooks (unless explicitly relevant)
-- `wandb/` - WandB local files
-
-**Usually skip unless relevant:**
-- `tests/` - Test files (unless debugging test failures)
-- `papers/` - Research paper drafts
-
-### Common Call Chains
-
-**Running Experiments:**
-- `spd-run` → `spd/scripts/run.py` → `spd/utils/slurm.py` → SLURM → `spd/run_spd.py`
-- `spd-local` → `spd/scripts/run_local.py` → `spd/run_spd.py` directly
-
-**Harvest Pipeline:**
-- `spd-harvest` → `spd/harvest/scripts/cli.py` → `spd/utils/slurm.py` → `spd/harvest/harvest.py`
-
-**Autointerp Pipeline:**
-- `spd-autointerp` → `spd/autointerp/scripts/cli.py` → `spd/utils/slurm.py` → `spd/autointerp/interpret.py`
-
-**Clustering Pipeline:**
-- `spd-clustering` → `spd/clustering/scripts/run_pipeline.py` → `spd/utils/slurm.py` → `spd/clustering/scripts/run_clustering.py`
 
 ## Common Usage Patterns
 
@@ -244,7 +192,7 @@ This runs experiments directly without SLURM, git snapshots, or W&B views/report
 The SPD app provides interactive visualization of component decompositions and attributions:
 
 ```bash
-make app              # Launch backend + frontend dev servers
+make app                        # Launch backend + frontend dev servers
 # or
 python -m spd.app.run_app
 ```
@@ -291,7 +239,8 @@ to analyse the result of the runs.
 
 **Metrics and Figures:**
 
-Metrics and figures are defined in `spd/metrics.py` and `spd/figures.py`. These files expose dictionaries of functions that can be selected and parameterized in the config of a given experiment. This allows for easy extension and customization of metrics and figures, without modifying the core framework code.
+Metrics and figures are defined in `spd/metrics.py` and `spd/figures.py`.  These files expose dictionaries of functions that can be selected and parameterized in
+the config of a given experiment.  This allows for easy extension and customization of metrics and figures, without modifying the core framework code.
 
 ### Sweeps
 
@@ -309,16 +258,16 @@ spd-run --sweep --n_agents 10                                 # Sweep all experi
 spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom sweep params file
 ```
 
-**Supported Experiments:** All experiments in `spd/registry.py` (run `spd-local --help` to see available options)
+**Supported experiments:** All experiments in `spd/registry.py` (run `spd-local --help` to see available options)
 
-**How It Works:**
+**How it works:**
 
 1. Creates a WandB sweep using parameters from `spd/scripts/sweep_params.yaml` (or custom file)
 2. Deploys multiple SLURM agents as a job array to run the sweep
 3. Each agent runs on a single GPU by default (use `--cpu` for CPU-only)
 4. Creates a git snapshot to ensure consistent code across all agents
 
-**Sweep Parameters:**
+**Sweep parameters:**
 
 - Default sweep parameters are loaded from `spd/scripts/sweep_params.yaml`
 - You can specify a custom sweep parameters file by passing its path to `--sweep`
@@ -361,7 +310,7 @@ model = ComponentModel.from_run_info(run_info)
 # Local paths work too
 model = ComponentModel.from_pretrained("/path/to/checkpoint.pt")
 ```
-**Path Formats:**
+**Path formats:**
 
 - WandB: `wandb:entity/project/run_id` or `wandb:entity/project/runs/run_id`
 - Local: Direct path to checkpoint file (config must be in same directory as `final_config.yaml`)
@@ -374,8 +323,13 @@ Downloaded runs are cached in `SPD_OUT_DIR/runs/<project>-<run_id>/`.
 - This includes not setting off multiple sweeps/evals that total >8 GPUs
 - Monitor jobs with: `squeue --format="%.18i %.9P %.15j %.12u %.12T %.10M %.9l %.6D %b %R" --me`
 
+## github
+- To view github issues and PRs, use the github cli (e.g. `gh issue view 28` or `gh pr view 30`).
+- When making PRs, use the github template defined in `.github/pull_request_template.md`.
+- Only commit the files that include the relevant changes, don't commit all files.
+- Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
 
-## Coding Guidelines & Software Engineering Principles
+## Coding Guidelines
 
 **This is research code, not production. Prioritize simplicity and fail-fast over defensive programming.**
 
@@ -410,72 +364,45 @@ config = get_config(path)
 value = config.key
 ```
 
+More detail in STYLE.md
 
-### Tests
-- The point of tests in this codebase is to ensure that the code is working as expected, not to prevent production outages - there's no deployment here. Therefore, don't worry about lots of larger integration/end-to-end tests. These often require too much overhead for what it's worth in our case, and this codebase is interactively run so often that issues will likely be caught by the user at very little cost.
+## Software Engineering Principles
 
-### Assertions and error handling
-- If you have an invariant in your head, assert it. Are you afraid to assert? Sounds like your program might already be broken. Assert, assert, assert. Never soft fail.
-- Do not write: `if everythingIsOk: continueHappyPath()`. Instead do `assert everythingIsOk`
-- You should have a VERY good reason to handle an error gracefully. If your program isn't working like it should then it shouldn't be running, you should be fixing it.
-- Do not write `try-catch` blocks unless it definitely makes sense
-
-### Control Flow
-- Keep I/O as high up as possible. Make as many functions as possible pure.
-- Prefer `match` over `if/elif/else` chains when dispatching on conditions - more declarative and makes cases explicit
-- If you either have (a and b) or neither, don't make them both independently optional. Instead, put them in an optional tuple
-
-### Types, Arguments, and Defaults
+- If you have an invariant in your head, assert it. Are you afraid to assert? sounds like your program might already be broken. Assert, assert, assert. Never soft fail
+- never write: `if everythingIsOk: continueHappyPath()`. Instead do `assert everythingIsOk`
+- You should have a VERY good reason to handle an error gracefully. If your program isn't working like it should then it shouldn't be running, you should be fixing it
 - Write your invariants into types as much as possible.
-- Use jaxtyping for tensor shapes (though for now we don't do runtime checking)
-- Always use the PEP 604 typing format of `|` for unions and `type | None` over `Optional`.
-- Use `dict`, `list` and `tuple` not `Dict`, `List` and `Tuple`
-- Don't add type annotations when they're redundant. (i.e. `my_thing: Thing = Thing()` or `name: str = "John Doe"`)
-- Differentiate no data from empty collections. Often it's important to differentiate `None` from `[]`
+  - if you either have a and b, or neither, don't make them both independently optional, put them in an optional tuple
 - Don't use bare dictionaries for structures whose values aren't homogenous
-  - good: {<id>: <val>}
+  - good: { <id>: <val>}
   - bad: {"tokens": …, "loss": …}
-- Default args are rarely a good idea. Avoid them unless necessary. You should have a very good reason for having a default value for an argument, especially if it's caller also defaults to the same thing
-- This repo uses basedpyright (not mypy) 
+- Keep I/O as high up as possible, make as many functions as possible pure.
+- Default args are a good idea far less often than they're typically used
+- You should have a very good reason for having a default value for an argument, especially if it's caller also defaults to the same thing
 - Keep defaults high in the call stack.
-
-### Tensor Operations
-- Try to use einops by default for clarity.
-- Assert shapes liberally
-- Document complex tensor manipulations
-
-
-
-### Comments
-
+- Delete unused code. If an argument is always x, strongly consider removing as an argument and just inlining
+- Differentiate no data from empty collections. Often it's important to differentiate `None` from `[]`
+- Do not write try catch blocks unless it absolutely makes sense
 - Comments hide sloppy code. If you feel the need to write a comment, consider that you should instead
   - name your functions more clearly
   - name your variables more clearly
   - separate a chunk of logic into a function
-  - separate an inlined computation into a meaningfully named variable
-- Don’t write dialogic / narrativised comments or code. Instead, write comments that describe
-  the code as is, not the diff you're making. Examples of narrativising comments:
+  - seperate an inlined computation into a meaningfully named variable
+
+Some other notes:
+
+- Please don’t write dialogic / narrativised comments or code. Instead, write comments that describe
+  the code as is, not the diff you're making.
+  - These are examples of narrativising comments:
     - `# the function now uses y instead of x`
     - `# changed to be faster`
     - `# we now traverse in reverse`
-- Here's an example of a bad diff, where the new comment makes reference to a change in code, not just the state of the code:
-```
+  - Here's an example of a bad diff:
+    ```diff
 95 -      # Reservoir states
 96 -      reservoir_states: list[ReservoirState]
 95 +      # Reservoir state (tensor-based)
 96 +      reservoir: TensorReservoirState
-```
-
-
-### Other Important Software Development Practices
-- Backwards compatibility that adds complexity should be avoided.
-- Delete unused code. 
-- If an argument is always x, strongly consider removing as an argument and just inlining
-- **Update CLAUDE.md files** when changing code structure, adding/removing files, or modifying key interfaces. Update the CLAUDE.md in the same directory (or nearest parent) as the changed files.
-
-### GitHub
-- To view github issues and PRs, use the github cli (e.g. `gh issue view 28` or `gh pr view 30`).
-- When making PRs, use the github template defined in `.github/pull_request_template.md`.
-- Before committing, ALWAYS ensure you are on the correct branch and do not use `git add .` to add all unstaged files. Instead, add only the individual files you changed, don't commit all files.
-- Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
-- NEVER use `--no-verify` to skip pre-commit hooks. They are there for a good reason. If pre-commit hooks fail, you MUST fix the underlying problem.
+    ```
+    This is bad because the new comment makes reference to a change in code, not just the state of
+    the code.
