@@ -17,7 +17,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
-            pnorm=1.0,
+            pnorm_1=1.0,
             pnorm_2=1.0,
             beta=0.0,
             eps=0.0,
@@ -36,7 +36,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
-            pnorm=2.0,
+            pnorm_1=2.0,
             pnorm_2=1.0,
             beta=0.0,
             eps=0.0,
@@ -57,7 +57,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
-            pnorm=0.5,
+            pnorm_1=0.5,
             pnorm_2=1.0,
             beta=0.0,
             eps=eps,
@@ -74,7 +74,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.3,
-            pnorm=2.0,
+            pnorm_1=2.0,
             pnorm_2=1.0,
             beta=0.0,
             eps=0.0,
@@ -94,7 +94,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.25,
-            pnorm=2.0,
+            pnorm_1=2.0,
             pnorm_2=1.0,
             beta=0.0,
             eps=0.0,
@@ -112,7 +112,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.9,
-            pnorm=2.0,
+            pnorm_1=2.0,
             pnorm_2=1.0,
             beta=0.0,
             eps=0.0,
@@ -130,7 +130,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.9,
-            pnorm=2.0,
+            pnorm_1=2.0,
             pnorm_2=1.0,
             beta=0.0,
             eps=0.0,
@@ -151,7 +151,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
-            pnorm=1.0,
+            pnorm_1=1.0,
             pnorm_2=1.0,
             beta=0.0,
             eps=0.0,
@@ -176,7 +176,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
-            pnorm=1.0,
+            pnorm_1=1.0,
             pnorm_2=2.0,
             beta=1.0,
             eps=0.0,
@@ -202,7 +202,7 @@ class TestImportanceMinimalityLoss:
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
-            pnorm=1.0,
+            pnorm_1=1.0,
             pnorm_2=2.0,
             beta=1.0,
             eps=0.0,

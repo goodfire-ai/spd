@@ -112,7 +112,7 @@ def importance_minimality_loss(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     current_frac_of_training: float,
     eps: float,
-    pnorm: float,
+    pnorm_1: float,
     pnorm_2: float,
     beta: float,
     p_anneal_start_frac: float,
@@ -130,7 +130,7 @@ def importance_minimality_loss(
 
     per_component_sums, n_examples = _importance_minimality_loss_update(
         ci_upper_leaky=ci_upper_leaky,
-        p=pnorm,
+        p=pnorm_1,
         eps=eps,
         p_anneal_start_frac=p_anneal_start_frac,
         p_anneal_final_p=p_anneal_final_p,
@@ -153,7 +153,7 @@ class ImportanceMinimalityLoss(Metric):
     have. That said, we're unsure about this, perhaps we do want to normalize over n_layers.
 
     Args:
-        pnorm: The p value for the L_p norm applied element-wise before averaging
+        pnorm_1: The p value for the L_p norm applied element-wise before averaging
         pnorm_2: The p value applied after averaging over batch/seq, before summing over components
         p_anneal_start_frac: The fraction of training after which to start annealing p
             (1.0 = no annealing)
@@ -169,15 +169,15 @@ class ImportanceMinimalityLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        pnorm: float,
-        pnorm_2: float = 1.0,
-        beta: float = 0.0,
+        pnorm_1: float,
+        pnorm_2: float,
+        beta: float,
         p_anneal_start_frac: float = 1.0,
         p_anneal_final_p: float | None = None,
         p_anneal_end_frac: float = 1.0,
         eps: float = 1e-12,
     ) -> None:
-        self.pnorm = pnorm
+        self.pnorm_1 = pnorm_1
         self.pnorm_2 = pnorm_2
         self.beta = beta
         self.eps = eps
@@ -199,7 +199,7 @@ class ImportanceMinimalityLoss(Metric):
     ) -> None:
         per_component_sums, n_examples = _importance_minimality_loss_update(
             ci_upper_leaky=ci.upper_leaky,
-            p=self.pnorm,
+            p=self.pnorm_1,
             eps=self.eps,
             current_frac_of_training=current_frac_of_training,
             p_anneal_start_frac=self.p_anneal_start_frac,
