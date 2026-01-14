@@ -100,12 +100,11 @@ def _importance_minimality_loss_compute(
 
     Then sum contributions from all layers.
     """
-    total_loss = None
+    total_loss = torch.tensor(0.0, device=next(iter(per_component_sums.values())).device)
     for layer_sums in per_component_sums.values():
         per_component_mean = layer_sums / n_examples
         layer_loss = (per_component_mean + beta * per_component_mean**pnorm_2).sum()
-        total_loss = layer_loss if total_loss is None else total_loss + layer_loss
-    assert total_loss is not None, "Empty per_component_sums"
+        total_loss += layer_loss
     return total_loss
 
 
