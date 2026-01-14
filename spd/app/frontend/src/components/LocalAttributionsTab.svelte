@@ -135,7 +135,7 @@
         const graphs: StoredGraph[] = await Promise.all(
             storedGraphs.map(async (data) => {
                 const isOptimized = !!data.optimization;
-                const label = isOptimized ? `Optimized (${data.optimization!.steps} steps)` : "Standard";
+                const label = isOptimized ? `Optimized` : "Standard";
 
                 // Load intervention runs for this graph
                 const runs = await api.getInterventionRuns(data.id);

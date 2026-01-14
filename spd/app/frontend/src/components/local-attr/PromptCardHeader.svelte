@@ -129,7 +129,7 @@
         {#each card.graphs as graph (graph.id)}
             <div class="graph-tab" class:active={graph.id === card.activeGraphId}>
                 <button class="tab-label" onclick={() => onSelectGraph(graph.id)}>
-                    {graph.label}
+                    {graph.label} <span class="graph-id">#{graph.id}</span>
                 </button>
                 <button class="tab-close" onclick={() => onCloseGraph(graph.id)}>×</button>
             </div>
@@ -521,6 +521,12 @@
         font-family: inherit;
         color: inherit;
         cursor: pointer;
+    }
+
+    .graph-id {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        opacity: 0.7;
     }
 
     .tab-close {
