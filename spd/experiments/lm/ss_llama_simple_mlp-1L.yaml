@@ -1,18 +1,18 @@
-# wandb_project: spd
+wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-- 550
+- 750
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
   - module_pattern: "h.*.mlp.c_fc"
-    C: 650
+    C: 850
   - module_pattern: "h.*.mlp.down_proj"
-    C: 600
+    C: 800
   - module_pattern: "h.*.attn.q_proj"
     C: 150
   - module_pattern: "h.*.attn.k_proj"
@@ -27,8 +27,8 @@ loss_metric_configs:
 - coeff: 0.002
   classname: ImportanceMinimalityLoss
   pnorm_1: 2.0
-  pnorm_2: 1.0
-  beta: 0.1
+  pnorm_2: 2.0
+  beta: 50
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.3
   p_anneal_end_frac: 1.0
@@ -37,8 +37,8 @@ loss_metric_configs:
   classname: StochasticReconSubsetLoss
 - coeff: 0.5
   init: random
-  step_size: 1.0
-  n_steps: 1
+  step_size: 0.5
+  n_steps: 4
   mask_scope: shared_across_batch
   classname: PGDReconSubsetLoss
 - coeff: 1000000.0
