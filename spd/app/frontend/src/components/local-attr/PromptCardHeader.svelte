@@ -607,4 +607,9 @@
         font-size: var(--text-sm);
         font-family: var(--font-mono);
     }
+
+    .staged-controls.readonly .compute-options input[type="text"] {
+        color: var(--text-muted);
+        cursor: not-allowed;
+    }
 </style>
