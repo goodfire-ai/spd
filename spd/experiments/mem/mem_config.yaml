@@ -1,30 +1,27 @@
 wandb_project: spd
 wandb_run_name: null
-wandb_run_name_prefix: '' #hej
+wandb_run_name_prefix: ''
 seed: 0
-C: 300
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
 - 300
 sampling: continuous
 sigmoid_type: leaky_hard
-target_module_patterns:
-# - block.attn.q_proj
-# - block.attn.k_proj
-# - block.attn.v_proj
-# - block.attn.o_proj
-- block.mlp.up_proj
-- block.mlp.down_proj
-# - unembed
-identity_module_patterns: null
+module_info:
+- module_pattern: block.mlp.up_proj
+  C: 300
+- module_pattern: block.mlp.down_proj
+  C: 300
+identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.2
+- coeff: 0.1
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
+  beta: 1
   p_anneal_start_frac: 0.0
-  p_anneal_final_p: 0.5
+  p_anneal_final_p: 0.3
   p_anneal_end_frac: 1.0
   eps: 1.0e-12
 - coeff: 0.5
@@ -39,23 +36,22 @@ loss_metric_configs:
   classname: PGDReconSubsetLoss
   routing:
     type: uniform_k_subset
-# - coeff: 0.5
-#   classname: CIMaskedReconLoss
-- coeff: 1
+- coeff: 1.0
   classname: FaithfulnessLoss
 output_loss_type: mem
-lr: 1e-3
-steps: 20000
-batch_size: 3200
+lr_schedule:
+  start_val: 0.001
+  warmup_pct: 0.0
+  final_val_frac: 0.0
+  fn_type: cosine
+steps: 100000
+batch_size: 2048
 gradient_accumulation_steps: 1
-grad_clip_norm: null
+grad_clip_norm_components: null
+grad_clip_norm_ci_fns: null
 faithfulness_warmup_steps: 100
 faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
-lr_schedule: cosine
-lr_exponential_halflife: null
-lr_warmup_pct: 0.0
-out_dir: null
 train_log_freq: 100
 eval_freq: 1000
 eval_batch_size: 500
@@ -91,3 +87,6 @@ pretrained_model_output_attr: null
 tokenizer_name: null
 task_config:
   task_name: mem
+  expand: false
+  d_model_new: null
+  d_mlp_new: null
