@@ -175,7 +175,7 @@ def main(
     train_epochs: int = 50,
     train_lr: float = 0.001,
     train_weight_decay: float = 5e-4,
-    spd_steps: int = 100000,
+    spd_steps: int = 200000,
     spd_lr: float = 0.001,
     n_components: int = 500,
     seed: int = 42,
@@ -322,7 +322,7 @@ def main(
         wandb_project=wandb_project,  # Use same wandb project
         seed=seed,
         n_mask_samples=1,
-        ci_fn_type="shared_mlp",
+        ci_fn_type="linear",
         ci_fn_hidden_dims=[256],
         sigmoid_type="leaky_hard",
         module_info=[
@@ -332,7 +332,7 @@ def main(
         use_delta_component=True,
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
-                coeff=1e-4,
+                coeff=5e-3,
                 pnorm=2.0,
                 p_anneal_start_frac=0.0,
                 p_anneal_final_p=0.5,

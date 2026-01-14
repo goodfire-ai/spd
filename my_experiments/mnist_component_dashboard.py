@@ -121,6 +121,8 @@ class ComponentDashboard:
         self.activations_fc2 = []
         self.causal_importance_fc1 = []
         self.causal_importance_fc2 = []
+        self.pre_sigmoid_ci_fc1 = []
+        self.pre_sigmoid_ci_fc2 = []
 
         with torch.no_grad():
             for idx in indices:
@@ -166,6 +168,15 @@ class ComponentDashboard:
                     ci_fc2 = ci_outputs.lower_leaky["fc2"]
                     self.causal_importance_fc2.append(ci_fc2[0].cpu().numpy())
 
+                # Also store pre-sigmoid CI values
+                if "fc1" in ci_outputs.pre_sigmoid:
+                    pre_sigmoid_fc1 = ci_outputs.pre_sigmoid["fc1"]
+                    self.pre_sigmoid_ci_fc1.append(pre_sigmoid_fc1[0].cpu().numpy())
+
+                if "fc2" in ci_outputs.pre_sigmoid:
+                    pre_sigmoid_fc2 = ci_outputs.pre_sigmoid["fc2"]
+                    self.pre_sigmoid_ci_fc2.append(pre_sigmoid_fc2[0].cpu().numpy())
+
         self.test_images = np.array(self.test_images)
         self.test_labels = np.array(self.test_labels)
         if self.activations_fc1:
@@ -174,6 +185,10 @@ class ComponentDashboard:
         if self.activations_fc2:
             self.activations_fc2 = np.array(self.activations_fc2)
             self.causal_importance_fc2 = np.array(self.causal_importance_fc2)
+        if self.pre_sigmoid_ci_fc1:
+            self.pre_sigmoid_ci_fc1 = np.array(self.pre_sigmoid_ci_fc1)
+        if self.pre_sigmoid_ci_fc2:
+            self.pre_sigmoid_ci_fc2 = np.array(self.pre_sigmoid_ci_fc2)
 
     def get_component_direction_plot(self, layer: str, component_idx: int):
         """Plot the component direction in input/output space."""
@@ -234,9 +249,9 @@ class ComponentDashboard:
         ax1.axvline(
             np.median(acts), color="orange", linestyle="--", label=f"Median: {np.median(acts):.3f}"
         )
-        ax1.set_xlabel("Activation Value")
+        ax1.set_xlabel("Inner Activation Value")
         ax1.set_ylabel("Frequency")
-        ax1.set_title(f"{layer} - Component {component_idx}\nActivation Distribution")
+        ax1.set_title(f"{layer} - Component {component_idx}\nInner Activation Distribution")
         ax1.legend()
         ax1.grid(alpha=0.3)
 
@@ -244,12 +259,12 @@ class ComponentDashboard:
         positive_acts = acts[acts > 0]
         if len(positive_acts) > 0:
             ax2.hist(np.log10(positive_acts + 1e-10), bins=50, color="green", alpha=0.7)
-            ax2.set_xlabel("Log10(Activation Value)")
+            ax2.set_xlabel("Log10(Inner Activation Value)")
             ax2.set_ylabel("Frequency")
-            ax2.set_title("Log-scale Distribution (positive activations)")
+            ax2.set_title("Log-scale Distribution (positive inner activations)")
             ax2.grid(alpha=0.3)
         else:
-            ax2.text(0.5, 0.5, "No positive activations", ha="center", va="center")
+            ax2.text(0.5, 0.5, "No positive inner activations", ha="center", va="center")
             ax2.set_xlim(0, 1)
             ax2.set_ylim(0, 1)
 
@@ -293,8 +308,22 @@ class ComponentDashboard:
         plt.tight_layout()
         return fig
 
-    def get_top_activating_examples(self, layer: str, component_idx: int, n_examples: int = 16):
-        """Show examples with highest activation for this component."""
+    def get_top_activating_examples(
+        self,
+        layer: str,
+        component_idx: int,
+        n_examples: int = 16,
+        show_inner_activation: bool = False,
+    ):
+        """Show examples with highest activation for this component.
+
+        Args:
+            layer: Which layer to show examples for
+            component_idx: Which component to show
+            n_examples: Number of examples to show
+            show_inner_activation: If True and layer is fc1, show per-pixel contribution
+                (image * V[:, component_idx]) instead of raw image
+        """
         activations = self.activations_fc1 if layer == "fc1" else self.activations_fc2
         if len(activations) == 0 or component_idx >= activations.shape[1]:
             return None
@@ -302,13 +331,29 @@ class ComponentDashboard:
         acts = activations[:, component_idx]
         top_indices = np.argsort(acts)[-n_examples:][::-1]
 
+        # Get V matrix for fc1 if showing inner activation
+        V_component = None
+        if show_inner_activation and layer == "fc1" and "fc1" in self.component_model.components:
+            V = self.component_model.components["fc1"].V.detach().cpu().numpy()
+            V_component = V[:, component_idx].reshape(28, 28)
+
         n_cols = 4
         n_rows = (n_examples + n_cols - 1) // n_cols
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(12, 3 * n_rows))
         axes = axes.flatten()
 
         for i, idx in enumerate(top_indices):
-            axes[i].imshow(self.test_images[idx], cmap="gray")
+            if show_inner_activation and V_component is not None:
+                # Show per-pixel contribution: image * V
+                inner_act = self.test_images[idx] * V_component
+                # Use symmetric colormap centered at 0
+                abs_max = max(abs(inner_act.min()), abs(inner_act.max()))
+                if abs_max < 1e-6:
+                    abs_max = 1.0
+                im = axes[i].imshow(inner_act, cmap="RdBu_r", vmin=-abs_max, vmax=abs_max)
+                plt.colorbar(im, ax=axes[i], fraction=0.046)
+            else:
+                axes[i].imshow(self.test_images[idx], cmap="gray")
             axes[i].set_title(f"Label: {self.test_labels[idx]}\nAct: {acts[idx]:.3f}", fontsize=9)
             axes[i].axis("off")
 
@@ -316,20 +361,24 @@ class ComponentDashboard:
         for i in range(len(top_indices), len(axes)):
             axes[i].axis("off")
 
+        title_suffix = " (pixel × V)" if (show_inner_activation and V_component is not None) else ""
         plt.suptitle(
-            f"{layer} - Component {component_idx}\nTop {n_examples} Activating Examples",
+            f"{layer} - Component {component_idx}\nTop {n_examples} by Inner Activation{title_suffix}",
             fontsize=14,
         )
         plt.tight_layout()
         return fig
 
     def get_top_ci_examples(self, layer: str, component_idx: int, n_examples: int = 16):
-        """Show examples with highest causal importance for this component."""
-        ci_values = self.causal_importance_fc1 if layer == "fc1" else self.causal_importance_fc2
-        if len(ci_values) == 0 or component_idx >= ci_values.shape[1]:
+        """Show examples with highest causal importance for this component.
+
+        Uses pre-sigmoid CI values for ranking and display.
+        """
+        pre_sigmoid_ci = self.pre_sigmoid_ci_fc1 if layer == "fc1" else self.pre_sigmoid_ci_fc2
+        if len(pre_sigmoid_ci) == 0 or component_idx >= pre_sigmoid_ci.shape[1]:
             return None
 
-        ci = ci_values[:, component_idx]
+        ci = pre_sigmoid_ci[:, component_idx]
         top_indices = np.argsort(ci)[-n_examples:][::-1]
 
         n_cols = 4
@@ -339,7 +388,9 @@ class ComponentDashboard:
 
         for i, idx in enumerate(top_indices):
             axes[i].imshow(self.test_images[idx], cmap="gray")
-            axes[i].set_title(f"Label: {self.test_labels[idx]}\nCI: {ci[idx]:.3f}", fontsize=9)
+            axes[i].set_title(
+                f"Label: {self.test_labels[idx]}\nCI (pre-σ): {ci[idx]:.3f}", fontsize=9
+            )
             axes[i].axis("off")
 
         # Hide unused subplots
@@ -347,7 +398,7 @@ class ComponentDashboard:
             axes[i].axis("off")
 
         plt.suptitle(
-            f"{layer} - Component {component_idx}\nTop {n_examples} by Causal Importance",
+            f"{layer} - Component {component_idx}\nTop {n_examples} by Causal Importance (pre-sigmoid)",
             fontsize=14,
         )
         plt.tight_layout()
@@ -379,8 +430,8 @@ class ComponentDashboard:
 
         ax1.bar(digits, means, yerr=stds, capsize=5, color="steelblue", alpha=0.7)
         ax1.set_xlabel("Digit Class")
-        ax1.set_ylabel("Mean Activation")
-        ax1.set_title(f"{layer} - Component {component_idx}\nMean Activation by Class")
+        ax1.set_ylabel("Mean Inner Activation")
+        ax1.set_title(f"{layer} - Component {component_idx}\nMean Inner Activation by Class")
         ax1.set_xticks(digits)
         ax1.grid(axis="y", alpha=0.3)
 
@@ -390,8 +441,10 @@ class ComponentDashboard:
         for patch in bp["boxes"]:
             patch.set_facecolor("lightblue")
         ax2.set_xlabel("Digit Class")
-        ax2.set_ylabel("Activation Value")
-        ax2.set_title(f"{layer} - Component {component_idx}\nActivation Distribution by Class")
+        ax2.set_ylabel("Inner Activation Value")
+        ax2.set_title(
+            f"{layer} - Component {component_idx}\nInner Activation Distribution by Class"
+        )
         ax2.grid(axis="y", alpha=0.3)
 
         plt.tight_layout()
@@ -490,7 +543,7 @@ class ComponentDashboard:
         metrics_text = f"""
 **Component {component_idx} - {layer}**
 
-**Activation Statistics:**
+**Inner Activation Statistics:**
 - Mean: {mean_act:.4f}
 - Max: {max_act:.4f}
 - Std: {std_act:.4f}
@@ -504,7 +557,7 @@ class ComponentDashboard:
 - 90th Percentile: {percentile_90_ci:.4f}
 - Sparsity (CI < 0.01): {ci_sparsity * 100:.2f}%
 
-**Activation Class Selectivity:**
+**Inner Activation Class Selectivity:**
 - Preferred Class: {preferred_class_act}
 - Selectivity Index: {act_selectivity_idx:.3f}
 
@@ -518,42 +571,6 @@ class ComponentDashboard:
             metrics_text += f"- Digit {digit}: {class_ci_means[digit]:.4f}\n"
 
         return metrics_text
-
-    def get_pairwise_correlation(self, layer: str, component_idx: int, top_k: int = 20):
-        """Show correlation with other components."""
-        activations = self.activations_fc1 if layer == "fc1" else self.activations_fc2
-        if len(activations) == 0 or component_idx >= activations.shape[1]:
-            return None
-
-        # Compute correlation matrix
-        acts_component = activations[:, component_idx]
-
-        # Get top-k most correlated components
-        correlations = []
-        for i in range(activations.shape[1]):
-            if i != component_idx:
-                corr = np.corrcoef(acts_component, activations[:, i])[0, 1]
-                correlations.append((i, corr))
-
-        correlations.sort(key=lambda x: abs(x[1]), reverse=True)
-        top_correlations = correlations[:top_k]
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        component_ids = [c[0] for c in top_correlations]
-        corr_values = [c[1] for c in top_correlations]
-
-        colors = ["green" if c > 0 else "red" for c in corr_values]
-        ax.barh(range(len(component_ids)), corr_values, color=colors, alpha=0.7)
-        ax.set_yticks(range(len(component_ids)))
-        ax.set_yticklabels([f"C{c}" for c in component_ids])
-        ax.set_xlabel("Correlation Coefficient")
-        ax.set_title(f"{layer} - Component {component_idx}\nTop {top_k} Correlated Components")
-        ax.axvline(0, color="black", linewidth=0.5)
-        ax.grid(axis="x", alpha=0.3)
-
-        plt.tight_layout()
-        return fig
 
     def get_ci_difference_image(self, layer: str, component_idx: int, threshold: float = 0.01):
         """Show difference between mean images where CI > threshold vs CI < threshold.
@@ -627,9 +644,9 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
         layer: dashboard.component_model.components[layer].V.shape[1] for layer in available_layers
     }
 
-    # Compute alive components for each layer (CI sparsity < 100%)
+    # Compute alive components for each layer (CI sparsity < 99.5%)
     def get_alive_components(layer: str, threshold: float = 0.01) -> list[int]:
-        """Get list of component indices that are not dead (have some CI > threshold)."""
+        """Get list of component indices that are not dead (have CI > threshold for >0.5% of samples)."""
         ci_values = (
             dashboard.causal_importance_fc1 if layer == "fc1" else dashboard.causal_importance_fc2
         )
@@ -639,8 +656,9 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
         alive = []
         for comp_idx in range(ci_values.shape[1]):
             ci = ci_values[:, comp_idx]
-            # Component is alive if at least some samples have CI > threshold
-            if (ci > threshold).any():
+            # Component is alive if more than 0.5% of samples have CI > threshold
+            # (i.e., sparsity < 99.5%)
+            if (ci > threshold).mean() > 0.005:
                 alive.append(comp_idx)
         return alive
 
@@ -652,7 +670,7 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
         alive = len(alive_components[layer])
         print(f"{layer}: {alive}/{total} components alive ({100 * alive / total:.1f}%)")
 
-    def update_component_viz(layer, component_idx):
+    def update_component_viz(layer, component_idx, show_inner_activation):
         """Update all visualizations for selected component."""
         if component_idx >= max_components.get(layer, 0):
             component_idx = 0
@@ -660,12 +678,13 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
         direction_plot = dashboard.get_component_direction_plot(layer, component_idx)
         dist_plot = dashboard.get_activation_distribution(layer, component_idx)
         ci_dist_plot = dashboard.get_causal_importance_distribution(layer, component_idx)
-        top_examples = dashboard.get_top_activating_examples(layer, component_idx)
+        top_examples = dashboard.get_top_activating_examples(
+            layer, component_idx, show_inner_activation=show_inner_activation
+        )
         top_ci_examples = dashboard.get_top_ci_examples(layer, component_idx)
         class_analysis = dashboard.get_class_activation_analysis(layer, component_idx)
         class_ci_analysis = dashboard.get_class_ci_analysis(layer, component_idx)
         metrics = dashboard.get_selectivity_metrics(layer, component_idx)
-        correlation = dashboard.get_pairwise_correlation(layer, component_idx)
         ci_diff_image = dashboard.get_ci_difference_image(layer, component_idx)
 
         return (
@@ -677,7 +696,6 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
             class_analysis,
             class_ci_analysis,
             metrics,
-            correlation,
             ci_diff_image,
         )
 
@@ -696,13 +714,15 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
                 label="Layer",
             )
             component_dropdown = gr.Dropdown(
-                choices=[(f"Component {i}", i) for i in range(max_components[available_layers[0]])],
-                value=0,
+                choices=[(f"Component {i}", i) for i in alive_components[available_layers[0]]],
+                value=alive_components[available_layers[0]][0]
+                if alive_components[available_layers[0]]
+                else 0,
                 label="Component Index",
             )
             hide_dead_toggle = gr.Checkbox(
-                value=False,
-                label="Hide dead components (CI sparsity = 100%)",
+                value=True,
+                label="Hide dead components (CI sparsity >= 99.5%)",
             )
 
         # Stats about alive components
@@ -743,14 +763,6 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
             with gr.Column():
                 metrics_text = gr.Markdown(label="Selectivity Metrics")
 
-        gr.Markdown("## Activation Statistics")
-        with gr.Row():
-            dist_plot = gr.Plot(label="Activation Distribution")
-            class_analysis = gr.Plot(label="Activation by Class")
-
-        with gr.Row():
-            top_examples = gr.Plot(label="Top Activating Examples")
-
         gr.Markdown("## Causal Importance Statistics")
         with gr.Row():
             ci_dist_plot = gr.Plot(label="Causal Importance Distribution")
@@ -762,14 +774,23 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
         with gr.Row():
             ci_diff_image = gr.Plot(label="Mean Image Difference by CI")
 
-        gr.Markdown("## Component Relationships")
+        gr.Markdown("## Inner Activation Statistics")
         with gr.Row():
-            correlation_plot = gr.Plot(label="Component Correlations")
+            dist_plot = gr.Plot(label="Inner Activation Distribution")
+            class_analysis = gr.Plot(label="Inner Activation by Class")
+
+        with gr.Row():
+            show_inner_act_toggle = gr.Checkbox(
+                value=True,
+                label="Show inner activation (pixel × V) - fc1 only",
+            )
+        with gr.Row():
+            top_examples = gr.Plot(label="Top by Inner Activation")
 
         # Update visualizations when component selection changes
         component_dropdown.change(
             update_component_viz,
-            inputs=[layer_dropdown, component_dropdown],
+            inputs=[layer_dropdown, component_dropdown, show_inner_act_toggle],
             outputs=[
                 direction_plot,
                 dist_plot,
@@ -779,7 +800,23 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
                 class_analysis,
                 class_ci_analysis,
                 metrics_text,
-                correlation_plot,
+                ci_diff_image,
+            ],
+        )
+
+        # Update when show inner activation toggle changes
+        show_inner_act_toggle.change(
+            update_component_viz,
+            inputs=[layer_dropdown, component_dropdown, show_inner_act_toggle],
+            outputs=[
+                direction_plot,
+                dist_plot,
+                ci_dist_plot,
+                top_examples,
+                top_ci_examples,
+                class_analysis,
+                class_ci_analysis,
+                metrics_text,
                 ci_diff_image,
             ],
         )
@@ -787,7 +824,7 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
         # Initial load
         demo.load(
             update_component_viz,
-            inputs=[layer_dropdown, component_dropdown],
+            inputs=[layer_dropdown, component_dropdown, show_inner_act_toggle],
             outputs=[
                 direction_plot,
                 dist_plot,
@@ -797,7 +834,6 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
                 class_analysis,
                 class_ci_analysis,
                 metrics_text,
-                correlation_plot,
                 ci_diff_image,
             ],
         )
