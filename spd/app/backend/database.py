@@ -500,8 +500,8 @@ class LocalAttrDB:
                    (prompt_id, is_optimized,
                     label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1,
                     pnorm_2, beta, mask_type, edges_data, output_probs_data, node_ci_vals,
-                    label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    node_subcomp_acts, label_prob)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
@@ -544,8 +544,8 @@ class LocalAttrDB:
 
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
-                      label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps,
-                      pnorm_1, pnorm_2, beta, mask_type, label_prob
+                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
+                      steps, pnorm_1, pnorm_2, beta, mask_type, label_prob
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
