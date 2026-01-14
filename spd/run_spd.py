@@ -156,7 +156,7 @@ def optimize(
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         pretrained_model_output_attr=config.pretrained_model_output_attr,
         sigmoid_type=config.sigmoid_type,
-        global_ci=config.global_ci,
+        use_global_ci=config.use_global_ci,
     )
 
     if ln_stds is not None:

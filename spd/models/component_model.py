@@ -80,7 +80,7 @@ class ComponentModel(LoadableModule):
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
         pretrained_model_output_attr: str | None,
-        global_ci: bool = False,
+        use_global_ci: bool = False,
     ):
         super().__init__()
 
@@ -103,7 +103,7 @@ class ComponentModel(LoadableModule):
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
         )
 
-        self.is_global_ci = global_ci
+        self.is_global_ci = use_global_ci
 
         if self.is_global_ci:
             # Global CI function: single function for all layers
@@ -263,10 +263,6 @@ class ComponentModel(LoadableModule):
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
         """Create a global CI function that takes all layer activations as input."""
-        assert ci_fn_type == "shared_mlp", (
-            f"Global CI currently only supports ci_fn_type='shared_mlp', got {ci_fn_type}"
-        )
-
         # Build layer_configs: layer_name -> (input_dim, C)
         # For embedding layers, use the embedding output dimension as input_dim
         layer_configs: dict[str, tuple[int, int]] = {}
@@ -288,12 +284,18 @@ class ComponentModel(LoadableModule):
                     input_dim = component.C
                 case _:
                     raise ValueError(
-                        f"Module {type(target_module)} not supported for {ci_fn_type=}"
+                        f"Module {type(target_module)} not supported for global CI with {ci_fn_type=}"
                     )
 
             layer_configs[target_module_path] = (input_dim, target_module_c)
 
-        return GlobalSharedMLPCiFn(layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims)
+        match ci_fn_type:
+            case "shared_mlp":
+                return GlobalSharedMLPCiFn(
+                    layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims
+                )
+            case _:
+                raise ValueError(f"Global CI not supported for {ci_fn_type=}")
 
     def _extract_output(self, raw_output: Any) -> Tensor:
         """Extract the desired output from the model's raw output.
