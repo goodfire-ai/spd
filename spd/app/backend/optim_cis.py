@@ -330,7 +330,9 @@ def optimize_ci_values(
         imp_min_loss = importance_minimality_loss(
             ci_upper_leaky=ci_outputs.upper_leaky,
             current_frac_of_training=step / config.steps,
-            pnorm=config.imp_min_config.pnorm,
+            pnorm_1=config.imp_min_config.pnorm_1,
+            pnorm_2=config.imp_min_config.pnorm_2,
+            beta=config.imp_min_config.beta,
             eps=config.imp_min_config.eps,
             p_anneal_start_frac=config.imp_min_config.p_anneal_start_frac,
             p_anneal_final_p=config.imp_min_config.p_anneal_final_p,

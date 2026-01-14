@@ -64,7 +64,9 @@ class OptimizationResult(BaseModel):
 
     imp_min_coeff: float
     steps: int
-    pnorm: float
+    pnorm_1: float
+    pnorm_2: float
+    beta: float
     # CE loss params (optional - required together)
     label_token: int | None = None
     label_str: str | None = None
@@ -381,7 +383,9 @@ def compute_graph_optimized_stream(
     prompt_id: Annotated[int, Query()],
     imp_min_coeff: Annotated[float, Query(gte=0)],
     steps: Annotated[int, Query(gt=0)],
-    pnorm: Annotated[float, Query(gt=0)],
+    pnorm_1: Annotated[float, Query(gt=0)],
+    pnorm_2: Annotated[float, Query(ge=0)],
+    beta: Annotated[float, Query(ge=0)],
     normalize: Annotated[NormalizeType, Query()],
     output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
     loaded: DepLoadedRun,
@@ -425,7 +429,9 @@ def compute_graph_optimized_stream(
     opt_params = OptimizationParams(
         imp_min_coeff=imp_min_coeff,
         steps=steps,
-        pnorm=pnorm,
+        pnorm_1=pnorm_1,
+        pnorm_2=pnorm_2,
+        beta=beta,
         label_token=label_token,
         ce_loss_coeff=ce_loss_coeff,
         kl_loss_coeff=kl_loss_coeff,
@@ -448,7 +454,9 @@ def compute_graph_optimized_stream(
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
         log_freq=max(1, steps // 4),
-        imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm),
+        imp_min_config=ImportanceMinimalityLossConfig(
+            coeff=imp_min_coeff, pnorm_1=pnorm_1, pnorm_2=pnorm_2, beta=beta
+        ),
         ce_loss_config=ce_loss_config,
         kl_loss_config=kl_loss_config,
         sampling=loaded.config.sampling,
@@ -504,7 +512,9 @@ def compute_graph_optimized_stream(
             optimization=OptimizationResult(
                 imp_min_coeff=imp_min_coeff,
                 steps=steps,
-                pnorm=pnorm,
+                pnorm_1=pnorm_1,
+                pnorm_2=pnorm_2,
+                beta=beta,
                 label_token=label_token,
                 label_str=label_str,
                 ce_loss_coeff=ce_loss_coeff,
@@ -642,7 +652,9 @@ def get_graphs(
                     optimization=OptimizationResult(
                         imp_min_coeff=graph.optimization_params.imp_min_coeff,
                         steps=graph.optimization_params.steps,
-                        pnorm=graph.optimization_params.pnorm,
+                        pnorm_1=graph.optimization_params.pnorm_1,
+                        pnorm_2=graph.optimization_params.pnorm_2,
+                        beta=graph.optimization_params.beta,
                         label_token=graph.optimization_params.label_token,
                         label_str=label_str,
                         ce_loss_coeff=graph.optimization_params.ce_loss_coeff,

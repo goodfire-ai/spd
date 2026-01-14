@@ -38,7 +38,9 @@
             return {
                 impMinCoeff: opt.imp_min_coeff,
                 steps: opt.steps,
-                pnorm: opt.pnorm,
+                pnorm_1: opt.pnorm_1,
+                pnorm_2: opt.pnorm_2,
+                beta: opt.beta,
                 ceLossCoeff: opt.ce_loss_coeff ?? 0,
                 klLossCoeff: opt.kl_loss_coeff ?? 0,
                 labelTokenId: opt.label_token,
@@ -95,11 +97,13 @@
             if (!opt) return false;
             // Compare all relevant params
             const stepsMatch = opt.steps === config.steps;
-            const impMinMatch = Math.abs(opt.imp_min_coeff - config.impMinCoeff) < 0.001;
-            const pnormMatch = Math.abs(opt.pnorm - config.pnorm) < 0.001;
+            const impMinMatch = Math.abs(opt.imp_min_coeff - config.impMinCoeff) < 0.0000001;
+            const pnorm1Match = Math.abs(opt.pnorm_1 - config.pnorm_1) < 0.0000001;
+            const pnorm2Match = Math.abs(opt.pnorm_2 - config.pnorm_2) < 0.0000001;
+            const betaMatch = Math.abs(opt.beta - config.beta) < 0.0000001;
             const ceMatch = (opt.ce_loss_coeff ?? 0) === config.ceLossCoeff && opt.label_token === config.labelTokenId;
             const klMatch = (opt.kl_loss_coeff ?? 0) === config.klLossCoeff;
-            return stepsMatch && impMinMatch && pnormMatch && ceMatch && klMatch;
+            return stepsMatch && impMinMatch && pnorm1Match && pnorm2Match && betaMatch && ceMatch && klMatch;
         });
     }
 
@@ -181,16 +185,44 @@
                         />
                     </label>
                     <label>
-                        <span>pnorm</span>
+                        <span>pnorm_1</span>
                         <input
                             type="number"
-                            value={optConfig.pnorm}
+                            value={optConfig.pnorm_1}
                             oninput={(e) => {
                                 if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ pnorm: parseFloat(e.currentTarget.value) });
+                                onOptimizeConfigChange({ pnorm_1: parseFloat(e.currentTarget.value) });
                             }}
                             min={0.1}
-                            max={1}
+                            max={2}
+                            step={0.1}
+                        />
+                    </label>
+                    <label>
+                        <span>pnorm_2</span>
+                        <input
+                            type="number"
+                            value={optConfig.pnorm_2}
+                            oninput={(e) => {
+                                if (e.currentTarget.value === "") return;
+                                onOptimizeConfigChange({ pnorm_2: parseFloat(e.currentTarget.value) });
+                            }}
+                            min={0}
+                            max={2}
+                            step={0.1}
+                        />
+                    </label>
+                    <label>
+                        <span>beta</span>
+                        <input
+                            type="number"
+                            value={optConfig.beta}
+                            oninput={(e) => {
+                                if (e.currentTarget.value === "") return;
+                                onOptimizeConfigChange({ beta: parseFloat(e.currentTarget.value) });
+                            }}
+                            min={0}
+                            max={10}
                             step={0.1}
                         />
                     </label>
@@ -266,8 +298,16 @@
                     <input type="number" value={displayConfig.steps} disabled />
                 </label>
                 <label>
-                    <span>pnorm</span>
-                    <input type="number" value={displayConfig.pnorm} disabled />
+                    <span>pnorm_1</span>
+                    <input type="number" value={displayConfig.pnorm_1} disabled />
+                </label>
+                <label>
+                    <span>pnorm_2</span>
+                    <input type="number" value={displayConfig.pnorm_2} disabled />
+                </label>
+                <label>
+                    <span>beta</span>
+                    <input type="number" value={displayConfig.beta} disabled />
                 </label>
                 {#if displayConfig.ceLossCoeff > 0}
                     <label>

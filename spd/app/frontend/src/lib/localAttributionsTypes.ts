@@ -69,7 +69,9 @@ export function buildEdgeIndexes(edges: Edge[]): {
 export type OptimizationResult = {
     imp_min_coeff: number;
     steps: number;
-    pnorm: number;
+    pnorm_1: number;
+    pnorm_2: number;
+    beta: number;
     // CE loss params (optional - required together)
     label_token: number | null;
     label_str: string | null;
