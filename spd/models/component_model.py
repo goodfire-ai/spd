@@ -80,6 +80,7 @@ class ComponentModel(LoadableModule):
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
         pretrained_model_output_attr: str | None,
+        global_ci: bool = False,
     ):
         super().__init__()
 
@@ -102,8 +103,7 @@ class ComponentModel(LoadableModule):
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
         )
 
-        # Determine if this is a global CI function type
-        self.is_global_ci: bool = ci_fn_type.startswith("global_")
+        self.is_global_ci = global_ci
 
         if self.is_global_ci:
             # Global CI function: single function for all layers
@@ -235,10 +235,6 @@ class ComponentModel(LoadableModule):
                 return VectorMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
             case "shared_mlp":
                 return VectorSharedMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
-            case "global_shared_mlp":
-                raise ValueError(
-                    "global_shared_mlp should use _create_global_ci_fn, not _create_ci_fn"
-                )
 
     @staticmethod
     def _create_ci_fns(
@@ -267,7 +263,9 @@ class ComponentModel(LoadableModule):
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
         """Create a global CI function that takes all layer activations as input."""
-        assert ci_fn_type == "global_shared_mlp", f"Unknown global ci_fn_type: {ci_fn_type}"
+        assert ci_fn_type == "shared_mlp", (
+            f"Global CI currently only supports ci_fn_type='shared_mlp', got {ci_fn_type}"
+        )
 
         # Build layer_configs: layer_name -> (input_dim, C)
         # For embedding layers, use the embedding output dimension as input_dim

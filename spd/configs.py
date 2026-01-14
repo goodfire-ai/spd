@@ -392,6 +392,11 @@ class Config(BaseConfig):
         default="vector_mlp",
         description="Type of causal importance function used to calculate the causal importance.",
     )
+    global_ci: bool = Field(
+        default=False,
+        description="If True, use a single global CI function that takes all layer activations "
+        "and outputs CI values for all layers at once. If False, use layerwise CI functions.",
+    )
     ci_fn_hidden_dims: list[NonNegativeInt] = Field(
         default=[8],
         description="Hidden dimensions for the causal importance function used to calculate the causal importance",
