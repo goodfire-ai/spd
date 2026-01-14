@@ -17,6 +17,7 @@ from spd.models.components import (
     Components,
     ComponentsMaskInfo,
     EmbeddingComponents,
+    GlobalSharedMLPCiFn,
     Identity,
     LinearComponents,
     MLPCiFn,
@@ -101,15 +102,34 @@ class ComponentModel(LoadableModule):
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
         )
 
-        self.ci_fns = ComponentModel._create_ci_fns(
-            target_model=target_model,
-            module_to_c=self.module_to_c,
-            ci_fn_type=ci_fn_type,
-            ci_fn_hidden_dims=ci_fn_hidden_dims,
-        )
-        self._ci_fns = nn.ModuleDict(
-            {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
-        )
+        # Determine if this is a global CI function type
+        self.is_global_ci: bool = ci_fn_type.startswith("global_")
+
+        if self.is_global_ci:
+            # Global CI function: single function for all layers
+            self.ci_fns: dict[str, nn.Module] = {}
+            self._ci_fns = nn.ModuleDict({})
+            self.global_ci_fn = ComponentModel._create_global_ci_fn(
+                target_model=target_model,
+                module_to_c=self.module_to_c,
+                components=self.components,
+                ci_fn_type=ci_fn_type,
+                ci_fn_hidden_dims=ci_fn_hidden_dims,
+            )
+            self._global_ci_fn = self.global_ci_fn
+        else:
+            # Layerwise CI functions: one function per layer
+            self.ci_fns = ComponentModel._create_ci_fns(
+                target_model=target_model,
+                module_to_c=self.module_to_c,
+                ci_fn_type=ci_fn_type,
+                ci_fn_hidden_dims=ci_fn_hidden_dims,
+            )
+            self._ci_fns = nn.ModuleDict(
+                {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
+            )
+            self.global_ci_fn: nn.Module | None = None
+            self._global_ci_fn: nn.Module | None = None
 
         if sigmoid_type == "leaky_hard":
             self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
@@ -215,6 +235,10 @@ class ComponentModel(LoadableModule):
                 return VectorMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
             case "shared_mlp":
                 return VectorSharedMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
+            case "global_shared_mlp":
+                raise ValueError(
+                    "global_shared_mlp should use _create_global_ci_fn, not _create_ci_fn"
+                )
 
     @staticmethod
     def _create_ci_fns(
@@ -233,6 +257,45 @@ class ComponentModel(LoadableModule):
                 ci_fn_hidden_dims=ci_fn_hidden_dims,
             )
         return ci_fns
+
+    @staticmethod
+    def _create_global_ci_fn(
+        target_model: nn.Module,
+        module_to_c: dict[str, int],
+        components: dict[str, Components],
+        ci_fn_type: CiFnType,
+        ci_fn_hidden_dims: list[int],
+    ) -> nn.Module:
+        """Create a global CI function that takes all layer activations as input."""
+        assert ci_fn_type == "global_shared_mlp", f"Unknown global ci_fn_type: {ci_fn_type}"
+
+        # Build layer_configs: layer_name -> (input_dim, C)
+        # For embedding layers, use the embedding output dimension as input_dim
+        layer_configs: dict[str, tuple[int, int]] = {}
+        for target_module_path, target_module_c in module_to_c.items():
+            target_module = target_model.get_submodule(target_module_path)
+            component = components[target_module_path]
+
+            match target_module:
+                case nn.Linear():
+                    input_dim = target_module.weight.shape[1]
+                case RadfordConv1D():
+                    input_dim = target_module.weight.shape[0]
+                case Identity():
+                    input_dim = target_module.d
+                case nn.Embedding():
+                    # For embeddings, use the embedding dimension as input_dim
+                    # (the output of get_component_acts which returns V[x])
+                    assert isinstance(component, EmbeddingComponents)
+                    input_dim = component.C
+                case _:
+                    raise ValueError(
+                        f"Module {type(target_module)} not supported for {ci_fn_type=}"
+                    )
+
+            layer_configs[target_module_path] = (input_dim, target_module_c)
+
+        return GlobalSharedMLPCiFn(layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims)
 
     def _extract_output(self, raw_output: Any) -> Tensor:
         """Extract the desired output from the model's raw output.
@@ -496,6 +559,18 @@ class ComponentModel(LoadableModule):
         Returns:
             Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.
         """
+        if self.is_global_ci:
+            return self._calc_global_causal_importances(pre_weight_acts, sampling, detach_inputs)
+        else:
+            return self._calc_layerwise_causal_importances(pre_weight_acts, sampling, detach_inputs)
+
+    def _calc_layerwise_causal_importances(
+        self,
+        pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+        sampling: SamplingType,
+        detach_inputs: bool,
+    ) -> CIOutputs:
+        """Calculate causal importances using layerwise CI functions."""
         causal_importances_lower_leaky = {}
         causal_importances_upper_leaky = {}
         pre_sigmoid = {}
@@ -519,6 +594,63 @@ class ComponentModel(LoadableModule):
 
             ci_fn_output = runtime_cast(Tensor, ci_fn(ci_fn_input))
 
+            if sampling == "binomial":
+                ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
+                    ci_fn_output
+                )
+            else:
+                ci_fn_output_for_lower_leaky = ci_fn_output
+
+            lower_leaky_output = self.lower_leaky_fn(ci_fn_output_for_lower_leaky)
+            assert lower_leaky_output.all() <= 1.0
+            causal_importances_lower_leaky[target_module_name] = lower_leaky_output
+
+            upper_leaky_output = self.upper_leaky_fn(ci_fn_output)
+            assert upper_leaky_output.all() >= 0
+            causal_importances_upper_leaky[target_module_name] = upper_leaky_output
+
+            pre_sigmoid[target_module_name] = ci_fn_output
+
+        return CIOutputs(
+            lower_leaky=causal_importances_lower_leaky,
+            upper_leaky=causal_importances_upper_leaky,
+            pre_sigmoid=pre_sigmoid,
+        )
+
+    def _calc_global_causal_importances(
+        self,
+        pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
+        sampling: SamplingType,
+        detach_inputs: bool,
+    ) -> CIOutputs:
+        """Calculate causal importances using a global CI function."""
+        assert self.global_ci_fn is not None
+
+        # Convert embedding inputs to float activations using get_component_acts
+        # For linear layers, use the input activations directly
+        ci_fn_inputs: dict[str, Float[Tensor, "... d_in"]] = {}
+        for layer_name, input_acts in pre_weight_acts.items():
+            component = self.components[layer_name]
+            if isinstance(component, EmbeddingComponents):
+                # Embedding: convert integer indices to float via get_component_acts (V[x])
+                ci_fn_inputs[layer_name] = component.get_component_acts(input_acts)
+            else:
+                # Linear: use input activations directly
+                assert isinstance(input_acts, Tensor)
+                ci_fn_inputs[layer_name] = input_acts
+
+        if detach_inputs:
+            ci_fn_inputs = {k: v.detach() for k, v in ci_fn_inputs.items()}
+
+        # Run global CI function
+        ci_fn_outputs: dict[str, Float[Tensor, "... C"]] = self.global_ci_fn(ci_fn_inputs)
+
+        # Apply sigmoid functions to get causal importances
+        causal_importances_lower_leaky = {}
+        causal_importances_upper_leaky = {}
+        pre_sigmoid = {}
+
+        for target_module_name, ci_fn_output in ci_fn_outputs.items():
             if sampling == "binomial":
                 ci_fn_output_for_lower_leaky = 1.05 * ci_fn_output - 0.05 * torch.rand_like(
                     ci_fn_output
