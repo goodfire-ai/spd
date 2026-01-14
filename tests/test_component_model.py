@@ -11,6 +11,7 @@ from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from spd.configs import (
     Config,
     ImportanceMinimalityLossConfig,
+    LayerwiseCiConfig,
     ModulePatternInfoConfig,
     ScheduleConfig,
     TMSTaskConfig,
@@ -89,8 +90,7 @@ def test_correct_parameters_require_grad():
             ModulePathInfo(module_path="conv1d1", C=10),
             ModulePathInfo(module_path="conv1d2", C=5),
         ],
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[4],
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[4]),
         pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
@@ -142,8 +142,7 @@ def test_from_run_info():
                 ModulePatternInfoConfig(module_pattern="conv1d2", C=4),
             ],
             identity_module_info=[ModulePatternInfoConfig(module_pattern="linear1", C=4)],
-            ci_fn_type="mlp",
-            ci_fn_hidden_dims=[4],
+            ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[4]),
             batch_size=1,
             steps=1,
             lr_schedule=ScheduleConfig(start_val=1e-3),
@@ -173,8 +172,7 @@ def test_from_run_info():
         cm = ComponentModel(
             target_model=target_model,
             module_path_info=module_path_info,
-            ci_fn_type=config.ci_fn_type,
-            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
+            ci_config=config.ci_config,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
             sigmoid_type=config.sigmoid_type,
         )
@@ -280,8 +278,7 @@ def test_full_weight_delta_matches_target_behaviour():
     cm = ComponentModel(
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[4],
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[4]),
         pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
@@ -312,8 +309,7 @@ def test_input_cache_captures_pre_weight_input():
     cm = ComponentModel(
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=2) for p in target_module_paths],
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[2],
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
         pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
@@ -347,8 +343,7 @@ def test_weight_deltas():
     cm = ComponentModel(
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=3) for p in target_module_paths],
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[2],
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
         pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
@@ -382,8 +377,7 @@ def test_replacement_effects_fwd_pass():
     cm = ComponentModel(
         target_model=model,
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[2],
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
         pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
@@ -438,8 +432,7 @@ def test_replacing_identity():
     cm = ComponentModel(
         target_model=model,
         module_path_info=[ModulePathInfo(module_path="linear.pre_identity", C=C)],
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[2],
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
         pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
@@ -488,8 +481,7 @@ def test_routing():
     cm = ComponentModel(
         target_model=model,
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
-        ci_fn_type="mlp",
-        ci_fn_hidden_dims=[2],
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
         pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )

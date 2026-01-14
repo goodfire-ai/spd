@@ -21,7 +21,13 @@ from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
-from spd.configs import Config, LMTaskConfig, ModulePatternInfoConfig, ScheduleConfig
+from spd.configs import (
+    Config,
+    LayerwiseCiConfig,
+    LMTaskConfig,
+    ModulePatternInfoConfig,
+    ScheduleConfig,
+)
 from spd.models.component_model import ComponentModel
 from spd.utils.module_utils import expand_module_patterns
 
@@ -82,8 +88,7 @@ def app_with_state():
 
         config = Config(
             n_mask_samples=1,
-            ci_fn_type="shared_mlp",
-            ci_fn_hidden_dims=[16],
+            ci_config=LayerwiseCiConfig(fn_type="shared_mlp", hidden_dims=[16]),
             sampling="continuous",
             sigmoid_type="leaky_hard",
             module_info=[
@@ -115,8 +120,7 @@ def app_with_state():
         model = ComponentModel(
             target_model=target_model,
             module_path_info=module_path_info,
-            ci_fn_type=config.ci_fn_type,
-            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
+            ci_config=config.ci_config,
             pretrained_model_output_attr=config.pretrained_model_output_attr,
             sigmoid_type=config.sigmoid_type,
         )

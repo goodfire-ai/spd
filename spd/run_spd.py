@@ -152,11 +152,9 @@ def optimize(
     model = ComponentModel(
         target_model=target_model,
         module_path_info=module_path_info,
-        ci_fn_type=config.ci_fn_type,
-        ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-        pretrained_model_output_attr=config.pretrained_model_output_attr,
+        ci_config=config.ci_config,
         sigmoid_type=config.sigmoid_type,
-        use_global_ci=config.use_global_ci,
+        pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
 
     if ln_stds is not None:

@@ -10,7 +10,7 @@ from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
-from spd.configs import Config, SamplingType
+from spd.configs import CiConfig, Config, GlobalCiConfig, LayerwiseCiConfig, SamplingType
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
@@ -25,7 +25,7 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
-from spd.spd_types import CiFnType, ModelPath
+from spd.spd_types import GlobalCiFnType, LayerwiseCiFnType, ModelPath
 from spd.utils.general_utils import resolve_class, runtime_cast
 from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 
@@ -76,11 +76,9 @@ class ComponentModel(LoadableModule):
         self,
         target_model: nn.Module,
         module_path_info: list[ModulePathInfo],
-        ci_fn_type: CiFnType,
-        ci_fn_hidden_dims: list[int],
+        ci_config: CiConfig,
         sigmoid_type: SigmoidType,
         pretrained_model_output_attr: str | None,
-        use_global_ci: bool = False,
     ):
         super().__init__()
 
@@ -103,33 +101,32 @@ class ComponentModel(LoadableModule):
             {k.replace(".", "-"): self.components[k] for k in sorted(self.components)}
         )
 
-        self.is_global_ci = use_global_ci
-
-        if self.is_global_ci:
-            # Global CI function: single function for all layers
-            self.ci_fns: dict[str, nn.Module] = {}
-            self._ci_fns = nn.ModuleDict({})
-            self.global_ci_fn = ComponentModel._create_global_ci_fn(
-                target_model=target_model,
-                module_to_c=self.module_to_c,
-                components=self.components,
-                ci_fn_type=ci_fn_type,
-                ci_fn_hidden_dims=ci_fn_hidden_dims,
-            )
-            self._global_ci_fn = self.global_ci_fn
-        else:
-            # Layerwise CI functions: one function per layer
-            self.ci_fns = ComponentModel._create_ci_fns(
-                target_model=target_model,
-                module_to_c=self.module_to_c,
-                ci_fn_type=ci_fn_type,
-                ci_fn_hidden_dims=ci_fn_hidden_dims,
-            )
-            self._ci_fns = nn.ModuleDict(
-                {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
-            )
-            self.global_ci_fn: nn.Module | None = None
-            self._global_ci_fn: nn.Module | None = None
+        match ci_config:
+            case GlobalCiConfig():
+                self.is_global_ci = True
+                self.ci_fns: dict[str, nn.Module] = {}
+                self._ci_fns = nn.ModuleDict({})
+                self.global_ci_fn = ComponentModel._create_global_ci_fn(
+                    target_model=target_model,
+                    module_to_c=self.module_to_c,
+                    components=self.components,
+                    ci_fn_type=ci_config.fn_type,
+                    ci_fn_hidden_dims=ci_config.hidden_dims,
+                )
+                self._global_ci_fn = self.global_ci_fn
+            case LayerwiseCiConfig():
+                self.is_global_ci = False
+                self.ci_fns = ComponentModel._create_ci_fns(
+                    target_model=target_model,
+                    module_to_c=self.module_to_c,
+                    ci_fn_type=ci_config.fn_type,
+                    ci_fn_hidden_dims=ci_config.hidden_dims,
+                )
+                self._ci_fns = nn.ModuleDict(
+                    {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
+                )
+                self.global_ci_fn: nn.Module | None = None
+                self._global_ci_fn: nn.Module | None = None
 
         if sigmoid_type == "leaky_hard":
             self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
@@ -210,7 +207,7 @@ class ComponentModel(LoadableModule):
     def _create_ci_fn(
         target_module: nn.Module,
         C: int,
-        ci_fn_type: CiFnType,
+        ci_fn_type: LayerwiseCiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
         """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
@@ -240,7 +237,7 @@ class ComponentModel(LoadableModule):
     def _create_ci_fns(
         target_model: nn.Module,
         module_to_c: dict[str, int],
-        ci_fn_type: CiFnType,
+        ci_fn_type: LayerwiseCiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
         ci_fns: dict[str, nn.Module] = {}
@@ -259,7 +256,7 @@ class ComponentModel(LoadableModule):
         target_model: nn.Module,
         module_to_c: dict[str, int],
         components: dict[str, Components],
-        ci_fn_type: CiFnType,
+        ci_fn_type: GlobalCiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
         """Create a global CI function that takes all layer activations as input."""
@@ -290,12 +287,10 @@ class ComponentModel(LoadableModule):
             layer_configs[target_module_path] = (input_dim, target_module_c)
 
         match ci_fn_type:
-            case "shared_mlp":
+            case "global_shared_mlp":
                 return GlobalSharedMLPCiFn(
                     layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims
                 )
-            case _:
-                raise ValueError(f"Global CI not supported for {ci_fn_type=}")
 
     def _extract_output(self, raw_output: Any) -> Tensor:
         """Extract the desired output from the model's raw output.
@@ -522,10 +517,9 @@ class ComponentModel(LoadableModule):
         comp_model = ComponentModel(
             target_model=target_model,
             module_path_info=module_path_info,
-            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-            ci_fn_type=config.ci_fn_type,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
+            ci_config=config.ci_config,
             sigmoid_type=config.sigmoid_type,
+            pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
 
         comp_model_weights = torch.load(

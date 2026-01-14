@@ -50,4 +50,5 @@ Probability = Annotated[float, Ge(0), Le(1)]
 
 TaskName = Literal["tms", "resid_mlp", "lm", "ih"]
 
-CiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]
+LayerwiseCiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]
+GlobalCiFnType = Literal["global_shared_mlp"]
