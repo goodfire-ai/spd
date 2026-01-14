@@ -175,13 +175,13 @@ class FaithfulnessLossConfig(LossMetricConfig):
 
 class ImportanceMinimalityLossConfig(LossMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
-    pnorm_1: float
-    pnorm_2: float
-    beta: float
-    p_anneal_start_frac: float = 1.0
-    p_anneal_final_p: float | None = None
-    p_anneal_end_frac: float = 1.0
-    eps: float = 1e-12
+    pnorm_1: NonNegativeFloat
+    pnorm_2: NonNegativeFloat
+    beta: NonNegativeFloat
+    p_anneal_start_frac: Probability = 1.0
+    p_anneal_final_p: NonNegativeFloat | None = None
+    p_anneal_end_frac: Probability = 1.0
+    eps: NonNegativeFloat = 1e-12
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
@@ -189,7 +189,7 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
         if "pnorm" in config_dict:
             config_dict["pnorm_1"] = config_dict.pop("pnorm")
         if "pnorm_2" not in config_dict:
-            config_dict["pnorm_2"] = 1.0
+            config_dict["pnorm_2"] = 0.0
         if "beta" not in config_dict:
             config_dict["beta"] = 0.0
         return config_dict
