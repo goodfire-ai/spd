@@ -24,7 +24,10 @@ loss_metric_configs:
     coeff: 0.0001
     pnorm_1: 2.0
     pnorm_2: 0
-    beta: 0
+    beta: 0.1
+    p_anneal_start_frac: 0.0
+    p_anneal_final_p: 0.3
+    p_anneal_end_frac: 1.0
   - classname: "StochasticReconSubsetLoss"
     coeff: 2.0
   - classname: "PGDReconSubsetLoss"
