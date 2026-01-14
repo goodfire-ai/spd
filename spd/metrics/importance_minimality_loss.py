@@ -57,12 +57,16 @@ def _importance_minimality_loss_update(
     p_anneal_final_p: float | None,
     p_anneal_end_frac: float,
     current_frac_of_training: float,
-) -> tuple[dict[str, Float[Tensor, " C"]], int]:
+) -> tuple[dict[str, Float[Tensor, " C"]], dict[str, Float[Tensor, " C"]], int]:
     """Calculate per-component sums of (ci_upper_leaky + eps) ** pnorm over batch/seq.
 
-    Returns per-layer per-component sums and the number of batch/seq elements.
-    These are used to compute the final loss by averaging over batch/seq,
-    raising to pnorm_2, and summing over components.
+    Also calculates "clamped" per-component sums, where ci_upper_leaky is clamped to max 1.0
+    before adding eps and raising to pnorm.
+
+    Returns:
+        - per_component_sums: per-layer per-component sums using raw ci_upper_leaky
+        - clamped_per_component_sums: per-layer per-component sums using clamped ci_upper_leaky
+        - n_params: number of batch/seq elements (all dims except component dim)
 
     NOTE: We don't normalize over the number of layers because a change in the number of layers
     should not change the ci loss that an ablation of a single component in a single layer might
@@ -77,34 +81,56 @@ def _importance_minimality_loss_update(
         p_anneal_end_frac=p_anneal_end_frac,
     )
     per_component_sums: dict[str, Float[Tensor, " C"]] = {}
+    clamped_per_component_sums: dict[str, Float[Tensor, " C"]] = {}
     for layer_name, layer_ci_upper_leaky in ci_upper_leaky.items():
         # Note: layer_ci_upper_leaky already >= 0
         # Shape: [... C] where ... is batch/seq
         pnorm_result = (layer_ci_upper_leaky + eps) ** pnorm
+        clamped_pnorm_result = (layer_ci_upper_leaky + eps) ** pnorm
         # Sum over batch/seq (all dims except last) to get per-component sum [C]
         per_component_sums[layer_name] = pnorm_result.sum(dim=tuple(range(pnorm_result.dim() - 1)))
+        clamped_per_component_sums[layer_name] = clamped_pnorm_result.sum(
+            dim=tuple(range(clamped_pnorm_result.dim() - 1))
+        )
     n_params = next(iter(ci_upper_leaky.values())).shape[:-1].numel()
-    return per_component_sums, n_params
+    return per_component_sums, clamped_per_component_sums, n_params
 
 
 def _importance_minimality_loss_compute(
     per_component_sums: dict[str, Float[Tensor, " C"]],
+    clamped_per_component_sums: dict[str, Float[Tensor, " C"]],
     total_params: Int[Tensor, ""] | int,
-    pnorm_2: float,
+    eps: float,
+    beta: float,
 ) -> Float[Tensor, ""]:
     """Compute final loss from accumulated per-component sums.
 
     For each layer:
     1. Divide per-component sums by total_params to get means over batch/seq
-    2. Raise to pnorm_2
-    3. Sum over components
+    2. Divide clamped per-component sums by total_params and compute per-component entropy:
+       -x*log_2(x+eps) - (1-x)*log_2(1-x+eps)
+    3. Compute layer loss: sum_i per_component_mean_i * (1 + beta * entropy_i)
 
     Then sum contributions from all layers.
     """
     total_loss = None
-    for layer_sums in per_component_sums.values():
+    for layer_name, layer_sums in per_component_sums.items():
         per_component_mean = layer_sums / total_params
-        layer_loss = (per_component_mean**pnorm_2).sum()
+        if beta == 0.0:
+            # Avoid computing entropy (which can introduce NaNs if eps=0 and mean hits 0/1).
+            layer_loss = per_component_mean.sum()
+        else:
+            clamped_layer_sums = clamped_per_component_sums[layer_name]
+            clamped_per_component_mean = clamped_layer_sums / total_params
+            # Ensure log arguments are strictly > 0 even if eps=0 (e.g. at mean=0 or 1).
+            eps_for_log = eps if eps > 0 else torch.finfo(clamped_per_component_mean.dtype).tiny
+            # per_component_entropy = -clamped_per_component_mean * torch.log2(
+            #     clamped_per_component_mean + eps_for_log
+            # ) - (1 - clamped_per_component_mean) * torch.log2(
+            #     1 - clamped_per_component_mean + eps_for_log
+            # )
+            per_component_entropy =clamped_per_component_mean* torch.log2(clamped_layer_sums + eps_for_log)
+            layer_loss = (per_component_mean + beta * per_component_entropy).sum()
         total_loss = layer_loss if total_loss is None else total_loss + layer_loss
     assert total_loss is not None, "Empty per_component_sums"
     return total_loss
@@ -115,12 +141,12 @@ def importance_minimality_loss(
     current_frac_of_training: float,
     eps: float,
     pnorm: float,
-    pnorm_2: float,
+    beta: float,
     p_anneal_start_frac: float,
     p_anneal_final_p: float | None,
     p_anneal_end_frac: float,
 ) -> Float[Tensor, ""]:
-    per_component_sums, total_params = _importance_minimality_loss_update(
+    per_component_sums, clamped_per_component_sums, total_params = _importance_minimality_loss_update(
         ci_upper_leaky=ci_upper_leaky,
         pnorm=pnorm,
         eps=eps,
@@ -129,7 +155,13 @@ def importance_minimality_loss(
         p_anneal_end_frac=p_anneal_end_frac,
         current_frac_of_training=current_frac_of_training,
     )
-    return _importance_minimality_loss_compute(per_component_sums, total_params, pnorm_2)
+    return _importance_minimality_loss_compute(
+        per_component_sums=per_component_sums,
+        clamped_per_component_sums=clamped_per_component_sums,
+        total_params=total_params,
+        eps=eps,
+        beta=beta,
+    )
 
 
 class ImportanceMinimalityLoss(Metric):
@@ -141,7 +173,7 @@ class ImportanceMinimalityLoss(Metric):
 
     Args:
         pnorm: The p value for the L_p norm applied element-wise before averaging
-        pnorm_2: The p value applied after averaging over batch/seq, before summing over components
+        beta: Entropy coefficient. Entropy is computed from clamped means (ci clamped to max 1.0).
         p_anneal_start_frac: The fraction of training after which to start annealing p
             (1.0 = no annealing)
         p_anneal_final_p: The final p value to anneal to (None = no annealing)
@@ -157,14 +189,14 @@ class ImportanceMinimalityLoss(Metric):
         model: ComponentModel,
         device: str,
         pnorm: float,
-        pnorm_2: float = 1.0,
+        beta: float = 0.0,
         p_anneal_start_frac: float = 1.0,
         p_anneal_final_p: float | None = None,
         p_anneal_end_frac: float = 1.0,
         eps: float = 1e-12,
     ) -> None:
         self.pnorm = pnorm
-        self.pnorm_2 = pnorm_2
+        self.beta = beta
         self.eps = eps
         self.p_anneal_start_frac = p_anneal_start_frac
         self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
@@ -172,6 +204,7 @@ class ImportanceMinimalityLoss(Metric):
         self.device = device
         # Track per-layer per-component sums for proper aggregation
         self.per_component_sums: dict[str, Float[Tensor, " C"]] = {}
+        self.clamped_per_component_sums: dict[str, Float[Tensor, " C"]] = {}
         self.n_examples = torch.tensor(0, device=device)
 
     @override
@@ -182,7 +215,7 @@ class ImportanceMinimalityLoss(Metric):
         current_frac_of_training: float,
         **_: Any,
     ) -> None:
-        per_component_sums, total_params = _importance_minimality_loss_update(
+        per_component_sums, clamped_per_component_sums, total_params = _importance_minimality_loss_update(
             ci_upper_leaky=ci.upper_leaky,
             pnorm=self.pnorm,
             eps=self.eps,
@@ -196,13 +229,26 @@ class ImportanceMinimalityLoss(Metric):
             if layer_name not in self.per_component_sums:
                 self.per_component_sums[layer_name] = torch.zeros_like(layer_sums)
             self.per_component_sums[layer_name] += layer_sums
+        for layer_name, layer_sums in clamped_per_component_sums.items():
+            if layer_name not in self.clamped_per_component_sums:
+                self.clamped_per_component_sums[layer_name] = torch.zeros_like(layer_sums)
+            self.clamped_per_component_sums[layer_name] += layer_sums
         self.n_examples += total_params
 
     @override
     def compute(self) -> Float[Tensor, ""]:
         # All-reduce per-component sums across distributed workers
         reduced_sums: dict[str, Float[Tensor, " C"]] = {}
+        reduced_clamped_sums: dict[str, Float[Tensor, " C"]] = {}
         for layer_name, layer_sums in self.per_component_sums.items():
             reduced_sums[layer_name] = all_reduce(layer_sums, op=ReduceOp.SUM)
+        for layer_name, layer_sums in self.clamped_per_component_sums.items():
+            reduced_clamped_sums[layer_name] = all_reduce(layer_sums, op=ReduceOp.SUM)
         n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
-        return _importance_minimality_loss_compute(reduced_sums, n_examples, self.pnorm_2)
+        return _importance_minimality_loss_compute(
+            per_component_sums=reduced_sums,
+            clamped_per_component_sums=reduced_clamped_sums,
+            total_params=n_examples,
+            eps=self.eps,
+            beta=self.beta,
+        )
