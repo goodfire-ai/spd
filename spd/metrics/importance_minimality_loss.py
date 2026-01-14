@@ -51,7 +51,7 @@ def _get_linear_annealed_p(
 
 def _importance_minimality_loss_update(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    p: float,
+    pnorm_1: float,
     eps: float,
     p_anneal_start_frac: float,
     p_anneal_final_p: float | None,
@@ -69,9 +69,9 @@ def _importance_minimality_loss_update(
     have. That said, we're unsure about this, perhaps we do want to normalize over n_layers.
     """
     assert ci_upper_leaky, "Empty ci_upper_leaky"
-    p = _get_linear_annealed_p(
+    pnorm_1 = _get_linear_annealed_p(
         current_frac_of_training=current_frac_of_training,
-        initial_p=p,
+        initial_p=pnorm_1,
         p_anneal_start_frac=p_anneal_start_frac,
         p_anneal_final_p=p_anneal_final_p,
         p_anneal_end_frac=p_anneal_end_frac,
@@ -79,7 +79,7 @@ def _importance_minimality_loss_update(
     per_component_sums: dict[str, Float[Tensor, " C"]] = {}
     for layer_name, layer_ci_upper_leaky in ci_upper_leaky.items():
         # NOTE: layer_ci_upper_leaky already >= 0, with shape [... C] where ... is batch/seq
-        pnorm_result = (layer_ci_upper_leaky + eps) ** p
+        pnorm_result = (layer_ci_upper_leaky + eps) ** pnorm_1
         # Sum over batch/seq to get per-component sum [C]
         per_component_sums[layer_name] = pnorm_result.sum(dim=tuple(range(pnorm_result.dim() - 1)))
     n_examples = next(iter(ci_upper_leaky.values())).shape[:-1].numel()
@@ -130,7 +130,7 @@ def importance_minimality_loss(
 
     per_component_sums, n_examples = _importance_minimality_loss_update(
         ci_upper_leaky=ci_upper_leaky,
-        p=pnorm_1,
+        pnorm_1=pnorm_1,
         eps=eps,
         p_anneal_start_frac=p_anneal_start_frac,
         p_anneal_final_p=p_anneal_final_p,
@@ -199,7 +199,7 @@ class ImportanceMinimalityLoss(Metric):
     ) -> None:
         per_component_sums, n_examples = _importance_minimality_loss_update(
             ci_upper_leaky=ci.upper_leaky,
-            p=self.pnorm_1,
+            pnorm_1=self.pnorm_1,
             eps=self.eps,
             current_frac_of_training=current_frac_of_training,
             p_anneal_start_frac=self.p_anneal_start_frac,
