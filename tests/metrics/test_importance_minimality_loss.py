@@ -212,3 +212,26 @@ class TestImportanceMinimalityLoss:
         )
         expected = torch.tensor(54.0)
         assert torch.allclose(result, expected)
+
+    def test_beta_zero_ignores_pnorm_2(self: object) -> None:
+        ci_upper_leaky = {
+            "layer1": torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32),
+        }
+        # With pnorm_1=1 and eps=0:
+        # per_component_sums = [1+3, 2+4] = [4, 6]
+        # n_examples = 2
+        # per_component_mean = [2, 3]
+        # beta=0 => layer_loss = sum(per_component_mean) = 5, independent of pnorm_2.
+        result = importance_minimality_loss(
+            ci_upper_leaky=ci_upper_leaky,
+            current_frac_of_training=0.0,
+            pnorm_1=1.0,
+            pnorm_2=2.0,
+            beta=0.0,
+            eps=0.0,
+            p_anneal_start_frac=1.0,
+            p_anneal_final_p=None,
+            p_anneal_end_frac=1.0,
+        )
+        expected = torch.tensor(5.0)
+        assert torch.allclose(result, expected)
