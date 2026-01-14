@@ -95,9 +95,8 @@ def _importance_minimality_loss_compute(
     """Compute final loss from accumulated per-component sums.
 
     For each layer:
-    1. Divide per-component sums by n_examples to get means over batch/seq
-    2. Raise to pnorm_2
-    3. Sum over components
+    1. Divide per-component sums by n_examples to get means over batch/seq (i.e. per_component_mean)
+    2. Calculate (per_component_mean + beta * per_component_mean**pnorm_2).sum()
 
     Then sum contributions from all layers.
     """
