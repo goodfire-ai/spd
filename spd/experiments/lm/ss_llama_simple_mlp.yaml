@@ -10,9 +10,9 @@ sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
   - module_pattern: "h.*.mlp.c_fc"
-    C: 650
+    C: 800
   - module_pattern: "h.*.mlp.down_proj"
-    C: 580
+    C: 800
   - module_pattern: "h.*.attn.q_proj"
     C: 250
   - module_pattern: "h.*.attn.k_proj"
@@ -24,11 +24,11 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.004
+- coeff: 0.002
   classname: ImportanceMinimalityLoss
   pnorm_1: 2.0
   pnorm_2: 0
-  beta: 0
+  beta: 0.1
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.5
   p_anneal_end_frac: 1.0
@@ -44,7 +44,7 @@ loss_metric_configs:
 - coeff: 100000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
-steps: 400000
+steps: 200000
 batch_size: 128
 gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
