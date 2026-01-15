@@ -561,6 +561,7 @@ def plot_ci_distribution(
 def main(
     hidden_size: int = 128,
     n_components: int = 500,
+    batch_size: int = 64,
     epochs: int = 100,
     lr: float = 0.001,
     weight_decay: float = 1e-6,
@@ -582,6 +583,7 @@ def main(
     Args:
         hidden_size: Hidden layer size
         n_components: Number of components per layer
+        batch_size: Training batch size
         epochs: Training epochs
         lr: Learning rate
         weight_decay: Weight decay
@@ -626,6 +628,7 @@ def main(
             config={
                 "hidden_size": hidden_size,
                 "n_components": n_components,
+                "batch_size": batch_size,
                 "epochs": epochs,
                 "lr": lr,
                 "weight_decay": weight_decay,
@@ -648,8 +651,8 @@ def main(
     train_dataset = datasets.MNIST(root="./data", train=True, download=True, transform=transform)
     test_dataset = datasets.MNIST(root="./data", train=False, download=True, transform=transform)
 
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     # Create model
     logger.info(f"Creating decomposed MLP with {n_components} components per layer...")
