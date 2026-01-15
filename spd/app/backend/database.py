@@ -317,6 +317,20 @@ class LocalAttrDB:
         conn.commit()
         return prompt_ids
 
+    def find_prompt_by_token_ids(
+        self,
+        run_id: int,
+        token_ids: list[int],
+        context_length: int,
+    ) -> int | None:
+        """Find an existing prompt with the same token_ids."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT id FROM prompts WHERE run_id = ? AND token_ids = ? AND context_length = ?",
+            (run_id, json.dumps(token_ids), context_length),
+        ).fetchone()
+        return row[0] if row else None
+
     def add_custom_prompt(
         self,
         run_id: int,
@@ -324,7 +338,7 @@ class LocalAttrDB:
         active_components: dict[str, tuple[float, list[int]]],
         context_length: int,
     ) -> int:
-        """Add a custom prompt to the database.
+        """Add a custom prompt to the database, or return existing if duplicate.
 
         Args:
             run_id: The run this prompt belongs to.
@@ -333,8 +347,12 @@ class LocalAttrDB:
             context_length: The context length setting.
 
         Returns:
-            The prompt ID.
+            The prompt ID (existing or newly created).
         """
+        existing_id = self.find_prompt_by_token_ids(run_id, token_ids, context_length)
+        if existing_id is not None:
+            return existing_id
+
         conn = self._get_conn()
         cursor = conn.execute(
             "INSERT INTO prompts (run_id, token_ids, context_length, is_custom) VALUES (?, ?, ?, 1)",
