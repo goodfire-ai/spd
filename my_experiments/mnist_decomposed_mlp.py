@@ -24,6 +24,7 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 
 from spd.log import logger
+from spd.metrics.alive_components import AliveComponentsTracker
 from spd.metrics.importance_minimality_loss import importance_minimality_loss
 from spd.models.components import LinearCiFn, MLPCiFn
 from spd.models.sigmoids import SIGMOID_TYPES
@@ -220,6 +221,7 @@ def train_decomposed_mlp(
     p_anneal_end_frac: float,
     sampling: str,
     ci_alive_threshold: float,
+    n_examples_until_dead: int,
     log_wandb: bool,
 ) -> int:
     """Train the decomposed MLP on MNIST.
@@ -238,6 +240,7 @@ def train_decomposed_mlp(
         p_anneal_end_frac: Fraction of training to finish annealing p
         sampling: "bernoulli" for stochastic, "none" for deterministic
         ci_alive_threshold: CI threshold above which a component is considered firing
+        n_examples_until_dead: Number of examples without firing before component is dead
         log_wandb: Whether to log to W&B
 
     Returns:
@@ -246,6 +249,16 @@ def train_decomposed_mlp(
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss()
+
+    # Initialize alive components tracker
+    batch_size = train_loader.batch_size or 64
+    alive_tracker = AliveComponentsTracker(
+        module_to_c={"fc1": model.fc1.C, "fc2": model.fc2.C},
+        device=device,
+        n_examples_until_dead=n_examples_until_dead,
+        ci_alive_threshold=ci_alive_threshold,
+        global_n_examples_per_batch=batch_size,
+    )
 
     logger.info(f"Training decomposed MLP for {epochs} epochs...")
     logger.info(f"  - Sampling: {sampling}")
@@ -308,9 +321,11 @@ def train_decomposed_mlp(
             l0_fc2 = calc_ci_l_zero(ci_values["fc2"], threshold=ci_alive_threshold)
             l0_total = l0_fc1 + l0_fc2
 
-            # Components that fired (CI > threshold) on at least one sample in batch
-            n_alive_fc1 = (ci_values["fc1"] > ci_alive_threshold).any(dim=0).sum().item()
-            n_alive_fc2 = (ci_values["fc2"] > ci_alive_threshold).any(dim=0).sum().item()
+            # Update alive tracker and get alive counts
+            alive_tracker.update(ci_values)
+            alive_counts = alive_tracker.compute()
+            n_alive_fc1 = alive_counts["fc1"]
+            n_alive_fc2 = alive_counts["fc2"]
             alive_pct_fc1 = 100.0 * n_alive_fc1 / n_components_fc1
             alive_pct_fc2 = 100.0 * n_alive_fc2 / n_components_fc2
 
@@ -557,6 +572,7 @@ def main(
     sampling: str = "bernoulli",
     ci_fn_type: str = "linear",
     ci_alive_threshold: float = 0.0,
+    n_examples_until_dead: int = 10000,
     seed: int = 42,
     output_dir: str | None = None,
     wandb_project: str | None = "mnist_predecomposed_mlp",
@@ -577,6 +593,7 @@ def main(
         sampling: "bernoulli" for stochastic, "none" for deterministic
         ci_fn_type: "linear" or "mlp"
         ci_alive_threshold: CI threshold above which a component is considered firing
+        n_examples_until_dead: Examples without firing before component is considered dead
         seed: Random seed
         output_dir: Output directory
         wandb_project: W&B project name (None to disable)
@@ -620,6 +637,7 @@ def main(
                 "sampling": sampling,
                 "ci_fn_type": ci_fn_type,
                 "ci_alive_threshold": ci_alive_threshold,
+                "n_examples_until_dead": n_examples_until_dead,
                 "seed": seed,
             },
         )
@@ -660,6 +678,7 @@ def main(
         p_anneal_end_frac=p_anneal_end_frac,
         sampling=sampling,
         ci_alive_threshold=ci_alive_threshold,
+        n_examples_until_dead=n_examples_until_dead,
         log_wandb=wandb_project is not None,
     )
 
