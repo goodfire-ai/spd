@@ -7,7 +7,7 @@ REPO_ROOT = (
     else Path(__file__).parent.parent
 )
 
-CLUSTER_BASE_PATH = Path("/mnt/polished-lake/spd")
+CLUSTER_BASE_PATH = Path("/mnt/polished-lake/artifacts/mechanisms/spd")
 ON_CLUSTER = CLUSTER_BASE_PATH.exists()
 
 # Base directory for SPD outputs (runs, logs, scripts, etc.)
