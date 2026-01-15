@@ -206,6 +206,7 @@ if __name__ == "__main__":
             ActivationExample(
                 token_ids=[100, 102, 103, 104, 105],
                 ci_values=[0.1, 0.0, 0.9, 0.0, 0.0],
+                component_acts=[0.05, 0.0, 0.45, 0.0, 0.0],
             )
         ],
         input_token_pmi=ComponentTokenPMI(
