@@ -316,7 +316,9 @@ def test_compute_optimized_stream(app_with_prompt: tuple[TestClient, int]):
             "imp_min_coeff": 0.01,
             "ce_loss_coeff": 1.0,
             "steps": 5,  # Very few steps for testing
-            "pnorm": 0.5,
+            "pnorm_1": 0.5,
+            "pnorm_2": 0.5,
+            "beta": 0.5,
             "normalize": "none",
             "ci_threshold": 0.0,
             "output_prob_threshold": 0.01,

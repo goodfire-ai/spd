@@ -127,7 +127,9 @@ def init_metric(
             metric = ImportanceMinimalityLoss(
                 model=model,
                 device=device,
-                pnorm=cfg.pnorm,
+                pnorm_1=cfg.pnorm_1,
+                pnorm_2=cfg.pnorm_2,
+                beta=cfg.beta,
                 p_anneal_start_frac=cfg.p_anneal_start_frac,
                 p_anneal_final_p=cfg.p_anneal_final_p,
                 p_anneal_end_frac=cfg.p_anneal_end_frac,

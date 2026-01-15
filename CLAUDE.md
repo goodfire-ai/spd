@@ -163,7 +163,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 **Output Directory (`SPD_OUT_DIR`):**
 
 - Defined in `spd/settings.py`
-- On cluster: `/mnt/polished-lake/spd/`
+- On cluster: `/mnt/polished-lake/artifacts/mechanisms/spd/`
 - Off cluster: `~/spd_out/`
 - Contains: runs, SLURM logs, sbatch scripts, clustering outputs, harvest data, autointerp results
 

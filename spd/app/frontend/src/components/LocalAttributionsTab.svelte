@@ -464,7 +464,9 @@
                 normalize: defaultViewSettings.normalizeEdges,
                 impMinCoeff: optConfig.impMinCoeff,
                 steps: optConfig.steps,
-                pnorm: optConfig.pnorm,
+                pnorm_1: optConfig.pnorm_1,
+                pnorm_2: optConfig.pnorm_2,
+                beta: optConfig.beta,
                 outputProbThreshold: 0.01,
                 ciThreshold: defaultViewSettings.ciThreshold,
             };
