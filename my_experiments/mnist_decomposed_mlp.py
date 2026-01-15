@@ -219,6 +219,7 @@ def train_decomposed_mlp(
     p_anneal_final_p: float,
     p_anneal_end_frac: float,
     sampling: str,
+    ci_alive_threshold: float,
     log_wandb: bool,
 ) -> int:
     """Train the decomposed MLP on MNIST.
@@ -236,6 +237,7 @@ def train_decomposed_mlp(
         p_anneal_final_p: Final p value after annealing
         p_anneal_end_frac: Fraction of training to finish annealing p
         sampling: "bernoulli" for stochastic, "none" for deterministic
+        ci_alive_threshold: CI threshold above which a component is considered firing
         log_wandb: Whether to log to W&B
 
     Returns:
@@ -302,13 +304,13 @@ def train_decomposed_mlp(
             n_components_fc1 = ci_values["fc1"].shape[-1]
             n_components_fc2 = ci_values["fc2"].shape[-1]
 
-            l0_fc1 = calc_ci_l_zero(ci_values["fc1"], threshold=0.5)
-            l0_fc2 = calc_ci_l_zero(ci_values["fc2"], threshold=0.5)
+            l0_fc1 = calc_ci_l_zero(ci_values["fc1"], threshold=ci_alive_threshold)
+            l0_fc2 = calc_ci_l_zero(ci_values["fc2"], threshold=ci_alive_threshold)
             l0_total = l0_fc1 + l0_fc2
 
-            # Components that fired (CI > 0.5) on at least one sample in batch
-            n_alive_fc1 = (ci_values["fc1"] > 0.5).any(dim=0).sum().item()
-            n_alive_fc2 = (ci_values["fc2"] > 0.5).any(dim=0).sum().item()
+            # Components that fired (CI > threshold) on at least one sample in batch
+            n_alive_fc1 = (ci_values["fc1"] > ci_alive_threshold).any(dim=0).sum().item()
+            n_alive_fc2 = (ci_values["fc2"] > ci_alive_threshold).any(dim=0).sum().item()
             alive_pct_fc1 = 100.0 * n_alive_fc1 / n_components_fc1
             alive_pct_fc2 = 100.0 * n_alive_fc2 / n_components_fc2
 
@@ -371,8 +373,12 @@ def evaluate(
     test_loader: DataLoader,
     device: str,
     sampling: str,
+    ci_alive_threshold: float,
 ) -> dict[str, float]:
     """Evaluate the model on test set.
+
+    Args:
+        ci_alive_threshold: CI threshold above which a component is considered firing
 
     Returns:
         Dict with accuracy, L0, alive_pct, and CI metrics per layer.
@@ -403,15 +409,15 @@ def evaluate(
             correct += predicted.eq(labels).sum().item()
 
             # Track L0 and CI per layer
-            l0_fc1_sum += calc_ci_l_zero(ci_values["fc1"], threshold=0.5)
-            l0_fc2_sum += calc_ci_l_zero(ci_values["fc2"], threshold=0.5)
+            l0_fc1_sum += calc_ci_l_zero(ci_values["fc1"], threshold=ci_alive_threshold)
+            l0_fc2_sum += calc_ci_l_zero(ci_values["fc2"], threshold=ci_alive_threshold)
             ci_fc1_sum += ci_values["fc1"].mean().item()
             ci_fc2_sum += ci_values["fc2"].mean().item()
             n_batches += 1
 
-            # Update ever_fired masks (component fired if CI > 0.5 on any sample)
-            ever_fired_fc1 |= (ci_values["fc1"] > 0.5).any(dim=0)
-            ever_fired_fc2 |= (ci_values["fc2"] > 0.5).any(dim=0)
+            # Update ever_fired masks (component fired if CI > threshold on any sample)
+            ever_fired_fc1 |= (ci_values["fc1"] > ci_alive_threshold).any(dim=0)
+            ever_fired_fc2 |= (ci_values["fc2"] > ci_alive_threshold).any(dim=0)
 
     accuracy = 100.0 * correct / total
     l0_fc1 = l0_fc1_sum / n_batches
@@ -543,13 +549,14 @@ def main(
     epochs: int = 100,
     lr: float = 0.001,
     weight_decay: float = 1e-6,
-    importance_coeff: float = 1e-9,
+    importance_coeff: float = 5e-9,
     pnorm: float = 1.0,
     p_anneal_start_frac: float = 0.0,
     p_anneal_final_p: float = 2.0,
     p_anneal_end_frac: float = 0.5,
     sampling: str = "bernoulli",
     ci_fn_type: str = "linear",
+    ci_alive_threshold: float = 0.0,
     seed: int = 42,
     output_dir: str | None = None,
     wandb_project: str | None = "mnist_predecomposed_mlp",
@@ -569,6 +576,7 @@ def main(
         p_anneal_end_frac: Fraction of training to finish annealing p
         sampling: "bernoulli" for stochastic, "none" for deterministic
         ci_fn_type: "linear" or "mlp"
+        ci_alive_threshold: CI threshold above which a component is considered firing
         seed: Random seed
         output_dir: Output directory
         wandb_project: W&B project name (None to disable)
@@ -611,6 +619,7 @@ def main(
                 "p_anneal_end_frac": p_anneal_end_frac,
                 "sampling": sampling,
                 "ci_fn_type": ci_fn_type,
+                "ci_alive_threshold": ci_alive_threshold,
                 "seed": seed,
             },
         )
@@ -650,12 +659,15 @@ def main(
         p_anneal_final_p=p_anneal_final_p,
         p_anneal_end_frac=p_anneal_end_frac,
         sampling=sampling,
+        ci_alive_threshold=ci_alive_threshold,
         log_wandb=wandb_project is not None,
     )
 
     # Evaluate
     logger.info("Evaluating on test set...")
-    test_metrics = evaluate(model, test_loader, device, sampling="none")
+    test_metrics = evaluate(
+        model, test_loader, device, sampling="none", ci_alive_threshold=ci_alive_threshold
+    )
     logger.info(f"Test accuracy: {test_metrics['accuracy']:.2f}%")
     logger.info(
         f"L0 (active components): fc1={test_metrics['l0_fc1']:.1f}, "
