@@ -306,8 +306,11 @@ def train_decomposed_mlp(
             l0_fc2 = calc_ci_l_zero(ci_values["fc2"], threshold=0.5)
             l0_total = l0_fc1 + l0_fc2
 
-            alive_pct_fc1 = 100.0 * l0_fc1 / n_components_fc1
-            alive_pct_fc2 = 100.0 * l0_fc2 / n_components_fc2
+            # Components that fired (CI > 0.5) on at least one sample in batch
+            n_alive_fc1 = (ci_values["fc1"] > 0.5).any(dim=0).sum().item()
+            n_alive_fc2 = (ci_values["fc2"] > 0.5).any(dim=0).sum().item()
+            alive_pct_fc1 = 100.0 * n_alive_fc1 / n_components_fc1
+            alive_pct_fc2 = 100.0 * n_alive_fc2 / n_components_fc2
 
             mean_ci_fc1 = ci_values["fc1"].mean().item()
             mean_ci_fc2 = ci_values["fc2"].mean().item()
@@ -385,6 +388,10 @@ def evaluate(
     n_components_fc1 = model.fc1.C
     n_components_fc2 = model.fc2.C
 
+    # Track which components have fired at least once across all test samples
+    ever_fired_fc1 = torch.zeros(n_components_fc1, dtype=torch.bool, device=device)
+    ever_fired_fc2 = torch.zeros(n_components_fc2, dtype=torch.bool, device=device)
+
     with torch.no_grad():
         for images, labels in test_loader:
             images = images.to(device)
@@ -402,19 +409,27 @@ def evaluate(
             ci_fc2_sum += ci_values["fc2"].mean().item()
             n_batches += 1
 
+            # Update ever_fired masks (component fired if CI > 0.5 on any sample)
+            ever_fired_fc1 |= (ci_values["fc1"] > 0.5).any(dim=0)
+            ever_fired_fc2 |= (ci_values["fc2"] > 0.5).any(dim=0)
+
     accuracy = 100.0 * correct / total
     l0_fc1 = l0_fc1_sum / n_batches
     l0_fc2 = l0_fc2_sum / n_batches
     mean_ci_fc1 = ci_fc1_sum / n_batches
     mean_ci_fc2 = ci_fc2_sum / n_batches
 
+    # Alive = fired at least once across all test samples
+    n_alive_fc1 = ever_fired_fc1.sum().item()
+    n_alive_fc2 = ever_fired_fc2.sum().item()
+
     return {
         "accuracy": accuracy,
         "l0_fc1": l0_fc1,
         "l0_fc2": l0_fc2,
         "l0_total": l0_fc1 + l0_fc2,
-        "alive_pct_fc1": 100.0 * l0_fc1 / n_components_fc1,
-        "alive_pct_fc2": 100.0 * l0_fc2 / n_components_fc2,
+        "alive_pct_fc1": 100.0 * n_alive_fc1 / n_components_fc1,
+        "alive_pct_fc2": 100.0 * n_alive_fc2 / n_components_fc2,
         "mean_ci_fc1": mean_ci_fc1,
         "mean_ci_fc2": mean_ci_fc2,
         "avg_ci": (mean_ci_fc1 + mean_ci_fc2) / 2,
@@ -525,13 +540,13 @@ def plot_ci_distribution(
 def main(
     hidden_size: int = 128,
     n_components: int = 500,
-    epochs: int = 50,
+    epochs: int = 100,
     lr: float = 0.001,
     weight_decay: float = 1e-6,
     importance_coeff: float = 1e-9,
-    pnorm: float = 2.0,
+    pnorm: float = 1.0,
     p_anneal_start_frac: float = 0.0,
-    p_anneal_final_p: float = 0.5,
+    p_anneal_final_p: float = 2.0,
     p_anneal_end_frac: float = 0.5,
     sampling: str = "bernoulli",
     ci_fn_type: str = "linear",
