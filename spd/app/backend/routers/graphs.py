@@ -20,7 +20,7 @@ from spd.app.backend.compute import (
     compute_local_attributions,
     compute_local_attributions_optimized,
 )
-from spd.app.backend.database import OptimizationParams, StoredGraph
+from spd.app.backend.database import GraphType, OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import MaskType, OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
 from spd.app.backend.schemas import OutputProbability
@@ -51,6 +51,8 @@ class GraphData(BaseModel):
     """Full attribution graph data."""
 
     id: int
+    graphType: GraphType
+    name: str | None  # Display name (auto-generated if None)
     tokens: list[str]
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
@@ -310,9 +312,36 @@ def compute_graph_stream(
     loaded: DepLoadedRun,
     manager: DepStateManager,
     ci_threshold: Annotated[float, Query()],
+    included_nodes: Annotated[str | None, Query()] = None,
+    graph_name: Annotated[str | None, Query()] = None,
+    base_graph_id: Annotated[int | None, Query()] = None,
 ):
-    """Compute attribution graph for a prompt with streaming progress."""
+    """Compute attribution graph for a prompt with streaming progress.
+
+    If included_nodes is provided (JSON array of node keys), creates a "manual" graph
+    with only those nodes. Otherwise creates a "standard" graph.
+
+    Args:
+        included_nodes: JSON array of node keys to include (creates manual graph if provided)
+        graph_name: Display name for manual graphs (required if included_nodes provided)
+        base_graph_id: ID of the graph this manual graph was derived from
+    """
     output_prob_threshold = 0.01
+
+    # Parse included_nodes if provided
+    included_nodes_set: set[str] | None = None
+    included_nodes_list: list[str] | None = None
+    if included_nodes is not None:
+        try:
+            parsed_nodes: list[str] = json.loads(included_nodes)
+            included_nodes_list = parsed_nodes
+            included_nodes_set = set(parsed_nodes)
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail="Invalid included_nodes JSON") from e
+
+    # Determine graph type
+    is_manual = included_nodes_set is not None
+    graph_type: GraphType = "manual" if is_manual else "standard"
 
     db = manager.db
     prompt = db.get_prompt(prompt_id)
@@ -333,6 +362,7 @@ def compute_graph_stream(
             device=DEVICE,
             show_progress=False,
             on_progress=on_progress,
+            included_nodes=included_nodes_set,
         )
 
         out_probs = build_out_probs(
@@ -346,10 +376,14 @@ def compute_graph_stream(
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
+                graph_type=graph_type,
+                name=graph_name,
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
                 node_subcomp_acts=result.node_subcomp_acts,
+                base_graph_id=base_graph_id,
+                included_nodes=included_nodes_list,
             ),
         )
 
@@ -367,6 +401,8 @@ def compute_graph_stream(
 
         return GraphData(
             id=graph_id,
+            graphType=graph_type,
+            name=graph_name,
             tokens=token_strings,
             edges=edges_data,
             outputProbs=out_probs,
@@ -533,6 +569,7 @@ def compute_graph_optimized_stream(
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
+                graph_type="optimized",
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
@@ -556,6 +593,8 @@ def compute_graph_optimized_stream(
 
         return GraphDataWithOptimization(
             id=graph_id,
+            graphType="optimized",
+            name=None,
             tokens=token_strings,
             edges=edges_data,
             outputProbs=out_probs,
@@ -659,7 +698,7 @@ def get_graphs(
     num_tokens = len(prompt.token_ids)
     results: list[GraphData | GraphDataWithOptimization] = []
     for graph in stored_graphs:
-        is_optimized = graph.optimization_params is not None
+        is_optimized = graph.graph_type == "optimized"
         filtered_node_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
         l0_total = len(filtered_node_ci_vals)
 
@@ -674,23 +713,7 @@ def get_graphs(
             is_optimized=is_optimized,
         )
 
-        if not is_optimized:
-            # Standard graph
-            results.append(
-                GraphData(
-                    id=graph.id,
-                    tokens=token_strings,
-                    edges=edges_data,
-                    outputProbs=graph.out_probs,
-                    nodeCiVals=node_ci_vals_with_pseudo,
-                    nodeSubcompActs=graph.node_subcomp_acts,
-                    maxAbsAttr=max_abs_attr,
-                    maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
-                    l0_total=l0_total,
-                )
-            )
-        else:
-            # Optimized graph
+        if graph.graph_type == "optimized":
             assert graph.optimization_params is not None
 
             # Get label_str if label_token is set
@@ -701,6 +724,8 @@ def get_graphs(
             results.append(
                 GraphDataWithOptimization(
                     id=graph.id,
+                    graphType=graph.graph_type,
+                    name=graph.name,
                     tokens=token_strings,
                     edges=edges_data,
                     outputProbs=graph.out_probs,
@@ -722,6 +747,23 @@ def get_graphs(
                         label_prob=graph.label_prob,
                         kl_loss_coeff=graph.optimization_params.kl_loss_coeff,
                     ),
+                )
+            )
+        else:
+            # Standard or manual graph
+            results.append(
+                GraphData(
+                    id=graph.id,
+                    graphType=graph.graph_type,
+                    name=graph.name,
+                    tokens=token_strings,
+                    edges=edges_data,
+                    outputProbs=graph.out_probs,
+                    nodeCiVals=node_ci_vals_with_pseudo,
+                    nodeSubcompActs=graph.node_subcomp_acts,
+                    maxAbsAttr=max_abs_attr,
+                    maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
+                    l0_total=l0_total,
                 )
             )
 

@@ -18,6 +18,12 @@ export type ComputeGraphParams = {
     promptId: number;
     normalize: NormalizeType;
     ciThreshold: number;
+    /** If provided, only include these nodes in the graph (creates manual graph) */
+    includedNodes?: string[];
+    /** Display name for manual graphs (required if includedNodes provided) */
+    graphName?: string;
+    /** ID of the graph this manual graph was derived from */
+    baseGraphId?: number;
 };
 
 /**
@@ -81,6 +87,15 @@ export async function computeGraphStreaming(
     url.searchParams.set("prompt_id", String(params.promptId));
     url.searchParams.set("normalize", String(params.normalize));
     url.searchParams.set("ci_threshold", String(params.ciThreshold));
+    if (params.includedNodes !== undefined) {
+        url.searchParams.set("included_nodes", JSON.stringify(params.includedNodes));
+    }
+    if (params.graphName !== undefined) {
+        url.searchParams.set("graph_name", params.graphName);
+    }
+    if (params.baseGraphId !== undefined) {
+        url.searchParams.set("base_graph_id", String(params.baseGraphId));
+    }
 
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {

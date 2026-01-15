@@ -75,6 +75,7 @@
         onDeleteRun: (runId: number) => void;
         onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRun>;
         onDeleteFork: (forkId: number) => void;
+        onGenerateGraphFromSelection: () => void;
     };
 
     let {
@@ -105,6 +106,7 @@
         onDeleteRun,
         onForkRun,
         onDeleteFork,
+        onGenerateGraphFromSelection,
     }: Props = $props();
 
     // Fork modal state
@@ -663,8 +665,16 @@
             <div class="button-group">
                 <button onclick={selectAll}>Select All</button>
                 <button onclick={clearSelection}>Clear</button>
+                <button
+                    class="generate-btn"
+                    onclick={onGenerateGraphFromSelection}
+                    disabled={interventableCount > 0 && selectedCount === interventableCount}
+                    title="Generate a subgraph showing only attributions between selected nodes"
+                >
+                    Generate subgraph
+                </button>
                 <button class="run-btn" onclick={onRunIntervention} disabled={runningIntervention}>
-                    {runningIntervention ? "Running..." : "Run"}
+                    {runningIntervention ? "Running..." : "Run forward pass"}
                 </button>
             </div>
         </div>
@@ -1164,6 +1174,21 @@
     .button-group button:hover:not(:disabled) {
         background: var(--bg-inset);
         border-color: var(--border-strong);
+    }
+
+    .generate-btn {
+        background: var(--status-info) !important;
+        color: white !important;
+        border-color: var(--status-info) !important;
+    }
+
+    .generate-btn:hover:not(:disabled) {
+        filter: brightness(1.1);
+    }
+
+    .generate-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
     .run-btn {
