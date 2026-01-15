@@ -48,9 +48,9 @@ class DecomposedLinear(nn.Module):
         d_in: int,
         d_out: int,
         C: int,
-        ci_fn_type: str = "linear",
-        ci_fn_hidden_dims: list[int] | None = None,
-        bias: bool = True,
+        ci_fn_type: str,
+        ci_fn_hidden_dims: list[int] | None,
+        bias: bool,
     ):
         super().__init__()
         self.d_in = d_in
@@ -94,8 +94,8 @@ class DecomposedLinear(nn.Module):
     def forward(
         self,
         x: Float[Tensor, "... d_in"],
-        sampling: str = "none",
-        return_ci: bool = False,
+        sampling: str,
+        return_ci: bool,
     ) -> Float[Tensor, "... d_out"] | tuple[Float[Tensor, "... d_out"], Float[Tensor, "... C"]]:
         """Forward pass with optional stochastic component sampling.
 
@@ -150,12 +150,12 @@ class DecomposedMLP(nn.Module):
 
     def __init__(
         self,
-        input_size: int = 784,
-        hidden_size: int = 128,
-        num_classes: int = 10,
-        n_components: int = 500,
-        ci_fn_type: str = "linear",
-        ci_fn_hidden_dims: list[int] | None = None,
+        input_size: int,
+        hidden_size: int,
+        num_classes: int,
+        n_components: int,
+        ci_fn_type: str,
+        ci_fn_hidden_dims: list[int] | None,
     ):
         super().__init__()
         self.fc1 = DecomposedLinear(
@@ -164,6 +164,7 @@ class DecomposedMLP(nn.Module):
             C=n_components,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
+            bias=True,
         )
         self.fc2 = DecomposedLinear(
             d_in=hidden_size,
@@ -171,13 +172,14 @@ class DecomposedMLP(nn.Module):
             C=n_components,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
+            bias=True,
         )
 
     def forward(
         self,
         x: torch.Tensor,
-        sampling: str = "none",
-        return_ci: bool = False,
+        sampling: str,
+        return_ci: bool,
     ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """Forward pass.
 
@@ -207,16 +209,16 @@ def train_decomposed_mlp(
     model: DecomposedMLP,
     train_loader: DataLoader,
     device: str,
-    epochs: int = 50,
-    lr: float = 0.001,
-    weight_decay: float = 0.0,
-    importance_coeff: float = 1e-3,
-    pnorm: float = 0.5,
-    p_anneal_start_frac: float = 0.0,
-    p_anneal_final_p: float | None = None,
-    p_anneal_end_frac: float = 0.5,
-    sampling: str = "bernoulli",
-    log_wandb: bool = False,
+    epochs: int,
+    lr: float,
+    weight_decay: float,
+    importance_coeff: float,
+    pnorm: float,
+    p_anneal_start_frac: float,
+    p_anneal_final_p: float,
+    p_anneal_end_frac: float,
+    sampling: str,
+    log_wandb: bool,
 ) -> int:
     """Train the decomposed MLP on MNIST.
 
@@ -230,7 +232,7 @@ def train_decomposed_mlp(
         importance_coeff: Coefficient for importance minimality loss
         pnorm: Starting p-norm for importance minimality (smaller = sparser)
         p_anneal_start_frac: Fraction of training to start annealing p
-        p_anneal_final_p: Final p value after annealing (None = same as pnorm, no annealing)
+        p_anneal_final_p: Final p value after annealing
         p_anneal_end_frac: Fraction of training to finish annealing p
         sampling: "bernoulli" for stochastic, "none" for deterministic
         log_wandb: Whether to log to W&B
@@ -241,10 +243,6 @@ def train_decomposed_mlp(
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss()
-
-    # Default p_anneal_final_p to pnorm if not specified (no annealing)
-    if p_anneal_final_p is None:
-        p_anneal_final_p = pnorm
 
     logger.info(f"Training decomposed MLP for {epochs} epochs...")
     logger.info(f"  - Sampling: {sampling}")
@@ -348,7 +346,7 @@ def evaluate(
     model: DecomposedMLP,
     test_loader: DataLoader,
     device: str,
-    sampling: str = "none",
+    sampling: str,
 ) -> tuple[float, float, float]:
     """Evaluate the model on test set.
 
@@ -388,8 +386,8 @@ def evaluate(
 def plot_component_directions(
     model: DecomposedMLP,
     out_dir: Path,
-    n_components_to_show: int = 20,
-    log_wandb: bool = False,
+    n_components_to_show: int,
+    log_wandb: bool,
 ) -> None:
     """Plot component directions as images for fc1."""
     V_fc1 = model.fc1.V.detach().cpu()  # (784, C)
@@ -435,7 +433,7 @@ def plot_ci_distribution(
     test_loader: DataLoader,
     device: str,
     out_dir: Path,
-    log_wandb: bool = False,
+    log_wandb: bool,
 ) -> None:
     """Plot distribution of CI values across test set."""
     model.eval()
@@ -491,8 +489,8 @@ def main(
     n_components: int = 500,
     epochs: int = 50,
     lr: float = 0.001,
-    weight_decay: float = 1e-4,
-    importance_coeff: float = 1e-3,
+    weight_decay: float = 1e-6,
+    importance_coeff: float = 1e-6,
     pnorm: float = 2.0,
     p_anneal_start_frac: float = 0.0,
     p_anneal_final_p: float = 0.5,
@@ -581,6 +579,7 @@ def main(
         num_classes=10,
         n_components=n_components,
         ci_fn_type=ci_fn_type,
+        ci_fn_hidden_dims=None,
     )
     model = model.to(device)
 
