@@ -10,7 +10,6 @@ import json
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel
 
@@ -531,17 +530,52 @@ class LocalAttrDB:
                 "Use get_graphs() to retrieve existing graph or delete it first."
             ) from e
 
+    def _row_to_stored_graph(self, row: sqlite3.Row) -> StoredGraph:
+        """Convert a database row to a StoredGraph."""
+        edges = [
+            Edge(
+                source=Node(**e["source"]),
+                target=Node(**e["target"]),
+                strength=float(e["strength"]),
+                is_cross_seq=bool(e["is_cross_seq"]),
+            )
+            for e in json.loads(row["edges_data"])
+        ]
+        out_probs = {
+            k: OutputProbability(**v) for k, v in json.loads(row["output_probs_data"]).items()
+        }
+        node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
+        node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
+
+        opt_params: OptimizationParams | None = None
+        label_prob: float | None = None
+        if row["is_optimized"]:
+            opt_params = OptimizationParams(
+                imp_min_coeff=row["imp_min_coeff"],
+                steps=row["steps"],
+                pnorm_1=row["pnorm_1"],
+                pnorm_2=row["pnorm_2"],
+                beta=row["beta"],
+                mask_type=row["mask_type"],
+                label_token=row["label_token"],
+                ce_loss_coeff=row["ce_loss_coeff"],
+                kl_loss_coeff=row["kl_loss_coeff"],
+            )
+            label_prob = row["label_prob"]
+
+        return StoredGraph(
+            id=row["id"],
+            edges=edges,
+            out_probs=out_probs,
+            node_ci_vals=node_ci_vals,
+            node_subcomp_acts=node_subcomp_acts,
+            optimization_params=opt_params,
+            label_prob=label_prob,
+        )
+
     def get_graphs(self, prompt_id: int) -> list[StoredGraph]:
-        """Retrieve all stored graphs for a prompt.
-
-        Args:
-            prompt_id: The prompt ID.
-
-        Returns:
-            List of stored graphs (standard and optimized).
-        """
+        """Retrieve all stored graphs for a prompt."""
         conn = self._get_conn()
-
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
                       node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
@@ -551,55 +585,22 @@ class LocalAttrDB:
                ORDER BY is_optimized, created_at""",
             (prompt_id,),
         ).fetchall()
+        return [self._row_to_stored_graph(row) for row in rows]
 
-        def _edge_from_dict(d: dict[str, Any]) -> Edge:
-            return Edge(
-                source=Node(**d["source"]),
-                target=Node(**d["target"]),
-                strength=float(d["strength"]),
-                is_cross_seq=bool(d["is_cross_seq"]),
-            )
-
-        results: list[StoredGraph] = []
-        for row in rows:
-            edges = [_edge_from_dict(e) for e in json.loads(row["edges_data"])]
-            out_probs = {
-                k: OutputProbability(**v) for k, v in json.loads(row["output_probs_data"]).items()
-            }
-
-            node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
-            node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
-
-            opt_params: OptimizationParams | None = None
-            label_prob: float | None = None
-
-            if row["is_optimized"]:
-                opt_params = OptimizationParams(
-                    imp_min_coeff=row["imp_min_coeff"],
-                    steps=row["steps"],
-                    pnorm_1=row["pnorm_1"],
-                    pnorm_2=row["pnorm_2"],
-                    beta=row["beta"],
-                    mask_type=row["mask_type"],
-                    label_token=row["label_token"],
-                    ce_loss_coeff=row["ce_loss_coeff"],
-                    kl_loss_coeff=row["kl_loss_coeff"],
-                )
-                label_prob = row["label_prob"]
-
-            results.append(
-                StoredGraph(
-                    id=row["id"],
-                    edges=edges,
-                    out_probs=out_probs,
-                    node_ci_vals=node_ci_vals,
-                    node_subcomp_acts=node_subcomp_acts,
-                    optimization_params=opt_params,
-                    label_prob=label_prob,
-                )
-            )
-
-        return results
+    def get_graph(self, graph_id: int) -> tuple[StoredGraph, int] | None:
+        """Retrieve a single graph by its ID. Returns (graph, prompt_id) or None."""
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT id, prompt_id, is_optimized, edges_data, output_probs_data, node_ci_vals,
+                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
+                      steps, pnorm_1, pnorm_2, beta, mask_type, label_prob
+               FROM graphs
+               WHERE id = ?""",
+            (graph_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return (self._row_to_stored_graph(row), row["prompt_id"])
 
     def delete_graphs_for_prompt(self, prompt_id: int) -> int:
         """Delete all graphs for a prompt. Returns the number of deleted rows."""

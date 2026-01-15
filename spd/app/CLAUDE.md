@@ -47,7 +47,8 @@ backend/
     ├── intervention.py    # Selective component activation
     ├── correlations.py    # Component correlations + token stats + interpretations
     ├── clusters.py        # Component clustering
-    └── dataset_search.py  # SimpleStories dataset search
+    ├── dataset_search.py  # SimpleStories dataset search
+    └── agents.py          # Various useful endpoints that AI agents should look at when helping 
 ```
 
 Note: Activation contexts, correlations, and token stats are now loaded from pre-harvested data (see `spd/harvest/`). The app no longer computes these on-the-fly.

@@ -26,6 +26,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from spd.app.backend.database import LocalAttrDB
 from spd.app.backend.routers import (
     activation_contexts_router,
+    agents_router,
     clusters_router,
     correlations_router,
     dataset_search_router,
@@ -151,6 +152,7 @@ app.include_router(correlations_router)
 app.include_router(clusters_router)
 app.include_router(intervention_router)
 app.include_router(dataset_search_router)
+app.include_router(agents_router)
 
 
 def cli(port: int = 8000) -> None:
