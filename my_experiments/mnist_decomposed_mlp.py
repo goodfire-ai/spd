@@ -298,10 +298,20 @@ def train_decomposed_mlp(
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
 
-            # Compute average CI (sparsity indicator) and L0 per layer
-            avg_ci = sum(ci.mean().item() for ci in ci_values.values()) / len(ci_values)
+            # Compute CI and L0 metrics per layer
+            n_components_fc1 = ci_values["fc1"].shape[-1]
+            n_components_fc2 = ci_values["fc2"].shape[-1]
+
             l0_fc1 = calc_ci_l_zero(ci_values["fc1"], threshold=0.5)
             l0_fc2 = calc_ci_l_zero(ci_values["fc2"], threshold=0.5)
+            l0_total = l0_fc1 + l0_fc2
+
+            alive_pct_fc1 = 100.0 * l0_fc1 / n_components_fc1
+            alive_pct_fc2 = 100.0 * l0_fc2 / n_components_fc2
+
+            mean_ci_fc1 = ci_values["fc1"].mean().item()
+            mean_ci_fc2 = ci_values["fc2"].mean().item()
+            avg_ci = (mean_ci_fc1 + mean_ci_fc2) / 2
 
             pbar.set_postfix(
                 {
@@ -309,6 +319,7 @@ def train_decomposed_mlp(
                     "im": f"{im_loss.item():.4f}",
                     "acc": f"{100.0 * correct / total:.1f}%",
                     "l0": f"{l0_fc1:.0f}/{l0_fc2:.0f}",
+                    "alive%": f"{alive_pct_fc1:.0f}/{alive_pct_fc2:.0f}",
                 }
             )
 
@@ -320,8 +331,13 @@ def train_decomposed_mlp(
                         "train/total_loss": loss.item(),
                         "train/accuracy": 100.0 * correct / total,
                         "train/avg_ci": avg_ci,
+                        "train/mean_ci_fc1": mean_ci_fc1,
+                        "train/mean_ci_fc2": mean_ci_fc2,
                         "train/l0_fc1": l0_fc1,
                         "train/l0_fc2": l0_fc2,
+                        "train/l0_total": l0_total,
+                        "train/alive_pct_fc1": alive_pct_fc1,
+                        "train/alive_pct_fc2": alive_pct_fc2,
                         "train/epoch": epoch,
                     },
                     step=total_steps,
@@ -352,20 +368,22 @@ def evaluate(
     test_loader: DataLoader,
     device: str,
     sampling: str,
-) -> tuple[float, float, float, float]:
+) -> dict[str, float]:
     """Evaluate the model on test set.
 
     Returns:
-        (accuracy, l0_fc1, l0_fc2, avg_ci)
+        Dict with accuracy, L0, alive_pct, and CI metrics per layer.
     """
     model.eval()
     correct = 0
     total = 0
-    total_ci = 0.0
-    total_components = 0
     l0_fc1_sum = 0.0
     l0_fc2_sum = 0.0
+    ci_fc1_sum = 0.0
+    ci_fc2_sum = 0.0
     n_batches = 0
+    n_components_fc1 = model.fc1.C
+    n_components_fc2 = model.fc2.C
 
     with torch.no_grad():
         for images, labels in test_loader:
@@ -377,22 +395,30 @@ def evaluate(
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
 
-            # Track L0 per layer
+            # Track L0 and CI per layer
             l0_fc1_sum += calc_ci_l_zero(ci_values["fc1"], threshold=0.5)
             l0_fc2_sum += calc_ci_l_zero(ci_values["fc2"], threshold=0.5)
+            ci_fc1_sum += ci_values["fc1"].mean().item()
+            ci_fc2_sum += ci_values["fc2"].mean().item()
             n_batches += 1
-
-            # Track CI statistics
-            for ci in ci_values.values():
-                total_ci += ci.sum().item()
-                total_components += ci.numel()
 
     accuracy = 100.0 * correct / total
     l0_fc1 = l0_fc1_sum / n_batches
     l0_fc2 = l0_fc2_sum / n_batches
-    avg_ci = total_ci / total_components
+    mean_ci_fc1 = ci_fc1_sum / n_batches
+    mean_ci_fc2 = ci_fc2_sum / n_batches
 
-    return accuracy, l0_fc1, l0_fc2, avg_ci
+    return {
+        "accuracy": accuracy,
+        "l0_fc1": l0_fc1,
+        "l0_fc2": l0_fc2,
+        "l0_total": l0_fc1 + l0_fc2,
+        "alive_pct_fc1": 100.0 * l0_fc1 / n_components_fc1,
+        "alive_pct_fc2": 100.0 * l0_fc2 / n_components_fc2,
+        "mean_ci_fc1": mean_ci_fc1,
+        "mean_ci_fc2": mean_ci_fc2,
+        "avg_ci": (mean_ci_fc1 + mean_ci_fc2) / 2,
+    }
 
 
 def plot_component_directions(
@@ -502,7 +528,7 @@ def main(
     epochs: int = 50,
     lr: float = 0.001,
     weight_decay: float = 1e-6,
-    importance_coeff: float = 1e-10,
+    importance_coeff: float = 1e-9,
     pnorm: float = 2.0,
     p_anneal_start_frac: float = 0.0,
     p_anneal_final_p: float = 0.5,
@@ -614,18 +640,30 @@ def main(
 
     # Evaluate
     logger.info("Evaluating on test set...")
-    test_acc, l0_fc1, l0_fc2, avg_ci = evaluate(model, test_loader, device, sampling="none")
-    logger.info(f"Test accuracy: {test_acc:.2f}%")
-    logger.info(f"L0 (active components): fc1={l0_fc1:.1f}, fc2={l0_fc2:.1f}")
-    logger.info(f"Average CI: {avg_ci:.4f}")
+    test_metrics = evaluate(model, test_loader, device, sampling="none")
+    logger.info(f"Test accuracy: {test_metrics['accuracy']:.2f}%")
+    logger.info(
+        f"L0 (active components): fc1={test_metrics['l0_fc1']:.1f}, "
+        f"fc2={test_metrics['l0_fc2']:.1f}, total={test_metrics['l0_total']:.1f}"
+    )
+    logger.info(
+        f"Alive components: fc1={test_metrics['alive_pct_fc1']:.1f}%, "
+        f"fc2={test_metrics['alive_pct_fc2']:.1f}%"
+    )
+    logger.info(f"Average CI: {test_metrics['avg_ci']:.4f}")
 
     if wandb_project:
         wandb.log(
             {
-                "test/accuracy": test_acc,
-                "test/l0_fc1": l0_fc1,
-                "test/l0_fc2": l0_fc2,
-                "test/avg_ci": avg_ci,
+                "test/accuracy": test_metrics["accuracy"],
+                "test/l0_fc1": test_metrics["l0_fc1"],
+                "test/l0_fc2": test_metrics["l0_fc2"],
+                "test/l0_total": test_metrics["l0_total"],
+                "test/alive_pct_fc1": test_metrics["alive_pct_fc1"],
+                "test/alive_pct_fc2": test_metrics["alive_pct_fc2"],
+                "test/mean_ci_fc1": test_metrics["mean_ci_fc1"],
+                "test/mean_ci_fc2": test_metrics["mean_ci_fc2"],
+                "test/avg_ci": test_metrics["avg_ci"],
             },
             step=total_steps,
         )
