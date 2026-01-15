@@ -33,6 +33,7 @@ dependencies = [
     "uvicorn",
     "openrouter>=0.1.1",
     "httpx>=0.28.0",
+    "gradio>=6.3.0",
 ]
 
 [dependency-groups]

@@ -836,7 +836,7 @@ def main(
         transcoder_input_unit_norm: Whether to normalize inputs to unit norm
         max_grad_norm: Maximum gradient norm for clipping
         seed: Random seed
-        output_dir: Output directory (defaults to ./mnist_transcoder_output)
+        output_dir: Output directory (defaults to ./output/mnist_transcoder)
         wandb_project: WandB project name (None to disable wandb logging)
         pretrained_mlp_path: Path to pretrained MLP weights (if None, trains new MLP)
     """
@@ -847,7 +847,7 @@ def main(
 
     # Setup output directory
     if output_dir is None:
-        output_dir = "./mnist_transcoder_output"
+        output_dir = "./output/mnist_transcoder"
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 

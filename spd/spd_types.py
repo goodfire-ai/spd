@@ -50,4 +50,4 @@ Probability = Annotated[float, Ge(0), Le(1)]
 
 TaskName = Literal["tms", "resid_mlp", "lm", "ih"]
 
-CiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]
+CiFnType = Literal["mlp", "vector_mlp", "shared_mlp", "linear"]

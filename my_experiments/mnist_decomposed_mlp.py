@@ -1,0 +1,643 @@
+"""Train a decomposed MLP on MNIST from scratch.
+
+Instead of training an MLP and then decomposing it, we train a decomposed model directly.
+The model uses:
+- LinearComponents (V, U matrices) instead of regular Linear layers
+- CI functions to predict which components should be active
+- Stochastic sampling based on CI during training
+- CE loss + importance minimality loss to encourage sparsity
+"""
+
+from pathlib import Path
+
+import einops
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import wandb
+from jaxtyping import Float
+from torch import Tensor
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from tqdm import tqdm
+
+from spd.log import logger
+from spd.metrics.importance_minimality_loss import importance_minimality_loss
+from spd.models.components import LinearCiFn, MLPCiFn
+from spd.models.sigmoids import SIGMOID_TYPES
+from spd.utils.distributed_utils import get_device
+from spd.utils.general_utils import set_seed
+from spd.utils.module_utils import init_param_
+
+
+class DecomposedLinear(nn.Module):
+    """A linear layer decomposed into C components with learned causal importance.
+
+    Instead of a single weight matrix W, we have:
+    - V: (d_in, C) - projects input to C component activations
+    - U: (C, d_out) - projects component activations to output
+    - ci_fn: predicts which components should be active given component activations
+
+    The effective weight is V @ U (shape d_in x d_out -> transposed gives d_out x d_in).
+    """
+
+    def __init__(
+        self,
+        d_in: int,
+        d_out: int,
+        C: int,
+        ci_fn_type: str = "linear",
+        ci_fn_hidden_dims: list[int] | None = None,
+        bias: bool = True,
+    ):
+        super().__init__()
+        self.d_in = d_in
+        self.d_out = d_out
+        self.C = C
+
+        # Component matrices
+        self.V = nn.Parameter(torch.empty(d_in, C))
+        self.U = nn.Parameter(torch.empty(C, d_out))
+        init_param_(self.V, fan_val=d_in, nonlinearity="linear")
+        init_param_(self.U, fan_val=C, nonlinearity="linear")
+
+        # Bias (not decomposed)
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(d_out))
+        else:
+            self.register_parameter("bias", None)
+
+        # CI function
+        if ci_fn_type == "linear":
+            self.ci_fn = LinearCiFn(C=C)
+        elif ci_fn_type == "mlp":
+            hidden_dims = ci_fn_hidden_dims or [256]
+            self.ci_fn = MLPCiFn(C=C, hidden_dims=hidden_dims)
+        else:
+            raise ValueError(f"Unknown ci_fn_type: {ci_fn_type}")
+
+        # Sigmoid functions for CI
+        self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
+        self.upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
+
+    @property
+    def weight(self) -> Float[Tensor, "d_out d_in"]:
+        """Effective weight matrix (V @ U).T to match nn.Linear convention."""
+        return einops.einsum(self.V, self.U, "d_in C, C d_out -> d_out d_in")
+
+    def get_component_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
+        """Project input to component activations."""
+        return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
+
+    def forward(
+        self,
+        x: Float[Tensor, "... d_in"],
+        sampling: str = "none",
+        return_ci: bool = False,
+    ) -> Float[Tensor, "... d_out"] | tuple[Float[Tensor, "... d_out"], Float[Tensor, "... C"]]:
+        """Forward pass with optional stochastic component sampling.
+
+        Args:
+            x: Input tensor
+            sampling: "none" for deterministic, "bernoulli" for stochastic sampling
+            return_ci: Whether to return CI values
+
+        Returns:
+            Output tensor, and optionally CI values
+        """
+        # Get component activations
+        component_acts = self.get_component_acts(x)  # (... C)
+
+        # Compute CI values
+        ci_pre_sigmoid = self.ci_fn(component_acts)  # (... C)
+
+        if sampling == "bernoulli":
+            # Stochastic sampling: sample from Bernoulli with CI as probability
+            # Use reparameterization trick for gradients
+            ci_for_sampling = 1.05 * ci_pre_sigmoid - 0.05 * torch.rand_like(ci_pre_sigmoid)
+            ci_lower = self.lower_leaky_fn(ci_for_sampling)
+            mask = torch.bernoulli(ci_lower)
+        elif sampling == "none":
+            # Deterministic: use soft CI values
+            ci_lower = self.lower_leaky_fn(ci_pre_sigmoid)
+            mask = ci_lower
+        else:
+            raise ValueError(f"Unknown sampling: {sampling}")
+
+        # Apply mask to component activations
+        masked_acts = component_acts * mask  # (... C)
+
+        # Project to output
+        out = einops.einsum(masked_acts, self.U, "... C, C d_out -> ... d_out")
+
+        if self.bias is not None:
+            out = out + self.bias
+
+        if return_ci:
+            ci_upper = self.upper_leaky_fn(ci_pre_sigmoid)
+            return out, ci_upper
+
+        return out
+
+
+class DecomposedMLP(nn.Module):
+    """A 2-layer MLP with decomposed linear layers.
+
+    Architecture: input -> DecomposedLinear -> ReLU -> DecomposedLinear -> output
+    """
+
+    def __init__(
+        self,
+        input_size: int = 784,
+        hidden_size: int = 128,
+        num_classes: int = 10,
+        n_components: int = 500,
+        ci_fn_type: str = "linear",
+        ci_fn_hidden_dims: list[int] | None = None,
+    ):
+        super().__init__()
+        self.fc1 = DecomposedLinear(
+            d_in=input_size,
+            d_out=hidden_size,
+            C=n_components,
+            ci_fn_type=ci_fn_type,
+            ci_fn_hidden_dims=ci_fn_hidden_dims,
+        )
+        self.fc2 = DecomposedLinear(
+            d_in=hidden_size,
+            d_out=num_classes,
+            C=n_components,
+            ci_fn_type=ci_fn_type,
+            ci_fn_hidden_dims=ci_fn_hidden_dims,
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        sampling: str = "none",
+        return_ci: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor]]:
+        """Forward pass.
+
+        Args:
+            x: Input tensor (batch, 784) or (batch, 1, 28, 28)
+            sampling: "none" for deterministic, "bernoulli" for stochastic
+            return_ci: Whether to return CI values for each layer
+
+        Returns:
+            Logits, and optionally dict of CI values per layer
+        """
+        x = x.view(x.size(0), -1)  # Flatten
+
+        if return_ci:
+            h, ci1 = self.fc1(x, sampling=sampling, return_ci=True)
+            h = F.relu(h)
+            out, ci2 = self.fc2(h, sampling=sampling, return_ci=True)
+            return out, {"fc1": ci1, "fc2": ci2}
+        else:
+            h = self.fc1(x, sampling=sampling)
+            h = F.relu(h)
+            out = self.fc2(h, sampling=sampling)
+            return out
+
+
+def train_decomposed_mlp(
+    model: DecomposedMLP,
+    train_loader: DataLoader,
+    device: str,
+    epochs: int = 50,
+    lr: float = 0.001,
+    weight_decay: float = 0.0,
+    importance_coeff: float = 1e-3,
+    pnorm: float = 0.5,
+    p_anneal_start_frac: float = 0.0,
+    p_anneal_final_p: float | None = None,
+    p_anneal_end_frac: float = 0.5,
+    sampling: str = "bernoulli",
+    log_wandb: bool = False,
+) -> int:
+    """Train the decomposed MLP on MNIST.
+
+    Args:
+        model: DecomposedMLP model
+        train_loader: MNIST training data loader
+        device: Device to train on
+        epochs: Number of training epochs
+        lr: Learning rate
+        weight_decay: Weight decay
+        importance_coeff: Coefficient for importance minimality loss
+        pnorm: Starting p-norm for importance minimality (smaller = sparser)
+        p_anneal_start_frac: Fraction of training to start annealing p
+        p_anneal_final_p: Final p value after annealing (None = same as pnorm, no annealing)
+        p_anneal_end_frac: Fraction of training to finish annealing p
+        sampling: "bernoulli" for stochastic, "none" for deterministic
+        log_wandb: Whether to log to W&B
+
+    Returns:
+        Total number of training steps
+    """
+    model.train()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    criterion = nn.CrossEntropyLoss()
+
+    # Default p_anneal_final_p to pnorm if not specified (no annealing)
+    if p_anneal_final_p is None:
+        p_anneal_final_p = pnorm
+
+    logger.info(f"Training decomposed MLP for {epochs} epochs...")
+    logger.info(f"  - Sampling: {sampling}")
+    logger.info(f"  - Importance coeff: {importance_coeff}")
+    logger.info(
+        f"  - P-norm: {pnorm} -> {p_anneal_final_p} (anneal {p_anneal_start_frac}-{p_anneal_end_frac})"
+    )
+
+    total_steps = 0
+    total_training_steps = epochs * len(train_loader)
+
+    for epoch in range(epochs):
+        total_ce_loss = 0.0
+        total_im_loss = 0.0
+        correct = 0
+        total = 0
+
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}")
+        for batch_idx, (images, labels) in enumerate(pbar):
+            images = images.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+
+            # Forward pass with CI values
+            outputs, ci_values = model(images, sampling=sampling, return_ci=True)
+
+            # CE loss
+            ce_loss = criterion(outputs, labels)
+
+            # Importance minimality loss (using SPD's implementation)
+            current_frac = total_steps / total_training_steps
+            im_loss = importance_minimality_loss(
+                ci_upper_leaky=ci_values,
+                current_frac_of_training=current_frac,
+                pnorm=pnorm,
+                eps=1e-8,
+                p_anneal_start_frac=p_anneal_start_frac,
+                p_anneal_final_p=p_anneal_final_p,
+                p_anneal_end_frac=p_anneal_end_frac,
+            )
+
+            # Total loss
+            loss = ce_loss + importance_coeff * im_loss
+
+            loss.backward()
+            optimizer.step()
+
+            total_ce_loss += ce_loss.item()
+            total_im_loss += im_loss.item()
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
+
+            # Compute average CI (sparsity indicator)
+            avg_ci = sum(ci.mean().item() for ci in ci_values.values()) / len(ci_values)
+
+            pbar.set_postfix(
+                {
+                    "ce": f"{ce_loss.item():.4f}",
+                    "im": f"{im_loss.item():.4f}",
+                    "acc": f"{100.0 * correct / total:.1f}%",
+                    "ci": f"{avg_ci:.3f}",
+                }
+            )
+
+            if log_wandb and batch_idx % 100 == 0:
+                wandb.log(
+                    {
+                        "train/ce_loss": ce_loss.item(),
+                        "train/im_loss": im_loss.item(),
+                        "train/total_loss": loss.item(),
+                        "train/accuracy": 100.0 * correct / total,
+                        "train/avg_ci": avg_ci,
+                        "train/epoch": epoch,
+                    },
+                    step=total_steps,
+                )
+
+            total_steps += 1
+
+        avg_ce = total_ce_loss / len(train_loader)
+        avg_im = total_im_loss / len(train_loader)
+        accuracy = 100.0 * correct / total
+        logger.info(f"Epoch {epoch + 1}: CE={avg_ce:.4f}, IM={avg_im:.4f}, Acc={accuracy:.2f}%")
+
+        if log_wandb:
+            wandb.log(
+                {
+                    "train/epoch_ce_loss": avg_ce,
+                    "train/epoch_im_loss": avg_im,
+                    "train/epoch_accuracy": accuracy,
+                },
+                step=total_steps - 1,
+            )
+
+    return total_steps
+
+
+def evaluate(
+    model: DecomposedMLP,
+    test_loader: DataLoader,
+    device: str,
+    sampling: str = "none",
+) -> tuple[float, float, float]:
+    """Evaluate the model on test set.
+
+    Returns:
+        (accuracy, avg_ci, active_components_ratio)
+    """
+    model.eval()
+    correct = 0
+    total = 0
+    total_ci = 0.0
+    total_active = 0
+    total_components = 0
+
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            outputs, ci_values = model(images, sampling=sampling, return_ci=True)
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
+
+            # Track CI statistics
+            for ci in ci_values.values():
+                total_ci += ci.sum().item()
+                total_active += (ci > 0.5).sum().item()
+                total_components += ci.numel()
+
+    accuracy = 100.0 * correct / total
+    avg_ci = total_ci / total_components
+    active_ratio = 100.0 * total_active / total_components
+
+    return accuracy, avg_ci, active_ratio
+
+
+def plot_component_directions(
+    model: DecomposedMLP,
+    out_dir: Path,
+    n_components_to_show: int = 20,
+    log_wandb: bool = False,
+) -> None:
+    """Plot component directions as images for fc1."""
+    V_fc1 = model.fc1.V.detach().cpu()  # (784, C)
+    C = V_fc1.shape[1]
+    n_show = min(n_components_to_show, C)
+
+    n_cols = 5
+    n_rows = (n_show + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 3, n_rows * 3))
+    if n_rows == 1:
+        axes = axes.reshape(1, -1)
+    axes = axes.flatten()
+
+    for i in range(n_show):
+        direction = V_fc1[:, i].reshape(28, 28).numpy()
+        vmin, vmax = direction.min(), direction.max()
+        if vmax - vmin > 1e-6:
+            direction = (direction - vmin) / (vmax - vmin)
+
+        im = axes[i].imshow(direction, cmap="RdBu_r", vmin=0, vmax=1)
+        axes[i].set_title(f"Component {i}", fontsize=10)
+        axes[i].axis("off")
+        plt.colorbar(im, ax=axes[i], fraction=0.046)
+
+    for i in range(n_show, len(axes)):
+        axes[i].axis("off")
+
+    plt.suptitle("FC1 Component Directions (Input Space)", fontsize=14, y=0.995)
+    plt.tight_layout()
+
+    plot_path = out_dir / "component_directions_fc1.png"
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Saved component directions to {plot_path}")
+
+    if log_wandb:
+        wandb.log({"visualizations/component_directions_fc1": wandb.Image(str(plot_path))})
+
+
+def plot_ci_distribution(
+    model: DecomposedMLP,
+    test_loader: DataLoader,
+    device: str,
+    out_dir: Path,
+    log_wandb: bool = False,
+) -> None:
+    """Plot distribution of CI values across test set."""
+    model.eval()
+
+    all_ci_fc1 = []
+    all_ci_fc2 = []
+
+    with torch.no_grad():
+        for images, _ in test_loader:
+            images = images.to(device)
+            _, ci_values = model(images, sampling="none", return_ci=True)
+            all_ci_fc1.append(ci_values["fc1"].cpu())
+            all_ci_fc2.append(ci_values["fc2"].cpu())
+
+    ci_fc1 = torch.cat(all_ci_fc1, dim=0)  # (N, C)
+    ci_fc2 = torch.cat(all_ci_fc2, dim=0)  # (N, C)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # FC1 CI distribution
+    mean_ci_fc1 = ci_fc1.mean(dim=0).numpy()
+    axes[0].bar(range(len(mean_ci_fc1)), np.sort(mean_ci_fc1)[::-1], alpha=0.7)
+    axes[0].set_xlabel("Component (sorted by CI)")
+    axes[0].set_ylabel("Mean CI")
+    axes[0].set_title(
+        f"FC1 CI Distribution (active>0.5: {(mean_ci_fc1 > 0.5).sum()}/{len(mean_ci_fc1)})"
+    )
+    axes[0].axhline(y=0.5, color="r", linestyle="--", alpha=0.5)
+
+    # FC2 CI distribution
+    mean_ci_fc2 = ci_fc2.mean(dim=0).numpy()
+    axes[1].bar(range(len(mean_ci_fc2)), np.sort(mean_ci_fc2)[::-1], alpha=0.7)
+    axes[1].set_xlabel("Component (sorted by CI)")
+    axes[1].set_ylabel("Mean CI")
+    axes[1].set_title(
+        f"FC2 CI Distribution (active>0.5: {(mean_ci_fc2 > 0.5).sum()}/{len(mean_ci_fc2)})"
+    )
+    axes[1].axhline(y=0.5, color="r", linestyle="--", alpha=0.5)
+
+    plt.tight_layout()
+
+    plot_path = out_dir / "ci_distribution.png"
+    plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    logger.info(f"Saved CI distribution to {plot_path}")
+
+    if log_wandb:
+        wandb.log({"visualizations/ci_distribution": wandb.Image(str(plot_path))})
+
+
+def main(
+    hidden_size: int = 128,
+    n_components: int = 500,
+    epochs: int = 50,
+    lr: float = 0.001,
+    weight_decay: float = 1e-4,
+    importance_coeff: float = 1e-3,
+    pnorm: float = 2.0,
+    p_anneal_start_frac: float = 0.0,
+    p_anneal_final_p: float = 0.5,
+    p_anneal_end_frac: float = 0.5,
+    sampling: str = "bernoulli",
+    ci_fn_type: str = "linear",
+    seed: int = 42,
+    output_dir: str | None = None,
+    wandb_project: str | None = "mnist_predecomposed_mlp",
+) -> None:
+    """Main experiment function.
+
+    Args:
+        hidden_size: Hidden layer size
+        n_components: Number of components per layer
+        epochs: Training epochs
+        lr: Learning rate
+        weight_decay: Weight decay
+        importance_coeff: Coefficient for importance minimality loss
+        pnorm: Starting p-norm for sparsity (smaller = sparser)
+        p_anneal_start_frac: Fraction of training to start annealing p
+        p_anneal_final_p: Final p value after annealing
+        p_anneal_end_frac: Fraction of training to finish annealing p
+        sampling: "bernoulli" for stochastic, "none" for deterministic
+        ci_fn_type: "linear" or "mlp"
+        seed: Random seed
+        output_dir: Output directory
+        wandb_project: W&B project name (None to disable)
+    """
+    device = get_device()
+    logger.info(f"Using device: {device}")
+
+    set_seed(seed)
+
+    # Setup output directory
+    if output_dir is None:
+        output_dir = "./output/mnist_decomposed"
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    # Initialize wandb
+    if wandb_project:
+        import os
+
+        from dotenv import load_dotenv
+
+        load_dotenv(override=True)
+        run_name = f"decomposed_h{hidden_size}_c{n_components}_im{importance_coeff}_p{pnorm}"
+
+        wandb.init(
+            project=wandb_project,
+            entity=os.getenv("WANDB_ENTITY"),
+            name=run_name,
+            tags=["mnist", "decomposed", "from_scratch"],
+            config={
+                "hidden_size": hidden_size,
+                "n_components": n_components,
+                "epochs": epochs,
+                "lr": lr,
+                "weight_decay": weight_decay,
+                "importance_coeff": importance_coeff,
+                "pnorm": pnorm,
+                "p_anneal_start_frac": p_anneal_start_frac,
+                "p_anneal_final_p": p_anneal_final_p,
+                "p_anneal_end_frac": p_anneal_end_frac,
+                "sampling": sampling,
+                "ci_fn_type": ci_fn_type,
+                "seed": seed,
+            },
+        )
+
+    # Load MNIST
+    logger.info("Loading MNIST dataset...")
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_dataset = datasets.MNIST(root="./data", train=True, download=True, transform=transform)
+    test_dataset = datasets.MNIST(root="./data", train=False, download=True, transform=transform)
+
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+    # Create model
+    logger.info(f"Creating decomposed MLP with {n_components} components per layer...")
+    model = DecomposedMLP(
+        input_size=784,
+        hidden_size=hidden_size,
+        num_classes=10,
+        n_components=n_components,
+        ci_fn_type=ci_fn_type,
+    )
+    model = model.to(device)
+
+    # Train
+    total_steps = train_decomposed_mlp(
+        model=model,
+        train_loader=train_loader,
+        device=device,
+        epochs=epochs,
+        lr=lr,
+        weight_decay=weight_decay,
+        importance_coeff=importance_coeff,
+        pnorm=pnorm,
+        p_anneal_start_frac=p_anneal_start_frac,
+        p_anneal_final_p=p_anneal_final_p,
+        p_anneal_end_frac=p_anneal_end_frac,
+        sampling=sampling,
+        log_wandb=wandb_project is not None,
+    )
+
+    # Evaluate
+    logger.info("Evaluating on test set...")
+    test_acc, avg_ci, active_ratio = evaluate(model, test_loader, device, sampling="none")
+    logger.info(f"Test accuracy: {test_acc:.2f}%")
+    logger.info(f"Average CI: {avg_ci:.4f}")
+    logger.info(f"Active components (CI > 0.5): {active_ratio:.2f}%")
+
+    if wandb_project:
+        wandb.log(
+            {
+                "test/accuracy": test_acc,
+                "test/avg_ci": avg_ci,
+                "test/active_ratio": active_ratio,
+            },
+            step=total_steps,
+        )
+
+    # Save model
+    model_path = out_path / "decomposed_mlp.pth"
+    torch.save(model.state_dict(), model_path)
+    logger.info(f"Saved model to {model_path}")
+
+    # Visualizations
+    logger.info("Creating visualizations...")
+    plot_component_directions(
+        model, out_path, n_components_to_show=20, log_wandb=wandb_project is not None
+    )
+    plot_ci_distribution(model, test_loader, device, out_path, log_wandb=wandb_project is not None)
+
+    logger.info("Experiment complete!")
+    logger.info(f"All outputs saved to: {out_path}")
+
+    if wandb_project:
+        wandb.finish()
+
+
+if __name__ == "__main__":
+    import fire
+
+    fire.Fire(main)

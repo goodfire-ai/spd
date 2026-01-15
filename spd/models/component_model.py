@@ -18,6 +18,7 @@ from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
     Identity,
+    LinearCiFn,
     LinearComponents,
     MLPCiFn,
     VectorMLPCiFn,
@@ -195,10 +196,15 @@ class ComponentModel(LoadableModule):
     ) -> nn.Module:
         """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
         if isinstance(target_module, nn.Embedding):
-            assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
+            assert ci_fn_type in ("mlp", "linear"), (
+                f"Embedding modules only supported for ci_fn_type='mlp' or 'linear', got {ci_fn_type}"
+            )
 
         if ci_fn_type == "mlp":
             return MLPCiFn(C=C, hidden_dims=ci_fn_hidden_dims)
+
+        if ci_fn_type == "linear":
+            return LinearCiFn(C=C)
 
         match target_module:
             case nn.Linear():
@@ -505,7 +511,7 @@ class ComponentModel(LoadableModule):
             ci_fn = self.ci_fns[target_module_name]
 
             match ci_fn:
-                case MLPCiFn():
+                case MLPCiFn() | LinearCiFn():
                     ci_fn_input = self.components[target_module_name].get_component_acts(
                         input_activations
                     )

@@ -110,6 +110,21 @@ class VectorSharedMLPCiFn(nn.Module):
         return self.layers(x)
 
 
+class LinearCiFn(nn.Module):
+    """Maps each component's scalar activation to its CI via a separate linear transform (scale + bias)."""
+
+    def __init__(self, C: int):
+        super().__init__()
+        # Each component has its own weight and bias: CI_c = w_c * act_c + b_c
+        self.linear = ParallelLinear(C, input_dim=1, output_dim=1, nonlinearity="linear")
+
+    @override
+    def forward(self, x: Float[Tensor, "... C"]) -> Float[Tensor, "... C"]:
+        x = einops.rearrange(x, "... C -> ... C 1")
+        x = self.linear(x)
+        return x[..., 0]
+
+
 WeightDeltaAndMask = tuple[Float[Tensor, "d_out d_in"], Float[Tensor, "..."]]
 
 

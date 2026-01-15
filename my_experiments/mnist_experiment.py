@@ -193,7 +193,7 @@ def main(
         spd_lr: Learning rate for SPD decomposition
         n_components: Number of components per layer for decomposition
         seed: Random seed
-        output_dir: Output directory (defaults to ./mnist_experiment_output)
+        output_dir: Output directory (defaults to ./output/mnist_experiment)
         wandb_project: WandB project name (None to disable wandb logging)
     """
     device = get_device()
@@ -203,7 +203,7 @@ def main(
 
     # Setup output directory
     if output_dir is None:
-        output_dir = "./mnist_experiment_output"
+        output_dir = "./output/mnist_experiment"
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
