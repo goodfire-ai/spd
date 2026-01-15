@@ -27,6 +27,7 @@ from spd.log import logger
 from spd.metrics.importance_minimality_loss import importance_minimality_loss
 from spd.models.components import LinearCiFn, MLPCiFn
 from spd.models.sigmoids import SIGMOID_TYPES
+from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import set_seed
 from spd.utils.module_utils import init_param_
@@ -297,15 +298,17 @@ def train_decomposed_mlp(
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
 
-            # Compute average CI (sparsity indicator)
+            # Compute average CI (sparsity indicator) and L0 per layer
             avg_ci = sum(ci.mean().item() for ci in ci_values.values()) / len(ci_values)
+            l0_fc1 = calc_ci_l_zero(ci_values["fc1"], threshold=0.5)
+            l0_fc2 = calc_ci_l_zero(ci_values["fc2"], threshold=0.5)
 
             pbar.set_postfix(
                 {
                     "ce": f"{ce_loss.item():.4f}",
                     "im": f"{im_loss.item():.4f}",
                     "acc": f"{100.0 * correct / total:.1f}%",
-                    "ci": f"{avg_ci:.3f}",
+                    "l0": f"{l0_fc1:.0f}/{l0_fc2:.0f}",
                 }
             )
 
@@ -317,6 +320,8 @@ def train_decomposed_mlp(
                         "train/total_loss": loss.item(),
                         "train/accuracy": 100.0 * correct / total,
                         "train/avg_ci": avg_ci,
+                        "train/l0_fc1": l0_fc1,
+                        "train/l0_fc2": l0_fc2,
                         "train/epoch": epoch,
                     },
                     step=total_steps,
@@ -347,18 +352,20 @@ def evaluate(
     test_loader: DataLoader,
     device: str,
     sampling: str,
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float]:
     """Evaluate the model on test set.
 
     Returns:
-        (accuracy, avg_ci, active_components_ratio)
+        (accuracy, l0_fc1, l0_fc2, avg_ci)
     """
     model.eval()
     correct = 0
     total = 0
     total_ci = 0.0
-    total_active = 0
     total_components = 0
+    l0_fc1_sum = 0.0
+    l0_fc2_sum = 0.0
+    n_batches = 0
 
     with torch.no_grad():
         for images, labels in test_loader:
@@ -370,17 +377,22 @@ def evaluate(
             total += labels.size(0)
             correct += predicted.eq(labels).sum().item()
 
+            # Track L0 per layer
+            l0_fc1_sum += calc_ci_l_zero(ci_values["fc1"], threshold=0.5)
+            l0_fc2_sum += calc_ci_l_zero(ci_values["fc2"], threshold=0.5)
+            n_batches += 1
+
             # Track CI statistics
             for ci in ci_values.values():
                 total_ci += ci.sum().item()
-                total_active += (ci > 0.5).sum().item()
                 total_components += ci.numel()
 
     accuracy = 100.0 * correct / total
+    l0_fc1 = l0_fc1_sum / n_batches
+    l0_fc2 = l0_fc2_sum / n_batches
     avg_ci = total_ci / total_components
-    active_ratio = 100.0 * total_active / total_components
 
-    return accuracy, avg_ci, active_ratio
+    return accuracy, l0_fc1, l0_fc2, avg_ci
 
 
 def plot_component_directions(
@@ -490,7 +502,7 @@ def main(
     epochs: int = 50,
     lr: float = 0.001,
     weight_decay: float = 1e-6,
-    importance_coeff: float = 1e-6,
+    importance_coeff: float = 1e-10,
     pnorm: float = 2.0,
     p_anneal_start_frac: float = 0.0,
     p_anneal_final_p: float = 0.5,
@@ -602,17 +614,18 @@ def main(
 
     # Evaluate
     logger.info("Evaluating on test set...")
-    test_acc, avg_ci, active_ratio = evaluate(model, test_loader, device, sampling="none")
+    test_acc, l0_fc1, l0_fc2, avg_ci = evaluate(model, test_loader, device, sampling="none")
     logger.info(f"Test accuracy: {test_acc:.2f}%")
+    logger.info(f"L0 (active components): fc1={l0_fc1:.1f}, fc2={l0_fc2:.1f}")
     logger.info(f"Average CI: {avg_ci:.4f}")
-    logger.info(f"Active components (CI > 0.5): {active_ratio:.2f}%")
 
     if wandb_project:
         wandb.log(
             {
                 "test/accuracy": test_acc,
+                "test/l0_fc1": l0_fc1,
+                "test/l0_fc2": l0_fc2,
                 "test/avg_ci": avg_ci,
-                "test/active_ratio": active_ratio,
             },
             step=total_steps,
         )
