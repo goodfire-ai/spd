@@ -331,7 +331,6 @@ def optimize_ci_values(
             ci_upper_leaky=ci_outputs.upper_leaky,
             current_frac_of_training=step / config.steps,
             pnorm_1=config.imp_min_config.pnorm_1,
-            pnorm_2=config.imp_min_config.pnorm_2,
             beta=config.imp_min_config.beta,
             eps=config.imp_min_config.eps,
             p_anneal_start_frac=config.imp_min_config.p_anneal_start_frac,

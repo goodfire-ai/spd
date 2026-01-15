@@ -447,7 +447,6 @@ class TestConfigIntegration:
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.5,  # Will be overridden
                     "pnorm_1": 1.0,
-                    "pnorm_2": 1.0,
                     "beta": 0.5,
                     "eps": 1e-12,
                 }

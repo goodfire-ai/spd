@@ -50,7 +50,6 @@ export type OptimizeConfig = {
     impMinCoeff: number;
     steps: number;
     pnorm_1: number;
-    pnorm_2: number;
     beta: number;
 };
 
@@ -80,7 +79,6 @@ export function defaultOptimizeConfig(): OptimizeConfig {
         impMinCoeff: 0.1,
         steps: 2000,
         pnorm_1: 0.3,
-        pnorm_2: 0,
         beta: 0,
     };
 }

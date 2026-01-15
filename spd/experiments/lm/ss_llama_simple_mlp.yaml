@@ -27,7 +27,6 @@ loss_metric_configs:
 - coeff: 0.004
   classname: ImportanceMinimalityLoss
   pnorm_1: 2.0
-  pnorm_2: 0
   beta: 0
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.5

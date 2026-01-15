@@ -85,7 +85,6 @@ export type ComputeGraphOptimizedParams = {
     impMinCoeff: number;
     steps: number;
     pnorm_1: number;
-    pnorm_2: number;
     beta: number;
     normalize: NormalizeType;
     outputProbThreshold: number;
@@ -104,7 +103,6 @@ export async function computeGraphOptimizedStreaming(
     url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
     url.searchParams.set("steps", String(params.steps));
     url.searchParams.set("pnorm_1", String(params.pnorm_1));
-    url.searchParams.set("pnorm_2", String(params.pnorm_2));
     url.searchParams.set("beta", String(params.beta));
     url.searchParams.set("normalize", String(params.normalize));
     url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));

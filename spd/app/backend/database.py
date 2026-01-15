@@ -45,7 +45,6 @@ class OptimizationParams(BaseModel):
     imp_min_coeff: float
     steps: int
     pnorm_1: float
-    pnorm_2: float
     beta: float
     # CE loss params (optional, must be set together)
     label_token: int | None = None
@@ -470,7 +469,7 @@ class LocalAttrDB:
         kl_loss_coeff = None
         steps = None
         pnorm_1 = None
-        pnorm_2 = None
+        pnorm_2 = None  # Deprecated, kept for DB compatibility
         beta = None
         label_prob = None
 
@@ -481,7 +480,7 @@ class LocalAttrDB:
             kl_loss_coeff = graph.optimization_params.kl_loss_coeff
             steps = graph.optimization_params.steps
             pnorm_1 = graph.optimization_params.pnorm_1
-            pnorm_2 = graph.optimization_params.pnorm_2
+            # pnorm_2 is deprecated and no longer used
             beta = graph.optimization_params.beta
             label_prob = graph.label_prob  # May be None for KL-only optimization
 
@@ -566,7 +565,6 @@ class LocalAttrDB:
                     imp_min_coeff=row["imp_min_coeff"],
                     steps=row["steps"],
                     pnorm_1=row["pnorm_1"],
-                    pnorm_2=row["pnorm_2"],
                     beta=row["beta"],
                     label_token=row["label_token"],
                     ce_loss_coeff=row["ce_loss_coeff"],

@@ -21,7 +21,6 @@ loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 3e-3
     pnorm_1: 1.0
-    pnorm_2: 0
     beta: 0
   - classname: "StochasticReconLoss"
     coeff: 1.0
