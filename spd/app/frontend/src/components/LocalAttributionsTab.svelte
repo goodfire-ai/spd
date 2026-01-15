@@ -402,6 +402,12 @@
             return;
         }
 
+        // Validate selection is not empty (defense in depth - button should be disabled)
+        if (composerState.selection.size === 0) {
+            console.warn("handleGenerateGraphFromSelection called with empty selection");
+            return;
+        }
+
         const cardId = activeCard.id;
         const includedNodes = Array.from(composerState.selection);
 
@@ -435,6 +441,19 @@
 
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
+
+                // Check if graph with this ID already exists (get-or-create semantics from backend)
+                const existingGraph = card.graphs.find((g) => g.id === data.id);
+                if (existingGraph) {
+                    // Graph already exists, just select it
+                    return {
+                        ...card,
+                        activeGraphId: data.id,
+                        activeView: "graph",
+                    };
+                }
+
+                // Add new graph
                 return {
                     ...card,
                     graphs: [
@@ -545,6 +564,13 @@
 
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
+
+                // Check if graph with this ID already exists (defensive check)
+                const existingGraph = card.graphs.find((g) => g.id === data.id);
+                if (existingGraph) {
+                    return { ...card, activeGraphId: data.id };
+                }
+
                 return {
                     ...card,
                     graphs: [

@@ -6,6 +6,7 @@ SPD_OUT_DIR/harvest/<run_id>/.
 Interpretations are stored separately at SPD_OUT_DIR/autointerp/<run_id>/.
 """
 
+import hashlib
 import json
 import sqlite3
 from dataclasses import asdict
@@ -194,6 +195,7 @@ class LocalAttrDB:
 
                 -- Manual graph params (NULL for non-manual graphs)
                 included_nodes TEXT,  -- JSON array of node keys in this graph
+                included_nodes_hash TEXT,  -- SHA256 hash of sorted JSON for uniqueness
 
                 -- The actual graph data (JSON)
                 edges_data TEXT NOT NULL,
@@ -220,9 +222,9 @@ class LocalAttrDB:
                 ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1, pnorm_2, beta, mask_type)
                 WHERE graph_type = 'optimized';
 
-            -- One manual graph per unique node set (included_nodes stored sorted for comparison)
+            -- One manual graph per unique node set (using hash for reliable uniqueness)
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_manual
-                ON graphs(prompt_id, included_nodes)
+                ON graphs(prompt_id, included_nodes_hash)
                 WHERE graph_type = 'manual';
 
             CREATE INDEX IF NOT EXISTS idx_graphs_prompt
@@ -530,19 +532,21 @@ class LocalAttrDB:
             label_prob = graph.label_prob
 
         # Extract manual-specific values (NULL for non-manual graphs)
-        # Sort included_nodes for consistent comparison in unique index
-        included_nodes_json = (
-            json.dumps(sorted(graph.included_nodes)) if graph.included_nodes else None
-        )
+        # Sort included_nodes and compute hash for reliable uniqueness
+        included_nodes_json: str | None = None
+        included_nodes_hash: str | None = None
+        if graph.included_nodes:
+            included_nodes_json = json.dumps(sorted(graph.included_nodes))
+            included_nodes_hash = hashlib.sha256(included_nodes_json.encode()).hexdigest()
 
         try:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, graph_type,
                     label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1,
-                    pnorm_2, beta, mask_type, included_nodes,
+                    pnorm_2, beta, mask_type, included_nodes, included_nodes_hash,
                     edges_data, output_probs_data, node_ci_vals, node_subcomp_acts, label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
@@ -556,6 +560,7 @@ class LocalAttrDB:
                     beta,
                     mask_type,
                     included_nodes_json,
+                    included_nodes_hash,
                     edges_json,
                     probs_json,
                     node_ci_vals_json,
@@ -579,6 +584,17 @@ class LocalAttrDB:
                         f"Optimized graph with same parameters already exists for prompt_id={prompt_id}."
                     ) from e
                 case "manual":
+                    # Get-or-create semantics: return existing graph ID
+                    conn.rollback()
+                    row = conn.execute(
+                        """SELECT id FROM graphs
+                           WHERE prompt_id = ? AND graph_type = 'manual'
+                           AND included_nodes_hash = ?""",
+                        (prompt_id, included_nodes_hash),
+                    ).fetchone()
+                    if row:
+                        return row["id"]
+                    # Should not happen if constraint triggered
                     raise ValueError("A manual graph with the same nodes already exists.") from e
 
     def _row_to_stored_graph(self, row: sqlite3.Row) -> StoredGraph:

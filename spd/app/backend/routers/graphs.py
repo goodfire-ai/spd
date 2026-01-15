@@ -323,16 +323,33 @@ def compute_graph_stream(
     """
     output_prob_threshold = 0.01
 
-    # Parse included_nodes if provided
+    # Parse and validate included_nodes if provided
     included_nodes_set: set[str] | None = None
     included_nodes_list: list[str] | None = None
     if included_nodes is not None:
         try:
-            parsed_nodes: list[str] = json.loads(included_nodes)
-            included_nodes_list = parsed_nodes
-            included_nodes_set = set(parsed_nodes)
+            parsed_nodes = json.loads(included_nodes)
         except json.JSONDecodeError as e:
             raise HTTPException(status_code=400, detail="Invalid included_nodes JSON") from e
+
+        # Validate structure
+        if not isinstance(parsed_nodes, list):
+            raise HTTPException(status_code=400, detail="included_nodes must be a JSON array")
+
+        # Validate size (10000 nodes is more than any realistic use case)
+        if len(parsed_nodes) > 10000:
+            raise HTTPException(status_code=400, detail="Too many nodes (max 10000)")
+
+        # Validate all elements are strings with reasonable length
+        # Node keys follow format "layer:seq:cIdx", 100 chars is generous
+        for node in parsed_nodes:
+            if not isinstance(node, str):
+                raise HTTPException(status_code=400, detail="All node keys must be strings")
+            if len(node) > 100:
+                raise HTTPException(status_code=400, detail=f"Node key too long: {node[:50]}...")
+
+        included_nodes_list = parsed_nodes
+        included_nodes_set = set(parsed_nodes)
 
     # Determine graph type
     is_manual = included_nodes_set is not None

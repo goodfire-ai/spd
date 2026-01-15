@@ -6,7 +6,7 @@ to avoid importing script files with global execution.
 
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, override
 
 import torch
@@ -65,10 +65,15 @@ class Node:
     layer: str
     seq_pos: int
     component_idx: int
+    _str_cache: str = field(default="", init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # Cache string representation for efficient repeated lookups
+        self._str_cache = f"{self.layer}:{self.seq_pos}:{self.component_idx}"
 
     @override
     def __str__(self) -> str:
-        return f"{self.layer}:{self.seq_pos}:{self.component_idx}"
+        return self._str_cache
 
 
 @dataclass
@@ -442,12 +447,17 @@ def filter_ci_to_included_nodes(
     so they're skipped during edge computation (more efficient than
     filtering edges after computation).
 
+    Uses batch tensor operations for efficiency with large node sets.
+
     Args:
         ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, C].
         included_nodes: Set of node keys to include (format: "layer:seq:cIdx").
 
     Returns:
         New dict with CI values zeroed for non-included nodes.
+
+    Raises:
+        AssertionError: If any node has invalid format or references invalid layer.
     """
     # Pre-group nodes by layer: layer -> list of (seq_pos, c_idx)
     nodes_by_layer: dict[str, list[tuple[int, int]]] = defaultdict(list)
@@ -457,15 +467,27 @@ def filter_ci_to_included_nodes(
         layer, seq_str, c_str = parts
         nodes_by_layer[layer].append((int(seq_str), int(c_str)))
 
+    # Validate all layers exist (Issue 8: fail fast on invalid nodes)
+    valid_layers = set(ci_lower_leaky.keys())
+    invalid_layers = set(nodes_by_layer.keys()) - valid_layers
+    assert not invalid_layers, f"Nodes reference invalid layers: {invalid_layers}"
+
     filtered = {}
     for layer_name, ci_tensor in ci_lower_leaky.items():
         new_ci = torch.zeros_like(ci_tensor)
         n_seq, n_components = ci_tensor.shape[1], ci_tensor.shape[2]
 
-        for seq_pos, c_idx in nodes_by_layer.get(layer_name, []):
-            assert 0 <= seq_pos < n_seq, f"seq_pos {seq_pos} out of bounds [0, {n_seq})"
-            assert 0 <= c_idx < n_components, f"c_idx {c_idx} out of bounds [0, {n_components})"
-            new_ci[0, seq_pos, c_idx] = ci_tensor[0, seq_pos, c_idx]
+        coords = nodes_by_layer.get(layer_name, [])
+        if coords:
+            # Validate bounds
+            for seq_pos, c_idx in coords:
+                assert 0 <= seq_pos < n_seq, f"seq_pos {seq_pos} out of bounds [0, {n_seq})"
+                assert 0 <= c_idx < n_components, f"c_idx {c_idx} out of bounds [0, {n_components})"
+
+            # Batch assignment using advanced indexing (more efficient for large node sets)
+            seq_indices = torch.tensor([c[0] for c in coords], device=ci_tensor.device)
+            c_indices = torch.tensor([c[1] for c in coords], device=ci_tensor.device)
+            new_ci[0, seq_indices, c_indices] = ci_tensor[0, seq_indices, c_indices]
 
         filtered[layer_name] = new_ci
 

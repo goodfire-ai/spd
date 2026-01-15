@@ -671,8 +671,11 @@
                     class="generate-btn"
                     onclick={onGenerateGraphFromSelection}
                     disabled={generatingSubgraph ||
+                        selectedCount === 0 ||
                         (interventableCount > 0 && selectedCount === interventableCount)}
-                    title="Generate a subgraph showing only attributions between selected nodes"
+                    title={selectedCount === 0
+                        ? "Select nodes to include in subgraph"
+                        : "Generate a subgraph showing only attributions between selected nodes"}
                 >
                     {generatingSubgraph ? "Generating..." : "Generate subgraph"}
                 </button>
