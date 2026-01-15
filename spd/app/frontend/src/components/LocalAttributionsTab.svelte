@@ -67,6 +67,7 @@
 
     // Intervention loading state
     let runningIntervention = $state(false);
+    let generatingSubgraph = $state(false);
 
     // Prompt generation state
     let promptGenerate = $state<PromptGenerateState>({ status: "idle" });
@@ -406,6 +407,7 @@
         const includedNodes = Array.from(composerState.selection);
         const graphName = "Manual";
 
+        generatingSubgraph = true;
         graphCompute = {
             status: "computing",
             cardId,
@@ -455,6 +457,8 @@
             graphCompute = { status: "idle" };
         } catch (error) {
             graphCompute = { status: "error", error: String(error) };
+        } finally {
+            generatingSubgraph = false;
         }
     }
 
@@ -800,6 +804,7 @@
                                 onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                 onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                 {runningIntervention}
+                                {generatingSubgraph}
                                 onSelectionChange={handleComposerSelectionChange}
                                 onRunIntervention={handleRunIntervention}
                                 onSelectRun={handleSelectRun}

@@ -69,6 +69,7 @@
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
         runningIntervention: boolean;
+        generatingSubgraph: boolean;
         onSelectionChange: (selection: Set<string>) => void;
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
@@ -100,6 +101,7 @@
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
         runningIntervention,
+        generatingSubgraph,
         onSelectionChange,
         onRunIntervention,
         onSelectRun,
@@ -668,10 +670,11 @@
                 <button
                     class="generate-btn"
                     onclick={onGenerateGraphFromSelection}
-                    disabled={interventableCount > 0 && selectedCount === interventableCount}
+                    disabled={generatingSubgraph ||
+                        (interventableCount > 0 && selectedCount === interventableCount)}
                     title="Generate a subgraph showing only attributions between selected nodes"
                 >
-                    Generate subgraph
+                    {generatingSubgraph ? "Generating..." : "Generate subgraph"}
                 </button>
                 <button class="run-btn" onclick={onRunIntervention} disabled={runningIntervention}>
                     {runningIntervention ? "Running..." : "Run forward pass"}
