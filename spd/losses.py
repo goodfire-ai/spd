@@ -69,7 +69,7 @@ def compute_total_loss(
                 loss = importance_minimality_loss(
                     ci_upper_leaky=ci.upper_leaky,
                     current_frac_of_training=current_frac_of_training,
-                    pnorm_1=cfg.pnorm_1,
+                    pnorm=cfg.pnorm,
                     beta=cfg.beta,
                     eps=cfg.eps,
                     p_anneal_start_frac=cfg.p_anneal_start_frac,

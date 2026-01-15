@@ -175,7 +175,7 @@ class FaithfulnessLossConfig(LossMetricConfig):
 
 class ImportanceMinimalityLossConfig(LossMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
-    pnorm_1: NonNegativeFloat
+    pnorm: NonNegativeFloat
     beta: NonNegativeFloat
     p_anneal_start_frac: Probability = 1.0
     p_anneal_final_p: NonNegativeFloat | None = None
@@ -184,9 +184,9 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
 
     @model_validator(mode="before")
     def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
-        """Migrate old pnorm to pnorm_1 and add default for beta. Ignore deprecated pnorm_2."""
-        if "pnorm" in config_dict:
-            config_dict["pnorm_1"] = config_dict.pop("pnorm")
+        """Migrate old pnorm_1 to pnorm and add default for beta. Ignore deprecated pnorm_2."""
+        if "pnorm_1" in config_dict:
+            config_dict["pnorm"] = config_dict.pop("pnorm_1")
         # pnorm_2 is deprecated and no longer used - remove if present
         config_dict.pop("pnorm_2", None)
         if "beta" not in config_dict:

@@ -49,7 +49,7 @@ export type OptimizeConfig = {
     // Common settings
     impMinCoeff: number;
     steps: number;
-    pnorm_1: number;
+    pnorm: number;
     beta: number;
 };
 
@@ -78,7 +78,7 @@ export function defaultOptimizeConfig(): OptimizeConfig {
         klLossCoeff: 0,
         impMinCoeff: 0.1,
         steps: 2000,
-        pnorm_1: 0.3,
+        pnorm: 0.3,
         beta: 0,
     };
 }

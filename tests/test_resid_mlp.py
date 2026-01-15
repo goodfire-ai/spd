@@ -48,7 +48,7 @@ def test_resid_mlp_decomposition_happy_path(tmp_path: Path) -> None:
         loss_metric_configs=[
             ImportanceMinimalityLossConfig(
                 coeff=3e-3,
-                pnorm_1=0.9,
+                pnorm=0.9,
                 beta=0.5,
                 eps=1e-12,
             ),

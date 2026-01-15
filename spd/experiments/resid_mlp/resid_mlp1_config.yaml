@@ -22,7 +22,7 @@ use_delta_component: true
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
     coeff: 1e-5
-    pnorm_1: 2.0
+    pnorm: 2.0
     beta: 0
   - classname: "StochasticReconLayerwiseLoss"
     coeff: 1.0
