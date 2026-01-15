@@ -95,7 +95,7 @@ export async function computeGraphStreaming(
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
         const error = await response.json();
-        throw new ApiError(error.error || `HTTP ${response.status}`, response.status);
+        throw new ApiError(error.detail || `HTTP ${response.status}`, response.status);
     }
 
     return parseGraphSSEStream(response, onProgress);
@@ -148,7 +148,7 @@ export async function computeGraphOptimizedStreaming(
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
         const error = await response.json();
-        throw new ApiError(error.error || `HTTP ${response.status}`, response.status);
+        throw new ApiError(error.detail || `HTTP ${response.status}`, response.status);
     }
 
     return parseGraphSSEStream(response, onProgress);

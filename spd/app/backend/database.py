@@ -222,7 +222,10 @@ class LocalAttrDB:
                 ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1, pnorm_2, beta, mask_type)
                 WHERE graph_type = 'optimized';
 
-            -- Manual graphs: no unique constraint, multiple allowed per prompt
+            -- One manual graph per unique node set (included_nodes stored sorted for comparison)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_manual
+                ON graphs(prompt_id, included_nodes)
+                WHERE graph_type = 'manual';
 
             CREATE INDEX IF NOT EXISTS idx_graphs_prompt
                 ON graphs(prompt_id);
@@ -529,7 +532,10 @@ class LocalAttrDB:
             label_prob = graph.label_prob
 
         # Extract manual-specific values (NULL for non-manual graphs)
-        included_nodes_json = json.dumps(graph.included_nodes) if graph.included_nodes else None
+        # Sort included_nodes for consistent comparison in unique index
+        included_nodes_json = (
+            json.dumps(sorted(graph.included_nodes)) if graph.included_nodes else None
+        )
 
         try:
             cursor = conn.execute(
@@ -575,8 +581,8 @@ class LocalAttrDB:
                     raise ValueError(
                         f"Optimized graph with same parameters already exists for prompt_id={prompt_id}."
                     ) from e
-                case _:
-                    raise ValueError(f"Failed to save graph: {e}") from e
+                case "manual":
+                    raise ValueError("A manual graph with the same nodes already exists.") from e
 
     def _row_to_stored_graph(self, row: sqlite3.Row) -> StoredGraph:
         """Convert a database row to a StoredGraph."""

@@ -451,12 +451,14 @@
                         },
                     ],
                     activeGraphId: data.id,
+                    activeView: "graph",
                 };
             });
 
             graphCompute = { status: "idle" };
         } catch (error) {
-            graphCompute = { status: "error", error: String(error) };
+            graphCompute = { status: "idle" };
+            alert(String(error));
         } finally {
             generatingSubgraph = false;
         }
