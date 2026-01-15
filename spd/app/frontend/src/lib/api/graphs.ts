@@ -20,8 +20,6 @@ export type ComputeGraphParams = {
     ciThreshold: number;
     /** If provided, only include these nodes in the graph (creates manual graph) */
     includedNodes?: string[];
-    /** Display name for manual graphs (required if includedNodes provided) */
-    graphName?: string;
 };
 
 /**
@@ -87,9 +85,6 @@ export async function computeGraphStreaming(
     url.searchParams.set("ci_threshold", String(params.ciThreshold));
     if (params.includedNodes !== undefined) {
         url.searchParams.set("included_nodes", JSON.stringify(params.includedNodes));
-    }
-    if (params.graphName !== undefined) {
-        url.searchParams.set("graph_name", params.graphName);
     }
 
     const response = await fetch(url.toString(), { method: "POST" });

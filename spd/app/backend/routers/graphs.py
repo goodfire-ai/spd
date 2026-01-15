@@ -52,7 +52,6 @@ class GraphData(BaseModel):
 
     id: int
     graphType: GraphType
-    name: str | None  # Display name (auto-generated if None)
     tokens: list[str]
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
@@ -313,7 +312,6 @@ def compute_graph_stream(
     manager: DepStateManager,
     ci_threshold: Annotated[float, Query()],
     included_nodes: Annotated[str | None, Query()] = None,
-    graph_name: Annotated[str | None, Query()] = None,
 ):
     """Compute attribution graph for a prompt with streaming progress.
 
@@ -322,7 +320,6 @@ def compute_graph_stream(
 
     Args:
         included_nodes: JSON array of node keys to include (creates manual graph if provided)
-        graph_name: Display name for manual graphs (required if included_nodes provided)
     """
     output_prob_threshold = 0.01
 
@@ -375,7 +372,6 @@ def compute_graph_stream(
             prompt_id=prompt_id,
             graph=StoredGraph(
                 graph_type=graph_type,
-                name=graph_name,
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
@@ -399,7 +395,6 @@ def compute_graph_stream(
         return GraphData(
             id=graph_id,
             graphType=graph_type,
-            name=graph_name,
             tokens=token_strings,
             edges=edges_data,
             outputProbs=out_probs,
@@ -591,7 +586,6 @@ def compute_graph_optimized_stream(
         return GraphDataWithOptimization(
             id=graph_id,
             graphType="optimized",
-            name=None,
             tokens=token_strings,
             edges=edges_data,
             outputProbs=out_probs,
@@ -700,7 +694,6 @@ def stored_graph_to_response(
         return GraphData(
             id=graph.id,
             graphType=graph.graph_type,
-            name=graph.name,
             tokens=token_strings,
             edges=edges_data,
             outputProbs=graph.out_probs,
@@ -720,7 +713,6 @@ def stored_graph_to_response(
     return GraphDataWithOptimization(
         id=graph.id,
         graphType=graph.graph_type,
-        name=graph.name,
         tokens=token_strings,
         edges=edges_data,
         outputProbs=graph.out_probs,

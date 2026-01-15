@@ -65,7 +65,6 @@ class StoredGraph(BaseModel):
 
     id: int = -1  # -1 for unsaved graphs, set by DB on save
     graph_type: GraphType = "standard"
-    name: str | None = None  # Display name (auto-generated if None)
 
     # Core graph data (all types)
     edges: list[Edge]
@@ -181,7 +180,6 @@ class LocalAttrDB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 prompt_id INTEGER NOT NULL REFERENCES prompts(id),
                 graph_type TEXT NOT NULL,  -- 'standard', 'optimized', 'manual'
-                name TEXT,  -- Display name (auto-generated if NULL)
 
                 -- Optimization params (NULL for non-optimized graphs)
                 label_token INTEGER,
@@ -540,15 +538,14 @@ class LocalAttrDB:
         try:
             cursor = conn.execute(
                 """INSERT INTO graphs
-                   (prompt_id, graph_type, name,
+                   (prompt_id, graph_type,
                     label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1,
                     pnorm_2, beta, mask_type, included_nodes,
                     edges_data, output_probs_data, node_ci_vals, node_subcomp_acts, label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
-                    graph.name,
                     label_token,
                     imp_min_coeff,
                     ce_loss_coeff,
@@ -625,7 +622,6 @@ class LocalAttrDB:
         return StoredGraph(
             id=row["id"],
             graph_type=row["graph_type"],
-            name=row["name"],
             edges=edges,
             out_probs=out_probs,
             node_ci_vals=node_ci_vals,
@@ -646,7 +642,7 @@ class LocalAttrDB:
         """
         conn = self._get_conn()
         rows = conn.execute(
-            """SELECT id, graph_type, name, edges_data, output_probs_data, node_ci_vals,
+            """SELECT id, graph_type, edges_data, output_probs_data, node_ci_vals,
                       node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
                       steps, pnorm_1, pnorm_2, beta, mask_type, label_prob,
                       included_nodes
@@ -663,7 +659,7 @@ class LocalAttrDB:
         """Retrieve a single graph by its ID. Returns (graph, prompt_id) or None."""
         conn = self._get_conn()
         row = conn.execute(
-            """SELECT id, prompt_id, graph_type, name, edges_data, output_probs_data, node_ci_vals,
+            """SELECT id, prompt_id, graph_type, edges_data, output_probs_data, node_ci_vals,
                       node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
                       steps, pnorm_1, pnorm_2, beta, mask_type, label_prob,
                       included_nodes

@@ -34,7 +34,6 @@ export type GraphType = "standard" | "optimized" | "manual";
 export type GraphData = {
     id: number;
     graphType: GraphType;
-    name: string | null; // Display name (auto-generated if null)
     tokens: string[];
     edges: Edge[];
     edgesBySource: Map<string, Edge[]>; // nodeKey -> edges where this node is source

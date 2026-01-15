@@ -33,7 +33,6 @@
 
     /** Generate a display label for a graph based on its type */
     function getGraphLabel(data: GraphData): string {
-        if (data.name) return data.name;
         switch (data.graphType) {
             case "standard":
                 return "Standard";
@@ -405,7 +404,6 @@
 
         const cardId = activeCard.id;
         const includedNodes = Array.from(composerState.selection);
-        const graphName = "Manual";
 
         generatingSubgraph = true;
         graphCompute = {
@@ -424,7 +422,6 @@
                     normalize: activeGraph.viewSettings.normalizeEdges,
                     ciThreshold: activeGraph.viewSettings.ciThreshold,
                     includedNodes,
-                    graphName,
                 },
                 (progress) => {
                     if (graphCompute.status === "computing") {
