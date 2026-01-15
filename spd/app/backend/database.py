@@ -10,7 +10,7 @@ import json
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -78,7 +78,6 @@ class StoredGraph(BaseModel):
     label_prob: float | None = None  # P(label_token) with optimized CI mask
 
     # Manual-specific (None for other types)
-    base_graph_id: int | None = None  # Graph this was derived from
     included_nodes: list[str] | None = None  # Nodes included in this graph
 
 
@@ -196,7 +195,6 @@ class LocalAttrDB:
                 mask_type TEXT,
 
                 -- Manual graph params (NULL for non-manual graphs)
-                base_graph_id INTEGER REFERENCES graphs(id),
                 included_nodes TEXT,  -- JSON array of node keys in this graph
 
                 -- The actual graph data (JSON)
@@ -337,6 +335,20 @@ class LocalAttrDB:
         conn.commit()
         return prompt_ids
 
+    def find_prompt_by_token_ids(
+        self,
+        run_id: int,
+        token_ids: list[int],
+        context_length: int,
+    ) -> int | None:
+        """Find an existing prompt with the same token_ids."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT id FROM prompts WHERE run_id = ? AND token_ids = ? AND context_length = ?",
+            (run_id, json.dumps(token_ids), context_length),
+        ).fetchone()
+        return row[0] if row else None
+
     def add_custom_prompt(
         self,
         run_id: int,
@@ -344,7 +356,7 @@ class LocalAttrDB:
         active_components: dict[str, tuple[float, list[int]]],
         context_length: int,
     ) -> int:
-        """Add a custom prompt to the database.
+        """Add a custom prompt to the database, or return existing if duplicate.
 
         Args:
             run_id: The run this prompt belongs to.
@@ -353,8 +365,12 @@ class LocalAttrDB:
             context_length: The context length setting.
 
         Returns:
-            The prompt ID.
+            The prompt ID (existing or newly created).
         """
+        existing_id = self.find_prompt_by_token_ids(run_id, token_ids, context_length)
+        if existing_id is not None:
+            return existing_id
+
         conn = self._get_conn()
         cursor = conn.execute(
             "INSERT INTO prompts (run_id, token_ids, context_length, is_custom) VALUES (?, ?, ?, 1)",
@@ -513,7 +529,6 @@ class LocalAttrDB:
             label_prob = graph.label_prob
 
         # Extract manual-specific values (NULL for non-manual graphs)
-        base_graph_id = graph.base_graph_id
         included_nodes_json = json.dumps(graph.included_nodes) if graph.included_nodes else None
 
         try:
@@ -521,9 +536,9 @@ class LocalAttrDB:
                 """INSERT INTO graphs
                    (prompt_id, graph_type, name,
                     label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1,
-                    pnorm_2, beta, mask_type, base_graph_id, included_nodes,
+                    pnorm_2, beta, mask_type, included_nodes,
                     edges_data, output_probs_data, node_ci_vals, node_subcomp_acts, label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
@@ -537,7 +552,6 @@ class LocalAttrDB:
                     pnorm_2,
                     beta,
                     mask_type,
-                    base_graph_id,
                     included_nodes_json,
                     edges_json,
                     probs_json,
@@ -564,6 +578,57 @@ class LocalAttrDB:
                 case _:
                     raise ValueError(f"Failed to save graph: {e}") from e
 
+    def _row_to_stored_graph(self, row: sqlite3.Row) -> StoredGraph:
+        """Convert a database row to a StoredGraph."""
+        edges = [
+            Edge(
+                source=Node(**e["source"]),
+                target=Node(**e["target"]),
+                strength=float(e["strength"]),
+                is_cross_seq=bool(e["is_cross_seq"]),
+            )
+            for e in json.loads(row["edges_data"])
+        ]
+        out_probs = {
+            k: OutputProbability(**v) for k, v in json.loads(row["output_probs_data"]).items()
+        }
+        node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
+        node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
+
+        opt_params: OptimizationParams | None = None
+        label_prob: float | None = None
+        if row["graph_type"] == "optimized":
+            opt_params = OptimizationParams(
+                imp_min_coeff=row["imp_min_coeff"],
+                steps=row["steps"],
+                pnorm_1=row["pnorm_1"],
+                pnorm_2=row["pnorm_2"],
+                beta=row["beta"],
+                mask_type=row["mask_type"],
+                label_token=row["label_token"],
+                ce_loss_coeff=row["ce_loss_coeff"],
+                kl_loss_coeff=row["kl_loss_coeff"],
+            )
+            label_prob = row["label_prob"]
+
+        # Parse manual-specific fields
+        included_nodes: list[str] | None = None
+        if row["included_nodes"]:
+            included_nodes = json.loads(row["included_nodes"])
+
+        return StoredGraph(
+            id=row["id"],
+            graph_type=row["graph_type"],
+            name=row["name"],
+            edges=edges,
+            out_probs=out_probs,
+            node_ci_vals=node_ci_vals,
+            node_subcomp_acts=node_subcomp_acts,
+            optimization_params=opt_params,
+            label_prob=label_prob,
+            included_nodes=included_nodes,
+        )
+
     def get_graphs(self, prompt_id: int) -> list[StoredGraph]:
         """Retrieve all stored graphs for a prompt.
 
@@ -574,12 +639,11 @@ class LocalAttrDB:
             List of stored graphs (standard, optimized, and manual).
         """
         conn = self._get_conn()
-
         rows = conn.execute(
             """SELECT id, graph_type, name, edges_data, output_probs_data, node_ci_vals,
                       node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
                       steps, pnorm_1, pnorm_2, beta, mask_type, label_prob,
-                      base_graph_id, included_nodes
+                      included_nodes
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY
@@ -587,66 +651,23 @@ class LocalAttrDB:
                    created_at""",
             (prompt_id,),
         ).fetchall()
+        return [self._row_to_stored_graph(row) for row in rows]
 
-        def _edge_from_dict(d: dict[str, Any]) -> Edge:
-            return Edge(
-                source=Node(**d["source"]),
-                target=Node(**d["target"]),
-                strength=float(d["strength"]),
-                is_cross_seq=bool(d["is_cross_seq"]),
-            )
-
-        results: list[StoredGraph] = []
-        for row in rows:
-            edges = [_edge_from_dict(e) for e in json.loads(row["edges_data"])]
-            out_probs = {
-                k: OutputProbability(**v) for k, v in json.loads(row["output_probs_data"]).items()
-            }
-
-            node_ci_vals: dict[str, float] = json.loads(row["node_ci_vals"])
-            node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
-
-            graph_type: GraphType = row["graph_type"]
-            opt_params: OptimizationParams | None = None
-            label_prob: float | None = None
-
-            if graph_type == "optimized":
-                opt_params = OptimizationParams(
-                    imp_min_coeff=row["imp_min_coeff"],
-                    steps=row["steps"],
-                    pnorm_1=row["pnorm_1"],
-                    pnorm_2=row["pnorm_2"],
-                    beta=row["beta"],
-                    mask_type=row["mask_type"],
-                    label_token=row["label_token"],
-                    ce_loss_coeff=row["ce_loss_coeff"],
-                    kl_loss_coeff=row["kl_loss_coeff"],
-                )
-                label_prob = row["label_prob"]
-
-            # Manual graph fields
-            base_graph_id: int | None = row["base_graph_id"]
-            included_nodes: list[str] | None = None
-            if row["included_nodes"]:
-                included_nodes = json.loads(row["included_nodes"])
-
-            results.append(
-                StoredGraph(
-                    id=row["id"],
-                    graph_type=graph_type,
-                    name=row["name"],
-                    edges=edges,
-                    out_probs=out_probs,
-                    node_ci_vals=node_ci_vals,
-                    node_subcomp_acts=node_subcomp_acts,
-                    optimization_params=opt_params,
-                    label_prob=label_prob,
-                    base_graph_id=base_graph_id,
-                    included_nodes=included_nodes,
-                )
-            )
-
-        return results
+    def get_graph(self, graph_id: int) -> tuple[StoredGraph, int] | None:
+        """Retrieve a single graph by its ID. Returns (graph, prompt_id) or None."""
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT id, prompt_id, graph_type, name, edges_data, output_probs_data, node_ci_vals,
+                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
+                      steps, pnorm_1, pnorm_2, beta, mask_type, label_prob,
+                      included_nodes
+               FROM graphs
+               WHERE id = ?""",
+            (graph_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return (self._row_to_stored_graph(row), row["prompt_id"])
 
     def delete_graphs_for_prompt(self, prompt_id: int) -> int:
         """Delete all graphs for a prompt. Returns the number of deleted rows."""

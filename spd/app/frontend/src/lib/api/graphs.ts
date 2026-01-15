@@ -22,8 +22,6 @@ export type ComputeGraphParams = {
     includedNodes?: string[];
     /** Display name for manual graphs (required if includedNodes provided) */
     graphName?: string;
-    /** ID of the graph this manual graph was derived from */
-    baseGraphId?: number;
 };
 
 /**
@@ -92,9 +90,6 @@ export async function computeGraphStreaming(
     }
     if (params.graphName !== undefined) {
         url.searchParams.set("graph_name", params.graphName);
-    }
-    if (params.baseGraphId !== undefined) {
-        url.searchParams.set("base_graph_id", String(params.baseGraphId));
     }
 
     const response = await fetch(url.toString(), { method: "POST" });

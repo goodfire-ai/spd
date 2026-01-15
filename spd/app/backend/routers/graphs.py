@@ -314,7 +314,6 @@ def compute_graph_stream(
     ci_threshold: Annotated[float, Query()],
     included_nodes: Annotated[str | None, Query()] = None,
     graph_name: Annotated[str | None, Query()] = None,
-    base_graph_id: Annotated[int | None, Query()] = None,
 ):
     """Compute attribution graph for a prompt with streaming progress.
 
@@ -324,7 +323,6 @@ def compute_graph_stream(
     Args:
         included_nodes: JSON array of node keys to include (creates manual graph if provided)
         graph_name: Display name for manual graphs (required if included_nodes provided)
-        base_graph_id: ID of the graph this manual graph was derived from
     """
     output_prob_threshold = 0.01
 
@@ -382,7 +380,6 @@ def compute_graph_stream(
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
                 node_subcomp_acts=result.node_subcomp_acts,
-                base_graph_id=base_graph_id,
                 included_nodes=included_nodes_list,
             ),
         )
@@ -673,6 +670,81 @@ def process_edges_for_response(
     return edges_data, max_abs_attr
 
 
+def stored_graph_to_response(
+    graph: StoredGraph,
+    token_ids: list[int],
+    token_strings_map: dict[int, str],
+    normalize: NormalizeType,
+    ci_threshold: float,
+) -> GraphData | GraphDataWithOptimization:
+    """Convert a StoredGraph to API response format."""
+    token_strings = [token_strings_map[t] for t in token_ids]
+    num_tokens = len(token_ids)
+    is_optimized = graph.optimization_params is not None
+
+    filtered_node_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
+    l0_total = len(filtered_node_ci_vals)
+
+    node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
+        filtered_node_ci_vals, num_tokens, graph.out_probs
+    )
+    edges_data, max_abs_attr = process_edges_for_response(
+        raw_edges=graph.edges,
+        normalize=normalize,
+        num_tokens=num_tokens,
+        node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
+        is_optimized=is_optimized,
+    )
+
+    if not is_optimized:
+        return GraphData(
+            id=graph.id,
+            graphType=graph.graph_type,
+            name=graph.name,
+            tokens=token_strings,
+            edges=edges_data,
+            outputProbs=graph.out_probs,
+            nodeCiVals=node_ci_vals_with_pseudo,
+            nodeSubcompActs=graph.node_subcomp_acts,
+            maxAbsAttr=max_abs_attr,
+            maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
+            l0_total=l0_total,
+        )
+
+    assert graph.optimization_params is not None
+
+    label_str: str | None = None
+    if graph.optimization_params.label_token is not None:
+        label_str = token_strings_map[graph.optimization_params.label_token]
+
+    return GraphDataWithOptimization(
+        id=graph.id,
+        graphType=graph.graph_type,
+        name=graph.name,
+        tokens=token_strings,
+        edges=edges_data,
+        outputProbs=graph.out_probs,
+        nodeCiVals=node_ci_vals_with_pseudo,
+        nodeSubcompActs=graph.node_subcomp_acts,
+        maxAbsAttr=max_abs_attr,
+        maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
+        l0_total=l0_total,
+        optimization=OptimizationResult(
+            imp_min_coeff=graph.optimization_params.imp_min_coeff,
+            steps=graph.optimization_params.steps,
+            pnorm_1=graph.optimization_params.pnorm_1,
+            pnorm_2=graph.optimization_params.pnorm_2,
+            beta=graph.optimization_params.beta,
+            mask_type=graph.optimization_params.mask_type,
+            label_token=graph.optimization_params.label_token,
+            label_str=label_str,
+            ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
+            label_prob=graph.label_prob,
+            kl_loss_coeff=graph.optimization_params.kl_loss_coeff,
+        ),
+    )
+
+
 @router.get("/{prompt_id}")
 @log_errors
 def get_graphs(
@@ -692,79 +764,14 @@ def get_graphs(
     if prompt is None:
         return []
 
-    token_strings = [loaded.token_strings[t] for t in prompt.token_ids]
     stored_graphs = db.get_graphs(prompt_id)
-
-    num_tokens = len(prompt.token_ids)
-    results: list[GraphData | GraphDataWithOptimization] = []
-    for graph in stored_graphs:
-        is_optimized = graph.graph_type == "optimized"
-        filtered_node_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
-        l0_total = len(filtered_node_ci_vals)
-
-        node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
-            filtered_node_ci_vals, num_tokens, graph.out_probs
-        )
-        edges_data, max_abs_attr = process_edges_for_response(
-            raw_edges=graph.edges,
+    return [
+        stored_graph_to_response(
+            graph=graph,
+            token_ids=prompt.token_ids,
+            token_strings_map=loaded.token_strings,
             normalize=normalize,
-            num_tokens=num_tokens,
-            node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
-            is_optimized=is_optimized,
+            ci_threshold=ci_threshold,
         )
-
-        if graph.graph_type == "optimized":
-            assert graph.optimization_params is not None
-
-            # Get label_str if label_token is set
-            label_str: str | None = None
-            if graph.optimization_params.label_token is not None:
-                label_str = loaded.token_strings[graph.optimization_params.label_token]
-
-            results.append(
-                GraphDataWithOptimization(
-                    id=graph.id,
-                    graphType=graph.graph_type,
-                    name=graph.name,
-                    tokens=token_strings,
-                    edges=edges_data,
-                    outputProbs=graph.out_probs,
-                    nodeCiVals=node_ci_vals_with_pseudo,
-                    nodeSubcompActs=graph.node_subcomp_acts,
-                    maxAbsAttr=max_abs_attr,
-                    maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
-                    l0_total=l0_total,
-                    optimization=OptimizationResult(
-                        imp_min_coeff=graph.optimization_params.imp_min_coeff,
-                        steps=graph.optimization_params.steps,
-                        pnorm_1=graph.optimization_params.pnorm_1,
-                        pnorm_2=graph.optimization_params.pnorm_2,
-                        beta=graph.optimization_params.beta,
-                        mask_type=graph.optimization_params.mask_type,
-                        label_token=graph.optimization_params.label_token,
-                        label_str=label_str,
-                        ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
-                        label_prob=graph.label_prob,
-                        kl_loss_coeff=graph.optimization_params.kl_loss_coeff,
-                    ),
-                )
-            )
-        else:
-            # Standard or manual graph
-            results.append(
-                GraphData(
-                    id=graph.id,
-                    graphType=graph.graph_type,
-                    name=graph.name,
-                    tokens=token_strings,
-                    edges=edges_data,
-                    outputProbs=graph.out_probs,
-                    nodeCiVals=node_ci_vals_with_pseudo,
-                    nodeSubcompActs=graph.node_subcomp_acts,
-                    maxAbsAttr=max_abs_attr,
-                    maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
-                    l0_total=l0_total,
-                )
-            )
-
-    return results
+        for graph in stored_graphs
+    ]

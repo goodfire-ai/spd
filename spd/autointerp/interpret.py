@@ -1,6 +1,7 @@
 import asyncio
 import json
 import random
+import time
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -38,6 +39,31 @@ BASE_DELAY_S = 0.5
 MAX_DELAY_S = 60.0
 JITTER_FACTOR = 0.5
 MAX_CONCURRENT_REQUESTS = 50
+MAX_REQUESTS_PER_MINUTE = 300  # Gemini flash has 400 RPM limit
+
+
+class RateLimiter:
+    """Sliding window rate limiter for async code."""
+
+    def __init__(self, max_requests: int, period_seconds: float):
+        self.max_requests = max_requests
+        self.period = period_seconds
+        self.timestamps: list[float] = []
+        self.lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        async with self.lock:
+            now = time.monotonic()
+            self.timestamps = [t for t in self.timestamps if now - t < self.period]
+
+            if len(self.timestamps) >= self.max_requests:
+                sleep_time = self.timestamps[0] + self.period - now
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+                self.timestamps = self.timestamps[1:]
+
+            self.timestamps.append(time.monotonic())
+
 
 RETRYABLE_ERRORS = (
     TooManyRequestsResponseError,
@@ -243,6 +269,7 @@ async def interpret_all(
 
     output_lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE, period_seconds=60.0)
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
@@ -253,6 +280,7 @@ async def interpret_all(
         client: OpenRouter,
         cost_tracker: CostTracker,
     ) -> None:
+        await rate_limiter.acquire()
         async with semaphore:
             try:
                 # Compute token stats for this component

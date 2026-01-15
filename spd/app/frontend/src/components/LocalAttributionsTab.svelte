@@ -179,6 +179,12 @@
     }
 
     function handleSelectPrompt(prompt: PromptPreview) {
+        // If prompt is already open as a card, just focus it
+        const existingCard = promptCards.find((c) => c.id === prompt.id);
+        if (existingCard) {
+            activeCardPromptId = prompt.id;
+            return;
+        }
         addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, false);
     }
 
@@ -186,6 +192,12 @@
         isAddingCustomPrompt = true;
         try {
             const prompt = await api.createCustomPrompt(text);
+            // If prompt already exists (returned existing ID), just focus it
+            const existingCard = promptCards.find((c) => c.id === prompt.id);
+            if (existingCard) {
+                activeCardPromptId = prompt.id;
+                return;
+            }
             await addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, true);
         } finally {
             isAddingCustomPrompt = false;
@@ -411,7 +423,6 @@
                     ciThreshold: activeGraph.viewSettings.ciThreshold,
                     includedNodes,
                     graphName,
-                    baseGraphId: activeGraph.id,
                 },
                 (progress) => {
                     if (graphCompute.status === "computing") {
