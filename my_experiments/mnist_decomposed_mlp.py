@@ -572,6 +572,7 @@ def main(
     p_anneal_end_frac: float = 0.5,
     sampling: str = "bernoulli",
     ci_fn_type: str = "linear",
+    ci_fn_hidden_dims: list[int] | None = None,
     ci_alive_threshold: float = 0.0,
     n_examples_until_dead: int = 10000,
     seed: int = 42,
@@ -594,6 +595,7 @@ def main(
         p_anneal_end_frac: Fraction of training to finish annealing p
         sampling: "bernoulli" for stochastic, "none" for deterministic
         ci_fn_type: "linear" or "mlp"
+        ci_fn_hidden_dims: Hidden dimensions for CI MLP (None uses defaults)
         ci_alive_threshold: CI threshold above which a component is considered firing
         n_examples_until_dead: Examples without firing before component is considered dead
         seed: Random seed
@@ -639,6 +641,7 @@ def main(
                 "p_anneal_end_frac": p_anneal_end_frac,
                 "sampling": sampling,
                 "ci_fn_type": ci_fn_type,
+                "ci_fn_hidden_dims": ci_fn_hidden_dims,
                 "ci_alive_threshold": ci_alive_threshold,
                 "n_examples_until_dead": n_examples_until_dead,
                 "seed": seed,
@@ -662,7 +665,7 @@ def main(
         num_classes=10,
         n_components=n_components,
         ci_fn_type=ci_fn_type,
-        ci_fn_hidden_dims=None,
+        ci_fn_hidden_dims=ci_fn_hidden_dims,
     )
     model = model.to(device)
 
