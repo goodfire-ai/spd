@@ -15,7 +15,10 @@ from pydantic import BaseModel
 class OutputProbability(BaseModel):
     """Output probability for a specific token at a specific position."""
 
-    prob: float
+    prob: float  # CI-masked (SPD model) probability
+    logit: float  # CI-masked (SPD model) raw logit
+    target_prob: float  # Target model probability
+    target_logit: float  # Target model raw logit
     token: str
 
 
@@ -55,3 +58,6 @@ class SubcomponentActivationContexts(BaseModel):
     # Examples - columnar arrays (n_examples ~ topk, window_size ~ 2*n_tokens_either_side+1)
     example_tokens: list[list[str]]  # [n_examples][window_size]
     example_ci: list[list[float]]  # [n_examples][window_size]
+    example_component_acts: list[
+        list[float]
+    ]  # [n_examples][window_size] - normalized component activations

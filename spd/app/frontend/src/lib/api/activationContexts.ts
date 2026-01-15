@@ -11,15 +11,7 @@ export type SubcomponentActivationContexts = {
     mean_ci: number;
     example_tokens: string[][];
     example_ci: number[][];
-};
-
-export type SubcomponentMetadata = {
-    subcomponent_idx: number;
-    mean_ci: number;
-};
-
-export type HarvestMetadata = {
-    layers: Record<string, SubcomponentMetadata[]>;
+    example_component_acts: number[][];
 };
 
 export async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {
@@ -32,11 +24,7 @@ export async function getComponentDetail(layer: string, componentIdx: number): P
     );
 }
 
-export async function probeComponent(
-    text: string,
-    layer: string,
-    componentIdx: number,
-): Promise<ComponentProbeResult> {
+export async function probeComponent(text: string, layer: string, componentIdx: number): Promise<ComponentProbeResult> {
     return fetchJson<ComponentProbeResult>(`${API_URL}/api/activation_contexts/probe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

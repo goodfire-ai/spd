@@ -1983,7 +1983,6 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
-    { name = "sqlite-web" },
 ]
 
 [package.metadata]
@@ -2022,21 +2021,6 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
-    { name = "sqlite-web", specifier = ">=0.6.5" },
-]
-
-[[package]]
-name = "sqlite-web"
-version = "0.6.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "flask" },
-    { name = "peewee" },
-    { name = "pygments" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/eb/1c/257ae3bd866fc04ec44b82a8fae8d470326a1afb58627a2f53ce46ee3a9d/sqlite_web-0.6.6.tar.gz", hash = "sha256:a02927d3b46d11424c620a90627c4413f9d8e63d808b3849d2f90f5882308ccc", size = 768634, upload-time = "2025-12-15T20:50:24.451Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/10/f62fa7f36f7838570255ccda72ab5cb9558b2ae0a7ea0dad24e9466cc806/sqlite_web-0.6.6-py3-none-any.whl", hash = "sha256:19c6a2be821452cf25ff4f403daeabc7cedbfaff0850b291775a36856a5de113", size = 774699, upload-time = "2025-12-15T20:50:12.501Z" },
 ]
 
 [[package]]
