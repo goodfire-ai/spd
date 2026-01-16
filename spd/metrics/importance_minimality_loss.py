@@ -178,7 +178,7 @@ class ImportanceMinimalityLoss(Metric):
         self.beta = beta
         self.eps = eps
         self.p_anneal_start_frac = p_anneal_start_frac
-        self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
+        self.p_anneal_final_p = p_anneal_final_p
         self.p_anneal_end_frac = p_anneal_end_frac
         self.device = device
         # Track per-layer per-component sums for proper aggregation
