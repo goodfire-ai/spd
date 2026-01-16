@@ -52,11 +52,13 @@ class DecomposedLinear(nn.Module):
         C: int,
         ci_fn_type: str,
         ci_fn_hidden_dims: list[int],
+        use_normal_sigmoid: bool,
     ):
         super().__init__()
         self.d_in = d_in
         self.d_out = d_out
         self.C = C
+        self.use_normal_sigmoid = use_normal_sigmoid
 
         # Component matrices
         self.V = nn.Parameter(torch.empty(d_in, C))
@@ -76,8 +78,11 @@ class DecomposedLinear(nn.Module):
             raise ValueError(f"Unknown ci_fn_type: {ci_fn_type}")
 
         # Sigmoid functions for CI
-        self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
-        self.upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
+        if use_normal_sigmoid:
+            self.sigmoid_fn = torch.sigmoid
+        else:
+            self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
+            self.upper_leaky_fn = SIGMOID_TYPES["upper_leaky_hard"]
 
     @property
     def weight(self) -> Float[Tensor, "d_out d_in"]:
@@ -110,18 +115,31 @@ class DecomposedLinear(nn.Module):
         # Compute CI values
         ci_pre_sigmoid = self.ci_fn(component_acts)  # (... C)
 
-        if sampling == "bernoulli":
-            # Stochastic sampling: sample from Bernoulli with CI as probability
-            # Use reparameterization trick for gradients
-            ci_for_sampling = 1.05 * ci_pre_sigmoid - 0.05 * torch.rand_like(ci_pre_sigmoid)
-            ci_lower = self.lower_leaky_fn(ci_for_sampling)
-            mask = torch.bernoulli(ci_lower)
-        elif sampling == "none":
-            # Deterministic: use soft CI values
-            ci_lower = self.lower_leaky_fn(ci_pre_sigmoid)
-            mask = ci_lower
+        if self.use_normal_sigmoid:
+            # Normal sigmoid for both masking and loss
+            ci = self.sigmoid_fn(ci_pre_sigmoid)
+            if sampling == "bernoulli":
+                mask = torch.bernoulli(ci)
+            elif sampling == "none":
+                mask = ci
+            else:
+                raise ValueError(f"Unknown sampling: {sampling}")
+            ci_for_loss = ci
         else:
-            raise ValueError(f"Unknown sampling: {sampling}")
+            # Leaky hard sigmoids (SPD default)
+            if sampling == "bernoulli":
+                # Stochastic sampling: sample from Bernoulli with CI as probability
+                # Use reparameterization trick for gradients
+                ci_for_sampling = 1.05 * ci_pre_sigmoid - 0.05 * torch.rand_like(ci_pre_sigmoid)
+                ci_lower = self.lower_leaky_fn(ci_for_sampling)
+                mask = torch.bernoulli(ci_lower)
+            elif sampling == "none":
+                # Deterministic: use soft CI values
+                ci_lower = self.lower_leaky_fn(ci_pre_sigmoid)
+                mask = ci_lower
+            else:
+                raise ValueError(f"Unknown sampling: {sampling}")
+            ci_for_loss = self.upper_leaky_fn(ci_pre_sigmoid)
 
         # Apply mask to component activations
         masked_acts = component_acts * mask  # (... C)
@@ -130,8 +148,7 @@ class DecomposedLinear(nn.Module):
         out = einops.einsum(masked_acts, self.U, "... C, C d_out -> ... d_out") + self.bias
 
         if return_ci:
-            ci_upper = self.upper_leaky_fn(ci_pre_sigmoid)
-            return out, ci_upper
+            return out, ci_for_loss
 
         return out
 
@@ -150,6 +167,7 @@ class DecomposedMLP(nn.Module):
         n_components: int,
         ci_fn_type: str,
         ci_fn_hidden_dims: list[int],
+        use_normal_sigmoid: bool,
     ):
         super().__init__()
         self.fc1 = DecomposedLinear(
@@ -158,6 +176,7 @@ class DecomposedMLP(nn.Module):
             C=n_components,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
+            use_normal_sigmoid=use_normal_sigmoid,
         )
         self.fc2 = DecomposedLinear(
             d_in=hidden_size,
@@ -165,6 +184,7 @@ class DecomposedMLP(nn.Module):
             C=n_components,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
+            use_normal_sigmoid=use_normal_sigmoid,
         )
 
     def forward(
@@ -551,17 +571,18 @@ def main(
     hidden_size: int = 128,
     n_components: int = 500,
     batch_size: int = 1024,
-    epochs: int = 500,
+    epochs: int = 1000,
     lr: float = 0.001,
-    weight_decay: float = 1e-6,
+    weight_decay: float = 1e-5,
     importance_coeff: float = 5e-9,
     pnorm: float = 1.0,
     p_anneal_start_frac: float = 0.0,
-    p_anneal_final_p: float = 2.0,
+    p_anneal_final_p: float = 1.0,
     p_anneal_end_frac: float = 0.5,
     sampling: str = "bernoulli",
     ci_fn_type: str = "linear",
     ci_fn_hidden_dims: list[int] | None = None,
+    use_normal_sigmoid: bool = False,
     ci_alive_threshold: float = 0.01,
     n_examples_until_dead: int = 10000,
     seed: int = 42,
@@ -585,6 +606,7 @@ def main(
         sampling: "bernoulli" for stochastic, "none" for deterministic
         ci_fn_type: "linear" or "mlp"
         ci_fn_hidden_dims: Hidden dimensions for CI MLP (None uses defaults)
+        use_normal_sigmoid: Use normal sigmoid instead of leaky hard sigmoids
         ci_alive_threshold: CI threshold above which a component is considered firing
         n_examples_until_dead: Examples without firing before component is considered dead
         seed: Random seed
@@ -631,6 +653,7 @@ def main(
                 "sampling": sampling,
                 "ci_fn_type": ci_fn_type,
                 "ci_fn_hidden_dims": ci_fn_hidden_dims,
+                "use_normal_sigmoid": use_normal_sigmoid,
                 "ci_alive_threshold": ci_alive_threshold,
                 "n_examples_until_dead": n_examples_until_dead,
                 "seed": seed,
@@ -656,6 +679,7 @@ def main(
         n_components=n_components,
         ci_fn_type=ci_fn_type,
         ci_fn_hidden_dims=ci_fn_hidden_dims_resolved,
+        use_normal_sigmoid=use_normal_sigmoid,
     )
     model = model.to(device)
 
