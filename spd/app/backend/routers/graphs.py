@@ -69,8 +69,7 @@ class OptimizationResult(BaseModel):
 
     imp_min_coeff: float
     steps: int
-    pnorm_1: float
-    pnorm_2: float
+    pnorm: float
     beta: float
     mask_type: MaskType
     # CE loss params (optional - required together)
@@ -467,8 +466,7 @@ def compute_graph_optimized_stream(
     prompt_id: Annotated[int, Query()],
     imp_min_coeff: Annotated[float, Query(gte=0)],
     steps: Annotated[int, Query(gt=0)],
-    pnorm_1: Annotated[float, Query(gt=0)],
-    pnorm_2: Annotated[float, Query(ge=0)],
+    pnorm: Annotated[float, Query(gt=0)],
     beta: Annotated[float, Query(ge=0)],
     normalize: Annotated[NormalizeType, Query()],
     output_prob_threshold: Annotated[float, Query(ge=0, le=1)],
@@ -514,8 +512,7 @@ def compute_graph_optimized_stream(
     opt_params = OptimizationParams(
         imp_min_coeff=imp_min_coeff,
         steps=steps,
-        pnorm_1=pnorm_1,
-        pnorm_2=pnorm_2,
+        pnorm=pnorm,
         beta=beta,
         mask_type=mask_type,
         label_token=label_token,
@@ -540,9 +537,7 @@ def compute_graph_optimized_stream(
         lr_exponential_halflife=None,
         lr_warmup_pct=0.01,
         log_freq=max(1, steps // 4),
-        imp_min_config=ImportanceMinimalityLossConfig(
-            coeff=imp_min_coeff, pnorm_1=pnorm_1, pnorm_2=pnorm_2, beta=beta
-        ),
+        imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm, beta=beta),
         ce_loss_config=ce_loss_config,
         kl_loss_config=kl_loss_config,
         sampling=loaded.config.sampling,
@@ -609,8 +604,7 @@ def compute_graph_optimized_stream(
             optimization=OptimizationResult(
                 imp_min_coeff=imp_min_coeff,
                 steps=steps,
-                pnorm_1=pnorm_1,
-                pnorm_2=pnorm_2,
+                pnorm=pnorm,
                 beta=beta,
                 mask_type=mask_type,
                 label_token=label_token,
@@ -733,8 +727,7 @@ def stored_graph_to_response(
         optimization=OptimizationResult(
             imp_min_coeff=graph.optimization_params.imp_min_coeff,
             steps=graph.optimization_params.steps,
-            pnorm_1=graph.optimization_params.pnorm_1,
-            pnorm_2=graph.optimization_params.pnorm_2,
+            pnorm=graph.optimization_params.pnorm,
             beta=graph.optimization_params.beta,
             mask_type=graph.optimization_params.mask_type,
             label_token=graph.optimization_params.label_token,

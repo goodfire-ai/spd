@@ -48,8 +48,7 @@ class OptimizationParams(BaseModel):
 
     imp_min_coeff: float
     steps: int
-    pnorm_1: float
-    pnorm_2: float
+    pnorm: float
     beta: float
     mask_type: MaskType
     # CE loss params (optional, must be set together)
@@ -188,8 +187,7 @@ class PromptAttrDB:
                 ce_loss_coeff REAL,
                 kl_loss_coeff REAL,
                 steps INTEGER,
-                pnorm_1 REAL,
-                pnorm_2 REAL,
+                pnorm REAL,
                 beta REAL,
                 mask_type TEXT,
 
@@ -219,7 +217,7 @@ class PromptAttrDB:
 
             -- One optimized graph per unique parameter combination
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1, pnorm_2, beta, mask_type)
+                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, beta, mask_type)
                 WHERE graph_type = 'optimized';
 
             -- One manual graph per unique node set (using hash for reliable uniqueness)
@@ -513,8 +511,7 @@ class PromptAttrDB:
         ce_loss_coeff = None
         kl_loss_coeff = None
         steps = None
-        pnorm_1 = None
-        pnorm_2 = None
+        pnorm = None
         beta = None
         mask_type = None
         label_prob = None
@@ -525,8 +522,7 @@ class PromptAttrDB:
             ce_loss_coeff = graph.optimization_params.ce_loss_coeff
             kl_loss_coeff = graph.optimization_params.kl_loss_coeff
             steps = graph.optimization_params.steps
-            pnorm_1 = graph.optimization_params.pnorm_1
-            pnorm_2 = graph.optimization_params.pnorm_2
+            pnorm = graph.optimization_params.pnorm
             beta = graph.optimization_params.beta
             mask_type = graph.optimization_params.mask_type
             label_prob = graph.label_prob
@@ -543,10 +539,10 @@ class PromptAttrDB:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, graph_type,
-                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1,
-                    pnorm_2, beta, mask_type, included_nodes, included_nodes_hash,
+                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
+                    beta, mask_type, included_nodes, included_nodes_hash,
                     edges_data, output_probs_data, node_ci_vals, node_subcomp_acts, label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
@@ -555,8 +551,7 @@ class PromptAttrDB:
                     ce_loss_coeff,
                     kl_loss_coeff,
                     steps,
-                    pnorm_1,
-                    pnorm_2,
+                    pnorm,
                     beta,
                     mask_type,
                     included_nodes_json,
@@ -620,8 +615,7 @@ class PromptAttrDB:
             opt_params = OptimizationParams(
                 imp_min_coeff=row["imp_min_coeff"],
                 steps=row["steps"],
-                pnorm_1=row["pnorm_1"],
-                pnorm_2=row["pnorm_2"],
+                pnorm=row["pnorm"],
                 beta=row["beta"],
                 mask_type=row["mask_type"],
                 label_token=row["label_token"],
@@ -660,7 +654,7 @@ class PromptAttrDB:
         rows = conn.execute(
             """SELECT id, graph_type, edges_data, output_probs_data, node_ci_vals,
                       node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
-                      steps, pnorm_1, pnorm_2, beta, mask_type, label_prob,
+                      steps, pnorm, beta, mask_type, label_prob,
                       included_nodes
                FROM graphs
                WHERE prompt_id = ?
@@ -677,7 +671,7 @@ class PromptAttrDB:
         row = conn.execute(
             """SELECT id, prompt_id, graph_type, edges_data, output_probs_data, node_ci_vals,
                       node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
-                      steps, pnorm_1, pnorm_2, beta, mask_type, label_prob,
+                      steps, pnorm, beta, mask_type, label_prob,
                       included_nodes
                FROM graphs
                WHERE id = ?""",
