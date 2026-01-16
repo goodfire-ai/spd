@@ -1,5 +1,5 @@
 wandb_project: spd
-wandb_run_name: null
+wandb_run_name: ss_llama_simple_mlp-2L-wide-ImpMin-coeff-0.004
 wandb_run_name_prefix: ''
 seed: 0
 n_mask_samples: 1
@@ -25,7 +25,7 @@ identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
 - classname: ImportanceMinimalityLoss
-  coeff: 0.001
+  coeff: 0.004
   pnorm: 2.0
   beta: 0
   p_anneal_start_frac: 0.0
