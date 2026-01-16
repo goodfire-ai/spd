@@ -5,29 +5,29 @@ seed: 0
 n_mask_samples: 1
 ci_fn_type: shared_mlp
 ci_fn_hidden_dims:
-- 1250
+- 1024
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
-- C: 1152
+- C: 1024
   module_pattern: h.*.mlp.c_fc
-- C: 960
+- C: 768
   module_pattern: h.*.mlp.down_proj
-- C: 288
+- C: 128
   module_pattern: h.*.attn.q_proj
-- C: 288
+- C: 192
   module_pattern: h.*.attn.k_proj
-- C: 384
+- C: 256
   module_pattern: h.*.attn.v_proj
-- C: 480
+- C: 256
   module_pattern: h.*.attn.o_proj
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
 - classname: ImportanceMinimalityLoss
-  coeff: 0.001
+  coeff: 0.002
   pnorm: 2.0
-  beta: 0
+  beta: 0.1
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.5
   p_anneal_end_frac: 1.0
