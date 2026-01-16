@@ -35,7 +35,7 @@ from spd.utils.module_utils import init_param_
 class AliveTracker:
     """Track which components are alive based on recent mask activity.
 
-    A component is considered alive if it has been active (mask > 0) within
+    A component is considered alive if it has been active (mask > threshold) within
     the last n_batches_until_dead batches.
     """
 
@@ -44,8 +44,10 @@ class AliveTracker:
         module_to_c: dict[str, int],
         device: str,
         n_batches_until_dead: int,
+        threshold: float = 0.5,
     ):
         self.n_batches_until_dead = n_batches_until_dead
+        self.threshold = threshold
         self.n_batches_since_active: dict[str, Tensor] = {
             name: torch.zeros(c, dtype=torch.int64, device=device)
             for name, c in module_to_c.items()
@@ -54,8 +56,9 @@ class AliveTracker:
     def update(self, masks: dict[str, Float[Tensor, "... C"]]) -> None:
         """Update tracking based on mask values from a batch."""
         for name, mask in masks.items():
-            # Component is active if mask > 0 for any sample in the batch
-            active = (mask > 0).any(dim=0)  # (C,)
+            # Component is active if mask > threshold for any sample in batch
+            # threshold=0.5 works for both binary (0/1) and soft masks
+            active = (mask > self.threshold).any(dim=0)  # (C,)
             self.n_batches_since_active[name] = torch.where(
                 active,
                 torch.zeros_like(self.n_batches_since_active[name]),
@@ -462,9 +465,11 @@ def evaluate(
     n_components_fc1 = model.fc1.C
     n_components_fc2 = model.fc2.C
 
-    # Track which components have been active at least once (mask > 0)
+    # Track which components have been active at least once (mask > 0.5)
+    # Using 0.5 threshold works for both binary masks and soft masks
     ever_active_fc1 = torch.zeros(n_components_fc1, dtype=torch.bool, device=device)
     ever_active_fc2 = torch.zeros(n_components_fc2, dtype=torch.bool, device=device)
+    active_threshold = 0.5
 
     with torch.no_grad():
         for images, labels in test_loader:
@@ -483,9 +488,9 @@ def evaluate(
             ci_fc2_sum += ci_values["fc2"].mean().item()
             n_batches += 1
 
-            # Update ever_active masks (component active if mask > 0 on any sample)
-            ever_active_fc1 |= (masks["fc1"] > 0).any(dim=0)
-            ever_active_fc2 |= (masks["fc2"] > 0).any(dim=0)
+            # Update ever_active masks (component active if mask > threshold on any sample)
+            ever_active_fc1 |= (masks["fc1"] > active_threshold).any(dim=0)
+            ever_active_fc2 |= (masks["fc2"] > active_threshold).any(dim=0)
 
     accuracy = 100.0 * correct / total
     l0_fc1 = l0_fc1_sum / n_batches
