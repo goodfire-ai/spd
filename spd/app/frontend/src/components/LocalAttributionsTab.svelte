@@ -39,7 +39,7 @@
             case "optimized":
                 return data.optimization ? `Optimized (${data.optimization.steps} steps)` : "Optimized";
             case "manual":
-                return "Manual";
+                return `Manual (${Object.keys(data.nodeCiVals).length} nodes)`;
         }
     }
 

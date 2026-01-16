@@ -663,11 +663,8 @@ def process_edges_for_response(
         raw_edges = [e for e in raw_edges if e.target.seq_pos == final_seq_pos]
 
     # Only include edges that connect to nodes in node_ci_vals_with_pseudo
-    edges = [
-        e
-        for e in raw_edges
-        if str(e.source) in node_ci_vals_with_pseudo and str(e.target) in node_ci_vals_with_pseudo
-    ]
+    node_keys = set(node_ci_vals_with_pseudo.keys())
+    edges = [e for e in raw_edges if str(e.source) in node_keys and str(e.target) in node_keys]
 
     edges = _normalize_edges(edges=edges, normalize=normalize)
     max_abs_attr = compute_max_abs_attr(edges=edges)
