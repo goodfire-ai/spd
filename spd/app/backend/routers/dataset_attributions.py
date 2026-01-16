@@ -103,7 +103,7 @@ def get_attribution_sources(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-    k: Annotated[int, Query(ge=1)] = 20,
+    k: Annotated[int, Query(ge=1)] = 10,
     sign: Literal["positive", "negative"] = "positive",
 ) -> list[DatasetAttributionEntry]:
     """Get top-k components that attribute TO this component over the dataset."""
@@ -119,7 +119,7 @@ def get_attribution_targets(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-    k: Annotated[int, Query(ge=1)] = 20,
+    k: Annotated[int, Query(ge=1)] = 10,
     sign: Literal["positive", "negative"] = "positive",
 ) -> list[DatasetAttributionEntry]:
     """Get top-k components this component attributes TO over the dataset."""
