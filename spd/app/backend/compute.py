@@ -68,7 +68,7 @@ class Node:
     _str_cache: str = field(default="", init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        # Cache string representation for efficient repeated lookups
+        """Cache string representation for efficient repeated lookups."""
         self._str_cache = f"{self.layer}:{self.seq_pos}:{self.component_idx}"
 
     @override
@@ -525,7 +525,6 @@ def compute_local_attributions(
             detach_inputs=False,
         )
 
-    # Filter CI to only included nodes if specified
     ci_lower_leaky = ci.lower_leaky
     if included_nodes is not None:
         ci_lower_leaky = filter_ci_to_included_nodes(ci_lower_leaky, included_nodes)
