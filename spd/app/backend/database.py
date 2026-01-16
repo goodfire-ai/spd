@@ -44,8 +44,7 @@ class OptimizationParams(BaseModel):
 
     imp_min_coeff: float
     steps: int
-    pnorm_1: float
-    pnorm_2: float
+    pnorm: float
     beta: float
     # CE loss params (optional, must be set together)
     label_token: int | None = None
@@ -176,8 +175,7 @@ class LocalAttrDB:
                 ce_loss_coeff REAL,
                 kl_loss_coeff REAL,
                 steps INTEGER,
-                pnorm_1 REAL,
-                pnorm_2 REAL,
+                pnorm REAL,
                 beta REAL,
 
                 -- The actual graph data (JSON)
@@ -198,7 +196,7 @@ class LocalAttrDB:
                 WHERE is_optimized = 0;
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1, pnorm_2, beta)
+                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, beta)
                 WHERE is_optimized = 1;
 
             CREATE INDEX IF NOT EXISTS idx_graphs_prompt
@@ -469,8 +467,7 @@ class LocalAttrDB:
         ce_loss_coeff = None
         kl_loss_coeff = None
         steps = None
-        pnorm_1 = None
-        pnorm_2 = None
+        pnorm = None
         beta = None
         label_prob = None
 
@@ -480,8 +477,7 @@ class LocalAttrDB:
             ce_loss_coeff = graph.optimization_params.ce_loss_coeff
             kl_loss_coeff = graph.optimization_params.kl_loss_coeff
             steps = graph.optimization_params.steps
-            pnorm_1 = graph.optimization_params.pnorm_1
-            pnorm_2 = graph.optimization_params.pnorm_2
+            pnorm = graph.optimization_params.pnorm
             beta = graph.optimization_params.beta
             label_prob = graph.label_prob  # May be None for KL-only optimization
 
@@ -489,10 +485,10 @@ class LocalAttrDB:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, is_optimized,
-                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm_1, pnorm_2, beta,
+                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, beta,
                     edges_data, output_probs_data, node_ci_vals,
                     label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     is_optimized,
@@ -501,8 +497,7 @@ class LocalAttrDB:
                     ce_loss_coeff,
                     kl_loss_coeff,
                     steps,
-                    pnorm_1,
-                    pnorm_2,
+                    pnorm,
                     beta,
                     edges_json,
                     probs_json,
@@ -534,7 +529,7 @@ class LocalAttrDB:
         rows = conn.execute(
             """SELECT id, is_optimized, edges_data, output_probs_data, node_ci_vals,
                       label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps,
-                      pnorm_1, pnorm_2, beta, label_prob
+                      pnorm, beta, label_prob
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY is_optimized, created_at""",
@@ -565,8 +560,7 @@ class LocalAttrDB:
                 opt_params = OptimizationParams(
                     imp_min_coeff=row["imp_min_coeff"],
                     steps=row["steps"],
-                    pnorm_1=row["pnorm_1"],
-                    pnorm_2=row["pnorm_2"],
+                    pnorm=row["pnorm"],
                     beta=row["beta"],
                     label_token=row["label_token"],
                     ce_loss_coeff=row["ce_loss_coeff"],

@@ -51,7 +51,7 @@ def _get_linear_annealed_p(
 
 def _importance_minimality_loss_update(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
-    pnorm_1: float,
+    pnorm: float,
     eps: float,
     p_anneal_start_frac: float,
     p_anneal_final_p: float | None,
@@ -61,17 +61,17 @@ def _importance_minimality_loss_update(
     """Calculate per-component sums of (ci_upper_leaky + eps) ** pnorm over batch/seq.
 
     Returns per-layer per-component sums and the number of batch/seq elements.
-    These are used to compute the final loss by averaging over batch/seq,
-    raising to pnorm_2, and summing over components.
+    These are used to compute the final loss by averaging over batch/seq
+    and summing over components.
 
     NOTE: We don't normalize over the number of layers because a change in the number of layers
     should not change the ci loss that an ablation of a single component in a single layer might
     have. That said, we're unsure about this, perhaps we do want to normalize over n_layers.
     """
     assert ci_upper_leaky, "Empty ci_upper_leaky"
-    pnorm_1 = _get_linear_annealed_p(
+    pnorm = _get_linear_annealed_p(
         current_frac_of_training=current_frac_of_training,
-        initial_p=pnorm_1,
+        initial_p=pnorm,
         p_anneal_start_frac=p_anneal_start_frac,
         p_anneal_final_p=p_anneal_final_p,
         p_anneal_end_frac=p_anneal_end_frac,
@@ -79,7 +79,7 @@ def _importance_minimality_loss_update(
     per_component_sums: dict[str, Float[Tensor, " C"]] = {}
     for layer_name, layer_ci_upper_leaky in ci_upper_leaky.items():
         # NOTE: layer_ci_upper_leaky already >= 0, with shape [... C] where ... is batch/seq
-        pnorm_result = (layer_ci_upper_leaky + eps) ** pnorm_1
+        pnorm_result = (layer_ci_upper_leaky + eps) ** pnorm
         # Sum over batch/seq to get per-component sum [C]
         per_component_sums[layer_name] = pnorm_result.sum(dim=tuple(range(pnorm_result.dim() - 1)))
     n_examples = next(iter(ci_upper_leaky.values())).shape[:-1].numel()
@@ -89,21 +89,22 @@ def _importance_minimality_loss_update(
 def _importance_minimality_loss_compute(
     per_component_sums: dict[str, Float[Tensor, " C"]],
     n_examples: int,
-    pnorm_2: float,
     beta: float,
 ) -> Float[Tensor, ""]:
     """Compute final loss from accumulated per-component sums.
 
     For each layer:
     1. Divide per-component sums by n_examples to get means over batch/seq (i.e. per_component_mean)
-    2. Calculate (per_component_mean + beta * per_component_mean**pnorm_2).sum()
+    2. Calculate (per_component_mean + beta * per_component_mean * log2(1 + layer_sums)).sum()
 
     Then sum contributions from all layers.
     """
     total_loss = torch.tensor(0.0, device=next(iter(per_component_sums.values())).device)
     for layer_sums in per_component_sums.values():
         per_component_mean = layer_sums / n_examples
-        layer_loss = (per_component_mean + beta * per_component_mean**pnorm_2).sum()
+        layer_loss = (
+            per_component_mean + beta * per_component_mean * torch.log2(1 + layer_sums)
+        ).sum()
         total_loss += layer_loss
     return total_loss
 
@@ -112,8 +113,7 @@ def importance_minimality_loss(
     ci_upper_leaky: dict[str, Float[Tensor, "... C"]],
     current_frac_of_training: float,
     eps: float,
-    pnorm_1: float,
-    pnorm_2: float,
+    pnorm: float,
     beta: float,
     p_anneal_start_frac: float,
     p_anneal_final_p: float | None,
@@ -130,7 +130,7 @@ def importance_minimality_loss(
 
     per_component_sums, n_examples = _importance_minimality_loss_update(
         ci_upper_leaky=ci_upper_leaky,
-        pnorm_1=pnorm_1,
+        pnorm=pnorm,
         eps=eps,
         p_anneal_start_frac=p_anneal_start_frac,
         p_anneal_final_p=p_anneal_final_p,
@@ -140,7 +140,6 @@ def importance_minimality_loss(
     return _importance_minimality_loss_compute(
         per_component_sums=per_component_sums,
         n_examples=n_examples,
-        pnorm_2=pnorm_2,
         beta=beta,
     )
 
@@ -153,8 +152,7 @@ class ImportanceMinimalityLoss(Metric):
     have. That said, we're unsure about this, perhaps we do want to normalize over n_layers.
 
     Args:
-        pnorm_1: The p value for the L_p norm applied element-wise before averaging
-        pnorm_2: The p value applied after averaging over batch/seq, before summing over components
+        pnorm: The p value for the L_p norm applied element-wise before averaging
         p_anneal_start_frac: The fraction of training after which to start annealing p
             (1.0 = no annealing)
         p_anneal_final_p: The final p value to anneal to (None = no annealing)
@@ -169,20 +167,18 @@ class ImportanceMinimalityLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        pnorm_1: float,
-        pnorm_2: float,
+        pnorm: float,
         beta: float,
         p_anneal_start_frac: float = 1.0,
         p_anneal_final_p: float | None = None,
         p_anneal_end_frac: float = 1.0,
         eps: float = 1e-12,
     ) -> None:
-        self.pnorm_1 = pnorm_1
-        self.pnorm_2 = pnorm_2
+        self.pnorm = pnorm
         self.beta = beta
         self.eps = eps
         self.p_anneal_start_frac = p_anneal_start_frac
-        self.p_anneal_final_p = p_anneal_final_p if p_anneal_final_p is not None else None
+        self.p_anneal_final_p = p_anneal_final_p
         self.p_anneal_end_frac = p_anneal_end_frac
         self.device = device
         # Track per-layer per-component sums for proper aggregation
@@ -199,7 +195,7 @@ class ImportanceMinimalityLoss(Metric):
     ) -> None:
         per_component_sums, n_examples = _importance_minimality_loss_update(
             ci_upper_leaky=ci.upper_leaky,
-            pnorm_1=self.pnorm_1,
+            pnorm=self.pnorm,
             eps=self.eps,
             current_frac_of_training=current_frac_of_training,
             p_anneal_start_frac=self.p_anneal_start_frac,
@@ -223,6 +219,5 @@ class ImportanceMinimalityLoss(Metric):
         return _importance_minimality_loss_compute(
             per_component_sums=reduced_sums,
             n_examples=n_examples,
-            pnorm_2=self.pnorm_2,
             beta=self.beta,
         )
