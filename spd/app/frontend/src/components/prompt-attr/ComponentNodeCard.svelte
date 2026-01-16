@@ -6,6 +6,7 @@
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
+    import DatasetAttributionsSection from "../ui/DatasetAttributionsSection.svelte";
     import EdgeAttributionList from "../ui/EdgeAttributionList.svelte";
     import InterpretationBadge from "../ui/InterpretationBadge.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
@@ -121,7 +122,7 @@
     function getTopEdgeAttributions(
         edges: Edge[],
         isPositive: boolean,
-        getNodeKey: (e: Edge) => string,
+        getKey: (e: Edge) => string,
     ): EdgeAttribution[] {
         const filtered = edges.filter((e) => (isPositive ? e.val > 0 : e.val < 0));
         const sorted = filtered
@@ -129,7 +130,7 @@
             .slice(0, N_EDGES_TO_DISPLAY);
         const maxAbsVal = Math.abs(sorted[0]?.val || 1);
         return sorted.map((e) => ({
-            nodeKey: getNodeKey(e),
+            key: getKey(e),
             value: e.val,
             normalizedMagnitude: Math.abs(e.val) / maxAbsVal,
         }));
@@ -203,10 +204,10 @@
 
     <ComponentProbeInput {layer} componentIdx={cIdx} />
 
-    <!-- Edge attributions (local, for this datapoint) -->
+    <!-- Prompt attributions -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
         <div class="edge-attributions-section">
-            <SectionHeader title="Edge Attributions" />
+            <SectionHeader title="Prompt Attributions" />
             <div class="edge-lists-grid">
                 {#if incomingPositive.length > 0 || incomingNegative.length > 0}
                     <div class="edge-list-group">
@@ -217,7 +218,7 @@
                                 <EdgeAttributionList
                                     items={incomingPositive}
                                     pageSize={10}
-                                    onNodeClick={handleEdgeNodeClick}
+                                    onClick={handleEdgeNodeClick}
                                     direction="positive"
                                     {tokens}
                                     {outputProbs}
@@ -230,7 +231,7 @@
                                 <EdgeAttributionList
                                     items={incomingNegative}
                                     pageSize={10}
-                                    onNodeClick={handleEdgeNodeClick}
+                                    onClick={handleEdgeNodeClick}
                                     direction="negative"
                                     {tokens}
                                     {outputProbs}
@@ -248,7 +249,7 @@
                                 <EdgeAttributionList
                                     items={outgoingPositive}
                                     pageSize={10}
-                                    onNodeClick={handleEdgeNodeClick}
+                                    onClick={handleEdgeNodeClick}
                                     direction="positive"
                                     {tokens}
                                     {outputProbs}
@@ -261,7 +262,7 @@
                                 <EdgeAttributionList
                                     items={outgoingNegative}
                                     pageSize={10}
-                                    onNodeClick={handleEdgeNodeClick}
+                                    onClick={handleEdgeNodeClick}
                                     direction="negative"
                                     {tokens}
                                     {outputProbs}
@@ -311,6 +312,24 @@
             <StatusText>No correlations available.</StatusText>
         {/if}
     </div>
+
+    <!-- Dataset attributions  -->
+    {#if componentData.datasetAttributions?.status === "loaded" && componentData.datasetAttributions.data}
+        <DatasetAttributionsSection
+            attributions={componentData.datasetAttributions.data}
+            onComponentClick={handleCorrelationClick}
+        />
+    {:else if componentData.datasetAttributions?.status === "loading"}
+        <div class="dataset-attributions-loading">
+            <SectionHeader title="Dataset Attributions" />
+            <StatusText>Loading...</StatusText>
+        </div>
+    {:else if componentData.datasetAttributions?.status === "error"}
+        <div class="dataset-attributions-loading">
+            <SectionHeader title="Dataset Attributions" />
+            <StatusText>Error: {String(componentData.datasetAttributions.error)}</StatusText>
+        </div>
+    {/if}
 </div>
 
 <style>
@@ -380,5 +399,11 @@
         font-size: var(--text-xs);
         color: var(--text-muted);
         font-style: italic;
+    }
+
+    .dataset-attributions-loading {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
     }
 </style>

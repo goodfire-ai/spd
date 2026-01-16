@@ -9,57 +9,65 @@
 
     type Props = {
         items: EdgeAttribution[];
-        onNodeClick: (nodeKey: string) => void;
+        onClick: (key: string) => void;
         pageSize: number;
         direction: "positive" | "negative";
-        tokens: string[];
-        outputProbs: Record<string, OutputProbEntry>;
+        // Optional: only needed for prompt-level attributions with wte/output pseudo-layers
+        tokens?: string[];
+        outputProbs?: Record<string, OutputProbEntry>;
     };
 
-    let { items, onNodeClick, pageSize, direction, tokens, outputProbs }: Props = $props();
+    let { items, onClick, pageSize, direction, tokens, outputProbs }: Props = $props();
 
-    // Extract component key (layer:cIdx) from node key (layer:seq:cIdx)
-    function getComponentKey(nodeKey: string): string {
-        const parts = nodeKey.split(":");
-        return `${parts[0]}:${parts[2]}`; // layer:cIdx
+    // Extract component key (layer:cIdx) from either format
+    function getComponentKey(key: string): string {
+        const parts = key.split(":");
+        if (parts.length === 3) {
+            return `${parts[0]}:${parts[2]}`; // layer:cIdx from layer:seq:cIdx
+        }
+        return key; // already layer:cIdx
     }
 
-    function getInterpretation(nodeKey: string): InterpretationBackendState {
-        const componentKey = getComponentKey(nodeKey);
+    function getInterpretation(key: string): InterpretationBackendState {
+        const componentKey = getComponentKey(key);
         const interp = runState.getInterpretation(componentKey);
         if (interp.status === "loaded" && interp.data.status === "generated") return interp.data;
         return { status: "none" };
     }
 
-    // Get display info for a node - returns label and whether it's a token (pseudo-layer) node
+    // Get display info for a key - returns label and whether it's a token (pseudo-layer) node
     // Token nodes (wte/output) show the token string; component nodes show interpretation label
-    function getNodeDisplayInfo(nodeKey: string): { label: string; isTokenNode: boolean } {
-        const parts = nodeKey.split(":");
-        const layer = parts[0];
-        const seqIdx = parseInt(parts[1]);
-        const cIdx = parts[2];
+    function getDisplayInfo(key: string): { label: string; isTokenNode: boolean } {
+        const parts = key.split(":");
 
-        // wte (input embedding) nodes: show the token at this sequence position
-        if (layer === "wte") {
-            if (seqIdx < 0 || seqIdx >= tokens.length) {
-                throw new Error(
-                    `EdgeAttributionList: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`,
-                );
-            }
-            return { label: tokens[seqIdx], isTokenNode: true };
-        }
+        // Only check for token nodes if we have prompt data and it's a node key
+        if (tokens && outputProbs && parts.length === 3) {
+            const layer = parts[0];
+            const seqIdx = parseInt(parts[1]);
+            const cIdx = parts[2];
 
-        // output nodes: show the predicted token string
-        if (layer === "output") {
-            const entry = outputProbs[`${seqIdx}:${cIdx}`];
-            if (!entry) {
-                throw new Error(`EdgeAttributionList: output node ${nodeKey} not found in outputProbs`);
+            // wte (input embedding) nodes: show the token at this sequence position
+            if (layer === "wte") {
+                if (seqIdx < 0 || seqIdx >= tokens.length) {
+                    throw new Error(
+                        `EdgeAttributionList: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`,
+                    );
+                }
+                return { label: tokens[seqIdx], isTokenNode: true };
             }
-            return { label: entry.token, isTokenNode: true };
+
+            // output nodes: show the predicted token string
+            if (layer === "output") {
+                const entry = outputProbs[`${seqIdx}:${cIdx}`];
+                if (!entry) {
+                    throw new Error(`EdgeAttributionList: output node ${key} not found in outputProbs`);
+                }
+                return { label: entry.token, isTokenNode: true };
+            }
         }
 
         // Component nodes: show interpretation label or "N/A"
-        const interp = getInterpretation(nodeKey);
+        const interp = getInterpretation(key);
 
         if (interp.status === "generated")
             return {
@@ -77,18 +85,18 @@
     const paginatedItems = $derived(items.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
 
     // Track which pill is being hovered and its position
-    let hoveredNodeKey = $state<string | null>(null);
+    let hoveredKey = $state<string | null>(null);
     let tooltipPosition = $state<{ top: number; left: number } | null>(null);
 
-    function handleMouseEnter(nodeKey: string, event: MouseEvent) {
-        hoveredNodeKey = nodeKey;
+    function handleMouseEnter(key: string, event: MouseEvent) {
+        hoveredKey = key;
         const target = event.currentTarget as HTMLElement;
         const rect = target.getBoundingClientRect();
         tooltipPosition = { top: rect.top, left: rect.left };
     }
 
     function handleMouseLeave() {
-        hoveredNodeKey = null;
+        hoveredKey = null;
         tooltipPosition = null;
     }
 
@@ -120,18 +128,14 @@
         </div>
     {/if}
     <div class="items">
-        {#each paginatedItems as { nodeKey, value, normalizedMagnitude } (nodeKey)}
+        {#each paginatedItems as { key, value, normalizedMagnitude } (key)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
-            {@const displayInfo = getNodeDisplayInfo(nodeKey)}
-            {@const interp = !displayInfo.isTokenNode ? getInterpretation(nodeKey) : undefined}
-            {@const isHovered = hoveredNodeKey === nodeKey}
-            <div
-                class="pill-container"
-                onmouseenter={(e) => handleMouseEnter(nodeKey, e)}
-                onmouseleave={handleMouseLeave}
-            >
-                <button class="edge-pill" style="background: {bgColor};" onclick={() => onNodeClick(nodeKey)}>
+            {@const displayInfo = getDisplayInfo(key)}
+            {@const interp = !displayInfo.isTokenNode ? getInterpretation(key) : undefined}
+            {@const isHovered = hoveredKey === key}
+            <div class="pill-container" onmouseenter={(e) => handleMouseEnter(key, e)} onmouseleave={handleMouseLeave}>
+                <button class="edge-pill" style="background: {bgColor};" onclick={() => onClick(key)}>
                     <span class="interp-label" style="color: {textColor};">{displayInfo.label}</span>
                     <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
                 </button>
@@ -140,10 +144,10 @@
                     <div
                         class="tooltip"
                         style="top: {tooltipPosition.top}px; left: {tooltipPosition.left}px;"
-                        onmouseenter={() => (hoveredNodeKey = nodeKey)}
+                        onmouseenter={() => (hoveredKey = key)}
                         onmouseleave={handleMouseLeave}
                     >
-                        <div class="tooltip-key">{formatNodeKeyForDisplay(nodeKey)}</div>
+                        <div class="tooltip-key">{formatNodeKeyForDisplay(key)}</div>
                         <button class="tooltip-label copyable" onclick={() => copyToClipboard(interp.data.label)}>
                             {interp.data.label}
                             <svg

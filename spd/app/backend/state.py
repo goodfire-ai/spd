@@ -14,6 +14,7 @@ from spd.app.backend.database import PromptAttrDB, Run
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
+from spd.dataset_attributions import DatasetAttributionStorage, load_dataset_attributions
 from spd.harvest.loaders import (
     load_activation_contexts_summary,
     load_correlations,
@@ -39,6 +40,7 @@ class HarvestCache:
         self._token_stats = _NOT_LOADED
         self._interpretations = _NOT_LOADED
         self._activation_contexts_summary = _NOT_LOADED
+        self._dataset_attributions = _NOT_LOADED
 
     @property
     def correlations(self) -> CorrelationStorage:
@@ -70,6 +72,16 @@ class HarvestCache:
             return None
         assert isinstance(self._activation_contexts_summary, dict)
         return self._activation_contexts_summary
+
+    @property
+    def dataset_attributions(self) -> DatasetAttributionStorage | None:
+        """Dataset-aggregated attribution matrix, if available."""
+        if self._dataset_attributions is _NOT_LOADED:
+            self._dataset_attributions = load_dataset_attributions(self.run_id)
+        if self._dataset_attributions is None:
+            return None
+        assert isinstance(self._dataset_attributions, DatasetAttributionStorage)
+        return self._dataset_attributions
 
 
 @dataclass

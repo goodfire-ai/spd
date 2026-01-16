@@ -16,7 +16,7 @@ export type Edge = {
 };
 
 export type EdgeAttribution = {
-    nodeKey: string; // "layer:seq:cIdx"
+    key: string; // "layer:seq:cIdx" for prompt or "layer:cIdx" for dataset
     value: number; // raw attribution value (positive or negative)
     normalizedMagnitude: number; // |value| / maxAbsValue, for color intensity (0-1)
 };
