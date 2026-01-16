@@ -237,20 +237,16 @@ if storage:
 | Branch | Purpose |
 |--------|---------|
 | `feature/global-attributions` | Main feature branch (this PR) |
-| `test/harvest-global-attr-neuron-lp` | Integration test branch (combines with `feature/neuron-param-lp-with-pnorm2`) |
-
-The test branch was used to verify config compatibility with other in-progress work.
 
 ## Key Commits
 
 | Commit | Description |
 |--------|-------------|
-| `7adeda98` | Initial global attributions implementation |
-| `f982f499` | Fix critical bugs (layer offset, validation) |
-| `41f924db` | Add CLI flag |
-| `0bdbdfdb` | Fix gradient computation for unconnected layers |
-| `fd9cb40e` | Fix OOM via chunked forward passes |
-| `83d6f76c` | Pull in neuron-param-lp config compatibility |
+| `6879d611` | Initial global attributions implementation |
+| `35c4e358` | Fix critical bugs (layer offset, validation) |
+| `fa42ee59` | Add CLI flag |
+| `2baf547e` | Fix gradient computation for unconnected layers |
+| `c132439b` | Fix OOM via chunked forward passes |
 
 ## Questions for Continuation
 
