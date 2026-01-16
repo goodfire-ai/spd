@@ -24,13 +24,50 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 
 from spd.log import logger
-from spd.metrics.alive_components import AliveComponentsTracker
 from spd.metrics.importance_minimality_loss import importance_minimality_loss
 from spd.models.components import LinearCiFn, MLPCiFn
 from spd.models.sigmoids import SIGMOID_TYPES
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import set_seed
 from spd.utils.module_utils import init_param_
+
+
+class AliveTracker:
+    """Track which components are alive based on recent mask activity.
+
+    A component is considered alive if it has been active (mask > 0) within
+    the last n_batches_until_dead batches.
+    """
+
+    def __init__(
+        self,
+        module_to_c: dict[str, int],
+        device: str,
+        n_batches_until_dead: int,
+    ):
+        self.n_batches_until_dead = n_batches_until_dead
+        self.n_batches_since_active: dict[str, Tensor] = {
+            name: torch.zeros(c, dtype=torch.int64, device=device)
+            for name, c in module_to_c.items()
+        }
+
+    def update(self, masks: dict[str, Float[Tensor, "... C"]]) -> None:
+        """Update tracking based on mask values from a batch."""
+        for name, mask in masks.items():
+            # Component is active if mask > 0 for any sample in the batch
+            active = (mask > 0).any(dim=0)  # (C,)
+            self.n_batches_since_active[name] = torch.where(
+                active,
+                torch.zeros_like(self.n_batches_since_active[name]),
+                self.n_batches_since_active[name] + 1,
+            )
+
+    def compute(self) -> dict[str, int]:
+        """Return number of alive components per module."""
+        return {
+            name: int((counts < self.n_batches_until_dead).sum().item())
+            for name, counts in self.n_batches_since_active.items()
+        }
 
 
 def calc_l0(mask: Float[Tensor, "... C"]) -> float:
@@ -245,8 +282,7 @@ def train_decomposed_mlp(
     p_anneal_final_p: float,
     p_anneal_end_frac: float,
     sampling: str,
-    ci_alive_threshold: float,
-    n_examples_until_dead: int,
+    n_batches_until_dead: int,
     log_wandb: bool,
 ) -> int:
     """Train the decomposed MLP on MNIST.
@@ -264,8 +300,7 @@ def train_decomposed_mlp(
         p_anneal_final_p: Final p value after annealing
         p_anneal_end_frac: Fraction of training to finish annealing p
         sampling: "bernoulli" for stochastic, "none" for deterministic
-        ci_alive_threshold: CI threshold above which a component is considered firing
-        n_examples_until_dead: Number of examples without firing before component is dead
+        n_batches_until_dead: Batches without activity before component is considered dead
         log_wandb: Whether to log to W&B
 
     Returns:
@@ -275,14 +310,11 @@ def train_decomposed_mlp(
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss()
 
-    # Initialize alive components tracker
-    batch_size = train_loader.batch_size or 64
-    alive_tracker = AliveComponentsTracker(
+    # Initialize alive tracker (uses masks, not CI threshold)
+    alive_tracker = AliveTracker(
         module_to_c={"fc1": model.fc1.C, "fc2": model.fc2.C},
         device=device,
-        n_examples_until_dead=n_examples_until_dead,
-        ci_alive_threshold=ci_alive_threshold,
-        global_n_examples_per_batch=batch_size,
+        n_batches_until_dead=n_batches_until_dead,
     )
 
     logger.info(f"Training decomposed MLP for {epochs} epochs...")
@@ -346,8 +378,8 @@ def train_decomposed_mlp(
             l0_fc2 = calc_l0(masks["fc2"])
             l0_total = l0_fc1 + l0_fc2
 
-            # Update alive tracker and get alive counts (still uses CI for threshold check)
-            alive_tracker.update(ci_values)
+            # Update alive tracker (uses masks)
+            alive_tracker.update(masks)
             alive_counts = alive_tracker.compute()
             n_alive_fc1 = alive_counts["fc1"]
             n_alive_fc2 = alive_counts["fc2"]
@@ -593,9 +625,8 @@ def main(
     sampling: str = "bernoulli",
     ci_fn_type: str = "linear",
     ci_fn_hidden_dims: list[int] | None = None,
-    use_normal_sigmoid: bool = True,
-    ci_alive_threshold: float = 0.01,
-    n_examples_until_dead: int = 10000,
+    use_normal_sigmoid: bool = False,
+    n_batches_until_dead: int = 100,
     seed: int = 42,
     output_dir: str | None = None,
     wandb_project: str | None = "mnist_predecomposed_mlp",
@@ -618,8 +649,7 @@ def main(
         ci_fn_type: "linear" or "mlp"
         ci_fn_hidden_dims: Hidden dimensions for CI MLP (None uses defaults)
         use_normal_sigmoid: Use normal sigmoid instead of leaky hard sigmoids
-        ci_alive_threshold: CI threshold above which a component is considered firing
-        n_examples_until_dead: Examples without firing before component is considered dead
+        n_batches_until_dead: Batches without activity before component is considered dead
         seed: Random seed
         output_dir: Output directory
         wandb_project: W&B project name (None to disable)
@@ -665,8 +695,7 @@ def main(
                 "ci_fn_type": ci_fn_type,
                 "ci_fn_hidden_dims": ci_fn_hidden_dims,
                 "use_normal_sigmoid": use_normal_sigmoid,
-                "ci_alive_threshold": ci_alive_threshold,
-                "n_examples_until_dead": n_examples_until_dead,
+                "n_batches_until_dead": n_batches_until_dead,
                 "seed": seed,
             },
         )
@@ -708,8 +737,7 @@ def main(
         p_anneal_final_p=p_anneal_final_p,
         p_anneal_end_frac=p_anneal_end_frac,
         sampling=sampling,
-        ci_alive_threshold=ci_alive_threshold,
-        n_examples_until_dead=n_examples_until_dead,
+        n_batches_until_dead=n_batches_until_dead,
         log_wandb=wandb_project is not None,
     )
 
