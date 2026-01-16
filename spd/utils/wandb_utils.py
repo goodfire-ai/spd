@@ -268,6 +268,16 @@ def download_wandb_file(run: Run, wandb_run_dir: Path, file_name: str) -> Path:
     Returns:
         Path to the downloaded file
     """
+    local_path = wandb_run_dir / file_name
+
+    # Check if file already exists locally to avoid redundant download attempts
+    if local_path.exists():
+        return local_path
+
+    # Remove broken symlinks that would prevent download
+    if local_path.is_symlink():
+        local_path.unlink()
+
     file_on_wandb = run.file(file_name)
     assert isinstance(file_on_wandb, File)
     path = Path(file_on_wandb.download(exist_ok=True, replace=False, root=str(wandb_run_dir)).name)
