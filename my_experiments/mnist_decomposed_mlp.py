@@ -51,8 +51,7 @@ class DecomposedLinear(nn.Module):
         d_out: int,
         C: int,
         ci_fn_type: str,
-        ci_fn_hidden_dims: list[int] | None,
-        bias: bool,
+        ci_fn_hidden_dims: list[int],
     ):
         super().__init__()
         self.d_in = d_in
@@ -65,18 +64,14 @@ class DecomposedLinear(nn.Module):
         init_param_(self.V, fan_val=d_in, nonlinearity="linear")
         init_param_(self.U, fan_val=C, nonlinearity="linear")
 
-        # Bias (not decomposed)
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(d_out))
-        else:
-            self.register_parameter("bias", None)
+        # Bias (not decomposed, always enabled)
+        self.bias = nn.Parameter(torch.zeros(d_out))
 
         # CI function
         if ci_fn_type == "linear":
             self.ci_fn = LinearCiFn(C=C)
         elif ci_fn_type == "mlp":
-            hidden_dims = ci_fn_hidden_dims or [256]
-            self.ci_fn = MLPCiFn(C=C, hidden_dims=hidden_dims)
+            self.ci_fn = MLPCiFn(C=C, hidden_dims=ci_fn_hidden_dims)
         else:
             raise ValueError(f"Unknown ci_fn_type: {ci_fn_type}")
 
@@ -132,10 +127,7 @@ class DecomposedLinear(nn.Module):
         masked_acts = component_acts * mask  # (... C)
 
         # Project to output
-        out = einops.einsum(masked_acts, self.U, "... C, C d_out -> ... d_out")
-
-        if self.bias is not None:
-            out = out + self.bias
+        out = einops.einsum(masked_acts, self.U, "... C, C d_out -> ... d_out") + self.bias
 
         if return_ci:
             ci_upper = self.upper_leaky_fn(ci_pre_sigmoid)
@@ -157,7 +149,7 @@ class DecomposedMLP(nn.Module):
         num_classes: int,
         n_components: int,
         ci_fn_type: str,
-        ci_fn_hidden_dims: list[int] | None,
+        ci_fn_hidden_dims: list[int],
     ):
         super().__init__()
         self.fc1 = DecomposedLinear(
@@ -166,7 +158,6 @@ class DecomposedMLP(nn.Module):
             C=n_components,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
-            bias=True,
         )
         self.fc2 = DecomposedLinear(
             d_in=hidden_size,
@@ -174,7 +165,6 @@ class DecomposedMLP(nn.Module):
             C=n_components,
             ci_fn_type=ci_fn_type,
             ci_fn_hidden_dims=ci_fn_hidden_dims,
-            bias=True,
         )
 
     def forward(
@@ -201,9 +191,9 @@ class DecomposedMLP(nn.Module):
             out, ci2 = self.fc2(h, sampling=sampling, return_ci=True)
             return out, {"fc1": ci1, "fc2": ci2}
         else:
-            h = self.fc1(x, sampling=sampling)
+            h = self.fc1(x, sampling=sampling, return_ci=False)
             h = F.relu(h)
-            out = self.fc2(h, sampling=sampling)
+            out = self.fc2(h, sampling=sampling, return_ci=False)
             return out
 
 
@@ -561,8 +551,8 @@ def plot_ci_distribution(
 def main(
     hidden_size: int = 128,
     n_components: int = 500,
-    batch_size: int = 64,
-    epochs: int = 100,
+    batch_size: int = 1024,
+    epochs: int = 500,
     lr: float = 0.001,
     weight_decay: float = 1e-6,
     importance_coeff: float = 5e-9,
@@ -573,7 +563,7 @@ def main(
     sampling: str = "bernoulli",
     ci_fn_type: str = "linear",
     ci_fn_hidden_dims: list[int] | None = None,
-    ci_alive_threshold: float = 0.0,
+    ci_alive_threshold: float = 0.01,
     n_examples_until_dead: int = 10000,
     seed: int = 42,
     output_dir: str | None = None,
@@ -659,13 +649,14 @@ def main(
 
     # Create model
     logger.info(f"Creating decomposed MLP with {n_components} components per layer...")
+    ci_fn_hidden_dims_resolved = ci_fn_hidden_dims if ci_fn_hidden_dims is not None else [256]
     model = DecomposedMLP(
         input_size=784,
         hidden_size=hidden_size,
         num_classes=10,
         n_components=n_components,
         ci_fn_type=ci_fn_type,
-        ci_fn_hidden_dims=ci_fn_hidden_dims,
+        ci_fn_hidden_dims=ci_fn_hidden_dims_resolved,
     )
     model = model.to(device)
 
