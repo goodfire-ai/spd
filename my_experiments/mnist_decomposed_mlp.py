@@ -458,6 +458,10 @@ def plot_component_directions(
     C = V_fc1.shape[1]
     n_show = min(n_components_to_show, C)
 
+    # Compute global scale across all components to show
+    directions = [V_fc1[:, i].reshape(28, 28).numpy() for i in range(n_show)]
+    global_max = max(abs(d).max() for d in directions)
+
     n_cols = 5
     n_rows = (n_show + n_cols - 1) // n_cols
 
@@ -467,12 +471,7 @@ def plot_component_directions(
     axes = axes.flatten()
 
     for i in range(n_show):
-        direction = V_fc1[:, i].reshape(28, 28).numpy()
-        vmin, vmax = direction.min(), direction.max()
-        if vmax - vmin > 1e-6:
-            direction = (direction - vmin) / (vmax - vmin)
-
-        im = axes[i].imshow(direction, cmap="RdBu_r", vmin=0, vmax=1)
+        im = axes[i].imshow(directions[i], cmap="RdBu_r", vmin=-global_max, vmax=global_max)
         axes[i].set_title(f"Component {i}", fontsize=10)
         axes[i].axis("off")
         plt.colorbar(im, ax=axes[i], fraction=0.046)
