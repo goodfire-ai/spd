@@ -28,10 +28,22 @@ from spd.metrics.alive_components import AliveComponentsTracker
 from spd.metrics.importance_minimality_loss import importance_minimality_loss
 from spd.models.components import LinearCiFn, MLPCiFn
 from spd.models.sigmoids import SIGMOID_TYPES
-from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import set_seed
 from spd.utils.module_utils import init_param_
+
+
+def calc_l0(ci: Float[Tensor, "... C"], threshold: float) -> float:
+    """Calculate L0: average number of active components per sample.
+
+    Args:
+        ci: CI values with shape (..., C)
+        threshold: CI threshold above which a component is considered active
+
+    Returns:
+        Average number of components with CI > threshold per sample
+    """
+    return (ci > threshold).float().sum(-1).mean().item()
 
 
 class DecomposedLinear(nn.Module):
@@ -327,8 +339,8 @@ def train_decomposed_mlp(
             n_components_fc1 = ci_values["fc1"].shape[-1]
             n_components_fc2 = ci_values["fc2"].shape[-1]
 
-            l0_fc1 = calc_ci_l_zero(ci_values["fc1"], threshold=ci_alive_threshold)
-            l0_fc2 = calc_ci_l_zero(ci_values["fc2"], threshold=ci_alive_threshold)
+            l0_fc1 = calc_l0(ci_values["fc1"], threshold=ci_alive_threshold)
+            l0_fc2 = calc_l0(ci_values["fc2"], threshold=ci_alive_threshold)
             l0_total = l0_fc1 + l0_fc2
 
             # Update alive tracker and get alive counts
@@ -434,8 +446,8 @@ def evaluate(
             correct += predicted.eq(labels).sum().item()
 
             # Track L0 and CI per layer
-            l0_fc1_sum += calc_ci_l_zero(ci_values["fc1"], threshold=ci_alive_threshold)
-            l0_fc2_sum += calc_ci_l_zero(ci_values["fc2"], threshold=ci_alive_threshold)
+            l0_fc1_sum += calc_l0(ci_values["fc1"], threshold=ci_alive_threshold)
+            l0_fc2_sum += calc_l0(ci_values["fc2"], threshold=ci_alive_threshold)
             ci_fc1_sum += ci_values["fc1"].mean().item()
             ci_fc2_sum += ci_values["fc2"].mean().item()
             n_batches += 1
@@ -582,7 +594,7 @@ def main(
     sampling: str = "bernoulli",
     ci_fn_type: str = "linear",
     ci_fn_hidden_dims: list[int] | None = None,
-    use_normal_sigmoid: bool = False,
+    use_normal_sigmoid: bool = True,
     ci_alive_threshold: float = 0.01,
     n_examples_until_dead: int = 10000,
     seed: int = 42,
