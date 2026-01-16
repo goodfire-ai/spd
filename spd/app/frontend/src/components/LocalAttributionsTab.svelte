@@ -9,8 +9,6 @@
         type TokenInfo,
     } from "../lib/localAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
-
-    const runState = getContext<RunContext>(RUN_KEY);
     import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
     import InterventionsView from "./local-attr/InterventionsView.svelte";
     import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
@@ -30,6 +28,20 @@
     } from "./local-attr/types";
     import ViewControls from "./local-attr/ViewControls.svelte";
     import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
+
+    const runState = getContext<RunContext>(RUN_KEY);
+
+    /** Generate a display label for a graph based on its type */
+    function getGraphLabel(data: GraphData): string {
+        switch (data.graphType) {
+            case "standard":
+                return "Standard";
+            case "optimized":
+                return data.optimization ? `Optimized (${data.optimization.steps} steps)` : "Optimized";
+            case "manual":
+                return `Manual (${Object.keys(data.nodeCiVals).length} nodes)`;
+        }
+    }
 
     type Props = {
         prompts: PromptPreview[];
@@ -54,6 +66,7 @@
 
     // Intervention loading state
     let runningIntervention = $state(false);
+    let generatingSubgraph = $state(false);
 
     // Prompt generation state
     let promptGenerate = $state<PromptGenerateState>({ status: "idle" });
@@ -134,9 +147,6 @@
         );
         const graphs: StoredGraph[] = await Promise.all(
             storedGraphs.map(async (data) => {
-                const isOptimized = !!data.optimization;
-                const label = isOptimized ? `Optimized` : "Standard";
-
                 // Load intervention runs for this graph
                 const runs = await api.getInterventionRuns(data.id);
 
@@ -145,7 +155,7 @@
 
                 return {
                     id: data.id,
-                    label,
+                    label: getGraphLabel(data),
                     data,
                     viewSettings: { ...defaultViewSettings },
                     interventionRuns: runs,
@@ -386,6 +396,90 @@
         });
     }
 
+    async function handleGenerateGraphFromSelection() {
+        const composerState = activeComposerState;
+        if (!activeCard || !activeGraph || !composerState) {
+            return;
+        }
+
+        // Validate selection is not empty (defense in depth - button should be disabled)
+        if (composerState.selection.size === 0) {
+            console.warn("handleGenerateGraphFromSelection called with empty selection");
+            return;
+        }
+
+        const cardId = activeCard.id;
+        const includedNodes = Array.from(composerState.selection);
+
+        generatingSubgraph = true;
+        graphCompute = {
+            status: "computing",
+            cardId,
+            progress: {
+                stages: [{ name: "Computing graph from selection", progress: 0 }],
+                currentStage: 0,
+            },
+        };
+
+        try {
+            const data = await api.computeGraphStreaming(
+                {
+                    promptId: cardId,
+                    normalize: activeGraph.viewSettings.normalizeEdges,
+                    ciThreshold: activeGraph.viewSettings.ciThreshold,
+                    includedNodes,
+                },
+                (progress) => {
+                    if (graphCompute.status === "computing") {
+                        graphCompute.progress.stages[0].progress = progress.current / progress.total;
+                    }
+                },
+            );
+
+            // Initialize composer state for the new graph
+            getComposerState(data.id, Object.keys(data.nodeCiVals));
+
+            promptCards = promptCards.map((card) => {
+                if (card.id !== cardId) return card;
+
+                // Check if graph with this ID already exists (get-or-create semantics from backend)
+                const existingGraph = card.graphs.find((g) => g.id === data.id);
+                if (existingGraph) {
+                    // Graph already exists, just select it
+                    return {
+                        ...card,
+                        activeGraphId: data.id,
+                        activeView: "graph",
+                    };
+                }
+
+                // Add new graph
+                return {
+                    ...card,
+                    graphs: [
+                        ...card.graphs,
+                        {
+                            id: data.id,
+                            label: getGraphLabel(data),
+                            data,
+                            viewSettings: { ...activeGraph.viewSettings },
+                            interventionRuns: [],
+                        },
+                    ],
+                    activeGraphId: data.id,
+                    activeView: "graph",
+                };
+            });
+
+            graphCompute = { status: "idle" };
+        } catch (error) {
+            graphCompute = { status: "idle" };
+            alert(String(error));
+        } finally {
+            generatingSubgraph = false;
+        }
+    }
+
     async function computeGraphForCard() {
         if (!activeCard || !activeCard.tokenIds || graphCompute.status === "computing") return;
 
@@ -465,20 +559,25 @@
                 });
             }
 
-            const label = isOptimized ? `Optimized (${optConfig.steps} steps)` : "Standard";
-
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
 
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
+
+                // Check if graph with this ID already exists (defensive check)
+                const existingGraph = card.graphs.find((g) => g.id === data.id);
+                if (existingGraph) {
+                    return { ...card, activeGraphId: data.id };
+                }
+
                 return {
                     ...card,
                     graphs: [
                         ...card.graphs,
                         {
                             id: data.id,
-                            label,
+                            label: getGraphLabel(data),
                             data,
                             viewSettings: { ...defaultViewSettings },
                             interventionRuns: [],
@@ -730,12 +829,14 @@
                                 onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                 onHideNodeCardChange={(v) => (hideNodeCard = v)}
                                 {runningIntervention}
+                                {generatingSubgraph}
                                 onSelectionChange={handleComposerSelectionChange}
                                 onRunIntervention={handleRunIntervention}
                                 onSelectRun={handleSelectRun}
                                 onDeleteRun={handleDeleteRun}
                                 onForkRun={handleForkRun}
                                 onDeleteFork={handleDeleteFork}
+                                onGenerateGraphFromSelection={handleGenerateGraphFromSelection}
                             />
                         {/if}
                     {:else}

@@ -29,8 +29,11 @@ export type OutputProbEntry = {
     token: string;
 };
 
+export type GraphType = "standard" | "optimized" | "manual";
+
 export type GraphData = {
     id: number;
+    graphType: GraphType;
     tokens: string[];
     edges: Edge[];
     edgesBySource: Map<string, Edge[]>; // nodeKey -> edges where this node is source

@@ -105,7 +105,16 @@
             const ceMatch = (opt.ce_loss_coeff ?? 0) === config.ceLossCoeff && opt.label_token === config.labelTokenId;
             const klMatch = (opt.kl_loss_coeff ?? 0) === config.klLossCoeff;
             const maskTypeMatch = (opt.mask_type ?? "stochastic") === config.maskType;
-            return stepsMatch && impMinMatch && pnorm1Match && pnorm2Match && betaMatch && ceMatch && klMatch && maskTypeMatch;
+            return (
+                stepsMatch &&
+                impMinMatch &&
+                pnorm1Match &&
+                pnorm2Match &&
+                betaMatch &&
+                ceMatch &&
+                klMatch &&
+                maskTypeMatch
+            );
         });
     }
 

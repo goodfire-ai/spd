@@ -18,6 +18,8 @@ export type ComputeGraphParams = {
     promptId: number;
     normalize: NormalizeType;
     ciThreshold: number;
+    /** If provided, only include these nodes in the graph (creates manual graph) */
+    includedNodes?: string[];
 };
 
 /**
@@ -81,11 +83,14 @@ export async function computeGraphStreaming(
     url.searchParams.set("prompt_id", String(params.promptId));
     url.searchParams.set("normalize", String(params.normalize));
     url.searchParams.set("ci_threshold", String(params.ciThreshold));
+    if (params.includedNodes !== undefined) {
+        url.searchParams.set("included_nodes", JSON.stringify(params.includedNodes));
+    }
 
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
         const error = await response.json();
-        throw new ApiError(error.error || `HTTP ${response.status}`, response.status);
+        throw new ApiError(error.detail || `HTTP ${response.status}`, response.status);
     }
 
     return parseGraphSSEStream(response, onProgress);
@@ -138,7 +143,7 @@ export async function computeGraphOptimizedStreaming(
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {
         const error = await response.json();
-        throw new ApiError(error.error || `HTTP ${response.status}`, response.status);
+        throw new ApiError(error.detail || `HTTP ${response.status}`, response.status);
     }
 
     return parseGraphSSEStream(response, onProgress);

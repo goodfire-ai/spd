@@ -20,7 +20,7 @@ from spd.app.backend.compute import (
     compute_local_attributions,
     compute_local_attributions_optimized,
 )
-from spd.app.backend.database import OptimizationParams, StoredGraph
+from spd.app.backend.database import GraphType, OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.optim_cis import MaskType, OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
 from spd.app.backend.schemas import OutputProbability
@@ -51,6 +51,7 @@ class GraphData(BaseModel):
     """Full attribution graph data."""
 
     id: int
+    graphType: GraphType
     tokens: list[str]
     edges: list[EdgeData]
     outputProbs: dict[str, OutputProbability]
@@ -310,9 +311,44 @@ def compute_graph_stream(
     loaded: DepLoadedRun,
     manager: DepStateManager,
     ci_threshold: Annotated[float, Query()],
+    included_nodes: Annotated[str | None, Query()] = None,
 ):
-    """Compute attribution graph for a prompt with streaming progress."""
+    """Compute attribution graph for a prompt with streaming progress.
+
+    If included_nodes is provided (JSON array of node keys), creates a "manual" graph
+    with only those nodes. Otherwise creates a "standard" graph.
+
+    Args:
+        included_nodes: JSON array of node keys to include (creates manual graph if provided)
+    """
     output_prob_threshold = 0.01
+
+    # Parse and validate included_nodes if provided
+    included_nodes_set: set[str] | None = None
+    included_nodes_list: list[str] | None = None
+    if included_nodes is not None:
+        try:
+            parsed_nodes = json.loads(included_nodes)
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail="Invalid included_nodes JSON") from e
+
+        if not isinstance(parsed_nodes, list):
+            raise HTTPException(status_code=400, detail="included_nodes must be a JSON array")
+
+        if len(parsed_nodes) > 10000:
+            raise HTTPException(status_code=400, detail="Too many nodes (max 10000)")
+
+        for node in parsed_nodes:
+            if not isinstance(node, str):
+                raise HTTPException(status_code=400, detail="All node keys must be strings")
+            if len(node) > 100:  # Node keys follow format "layer:seq:cIdx", 100 chars is generous
+                raise HTTPException(status_code=400, detail=f"Node key too long: {node[:50]}...")
+
+        included_nodes_list = parsed_nodes
+        included_nodes_set = set(parsed_nodes)
+
+    is_manual = included_nodes_set is not None
+    graph_type: GraphType = "manual" if is_manual else "standard"
 
     db = manager.db
     prompt = db.get_prompt(prompt_id)
@@ -333,6 +369,7 @@ def compute_graph_stream(
             device=DEVICE,
             show_progress=False,
             on_progress=on_progress,
+            included_nodes=included_nodes_set,
         )
 
         out_probs = build_out_probs(
@@ -346,10 +383,12 @@ def compute_graph_stream(
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
+                graph_type=graph_type,
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
                 node_subcomp_acts=result.node_subcomp_acts,
+                included_nodes=included_nodes_list,
             ),
         )
 
@@ -367,6 +406,7 @@ def compute_graph_stream(
 
         return GraphData(
             id=graph_id,
+            graphType=graph_type,
             tokens=token_strings,
             edges=edges_data,
             outputProbs=out_probs,
@@ -533,6 +573,7 @@ def compute_graph_optimized_stream(
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
+                graph_type="optimized",
                 edges=result.edges,
                 out_probs=out_probs,
                 node_ci_vals=result.node_ci_vals,
@@ -556,6 +597,7 @@ def compute_graph_optimized_stream(
 
         return GraphDataWithOptimization(
             id=graph_id,
+            graphType="optimized",
             tokens=token_strings,
             edges=edges_data,
             outputProbs=out_probs,
@@ -616,11 +658,8 @@ def process_edges_for_response(
         raw_edges = [e for e in raw_edges if e.target.seq_pos == final_seq_pos]
 
     # Only include edges that connect to nodes in node_ci_vals_with_pseudo
-    edges = [
-        e
-        for e in raw_edges
-        if str(e.source) in node_ci_vals_with_pseudo and str(e.target) in node_ci_vals_with_pseudo
-    ]
+    node_keys = set(node_ci_vals_with_pseudo.keys())
+    edges = [e for e in raw_edges if str(e.source) in node_keys and str(e.target) in node_keys]
 
     edges = _normalize_edges(edges=edges, normalize=normalize)
     max_abs_attr = compute_max_abs_attr(edges=edges)
@@ -663,6 +702,7 @@ def stored_graph_to_response(
     if not is_optimized:
         return GraphData(
             id=graph.id,
+            graphType=graph.graph_type,
             tokens=token_strings,
             edges=edges_data,
             outputProbs=graph.out_probs,
@@ -681,6 +721,7 @@ def stored_graph_to_response(
 
     return GraphDataWithOptimization(
         id=graph.id,
+        graphType=graph.graph_type,
         tokens=token_strings,
         edges=edges_data,
         outputProbs=graph.out_probs,
