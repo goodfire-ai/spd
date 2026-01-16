@@ -38,8 +38,7 @@
             return {
                 impMinCoeff: opt.imp_min_coeff,
                 steps: opt.steps,
-                pnorm_1: opt.pnorm_1,
-                pnorm_2: opt.pnorm_2,
+                pnorm: opt.pnorm,
                 beta: opt.beta,
                 ceLossCoeff: opt.ce_loss_coeff ?? 0,
                 klLossCoeff: opt.kl_loss_coeff ?? 0,
@@ -98,12 +97,11 @@
             // Compare all relevant params
             const stepsMatch = opt.steps === config.steps;
             const impMinMatch = Math.abs(opt.imp_min_coeff - config.impMinCoeff) < 0.0000001;
-            const pnorm1Match = Math.abs(opt.pnorm_1 - config.pnorm_1) < 0.0000001;
-            const pnorm2Match = Math.abs(opt.pnorm_2 - config.pnorm_2) < 0.0000001;
+            const pnormMatch = Math.abs(opt.pnorm - config.pnorm) < 0.0000001;
             const betaMatch = Math.abs(opt.beta - config.beta) < 0.0000001;
             const ceMatch = (opt.ce_loss_coeff ?? 0) === config.ceLossCoeff && opt.label_token === config.labelTokenId;
             const klMatch = (opt.kl_loss_coeff ?? 0) === config.klLossCoeff;
-            return stepsMatch && impMinMatch && pnorm1Match && pnorm2Match && betaMatch && ceMatch && klMatch;
+            return stepsMatch && impMinMatch && pnormMatch && betaMatch && ceMatch && klMatch;
         });
     }
 
@@ -185,29 +183,15 @@
                         />
                     </label>
                     <label>
-                        <span>pnorm_1</span>
+                        <span>pnorm</span>
                         <input
                             type="number"
-                            value={optConfig.pnorm_1}
+                            value={optConfig.pnorm}
                             oninput={(e) => {
                                 if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ pnorm_1: parseFloat(e.currentTarget.value) });
+                                onOptimizeConfigChange({ pnorm: parseFloat(e.currentTarget.value) });
                             }}
                             min={0.1}
-                            max={2}
-                            step={0.1}
-                        />
-                    </label>
-                    <label>
-                        <span>pnorm_2</span>
-                        <input
-                            type="number"
-                            value={optConfig.pnorm_2}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ pnorm_2: parseFloat(e.currentTarget.value) });
-                            }}
-                            min={0}
                             max={2}
                             step={0.1}
                         />
@@ -298,12 +282,8 @@
                     <input type="number" value={displayConfig.steps} disabled />
                 </label>
                 <label>
-                    <span>pnorm_1</span>
-                    <input type="number" value={displayConfig.pnorm_1} disabled />
-                </label>
-                <label>
-                    <span>pnorm_2</span>
-                    <input type="number" value={displayConfig.pnorm_2} disabled />
+                    <span>pnorm</span>
+                    <input type="number" value={displayConfig.pnorm} disabled />
                 </label>
                 <label>
                     <span>beta</span>

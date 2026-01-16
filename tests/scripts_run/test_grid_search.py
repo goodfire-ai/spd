@@ -328,6 +328,7 @@ class TestConfigIntegration:
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
                     "pnorm": 1.0,
+                    "beta": 0.5,
                     "eps": 1e-12,
                 },
                 {
@@ -382,6 +383,7 @@ class TestConfigIntegration:
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
                     "pnorm": 1.0,
+                    "beta": 0.5,
                     "eps": 1e-12,
                 }
             ],
@@ -421,7 +423,7 @@ class TestConfigIntegration:
         assert config.task_config.max_seq_len == 256
         assert config.loss_metric_configs[0].coeff == 0.01
         assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossConfig)
-        assert config.loss_metric_configs[0].pnorm_1 == 2.0
+        assert config.loss_metric_configs[0].pnorm == 2.0
         assert config.loss_metric_configs[0].eps == 1e-12  # Preserved
 
     def test_full_sweep_workflow(self):
@@ -446,8 +448,7 @@ class TestConfigIntegration:
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.5,  # Will be overridden
-                    "pnorm_1": 1.0,
-                    "pnorm_2": 1.0,
+                    "pnorm": 1.0,
                     "beta": 0.5,
                     "eps": 1e-12,
                 }
@@ -496,7 +497,7 @@ class TestConfigIntegration:
             # Check preserved values
             assert config.task_config.data_generation_type == "at_least_zero_active"
             assert isinstance(config.loss_metric_configs[0], ImportanceMinimalityLossConfig)
-            assert config.loss_metric_configs[0].pnorm_1 == 1.0
+            assert config.loss_metric_configs[0].pnorm == 1.0
             assert config.loss_metric_configs[0].eps == 1e-12
 
             # Verify JSON serialization round-trip
