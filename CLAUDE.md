@@ -276,6 +276,7 @@ spd-run --experiments tms_5-2 --sweep custom.yaml --n_agents 2 # Use custom swee
 - When making PRs, use the github template defined in `.github/pull_request_template.md`.
 - Only commit the files that include the relevant changes, don't commit all files.
 - Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
+- **Always commit after making code edits** - don't let changes accumulate without committing.
 
 ## Coding Guidelines
 
