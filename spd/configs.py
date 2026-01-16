@@ -182,17 +182,6 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     p_anneal_end_frac: Probability = 1.0
     eps: NonNegativeFloat = 1e-12
 
-    @model_validator(mode="before")
-    def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
-        """Migrate old pnorm_1 to pnorm and add default for beta. Ignore deprecated pnorm_2."""
-        if "pnorm_1" in config_dict:
-            config_dict["pnorm"] = config_dict.pop("pnorm_1")
-        # pnorm_2 is deprecated and no longer used - remove if present
-        config_dict.pop("pnorm_2", None)
-        if "beta" not in config_dict:
-            config_dict["beta"] = 0.0
-        return config_dict
-
 
 class UniformKSubsetRoutingConfig(BaseConfig):
     type: Literal["uniform_k_subset"] = "uniform_k_subset"
