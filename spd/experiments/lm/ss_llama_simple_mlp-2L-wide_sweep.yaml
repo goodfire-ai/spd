@@ -1,9 +1,0 @@
-# Sweep config for ss_llama_simple_mlp-2L-wide
-# Original sweep used: 0.0005, 0.001
-# Edit the values below with your new imp_min_coeff values
-
-global:
-  loss_metric_configs:
-    - classname: ImportanceMinimalityLoss
-      coeff:
-        values: [0.001, 0.005, 0.01, 0.05, 0.1]
