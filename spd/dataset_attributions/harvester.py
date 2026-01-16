@@ -72,30 +72,43 @@ class AttributionHarvester:
 
         self.key_to_idx = {k: i for i, k in enumerate(component_keys)}
 
-        # Build per-layer index ranges
-        self.layer_names = list(model.target_module_paths)
+        # Build per-layer index ranges (wte, component layers, output)
+        self.component_layer_names = list(model.target_module_paths)
         self.layer_to_idx_range = self._build_layer_index_ranges()
 
         # Pre-compute alive indices per layer for efficiency
         self.alive_c_idxs_per_layer = self._build_alive_indices_per_layer()
 
     def _build_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
-        """Build mapping from layer name to (start_idx, end_idx) in flat component space."""
+        """Build mapping from layer name to (start_idx, end_idx) in flat component space.
+
+        Order: wte, component layers, output
+        """
         layer_to_idx_range: dict[str, tuple[int, int]] = {}
-        idx = 0
-        for layer in self.layer_names:
+
+        # wte is always at index 0
+        layer_to_idx_range["wte"] = (0, 1)
+        idx = 1
+
+        for layer in self.component_layer_names:
             n_components = self.model.module_to_c[layer]
             layer_to_idx_range[layer] = (idx, idx + n_components)
             idx += n_components
+
+        # output is always at the end
+        layer_to_idx_range["output"] = (idx, idx + 1)
+
         return layer_to_idx_range
 
     def _build_alive_indices_per_layer(self) -> dict[str, list[int]]:
         """Get list of alive component indices for each layer."""
         alive_per_layer: dict[str, list[int]] = {}
-        for layer in self.layer_names:
+
+        for layer in self.layer_to_idx_range:
             start_idx, end_idx = self.layer_to_idx_range[layer]
             layer_alive = self.alive_mask[start_idx:end_idx]
             alive_per_layer[layer] = torch.where(layer_alive)[0].tolist()
+
         return alive_per_layer
 
     def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
@@ -141,6 +154,7 @@ class AttributionHarvester:
 
         cache = comp_output.cache
         cache["wte_post_detach"] = wte_cache[0]
+        cache["output_pre_detach"] = comp_output.output  # Logits [B, S, vocab]
 
         # Process each target layer
         pbar = tqdm(
@@ -150,14 +164,17 @@ class AttributionHarvester:
             leave=False,
         )
 
-        for target_layer, source_layers in pbar:
+        target_layers_list = list(self.sources_by_target.items())
+        for i, (target_layer, source_layers) in enumerate(pbar):
             if self.show_progress:
                 pbar.set_description(f"Target: {target_layer}")
 
+            is_last_layer = i == len(target_layers_list) - 1
             self._process_target_layer(
                 target_layer=target_layer,
                 source_layers=source_layers,
                 cache=cache,
+                is_last_layer=is_last_layer,
             )
 
     def _process_target_layer(
@@ -165,36 +182,47 @@ class AttributionHarvester:
         target_layer: str,
         source_layers: list[str],
         cache: dict[str, Tensor],
+        is_last_layer: bool,
     ) -> None:
         """Process attributions for a single target layer."""
-        # Get target indices
         target_start, _ = self.layer_to_idx_range[target_layer]
         alive_target_c_idxs = self.alive_c_idxs_per_layer[target_layer]
 
         if not alive_target_c_idxs:
             return
 
-        # Get target activations (pre_detach for gradient computation)
-        out_pre_detach: Float[Tensor, "B S C"] = cache[f"{target_layer}_pre_detach"]
+        # Get target activations
+        out_pre_detach = cache[f"{target_layer}_pre_detach"]
 
-        # Sum over batch and sequence BEFORE backward (key optimization)
-        # This reduces backward passes from O(B*S*C_out) to O(C_out)
-        total_out: Float[Tensor, " C"] = out_pre_detach.sum(dim=(0, 1))
+        # Handle output as a special case: single pseudo-component
+        is_output_target = target_layer == "output"
+        if is_output_target:
+            # output: [B, S, vocab] -> treat as single component
+            # Sum over all dims to get scalar for backward
+            total_out = out_pre_detach.sum()
+            target_components = [(0, total_out)]  # (local_idx, value_to_diff)
+        else:
+            # Regular component layer: [B, S, C]
+            # Sum over batch and sequence BEFORE backward (key optimization)
+            total_out: Float[Tensor, " C"] = out_pre_detach.sum(dim=(0, 1))
+            target_components = [(c, total_out[c]) for c in alive_target_c_idxs]
 
         # Gather source post_detach activations
-        in_post_detaches: list[Float[Tensor, "B S C"]] = []
+        in_post_detaches: list[Tensor] = []
         for source_layer in source_layers:
             in_post_detaches.append(cache[f"{source_layer}_post_detach"])
 
         # Process each alive target component
-        for c_out_local in alive_target_c_idxs:
+        n_targets = len(target_components)
+        for idx, (c_out_local, out_value) in enumerate(target_components):
             c_out_global = target_start + c_out_local
 
-            # Single backward pass per target component
+            # Release graph on last backward pass to free memory
+            is_last_component = is_last_layer and idx == n_targets - 1
             grads = torch.autograd.grad(
-                outputs=total_out[c_out_local],
+                outputs=out_value,
                 inputs=in_post_detaches,
-                retain_graph=True,
+                retain_graph=not is_last_component,
             )
 
             # Compute attributions for each source layer
@@ -208,15 +236,24 @@ class AttributionHarvester:
                     if not alive_source_c_idxs:
                         continue
 
-                    # Attribution = grad * activation, summed over batch and sequence
-                    # grad: [B, S, C_in], in_post_detach: [B, S, C_in]
-                    attr_per_component: Float[Tensor, " C_in"] = (grad * in_post_detach).sum(
-                        dim=(0, 1)
-                    )
+                    # Handle wte as a special case: single pseudo-component
+                    is_wte_source = source_layer == "wte"
+                    if is_wte_source:
+                        # wte: [B, S, d_model] -> single component
+                        # Attribution = sum of grad * activation over all dims
+                        attr_total = (grad * in_post_detach).sum()
+                        c_in_global = source_start  # wte is at index 0 in its range
+                        self.accumulator[c_in_global, c_out_global] += attr_total
+                    else:
+                        # Regular component layer: [B, S, C_in]
+                        # Attribution = grad * activation, summed over batch and sequence
+                        attr_per_component: Float[Tensor, " C_in"] = (grad * in_post_detach).sum(
+                            dim=(0, 1)
+                        )
 
-                    # Accumulate only for alive source components
-                    for c_in_local in alive_source_c_idxs:
-                        c_in_global = source_start + c_in_local
-                        self.accumulator[c_in_global, c_out_global] += attr_per_component[
-                            c_in_local
-                        ]
+                        # Accumulate only for alive source components
+                        for c_in_local in alive_source_c_idxs:
+                            c_in_global = source_start + c_in_local
+                            self.accumulator[c_in_global, c_out_global] += attr_per_component[
+                                c_in_local
+                            ]

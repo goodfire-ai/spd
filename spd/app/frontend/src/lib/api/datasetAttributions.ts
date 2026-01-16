@@ -67,7 +67,7 @@ export async function getAttributionSources(
 export async function getAttributionTargets(
     layer: string,
     componentIdx: number,
-    k: number = 10,
+    k: number = 20,
     sign: "positive" | "negative" = "positive",
 ): Promise<DatasetAttributionEntry[]> {
     const url = new URL(`${API_URL}/api/dataset_attributions/${encodeURIComponent(layer)}/${componentIdx}/targets`);

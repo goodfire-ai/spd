@@ -27,14 +27,17 @@ class DatasetAttributionStorage:
     """Dataset-aggregated attribution strengths between components.
 
     Stores full dense matrix for maximum flexibility.
-    attribution_matrix[i, j] = total attribution FROM component i TO component j
-    (i.e., how much source i influences target j across the dataset)
+    attribution_matrix[i, j] = per-token average attribution FROM component i TO component j
+    (i.e., how much source i influences target j per token, on average across the dataset)
+
+    Values are normalized by n_tokens_processed, making them comparable across runs
+    with different numbers of batches.
     """
 
     component_keys: list[str]
     """Maps flat index to 'layer:c_idx'"""
     attribution_matrix: Float[Tensor, "n_components n_components"]
-    """attribution_matrix[i, j] = attribution from component i to component j"""
+    """attribution_matrix[i, j] = per-token average attribution from component i to component j"""
     n_batches_processed: int
     n_tokens_processed: int
     ci_threshold: float
@@ -43,6 +46,10 @@ class DatasetAttributionStorage:
 
     def __post_init__(self) -> None:
         self._key_to_idx = {k: i for i, k in enumerate(self.component_keys)}
+
+    def has_component(self, component_key: str) -> bool:
+        """Check if a component exists in the storage."""
+        return component_key in self._key_to_idx
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -42,9 +42,9 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    summary_data = loaded.harvest.activation_contexts_summary
-    if summary_data is None:
+    if not loaded.harvest.has_activation_contexts_summary():
         raise HTTPException(status_code=404, detail="No activation contexts summary found")
+    summary_data = loaded.harvest.activation_contexts_summary
 
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
     for comp in summary_data.values():

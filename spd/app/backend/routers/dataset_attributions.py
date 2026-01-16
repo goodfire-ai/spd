@@ -47,15 +47,14 @@ NOT_AVAILABLE_MSG = (
 
 def _require_storage(loaded: DepLoadedRun) -> DatasetAttributionStorage:
     """Get storage or raise 404."""
-    storage = loaded.harvest.dataset_attributions
-    if storage is None:
+    if not loaded.harvest.has_dataset_attributions():
         raise HTTPException(status_code=404, detail=NOT_AVAILABLE_MSG)
-    return storage
+    return loaded.harvest.dataset_attributions
 
 
 def _require_component(storage: DatasetAttributionStorage, component_key: str) -> None:
     """Validate component exists in storage or raise 404."""
-    if component_key not in storage._key_to_idx:
+    if not storage.has_component(component_key):
         raise HTTPException(
             status_code=404,
             detail=f"Component {component_key} not found in attributions",
@@ -79,8 +78,7 @@ def _to_api_entries(entries: list[StorageEntry]) -> list[DatasetAttributionEntry
 @log_errors
 def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata:
     """Get metadata about dataset attributions availability."""
-    storage = loaded.harvest.dataset_attributions
-    if storage is None:
+    if not loaded.harvest.has_dataset_attributions():
         return DatasetAttributionMetadata(
             available=False,
             n_batches_processed=None,
@@ -89,6 +87,7 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
             ci_threshold=None,
         )
 
+    storage = loaded.harvest.dataset_attributions
     return DatasetAttributionMetadata(
         available=True,
         n_batches_processed=storage.n_batches_processed,
@@ -104,7 +103,7 @@ def get_attribution_sources(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-    k: Annotated[int, Query(ge=1)] = 10,
+    k: Annotated[int, Query(ge=1)] = 20,
     sign: Literal["positive", "negative"] = "positive",
 ) -> list[DatasetAttributionEntry]:
     """Get top-k components that attribute TO this component over the dataset."""
@@ -120,7 +119,7 @@ def get_attribution_targets(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
-    k: Annotated[int, Query(ge=1)] = 10,
+    k: Annotated[int, Query(ge=1)] = 20,
     sign: Literal["positive", "negative"] = "positive",
 ) -> list[DatasetAttributionEntry]:
     """Get top-k components this component attributes TO over the dataset."""

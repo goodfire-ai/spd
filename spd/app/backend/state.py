@@ -63,9 +63,7 @@ class HarvestCache:
         assert isinstance(self._interpretations, dict)
         return self._interpretations
 
-    @property
-    def activation_contexts_summary(self) -> dict[str, ComponentSummary] | None:
-        """Lightweight summary of activation contexts, keyed by component_key (e.g. 'h.0.mlp.c_fc:5')."""
+    def _load_activation_contexts_summary(self) -> dict[str, ComponentSummary] | None:
         if self._activation_contexts_summary is _NOT_LOADED:
             self._activation_contexts_summary = load_activation_contexts_summary(self.run_id)
         if self._activation_contexts_summary is None:
@@ -73,15 +71,38 @@ class HarvestCache:
         assert isinstance(self._activation_contexts_summary, dict)
         return self._activation_contexts_summary
 
+    def has_activation_contexts_summary(self) -> bool:
+        """Check if activation contexts summary is available."""
+        return self._load_activation_contexts_summary() is not None
+
     @property
-    def dataset_attributions(self) -> DatasetAttributionStorage | None:
-        """Dataset-aggregated attribution matrix, if available."""
+    def activation_contexts_summary(self) -> dict[str, ComponentSummary]:
+        """Lightweight summary of activation contexts, keyed by component_key (e.g. 'h.0.mlp.c_fc:5')."""
+        result = self._load_activation_contexts_summary()
+        assert result is not None, f"No activation contexts summary found for run {self.run_id}"
+        return result
+
+    def _load_dataset_attributions(self) -> DatasetAttributionStorage | None:
         if self._dataset_attributions is _NOT_LOADED:
             self._dataset_attributions = load_dataset_attributions(self.run_id)
         if self._dataset_attributions is None:
             return None
         assert isinstance(self._dataset_attributions, DatasetAttributionStorage)
         return self._dataset_attributions
+
+    def has_dataset_attributions(self) -> bool:
+        """Check if dataset attributions are available."""
+        return self._load_dataset_attributions() is not None
+
+    @property
+    def dataset_attributions(self) -> DatasetAttributionStorage:
+        """Dataset-aggregated attribution matrix."""
+        result = self._load_dataset_attributions()
+        assert result is not None, (
+            f"No dataset attributions found for run {self.run_id}. "
+            "Run: spd-attributions <wandb_path> --n_batches N"
+        )
+        return result
 
 
 @dataclass
