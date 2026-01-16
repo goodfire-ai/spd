@@ -128,17 +128,15 @@ def harvest_attributions(config: DatasetAttributionConfig) -> None:
         show_progress=True,
     )
 
-    # Process batches
-    train_iter = iter(train_loader)
-    for batch_idx in tqdm.tqdm(range(config.n_batches), desc="Attribution batches"):
-        try:
-            batch = extract_batch_data(next(train_iter)).to(device)
-        except StopIteration:
-            logger.info(
-                f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early."
-            )
+    # Process batches (up to n_batches or until dataset exhausted)
+    for batch_idx, batch_data in tqdm.tqdm(
+        enumerate(train_loader),
+        total=config.n_batches,
+        desc="Attribution batches",
+    ):
+        if batch_idx >= config.n_batches:
             break
-
+        batch = extract_batch_data(batch_data).to(device)
         harvester.process_batch(batch)
 
     logger.info(

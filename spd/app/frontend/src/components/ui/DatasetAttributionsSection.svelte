@@ -119,13 +119,6 @@
         gap: var(--space-2);
     }
 
-    .subtitle {
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-        margin: 0;
-        font-style: italic;
-    }
-
     .edge-lists-grid {
         display: flex;
         flex-wrap: wrap;

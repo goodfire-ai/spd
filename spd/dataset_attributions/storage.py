@@ -76,75 +76,50 @@ class DatasetAttributionStorage:
         tgt_idx = self._key_to_idx[target_key]
         return self.attribution_matrix[src_idx, tgt_idx].item()
 
-    def _parse_key(self, key: str) -> tuple[str, int]:
-        """Parse 'layer:c_idx' into (layer, c_idx)."""
-        parts = key.rsplit(":", 1)
-        return parts[0], int(parts[1])
+    def _get_top_k(
+        self,
+        values: Tensor,
+        k: int,
+        sign: Literal["positive", "negative"],
+    ) -> list[DatasetAttributionEntry]:
+        """Get top-k entries from a 1D tensor of attribution values."""
+        is_positive = sign == "positive"
+        top_vals, top_idxs = torch.topk(values, min(k, len(values)), largest=is_positive)
+
+        # Filter to only values matching the requested sign
+        mask = top_vals > 0 if is_positive else top_vals < 0
+        top_vals, top_idxs = top_vals[mask], top_idxs[mask]
+
+        results = []
+        for idx, val in zip(top_idxs.tolist(), top_vals.tolist(), strict=True):
+            key = self.component_keys[idx]
+            layer, c_idx_str = key.rsplit(":", 1)
+            results.append(
+                DatasetAttributionEntry(
+                    component_key=key,
+                    layer=layer,
+                    component_idx=int(c_idx_str),
+                    value=val,
+                )
+            )
+        return results
 
     def get_top_sources(
         self,
         target_key: str,
-        k: int = 10,
-        sign: Literal["positive", "negative"] = "positive",
+        k: int,
+        sign: Literal["positive", "negative"],
     ) -> list[DatasetAttributionEntry]:
         """Get top-k components that attribute TO this component."""
         tgt_idx = self._key_to_idx[target_key]
-        col = self.attribution_matrix[:, tgt_idx]
-
-        if sign == "positive":
-            top_vals, top_idxs = torch.topk(col, min(k, len(col)), largest=True)
-            # Filter to positive values only
-            mask = top_vals > 0
-            top_vals, top_idxs = top_vals[mask], top_idxs[mask]
-        else:
-            top_vals, top_idxs = torch.topk(col, min(k, len(col)), largest=False)
-            # Filter to negative values only
-            mask = top_vals < 0
-            top_vals, top_idxs = top_vals[mask], top_idxs[mask]
-
-        results = []
-        for idx, val in zip(top_idxs.tolist(), top_vals.tolist(), strict=True):
-            key = self.component_keys[idx]
-            layer, c_idx = self._parse_key(key)
-            results.append(
-                DatasetAttributionEntry(
-                    component_key=key,
-                    layer=layer,
-                    component_idx=c_idx,
-                    value=val,
-                )
-            )
-        return results
+        return self._get_top_k(self.attribution_matrix[:, tgt_idx], k, sign)
 
     def get_top_targets(
         self,
         source_key: str,
-        k: int = 10,
-        sign: Literal["positive", "negative"] = "positive",
+        k: int,
+        sign: Literal["positive", "negative"],
     ) -> list[DatasetAttributionEntry]:
         """Get top-k components this component attributes TO."""
         src_idx = self._key_to_idx[source_key]
-        row = self.attribution_matrix[src_idx, :]
-
-        if sign == "positive":
-            top_vals, top_idxs = torch.topk(row, min(k, len(row)), largest=True)
-            mask = top_vals > 0
-            top_vals, top_idxs = top_vals[mask], top_idxs[mask]
-        else:
-            top_vals, top_idxs = torch.topk(row, min(k, len(row)), largest=False)
-            mask = top_vals < 0
-            top_vals, top_idxs = top_vals[mask], top_idxs[mask]
-
-        results = []
-        for idx, val in zip(top_idxs.tolist(), top_vals.tolist(), strict=True):
-            key = self.component_keys[idx]
-            layer, c_idx = self._parse_key(key)
-            results.append(
-                DatasetAttributionEntry(
-                    component_key=key,
-                    layer=layer,
-                    component_idx=c_idx,
-                    value=val,
-                )
-            )
-        return results
+        return self._get_top_k(self.attribution_matrix[src_idx, :], k, sign)

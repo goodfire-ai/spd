@@ -1,11 +1,10 @@
 """Core attribution harvester for computing dataset-aggregated attributions.
 
 Computes component-to-component attribution strengths aggregated over the full
-training dataset using gradient × activation formula, summed over all positions
+training dataset using gradient x activation formula, summed over all positions
 and batches.
 """
 
-from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -16,31 +15,6 @@ from tqdm.auto import tqdm
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
-
-
-@dataclass
-class AttributionHarvesterState:
-    """Serializable state for potential future parallel merging."""
-
-    component_keys: list[str]
-    accumulator: Float[Tensor, "n_components n_components"]
-    n_batches: int
-    n_tokens: int
-
-    @staticmethod
-    def merge(states: list["AttributionHarvesterState"]) -> "AttributionHarvesterState":
-        """Merge states from parallel workers (simple sum)."""
-        assert len(states) > 0
-        assert all(s.component_keys == states[0].component_keys for s in states)
-        merged_accumulator = states[0].accumulator.clone()
-        for s in states[1:]:
-            merged_accumulator += s.accumulator
-        return AttributionHarvesterState(
-            component_keys=states[0].component_keys,
-            accumulator=merged_accumulator,
-            n_batches=sum(s.n_batches for s in states),
-            n_tokens=sum(s.n_tokens for s in states),
-        )
 
 
 def _setup_wte_hook() -> tuple[Any, list[Tensor]]:
@@ -246,36 +220,3 @@ class AttributionHarvester:
                         self.accumulator[c_in_global, c_out_global] += attr_per_component[
                             c_in_local
                         ]
-
-    def get_state(self) -> AttributionHarvesterState:
-        """Extract state for potential parallel merging."""
-        return AttributionHarvesterState(
-            component_keys=self.component_keys,
-            accumulator=self.accumulator.cpu(),
-            n_batches=self.n_batches,
-            n_tokens=self.n_tokens,
-        )
-
-    @classmethod
-    def from_state(
-        cls,
-        state: AttributionHarvesterState,
-        model: ComponentModel,
-        sources_by_target: dict[str, list[str]],
-        alive_mask: Bool[Tensor, " n_components"],
-        sampling: SamplingType,
-        device: torch.device,
-    ) -> "AttributionHarvester":
-        """Reconstruct harvester from state (for merging)."""
-        harvester = cls(
-            model=model,
-            sources_by_target=sources_by_target,
-            component_keys=state.component_keys,
-            alive_mask=alive_mask,
-            sampling=sampling,
-            device=device,
-        )
-        harvester.accumulator = state.accumulator.to(device)
-        harvester.n_batches = state.n_batches
-        harvester.n_tokens = state.n_tokens
-        return harvester

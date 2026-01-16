@@ -1,8 +1,8 @@
 """CLI for dataset attribution computation.
 
 Usage:
-    python -m spd.dataset_attributions.scripts.run <wandb_path> --n_batches 1000
-    python -m spd.dataset_attributions.scripts.run <wandb_path> --n_batches 1000 --batch_size 32
+    spd-attributions <wandb_path> --n_batches 1000
+    spd-attributions <wandb_path> --n_batches 1000 --batch_size 32
 """
 
 from spd.dataset_attributions.harvest import DatasetAttributionConfig, harvest_attributions
@@ -33,7 +33,11 @@ def main(
     harvest_attributions(config)
 
 
-if __name__ == "__main__":
+def cli() -> None:
     import fire
 
     fire.Fire(main)
+
+
+if __name__ == "__main__":
+    cli()
