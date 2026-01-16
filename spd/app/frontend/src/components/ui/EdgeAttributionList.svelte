@@ -136,10 +136,9 @@
             {@const isHovered = hoveredKey === key}
             <div class="pill-container" onmouseenter={(e) => handleMouseEnter(key, e)} onmouseleave={handleMouseLeave}>
                 <button class="edge-pill" style="background: {bgColor};" onclick={() => onClick(key)}>
-                    <span class="interp-label" style="color: {textColor};">{displayInfo.label}</span>
-                    <span class="value" style="color: {textColor};">{value.toFixed(2)}</span>
+                    <span class="node-key" style="color: {textColor};">{formatNodeKeyForDisplay(key)}</span>
                 </button>
-                {#if isHovered && !displayInfo.isTokenNode && interp?.status === "generated" && tooltipPosition}
+                {#if isHovered && tooltipPosition}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
                         class="tooltip"
@@ -147,23 +146,27 @@
                         onmouseenter={() => (hoveredKey = key)}
                         onmouseleave={handleMouseLeave}
                     >
-                        <div class="tooltip-key">{formatNodeKeyForDisplay(key)}</div>
-                        <button class="tooltip-label copyable" onclick={() => copyToClipboard(interp.data.label)}>
-                            {interp.data.label}
-                            <svg
-                                class="copy-icon"
-                                width="12"
-                                height="12"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                        </button>
-                        <div class="tooltip-confidence">Confidence: {interp.data.confidence}</div>
+                        <div class="tooltip-value">Attribution: {value.toFixed(3)}</div>
+                        {#if !displayInfo.isTokenNode && interp?.status === "generated"}
+                            <button class="tooltip-label copyable" onclick={() => copyToClipboard(interp.data.label)}>
+                                {interp.data.label}
+                                <svg
+                                    class="copy-icon"
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                            </button>
+                            <div class="tooltip-confidence">Confidence: {interp.data.confidence}</div>
+                        {:else if displayInfo.isTokenNode}
+                            <div class="tooltip-token">Token: {displayInfo.label}</div>
+                        {/if}
                     </div>
                 {/if}
             </div>
@@ -234,17 +237,9 @@
         font-size: inherit;
     }
 
-    .value {
-        opacity: 0.8;
-    }
-
-    .interp-label {
-        font-family: var(--font-sans);
-        font-weight: 500;
-        max-width: 150px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+    .node-key {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
     }
 
     .tooltip {
@@ -261,11 +256,18 @@
         max-width: 350px;
     }
 
-    .tooltip-key {
+    .tooltip-value {
         font-family: var(--font-mono);
-        font-size: var(--text-xs);
-        color: var(--text-muted);
+        font-size: var(--text-sm);
+        font-weight: 600;
+        color: var(--text-primary);
         margin-bottom: var(--space-1);
+    }
+
+    .tooltip-token {
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--text-secondary);
     }
 
     .tooltip-label {
