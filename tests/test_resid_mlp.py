@@ -49,6 +49,7 @@ def test_resid_mlp_decomposition_happy_path(tmp_path: Path) -> None:
             ImportanceMinimalityLossConfig(
                 coeff=3e-3,
                 pnorm=0.9,
+                beta=0.5,
                 eps=1e-12,
             ),
             StochasticReconLossConfig(coeff=1.0),

@@ -94,6 +94,7 @@ def generate_script(config: SlurmConfig, command: str, env: dict[str, str] | Non
 {header}
 
 set -euo pipefail
+umask 002  # Ensure files are group-writable
 {env_exports}
 {setup}
 
@@ -143,6 +144,7 @@ def generate_array_script(
 {header}
 
 set -euo pipefail
+umask 002  # Ensure files are group-writable
 {env_exports}
 {setup}
 

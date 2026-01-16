@@ -70,6 +70,7 @@ export type OptimizationResult = {
     imp_min_coeff: number;
     steps: number;
     pnorm: number;
+    beta: number;
     // CE loss params (optional - required together)
     label_token: number | null;
     label_str: string | null;

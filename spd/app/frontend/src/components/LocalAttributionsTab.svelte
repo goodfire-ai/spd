@@ -465,6 +465,7 @@
                 impMinCoeff: optConfig.impMinCoeff,
                 steps: optConfig.steps,
                 pnorm: optConfig.pnorm,
+                beta: optConfig.beta,
                 outputProbThreshold: 0.01,
                 ciThreshold: defaultViewSettings.ciThreshold,
             };

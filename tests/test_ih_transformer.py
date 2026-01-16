@@ -64,6 +64,7 @@ def test_ih_transformer_decomposition_happy_path(tmp_path: Path) -> None:
             ImportanceMinimalityLossConfig(
                 coeff=1e-2,
                 pnorm=0.9,
+                beta=0.5,
                 eps=1e-12,
             ),
             StochasticReconLayerwiseLossConfig(coeff=1.0),
