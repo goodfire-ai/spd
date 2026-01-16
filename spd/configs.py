@@ -182,6 +182,14 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
     p_anneal_end_frac: Probability = 1.0
     eps: NonNegativeFloat = 1e-12
 
+    @model_validator(mode="before")
+    @classmethod
+    def default_beta(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if "beta" not in data:
+            logger.warning("beta not in ImportanceMinimalityLossConfig, defaulting to 0.0")
+            data["beta"] = 0.0
+        return data
+
 
 class UniformKSubsetRoutingConfig(BaseConfig):
     type: Literal["uniform_k_subset"] = "uniform_k_subset"
