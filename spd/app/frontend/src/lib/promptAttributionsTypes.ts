@@ -1,4 +1,4 @@
-/** Types for the local attributions visualizer */
+/** Types for the prompt attributions visualizer */
 
 // Server API types
 

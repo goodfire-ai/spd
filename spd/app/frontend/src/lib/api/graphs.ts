@@ -2,8 +2,8 @@
  * API client for /api/graphs endpoints.
  */
 
-import type { GraphData, TokenizeResult, TokenInfo } from "../localAttributionsTypes";
-import { buildEdgeIndexes } from "../localAttributionsTypes";
+import type { GraphData, TokenizeResult, TokenInfo } from "../promptAttributionsTypes";
+import { buildEdgeIndexes } from "../promptAttributionsTypes";
 import { API_URL, ApiError, fetchJson } from "./index";
 
 export type NormalizeType = "none" | "target" | "layer";

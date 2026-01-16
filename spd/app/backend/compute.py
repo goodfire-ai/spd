@@ -1,6 +1,6 @@
 """Core attribution computation functions.
 
-Copied and cleaned up from spd/scripts/calc_local_attributions.py and calc_global_attributions.py
+Copied and cleaned up from spd/scripts/calc_prompt_attributions.py and calc_dataset_attributions.py
 to avoid importing script files with global execution.
 """
 
@@ -87,8 +87,8 @@ class Edge:
 
 
 @dataclass
-class LocalAttributionResult:
-    """Result of computing local attributions for a prompt."""
+class PromptAttributionResult:
+    """Result of computing prompt attributions for a prompt."""
 
     edges: list[Edge]
     ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
@@ -100,8 +100,8 @@ class LocalAttributionResult:
 
 
 @dataclass
-class OptimizedLocalAttributionResult:
-    """Result of computing local attributions with optimized CI values."""
+class OptimizedPromptAttributionResult:
+    """Result of computing prompt attributions with optimized CI values."""
 
     edges: list[Edge]
     ci_masked_out_probs: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) softmax probabilities
@@ -321,7 +321,7 @@ def compute_edges_from_ci(
     device: str,
     show_progress: bool,
     on_progress: ProgressCallback | None = None,
-) -> LocalAttributionResult:
+) -> PromptAttributionResult:
     """Core edge computation from pre-computed CI values.
 
     Computes gradient-based attribution edges between components using the
@@ -426,7 +426,7 @@ def compute_edges_from_ci(
         component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky
     )
 
-    return LocalAttributionResult(
+    return PromptAttributionResult(
         edges=edges,
         ci_masked_out_probs=ci_masked_out_probs[0],
         ci_masked_out_logits=comp_output_with_cache.output[0],
@@ -494,7 +494,7 @@ def filter_ci_to_included_nodes(
     return filtered
 
 
-def compute_local_attributions(
+def compute_prompt_attributions(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
@@ -504,11 +504,11 @@ def compute_local_attributions(
     show_progress: bool,
     on_progress: ProgressCallback | None = None,
     included_nodes: set[str] | None = None,
-) -> LocalAttributionResult:
-    """Compute local attributions using the model's natural CI values.
+) -> PromptAttributionResult:
+    """Compute prompt attributions using the model's natural CI values.
 
     Computes CI via forward pass, then delegates to compute_edges_from_ci().
-    For optimized sparse CI values, use compute_local_attributions_optimized().
+    For optimized sparse CI values, use compute_prompt_attributions_optimized().
 
     If included_nodes is provided, CI values for non-included nodes are zeroed out
     before edge computation. This efficiently filters to only compute edges between
@@ -544,7 +544,7 @@ def compute_local_attributions(
     )
 
 
-def compute_local_attributions_optimized(
+def compute_prompt_attributions_optimized(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
@@ -553,8 +553,8 @@ def compute_local_attributions_optimized(
     device: str,
     show_progress: bool,
     on_progress: ProgressCallback | None = None,
-) -> OptimizedLocalAttributionResult:
-    """Compute local attributions using optimized sparse CI values.
+) -> OptimizedPromptAttributionResult:
+    """Compute prompt attributions using optimized sparse CI values.
 
     Runs CI optimization to find a minimal sparse mask that preserves
     the model's prediction, then computes edges.
@@ -606,7 +606,7 @@ def compute_local_attributions_optimized(
         on_progress=on_progress,
     )
 
-    return OptimizedLocalAttributionResult(
+    return OptimizedPromptAttributionResult(
         edges=result.edges,
         ci_masked_out_probs=result.ci_masked_out_probs,
         ci_masked_out_logits=result.ci_masked_out_logits,
@@ -635,7 +635,7 @@ def compute_ci_only(
 ) -> CIOnlyResult:
     """Fast CI computation without full attribution graph.
 
-    This is much faster than compute_local_attributions() because it only
+    This is much faster than compute_prompt_attributions() because it only
     requires a forward pass and CI computation (no gradient loop).
 
     Args:

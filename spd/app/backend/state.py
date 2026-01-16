@@ -10,7 +10,7 @@ from typing import Any
 
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.database import LocalAttrDB, Run
+from spd.app.backend.database import PromptAttrDB, Run
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
@@ -98,7 +98,7 @@ class DatasetSearchState:
 class AppState:
     """Server state. DB is always available; run_state is set after /api/runs/load."""
 
-    db: LocalAttrDB
+    db: PromptAttrDB
     run_state: RunState | None = field(default=None)
     dataset_search_state: DatasetSearchState | None = field(default=None)
 
@@ -127,7 +127,7 @@ class StateManager:
         """Reset the singleton (for testing)."""
         cls._instance = None
 
-    def initialize(self, db: LocalAttrDB) -> None:
+    def initialize(self, db: PromptAttrDB) -> None:
         """Initialize state with database connection."""
         self._state = AppState(db=db)
 
@@ -138,7 +138,7 @@ class StateManager:
         return self._state
 
     @property
-    def db(self) -> LocalAttrDB:
+    def db(self) -> PromptAttrDB:
         """Get database connection."""
         return self.state.db
 

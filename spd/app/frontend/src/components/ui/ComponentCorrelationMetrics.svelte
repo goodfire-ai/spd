@@ -1,7 +1,7 @@
 <script lang="ts">
-    import type { ComponentCorrelations } from "../../lib/localAttributionsTypes";
+    import type { ComponentCorrelations } from "../../lib/promptAttributionsTypes";
     import { displaySettings } from "../../lib/displaySettings.svelte";
-    import ComponentCorrelationPills from "../local-attr/ComponentCorrelationPills.svelte";
+    import ComponentCorrelationPills from "../prompt-attr/ComponentCorrelationPills.svelte";
 
     type Props = {
         correlations: ComponentCorrelations;

@@ -17,8 +17,8 @@ from pydantic import BaseModel
 
 from spd.app.backend.compute import (
     Edge,
-    compute_local_attributions,
-    compute_local_attributions_optimized,
+    compute_prompt_attributions,
+    compute_prompt_attributions_optimized,
 )
 from spd.app.backend.database import GraphType, OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
@@ -360,7 +360,7 @@ def compute_graph_stream(
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
     def work(on_progress: ProgressCallback) -> GraphData:
-        result = compute_local_attributions(
+        result = compute_prompt_attributions(
             model=loaded.model,
             tokens=tokens_tensor,
             sources_by_target=loaded.sources_by_target,
@@ -551,7 +551,7 @@ def compute_graph_optimized_stream(
     )
 
     def work(on_progress: ProgressCallback) -> GraphDataWithOptimization:
-        result = compute_local_attributions_optimized(
+        result = compute_prompt_attributions_optimized(
             model=loaded.model,
             tokens=tokens_tensor,
             sources_by_target=loaded.sources_by_target,

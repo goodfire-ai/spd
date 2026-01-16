@@ -8,7 +8,7 @@
 import type { Loadable } from ".";
 import * as api from "./api";
 import type { RunState as RunData, Interpretation } from "./api";
-import type { ActivationContextsSummary, ComponentDetail, PromptPreview, TokenInfo } from "./localAttributionsTypes";
+import type { ActivationContextsSummary, ComponentDetail, PromptPreview, TokenInfo } from "./promptAttributionsTypes";
 
 /** Maps component keys to cluster IDs. Singletons (unclustered components) have null values. */
 export type ClusterMappingData = Record<string, number | null>;

@@ -2,7 +2,7 @@
  * API client for /api/correlations endpoints.
  */
 
-import type { ComponentCorrelations, TokenStats } from "../localAttributionsTypes";
+import type { ComponentCorrelations, TokenStats } from "../promptAttributionsTypes";
 import { API_URL, fetchJson } from "./index";
 
 export async function getComponentCorrelations(

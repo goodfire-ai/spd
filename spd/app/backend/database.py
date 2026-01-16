@@ -1,4 +1,4 @@
-"""SQLite database for local attribution data.
+"""SQLite database for prompt attribution data.
 
 Stores runs, prompts, and attribution graphs.
 Activation contexts and correlations are stored in the harvest pipeline output at
@@ -24,7 +24,7 @@ GraphType = Literal["standard", "optimized", "manual"]
 
 # Persistent data directories
 _APP_DATA_DIR = REPO_ROOT / ".data" / "app"
-DEFAULT_DB_PATH = _APP_DATA_DIR / "local_attr.db"
+DEFAULT_DB_PATH = _APP_DATA_DIR / "prompt_attr.db"
 
 
 class Run(BaseModel):
@@ -101,8 +101,8 @@ class ForkedInterventionRunRecord(BaseModel):
     created_at: str
 
 
-class LocalAttrDB:
-    """SQLite database for storing and querying local attribution data.
+class PromptAttrDB:
+    """SQLite database for storing and querying prompt attribution data.
 
     Schema:
     - runs: One row per SPD run (keyed by wandb_path)
@@ -133,7 +133,7 @@ class LocalAttrDB:
             self._conn.close()
             self._conn = None
 
-    def __enter__(self) -> "LocalAttrDB":
+    def __enter__(self) -> "PromptAttrDB":
         return self
 
     def __exit__(self, *args: object) -> None:

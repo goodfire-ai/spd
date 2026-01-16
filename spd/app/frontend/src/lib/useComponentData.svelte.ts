@@ -8,7 +8,7 @@ import {
     requestComponentInterpretation,
 } from "./api";
 import type { InterpretationDetail } from "./api";
-import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./localAttributionsTypes";
+import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./promptAttributionsTypes";
 import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./useRun.svelte";
 
 /** Correlations are paginated in the UI, so fetch more */

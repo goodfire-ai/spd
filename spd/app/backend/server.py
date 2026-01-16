@@ -1,6 +1,6 @@
 """Unified FastAPI server for the SPD app.
 
-Merges the main app backend with the local attributions server.
+Merges the main app backend with the prompt attributions server.
 Supports multiple runs, on-demand attribution graph computation,
 and activation contexts generation.
 
@@ -23,7 +23,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from spd.app.backend.database import LocalAttrDB
+from spd.app.backend.database import PromptAttrDB
 from spd.app.backend.routers import (
     activation_contexts_router,
     agents_router,
@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     """Initialize DB connection at startup. Model loaded on-demand via /api/runs/load."""
     manager = StateManager.get()
 
-    db = LocalAttrDB(check_same_thread=False)
+    db = PromptAttrDB(check_same_thread=False)
     db.init_schema()
     manager.initialize(db)
 

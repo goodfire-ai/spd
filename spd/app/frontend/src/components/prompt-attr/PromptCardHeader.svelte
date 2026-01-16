@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { TokenInfo } from "../../lib/localAttributionsTypes";
+    import type { TokenInfo } from "../../lib/promptAttributionsTypes";
     import type { PromptCard, OptimizeConfig, StoredGraph, MaskType } from "./types";
     import TokenDropdown from "./TokenDropdown.svelte";
 

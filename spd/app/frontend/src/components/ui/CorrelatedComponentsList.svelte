@@ -1,10 +1,10 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
+    import type { CorrelatedComponent } from "../../lib/promptAttributionsTypes";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import SetOverlapVis from "./SetOverlapVis.svelte";
-    import { lerp } from "../local-attr/graphUtils";
+    import { lerp } from "../prompt-attr/graphUtils";
 
     const runState = getContext<RunContext>(RUN_KEY);
 

@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
-    import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/promptAttributionsTypes";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";

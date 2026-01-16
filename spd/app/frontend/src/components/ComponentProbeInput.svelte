@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { ComponentProbeResult } from "../lib/localAttributionsTypes";
+    import type { ComponentProbeResult } from "../lib/promptAttributionsTypes";
     import { getTokenHighlightBg } from "../lib/colors";
     import { probeComponent } from "../lib/api";
 

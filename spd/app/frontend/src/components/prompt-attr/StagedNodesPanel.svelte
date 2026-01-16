@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import type { OutputProbEntry, PinnedNode, Edge } from "../../lib/localAttributionsTypes";
-    import { getLayerDisplayName } from "../../lib/localAttributionsTypes";
+    import type { OutputProbEntry, PinnedNode, Edge } from "../../lib/promptAttributionsTypes";
+    import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";

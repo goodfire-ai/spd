@@ -3,7 +3,7 @@
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ClusterPathInput from "./ClusterPathInput.svelte";
     import DatasetSearchTab from "./DatasetSearchTab.svelte";
-    import LocalAttributionsTab from "./LocalAttributionsTab.svelte";
+    import PromptAttributionsTab from "./PromptAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./ui/DisplaySettingsDropdown.svelte";
     import ActivationContextsTab from "./ActivationContextsTab.svelte";
 
@@ -82,7 +82,7 @@
         {#if runState.prompts.status === "loaded" && runState.allTokens.status === "loaded"}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>
-                <LocalAttributionsTab prompts={runState.prompts.data} allTokens={runState.allTokens.data} />
+                <PromptAttributionsTab prompts={runState.prompts.data} allTokens={runState.allTokens.data} />
             </div>
             <div class="tab-content" class:hidden={activeTab !== "components"}>
                 <ActivationContextsTab />

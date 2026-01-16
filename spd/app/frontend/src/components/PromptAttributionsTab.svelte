@@ -7,14 +7,14 @@
         type PinnedNode,
         type PromptPreview,
         type TokenInfo,
-    } from "../lib/localAttributionsTypes";
+    } from "../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
-    import ComputeProgressOverlay from "./local-attr/ComputeProgressOverlay.svelte";
-    import InterventionsView from "./local-attr/InterventionsView.svelte";
-    import PromptCardHeader from "./local-attr/PromptCardHeader.svelte";
-    import PromptCardTabs from "./local-attr/PromptCardTabs.svelte";
-    import PromptPicker from "./local-attr/PromptPicker.svelte";
-    import StagedNodesPanel from "./local-attr/StagedNodesPanel.svelte";
+    import ComputeProgressOverlay from "./prompt-attr/ComputeProgressOverlay.svelte";
+    import InterventionsView from "./prompt-attr/InterventionsView.svelte";
+    import PromptCardHeader from "./prompt-attr/PromptCardHeader.svelte";
+    import PromptCardTabs from "./prompt-attr/PromptCardTabs.svelte";
+    import PromptPicker from "./prompt-attr/PromptPicker.svelte";
+    import StagedNodesPanel from "./prompt-attr/StagedNodesPanel.svelte";
     import {
         defaultOptimizeConfig,
         type ActionState,
@@ -25,9 +25,9 @@
         type OptimizeConfig,
         type PromptCard,
         type ViewSettings,
-    } from "./local-attr/types";
-    import ViewControls from "./local-attr/ViewControls.svelte";
-    import LocalAttributionsGraph from "./LocalAttributionsGraph.svelte";
+    } from "./prompt-attr/types";
+    import ViewControls from "./prompt-attr/ViewControls.svelte";
+    import PromptAttributionsGraph from "./PromptAttributionsGraph.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
@@ -686,7 +686,7 @@
     }
 </script>
 
-<div class="local-attributions-tab">
+<div class="prompt-attributions-tab">
     <div class="main-content">
         <div class="graph-container">
             <div class="card-tabs-row">
@@ -783,7 +783,7 @@
                                     {/if}
                                 </div>
                                 {#key activeGraph.id}
-                                    <LocalAttributionsGraph
+                                    <PromptAttributionsGraph
                                         data={activeGraph.data}
                                         topK={activeGraph.viewSettings.topK}
                                         componentGap={activeGraph.viewSettings.componentGap}
@@ -883,7 +883,7 @@
 </div>
 
 <style>
-    .local-attributions-tab {
+    .prompt-attributions-tab {
         display: flex;
         flex: 1;
         min-height: 0;

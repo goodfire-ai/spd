@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
-    import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
+    import type { CorrelatedComponent } from "../../lib/promptAttributionsTypes";
     import { colors } from "../../lib/colors";
     import CorrelatedComponentsList from "../ui/CorrelatedComponentsList.svelte";
 

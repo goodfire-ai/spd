@@ -9,7 +9,7 @@
         type LayerInfo,
         type NodePosition,
         type TokenInfo,
-    } from "../../lib/localAttributionsTypes";
+    } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);

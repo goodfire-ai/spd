@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { PromptPreview, PinnedNode, TokenizeResult } from "../../lib/localAttributionsTypes";
+    import type { PromptPreview, PinnedNode, TokenizeResult } from "../../lib/promptAttributionsTypes";
     import { tokenizeText } from "../../lib/api";
     import type { PromptGenerateState } from "./types";
 

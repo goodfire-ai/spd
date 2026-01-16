@@ -8,8 +8,8 @@
         HoveredEdge,
         LayerInfo,
         NodePosition,
-    } from "../lib/localAttributionsTypes";
-    import { formatNodeKeyForDisplay } from "../lib/localAttributionsTypes";
+    } from "../lib/promptAttributionsTypes";
+    import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
     import { colors, getEdgeColor, getOutputNodeColor, getSubcompActColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
@@ -20,8 +20,8 @@
         computeComponentOffsets,
         computeClusterSpans,
         type ClusterSpan,
-    } from "./local-attr/graphUtils";
-    import NodeTooltip from "./local-attr/NodeTooltip.svelte";
+    } from "./prompt-attr/graphUtils";
+    import NodeTooltip from "./prompt-attr/NodeTooltip.svelte";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import { useZoomPan } from "../lib/useZoomPan.svelte";
     import ZoomControls from "../lib/ZoomControls.svelte";

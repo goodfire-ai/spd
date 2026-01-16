@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import type { OutputProbEntry } from "../../lib/promptAttributionsTypes";
     import { getOutputHeaderColor } from "../../lib/colors";
 
     type Props = {

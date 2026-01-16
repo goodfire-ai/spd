@@ -1,9 +1,9 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import type { EdgeAttribution, OutputProbEntry } from "../../lib/localAttributionsTypes";
-    import { formatNodeKeyForDisplay } from "../../lib/localAttributionsTypes";
+    import type { EdgeAttribution, OutputProbEntry } from "../../lib/promptAttributionsTypes";
+    import { formatNodeKeyForDisplay } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
-    import { lerp } from "../local-attr/graphUtils";
+    import { lerp } from "../prompt-attr/graphUtils";
 
     const runState = getContext<RunContext>(RUN_KEY);
 

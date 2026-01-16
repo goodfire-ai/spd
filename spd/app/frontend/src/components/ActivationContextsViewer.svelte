@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { hasAnyCorrelationStats } from "../lib/displaySettings.svelte";
-    import type { ActivationContextsSummary, ComponentSummary } from "../lib/localAttributionsTypes";
+    import type { ActivationContextsSummary, ComponentSummary } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";

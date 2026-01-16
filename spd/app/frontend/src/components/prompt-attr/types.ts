@@ -1,4 +1,4 @@
-import type { GraphData } from "../../lib/localAttributionsTypes";
+import type { GraphData } from "../../lib/promptAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/api";
 

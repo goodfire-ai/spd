@@ -2,7 +2,7 @@
  * API client for /api/activation_contexts endpoints.
  */
 
-import type { ActivationContextsSummary, ComponentDetail, ComponentProbeResult } from "../localAttributionsTypes";
+import type { ActivationContextsSummary, ComponentDetail, ComponentProbeResult } from "../promptAttributionsTypes";
 import { API_URL, fetchJson } from "./index";
 
 // Types for activation contexts
