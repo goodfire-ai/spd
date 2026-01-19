@@ -44,8 +44,8 @@
 
 <EdgeAttributionGrid
     title="Dataset Attributions"
-    incomingLabel="Incoming (sources)"
-    outgoingLabel="Outgoing (targets)"
+    incomingLabel="Incoming"
+    outgoingLabel="Outgoing"
     incomingPositive={positiveSources}
     incomingNegative={negativeSources}
     outgoingPositive={positiveTargets}
