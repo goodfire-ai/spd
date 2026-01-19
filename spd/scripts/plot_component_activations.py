@@ -4,6 +4,10 @@ Creates scatter plots (one per layer) where:
 - X-axis: Component rank (ordered by median normalized activation)
 - Y-axis: Component activation (normalized per-component to [0, 1])
 - Filter: Only plots datapoints where CI > threshold
+
+Usage:
+    python -m spd.scripts.plot_component_activations s-7884efcc
+    python -m spd.scripts.plot_component_activations s-7884efcc --ci-threshold 0.0
 """
 
 import argparse
@@ -173,7 +177,7 @@ def main():
     )
     args = parser.parse_args()
 
-    base_output_dir = Path("scripts/outputs") / args.run_id / "component-act-scatter"
+    base_output_dir = Path(__file__).parent / "out" / args.run_id / "component-act-scatter"
     output_dir_median = base_output_dir / "order-by-median"
     output_dir_freq = base_output_dir / "order-by-freq"
     output_dir_median.mkdir(parents=True, exist_ok=True)
