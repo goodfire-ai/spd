@@ -1,0 +1,9 @@
+# Sweep params for resid_mlp1 with global CI function
+global:
+  ci_config:
+    hidden_dims:
+      values: [[400, 300]]
+  loss_metric_configs:
+    - classname: "ImportanceMinimalityLoss"
+      coeff:
+        values: [7e-5, 6e-5, 5e-5]
