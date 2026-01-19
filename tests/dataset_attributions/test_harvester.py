@@ -4,7 +4,7 @@ from pathlib import Path
 
 import torch
 
-from spd.dataset_attributions.storage import DatasetAttributionEntry, DatasetAttributionStorage
+from spd.dataset_attributions.storage import DatasetAttributionStorage
 
 
 def _make_storage(
@@ -263,20 +263,3 @@ class TestDatasetAttributionStorage:
         assert loaded.ci_threshold == original.ci_threshold
         assert torch.allclose(loaded.source_to_component, original.source_to_component)
         assert torch.allclose(loaded.source_to_out_residual, original.source_to_out_residual)
-
-
-class TestDatasetAttributionEntry:
-    """Tests for DatasetAttributionEntry dataclass."""
-
-    def test_entry_creation(self) -> None:
-        """Test creating an entry."""
-        entry = DatasetAttributionEntry(
-            component_key="h.0.mlp.c_fc:5",
-            layer="h.0.mlp.c_fc",
-            component_idx=5,
-            value=0.123,
-        )
-        assert entry.component_key == "h.0.mlp.c_fc:5"
-        assert entry.layer == "h.0.mlp.c_fc"
-        assert entry.component_idx == 5
-        assert entry.value == 0.123
