@@ -1,6 +1,7 @@
 """Storage classes for dataset attributions."""
 
 import dataclasses
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -180,13 +181,14 @@ class DatasetAttributionStorage:
         tgt_idx = self._target_idx(target_key)
         return self.attribution_matrix[src_idx, tgt_idx].item()
 
-    def _get_top_k_sources(
+    def _get_top_k(
         self,
         values: Tensor,
         k: int,
         sign: Literal["positive", "negative"],
+        idx_to_key: Callable[[int], str],
     ) -> list[DatasetAttributionEntry]:
-        """Get top-k source entries from a 1D tensor of attribution values."""
+        """Get top-k entries from a 1D tensor of attribution values."""
         is_positive = sign == "positive"
         top_vals, top_idxs = torch.topk(values, min(k, len(values)), largest=is_positive)
 
@@ -195,36 +197,8 @@ class DatasetAttributionStorage:
         top_vals, top_idxs = top_vals[mask], top_idxs[mask]
 
         results = []
-        for source_idx, val in zip(top_idxs.tolist(), top_vals.tolist(), strict=True):
-            key = self._source_idx_to_key(source_idx)
-            layer, c_idx = self._parse_key(key)
-            results.append(
-                DatasetAttributionEntry(
-                    component_key=key,
-                    layer=layer,
-                    component_idx=c_idx,
-                    value=val,
-                )
-            )
-        return results
-
-    def _get_top_k_targets(
-        self,
-        values: Tensor,
-        k: int,
-        sign: Literal["positive", "negative"],
-    ) -> list[DatasetAttributionEntry]:
-        """Get top-k target entries from a 1D tensor of attribution values."""
-        is_positive = sign == "positive"
-        top_vals, top_idxs = torch.topk(values, min(k, len(values)), largest=is_positive)
-
-        # Filter to only values matching the requested sign
-        mask = top_vals > 0 if is_positive else top_vals < 0
-        top_vals, top_idxs = top_vals[mask], top_idxs[mask]
-
-        results = []
-        for target_idx, val in zip(top_idxs.tolist(), top_vals.tolist(), strict=True):
-            key = self._target_idx_to_key(target_idx)
+        for idx, val in zip(top_idxs.tolist(), top_vals.tolist(), strict=True):
+            key = idx_to_key(idx)
             layer, c_idx = self._parse_key(key)
             results.append(
                 DatasetAttributionEntry(
@@ -244,7 +218,12 @@ class DatasetAttributionStorage:
     ) -> list[DatasetAttributionEntry]:
         """Get top-k source components that attribute TO this target."""
         tgt_idx = self._target_idx(target_key)
-        return self._get_top_k_sources(self.attribution_matrix[:, tgt_idx], k, sign)
+        return self._get_top_k(
+            values=self.attribution_matrix[:, tgt_idx],
+            k=k,
+            sign=sign,
+            idx_to_key=self._source_idx_to_key,
+        )
 
     def get_top_targets(
         self,
@@ -254,4 +233,9 @@ class DatasetAttributionStorage:
     ) -> list[DatasetAttributionEntry]:
         """Get top-k target components this source attributes TO."""
         src_idx = self._source_idx(source_key)
-        return self._get_top_k_targets(self.attribution_matrix[src_idx, :], k, sign)
+        return self._get_top_k(
+            values=self.attribution_matrix[src_idx, :],
+            k=k,
+            sign=sign,
+            idx_to_key=self._target_idx_to_key,
+        )
