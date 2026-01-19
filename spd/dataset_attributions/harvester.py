@@ -176,19 +176,17 @@ class AttributionHarvester:
         # Process each target layer
         layers = list(self.sources_by_target.items())
         pbar = tqdm(layers, desc="Targets", disable=not self.show_progress, leave=False)
-        for i, (target_layer, source_layers) in enumerate(pbar):
-            is_last = i == len(layers) - 1
+        for target_layer, source_layers in pbar:
             if target_layer == "output":
-                self._process_output_targets(source_layers, cache, is_last)
+                self._process_output_targets(source_layers, cache)
             else:
-                self._process_component_targets(target_layer, source_layers, cache, is_last)
+                self._process_component_targets(target_layer, source_layers, cache)
 
     def _process_component_targets(
         self,
         target_layer: str,
         source_layers: list[str],
         cache: dict[str, Tensor],
-        is_last_layer: bool,
     ) -> None:
         """Process attributions to a component layer."""
         target_start, _ = self.target_layer_to_idx_range[target_layer]
@@ -200,10 +198,8 @@ class AttributionHarvester:
         target_acts = cache[f"{target_layer}_pre_detach"].sum(dim=(0, 1))
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
-        for i, t_idx in enumerate(alive_targets):
-            # Only retain the computation graph if we need more backward passes.
-            is_last = is_last_layer and i == len(alive_targets) - 1
-            grads = torch.autograd.grad(target_acts[t_idx], source_acts, retain_graph=not is_last)
+        for t_idx in alive_targets:
+            grads = torch.autograd.grad(target_acts[t_idx], source_acts, retain_graph=True)
             self._accumulate_attributions(
                 self.comp_accumulator[:, target_start + t_idx],
                 source_layers,
@@ -216,7 +212,6 @@ class AttributionHarvester:
         self,
         source_layers: list[str],
         cache: dict[str, Tensor],
-        is_last_layer: bool,
     ) -> None:
         """Process output attributions via output-residual-space storage.
 
@@ -229,9 +224,7 @@ class AttributionHarvester:
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
         for d_idx in range(self.d_model):
-            # Only retain the computation graph if we need more backward passes.
-            is_last = is_last_layer and d_idx == self.d_model - 1
-            grads = torch.autograd.grad(out_residual[d_idx], source_acts, retain_graph=not is_last)
+            grads = torch.autograd.grad(out_residual[d_idx], source_acts, retain_graph=True)
             self._accumulate_attributions(
                 self.out_residual_accumulator[:, d_idx],
                 source_layers,
