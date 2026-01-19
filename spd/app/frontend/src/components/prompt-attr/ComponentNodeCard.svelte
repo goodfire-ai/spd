@@ -221,6 +221,24 @@
         />
     {/if}
 
+    <!-- Dataset attributions  -->
+    {#if componentData.datasetAttributions?.status === "loaded" && componentData.datasetAttributions.data}
+        <DatasetAttributionsSection
+            attributions={componentData.datasetAttributions.data}
+            onComponentClick={handleCorrelationClick}
+        />
+    {:else if componentData.datasetAttributions?.status === "loading"}
+        <div class="dataset-attributions-loading">
+            <SectionHeader title="Dataset Attributions" />
+            <StatusText>Loading...</StatusText>
+        </div>
+    {:else if componentData.datasetAttributions?.status === "error"}
+        <div class="dataset-attributions-loading">
+            <SectionHeader title="Dataset Attributions" />
+            <StatusText>Error: {String(componentData.datasetAttributions.error)}</StatusText>
+        </div>
+    {/if}
+
     <div class="token-stats-row">
         {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
             <StatusText>Loading token stats...</StatusText>
@@ -259,23 +277,7 @@
         {/if}
     </div>
 
-    <!-- Dataset attributions  -->
-    {#if componentData.datasetAttributions?.status === "loaded" && componentData.datasetAttributions.data}
-        <DatasetAttributionsSection
-            attributions={componentData.datasetAttributions.data}
-            onComponentClick={handleCorrelationClick}
-        />
-    {:else if componentData.datasetAttributions?.status === "loading"}
-        <div class="dataset-attributions-loading">
-            <SectionHeader title="Dataset Attributions" />
-            <StatusText>Loading...</StatusText>
-        </div>
-    {:else if componentData.datasetAttributions?.status === "error"}
-        <div class="dataset-attributions-loading">
-            <SectionHeader title="Dataset Attributions" />
-            <StatusText>Error: {String(componentData.datasetAttributions.error)}</StatusText>
-        </div>
-    {/if}
+
 </div>
 
 <style>
