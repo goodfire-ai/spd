@@ -254,7 +254,7 @@ class AnthropicJumpReLUSAE(nn.Module):
 
         # Sparsity penalty with tanh: lambda_S * sum_i tanh(c * |f_i| * ||W_d_i||_2)
         # Lambda_S is warmed up linearly over entire training
-        lambda_S = self.lambda_S_final * (current_step / max(total_steps, 1))
+        lambda_S = self.lambda_S_final  # * (current_step / max(total_steps, 1))
 
         decoder_norms = self.W_dec.norm(dim=-1)  # [m]
         # acts: [batch, m], decoder_norms: [m]
@@ -352,6 +352,11 @@ def get_anthropic_cfg() -> dict:
     cfg["batch_size"] = 32768
     cfg["lr"] = 2e-4
     cfg["max_grad_norm"] = 1.0  # Paper uses gradient clipping to norm 1
+
+    # Optimizer defaults (Adam with beta1=0.9, beta2=0.999, no weight decay)
+    cfg["beta1"] = 0.9
+    cfg["beta2"] = 0.999
+    cfg["weight_decay"] = 0.0
 
     return cfg
 
@@ -481,12 +486,11 @@ def train_anthropic_sae(
         print("Initializing b_enc from data...")
         sae.initialize_b_enc_from_data(activation_store, target_l0=cfg.get("target_l0", 10000))
 
-    # Adam optimizer: beta1=0.9, beta2=0.999, no weight decay
     optimizer = torch.optim.Adam(
         sae.parameters(),
         lr=cfg["lr"],
-        betas=(0.9, 0.999),
-        weight_decay=0,
+        betas=(cfg["beta1"], cfg["beta2"]),
+        weight_decay=cfg["weight_decay"],
     )
 
     # LR scheduler: linear decay over last 20%
@@ -589,14 +593,14 @@ def train_comparison(
     jumprelu_optimizer = torch.optim.Adam(
         jumprelu_sae.parameters(),
         lr=cfg["lr"],
-        betas=(0.9, 0.999),
-        weight_decay=0,
+        betas=(cfg["beta1"], cfg["beta2"]),
+        weight_decay=cfg["weight_decay"],
     )
     topk_optimizer = torch.optim.Adam(
         topk_sae.parameters(),
         lr=cfg["lr"],
-        betas=(cfg.get("beta1", 0.9), cfg.get("beta2", 0.999)),
-        weight_decay=0,
+        betas=(cfg["beta1"], cfg["beta2"]),
+        weight_decay=cfg["weight_decay"],
     )
 
     # LR scheduler for JumpReLU (decay over last 20%)
@@ -699,6 +703,9 @@ def main(
     num_tokens: int = 100_000_000,
     batch_size: int = 4096,
     lr: float = 2e-4,
+    beta1: float = 0.9,
+    beta2: float = 0.999,
+    weight_decay: float = 0.0,
     # Model settings
     model_name: str = "gpt2-small",
     layer: int = 8,
@@ -708,11 +715,11 @@ def main(
     tanh_c: float = 4.0,
     epsilon: float = 2.0,
     lambda_P: float = 3e-6,
-    lambda_S: float = 1.0,
+    lambda_S: float = 0.2,
     target_l0: int = 2000,
     init_b_enc_from_data: bool = True,
     # Comparison mode
-    compare_with_topk: bool = False,
+    compare_with_topk: bool = True,
     top_k: int = 32,
     aux_penalty: float = 1 / 32,
     # Other
@@ -729,6 +736,9 @@ def main(
         num_tokens: Total tokens to train on
         batch_size: Batch size (paper recommends 32768)
         lr: Learning rate (paper default 2e-4)
+        beta1: Adam beta1 (paper: 0.9)
+        beta2: Adam beta2 (paper: 0.999)
+        weight_decay: Weight decay (paper: 0)
         model_name: Transformer model name
         layer: Layer to extract activations from
         site: Hook site (resid_pre, resid_post, etc.)
@@ -752,6 +762,9 @@ def main(
     cfg["num_tokens"] = num_tokens
     cfg["batch_size"] = batch_size
     cfg["lr"] = lr
+    cfg["beta1"] = beta1
+    cfg["beta2"] = beta2
+    cfg["weight_decay"] = weight_decay
     cfg["model_name"] = model_name
     cfg["layer"] = layer
     cfg["site"] = site
