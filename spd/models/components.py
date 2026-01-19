@@ -134,7 +134,7 @@ class GlobalSharedMLPCiFn(nn.Module):
         for i in range(len(hidden_dims)):
             in_dim = total_input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
-            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
+            self.layers.append(Linear(in_dim, output_dim))
             self.layers.append(nn.GELU())
         final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else total_input_dim
         self.layers.append(Linear(final_dim, total_C, nonlinearity="linear"))
