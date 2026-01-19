@@ -92,30 +92,30 @@ class DatasetAttributionStorage:
     def _source_idx(self, key: str) -> int:
         """Get source (row) index for a key. Raises KeyError if not a valid source."""
         layer, idx = self._parse_key(key)
-        if layer == "wte":
-            assert 0 <= idx < self.vocab_size, (
-                f"wte index {idx} out of range [0, {self.vocab_size})"
-            )
-            return idx
-        elif layer == "output":
-            raise KeyError(f"output tokens cannot be sources: {key}")
-        else:
-            # Component layer
-            return self.vocab_size + self._component_key_to_idx[key]
+        match layer:
+            case "wte":
+                assert 0 <= idx < self.vocab_size, (
+                    f"wte index {idx} out of range [0, {self.vocab_size})"
+                )
+                return idx
+            case "output":
+                raise KeyError(f"output tokens cannot be sources: {key}")
+            case _:
+                return self.vocab_size + self._component_key_to_idx[key]
 
     def _target_idx(self, key: str) -> int:
         """Get target (column) index for a key. Raises KeyError if not a valid target."""
         layer, idx = self._parse_key(key)
-        if layer == "wte":
-            raise KeyError(f"wte tokens cannot be targets: {key}")
-        elif layer == "output":
-            assert 0 <= idx < self.vocab_size, (
-                f"output index {idx} out of range [0, {self.vocab_size})"
-            )
-            return self.n_components + idx
-        else:
-            # Component layer
-            return self._component_key_to_idx[key]
+        match layer:
+            case "wte":
+                raise KeyError(f"wte tokens cannot be targets: {key}")
+            case "output":
+                assert 0 <= idx < self.vocab_size, (
+                    f"output index {idx} out of range [0, {self.vocab_size})"
+                )
+                return self.n_components + idx
+            case _:
+                return self._component_key_to_idx[key]
 
     def _source_idx_to_key(self, idx: int) -> str:
         """Convert source (row) index to key."""
@@ -133,19 +133,25 @@ class DatasetAttributionStorage:
 
     def has_source(self, key: str) -> bool:
         """Check if a key can be a source (wte token or component layer)."""
-        try:
-            self._source_idx(key)
-            return True
-        except (KeyError, AssertionError):
-            return False
+        layer, idx = self._parse_key(key)
+        match layer:
+            case "wte":
+                return 0 <= idx < self.vocab_size
+            case "output":
+                return False
+            case _:
+                return key in self._component_key_to_idx
 
     def has_target(self, key: str) -> bool:
         """Check if a key can be a target (component layer or output token)."""
-        try:
-            self._target_idx(key)
-            return True
-        except (KeyError, AssertionError):
-            return False
+        layer, idx = self._parse_key(key)
+        match layer:
+            case "wte":
+                return False
+            case "output":
+                return 0 <= idx < self.vocab_size
+            case _:
+                return key in self._component_key_to_idx
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
