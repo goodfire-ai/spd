@@ -36,19 +36,19 @@ def _validate_checkpoint_ci_config_compatibility(
     state_dict: dict[str, Tensor], ci_config: CiConfig
 ) -> None:
     """Validate that checkpoint CI weights match the config CI mode."""
-    has_global_ci_fn = any(k.startswith("ci_fn._global_ci_fn") for k in state_dict)
     has_layerwise_ci_fns = any(k.startswith("ci_fn._ci_fns") for k in state_dict)
+    has_global_ci_fn = any(k.startswith("ci_fn._global_ci_fn") for k in state_dict)
 
     match ci_config:
-        case GlobalCiConfig():
-            assert has_global_ci_fn, (
-                f"Config specifies global CI but checkpoint has no ci_fn._global_ci_fn keys "
-                f"(has ci_fn._ci_fns: {has_layerwise_ci_fns})"
-            )
         case LayerwiseCiConfig():
             assert has_layerwise_ci_fns, (
                 f"Config specifies layerwise CI but checkpoint has no ci_fn._ci_fns keys "
                 f"(has ci_fn._global_ci_fn: {has_global_ci_fn})"
+            )
+        case GlobalCiConfig():
+            assert has_global_ci_fn, (
+                f"Config specifies global CI but checkpoint has no ci_fn._global_ci_fn keys "
+                f"(has ci_fn._ci_fns: {has_layerwise_ci_fns})"
             )
 
 
@@ -124,18 +124,6 @@ class ComponentModel(LoadableModule):
         )
 
         match ci_config:
-            case GlobalCiConfig():
-                raw_global_ci_fn = ComponentModel._create_global_ci_fn(
-                    target_model=target_model,
-                    module_to_c=self.module_to_c,
-                    components=self.components,
-                    ci_fn_type=ci_config.fn_type,
-                    ci_fn_hidden_dims=ci_config.hidden_dims,
-                )
-                self.ci_fn = GlobalCiFnWrapper(
-                    global_ci_fn=raw_global_ci_fn,
-                    components=self.components,
-                )
             case LayerwiseCiConfig():
                 raw_layerwise_ci_fns = ComponentModel._create_layerwise_ci_fns(
                     target_model=target_model,
@@ -147,6 +135,18 @@ class ComponentModel(LoadableModule):
                     ci_fns=raw_layerwise_ci_fns,
                     components=self.components,
                     ci_fn_type=ci_config.fn_type,
+                )
+            case GlobalCiConfig():
+                raw_global_ci_fn = ComponentModel._create_global_ci_fn(
+                    target_model=target_model,
+                    module_to_c=self.module_to_c,
+                    components=self.components,
+                    ci_fn_type=ci_config.fn_type,
+                    ci_fn_hidden_dims=ci_config.hidden_dims,
+                )
+                self.ci_fn = GlobalCiFnWrapper(
+                    global_ci_fn=raw_global_ci_fn,
+                    components=self.components,
                 )
 
         if sigmoid_type == "leaky_hard":
