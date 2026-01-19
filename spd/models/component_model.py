@@ -37,16 +37,16 @@ def _validate_checkpoint_ci_config_compatibility(
 ) -> None:
     """Validate that checkpoint CI weights match the config CI mode."""
     has_global_ci_fn = any(k.startswith("ci_fn._global_ci_fn") for k in state_dict)
-    has_ci_fns = any(k.startswith("ci_fn._ci_fns") for k in state_dict)
+    has_layerwise_ci_fns = any(k.startswith("ci_fn._ci_fns") for k in state_dict)
 
     match ci_config:
         case GlobalCiConfig():
             assert has_global_ci_fn, (
                 f"Config specifies global CI but checkpoint has no ci_fn._global_ci_fn keys "
-                f"(has ci_fn._ci_fns: {has_ci_fns})"
+                f"(has ci_fn._ci_fns: {has_layerwise_ci_fns})"
             )
         case LayerwiseCiConfig():
-            assert has_ci_fns, (
+            assert has_layerwise_ci_fns, (
                 f"Config specifies layerwise CI but checkpoint has no ci_fn._ci_fns keys "
                 f"(has ci_fn._global_ci_fn: {has_global_ci_fn})"
             )
@@ -137,7 +137,7 @@ class ComponentModel(LoadableModule):
                     components=self.components,
                 )
             case LayerwiseCiConfig():
-                raw_layerwise_ci_fns = ComponentModel._create_ci_fns(
+                raw_layerwise_ci_fns = ComponentModel._create_layerwise_ci_fns(
                     target_model=target_model,
                     module_to_c=self.module_to_c,
                     ci_fn_type=ci_config.fn_type,
@@ -263,13 +263,13 @@ class ComponentModel(LoadableModule):
                 raise ValueError(f"Module {type(target_module)} not supported")
 
     @staticmethod
-    def _create_ci_fn(
+    def _create_layerwise_ci_fn(
         target_module: nn.Module,
         C: int,
         ci_fn_type: LayerwiseCiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
-        """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
+        """Helper to create a single layerwise CI function based on ci_fn_type and module type."""
         if isinstance(target_module, nn.Embedding):
             assert ci_fn_type == "mlp", "Embedding modules only supported for ci_fn_type='mlp'"
 
@@ -289,22 +289,22 @@ class ComponentModel(LoadableModule):
                 return VectorSharedMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
 
     @staticmethod
-    def _create_ci_fns(
+    def _create_layerwise_ci_fns(
         target_model: nn.Module,
         module_to_c: dict[str, int],
         ci_fn_type: LayerwiseCiFnType,
         ci_fn_hidden_dims: list[int],
     ) -> dict[str, nn.Module]:
-        ci_fns: dict[str, nn.Module] = {}
+        layerwise_ci_fns: dict[str, nn.Module] = {}
         for target_module_path, target_module_c in module_to_c.items():
             target_module = target_model.get_submodule(target_module_path)
-            ci_fns[target_module_path] = ComponentModel._create_ci_fn(
+            layerwise_ci_fns[target_module_path] = ComponentModel._create_layerwise_ci_fn(
                 target_module=target_module,
                 C=target_module_c,
                 ci_fn_type=ci_fn_type,
                 ci_fn_hidden_dims=ci_fn_hidden_dims,
             )
-        return ci_fns
+        return layerwise_ci_fns
 
     @staticmethod
     def _create_global_ci_fn(
