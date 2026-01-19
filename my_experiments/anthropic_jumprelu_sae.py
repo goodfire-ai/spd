@@ -127,8 +127,9 @@ class AnthropicJumpReLUSAE(nn.Module):
         with torch.no_grad():
             self.W_enc.data = (n / m) * self.W_dec.data.T.clone()
 
-        # Initialize log thresholds to log(0.1) so exp(t) = 0.1
-        self.log_threshold = nn.Parameter(torch.full((m,), math.log(0.1)))
+        # Initialize log thresholds to 0.1 so exp(t) ≈ 1.105
+        # Paper says "t: Initialized to 0.1"
+        self.log_threshold = nn.Parameter(torch.full((m,), 0.1))
 
         # Biases
         self.b_dec = nn.Parameter(torch.zeros(n))
@@ -171,21 +172,46 @@ class AnthropicJumpReLUSAE(nn.Module):
     def preprocess_input(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
-        """Optionally normalize input."""
+        """
+        Normalize input.
+
+        Paper: "Dataset is scaled by a single constant such that E[||x||_2] = sqrt(n)"
+        This ensures lambda_S means the same thing across different sized models.
+        """
         if self.cfg.get("input_unit_norm", False):
+            # Per-sample normalization (alternative approach)
             x_mean = x.mean(dim=-1, keepdim=True)
             x = x - x_mean
             x_std = x.std(dim=-1, keepdim=True)
             x = x / (x_std + 1e-5)
             return x, x_mean, x_std
+        elif self.cfg.get("anthropic_norm", True):
+            # Anthropic's normalization: scale so E[||x||_2] = sqrt(n)
+            # This is a batch-level scaling
+            n = x.shape[-1]
+            target_norm = math.sqrt(n)
+            actual_norm = x.norm(dim=-1).mean()
+            scale = target_norm / (actual_norm + 1e-8)
+            x = x * scale
+            return x, None, scale
         return x, None, None
 
     def postprocess_output(
-        self, x_reconstruct: torch.Tensor, x_mean: torch.Tensor | None, x_std: torch.Tensor | None
+        self,
+        x_reconstruct: torch.Tensor,
+        x_mean: torch.Tensor | None,
+        x_std_or_scale: torch.Tensor | float | None,
     ) -> torch.Tensor:
         """Reverse normalization."""
-        if self.cfg.get("input_unit_norm", False) and x_mean is not None and x_std is not None:
-            x_reconstruct = x_reconstruct * x_std + x_mean
+        if (
+            self.cfg.get("input_unit_norm", False)
+            and x_mean is not None
+            and x_std_or_scale is not None
+        ):
+            x_reconstruct = x_reconstruct * x_std_or_scale + x_mean
+        elif self.cfg.get("anthropic_norm", True) and x_std_or_scale is not None:
+            # Reverse the scaling
+            x_reconstruct = x_reconstruct / x_std_or_scale
         return x_reconstruct
 
     def forward(
@@ -218,7 +244,7 @@ class AnthropicJumpReLUSAE(nn.Module):
         pre_acts: torch.Tensor,
         acts: torch.Tensor,
         x_mean: torch.Tensor | None,
-        x_std: torch.Tensor | None,
+        x_std_or_scale: torch.Tensor | float | None,
         current_step: int,
         total_steps: int,
     ) -> dict[str, torch.Tensor]:
@@ -252,7 +278,7 @@ class AnthropicJumpReLUSAE(nn.Module):
             self.num_batches_not_active > self.cfg.get("n_batches_to_dead", 5)
         ).sum()
 
-        sae_out = self.postprocess_output(x_reconstruct, x_mean, x_std)
+        sae_out = self.postprocess_output(x_reconstruct, x_mean, x_std_or_scale)
 
         return {
             "sae_out": sae_out,
@@ -316,6 +342,10 @@ def get_anthropic_cfg() -> dict:
     # Initialization
     cfg["init_b_enc_from_data"] = True
     cfg["target_l0"] = 10000  # Target ~10k features active per datapoint
+
+    # Data normalization - use Anthropic's approach by default
+    cfg["input_unit_norm"] = False  # Disable per-sample normalization
+    cfg["anthropic_norm"] = True  # Scale so E[||x||_2] = sqrt(n)
 
     # Training defaults from paper
     cfg["batch_size"] = 32768
@@ -535,19 +565,19 @@ def train_anthropic_sae(
 def main(
     # Training settings
     num_tokens: int = 100_000_000,
-    batch_size: int = 32768,
+    batch_size: int = 4096,
     lr: float = 2e-4,
     # Model settings
     model_name: str = "gpt2-small",
     layer: int = 8,
     site: str = "resid_pre",
-    dict_size: int = 768 * 16,
+    dict_size: int = 768 * 4,
     # Anthropic hyperparameters
     tanh_c: float = 4.0,
     epsilon: float = 2.0,
     lambda_P: float = 3e-6,
-    lambda_S: float = 20.0,
-    target_l0: int = 10000,
+    lambda_S: float = 1.0,
+    target_l0: int = 2000,
     init_b_enc_from_data: bool = True,
     # Other
     seed: int = 42,
