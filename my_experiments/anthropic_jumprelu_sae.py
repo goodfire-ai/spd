@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "batchtopk"))
 
 from activation_store import ActivationsStore
 from config import get_default_cfg, post_init_cfg
+from sae import BatchTopKSAE
 from transformer_lens import HookedTransformer
 
 from logs import init_wandb, log_model_performance, save_checkpoint
@@ -562,6 +563,137 @@ def train_anthropic_sae(
     print("Training complete!")
 
 
+def train_comparison(
+    jumprelu_sae: AnthropicJumpReLUSAE,
+    topk_sae: BatchTopKSAE,
+    activation_store: ActivationsStore,
+    model: HookedTransformer,
+    cfg: dict,
+) -> None:
+    """
+    Train JumpReLU and BatchTopK SAEs in parallel for comparison.
+
+    Both SAEs see the same batches and use comparable training settings.
+    Metrics are logged with prefixes 'jumprelu/' and 'topk/' for comparison.
+    """
+    num_batches = cfg["num_tokens"] // cfg["batch_size"]
+
+    # Initialize JumpReLU SAE
+    if cfg.get("init_b_enc_from_data", True):
+        print("Initializing JumpReLU b_enc from data...")
+        jumprelu_sae.initialize_b_enc_from_data(
+            activation_store, target_l0=cfg.get("target_l0", 10000)
+        )
+
+    # Optimizers - same settings for fair comparison
+    jumprelu_optimizer = torch.optim.Adam(
+        jumprelu_sae.parameters(),
+        lr=cfg["lr"],
+        betas=(0.9, 0.999),
+        weight_decay=0,
+    )
+    topk_optimizer = torch.optim.Adam(
+        topk_sae.parameters(),
+        lr=cfg["lr"],
+        betas=(cfg.get("beta1", 0.9), cfg.get("beta2", 0.999)),
+        weight_decay=0,
+    )
+
+    # LR scheduler for JumpReLU (decay over last 20%)
+    decay_start = int(0.8 * num_batches)
+
+    def lr_lambda(step: int) -> float:
+        if step < decay_start:
+            return 1.0
+        progress = (step - decay_start) / (num_batches - decay_start)
+        return 1.0 - progress
+
+    jumprelu_scheduler = torch.optim.lr_scheduler.LambdaLR(jumprelu_optimizer, lr_lambda)
+
+    pbar = tqdm.trange(num_batches)
+    wandb_run = init_wandb(cfg)
+
+    for i in pbar:
+        batch = activation_store.next_batch()
+
+        # Forward pass for both SAEs
+        jumprelu_output = jumprelu_sae(batch, current_step=i, total_steps=num_batches)
+        topk_output = topk_sae(batch)
+
+        # Log JumpReLU metrics
+        jumprelu_log = {
+            "jumprelu/loss": jumprelu_output["loss"].item(),
+            "jumprelu/l2_loss": jumprelu_output["l2_loss"].item(),
+            "jumprelu/sparsity_loss": jumprelu_output["sparsity_loss"].item(),
+            "jumprelu/pre_act_loss": jumprelu_output["pre_act_loss"].item(),
+            "jumprelu/l0_norm": jumprelu_output["l0_norm"].item(),
+            "jumprelu/l1_norm": jumprelu_output["l1_norm"].item(),
+            "jumprelu/num_dead_features": jumprelu_output["num_dead_features"].item(),
+            "jumprelu/lambda_S": jumprelu_output["lambda_S"].item(),
+            "jumprelu/n_dead_in_batch": (jumprelu_output["feature_acts"].sum(0) == 0).sum().item(),
+        }
+
+        # Log TopK metrics
+        topk_log = {
+            "topk/loss": topk_output["loss"].item(),
+            "topk/l2_loss": topk_output["l2_loss"].item(),
+            "topk/l0_norm": topk_output["l0_norm"].item(),
+            "topk/l1_norm": topk_output["l1_norm"].item(),
+            "topk/aux_loss": topk_output["aux_loss"].item(),
+            "topk/num_dead_features": topk_output["num_dead_features"].item(),
+            "topk/n_dead_in_batch": (topk_output["feature_acts"].sum(0) == 0).sum().item(),
+        }
+
+        # Combined logging
+        log_dict = {**jumprelu_log, **topk_log, "lr": jumprelu_scheduler.get_last_lr()[0]}
+        wandb_run.log(log_dict, step=i)
+
+        # Performance logging
+        if i % cfg.get("perf_log_freq", 1000) == 0:
+            log_model_performance(
+                wandb_run, i, model, activation_store, jumprelu_sae, index="jumprelu"
+            )
+            log_model_performance(wandb_run, i, model, activation_store, topk_sae, index="topk")
+            log_threshold_visualizations(wandb_run, i, activation_store, jumprelu_sae)
+
+        if i % cfg.get("checkpoint_freq", 10000) == 0:
+            save_checkpoint(wandb_run, jumprelu_sae, {**cfg, "sae_type": "jumprelu"}, i)
+            save_checkpoint(wandb_run, topk_sae, {**cfg, "sae_type": "topk"}, i)
+
+        # Progress bar
+        pbar.set_postfix(
+            {
+                "JR_L2": f"{jumprelu_output['l2_loss'].item():.4f}",
+                "JR_L0": f"{jumprelu_output['l0_norm'].item():.1f}",
+                "TK_L2": f"{topk_output['l2_loss'].item():.4f}",
+                "TK_L0": f"{topk_output['l0_norm'].item():.1f}",
+            }
+        )
+
+        # Backward and optimize JumpReLU
+        jumprelu_output["loss"].backward()
+        torch.nn.utils.clip_grad_norm_(jumprelu_sae.parameters(), cfg.get("max_grad_norm", 1.0))
+        jumprelu_sae.make_decoder_weights_and_grad_unit_norm()
+        jumprelu_optimizer.step()
+        jumprelu_scheduler.step()
+        jumprelu_optimizer.zero_grad()
+
+        # Backward and optimize TopK
+        topk_output["loss"].backward()
+        torch.nn.utils.clip_grad_norm_(topk_sae.parameters(), cfg.get("max_grad_norm", 1.0))
+        topk_sae.make_decoder_weights_and_grad_unit_norm()
+        topk_optimizer.step()
+        topk_optimizer.zero_grad()
+
+    # Post-training normalization for JumpReLU
+    print("Applying post-training decoder normalization to JumpReLU SAE...")
+    jumprelu_sae.normalize_decoder_post_training()
+
+    save_checkpoint(wandb_run, jumprelu_sae, {**cfg, "sae_type": "jumprelu"}, num_batches)
+    save_checkpoint(wandb_run, topk_sae, {**cfg, "sae_type": "topk"}, num_batches)
+    print("Comparison training complete!")
+
+
 def main(
     # Training settings
     num_tokens: int = 100_000_000,
@@ -570,7 +702,7 @@ def main(
     # Model settings
     model_name: str = "gpt2-small",
     layer: int = 8,
-    site: str = "resid_pre",
+    site: str = "mlp_out",
     dict_size: int = 768 * 4,
     # Anthropic hyperparameters
     tanh_c: float = 4.0,
@@ -579,6 +711,10 @@ def main(
     lambda_S: float = 1.0,
     target_l0: int = 2000,
     init_b_enc_from_data: bool = True,
+    # Comparison mode
+    compare_with_topk: bool = False,
+    top_k: int = 32,
+    aux_penalty: float = 1 / 32,
     # Other
     seed: int = 42,
     device: str = "cuda:0",
@@ -603,6 +739,9 @@ def main(
         lambda_S: Final sparsity coefficient (paper: ~10-20)
         target_l0: Target L0 for b_enc initialization (paper: 10000)
         init_b_enc_from_data: Whether to initialize b_enc from data
+        compare_with_topk: Train BatchTopK SAE in parallel for comparison
+        top_k: K value for BatchTopK SAE (when compare_with_topk=True)
+        aux_penalty: Auxiliary loss penalty for BatchTopK dead features
         seed: Random seed
         device: Device to train on
         wandb_project: W&B project name
@@ -625,13 +764,24 @@ def main(
     cfg["init_b_enc_from_data"] = init_b_enc_from_data
     cfg["device"] = device
     cfg["wandb_project"] = wandb_project
+
+    # TopK-specific config (used when compare_with_topk=True)
+    cfg["top_k"] = top_k
+    cfg["top_k_aux"] = min(512, dict_size)
+    cfg["aux_penalty"] = aux_penalty
+    cfg["l1_coeff"] = 0.0  # TopK doesn't need L1 regularization
+
     cfg = post_init_cfg(cfg)
 
-    print(f"Training Anthropic JumpReLU SAE on {model_name} layer {layer}")
+    mode = "comparison (JumpReLU vs BatchTopK)" if compare_with_topk else "JumpReLU only"
+    print(f"Training mode: {mode}")
+    print(f"  Model: {model_name} layer {layer} ({site})")
     print(f"  dict_size: {dict_size}")
     print(
-        f"  Hyperparameters: c={tanh_c}, epsilon={epsilon}, lambda_P={lambda_P}, lambda_S={lambda_S}"
+        f"  JumpReLU params: c={tanh_c}, epsilon={epsilon}, lambda_P={lambda_P}, lambda_S={lambda_S}"
     )
+    if compare_with_topk:
+        print(f"  TopK params: top_k={top_k}, aux_penalty={aux_penalty}")
     print(f"  target_l0: {target_l0}, init_b_enc_from_data: {init_b_enc_from_data}")
     print(f"  batch_size: {batch_size}, lr: {lr}")
     print(f"  num_tokens: {num_tokens:,}")
@@ -643,12 +793,20 @@ def main(
     # Create activation store
     activation_store = ActivationsStore(model, cfg)
 
-    # Create SAE
-    sae = AnthropicJumpReLUSAE(cfg)
-    print(f"  SAE parameters: {sum(p.numel() for p in sae.parameters()):,}")
+    # Create JumpReLU SAE
+    jumprelu_sae = AnthropicJumpReLUSAE(cfg)
+    print(f"  JumpReLU SAE parameters: {sum(p.numel() for p in jumprelu_sae.parameters()):,}")
 
-    # Train
-    train_anthropic_sae(sae, activation_store, model, cfg)
+    if compare_with_topk:
+        # Create BatchTopK SAE with same architecture
+        topk_sae = BatchTopKSAE(cfg)
+        print(f"  BatchTopK SAE parameters: {sum(p.numel() for p in topk_sae.parameters()):,}")
+
+        # Train both in parallel
+        train_comparison(jumprelu_sae, topk_sae, activation_store, model, cfg)
+    else:
+        # Train JumpReLU only
+        train_anthropic_sae(jumprelu_sae, activation_store, model, cfg)
 
     print("Training complete!")
 
