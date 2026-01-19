@@ -12,12 +12,13 @@
         onClick: (key: string) => void;
         pageSize: number;
         direction: "positive" | "negative";
+        title?: string;
         // Optional: only needed for prompt-level attributions with wte/output pseudo-layers
         tokens?: string[];
         outputProbs?: Record<string, OutputProbEntry>;
     };
 
-    let { items, onClick, pageSize, direction, tokens, outputProbs }: Props = $props();
+    let { items, onClick, pageSize, direction, title, tokens, outputProbs }: Props = $props();
 
     // Extract component key (layer:cIdx) from either format
     function getComponentKey(key: string): string {
@@ -142,11 +143,18 @@
 </script>
 
 <div class="edge-attribution-list">
-    {#if totalPages > 1}
-        <div class="pagination">
-            <button onclick={() => currentPage--} disabled={currentPage === 0}>&lt;</button>
-            <span>{currentPage + 1} / {totalPages}</span>
-            <button onclick={() => currentPage++} disabled={currentPage >= totalPages - 1}>&gt;</button>
+    {#if title || totalPages > 1}
+        <div class="header-row">
+            {#if title}
+                <span class="list-title">{title}</span>
+            {/if}
+            {#if totalPages > 1}
+                <div class="pagination">
+                    <button onclick={() => currentPage--} disabled={currentPage === 0}>&lt;</button>
+                    <span>{currentPage + 1} / {totalPages}</span>
+                    <button onclick={() => currentPage++} disabled={currentPage >= totalPages - 1}>&gt;</button>
+                </div>
+            {/if}
         </div>
     {/if}
     <div class="items">
@@ -201,6 +209,18 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-1);
+    }
+
+    .header-row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .list-title {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        font-style: italic;
     }
 
     .items {

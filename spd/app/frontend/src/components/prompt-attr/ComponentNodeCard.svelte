@@ -214,7 +214,7 @@
             {incomingNegative}
             {outgoingPositive}
             {outgoingNegative}
-            pageSize={10}
+            pageSize={4}
             onClick={handleEdgeNodeClick}
             {tokens}
             {outputProbs}

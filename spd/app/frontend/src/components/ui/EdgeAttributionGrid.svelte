@@ -44,64 +44,68 @@
             {#if hasAnyIncoming}
                 <div class="edge-list-group">
                     <h5>{incomingLabel}</h5>
-                    {#if incomingPositive.length > 0}
-                        <div class="edge-list">
-                            <span class="edge-list-title">Positive</span>
-                            <EdgeAttributionList
-                                items={incomingPositive}
-                                {pageSize}
-                                {onClick}
-                                direction="positive"
-                                {tokens}
-                                {outputProbs}
-                            />
-                        </div>
-                    {/if}
-                    {#if incomingNegative.length > 0}
-                        <div class="edge-list">
-                            <span class="edge-list-title">Negative</span>
-                            <EdgeAttributionList
-                                items={incomingNegative}
-                                {pageSize}
-                                {onClick}
-                                direction="negative"
-                                {tokens}
-                                {outputProbs}
-                            />
-                        </div>
-                    {/if}
+                    <div class="pos-neg-row">
+                        {#if incomingPositive.length > 0}
+                            <div class="edge-list">
+                                <EdgeAttributionList
+                                    items={incomingPositive}
+                                    {pageSize}
+                                    {onClick}
+                                    direction="positive"
+                                    title="Positive"
+                                    {tokens}
+                                    {outputProbs}
+                                />
+                            </div>
+                        {/if}
+                        {#if incomingNegative.length > 0}
+                            <div class="edge-list">
+                                <EdgeAttributionList
+                                    items={incomingNegative}
+                                    {pageSize}
+                                    {onClick}
+                                    direction="negative"
+                                    title="Negative"
+                                    {tokens}
+                                    {outputProbs}
+                                />
+                            </div>
+                        {/if}
+                    </div>
                 </div>
             {/if}
 
             {#if hasAnyOutgoing}
                 <div class="edge-list-group">
                     <h5>{outgoingLabel}</h5>
-                    {#if outgoingPositive.length > 0}
-                        <div class="edge-list">
-                            <span class="edge-list-title">Positive</span>
-                            <EdgeAttributionList
-                                items={outgoingPositive}
-                                {pageSize}
-                                {onClick}
-                                direction="positive"
-                                {tokens}
-                                {outputProbs}
-                            />
-                        </div>
-                    {/if}
-                    {#if outgoingNegative.length > 0}
-                        <div class="edge-list">
-                            <span class="edge-list-title">Negative</span>
-                            <EdgeAttributionList
-                                items={outgoingNegative}
-                                {pageSize}
-                                {onClick}
-                                direction="negative"
-                                {tokens}
-                                {outputProbs}
-                            />
-                        </div>
-                    {/if}
+                    <div class="pos-neg-row">
+                        {#if outgoingPositive.length > 0}
+                            <div class="edge-list">
+                                <EdgeAttributionList
+                                    items={outgoingPositive}
+                                    {pageSize}
+                                    {onClick}
+                                    direction="positive"
+                                    title="Positive"
+                                    {tokens}
+                                    {outputProbs}
+                                />
+                            </div>
+                        {/if}
+                        {#if outgoingNegative.length > 0}
+                            <div class="edge-list">
+                                <EdgeAttributionList
+                                    items={outgoingNegative}
+                                    {pageSize}
+                                    {onClick}
+                                    direction="negative"
+                                    title="Negative"
+                                    {tokens}
+                                    {outputProbs}
+                                />
+                            </div>
+                        {/if}
+                    </div>
                 </div>
             {/if}
         </div>
@@ -134,15 +138,16 @@
         font-weight: 600;
     }
 
+    .pos-neg-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-3);
+    }
+
     .edge-list {
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: var(--space-1);
-    }
-
-    .edge-list-title {
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-        font-style: italic;
     }
 </style>
