@@ -23,11 +23,15 @@ loss_metric_configs:
 - coeff: 0.2
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
-  beta: 0.0
+  beta: 0.1
   p_anneal_start_frac: 0.0
   p_anneal_final_p: 0.5
   p_anneal_end_frac: 1.0
   eps: 1.0e-12
+- coeff: 1
+  classname: CIMaskedReconSubsetLoss
+  routing:
+    type: uniform_k_subset
 - coeff: 0.5
   classname: StochasticReconSubsetLoss
   routing:
@@ -46,7 +50,7 @@ loss_metric_configs:
   classname: FaithfulnessLoss
 output_loss_type: mem
 lr: 1e-3
-steps: 20000
+steps: 100000
 batch_size: 3200
 gradient_accumulation_steps: 1
 grad_clip_norm: null
