@@ -32,6 +32,7 @@ def submit_attributions(
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "48:00:00",
     max_concurrent: int | None = None,
+    job_suffix: str | None = None,
 ) -> None:
     """Submit multi-GPU attribution harvesting job to SLURM.
 
@@ -48,13 +49,15 @@ def submit_attributions(
         partition: SLURM partition name.
         time: Job time limit.
         max_concurrent: Maximum concurrent array tasks. If None, all run at once.
+        job_suffix: Optional suffix for SLURM job names (e.g., "1h" -> "spd-attr-1h").
     """
-    # Create git snapshot for reproducibility
     run_id = f"attr-{secrets.token_hex(4)}"
     snapshot_branch, commit_hash = create_git_snapshot(run_id)
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
-    # Generate commands for each worker
+    suffix = f"-{job_suffix}" if job_suffix else ""
+    array_job_name = f"spd-attr{suffix}"
+
     # SLURM arrays are 1-indexed, so task ID 1 -> rank 0, etc.
     worker_commands = []
     for rank in range(n_gpus):
@@ -69,9 +72,8 @@ def submit_attributions(
         )
         worker_commands.append(cmd)
 
-    # Submit array job for workers
     array_config = SlurmArrayConfig(
-        job_name="spd-attr",
+        job_name=array_job_name,
         partition=partition,
         n_gpus=1,  # 1 GPU per worker
         time=time,
