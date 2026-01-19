@@ -222,6 +222,7 @@ class DatasetAttributionStorage:
         if self._is_output_target(target_key):
             assert w_unembed is not None, "w_unembed required for output target queries"
             token_id = self._output_token_id(target_key)
+            w_unembed = w_unembed.to(self.source_to_out_residual.device)
             return (self.source_to_out_residual[src_idx] @ w_unembed[:, token_id]).item()
 
         tgt_idx = self._component_target_idx(target_key)
@@ -274,6 +275,7 @@ class DatasetAttributionStorage:
         if self._is_output_target(target_key):
             assert w_unembed is not None, "w_unembed required for output target queries"
             token_id = self._output_token_id(target_key)
+            w_unembed = w_unembed.to(self.source_to_out_residual.device)
             values = self.source_to_out_residual @ w_unembed[:, token_id]  # (n_sources,)
         else:
             tgt_idx = self._component_target_idx(target_key)
@@ -304,6 +306,7 @@ class DatasetAttributionStorage:
         if include_outputs:
             assert w_unembed is not None, "w_unembed required when include_outputs=True"
             # Compute attributions to all output tokens
+            w_unembed = w_unembed.to(self.source_to_out_residual.device)
             output_values = self.source_to_out_residual[src_idx, :] @ w_unembed  # (vocab,)
             all_values = torch.cat([comp_values, output_values])
 
@@ -337,5 +340,6 @@ class DatasetAttributionStorage:
     ) -> list[DatasetAttributionEntry]:
         """Get top-k output token targets this source attributes TO."""
         src_idx = self._source_idx(source_key)
+        w_unembed = w_unembed.to(self.source_to_out_residual.device)
         output_values = self.source_to_out_residual[src_idx, :] @ w_unembed  # (vocab,)
         return self._get_top_k(output_values, k, sign, self._output_target_idx_to_key)
