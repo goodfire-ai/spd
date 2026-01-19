@@ -296,3 +296,8 @@ def merge_attributions(wandb_path: str) -> None:
     merged.save(output_path)
     logger.info(f"Merged {len(rank_files)} files -> {output_path}")
     logger.info(f"Total: {total_batches} batches, {total_tokens:,} tokens")
+
+    # Clean up per-rank files after successful merge
+    for rank_file in rank_files:
+        rank_file.unlink()
+    logger.info(f"Deleted {len(rank_files)} per-rank files")
