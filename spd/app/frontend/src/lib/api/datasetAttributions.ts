@@ -15,7 +15,8 @@ export type DatasetAttributionMetadata = {
     available: boolean;
     nBatchesProcessed: number | null;
     nTokensProcessed: number | null;
-    nComponents: number | null;
+    nComponentLayerKeys: number | null;
+    vocabSize: number | null;
     ciThreshold: number | null;
 };
 
@@ -24,7 +25,8 @@ export async function getDatasetAttributionMetadata(): Promise<DatasetAttributio
         available: boolean;
         n_batches_processed: number | null;
         n_tokens_processed: number | null;
-        n_components: number | null;
+        n_component_layer_keys: number | null;
+        vocab_size: number | null;
         ci_threshold: number | null;
     }>(`${API_URL}/api/dataset_attributions/metadata`);
 
@@ -32,7 +34,8 @@ export async function getDatasetAttributionMetadata(): Promise<DatasetAttributio
         available: data.available,
         nBatchesProcessed: data.n_batches_processed,
         nTokensProcessed: data.n_tokens_processed,
-        nComponents: data.n_components,
+        nComponentLayerKeys: data.n_component_layer_keys,
+        vocabSize: data.vocab_size,
         ciThreshold: data.ci_threshold,
     };
 }

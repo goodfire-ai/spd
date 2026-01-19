@@ -7,7 +7,7 @@
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
     import DatasetAttributionsSection from "../ui/DatasetAttributionsSection.svelte";
-    import EdgeAttributionList from "../ui/EdgeAttributionList.svelte";
+    import EdgeAttributionGrid from "../ui/EdgeAttributionGrid.svelte";
     import InterpretationBadge from "../ui/InterpretationBadge.svelte";
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
@@ -206,73 +206,19 @@
 
     <!-- Prompt attributions -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}
-        <div class="edge-attributions-section">
-            <SectionHeader title="Prompt Attributions" />
-            <div class="edge-lists-grid">
-                {#if incomingPositive.length > 0 || incomingNegative.length > 0}
-                    <div class="edge-list-group">
-                        <h5>Incoming</h5>
-                        {#if incomingPositive.length > 0}
-                            <div class="edge-list">
-                                <span class="edge-list-title">Positive</span>
-                                <EdgeAttributionList
-                                    items={incomingPositive}
-                                    pageSize={10}
-                                    onClick={handleEdgeNodeClick}
-                                    direction="positive"
-                                    {tokens}
-                                    {outputProbs}
-                                />
-                            </div>
-                        {/if}
-                        {#if incomingNegative.length > 0}
-                            <div class="edge-list">
-                                <span class="edge-list-title">Negative</span>
-                                <EdgeAttributionList
-                                    items={incomingNegative}
-                                    pageSize={10}
-                                    onClick={handleEdgeNodeClick}
-                                    direction="negative"
-                                    {tokens}
-                                    {outputProbs}
-                                />
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
-                {#if outgoingPositive.length > 0 || outgoingNegative.length > 0}
-                    <div class="edge-list-group">
-                        <h5>Outgoing</h5>
-                        {#if outgoingPositive.length > 0}
-                            <div class="edge-list">
-                                <span class="edge-list-title">Positive</span>
-                                <EdgeAttributionList
-                                    items={outgoingPositive}
-                                    pageSize={10}
-                                    onClick={handleEdgeNodeClick}
-                                    direction="positive"
-                                    {tokens}
-                                    {outputProbs}
-                                />
-                            </div>
-                        {/if}
-                        {#if outgoingNegative.length > 0}
-                            <div class="edge-list">
-                                <span class="edge-list-title">Negative</span>
-                                <EdgeAttributionList
-                                    items={outgoingNegative}
-                                    pageSize={10}
-                                    onClick={handleEdgeNodeClick}
-                                    direction="negative"
-                                    {tokens}
-                                    {outputProbs}
-                                />
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
-            </div>
-        </div>
+        <EdgeAttributionGrid
+            title="Prompt Attributions"
+            incomingLabel="Incoming"
+            outgoingLabel="Outgoing"
+            {incomingPositive}
+            {incomingNegative}
+            {outgoingPositive}
+            {outgoingNegative}
+            pageSize={10}
+            onClick={handleEdgeNodeClick}
+            {tokens}
+            {outputProbs}
+        />
     {/if}
 
     <div class="token-stats-row">
@@ -362,43 +308,6 @@
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
-    }
-
-    .edge-attributions-section {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-    }
-
-    .edge-lists-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-4);
-    }
-
-    .edge-list-group {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-    }
-
-    .edge-list-group h5 {
-        margin: 0;
-        font-size: var(--text-sm);
-        color: var(--text-secondary);
-        font-weight: 600;
-    }
-
-    .edge-list {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-1);
-    }
-
-    .edge-list-title {
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-        font-style: italic;
     }
 
     .dataset-attributions-loading {

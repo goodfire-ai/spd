@@ -44,62 +44,78 @@ class DatasetAttributionConfig:
     ci_threshold: float
 
 
-def _build_component_keys(model: ComponentModel) -> list[str]:
-    """Build flat list of component keys ('layer:c_idx') in consistent order.
+def _build_component_layer_keys(model: ComponentModel) -> list[str]:
+    """Build list of component layer keys in canonical order.
 
-    Order: wte:0, component layers, output:0
+    Returns keys like ["h.0.attn.q_proj:0", "h.0.attn.q_proj:1", ...] for all layers.
+    wte and output keys are not included - they're constructed from vocab_size.
     """
-    component_keys = ["wte:0"]
-
+    component_layer_keys = []
     for layer in model.target_module_paths:
         n_components = model.module_to_c[layer]
         for c_idx in range(n_components):
-            component_keys.append(f"{layer}:{c_idx}")
-
-    component_keys.append("output:0")
-    return component_keys
+            component_layer_keys.append(f"{layer}:{c_idx}")
+    return component_layer_keys
 
 
-def _build_alive_mask(
+def _build_alive_masks(
     model: ComponentModel,
     run_id: str,
     ci_threshold: float,
-) -> Bool[Tensor, " n_components"]:
-    """Build mask of alive components (mean_ci > threshold).
+    n_components: int,
+    vocab_size: int,
+) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_targets"]]:
+    """Build masks of alive components (mean_ci > threshold) for sources and targets.
 
     Falls back to all-alive if harvest summary not available.
-    wte and output are always considered alive.
+
+    Index structure matches storage:
+    - Sources: [0, vocab_size) = wte tokens, [vocab_size, vocab_size + n_components) = component layers
+    - Targets: [0, n_components) = component layers, [n_components, n_components + vocab_size) = output tokens
     """
     summary = load_activation_contexts_summary(run_id)
 
-    n_component_layers = sum(model.module_to_c[layer] for layer in model.target_module_paths)
-    total_components = n_component_layers + 2  # +2 for wte and output
-    alive_mask = torch.zeros(total_components, dtype=torch.bool)
+    n_sources = vocab_size + n_components  # wte tokens + component layers
+    n_targets = n_components + vocab_size  # component layers + output tokens
 
-    # wte is always alive (index 0)
-    alive_mask[0] = True
-    idx = 1
+    source_alive = torch.zeros(n_sources, dtype=torch.bool)
+    target_alive = torch.zeros(n_targets, dtype=torch.bool)
+
+    # All wte tokens are always alive (source indices [0, vocab_size))
+    source_alive[:vocab_size] = True
 
     if summary is None:
         logger.warning("Harvest summary not available, using all components as alive")
-        alive_mask.fill_(True)
-        return alive_mask
+        source_alive.fill_(True)
+        target_alive.fill_(True)
+        return source_alive, target_alive
 
-    # Build index for each component layer
+    # Build masks for component layers
+    # Source indices [vocab_size, vocab_size + n_components) = component layers
+    # Target indices [0, n_components) = component layers
+    source_idx = vocab_size  # Start after wte tokens
+    target_idx = 0  # Component layers start at 0 in targets
+
     for layer in model.target_module_paths:
-        n_components = model.module_to_c[layer]
-        for c_idx in range(n_components):
+        n_layer_components = model.module_to_c[layer]
+        for c_idx in range(n_layer_components):
             component_key = f"{layer}:{c_idx}"
-            if component_key in summary and summary[component_key].mean_ci > ci_threshold:
-                alive_mask[idx] = True
-            idx += 1
+            is_alive = component_key in summary and summary[component_key].mean_ci > ci_threshold
+            source_alive[source_idx] = is_alive
+            target_alive[target_idx] = is_alive
+            source_idx += 1
+            target_idx += 1
 
-    # output is always alive (last index)
-    alive_mask[idx] = True
+    # All output tokens are always alive (target indices [n_components, end))
+    target_alive[n_components:] = True
 
-    n_alive = int(alive_mask.sum().item())
-    logger.info(f"Found {n_alive}/{total_components} alive components (ci > {ci_threshold})")
-    return alive_mask
+    n_source_alive = int(source_alive.sum().item())
+    n_target_alive = int(target_alive.sum().item())
+    logger.info(
+        f"Alive components: {n_source_alive}/{n_sources} sources, "
+        f"{n_target_alive}/{n_targets} targets (ci > {ci_threshold})"
+    )
+    return source_alive, target_alive
 
 
 def _get_output_path(run_id: str, rank: int | None) -> Path:
@@ -138,11 +154,26 @@ def harvest_attributions(
     model.eval()
 
     spd_config = run_info.config
-    train_loader, _ = train_loader_and_tokenizer(spd_config, config.batch_size)
+    train_loader, tokenizer = train_loader_and_tokenizer(spd_config, config.batch_size)
+    vocab_size_raw = tokenizer.vocab_size
+    assert isinstance(vocab_size_raw, int), (
+        f"Tokenizer vocab_size must be int, got {type(vocab_size_raw)}"
+    )
+    vocab_size: int = vocab_size_raw
+    logger.info(f"Vocab size: {vocab_size}")
 
-    # Build component keys and alive mask (includes wte and output pseudo-layers)
-    component_keys = _build_component_keys(model)
-    alive_mask = _build_alive_mask(model, run_id, config.ci_threshold).to(device)
+    # Build component keys and alive masks
+    component_layer_keys = _build_component_layer_keys(model)
+    n_components = len(component_layer_keys)
+    source_alive, target_alive = _build_alive_masks(
+        model, run_id, config.ci_threshold, n_components, vocab_size
+    )
+    source_alive = source_alive.to(device)
+    target_alive = target_alive.to(device)
+
+    n_sources = vocab_size + n_components
+    n_targets = n_components + vocab_size
+    logger.info(f"Component layers: {n_components}, Sources: {n_sources}, Targets: {n_targets}")
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
@@ -168,8 +199,10 @@ def harvest_attributions(
     harvester = AttributionHarvester(
         model=model,
         sources_by_target=sources_by_target,
-        component_keys=component_keys,
-        alive_mask=alive_mask,
+        n_components=n_components,
+        vocab_size=vocab_size,
+        source_alive=source_alive,
+        target_alive=target_alive,
         sampling=spd_config.sampling,
         device=device,
         show_progress=True,
@@ -198,7 +231,8 @@ def harvest_attributions(
 
     # Build and save storage
     storage = DatasetAttributionStorage(
-        component_keys=component_keys,
+        component_layer_keys=component_layer_keys,
+        vocab_size=vocab_size,
         attribution_matrix=normalized_matrix.cpu(),
         n_batches_processed=harvester.n_batches,
         n_tokens_processed=harvester.n_tokens,
@@ -230,7 +264,8 @@ def merge_attributions(wandb_path: str) -> None:
     # Validate consistency
     first = storages[0]
     for s in storages[1:]:
-        assert s.component_keys == first.component_keys, "Component keys mismatch"
+        assert s.component_layer_keys == first.component_layer_keys, "Component layer keys mismatch"
+        assert s.vocab_size == first.vocab_size, "Vocab size mismatch"
         assert s.ci_threshold == first.ci_threshold, "CI threshold mismatch"
 
     # Merge: de-normalize, sum, re-normalize
@@ -246,7 +281,8 @@ def merge_attributions(wandb_path: str) -> None:
 
     # Save merged result
     merged = DatasetAttributionStorage(
-        component_keys=first.component_keys,
+        component_layer_keys=first.component_layer_keys,
+        vocab_size=first.vocab_size,
         attribution_matrix=merged_matrix,
         n_batches_processed=total_batches,
         n_tokens_processed=total_tokens,

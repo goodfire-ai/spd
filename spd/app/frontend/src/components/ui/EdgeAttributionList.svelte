@@ -37,10 +37,10 @@
 
     // Get display info for a key - returns label and whether it's a token (pseudo-layer) node
     // Token nodes (wte/output) show the token string; component nodes show interpretation label
-    function getDisplayInfo(key: string): { label: string; isTokenNode: boolean } {
+    function getDisplayInfo(key: string): { label: string; isTokenNode: boolean; isOutputToken?: boolean } {
         const parts = key.split(":");
 
-        // Only check for token nodes if we have prompt data and it's a node key
+        // Handle prompt attributions with 3-part keys (layer:seq:cIdx)
         if (tokens && outputProbs && parts.length === 3) {
             const layer = parts[0];
             const seqIdx = parseInt(parts[1]);
@@ -63,6 +63,23 @@
                     throw new Error(`EdgeAttributionList: output node ${key} not found in outputProbs`);
                 }
                 return { label: entry.token, isTokenNode: true };
+            }
+        }
+
+        // Handle dataset attributions with 2-part keys (layer:cIdx)
+        if (parts.length === 2) {
+            const layer = parts[0];
+            const cIdx = parts[1];
+
+            // wte node in dataset attributions: single pseudo-component
+            if (layer === "wte") {
+                return { label: "Input Embeddings", isTokenNode: true };
+            }
+
+            // output nodes in dataset attributions: show token ID
+            // Format: output:tokenId where tokenId is the vocab index
+            if (layer === "output") {
+                return { label: `Token #${cIdx}`, isTokenNode: true, isOutputToken: true };
             }
         }
 

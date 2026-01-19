@@ -34,7 +34,8 @@ class DatasetAttributionMetadata(BaseModel):
     available: bool
     n_batches_processed: int | None
     n_tokens_processed: int | None
-    n_components: int | None
+    n_component_layer_keys: int | None
+    vocab_size: int | None
     ci_threshold: float | None
 
 
@@ -52,12 +53,21 @@ def _require_storage(loaded: DepLoadedRun) -> DatasetAttributionStorage:
     return loaded.harvest.dataset_attributions
 
 
-def _require_component(storage: DatasetAttributionStorage, component_key: str) -> None:
-    """Validate component exists in storage or raise 404."""
-    if not storage.has_component(component_key):
+def _require_source(storage: DatasetAttributionStorage, component_key: str) -> None:
+    """Validate component exists as a source or raise 404."""
+    if not storage.has_source(component_key):
         raise HTTPException(
             status_code=404,
-            detail=f"Component {component_key} not found in attributions",
+            detail=f"Component {component_key} not found as source in attributions",
+        )
+
+
+def _require_target(storage: DatasetAttributionStorage, component_key: str) -> None:
+    """Validate component exists as a target or raise 404."""
+    if not storage.has_target(component_key):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Component {component_key} not found as target in attributions",
         )
 
 
@@ -83,7 +93,8 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
             available=False,
             n_batches_processed=None,
             n_tokens_processed=None,
-            n_components=None,
+            n_component_layer_keys=None,
+            vocab_size=None,
             ci_threshold=None,
         )
 
@@ -92,7 +103,8 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
         available=True,
         n_batches_processed=storage.n_batches_processed,
         n_tokens_processed=storage.n_tokens_processed,
-        n_components=len(storage.component_keys),
+        n_component_layer_keys=storage.n_components,
+        vocab_size=storage.vocab_size,
         ci_threshold=storage.ci_threshold,
     )
 
@@ -106,11 +118,11 @@ def get_attribution_sources(
     k: Annotated[int, Query(ge=1)] = 10,
     sign: Literal["positive", "negative"] = "positive",
 ) -> list[DatasetAttributionEntry]:
-    """Get top-k components that attribute TO this component over the dataset."""
+    """Get top-k source components that attribute TO this target over the dataset."""
     storage = _require_storage(loaded)
-    component_key = f"{layer}:{component_idx}"
-    _require_component(storage, component_key)
-    return _to_api_entries(storage.get_top_sources(component_key, k, sign))
+    target_key = f"{layer}:{component_idx}"
+    _require_target(storage, target_key)
+    return _to_api_entries(storage.get_top_sources(target_key, k, sign))
 
 
 @router.get("/{layer}/{component_idx}/targets")
@@ -122,11 +134,11 @@ def get_attribution_targets(
     k: Annotated[int, Query(ge=1)] = 10,
     sign: Literal["positive", "negative"] = "positive",
 ) -> list[DatasetAttributionEntry]:
-    """Get top-k components this component attributes TO over the dataset."""
+    """Get top-k target components this source attributes TO over the dataset."""
     storage = _require_storage(loaded)
-    component_key = f"{layer}:{component_idx}"
-    _require_component(storage, component_key)
-    return _to_api_entries(storage.get_top_targets(component_key, k, sign))
+    source_key = f"{layer}:{component_idx}"
+    _require_source(storage, source_key)
+    return _to_api_entries(storage.get_top_targets(source_key, k, sign))
 
 
 @router.get("/between/{source_layer}/{source_idx}/{target_layer}/{target_idx}")
@@ -142,6 +154,6 @@ def get_attribution_between(
     storage = _require_storage(loaded)
     source_key = f"{source_layer}:{source_idx}"
     target_key = f"{target_layer}:{target_idx}"
-    _require_component(storage, source_key)
-    _require_component(storage, target_key)
+    _require_source(storage, source_key)
+    _require_target(storage, target_key)
     return storage.get_attribution(source_key, target_key)
