@@ -32,6 +32,7 @@ export * from "./graphs";
 export * from "./prompts";
 export * from "./activationContexts";
 export * from "./correlations";
+export * from "./datasetAttributions";
 export * from "./intervention";
 export * from "./dataset";
 export * from "./clusters";
