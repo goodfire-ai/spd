@@ -1,16 +1,10 @@
-"""CLI for dataset attribution computation.
+"""Internal worker script for dataset attribution computation.
 
-Usage:
-    # Single GPU
-    spd-attributions <wandb_path> --n_batches 1000
+Called by SLURM jobs submitted via spd-attributions. Not intended for direct use.
 
-    # Multi-GPU (launch workers separately, then merge)
-    spd-attributions <path> --n_batches 1000 --rank 0 --world_size 4 &
-    spd-attributions <path> --n_batches 1000 --rank 1 --world_size 4 &
-    spd-attributions <path> --n_batches 1000 --rank 2 --world_size 4 &
-    spd-attributions <path> --n_batches 1000 --rank 3 --world_size 4 &
-    wait
-    spd-attributions <path> --merge
+Usage (via SLURM):
+    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4
+    python -m spd.dataset_attributions.scripts.run <path> --merge
 """
 
 from spd.dataset_attributions.harvest import (

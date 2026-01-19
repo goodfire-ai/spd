@@ -249,6 +249,8 @@ def merge_attributions(wandb_path: str) -> None:
 
     Looks for dataset_attributions_rank_*.pt files and merges them into
     dataset_attributions.pt.
+
+    Uses streaming merge to avoid OOM - loads one file at a time instead of all at once.
     """
     _, _, run_id = parse_wandb_run_path(wandb_path)
     output_dir = get_attributions_dir(run_id)
@@ -258,25 +260,30 @@ def merge_attributions(wandb_path: str) -> None:
     assert rank_files, f"No rank files found in {output_dir}"
     logger.info(f"Found {len(rank_files)} rank files to merge")
 
-    # Load all storages
-    storages = [DatasetAttributionStorage.load(f) for f in rank_files]
+    # Load first file to get metadata and initialize accumulator
+    first = DatasetAttributionStorage.load(rank_files[0])
+    total_matrix = first.attribution_matrix * first.n_tokens_processed
+    total_tokens = first.n_tokens_processed
+    total_batches = first.n_batches_processed
+    logger.info(f"Loaded rank 0: {first.n_tokens_processed:,} tokens")
 
-    # Validate consistency
-    first = storages[0]
-    for s in storages[1:]:
-        assert s.component_layer_keys == first.component_layer_keys, "Component layer keys mismatch"
-        assert s.vocab_size == first.vocab_size, "Vocab size mismatch"
-        assert s.ci_threshold == first.ci_threshold, "CI threshold mismatch"
+    # Stream remaining files one at a time
+    for rank_file in tqdm.tqdm(rank_files[1:], desc="Merging rank files"):
+        storage = DatasetAttributionStorage.load(rank_file)
 
-    # Merge: de-normalize, sum, re-normalize
-    # Each storage has: normalized_matrix = accumulator / n_tokens
-    # To merge: total_accum = sum(s.matrix * s.n_tokens), then normalize by total_tokens
-    total_matrix = torch.stack([s.attribution_matrix * s.n_tokens_processed for s in storages]).sum(
-        dim=0
-    )
-    total_tokens = sum(s.n_tokens_processed for s in storages)
-    total_batches = sum(s.n_batches_processed for s in storages)
+        # Validate consistency
+        assert storage.component_layer_keys == first.component_layer_keys, (
+            "Component layer keys mismatch"
+        )
+        assert storage.vocab_size == first.vocab_size, "Vocab size mismatch"
+        assert storage.ci_threshold == first.ci_threshold, "CI threshold mismatch"
 
+        # Accumulate de-normalized values
+        total_matrix += storage.attribution_matrix * storage.n_tokens_processed
+        total_tokens += storage.n_tokens_processed
+        total_batches += storage.n_batches_processed
+
+    # Normalize by total tokens
     merged_matrix = total_matrix / total_tokens
 
     # Save merged result
