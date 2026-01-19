@@ -1,4 +1,11 @@
 <script lang="ts">
+    /**
+     * Dataset attributions for a single component.
+     *
+     * Terminology:
+     * - "Incoming" = sources that attribute TO this component (this component is the target)
+     * - "Outgoing" = targets that this component attributes TO (this component is the source)
+     */
     import type { EdgeAttribution } from "../../lib/promptAttributionsTypes";
     import type { DatasetAttributions } from "../../lib/useComponentData.svelte";
     import EdgeAttributionGrid from "./EdgeAttributionGrid.svelte";

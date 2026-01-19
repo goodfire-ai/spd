@@ -19,7 +19,7 @@ def submit_attributions(
     batch_size: int = 64,
     ci_threshold: float = 0.0,
     partition: str = DEFAULT_PARTITION_NAME,
-    time: str = "24:00:00",
+    time: str = "48:00:00",
     max_concurrent: int | None = None,
 ) -> None:
     """Submit multi-GPU dataset attribution harvesting to SLURM.

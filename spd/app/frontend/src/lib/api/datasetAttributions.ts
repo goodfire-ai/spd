@@ -40,6 +40,47 @@ export async function getDatasetAttributionMetadata(): Promise<DatasetAttributio
     };
 }
 
+export type ComponentAttributions = {
+    positiveSources: DatasetAttributionEntry[];
+    negativeSources: DatasetAttributionEntry[];
+    positiveTargets: DatasetAttributionEntry[];
+    negativeTargets: DatasetAttributionEntry[];
+};
+
+function mapEntries(
+    entries: Array<{ component_key: string; layer: string; component_idx: number; value: number }>,
+): DatasetAttributionEntry[] {
+    return entries.map((e) => ({
+        componentKey: e.component_key,
+        layer: e.layer,
+        componentIdx: e.component_idx,
+        value: e.value,
+    }));
+}
+
+export async function getComponentAttributions(
+    layer: string,
+    componentIdx: number,
+    k: number = 10,
+): Promise<ComponentAttributions> {
+    const url = new URL(`${API_URL}/api/dataset_attributions/${encodeURIComponent(layer)}/${componentIdx}`);
+    url.searchParams.set("k", String(k));
+
+    const data = await fetchJson<{
+        positive_sources: Array<{ component_key: string; layer: string; component_idx: number; value: number }>;
+        negative_sources: Array<{ component_key: string; layer: string; component_idx: number; value: number }>;
+        positive_targets: Array<{ component_key: string; layer: string; component_idx: number; value: number }>;
+        negative_targets: Array<{ component_key: string; layer: string; component_idx: number; value: number }>;
+    }>(url.toString());
+
+    return {
+        positiveSources: mapEntries(data.positive_sources),
+        negativeSources: mapEntries(data.negative_sources),
+        positiveTargets: mapEntries(data.positive_targets),
+        negativeTargets: mapEntries(data.negative_targets),
+    };
+}
+
 export async function getAttributionSources(
     layer: string,
     componentIdx: number,

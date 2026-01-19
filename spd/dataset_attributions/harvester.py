@@ -199,6 +199,8 @@ class AttributionHarvester:
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
         for i, t_idx in enumerate(alive_targets):
+            # Only retain the computation graph if we need more backward passes.
+            # See _process_output_targets for detailed explanation.
             is_last = is_last_layer and i == len(alive_targets) - 1
             grads = torch.autograd.grad(target_acts[t_idx], source_acts, retain_graph=not is_last)
             self._accumulate_to_column(
@@ -234,6 +236,10 @@ class AttributionHarvester:
         residual_attr = torch.zeros(self.n_sources, self.d_model, device=self.device)
 
         for d_idx in range(self.d_model):
+            # Only retain the computation graph if we need more backward passes.
+            # is_last is True only when: (1) this is the last target layer being processed
+            # AND (2) this is the last residual dimension. This allows the graph to be
+            # freed after the final backward pass, saving memory.
             is_last = is_last_layer and d_idx == self.d_model - 1
             grads = torch.autograd.grad(residual[d_idx], source_acts, retain_graph=not is_last)
             self._accumulate_to_column(

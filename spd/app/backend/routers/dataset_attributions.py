@@ -39,6 +39,15 @@ class DatasetAttributionMetadata(BaseModel):
     ci_threshold: float | None
 
 
+class ComponentAttributions(BaseModel):
+    """All attribution data for a single component (sources and targets, positive and negative)."""
+
+    positive_sources: list[DatasetAttributionEntry]
+    negative_sources: list[DatasetAttributionEntry]
+    positive_targets: list[DatasetAttributionEntry]
+    negative_targets: list[DatasetAttributionEntry]
+
+
 router = APIRouter(prefix="/api/dataset_attributions", tags=["dataset_attributions"])
 
 NOT_AVAILABLE_MSG = (
@@ -106,6 +115,44 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
         n_component_layer_keys=storage.n_components,
         vocab_size=storage.vocab_size,
         ci_threshold=storage.ci_threshold,
+    )
+
+
+@router.get("/{layer}/{component_idx}")
+@log_errors
+def get_component_attributions(
+    layer: str,
+    component_idx: int,
+    loaded: DepLoadedRun,
+    k: Annotated[int, Query(ge=1)] = 10,
+) -> ComponentAttributions:
+    """Get all attribution data for a component (sources and targets, positive and negative)."""
+    storage = _require_storage(loaded)
+    component_key = f"{layer}:{component_idx}"
+
+    # Component can be both a source and a target, so we need to check both
+    is_source = storage.has_source(component_key)
+    is_target = storage.has_target(component_key)
+
+    if not is_source and not is_target:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Component {component_key} not found in attributions",
+        )
+
+    return ComponentAttributions(
+        positive_sources=_to_api_entries(storage.get_top_sources(component_key, k, "positive"))
+        if is_target
+        else [],
+        negative_sources=_to_api_entries(storage.get_top_sources(component_key, k, "negative"))
+        if is_target
+        else [],
+        positive_targets=_to_api_entries(storage.get_top_targets(component_key, k, "positive"))
+        if is_source
+        else [],
+        negative_targets=_to_api_entries(storage.get_top_targets(component_key, k, "negative"))
+        if is_source
+        else [],
     )
 
 

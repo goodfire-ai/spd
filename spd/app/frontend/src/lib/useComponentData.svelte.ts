@@ -2,14 +2,13 @@ import { getContext } from "svelte";
 import type { Loadable } from ".";
 import {
     ApiError,
-    getAttributionSources,
-    getAttributionTargets,
+    getComponentAttributions,
     getComponentCorrelations,
     getComponentTokenStats,
     getInterpretationDetail,
     requestComponentInterpretation,
 } from "./api";
-import type { DatasetAttributionEntry, InterpretationDetail } from "./api";
+import type { ComponentAttributions, InterpretationDetail } from "./api";
 import type { ComponentCorrelations, ComponentDetail, TokenStats } from "./promptAttributionsTypes";
 import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./useRun.svelte";
 
@@ -20,12 +19,7 @@ const TOKEN_STATS_TOP_K = 50;
 /** Dataset attributions top-k */
 const DATASET_ATTRIBUTIONS_TOP_K = 20;
 
-export type DatasetAttributions = {
-    positiveSources: DatasetAttributionEntry[];
-    negativeSources: DatasetAttributionEntry[];
-    positiveTargets: DatasetAttributionEntry[];
-    negativeTargets: DatasetAttributionEntry[];
-};
+export type { ComponentAttributions as DatasetAttributions };
 
 export type ComponentCoords = { layer: string; cIdx: number };
 
@@ -43,7 +37,7 @@ export function useComponentData() {
     // null inside Loadable means "no data for this component" (404)
     let correlations = $state<Loadable<ComponentCorrelations | null>>({ status: "uninitialized" });
     let tokenStats = $state<Loadable<TokenStats | null>>({ status: "uninitialized" });
-    let datasetAttributions = $state<Loadable<DatasetAttributions | null>>({ status: "uninitialized" });
+    let datasetAttributions = $state<Loadable<ComponentAttributions | null>>({ status: "uninitialized" });
 
     let interpretationDetail = $state<Loadable<InterpretationDetail | null>>({ status: "uninitialized" });
 
@@ -114,18 +108,10 @@ export function useComponentData() {
             });
 
         // Fetch dataset attributions (404 = not available)
-        Promise.all([
-            getAttributionSources(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K, "positive"),
-            getAttributionSources(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K, "negative"),
-            getAttributionTargets(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K, "positive"),
-            getAttributionTargets(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K, "negative"),
-        ])
-            .then(([positiveSources, negativeSources, positiveTargets, negativeTargets]) => {
+        getComponentAttributions(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K)
+            .then((data) => {
                 if (isStale()) return;
-                datasetAttributions = {
-                    status: "loaded",
-                    data: { positiveSources, negativeSources, positiveTargets, negativeTargets },
-                };
+                datasetAttributions = { status: "loaded", data };
             })
             .catch((error) => {
                 if (isStale()) return;
