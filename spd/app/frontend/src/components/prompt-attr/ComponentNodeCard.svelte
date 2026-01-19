@@ -276,8 +276,6 @@
             <StatusText>No correlations available.</StatusText>
         {/if}
     </div>
-
-
 </div>
 
 <style>

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import type { EdgeAttribution, OutputProbEntry } from "../../lib/promptAttributionsTypes";
+    import type { EdgeAttribution, OutputProbEntry, TokenInfo } from "../../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../prompt-attr/graphUtils";
@@ -76,10 +76,15 @@
                 return { label: "Input Embeddings", isTokenNode: true };
             }
 
-            // output nodes in dataset attributions: show token ID
+            // output nodes in dataset attributions: show token string
             // Format: output:tokenId where tokenId is the vocab index
             if (layer === "output") {
-                return { label: `Token #${cIdx}`, isTokenNode: true, isOutputToken: true };
+                const vocabIdx = parseInt(cIdx);
+                // Tokens are guaranteed loaded when run is loaded (see useRun.svelte.ts)
+                const tokens = (runState.allTokens as { status: "loaded"; data: TokenInfo[] }).data;
+                const tokenInfo = tokens.find((t) => t.id === vocabIdx);
+                if (!tokenInfo) throw new Error(`Token not found for vocab index ${vocabIdx}`);
+                return { label: tokenInfo.string, isTokenNode: true, isOutputToken: true };
             }
         }
 
