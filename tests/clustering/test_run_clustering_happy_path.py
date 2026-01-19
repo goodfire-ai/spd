@@ -38,6 +38,6 @@ def test_run_clustering_happy_path(monkeypatch: Any):
                 plot=100,
                 artifact=100,
             ),
-            dataset_streaming=True,  # tests in CI very slow without this, see https://github.com/goodfire-ai/spd/pull/199
+            dataset_streaming=False,  # resid_mlp doesn't support streaming
         )
         main(config)
