@@ -251,9 +251,10 @@ def merge_attributions(wandb_path: str) -> None:
     logger.info(f"Found {len(rank_files)} rank files to merge")
 
     # Load first file to get metadata and initialize accumulators
+    # Use double precision for accumulation to prevent precision loss with billions of tokens
     first = DatasetAttributionStorage.load(rank_files[0])
-    total_comp = first.source_to_component * first.n_tokens_processed
-    total_out_residual = first.source_to_out_residual * first.n_tokens_processed
+    total_comp = (first.source_to_component * first.n_tokens_processed).double()
+    total_out_residual = (first.source_to_out_residual * first.n_tokens_processed).double()
     total_tokens = first.n_tokens_processed
     total_batches = first.n_batches_processed
     logger.info(f"Loaded rank 0: {first.n_tokens_processed:,} tokens")
@@ -276,9 +277,9 @@ def merge_attributions(wandb_path: str) -> None:
         total_tokens += storage.n_tokens_processed
         total_batches += storage.n_batches_processed
 
-    # Normalize by total tokens
-    merged_comp = total_comp / total_tokens
-    merged_out_residual = total_out_residual / total_tokens
+    # Normalize by total tokens and convert back to float32 for storage
+    merged_comp = (total_comp / total_tokens).float()
+    merged_out_residual = (total_out_residual / total_tokens).float()
 
     # Save merged result
     merged = DatasetAttributionStorage(
