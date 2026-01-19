@@ -21,6 +21,7 @@ def submit_attributions(
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "48:00:00",
     max_concurrent: int | None = None,
+    job_suffix: str | None = None,
 ) -> None:
     """Submit multi-GPU dataset attribution harvesting to SLURM.
 
@@ -40,6 +41,7 @@ def submit_attributions(
         partition: SLURM partition name.
         time: Job time limit for worker jobs.
         max_concurrent: Maximum concurrent array tasks. If None, all run at once.
+        job_suffix: Optional suffix for SLURM job names (e.g., "v2" -> "spd-attr-v2").
     """
     from spd.dataset_attributions.scripts.run_slurm import submit_attributions as impl
 
@@ -52,6 +54,7 @@ def submit_attributions(
         partition=partition,
         time=time,
         max_concurrent=max_concurrent,
+        job_suffix=job_suffix,
     )
 
 
