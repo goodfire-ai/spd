@@ -24,6 +24,7 @@
     $effect(() => {
         if (runState.run?.status === "loaded" && runState.run.data) {
             showRunSelector = false;
+            // Load activation contexts (fire-and-forget with error handling)
             loadActivationContextsSummary();
         }
     });
@@ -33,15 +34,28 @@
     }
 
     async function loadActivationContextsSummary() {
-        activationContextsSummary = await api.getActivationContextsSummary();
+        try {
+            activationContextsSummary = await api.getActivationContextsSummary();
+        } catch (error) {
+            // API returns 404 if no harvest data exists - this is expected
+            // Just leave activationContextsSummary as null to show the empty state
+            console.warn("Failed to load activation contexts:", error);
+            activationContextsSummary = null;
+        }
     }
 
     function handleChangeRun() {
         showRunSelector = true;
     }
 
-    onMount(() => {
-        runState.syncStatus();
+    onMount(async () => {
+        // Sync with backend state - if a run is already loaded, this will trigger the $effect
+        await runState.syncStatus();
+        // If run was already loaded, load activation contexts now
+        // (handles reconnection to running backend)
+        if (runState.run?.status === "loaded" && runState.run.data) {
+            loadActivationContextsSummary();
+        }
         api.getWhoami().then((user) => (backendUser = { status: "loaded", data: user }));
     });
 
