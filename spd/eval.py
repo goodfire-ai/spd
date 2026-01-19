@@ -128,6 +128,7 @@ def init_metric(
                 model=model,
                 device=device,
                 pnorm=cfg.pnorm,
+                beta=cfg.beta,
                 p_anneal_start_frac=cfg.p_anneal_start_frac,
                 p_anneal_final_p=cfg.p_anneal_final_p,
                 p_anneal_end_frac=cfg.p_anneal_end_frac,

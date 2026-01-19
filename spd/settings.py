@@ -2,10 +2,12 @@ import os
 from pathlib import Path
 
 REPO_ROOT = (
-    Path(os.environ["GITHUB_WORKSPACE"]) if os.environ.get("CI") else Path(__file__).parent.parent
+    Path(os.environ["GITHUB_WORKSPACE"])
+    if ("CI" in os.environ and "GITHUB_WORKSPACE" in os.environ)
+    else Path(__file__).parent.parent
 )
 
-CLUSTER_BASE_PATH = Path("/mnt/polished-lake/spd")
+CLUSTER_BASE_PATH = Path("/mnt/polished-lake/artifacts/mechanisms/spd")
 ON_CLUSTER = CLUSTER_BASE_PATH.exists()
 
 # Base directory for SPD outputs (runs, logs, scripts, etc.)

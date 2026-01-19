@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from simple_stories_train.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 
 from spd.app.backend.compute import get_sources_by_target
-from spd.app.backend.database import LocalAttrDB
+from spd.app.backend.database import PromptAttrDB
 from spd.app.backend.routers import graphs as graphs_router
 from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
@@ -57,7 +57,7 @@ def app_with_state():
         mock.patch.object(prompts_router, "DEVICE", DEVICE),
         mock.patch.object(runs_router, "DEVICE", DEVICE),
     ):
-        db = LocalAttrDB(db_path=Path(":memory:"), check_same_thread=False)
+        db = PromptAttrDB(db_path=Path(":memory:"), check_same_thread=False)
         db.init_schema()
 
         run_id = db.create_run("wandb:test/test/runs/testrun1")
@@ -321,6 +321,7 @@ def test_compute_optimized_stream(app_with_prompt: tuple[TestClient, int]):
             "ce_loss_coeff": 1.0,
             "steps": 5,  # Very few steps for testing
             "pnorm": 0.5,
+            "beta": 0.5,
             "normalize": "none",
             "ci_threshold": 0.0,
             "output_prob_threshold": 0.01,

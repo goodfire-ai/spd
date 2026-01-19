@@ -1,4 +1,4 @@
-/** Types for the local attributions visualizer */
+/** Types for the prompt attributions visualizer */
 
 // Server API types
 
@@ -22,19 +22,27 @@ export type EdgeAttribution = {
 };
 
 export type OutputProbEntry = {
-    prob: number;
+    prob: number; // CI-masked (SPD model) probability
+    logit: number; // CI-masked (SPD model) raw logit
+    target_prob: number; // Target model probability
+    target_logit: number; // Target model raw logit
     token: string;
 };
 
+export type GraphType = "standard" | "optimized" | "manual";
+
 export type GraphData = {
     id: number;
+    graphType: GraphType;
     tokens: string[];
     edges: Edge[];
     edgesBySource: Map<string, Edge[]>; // nodeKey -> edges where this node is source
     edgesByTarget: Map<string, Edge[]>; // nodeKey -> edges where this node is target
     outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
     nodeCiVals: Record<string, number>; // node key -> CI value (or output prob for output nodes or 1 for wte node)
+    nodeSubcompActs: Record<string, number>; // node key -> subcomponent activation (v_i^T @ a)
     maxAbsAttr: number; // max absolute edge value
+    maxAbsSubcompAct: number; // max absolute subcomponent activation for normalization
     l0_total: number; // total active components at current CI threshold
     optimization?: OptimizationResult;
 };
@@ -66,10 +74,13 @@ export function buildEdgeIndexes(edges: Edge[]): {
     return { edgesBySource, edgesByTarget };
 }
 
+export type MaskType = "stochastic" | "ci";
+
 export type OptimizationResult = {
     imp_min_coeff: number;
     steps: number;
     pnorm: number;
+    beta: number;
     // CE loss params (optional - required together)
     label_token: number | null;
     label_str: string | null;
@@ -77,6 +88,7 @@ export type OptimizationResult = {
     label_prob: number | null;
     // KL loss param (optional)
     kl_loss_coeff: number | null;
+    mask_type: MaskType;
 };
 
 export type ComponentSummary = {
@@ -92,6 +104,7 @@ export type ComponentDetail = {
     mean_ci: number;
     example_tokens: string[][];
     example_ci: number[][];
+    example_component_acts: number[][];
 };
 
 export type CorrelatedComponent = {
@@ -183,6 +196,7 @@ export type LayoutResult = {
 export type ComponentProbeResult = {
     tokens: string[];
     ci_values: number[];
+    subcomp_acts: number[];
 };
 
 // Display name mapping for special layers
@@ -214,9 +228,5 @@ export function isInterventableNode(nodeKey: string): boolean {
 }
 
 export function filterInterventableNodes(nodeKeys: Iterable<string>): Set<string> {
-    const result = new Set<string>();
-    for (const key of nodeKeys) {
-        if (isInterventableNode(key)) result.add(key);
-    }
-    return result;
+    return new Set([...nodeKeys].filter(isInterventableNode));
 }

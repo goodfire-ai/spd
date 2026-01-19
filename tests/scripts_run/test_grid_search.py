@@ -323,11 +323,17 @@ class TestConfigIntegration:
             "C": 10,
             "n_mask_samples": 1,
             "target_module_patterns": ["linear1"],
+            "ci_config": {
+                "mode": "layerwise",
+                "fn_type": "mlp",
+                "hidden_dims": [16],
+            },
             "loss_metric_configs": [
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
                     "pnorm": 1.0,
+                    "beta": 0.5,
                     "eps": 1e-12,
                 },
                 {
@@ -377,11 +383,17 @@ class TestConfigIntegration:
             "C": 10,
             "n_mask_samples": 1,
             "target_module_patterns": ["transformer"],
+            "ci_config": {
+                "mode": "layerwise",
+                "fn_type": "vector_mlp",
+                "hidden_dims": [12],
+            },
             "loss_metric_configs": [
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
                     "pnorm": 1.0,
+                    "beta": 0.5,
                     "eps": 1e-12,
                 }
             ],
@@ -442,11 +454,17 @@ class TestConfigIntegration:
             "C": 10,
             "n_mask_samples": 1,
             "target_module_patterns": ["linear1"],
+            "ci_config": {
+                "mode": "layerwise",
+                "fn_type": "mlp",
+                "hidden_dims": [16],
+            },
             "loss_metric_configs": [
                 {
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.5,  # Will be overridden
                     "pnorm": 1.0,
+                    "beta": 0.5,
                     "eps": 1e-12,
                 }
             ],

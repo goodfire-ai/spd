@@ -116,14 +116,14 @@ class TestImportanceMinimalityLoss:
             "layer2": torch.tensor([[0.5, 1.5]], dtype=torch.float32),
         }
         # With eps=0, p=1, no annealing:
-        # layer1: (1+0)^1 + (2+0)^1 + (3+0)^1 = 6
-        # layer2: (0.5+0)^1 + (1.5+0)^1 = 2
-        # total = 8, n_params = 1 (batch dimension)
-        # loss = 8 / 1 = 8.0
+        # layer1: per_component_mean = [1, 2, 3], sum = 6
+        # layer2: per_component_mean = [0.5, 1.5], sum = 2
+        # total = 8
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
             pnorm=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
@@ -136,12 +136,12 @@ class TestImportanceMinimalityLoss:
         ci_upper_leaky = {
             "layer1": torch.tensor([[2.0, 3.0]], dtype=torch.float32),
         }
-        # L2: (2^2 + 3^2) = 4 + 9 = 13
-        # n_params = 1, loss = 13.0
+        # L2: per_component_mean = [4, 9], sum = 13
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
             pnorm=2.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
@@ -156,17 +156,18 @@ class TestImportanceMinimalityLoss:
             "layer1": torch.tensor([[0.0, 1.0]], dtype=torch.float32),
         }
         eps = 1e-6
-        # With p=0.5: (0+eps)^0.5 + (1+eps)^0.5
+        # With p=0.5: per_component_mean = [(0+eps)^0.5, (1+eps)^0.5]
         result = importance_minimality_loss(
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
             pnorm=0.5,
+            beta=0.0,
             eps=eps,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
             p_anneal_end_frac=1.0,
         )
-        expected = ((0.0 + eps) ** 0.5 + (1.0 + eps) ** 0.5) / 1
+        expected = (0.0 + eps) ** 0.5 + (1.0 + eps) ** 0.5
         assert torch.allclose(result, torch.tensor(expected))
 
     def test_p_annealing_before_start(self: object) -> None:
@@ -176,6 +177,7 @@ class TestImportanceMinimalityLoss:
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.3,
             pnorm=2.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=0.5,
             p_anneal_final_p=1.0,
@@ -194,6 +196,7 @@ class TestImportanceMinimalityLoss:
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.25,
             pnorm=2.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=0.0,
             p_anneal_final_p=1.0,
@@ -210,6 +213,7 @@ class TestImportanceMinimalityLoss:
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.9,
             pnorm=2.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=0.0,
             p_anneal_final_p=1.0,
@@ -226,6 +230,7 @@ class TestImportanceMinimalityLoss:
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.9,
             pnorm=2.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=0.0,
             p_anneal_final_p=None,
@@ -245,12 +250,15 @@ class TestImportanceMinimalityLoss:
             ci_upper_leaky=ci_upper_leaky,
             current_frac_of_training=0.0,
             pnorm=1.0,
+            beta=0.0,
             eps=0.0,
             p_anneal_start_frac=1.0,
             p_anneal_final_p=None,
             p_anneal_end_frac=1.0,
         )
-        # layer1: 1+1 = 2, layer2: 2+2 = 4, total = 6, n_params = 1
+        # layer1: per_component_mean = [1, 1], sum = 2
+        # layer2: per_component_mean = [2, 2], sum = 4
+        # total = 6
         expected = torch.tensor(6.0)
         assert torch.allclose(result, expected)
 

@@ -4,14 +4,14 @@ Web-based visualization and analysis tool for exploring neural network component
 
 - **Backend**: Python FastAPI (`backend/`)
 - **Frontend**: Svelte 5 + TypeScript (`frontend/`)
-- **Database**: SQLite at `.data/app/local_attr.db` (relative to repo root)
+- **Database**: SQLite at `.data/app/prompt_attr.db` (relative to repo root)
 
 ## Project Context
 
 This is a **rapidly iterated research tool**. Key implications:
 
 - **Please do not code for backwards compatibility**: Schema changes don't need migrations, expect state can be deleted, etc.
-- **Database is disposable**: Delete `.data/app/local_attr.db` if schema changes break things
+- **Database is disposable**: Delete `.data/app/prompt_attr.db` if schema changes break things
 - **Prefer simplicity**: Avoid over-engineering for hypothetical future needs
 - **Fail loud and fast**: The users are a small team of highly technical people. Errors are good. We want to know immediately if something is wrong. No soft failing, assert, assert, assert
 
@@ -47,7 +47,8 @@ backend/
     ├── intervention.py    # Selective component activation
     ├── correlations.py    # Component correlations + token stats + interpretations
     ├── clusters.py        # Component clustering
-    └── dataset_search.py  # SimpleStories dataset search
+    ├── dataset_search.py  # SimpleStories dataset search
+    └── agents.py          # Various useful endpoints that AI agents should look at when helping 
 ```
 
 Note: Activation contexts, correlations, and token stats are now loaded from pre-harvested data (see `spd/harvest/`). The app no longer computes these on-the-fly.
@@ -69,7 +70,7 @@ frontend/src/
 │   │   ├── dataset.ts            # Dataset search
 │   │   └── clusters.ts           # Component clustering
 │   ├── index.ts                  # Shared utilities (Loadable<T> pattern)
-│   ├── localAttributionsTypes.ts # TypeScript types
+│   ├── promptAttributionsTypes.ts # TypeScript types
 │   ├── interventionTypes.ts
 │   ├── colors.ts                 # Color utilities
 │   ├── registry.ts               # Component registry
@@ -78,8 +79,8 @@ frontend/src/
 │   └── clusterMapping.svelte.ts  # Cluster mapping state
 └── components/
     ├── RunSelector.svelte            # Run selection screen
-    ├── LocalAttributionsTab.svelte   # Main analysis container
-    ├── LocalAttributionsGraph.svelte # SVG graph visualization
+    ├── PromptAttributionsTab.svelte   # Main analysis container
+    ├── PromptAttributionsGraph.svelte # SVG graph visualization
     ├── ActivationContextsTab.svelte  # Component firing patterns tab
     ├── ActivationContextsViewer.svelte
     ├── ActivationContextsPagedTable.svelte
@@ -88,7 +89,7 @@ frontend/src/
     ├── ClusterPathInput.svelte       # Cluster path selector
     ├── ComponentProbeInput.svelte    # Component probe UI
     ├── TokenHighlights.svelte        # Token highlighting
-    ├── local-attr/
+    ├── prompt-attr/
     │   ├── InterventionsView.svelte      # Selective activation UI
     │   ├── StagedNodesPanel.svelte       # Pinned nodes list
     │   ├── NodeTooltip.svelte            # Hover card
@@ -138,7 +139,7 @@ Node keys follow the format `"layer:seq:cIdx"` where:
 These appear in attribution graphs but **cannot be intervened on**.
 Only internal layers (attn/mlp projections) support selective activation.
 
-Helper: `isInterventableNode()` in `localAttributionsTypes.ts`
+Helper: `isInterventableNode()` in `promptAttributionsTypes.ts`
 
 ### Backend Types (`compute.py`)
 
@@ -149,11 +150,11 @@ Edge(source: Node, target: Node, strength: float, is_cross_seq: bool)
 # strength = gradient * activation
 # is_cross_seq = True for k/v → o_proj (attention pattern)
 
-LocalAttributionResult(edges: list[Edge], output_probs: Tensor[seq, vocab], node_ci_vals: dict[str, float])
+PromptAttributionResult(edges: list[Edge], output_probs: Tensor[seq, vocab], node_ci_vals: dict[str, float])
 # node_ci_vals maps "layer:seq:c_idx" → CI value
 ```
 
-### Frontend Types (`localAttributionsTypes.ts`)
+### Frontend Types (`promptAttributionsTypes.ts`)
 
 ```typescript
 GraphData = {
@@ -176,8 +177,8 @@ GraphData = {
 
 **Entry points**:
 
-- `compute_local_attributions()` - Uses model's natural CI values
-- `compute_local_attributions_optimized()` - Sparse CI optimization
+- `compute_prompt_attributions()` - Uses model's natural CI values
+- `compute_prompt_attributions_optimized()` - Sparse CI optimization
 
 **Algorithm** (`compute_edges_from_ci`):
 
@@ -232,7 +233,7 @@ POST /api/runs/load(wandb_path)
 
 ```
 POST /api/graphs
-  → compute_local_attributions()
+  → compute_prompt_attributions()
   → Stream progress: {type: "progress", current, total, stage}
   ← {type: "complete", data: GraphData}
 ```
@@ -276,7 +277,7 @@ GET /api/dataset/results?page=1&page_size=20
 
 ## Database Schema
 
-Located at `.data/app/local_attr.db`. Delete this file if schema changes cause issues.
+Located at `.data/app/prompt_attr.db`. Delete this file if schema changes cause issues.
 
 | Table              | Key                                | Purpose                                           |
 | ------------------ | ---------------------------------- | ------------------------------------------------- |
@@ -295,7 +296,7 @@ Note: Activation contexts, correlations, token stats, and interpretations are lo
 
 ```python
 StateManager.get() → AppState:
-  - db: LocalAttrDB (always available)
+  - db: PromptAttrDB (always available)
   - run_state: RunState | None
       - model: ComponentModel
       - tokenizer: PreTrainedTokenizerBase
@@ -311,7 +312,7 @@ HarvestCache:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
   - interpretations: dict[str, InterpretationResult] | None
 ```
 
-### Frontend (`LocalAttributionsTab.svelte`)
+### Frontend (`PromptAttributionsTab.svelte`)
 
 - `promptCards` - All open prompt analysis cards
 - `activeCard` / `activeGraph` - Current selection
@@ -323,6 +324,9 @@ HarvestCache:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
 ## Svelte 5 Conventions
 
 - Use `SvelteSet`/`SvelteMap` from `svelte/reactivity` instead of `Set`/`Map` - they're reactive without `$state()` wrapping
+- **Isolate nullability at higher levels**: Handle loading/error/null states in wrapper components so inner components can assume data is present. Pass loaded data as props rather than having children read from context and check status. This avoids optional chaining and null checks scattered throughout the codebase.
+  - `RunView` guards with `{#if runState.prompts.status === "loaded" && ...}` and passes `.data` as props to `PromptAttributionsTab` - the status check both guards rendering and narrows the type
+  - `ActivationContextsTab` loads data and shows loading state, then renders `ActivationContextsViewer` only when data is ready
 
 ---
 

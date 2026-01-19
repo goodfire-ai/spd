@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { OutputProbEntry } from "../../lib/localAttributionsTypes";
+    import type { OutputProbEntry } from "../../lib/promptAttributionsTypes";
     import { getOutputHeaderColor } from "../../lib/colors";
 
     type Props = {
@@ -30,6 +30,9 @@
             .map(([key, entry]) => ({
                 seqIdx: parseInt(key.split(":")[0]),
                 prob: entry.prob,
+                logit: entry.logit,
+                target_prob: entry.target_prob,
+                target_logit: entry.target_logit,
                 token: entry.token,
             }))
             .sort((a, b) => b.prob - a.prob);
@@ -42,7 +45,14 @@
     {#if singlePosEntry}
         <div class="output-header" style="background: {getOutputHeaderColor(singlePosEntry.prob)};">
             <div class="output-token">"{escapeHtml(singlePosEntry.token)}"</div>
-            <div class="output-prob">{(singlePosEntry.prob * 100).toFixed(1)}% probability</div>
+            <div class="output-prob">
+                CI-masked: {(singlePosEntry.prob * 100).toFixed(1)}% (logit: {singlePosEntry.logit.toFixed(2)})
+            </div>
+            <div class="output-prob">
+                Target: {(singlePosEntry.target_prob * 100).toFixed(1)}% (logit: {singlePosEntry.target_logit.toFixed(
+                    2,
+                )})
+            </div>
         </div>
         <p class="stats">
             <strong>Position:</strong>
@@ -53,11 +63,23 @@
     {:else if allPositions}
         <p><strong>"{allPositions[0].token}"</strong></p>
         <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Pos</th>
+                    <th>CI-masked</th>
+                    <th>Logit</th>
+                    <th>Target</th>
+                    <th>Logit</th>
+                </tr>
+            </thead>
             <tbody>
                 {#each allPositions as pos (pos.seqIdx)}
                     <tr>
-                        <td>Pos {pos.seqIdx}</td>
+                        <td>{pos.seqIdx}</td>
                         <td>{(pos.prob * 100).toFixed(2)}%</td>
+                        <td>{pos.logit.toFixed(2)}</td>
+                        <td>{(pos.target_prob * 100).toFixed(2)}%</td>
+                        <td>{pos.target_logit.toFixed(2)}</td>
                     </tr>
                 {/each}
             </tbody>
@@ -112,6 +134,19 @@
         border-collapse: collapse;
     }
 
+    .data-table th {
+        padding: var(--space-1) var(--space-2);
+        color: var(--text-muted);
+        font-weight: 500;
+        font-size: var(--text-xs);
+        text-align: left;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .data-table th:not(:first-child) {
+        text-align: right;
+    }
+
     .data-table td {
         padding: var(--space-1) var(--space-2);
         border-bottom: 1px solid var(--border-subtle);
@@ -121,7 +156,7 @@
         color: var(--text-primary);
     }
 
-    .data-table td:last-child {
+    .data-table td:not(:first-child) {
         color: var(--text-secondary);
         text-align: right;
     }
