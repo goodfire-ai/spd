@@ -120,18 +120,13 @@ class GlobalSharedMLPCiFn(nn.Module):
     ):
         super().__init__()
 
-        # Store layer order for consistent concatenation/splitting (sorted for determinism)
         self.layer_order = sorted(layer_configs.keys())
         self.layer_configs = layer_configs
+        self.split_sizes = [layer_configs[name][1] for name in self.layer_order]
 
-        # Calculate dimensions
         total_input_dim = sum(input_dim for input_dim, _ in layer_configs.values())
         total_C = sum(C for _, C in layer_configs.values())
 
-        # Store split sizes for output splitting (C values in layer order)
-        self.split_sizes = [layer_configs[name][1] for name in self.layer_order]
-
-        # Build MLP: total_input_dim -> hidden_dims -> total_C
         self.layers = nn.Sequential()
         for i in range(len(hidden_dims)):
             in_dim = total_input_dim if i == 0 else hidden_dims[i - 1]
@@ -146,26 +141,9 @@ class GlobalSharedMLPCiFn(nn.Module):
         self,
         input_acts: dict[str, Float[Tensor, "... d_in"]],
     ) -> dict[str, Float[Tensor, "... C"]]:
-        # Concatenate all inputs along last dimension in layer order
         inputs_list = [input_acts[name] for name in self.layer_order]
         concatenated = torch.cat(inputs_list, dim=-1)
-
-        # Assert concatenated input has expected dimension
-        expected_input_dim = sum(self.layer_configs[name][0] for name in self.layer_order)
-        assert concatenated.shape[-1] == expected_input_dim, (
-            f"Expected input dim {expected_input_dim}, got {concatenated.shape[-1]}"
-        )
-
-        # Run through MLP
         output = self.layers(concatenated)
-
-        # Assert output has expected total C dimension
-        expected_total_c = sum(self.split_sizes)
-        assert output.shape[-1] == expected_total_c, (
-            f"Expected output dim {expected_total_c}, got {output.shape[-1]}"
-        )
-
-        # Split output back into per-layer dict
         split_outputs = torch.split(output, self.split_sizes, dim=-1)
         return {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
 

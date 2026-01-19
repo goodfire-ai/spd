@@ -33,32 +33,20 @@ from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 def _validate_checkpoint_ci_config_compatibility(
     state_dict: dict[str, Tensor], ci_config: CiConfig
 ) -> None:
-    """Validate that checkpoint CI weights match the config CI mode.
-
-    Fails fast with a clear error message if there's a mismatch between:
-    - Checkpoint having global CI weights (_global_ci_fn) but config specifying layerwise mode
-    - Checkpoint having layerwise CI weights (_ci_fns) but config specifying global mode
-
-    Args:
-        state_dict: The loaded checkpoint state dict
-        ci_config: The config specifying the expected CI mode
-
-    Raises:
-        AssertionError: If checkpoint and config CI modes don't match
-    """
+    """Validate that checkpoint CI weights match the config CI mode."""
     has_global_ci_fn = any(k.startswith("_global_ci_fn") for k in state_dict)
     has_ci_fns = any(k.startswith("_ci_fns") for k in state_dict)
 
     match ci_config:
         case GlobalCiConfig():
             assert has_global_ci_fn, (
-                "Checkpoint has layerwise CI weights (_ci_fns keys) but config specifies global CI mode. "
-                "Cannot load a layerwise checkpoint with a GlobalCiConfig."
+                f"Config specifies global CI but checkpoint has no _global_ci_fn keys "
+                f"(has _ci_fns: {has_ci_fns})"
             )
         case LayerwiseCiConfig():
             assert has_ci_fns, (
-                "Checkpoint has global CI weights (_global_ci_fn keys) but config specifies layerwise CI mode. "
-                "Cannot load a global checkpoint with a LayerwiseCiConfig."
+                f"Config specifies layerwise CI but checkpoint has no _ci_fns keys "
+                f"(has _global_ci_fn: {has_global_ci_fn})"
             )
 
 
@@ -687,25 +675,19 @@ class ComponentModel(LoadableModule):
         """Calculate causal importances using a global CI function."""
         assert self.global_ci_fn is not None
 
-        # Convert embedding inputs to float activations using get_component_acts
-        # For linear layers, use the input activations directly
         ci_fn_inputs: dict[str, Float[Tensor, "... d_in"]] = {}
         for layer_name, input_acts in pre_weight_acts.items():
             component = self.components[layer_name]
             if isinstance(component, EmbeddingComponents):
-                # Embedding: convert integer indices to float via get_component_acts (V[x])
                 ci_fn_inputs[layer_name] = component.get_component_acts(input_acts)
             else:
-                # Linear: use input activations directly
                 assert isinstance(input_acts, Tensor)
                 ci_fn_inputs[layer_name] = input_acts
 
         if detach_inputs:
             ci_fn_inputs = {k: v.detach() for k, v in ci_fn_inputs.items()}
 
-        # Run global CI function
         ci_fn_outputs: dict[str, Float[Tensor, "... C"]] = self.global_ci_fn(ci_fn_inputs)
-
         return self._apply_sigmoid_to_ci_outputs(ci_fn_outputs, sampling)
 
     def get_all_component_acts(

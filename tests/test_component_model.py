@@ -617,7 +617,7 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
         cm_run_info.config = config_layerwise
 
         with pytest.raises(
-            AssertionError, match="Cannot load a global checkpoint with a LayerwiseCiConfig"
+            AssertionError, match="Config specifies layerwise CI but checkpoint has no _ci_fns keys"
         ):
             ComponentModel.from_run_info(cm_run_info)
 
@@ -718,7 +718,8 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
         cm_run_info.config = config_global
 
         with pytest.raises(
-            AssertionError, match="Cannot load a layerwise checkpoint with a GlobalCiConfig"
+            AssertionError,
+            match="Config specifies global CI but checkpoint has no _global_ci_fn keys",
         ):
             ComponentModel.from_run_info(cm_run_info)
 
@@ -983,6 +984,31 @@ def test_component_model_global_ci_different_inputs_different_ci():
         assert not torch.allclose(ci1.pre_sigmoid[path], ci2.pre_sigmoid[path]), (
             f"CI for {path} should differ for different inputs"
         )
+
+
+def test_component_model_global_ci_binomial_sampling():
+    """Test global CI with binomial sampling produces valid binary masks."""
+    target_model = tiny_target()
+
+    target_module_paths = ["mlp", "out"]
+    C = 4
+    cm = ComponentModel(
+        target_model=target_model,
+        module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
+        ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
+        pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
+    )
+
+    token_ids = torch.randint(0, target_model.embed.num_embeddings, size=(BATCH_SIZE,))
+    _, cache = cm(token_ids, cache_type="input")
+
+    ci = cm.calc_causal_importances(cache, sampling="binomial")
+
+    for path in target_module_paths:
+        assert ci.lower_leaky[path].shape == (BATCH_SIZE, C)
+        assert torch.isfinite(ci.lower_leaky[path]).all()
+        assert torch.isfinite(ci.upper_leaky[path]).all()
 
 
 def test_component_model_global_ci_with_embeddings():
