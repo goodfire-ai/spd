@@ -194,12 +194,14 @@ def harvest_attributions(
     )
 
     # Process batches
-    for batch_idx, batch_data in tqdm.tqdm(
-        enumerate(train_loader),
-        total=config.n_batches,
-        desc="Attribution batches",
-    ):
-        if batch_idx >= config.n_batches:
+    train_iter = iter(train_loader)
+    for batch_idx in tqdm.tqdm(range(config.n_batches), desc="Attribution batches"):
+        try:
+            batch_data = next(train_iter)
+        except StopIteration:
+            logger.info(
+                f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early."
+            )
             break
         # Skip batches not assigned to this rank
         if world_size is not None and batch_idx % world_size != rank:
