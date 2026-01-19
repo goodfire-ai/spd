@@ -21,35 +21,18 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 
 
-def _setup_wte_hook() -> tuple[Any, list[Tensor]]:
-    """Create hook to capture wte output with gradients.
-
-    Returns the hook function and a mutable container for the cached output.
-    """
-    wte_cache: list[Tensor] = []
-
-    def wte_hook(
-        _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
-    ) -> Any:
-        output.requires_grad_(True)
-        wte_cache.clear()
-        wte_cache.append(output)
-        return output
-
-    return wte_hook, wte_cache
-
-
 class AttributionHarvester:
     """Accumulates attribution strengths across batches.
 
     The attribution formula is:
         attribution[src, tgt] = Σ_batch Σ_pos (∂out[pos, tgt] / ∂in[pos, src]) × in_act[pos, src]
 
-    Key optimization: We sum outputs over positions BEFORE computing gradients,
-    reducing backward passes from O(positions × components) to O(components).
-
-    For output targets, we compute attribution to each vocab token individually.
-    For wte sources, we compute attribution from each input token individually using scatter_add_.
+    Key optimizations:
+    1. Sum outputs over positions BEFORE computing gradients, reducing backward
+       passes from O(positions × components) to O(components).
+    2. For output targets, compute attributions to the pre-unembed residual
+       (d_model dimensions) then multiply by W_unembed. This reduces backward
+       passes from O(vocab_size) to O(d_model).
 
     Index structure matches DatasetAttributionStorage:
         - Sources: wte tokens [0, vocab_size) + component layers [vocab_size, ...)
@@ -81,230 +64,210 @@ class AttributionHarvester:
         self.show_progress = show_progress
 
         # Matrix shape matches storage
-        n_sources = vocab_size + n_components  # wte tokens + component layers
-        n_targets = n_components + vocab_size  # component layers + output tokens
-        self.accumulator = torch.zeros(n_sources, n_targets, device=device)
+        self.n_sources = vocab_size + n_components
+        n_targets = n_components + vocab_size
+        self.accumulator = torch.zeros(self.n_sources, n_targets, device=device)
         self.n_batches = 0
         self.n_tokens = 0
 
-        # Build per-layer index ranges for sources and targets
+        # Build per-layer index ranges
         self.component_layer_names = list(model.target_module_paths)
         self.source_layer_to_idx_range = self._build_source_layer_index_ranges()
         self.target_layer_to_idx_range = self._build_target_layer_index_ranges()
 
-        # Pre-compute alive indices per layer for efficiency
-        self.alive_source_idxs_per_layer = self._build_alive_source_indices_per_layer()
-        self.alive_target_idxs_per_layer = self._build_alive_target_indices_per_layer()
-
-    def _build_source_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
-        """Build mapping from layer name to (start_idx, end_idx) in source index space.
-
-        Source order: wte tokens [0, vocab_size), then component layers [vocab_size, ...).
-        """
-        layer_to_idx_range: dict[str, tuple[int, int]] = {}
-
-        # wte covers vocab_size entries (one per token)
-        layer_to_idx_range["wte"] = (0, self.vocab_size)
-        idx = self.vocab_size
-
-        for layer in self.component_layer_names:
-            n_layer_components = self.model.module_to_c[layer]
-            layer_to_idx_range[layer] = (idx, idx + n_layer_components)
-            idx += n_layer_components
-
-        return layer_to_idx_range
-
-    def _build_target_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
-        """Build mapping from layer name to (start_idx, end_idx) in target index space.
-
-        Target order: component layers [0, n_components), then output tokens [n_components, ...).
-        """
-        layer_to_idx_range: dict[str, tuple[int, int]] = {}
-        idx = 0
-
-        for layer in self.component_layer_names:
-            n_layer_components = self.model.module_to_c[layer]
-            layer_to_idx_range[layer] = (idx, idx + n_layer_components)
-            idx += n_layer_components
-
-        # output covers vocab_size entries (one per token)
-        layer_to_idx_range["output"] = (idx, idx + self.vocab_size)
-
-        return layer_to_idx_range
-
-    def _build_alive_source_indices_per_layer(self) -> dict[str, list[int]]:
-        """Get list of alive source component local indices for each layer."""
-        alive_per_layer: dict[str, list[int]] = {}
-
-        for layer in self.source_layer_to_idx_range:
-            start_idx, end_idx = self.source_layer_to_idx_range[layer]
-            layer_alive = self.source_alive[start_idx:end_idx]
-            alive_per_layer[layer] = torch.where(layer_alive)[0].tolist()
-
-        return alive_per_layer
-
-    def _build_alive_target_indices_per_layer(self) -> dict[str, list[int]]:
-        """Get list of alive target component local indices for each layer."""
-        alive_per_layer: dict[str, list[int]] = {}
-
-        for layer in self.target_layer_to_idx_range:
-            start_idx, end_idx = self.target_layer_to_idx_range[layer]
-            layer_alive = self.target_alive[start_idx:end_idx]
-            alive_per_layer[layer] = torch.where(layer_alive)[0].tolist()
-
-        return alive_per_layer
-
-    def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
-        """Accumulate attributions from one batch.
-
-        Uses the key optimization of summing outputs before backward pass.
-        """
-        batch_size, seq_len = tokens.shape
-        self.n_batches += 1
-        self.n_tokens += batch_size * seq_len
-
-        # Setup wte hook and create unmasked masks for all components
-        wte_hook_fn, wte_cache = _setup_wte_hook()
-        assert isinstance(self.model.target_model.wte, nn.Module)
-        wte_handle = self.model.target_model.wte.register_forward_hook(
-            wte_hook_fn, with_kwargs=True
+        # Pre-compute alive indices per layer
+        self.alive_source_idxs_per_layer = self._build_alive_indices(
+            self.source_layer_to_idx_range, source_alive
+        )
+        self.alive_target_idxs_per_layer = self._build_alive_indices(
+            self.target_layer_to_idx_range, target_alive
         )
 
-        # Create masks with all components active
+        # For output optimization: store lm_head weight [d_model, vocab_size]
+        assert hasattr(model.target_model, "lm_head"), "Model must have lm_head"
+        lm_head = model.target_model.lm_head
+        assert isinstance(lm_head, nn.Linear), f"lm_head must be nn.Linear, got {type(lm_head)}"
+        self.w_unembed: Float[Tensor, "d_model vocab"] = lm_head.weight.T.detach()
+        self.d_model = self.w_unembed.shape[0]
+        self.lm_head = lm_head
+
+    def _build_source_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
+        """Source order: wte tokens [0, vocab_size), then component layers."""
+        ranges: dict[str, tuple[int, int]] = {"wte": (0, self.vocab_size)}
+        idx = self.vocab_size
+        for layer in self.component_layer_names:
+            n = self.model.module_to_c[layer]
+            ranges[layer] = (idx, idx + n)
+            idx += n
+        return ranges
+
+    def _build_target_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
+        """Target order: component layers [0, n_components), then output tokens."""
+        ranges: dict[str, tuple[int, int]] = {}
+        idx = 0
+        for layer in self.component_layer_names:
+            n = self.model.module_to_c[layer]
+            ranges[layer] = (idx, idx + n)
+            idx += n
+        ranges["output"] = (idx, idx + self.vocab_size)
+        return ranges
+
+    def _build_alive_indices(
+        self, layer_ranges: dict[str, tuple[int, int]], alive_mask: Bool[Tensor, " n"]
+    ) -> dict[str, list[int]]:
+        """Get alive local indices for each layer."""
+        return {
+            layer: torch.where(alive_mask[start:end])[0].tolist()
+            for layer, (start, end) in layer_ranges.items()
+        }
+
+    def process_batch(self, tokens: Int[Tensor, "batch seq"]) -> None:
+        """Accumulate attributions from one batch."""
+        self.n_batches += 1
+        self.n_tokens += tokens.numel()
+
+        # Setup hooks to capture wte output and pre-unembed residual
+        wte_out: list[Tensor] = []
+        pre_unembed: list[Tensor] = []
+
+        def wte_hook(_mod: nn.Module, _args: Any, _kwargs: Any, out: Tensor) -> Tensor:
+            out.requires_grad_(True)
+            wte_out.clear()
+            wte_out.append(out)
+            return out
+
+        def pre_unembed_hook(_mod: nn.Module, args: tuple[Any, ...], _kwargs: Any) -> None:
+            args[0].requires_grad_(True)
+            pre_unembed.clear()
+            pre_unembed.append(args[0])
+
+        wte = self.model.target_model.wte
+        assert isinstance(wte, nn.Module)
+        h1 = wte.register_forward_hook(wte_hook, with_kwargs=True)
+        h2 = self.lm_head.register_forward_pre_hook(pre_unembed_hook, with_kwargs=True)
+
+        # Get masks with all components active
         with torch.no_grad():
             out = self.model(tokens, cache_type="input")
             ci = self.model.calc_causal_importances(
-                pre_weight_acts=out.cache,
-                sampling=self.sampling,
-                detach_inputs=False,
+                pre_weight_acts=out.cache, sampling=self.sampling, detach_inputs=False
             )
-
         mask_infos = make_mask_infos(
             component_masks={k: torch.ones_like(v) for k, v in ci.lower_leaky.items()},
             routing_masks="all",
         )
 
-        # Forward pass with gradient-enabled caching
+        # Forward pass with gradients
         with torch.enable_grad():
             comp_output: OutputWithCache = self.model(
-                tokens,
-                mask_infos=mask_infos,
-                cache_type="component_acts",
+                tokens, mask_infos=mask_infos, cache_type="component_acts"
             )
 
-        wte_handle.remove()
-        assert len(wte_cache) == 1
+        h1.remove()
+        h2.remove()
 
         cache = comp_output.cache
-        cache["wte_post_detach"] = wte_cache[0]
-        cache["output_pre_detach"] = comp_output.output  # Logits [B, S, vocab]
-        cache["tokens"] = tokens  # Store tokens for per-token wte attributions
+        cache["wte_post_detach"] = wte_out[0]
+        cache["pre_unembed"] = pre_unembed[0]
+        cache["tokens"] = tokens
 
         # Process each target layer
-        pbar = tqdm(
-            self.sources_by_target.items(),
-            desc="Target layers",
-            disable=not self.show_progress,
-            leave=False,
-        )
-
-        target_layers_list = list(self.sources_by_target.items())
+        layers = list(self.sources_by_target.items())
+        pbar = tqdm(layers, desc="Targets", disable=not self.show_progress, leave=False)
         for i, (target_layer, source_layers) in enumerate(pbar):
-            if self.show_progress:
-                pbar.set_description(f"Target: {target_layer}")
+            is_last = i == len(layers) - 1
+            if target_layer == "output":
+                self._process_output_targets(source_layers, cache, is_last)
+            else:
+                self._process_component_targets(target_layer, source_layers, cache, is_last)
 
-            is_last_layer = i == len(target_layers_list) - 1
-            self._process_target_layer(
-                target_layer=target_layer,
-                source_layers=source_layers,
-                cache=cache,
-                is_last_layer=is_last_layer,
-            )
-
-    def _process_target_layer(
+    def _process_component_targets(
         self,
         target_layer: str,
         source_layers: list[str],
         cache: dict[str, Tensor],
         is_last_layer: bool,
     ) -> None:
-        """Process attributions for a single target layer."""
+        """Process attributions to a component layer."""
         target_start, _ = self.target_layer_to_idx_range[target_layer]
-        alive_target_c_idxs = self.alive_target_idxs_per_layer[target_layer]
-
-        if not alive_target_c_idxs:
+        alive_targets = self.alive_target_idxs_per_layer[target_layer]
+        if not alive_targets:
             return
 
-        # Get target activations
-        out_pre_detach = cache[f"{target_layer}_pre_detach"]
+        # Sum over batch and sequence
+        target_acts = cache[f"{target_layer}_pre_detach"].sum(dim=(0, 1))
+        source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
-        # Handle output as a special case: one target per vocab token
-        is_output_target = target_layer == "output"
-        if is_output_target:
-            # output: [B, S, vocab] -> sum over batch and sequence, keep vocab dim
-            # This gives us per-token logit sums that we can differentiate individually
-            total_out_per_token: Float[Tensor, " vocab"] = out_pre_detach.sum(dim=(0, 1))
-            # alive_target_c_idxs for output contains indices 0..vocab_size-1
-            target_components = [(t, total_out_per_token[t]) for t in alive_target_c_idxs]
-        else:
-            # Regular component layer: [B, S, C]
-            # Sum over batch and sequence BEFORE backward (key optimization)
-            total_out: Float[Tensor, " C"] = out_pre_detach.sum(dim=(0, 1))
-            target_components = [(c, total_out[c]) for c in alive_target_c_idxs]
-
-        # Gather source post_detach activations
-        in_post_detaches: list[Tensor] = []
-        for source_layer in source_layers:
-            in_post_detaches.append(cache[f"{source_layer}_post_detach"])
-
-        # Process each alive target component
-        n_targets = len(target_components)
-        for idx, (c_out_local, out_value) in enumerate(target_components):
-            c_out_global = target_start + c_out_local
-
-            # Release graph on last backward pass to free memory
-            is_last_component = is_last_layer and idx == n_targets - 1
-            grads = torch.autograd.grad(
-                outputs=out_value,
-                inputs=in_post_detaches,
-                retain_graph=not is_last_component,
+        for i, t_idx in enumerate(alive_targets):
+            is_last = is_last_layer and i == len(alive_targets) - 1
+            grads = torch.autograd.grad(target_acts[t_idx], source_acts, retain_graph=not is_last)
+            self._accumulate_to_column(
+                self.accumulator[:, target_start + t_idx],
+                source_layers,
+                grads,
+                source_acts,
+                cache["tokens"],
             )
 
-            # Compute attributions for each source layer
-            with torch.no_grad():
-                for source_layer, grad, in_post_detach in zip(
-                    source_layers, grads, in_post_detaches, strict=True
-                ):
-                    alive_source_c_idxs = self.alive_source_idxs_per_layer[source_layer]
+    def _process_output_targets(
+        self,
+        source_layers: list[str],
+        cache: dict[str, Tensor],
+        is_last_layer: bool,
+    ) -> None:
+        """Process output attributions via residual-space optimization.
 
-                    if not alive_source_c_idxs:
-                        continue
+        Instead of O(vocab_size) backward passes, we:
+        1. Compute attributions to d_model residual dimensions
+        2. Multiply by W_unembed to get vocab attributions
+        """
+        target_start, _ = self.target_layer_to_idx_range["output"]
+        alive_outputs = self.alive_target_idxs_per_layer["output"]
+        if not alive_outputs:
+            return
 
-                    # Handle wte as a special case: per-token attributions
-                    is_wte_source = source_layer == "wte"
-                    if is_wte_source:
-                        # wte: [B, S, d_model] -> per-token attributions
-                        # Attribution per position = sum of grad * activation over d_model
-                        tokens: Int[Tensor, "batch seq"] = cache["tokens"]
-                        attr_per_position: Float[Tensor, "batch seq"] = (grad * in_post_detach).sum(
-                            dim=-1
-                        )
-                        # Use scatter_add_ to accumulate by token id
-                        flat_tokens = tokens.flatten()  # [B*S]
-                        flat_attr = attr_per_position.flatten()  # [B*S]
-                        # Source indices for wte are [0, vocab_size), which is the token id
-                        self.accumulator[:, c_out_global].scatter_add_(0, flat_tokens, flat_attr)
-                    else:
-                        # Regular component layer: [B, S, C_in]
-                        # Attribution = grad * activation, summed over batch and sequence
-                        source_start, _ = self.source_layer_to_idx_range[source_layer]
-                        attr_per_component: Float[Tensor, " C_in"] = (grad * in_post_detach).sum(
-                            dim=(0, 1)
-                        )
+        # Sum residual over batch and sequence -> [d_model]
+        residual = cache["pre_unembed"].sum(dim=(0, 1))
+        source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
 
-                        # Accumulate only for alive source components
-                        for c_in_local in alive_source_c_idxs:
-                            c_in_global = source_start + c_in_local
-                            self.accumulator[c_in_global, c_out_global] += attr_per_component[
-                                c_in_local
-                            ]
+        # Accumulate attributions to residual dimensions
+        residual_attr = torch.zeros(self.n_sources, self.d_model, device=self.device)
+
+        for d_idx in range(self.d_model):
+            is_last = is_last_layer and d_idx == self.d_model - 1
+            grads = torch.autograd.grad(residual[d_idx], source_acts, retain_graph=not is_last)
+            self._accumulate_to_column(
+                residual_attr[:, d_idx], source_layers, grads, source_acts, cache["tokens"]
+            )
+
+        # Convert to vocab attributions and store
+        with torch.no_grad():
+            vocab_attr = residual_attr @ self.w_unembed
+            for v_idx in alive_outputs:
+                self.accumulator[:, target_start + v_idx] += vocab_attr[:, v_idx]
+
+    def _accumulate_to_column(
+        self,
+        target_col: Float[Tensor, " n_sources"],
+        source_layers: list[str],
+        grads: tuple[Tensor, ...],
+        source_acts: list[Tensor],
+        tokens: Int[Tensor, "batch seq"],
+    ) -> None:
+        """Accumulate attributions from all sources to a single target column."""
+        with torch.no_grad():
+            for layer, grad, act in zip(source_layers, grads, source_acts, strict=True):
+                alive = self.alive_source_idxs_per_layer[layer]
+                if not alive:
+                    continue
+
+                if layer == "wte":
+                    # Per-token: sum grad*act over d_model, scatter by token id
+                    attr = (grad * act).sum(dim=-1).flatten()
+                    target_col.scatter_add_(0, tokens.flatten(), attr)
+                else:
+                    # Per-component: sum grad*act over batch and sequence
+                    start, _ = self.source_layer_to_idx_range[layer]
+                    attr = (grad * act).sum(dim=(0, 1))
+                    for c in alive:
+                        target_col[start + c] += attr[c]
