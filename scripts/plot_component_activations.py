@@ -13,6 +13,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 from spd.harvest.schemas import (
     ActivationExample,
@@ -20,6 +21,7 @@ from spd.harvest.schemas import (
     ComponentTokenPMI,
     get_activation_contexts_dir,
 )
+from spd.settings import SPD_OUT_DIR
 
 
 def load_activation_contexts(run_id: str) -> dict[str, ComponentData]:
@@ -45,6 +47,18 @@ def load_activation_contexts(run_id: str) -> dict[str, ComponentData]:
             comp = ComponentData(**data)
             components[comp.component_key] = comp
     return components
+
+
+def load_firing_counts(run_id: str) -> dict[str, int]:
+    """Load pre-calculated firing counts from harvest data."""
+    token_stats_path = SPD_OUT_DIR / "harvest" / run_id / "correlations" / "token_stats.pt"
+    assert token_stats_path.exists(), f"No token stats found for run {run_id}"
+
+    data = torch.load(token_stats_path)
+    component_keys = data["component_keys"]
+    firing_counts = data["firing_counts"]
+
+    return {key: int(count) for key, count in zip(component_keys, firing_counts, strict=True)}
 
 
 def extract_activations(
@@ -99,11 +113,23 @@ def order_by_median(normalized: dict[str, np.ndarray]) -> list[str]:
     return [key for key, _ in medians]
 
 
+def order_by_frequency(
+    normalized: dict[str, np.ndarray], firing_counts: dict[str, int]
+) -> list[str]:
+    """Order component keys by pre-calculated firing counts (descending)."""
+    freqs = [(key, firing_counts.get(key, 0)) for key in normalized]
+    freqs.sort(key=lambda x: x[1], reverse=True)
+    return [key for key, _ in freqs]
+
+
 def create_layer_scatter_plot(
     normalized_by_key: dict[str, np.ndarray],
     ordered_keys: list[str],
     layer_name: str,
+    run_id: str,
     output_path: Path,
+    x_label: str = "Component Rank (by median activation)",
+    y_label: str = "Normalized Component Activation",
 ) -> None:
     """Create scatter plot for a single layer."""
     x_vals = []
@@ -115,9 +141,9 @@ def create_layer_scatter_plot(
 
     fig, ax = plt.subplots(figsize=(14, 8))
     ax.scatter(x_vals, y_vals, alpha=0.3, s=1, marker=".")
-    ax.set_xlabel("Component Rank (by median activation)")
-    ax.set_ylabel("Normalized Component Activation")
-    ax.set_title(f"{layer_name}")
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.set_title(f"Layer: {layer_name}   |||   Run id: {run_id}")
 
     n_components = len(ordered_keys)
     n_points = len(x_vals)
@@ -147,12 +173,18 @@ def main():
     )
     args = parser.parse_args()
 
-    output_dir = Path("scripts/outputs") / args.run_id
-    output_dir.mkdir(parents=True, exist_ok=True)
+    base_output_dir = Path("scripts/outputs") / args.run_id / "component-act-scatter"
+    output_dir_median = base_output_dir / "order-by-median"
+    output_dir_freq = base_output_dir / "order-by-freq"
+    output_dir_median.mkdir(parents=True, exist_ok=True)
+    output_dir_freq.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading activation contexts for run {args.run_id}...")
     contexts = load_activation_contexts(args.run_id)
     print(f"Loaded {len(contexts)} components")
+
+    print("Loading firing counts...")
+    firing_counts = load_firing_counts(args.run_id)
 
     print("Extracting activations...")
     all_by_layer, filtered_by_layer = extract_activations(contexts, args.ci_threshold)
@@ -165,7 +197,8 @@ def main():
         print("No datapoints found above threshold. Try lowering --ci-threshold.")
         return
 
-    print(f"Creating per-layer plots in {output_dir}/...")
+    # Create plots ordered by median normalized activation
+    print(f"Creating per-layer plots (ordered by median) in {output_dir_median}/...")
     for layer_name in sorted(all_by_layer.keys()):
         all_acts = all_by_layer[layer_name]
         filtered_acts = filtered_by_layer.get(layer_name, {})
@@ -174,8 +207,32 @@ def main():
             continue
         ordered_keys = order_by_median(normalized)
         safe_name = layer_name.replace(".", "_")
-        output_path = output_dir / f"{safe_name}.png"
-        create_layer_scatter_plot(normalized, ordered_keys, layer_name, output_path)
+        output_path = output_dir_median / f"{safe_name}.png"
+        create_layer_scatter_plot(normalized, ordered_keys, layer_name, args.run_id, output_path)
+        print(f"  {output_path}")
+
+    # Create plots ordered by CI activation frequency (with abs distance from midpoint)
+    print(f"Creating per-layer plots (ordered by frequency) in {output_dir_freq}/...")
+    for layer_name in sorted(all_by_layer.keys()):
+        all_acts = all_by_layer[layer_name]
+        filtered_acts = filtered_by_layer.get(layer_name, {})
+        normalized = normalize_per_component(all_acts, filtered_acts)
+        if not normalized:
+            continue
+        # Transform to absolute distance from midpoint
+        abs_from_midpoint = {key: np.abs(acts - 0.5) for key, acts in normalized.items()}
+        ordered_keys = order_by_frequency(abs_from_midpoint, firing_counts)
+        safe_name = layer_name.replace(".", "_")
+        output_path = output_dir_freq / f"{safe_name}.png"
+        create_layer_scatter_plot(
+            abs_from_midpoint,
+            ordered_keys,
+            layer_name,
+            args.run_id,
+            output_path,
+            x_label="Component Rank (by firing frequency)",
+            y_label="|Normalized Component Activation - 0.5|",
+        )
         print(f"  {output_path}")
 
     print("Done!")
