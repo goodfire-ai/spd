@@ -26,6 +26,7 @@ from spd.models.component_model import (
 from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
+    GlobalCiFnWrapper,
     GlobalSharedMLPCiFn,
     LinearComponents,
     MLPCiFn,
@@ -617,7 +618,8 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
         cm_run_info.config = config_layerwise
 
         with pytest.raises(
-            AssertionError, match="Config specifies layerwise CI but checkpoint has no _ci_fns keys"
+            AssertionError,
+            match="Config specifies layerwise CI but checkpoint has no ci_fn._ci_fns keys",
         ):
             ComponentModel.from_run_info(cm_run_info)
 
@@ -719,7 +721,7 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
 
         with pytest.raises(
             AssertionError,
-            match="Config specifies global CI but checkpoint has no _global_ci_fn keys",
+            match="Config specifies global CI but checkpoint has no ci_fn._global_ci_fn keys",
         ):
             ComponentModel.from_run_info(cm_run_info)
 
@@ -898,10 +900,8 @@ def test_component_model_with_global_ci():
         sigmoid_type="leaky_hard",
     )
 
-    assert cm.is_global_ci
-    assert cm.global_ci_fn is not None
-    assert isinstance(cm.global_ci_fn, GlobalSharedMLPCiFn)
-    assert len(cm.ci_fns) == 0
+    assert isinstance(cm.ci_fn, GlobalCiFnWrapper)
+    assert isinstance(cm.ci_fn._global_ci_fn, GlobalSharedMLPCiFn)
 
     # Forward pass should work and match target
     token_ids = torch.randint(
@@ -1025,7 +1025,7 @@ def test_component_model_global_ci_with_embeddings():
         sigmoid_type="leaky_hard",
     )
 
-    assert cm.is_global_ci
+    assert isinstance(cm.ci_fn, GlobalCiFnWrapper)
 
     token_ids = torch.randint(
         low=0, high=target_model.embed.num_embeddings, size=(BATCH_SIZE,), dtype=torch.long
@@ -1077,8 +1077,8 @@ def test_component_model_global_ci_gradient_flow():
     ci_loss.backward()
 
     # Check that global CI function has meaningful gradients
-    assert cm.global_ci_fn is not None
-    for name, param in cm.global_ci_fn.named_parameters():
+    assert isinstance(cm.ci_fn, GlobalCiFnWrapper)
+    for name, param in cm.ci_fn._global_ci_fn.named_parameters():
         assert param.grad is not None, f"Param {name} has no gradient"
         assert torch.isfinite(param.grad).all(), f"Param {name} has NaN/Inf gradient"
         assert param.grad.abs().sum() > 0, f"Param {name} has zero gradient"
@@ -1116,8 +1116,8 @@ def test_component_model_global_ci_detach_inputs_blocks_gradients():
     ci_loss.backward()
 
     # CI function should still get gradients (from its own computation)
-    assert cm.global_ci_fn is not None
-    for param in cm.global_ci_fn.parameters():
+    assert isinstance(cm.ci_fn, GlobalCiFnWrapper)
+    for param in cm.ci_fn._global_ci_fn.parameters():
         assert param.grad is not None
 
 
@@ -1281,7 +1281,7 @@ def test_global_ci_save_and_load():
             sigmoid_type=config.sigmoid_type,
         )
 
-        assert cm.is_global_ci
+        assert isinstance(cm.ci_fn, GlobalCiFnWrapper)
 
         save_file(cm.state_dict(), comp_model_dir / "model.pth")
         save_file(config.model_dump(mode="json"), comp_model_dir / "final_config.yaml")
@@ -1290,28 +1290,25 @@ def test_global_ci_save_and_load():
         cm_run_info = SPDRunInfo.from_path(comp_model_dir / "model.pth")
         cm_loaded = ComponentModel.from_run_info(cm_run_info)
 
-        assert cm_loaded.is_global_ci
-        assert cm_loaded.global_ci_fn is not None
+        assert isinstance(cm_loaded.ci_fn, GlobalCiFnWrapper)
 
         # Verify state dict matches
         for k, v in cm_loaded.state_dict().items():
             torch.testing.assert_close(v, cm.state_dict()[k])
 
         # Verify global CI function weights specifically
-        assert cm_loaded.global_ci_fn is not None
-        assert cm.global_ci_fn is not None
-        assert cm_loaded.global_ci_fn.layer_order == cm.global_ci_fn.layer_order
-        for p1, p2 in zip(
-            cm.global_ci_fn.parameters(), cm_loaded.global_ci_fn.parameters(), strict=True
-        ):
+        global_ci_fn = cm.ci_fn._global_ci_fn
+        global_ci_fn_loaded = cm_loaded.ci_fn._global_ci_fn
+        assert global_ci_fn_loaded.layer_order == global_ci_fn.layer_order
+        for p1, p2 in zip(global_ci_fn.parameters(), global_ci_fn_loaded.parameters(), strict=True):
             torch.testing.assert_close(p1, p2)
 
         # Verify global CI function produces same outputs
         test_acts = {
-            name: torch.randn(BATCH_SIZE, cm.global_ci_fn.layer_configs[name][0])
-            for name in cm.global_ci_fn.layer_order
+            name: torch.randn(BATCH_SIZE, global_ci_fn.layer_configs[name][0])
+            for name in global_ci_fn.layer_order
         }
-        outputs_orig = cm.global_ci_fn(test_acts)
-        outputs_loaded = cm_loaded.global_ci_fn(test_acts)
-        for name in cm.global_ci_fn.layer_order:
+        outputs_orig = global_ci_fn(test_acts)
+        outputs_loaded = global_ci_fn_loaded(test_acts)
+        for name in global_ci_fn.layer_order:
             torch.testing.assert_close(outputs_orig[name], outputs_loaded[name])

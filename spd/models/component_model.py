@@ -17,8 +17,10 @@ from spd.models.components import (
     Components,
     ComponentsMaskInfo,
     EmbeddingComponents,
+    GlobalCiFnWrapper,
     GlobalSharedMLPCiFn,
     Identity,
+    LayerwiseCiFnWrapper,
     LinearComponents,
     MLPCiFn,
     VectorMLPCiFn,
@@ -26,7 +28,7 @@ from spd.models.components import (
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import GlobalCiFnType, LayerwiseCiFnType, ModelPath
-from spd.utils.general_utils import resolve_class, runtime_cast
+from spd.utils.general_utils import resolve_class
 from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 
 
@@ -34,19 +36,19 @@ def _validate_checkpoint_ci_config_compatibility(
     state_dict: dict[str, Tensor], ci_config: CiConfig
 ) -> None:
     """Validate that checkpoint CI weights match the config CI mode."""
-    has_global_ci_fn = any(k.startswith("_global_ci_fn") for k in state_dict)
-    has_ci_fns = any(k.startswith("_ci_fns") for k in state_dict)
+    has_global_ci_fn = any(k.startswith("ci_fn._global_ci_fn") for k in state_dict)
+    has_ci_fns = any(k.startswith("ci_fn._ci_fns") for k in state_dict)
 
     match ci_config:
         case GlobalCiConfig():
             assert has_global_ci_fn, (
-                f"Config specifies global CI but checkpoint has no _global_ci_fn keys "
-                f"(has _ci_fns: {has_ci_fns})"
+                f"Config specifies global CI but checkpoint has no ci_fn._global_ci_fn keys "
+                f"(has ci_fn._ci_fns: {has_ci_fns})"
             )
         case LayerwiseCiConfig():
             assert has_ci_fns, (
-                f"Config specifies layerwise CI but checkpoint has no _ci_fns keys "
-                f"(has _global_ci_fn: {has_global_ci_fn})"
+                f"Config specifies layerwise CI but checkpoint has no ci_fn._ci_fns keys "
+                f"(has ci_fn._global_ci_fn: {has_global_ci_fn})"
             )
 
 
@@ -123,30 +125,29 @@ class ComponentModel(LoadableModule):
 
         match ci_config:
             case GlobalCiConfig():
-                self.is_global_ci = True
-                self.ci_fns: dict[str, nn.Module] = {}
-                self._ci_fns = nn.ModuleDict({})
-                self.global_ci_fn = ComponentModel._create_global_ci_fn(
+                raw_global_ci_fn = ComponentModel._create_global_ci_fn(
                     target_model=target_model,
                     module_to_c=self.module_to_c,
                     components=self.components,
                     ci_fn_type=ci_config.fn_type,
                     ci_fn_hidden_dims=ci_config.hidden_dims,
                 )
-                self._global_ci_fn = self.global_ci_fn
+                self.ci_fn = GlobalCiFnWrapper(
+                    global_ci_fn=raw_global_ci_fn,
+                    components=self.components,
+                )
             case LayerwiseCiConfig():
-                self.is_global_ci = False
-                self.ci_fns = ComponentModel._create_ci_fns(
+                raw_layerwise_ci_fns = ComponentModel._create_ci_fns(
                     target_model=target_model,
                     module_to_c=self.module_to_c,
                     ci_fn_type=ci_config.fn_type,
                     ci_fn_hidden_dims=ci_config.hidden_dims,
                 )
-                self._ci_fns = nn.ModuleDict(
-                    {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
+                self.ci_fn = LayerwiseCiFnWrapper(
+                    ci_fns=raw_layerwise_ci_fns,
+                    components=self.components,
+                    ci_fn_type=ci_config.fn_type,
                 )
-                self.global_ci_fn: GlobalSharedMLPCiFn | None = None
-                self._global_ci_fn: GlobalSharedMLPCiFn | None = None
 
         if sigmoid_type == "leaky_hard":
             self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
@@ -588,19 +589,21 @@ class ComponentModel(LoadableModule):
         sampling: SamplingType,
         detach_inputs: bool = False,
     ) -> CIOutputs:
-        """Calculate causal importances.
+        """Calculate causal importances using the unified CI function interface.
 
         Args:
             pre_weight_acts: The activations before each layer in the target model.
+            sampling: The sampling type for stochastic masks.
             detach_inputs: Whether to detach the inputs to the causal importance function.
 
         Returns:
-            Tuple of (causal_importances, causal_importances_upper_leaky) dictionaries for each layer.
+            CIOutputs containing lower_leaky, upper_leaky, and pre_sigmoid CI values.
         """
-        if self.is_global_ci:
-            return self._calc_global_causal_importances(pre_weight_acts, sampling, detach_inputs)
-        else:
-            return self._calc_layerwise_causal_importances(pre_weight_acts, sampling, detach_inputs)
+        if detach_inputs:
+            pre_weight_acts = {k: v.detach() for k, v in pre_weight_acts.items()}
+
+        ci_fn_outputs = self.ci_fn(pre_weight_acts)
+        return self._apply_sigmoid_to_ci_outputs(ci_fn_outputs, sampling)
 
     def _apply_sigmoid_to_ci_outputs(
         self,
@@ -635,60 +638,6 @@ class ComponentModel(LoadableModule):
             upper_leaky=causal_importances_upper_leaky,
             pre_sigmoid=pre_sigmoid,
         )
-
-    def _calc_layerwise_causal_importances(
-        self,
-        pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
-        sampling: SamplingType,
-        detach_inputs: bool,
-    ) -> CIOutputs:
-        """Calculate causal importances using layerwise CI functions."""
-        ci_fn_outputs: dict[str, Float[Tensor, "... C"]] = {}
-
-        for target_module_name in pre_weight_acts:
-            input_activations = pre_weight_acts[target_module_name]
-            ci_fn = self.ci_fns[target_module_name]
-
-            match ci_fn:
-                case MLPCiFn():
-                    ci_fn_input = self.components[target_module_name].get_component_acts(
-                        input_activations
-                    )
-                case VectorMLPCiFn() | VectorSharedMLPCiFn():
-                    ci_fn_input = input_activations
-                case _:
-                    raise ValueError(f"Unknown ci_fn type: {type(ci_fn)}")
-
-            if detach_inputs:
-                ci_fn_input = ci_fn_input.detach()
-
-            ci_fn_outputs[target_module_name] = runtime_cast(Tensor, ci_fn(ci_fn_input))
-
-        return self._apply_sigmoid_to_ci_outputs(ci_fn_outputs, sampling)
-
-    def _calc_global_causal_importances(
-        self,
-        pre_weight_acts: dict[str, Float[Tensor, "... d_in"] | Int[Tensor, "... pos"]],
-        sampling: SamplingType,
-        detach_inputs: bool,
-    ) -> CIOutputs:
-        """Calculate causal importances using a global CI function."""
-        assert self.global_ci_fn is not None
-
-        ci_fn_inputs: dict[str, Float[Tensor, "... d_in"]] = {}
-        for layer_name, input_acts in pre_weight_acts.items():
-            component = self.components[layer_name]
-            if isinstance(component, EmbeddingComponents):
-                ci_fn_inputs[layer_name] = component.get_component_acts(input_acts)
-            else:
-                assert isinstance(input_acts, Tensor)
-                ci_fn_inputs[layer_name] = input_acts
-
-        if detach_inputs:
-            ci_fn_inputs = {k: v.detach() for k, v in ci_fn_inputs.items()}
-
-        ci_fn_outputs: dict[str, Float[Tensor, "... C"]] = self.global_ci_fn(ci_fn_inputs)
-        return self._apply_sigmoid_to_ci_outputs(ci_fn_outputs, sampling)
 
     def get_all_component_acts(
         self,
