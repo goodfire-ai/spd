@@ -1,9 +1,15 @@
-"""Internal worker script for dataset attribution computation.
+"""Worker script for dataset attribution computation.
 
-Called by SLURM jobs submitted via spd-attributions. Not intended for direct use.
+Called by SLURM jobs submitted via spd-attributions, or run directly for non-SLURM environments.
 
-Usage (via SLURM):
+Usage:
+    # Single GPU
+    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000
+
+    # Multi-GPU (run in parallel)
     python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4
+    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 1 --world_size 4
+    ...
     python -m spd.dataset_attributions.scripts.run <path> --merge
 """
 

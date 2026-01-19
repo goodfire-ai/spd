@@ -5,16 +5,20 @@ training dataset. Unlike prompt attributions (single-prompt, position-aware),
 dataset attributions answer: "In aggregate, which components typically influence
 each other?"
 
-Multi-GPU usage:
-    # Launch workers (any orchestration: shell, SLURM, tmux, etc.)
-    spd-attributions <path> --n_batches 1000 --rank 0 --world_size 4 &
-    spd-attributions <path> --n_batches 1000 --rank 1 --world_size 4 &
-    spd-attributions <path> --n_batches 1000 --rank 2 --world_size 4 &
-    spd-attributions <path> --n_batches 1000 --rank 3 --world_size 4 &
-    wait
+Usage (SLURM):
+    spd-attributions <wandb_path> --n_batches 1000 --n_gpus 8
 
-    # Merge results
-    spd-attributions <path> --merge
+Usage (non-SLURM):
+    # Single GPU
+    python -m spd.dataset_attributions.scripts.run <wandb_path> --n_batches 1000
+
+    # Multi-GPU (run in parallel via shell, tmux, etc.)
+    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4 &
+    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 1 --world_size 4 &
+    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 2 --world_size 4 &
+    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 3 --world_size 4 &
+    wait
+    python -m spd.dataset_attributions.scripts.run <path> --merge
 """
 
 from dataclasses import dataclass

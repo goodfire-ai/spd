@@ -2,7 +2,7 @@
 
 Multi-GPU pipeline for computing component-to-component attribution strengths aggregated over the training dataset. Unlike prompt attributions (single-prompt, position-aware), dataset attributions answer: "In aggregate, which components typically influence each other?"
 
-## Usage
+## Usage (SLURM)
 
 ```bash
 # Submit 8-GPU SLURM job
@@ -21,6 +21,27 @@ The command:
 2. Submits a SLURM job array with N tasks (one per GPU)
 3. Each task processes batches where `batch_idx % world_size == rank`
 4. Submits a merge job (depends on array completion) that combines all worker results
+
+## Usage (non-SLURM)
+
+For environments without SLURM, run the worker script directly:
+
+```bash
+# Single GPU
+python -m spd.dataset_attributions.scripts.run <wandb_path> --n_batches 1000
+
+# Multi-GPU (run in parallel via shell, tmux, etc.)
+python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4 &
+python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 1 --world_size 4 &
+python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 2 --world_size 4 &
+python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 3 --world_size 4 &
+wait
+
+# Merge results after all workers complete
+python -m spd.dataset_attributions.scripts.run <path> --merge
+```
+
+Each worker processes batches where `batch_idx % world_size == rank`, then the merge step combines all partial results.
 
 ## Data Storage
 
