@@ -7,7 +7,9 @@ over the full training dataset.
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query
+from jaxtyping import Float
 from pydantic import BaseModel
+from torch import Tensor, nn
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
@@ -36,6 +38,7 @@ class DatasetAttributionMetadata(BaseModel):
     n_tokens_processed: int | None
     n_component_layer_keys: int | None
     vocab_size: int | None
+    d_model: int | None
     ci_threshold: float | None
 
 
@@ -80,6 +83,13 @@ def _require_target(storage: DatasetAttributionStorage, component_key: str) -> N
         )
 
 
+def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
+    """Get the unembedding matrix from the loaded model."""
+    lm_head = loaded.model.target_model.lm_head
+    assert isinstance(lm_head, nn.Linear), f"lm_head must be nn.Linear, got {type(lm_head)}"
+    return lm_head.weight.T.detach()
+
+
 def _to_api_entries(entries: list[StorageEntry]) -> list[DatasetAttributionEntry]:
     """Convert storage entries to API response format."""
     return [
@@ -104,6 +114,7 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
             n_tokens_processed=None,
             n_component_layer_keys=None,
             vocab_size=None,
+            d_model=None,
             ci_threshold=None,
         )
 
@@ -114,6 +125,7 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
         n_tokens_processed=storage.n_tokens_processed,
         n_component_layer_keys=storage.n_components,
         vocab_size=storage.vocab_size,
+        d_model=storage.d_model,
         ci_threshold=storage.ci_threshold,
     )
 
@@ -140,6 +152,8 @@ def get_component_attributions(
             detail=f"Component {component_key} not found in attributions",
         )
 
+    w_unembed = _get_w_unembed(loaded) if is_source else None
+
     return ComponentAttributions(
         positive_sources=_to_api_entries(storage.get_top_sources(component_key, k, "positive"))
         if is_target
@@ -147,10 +161,14 @@ def get_component_attributions(
         negative_sources=_to_api_entries(storage.get_top_sources(component_key, k, "negative"))
         if is_target
         else [],
-        positive_targets=_to_api_entries(storage.get_top_targets(component_key, k, "positive"))
+        positive_targets=_to_api_entries(
+            storage.get_top_targets(component_key, k, "positive", w_unembed=w_unembed)
+        )
         if is_source
         else [],
-        negative_targets=_to_api_entries(storage.get_top_targets(component_key, k, "negative"))
+        negative_targets=_to_api_entries(
+            storage.get_top_targets(component_key, k, "negative", w_unembed=w_unembed)
+        )
         if is_source
         else [],
     )
@@ -169,7 +187,10 @@ def get_attribution_sources(
     storage = _require_storage(loaded)
     target_key = f"{layer}:{component_idx}"
     _require_target(storage, target_key)
-    return _to_api_entries(storage.get_top_sources(target_key, k, sign))
+
+    w_unembed = _get_w_unembed(loaded) if layer == "output" else None
+
+    return _to_api_entries(storage.get_top_sources(target_key, k, sign, w_unembed=w_unembed))
 
 
 @router.get("/{layer}/{component_idx}/targets")
@@ -185,7 +206,10 @@ def get_attribution_targets(
     storage = _require_storage(loaded)
     source_key = f"{layer}:{component_idx}"
     _require_source(storage, source_key)
-    return _to_api_entries(storage.get_top_targets(source_key, k, sign))
+
+    w_unembed = _get_w_unembed(loaded)
+
+    return _to_api_entries(storage.get_top_targets(source_key, k, sign, w_unembed=w_unembed))
 
 
 @router.get("/between/{source_layer}/{source_idx}/{target_layer}/{target_idx}")
@@ -203,4 +227,7 @@ def get_attribution_between(
     target_key = f"{target_layer}:{target_idx}"
     _require_source(storage, source_key)
     _require_target(storage, target_key)
-    return storage.get_attribution(source_key, target_key)
+
+    w_unembed = _get_w_unembed(loaded) if target_layer == "output" else None
+
+    return storage.get_attribution(source_key, target_key, w_unembed=w_unembed)

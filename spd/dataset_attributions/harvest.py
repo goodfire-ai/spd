@@ -5,6 +5,10 @@ training dataset. Unlike prompt attributions (single-prompt, position-aware),
 dataset attributions answer: "In aggregate, which components typically influence
 each other?"
 
+Uses residual-based storage for scalability:
+- Component targets: stored directly
+- Output targets: stored as attributions to output residual, computed on-the-fly at query time
+
 See CLAUDE.md in this directory for usage instructions.
 """
 
@@ -55,22 +59,21 @@ def _build_alive_masks(
     ci_threshold: float,
     n_components: int,
     vocab_size: int,
-) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_targets"]]:
+) -> tuple[Bool[Tensor, " n_sources"], Bool[Tensor, " n_components"]]:
     """Build masks of alive components (mean_ci > threshold) for sources and targets.
 
     Falls back to all-alive if harvest summary not available.
 
-    Index structure matches storage:
+    Index structure:
     - Sources: [0, vocab_size) = wte tokens, [vocab_size, vocab_size + n_components) = component layers
-    - Targets: [0, n_components) = component layers, [n_components, n_components + vocab_size) = output tokens
+    - Targets: [0, n_components) = component layers (output handled via out_residual)
     """
     summary = load_activation_contexts_summary(run_id)
 
-    n_sources = vocab_size + n_components  # wte tokens + component layers
-    n_targets = n_components + vocab_size  # component layers + output tokens
+    n_sources = vocab_size + n_components
 
     source_alive = torch.zeros(n_sources, dtype=torch.bool)
-    target_alive = torch.zeros(n_targets, dtype=torch.bool)
+    target_alive = torch.zeros(n_components, dtype=torch.bool)
 
     # All wte tokens are always alive (source indices [0, vocab_size))
     source_alive[:vocab_size] = True
@@ -82,10 +85,8 @@ def _build_alive_masks(
         return source_alive, target_alive
 
     # Build masks for component layers
-    # Source indices [vocab_size, vocab_size + n_components) = component layers
-    # Target indices [0, n_components) = component layers
     source_idx = vocab_size  # Start after wte tokens
-    target_idx = 0  # Component layers start at 0 in targets
+    target_idx = 0
 
     for layer in model.target_module_paths:
         n_layer_components = model.module_to_c[layer]
@@ -97,14 +98,11 @@ def _build_alive_masks(
             source_idx += 1
             target_idx += 1
 
-    # All output tokens are always alive (target indices [n_components, end))
-    target_alive[n_components:] = True
-
     n_source_alive = int(source_alive.sum().item())
     n_target_alive = int(target_alive.sum().item())
     logger.info(
         f"Alive components: {n_source_alive}/{n_sources} sources, "
-        f"{n_target_alive}/{n_targets} targets (ci > {ci_threshold})"
+        f"{n_target_alive}/{n_components} component targets (ci > {ci_threshold})"
     )
     return source_alive, target_alive
 
@@ -146,11 +144,8 @@ def harvest_attributions(
 
     spd_config = run_info.config
     train_loader, tokenizer = train_loader_and_tokenizer(spd_config, config.batch_size)
-    vocab_size_raw = tokenizer.vocab_size
-    assert isinstance(vocab_size_raw, int), (
-        f"Tokenizer vocab_size must be int, got {type(vocab_size_raw)}"
-    )
-    vocab_size: int = vocab_size_raw
+    vocab_size = tokenizer.vocab_size
+    assert isinstance(vocab_size, int), f"vocab_size must be int, got {type(vocab_size)}"
     logger.info(f"Vocab size: {vocab_size}")
 
     # Build component keys and alive masks
@@ -163,8 +158,7 @@ def harvest_attributions(
     target_alive = target_alive.to(device)
 
     n_sources = vocab_size + n_components
-    n_targets = n_components + vocab_size
-    logger.info(f"Component layers: {n_components}, Sources: {n_sources}, Targets: {n_targets}")
+    logger.info(f"Component layers: {n_components}, Sources: {n_sources}")
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
@@ -218,13 +212,16 @@ def harvest_attributions(
     )
 
     # Normalize by n_tokens to get per-token average attribution
-    normalized_matrix = harvester.accumulator / harvester.n_tokens
+    normalized_comp = harvester.comp_accumulator / harvester.n_tokens
+    normalized_out_residual = harvester.out_residual_accumulator / harvester.n_tokens
 
     # Build and save storage
     storage = DatasetAttributionStorage(
         component_layer_keys=component_layer_keys,
         vocab_size=vocab_size,
-        attribution_matrix=normalized_matrix.cpu(),
+        d_model=harvester.d_model,
+        source_to_component=normalized_comp.cpu(),
+        source_to_out_residual=normalized_out_residual.cpu(),
         n_batches_processed=harvester.n_batches,
         n_tokens_processed=harvester.n_tokens,
         ci_threshold=config.ci_threshold,
@@ -251,9 +248,10 @@ def merge_attributions(wandb_path: str) -> None:
     assert rank_files, f"No rank files found in {output_dir}"
     logger.info(f"Found {len(rank_files)} rank files to merge")
 
-    # Load first file to get metadata and initialize accumulator
+    # Load first file to get metadata and initialize accumulators
     first = DatasetAttributionStorage.load(rank_files[0])
-    total_matrix = first.attribution_matrix * first.n_tokens_processed
+    total_comp = first.source_to_component * first.n_tokens_processed
+    total_out_residual = first.source_to_out_residual * first.n_tokens_processed
     total_tokens = first.n_tokens_processed
     total_batches = first.n_batches_processed
     logger.info(f"Loaded rank 0: {first.n_tokens_processed:,} tokens")
@@ -267,21 +265,26 @@ def merge_attributions(wandb_path: str) -> None:
             "Component layer keys mismatch"
         )
         assert storage.vocab_size == first.vocab_size, "Vocab size mismatch"
+        assert storage.d_model == first.d_model, "d_model mismatch"
         assert storage.ci_threshold == first.ci_threshold, "CI threshold mismatch"
 
         # Accumulate de-normalized values
-        total_matrix += storage.attribution_matrix * storage.n_tokens_processed
+        total_comp += storage.source_to_component * storage.n_tokens_processed
+        total_out_residual += storage.source_to_out_residual * storage.n_tokens_processed
         total_tokens += storage.n_tokens_processed
         total_batches += storage.n_batches_processed
 
     # Normalize by total tokens
-    merged_matrix = total_matrix / total_tokens
+    merged_comp = total_comp / total_tokens
+    merged_out_residual = total_out_residual / total_tokens
 
     # Save merged result
     merged = DatasetAttributionStorage(
         component_layer_keys=first.component_layer_keys,
         vocab_size=first.vocab_size,
-        attribution_matrix=merged_matrix,
+        d_model=first.d_model,
+        source_to_component=merged_comp,
+        source_to_out_residual=merged_out_residual,
         n_batches_processed=total_batches,
         n_tokens_processed=total_tokens,
         ci_threshold=first.ci_threshold,

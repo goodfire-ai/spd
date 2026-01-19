@@ -4,9 +4,10 @@ Computes component-to-component attribution strengths aggregated over the full
 training dataset using gradient x activation formula, summed over all positions
 and batches.
 
-Matrix structure is (n_sources, n_targets) where:
-- Sources: wte tokens [0, vocab_size) + component layers [vocab_size, ...)
-- Targets: component layers [0, n_components) + output tokens [n_components, ...)
+Uses residual-based storage for scalability:
+- Component targets: accumulated directly to comp_accumulator
+- Output targets: accumulated as attributions to output residual stream (source_to_out_residual)
+  Output attributions computed on-the-fly at query time via w_unembed
 """
 
 from typing import Any
@@ -30,13 +31,14 @@ class AttributionHarvester:
     Key optimizations:
     1. Sum outputs over positions BEFORE computing gradients, reducing backward
        passes from O(positions × components) to O(components).
-    2. For output targets, compute attributions to the pre-unembed residual
-       (d_model dimensions) then multiply by W_unembed. This reduces backward
-       passes from O(vocab_size) to O(d_model).
+    2. For output targets, store attributions to the pre-unembed residual
+       (d_model dimensions) instead of vocab tokens. This eliminates the expensive
+       O((V+C) × d_model × V) matmul during harvesting and reduces storage.
 
-    Index structure matches DatasetAttributionStorage:
+    Index structure:
         - Sources: wte tokens [0, vocab_size) + component layers [vocab_size, ...)
-        - Targets: component layers [0, n_components) + output tokens [n_components, ...)
+        - Component targets: [0, n_components) in comp_accumulator
+        - Output targets: via out_residual_accumulator (computed on-the-fly at query time)
     """
 
     sampling: SamplingType
@@ -48,7 +50,7 @@ class AttributionHarvester:
         n_components: int,
         vocab_size: int,
         source_alive: Bool[Tensor, " n_sources"],
-        target_alive: Bool[Tensor, " n_targets"],
+        target_alive: Bool[Tensor, " n_components"],
         sampling: SamplingType,
         device: torch.device,
         show_progress: bool = False,
@@ -63,14 +65,22 @@ class AttributionHarvester:
         self.device = device
         self.show_progress = show_progress
 
-        # Matrix shape matches storage
         self.n_sources = vocab_size + n_components
-        n_targets = n_components + vocab_size
-        self.accumulator = torch.zeros(self.n_sources, n_targets, device=device)
         self.n_batches = 0
         self.n_tokens = 0
 
-        # Build per-layer index ranges
+        # Split accumulators for component and output targets
+        self.comp_accumulator = torch.zeros(self.n_sources, n_components, device=device)
+
+        # For output targets: store attributions to output residual dimensions
+        assert hasattr(model.target_model, "lm_head"), "Model must have lm_head"
+        lm_head = model.target_model.lm_head
+        assert isinstance(lm_head, nn.Linear), f"lm_head must be nn.Linear, got {type(lm_head)}"
+        self.d_model = lm_head.in_features
+        self.out_residual_accumulator = torch.zeros(self.n_sources, self.d_model, device=device)
+        self.lm_head = lm_head
+
+        # Build per-layer index ranges for sources
         self.component_layer_names = list(model.target_module_paths)
         self.source_layer_to_idx_range = self._build_source_layer_index_ranges()
         self.target_layer_to_idx_range = self._build_target_layer_index_ranges()
@@ -83,14 +93,6 @@ class AttributionHarvester:
             self.target_layer_to_idx_range, target_alive
         )
 
-        # For output optimization: store lm_head weight [d_model, vocab_size]
-        assert hasattr(model.target_model, "lm_head"), "Model must have lm_head"
-        lm_head = model.target_model.lm_head
-        assert isinstance(lm_head, nn.Linear), f"lm_head must be nn.Linear, got {type(lm_head)}"
-        self.w_unembed: Float[Tensor, "d_model vocab"] = lm_head.weight.T.detach()
-        self.d_model = self.w_unembed.shape[0]
-        self.lm_head = lm_head
-
     def _build_source_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
         """Source order: wte tokens [0, vocab_size), then component layers."""
         ranges: dict[str, tuple[int, int]] = {"wte": (0, self.vocab_size)}
@@ -102,14 +104,14 @@ class AttributionHarvester:
         return ranges
 
     def _build_target_layer_index_ranges(self) -> dict[str, tuple[int, int]]:
-        """Target order: component layers [0, n_components), then output tokens."""
+        """Target order: component layers [0, n_components). Output handled separately."""
         ranges: dict[str, tuple[int, int]] = {}
         idx = 0
         for layer in self.component_layer_names:
             n = self.model.module_to_c[layer]
             ranges[layer] = (idx, idx + n)
             idx += n
-        ranges["output"] = (idx, idx + self.vocab_size)
+        # Note: "output" not included - handled via out_residual_accumulator
         return ranges
 
     def _build_alive_indices(
@@ -200,11 +202,10 @@ class AttributionHarvester:
 
         for i, t_idx in enumerate(alive_targets):
             # Only retain the computation graph if we need more backward passes.
-            # See _process_output_targets for detailed explanation.
             is_last = is_last_layer and i == len(alive_targets) - 1
             grads = torch.autograd.grad(target_acts[t_idx], source_acts, retain_graph=not is_last)
-            self._accumulate_to_column(
-                self.accumulator[:, target_start + t_idx],
+            self._accumulate_attributions(
+                self.comp_accumulator[:, target_start + t_idx],
                 source_layers,
                 grads,
                 source_acts,
@@ -217,42 +218,29 @@ class AttributionHarvester:
         cache: dict[str, Tensor],
         is_last_layer: bool,
     ) -> None:
-        """Process output attributions via residual-space optimization.
+        """Process output attributions via output-residual-space storage.
 
-        Instead of O(vocab_size) backward passes, we:
-        1. Compute attributions to d_model residual dimensions
-        2. Multiply by W_unembed to get vocab attributions
+        Instead of computing and storing attributions to vocab tokens directly,
+        we store attributions to output residual dimensions. Output attributions are
+        computed on-the-fly at query time via: attr[src, token] = out_residual[src] @ w_unembed[:, token]
         """
-        target_start, _ = self.target_layer_to_idx_range["output"]
-        alive_outputs = self.alive_target_idxs_per_layer["output"]
-        if not alive_outputs:
-            return
-
-        # Sum residual over batch and sequence -> [d_model]
-        residual = cache["pre_unembed"].sum(dim=(0, 1))
+        # Sum output residual over batch and sequence -> [d_model]
+        out_residual = cache["pre_unembed"].sum(dim=(0, 1))
         source_acts = [cache[f"{s}_post_detach"] for s in source_layers]
-
-        # Accumulate attributions to residual dimensions
-        residual_attr = torch.zeros(self.n_sources, self.d_model, device=self.device)
 
         for d_idx in range(self.d_model):
             # Only retain the computation graph if we need more backward passes.
-            # is_last is True only when: (1) this is the last target layer being processed
-            # AND (2) this is the last residual dimension. This allows the graph to be
-            # freed after the final backward pass, saving memory.
             is_last = is_last_layer and d_idx == self.d_model - 1
-            grads = torch.autograd.grad(residual[d_idx], source_acts, retain_graph=not is_last)
-            self._accumulate_to_column(
-                residual_attr[:, d_idx], source_layers, grads, source_acts, cache["tokens"]
+            grads = torch.autograd.grad(out_residual[d_idx], source_acts, retain_graph=not is_last)
+            self._accumulate_attributions(
+                self.out_residual_accumulator[:, d_idx],
+                source_layers,
+                grads,
+                source_acts,
+                cache["tokens"],
             )
 
-        # Convert to vocab attributions and store
-        with torch.no_grad():
-            vocab_attr = residual_attr @ self.w_unembed
-            for v_idx in alive_outputs:
-                self.accumulator[:, target_start + v_idx] += vocab_attr[:, v_idx]
-
-    def _accumulate_to_column(
+    def _accumulate_attributions(
         self,
         target_col: Float[Tensor, " n_sources"],
         source_layers: list[str],
@@ -260,7 +248,7 @@ class AttributionHarvester:
         source_acts: list[Tensor],
         tokens: Int[Tensor, "batch seq"],
     ) -> None:
-        """Accumulate attributions from all sources to a single target column."""
+        """Accumulate grad*act attributions from sources to a target column."""
         with torch.no_grad():
             for layer, grad, act in zip(source_layers, grads, source_acts, strict=True):
                 alive = self.alive_source_idxs_per_layer[layer]

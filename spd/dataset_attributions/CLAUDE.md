@@ -81,15 +81,29 @@ attribution[src, tgt] = Σ_batch Σ_pos (∂out[pos, tgt] / ∂in[pos, src]) × 
 
 Key optimizations:
 1. Sum outputs over positions before gradients (reduces backward passes)
-2. For output targets, compute attributions to pre-unembed residual then multiply by W_unembed
+2. For output targets, store attributions to output residual stream instead of vocab tokens (reduces storage from O((V+C)²) to O((V+C)×(C+d_model)))
 
 ### Storage (`storage.py`)
 
-`DatasetAttributionStorage` class for loading/saving attribution matrices.
+`DatasetAttributionStorage` class using output-residual-based storage for scalability.
 
-Matrix structure:
-- Rows (sources): wte tokens `[0, vocab_size)` + component layers `[vocab_size, ...)`
-- Cols (targets): component layers `[0, n_components)` + output tokens `[n_components, ...)`
+**Storage structure:**
+- `source_to_component`: (n_sources, n_components) - direct attributions to component targets
+- `source_to_out_residual`: (n_sources, d_model) - attributions to output residual stream for output queries
+
+**Source indexing (rows):**
+- `[0, vocab_size)`: wte tokens
+- `[vocab_size, vocab_size + n_components)`: component layers
+
+**Target handling:**
+- Component targets: direct lookup in `source_to_component`
+- Output targets: computed on-the-fly via `source_to_out_residual @ w_unembed[:, token_id]`
+
+**Why output-residual-based storage?**
+
+For large vocab models (V=32K), the naive approach would require O((V+C)²) storage (~4 GB).
+The output-residual-based approach requires only O((V+C)×(C+d)) storage (~670 MB for Llama-scale),
+a 6.5x reduction. Output attributions are computed on-the-fly at query time with negligible latency.
 
 ### Loaders (`loaders.py`)
 
@@ -98,17 +112,36 @@ from spd.dataset_attributions.loaders import load_dataset_attributions
 
 storage = load_dataset_attributions(run_id)
 if storage:
-    # Get top sources attributing to a component
-    top_sources = storage.get_top_sources("h.0.mlp.fc1:5", k=10, sign="positive")
+    # Get top sources attributing to a component (no w_unembed needed)
+    top_sources = storage.get_top_sources("h.0.mlp.c_fc:5", k=10, sign="positive")
 
-    # Get top targets a component attributes to
-    top_targets = storage.get_top_targets("h.0.mlp.fc1:5", k=10, sign="positive")
+    # Get top component targets (no w_unembed needed)
+    top_comp_targets = storage.get_top_component_targets("h.0.mlp.c_fc:5", k=10, sign="positive")
+
+    # Get top targets including outputs (requires w_unembed)
+    w_unembed = model.target_model.lm_head.weight.T.detach()
+    top_targets = storage.get_top_targets("h.0.mlp.c_fc:5", k=10, sign="positive", w_unembed=w_unembed)
+
+    # Get top output targets only (requires w_unembed)
+    top_outputs = storage.get_top_output_targets("h.0.mlp.c_fc:5", k=10, sign="positive", w_unembed=w_unembed)
 ```
 
 ## Key Types
 
 ```python
-DatasetAttributionStorage   # Main storage class with attribution matrix
+DatasetAttributionStorage   # Main storage class with split matrices
 DatasetAttributionEntry     # Single entry: component_key, layer, component_idx, value
 DatasetAttributionConfig    # Config: wandb_path, n_batches, batch_size, ci_threshold
 ```
+
+## Query Methods
+
+| Method | w_unembed required? | Description |
+|--------|---------------------|-------------|
+| `get_top_sources(component_key, k, sign)` | No | Top sources → component target |
+| `get_top_sources(output_key, k, sign, w_unembed)` | Yes | Top sources → output token |
+| `get_top_component_targets(source_key, k, sign)` | No | Top component targets |
+| `get_top_output_targets(source_key, k, sign, w_unembed)` | Yes | Top output token targets |
+| `get_top_targets(source_key, k, sign, w_unembed)` | Yes | All targets (components + outputs) |
+| `get_attribution(source_key, component_key)` | No | Single component attribution |
+| `get_attribution(source_key, output_key, w_unembed)` | Yes | Single output attribution |

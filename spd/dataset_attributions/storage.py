@@ -1,4 +1,9 @@
-"""Storage classes for dataset attributions."""
+"""Storage classes for dataset attributions.
+
+Uses a residual-based storage approach for scalability:
+- Component targets: stored directly in source_to_component matrix
+- Output targets: stored as attributions to residual stream, computed on-the-fly via w_unembed
+"""
 
 import dataclasses
 from collections.abc import Callable
@@ -27,19 +32,24 @@ class DatasetAttributionEntry:
 class DatasetAttributionStorage:
     """Dataset-aggregated attribution strengths between components.
 
-    Matrix structure:
-        - Rows (sources): wte tokens [0, vocab_size) + component layers [vocab_size, ...)
-        - Cols (targets): component layers [0, n_components) + output tokens [n_components, ...)
+    Uses residual-based storage for scalability with large vocabularies:
+    - source_to_component: direct attributions to component targets
+    - source_to_out_residual: attributions to output residual stream (for computing output attributions)
+
+    Output attributions are computed on-the-fly: attr[src, output_token] = out_residual[src] @ w_unembed[:, token]
+
+    Source indexing (rows):
+        - [0, vocab_size): wte tokens
+        - [vocab_size, vocab_size + n_components): component layers
+
+    Target indexing:
+        - Component targets: [0, n_components) in source_to_component
+        - Output targets: computed via source_to_out_residual @ w_unembed
 
     Key formats:
-        - wte tokens: "wte:{token_id}" where token_id is the vocabulary index
+        - wte tokens: "wte:{token_id}"
         - component layers: "layer:c_idx" (e.g., "h.0.attn.q_proj:5")
-        - output tokens: "output:{token_id}" where token_id is the vocabulary index
-
-    Only component_layer_keys are stored explicitly. wte and output keys are
-    constructed from vocab_size as f"wte:{id}" and f"output:{id}".
-
-    attribution_matrix[i, j] = per-token average attribution FROM source i TO target j
+        - output tokens: "output:{token_id}"
     """
 
     component_layer_keys: list[str]
@@ -48,8 +58,14 @@ class DatasetAttributionStorage:
     vocab_size: int
     """Vocabulary size (number of wte and output tokens)"""
 
-    attribution_matrix: Float[Tensor, "n_sources n_targets"]
-    """Shape: (vocab_size + n_components, n_components + vocab_size)"""
+    d_model: int
+    """Model hidden dimension (residual stream size)"""
+
+    source_to_component: Float[Tensor, "n_sources n_components"]
+    """Attributions from sources to component targets. Shape: (vocab_size + n_components, n_components)"""
+
+    source_to_out_residual: Float[Tensor, "n_sources d_model"]
+    """Attributions from sources to output residual dimensions. Shape: (vocab_size + n_components, d_model)"""
 
     n_batches_processed: int
     n_tokens_processed: int
@@ -62,27 +78,28 @@ class DatasetAttributionStorage:
     def __post_init__(self) -> None:
         self._component_key_to_idx = {k: i for i, k in enumerate(self.component_layer_keys)}
 
-        # Validate dimensions
         n_components = len(self.component_layer_keys)
-        expected_shape = (self.vocab_size + n_components, n_components + self.vocab_size)
-        assert self.attribution_matrix.shape == expected_shape, (
-            f"Matrix shape {self.attribution_matrix.shape} doesn't match expected {expected_shape}"
+        n_sources = self.vocab_size + n_components
+
+        expected_comp_shape = (n_sources, n_components)
+        assert self.source_to_component.shape == expected_comp_shape, (
+            f"source_to_component shape {self.source_to_component.shape} "
+            f"doesn't match expected {expected_comp_shape}"
+        )
+
+        expected_resid_shape = (n_sources, self.d_model)
+        assert self.source_to_out_residual.shape == expected_resid_shape, (
+            f"source_to_out_residual shape {self.source_to_out_residual.shape} "
+            f"doesn't match expected {expected_resid_shape}"
         )
 
     @property
     def n_components(self) -> int:
-        """Number of component layer keys."""
         return len(self.component_layer_keys)
 
     @property
     def n_sources(self) -> int:
-        """Number of source components (wte tokens + component layers)."""
         return self.vocab_size + self.n_components
-
-    @property
-    def n_targets(self) -> int:
-        """Number of target components (component layers + output tokens)."""
-        return self.n_components + self.vocab_size
 
     def _parse_key(self, key: str) -> tuple[str, int]:
         """Parse a key into (layer, idx)."""
@@ -103,33 +120,35 @@ class DatasetAttributionStorage:
             case _:
                 return self.vocab_size + self._component_key_to_idx[key]
 
-    def _target_idx(self, key: str) -> int:
-        """Get target (column) index for a key. Raises KeyError if not a valid target."""
-        layer, idx = self._parse_key(key)
-        match layer:
-            case "wte":
-                raise KeyError(f"wte tokens cannot be targets: {key}")
-            case "output":
-                assert 0 <= idx < self.vocab_size, (
-                    f"output index {idx} out of range [0, {self.vocab_size})"
-                )
-                return self.n_components + idx
-            case _:
-                return self._component_key_to_idx[key]
+    def _component_target_idx(self, key: str) -> int:
+        """Get target index for a component key. Raises KeyError if output or invalid."""
+        if key.startswith(("wte:", "output:")):
+            raise KeyError(f"Not a component target: {key}")
+        return self._component_key_to_idx[key]
 
     def _source_idx_to_key(self, idx: int) -> str:
         """Convert source (row) index to key."""
         if idx < self.vocab_size:
             return f"wte:{idx}"
-        else:
-            return self.component_layer_keys[idx - self.vocab_size]
+        return self.component_layer_keys[idx - self.vocab_size]
 
-    def _target_idx_to_key(self, idx: int) -> str:
-        """Convert target (column) index to key."""
-        if idx < self.n_components:
-            return self.component_layer_keys[idx]
-        else:
-            return f"output:{idx - self.n_components}"
+    def _component_target_idx_to_key(self, idx: int) -> str:
+        """Convert component target index to key."""
+        return self.component_layer_keys[idx]
+
+    def _output_target_idx_to_key(self, idx: int) -> str:
+        """Convert output token index to key."""
+        return f"output:{idx}"
+
+    def _is_output_target(self, key: str) -> bool:
+        """Check if key is an output target."""
+        return key.startswith("output:")
+
+    def _output_token_id(self, key: str) -> int:
+        """Extract token_id from an output key like 'output:123'. Asserts valid range."""
+        _, token_id = self._parse_key(key)
+        assert 0 <= token_id < self.vocab_size, f"output index {token_id} out of range"
+        return token_id
 
     def has_source(self, key: str) -> bool:
         """Check if a key can be a source (wte token or component layer)."""
@@ -159,7 +178,9 @@ class DatasetAttributionStorage:
             {
                 "component_layer_keys": self.component_layer_keys,
                 "vocab_size": self.vocab_size,
-                "attribution_matrix": self.attribution_matrix.cpu(),
+                "d_model": self.d_model,
+                "source_to_component": self.source_to_component.cpu(),
+                "source_to_out_residual": self.source_to_out_residual.cpu(),
                 "n_batches_processed": self.n_batches_processed,
                 "n_tokens_processed": self.n_tokens_processed,
                 "ci_threshold": self.ci_threshold,
@@ -175,17 +196,36 @@ class DatasetAttributionStorage:
         return cls(
             component_layer_keys=data["component_layer_keys"],
             vocab_size=data["vocab_size"],
-            attribution_matrix=data["attribution_matrix"],
+            d_model=data["d_model"],
+            source_to_component=data["source_to_component"],
+            source_to_out_residual=data["source_to_out_residual"],
             n_batches_processed=data["n_batches_processed"],
             n_tokens_processed=data["n_tokens_processed"],
             ci_threshold=data["ci_threshold"],
         )
 
-    def get_attribution(self, source_key: str, target_key: str) -> float:
-        """Get attribution strength from source to target."""
+    def get_attribution(
+        self,
+        source_key: str,
+        target_key: str,
+        w_unembed: Float[Tensor, "d_model vocab"] | None = None,
+    ) -> float:
+        """Get attribution strength from source to target.
+
+        Args:
+            source_key: Source component key (wte or component layer)
+            target_key: Target component key (component layer or output token)
+            w_unembed: Unembedding matrix, required if target is an output token
+        """
         src_idx = self._source_idx(source_key)
-        tgt_idx = self._target_idx(target_key)
-        return self.attribution_matrix[src_idx, tgt_idx].item()
+
+        if self._is_output_target(target_key):
+            assert w_unembed is not None, "w_unembed required for output target queries"
+            token_id = self._output_token_id(target_key)
+            return (self.source_to_out_residual[src_idx] @ w_unembed[:, token_id]).item()
+
+        tgt_idx = self._component_target_idx(target_key)
+        return self.source_to_component[src_idx, tgt_idx].item()
 
     def _get_top_k(
         self,
@@ -221,27 +261,81 @@ class DatasetAttributionStorage:
         target_key: str,
         k: int,
         sign: Literal["positive", "negative"],
+        w_unembed: Float[Tensor, "d_model vocab"] | None = None,
     ) -> list[DatasetAttributionEntry]:
-        """Get top-k source components that attribute TO this target."""
-        tgt_idx = self._target_idx(target_key)
-        return self._get_top_k(
-            values=self.attribution_matrix[:, tgt_idx],
-            k=k,
-            sign=sign,
-            idx_to_key=self._source_idx_to_key,
-        )
+        """Get top-k source components that attribute TO this target.
+
+        Args:
+            target_key: Target component key (component layer or output token)
+            k: Number of top sources to return
+            sign: "positive" for strongest positive, "negative" for strongest negative
+            w_unembed: Unembedding matrix, required if target is an output token
+        """
+        if self._is_output_target(target_key):
+            assert w_unembed is not None, "w_unembed required for output target queries"
+            token_id = self._output_token_id(target_key)
+            values = self.source_to_out_residual @ w_unembed[:, token_id]  # (n_sources,)
+        else:
+            tgt_idx = self._component_target_idx(target_key)
+            values = self.source_to_component[:, tgt_idx]
+
+        return self._get_top_k(values, k, sign, self._source_idx_to_key)
 
     def get_top_targets(
         self,
         source_key: str,
         k: int,
         sign: Literal["positive", "negative"],
+        w_unembed: Float[Tensor, "d_model vocab"] | None = None,
+        include_outputs: bool = True,
     ) -> list[DatasetAttributionEntry]:
-        """Get top-k target components this source attributes TO."""
+        """Get top-k target components this source attributes TO.
+
+        Args:
+            source_key: Source component key (wte or component layer)
+            k: Number of top targets to return
+            sign: "positive" for strongest positive, "negative" for strongest negative
+            w_unembed: Unembedding matrix, required if include_outputs=True
+            include_outputs: Whether to include output tokens in results
+        """
         src_idx = self._source_idx(source_key)
-        return self._get_top_k(
-            values=self.attribution_matrix[src_idx, :],
-            k=k,
-            sign=sign,
-            idx_to_key=self._target_idx_to_key,
-        )
+        comp_values = self.source_to_component[src_idx, :]  # (n_components,)
+
+        if include_outputs:
+            assert w_unembed is not None, "w_unembed required when include_outputs=True"
+            # Compute attributions to all output tokens
+            output_values = self.source_to_out_residual[src_idx, :] @ w_unembed  # (vocab,)
+            all_values = torch.cat([comp_values, output_values])
+
+            def combined_idx_to_key(idx: int) -> str:
+                if idx < self.n_components:
+                    return self._component_target_idx_to_key(idx)
+                return self._output_target_idx_to_key(idx - self.n_components)
+
+            return self._get_top_k(all_values, k, sign, combined_idx_to_key)
+
+        return self._get_top_k(comp_values, k, sign, self._component_target_idx_to_key)
+
+    def get_top_component_targets(
+        self,
+        source_key: str,
+        k: int,
+        sign: Literal["positive", "negative"],
+    ) -> list[DatasetAttributionEntry]:
+        """Get top-k component targets (excluding outputs) this source attributes TO.
+
+        Convenience method that doesn't require w_unembed.
+        """
+        return self.get_top_targets(source_key, k, sign, w_unembed=None, include_outputs=False)
+
+    def get_top_output_targets(
+        self,
+        source_key: str,
+        k: int,
+        sign: Literal["positive", "negative"],
+        w_unembed: Float[Tensor, "d_model vocab"],
+    ) -> list[DatasetAttributionEntry]:
+        """Get top-k output token targets this source attributes TO."""
+        src_idx = self._source_idx(source_key)
+        output_values = self.source_to_out_residual[src_idx, :] @ w_unembed  # (vocab,)
+        return self._get_top_k(output_values, k, sign, self._output_target_idx_to_key)
