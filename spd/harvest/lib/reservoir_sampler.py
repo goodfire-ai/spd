@@ -1,3 +1,4 @@
+import heapq
 import random
 from dataclasses import dataclass
 from typing import Generic, TypeVar
@@ -17,7 +18,8 @@ class ReservoirState(Generic[T]):  # noqa: UP046 - PEP 695 syntax breaks picklin
     def merge(states: list["ReservoirState[T]"]) -> "ReservoirState[T]":
         """Merge multiple reservoir states via weighted random sampling.
 
-        Each sample from reservoir i has probability n_i / sum(n_j) of being selected.
+        Uses Efraimidis-Spirakis algorithm: each sample gets key = random()^(1/weight),
+        take k largest. O(n + k log n) vs O(k*n) for naive weighted sampling.
         """
         assert len(states) > 0
         k = states[0].k
@@ -27,7 +29,7 @@ class ReservoirState(Generic[T]):  # noqa: UP046 - PEP 695 syntax breaks picklin
         if total_seen == 0:
             return ReservoirState(k=k, samples=[], n_seen=0)
 
-        # Build weighted pool: (sample, weight) where weight = n_seen for that reservoir
+        # Build weighted pool: each sample weighted by its reservoir's n_seen
         weighted_samples: list[tuple[T, int]] = []
         for state in states:
             for sample in state.samples:
@@ -36,26 +38,10 @@ class ReservoirState(Generic[T]):  # noqa: UP046 - PEP 695 syntax breaks picklin
         if len(weighted_samples) <= k:
             merged_samples = [s for s, _ in weighted_samples]
         else:
-            # Weighted random sampling without replacement
-            weights = [w for _, w in weighted_samples]
-            indices = []
-            remaining_weights = list(weights)
-            remaining_indices = list(range(len(weighted_samples)))
-
-            for _ in range(k):
-                r = random.random() * sum(remaining_weights)
-                cumsum = 0.0
-                for i, (idx, w) in enumerate(
-                    zip(remaining_indices, remaining_weights, strict=True)
-                ):
-                    cumsum += w
-                    if r <= cumsum:
-                        indices.append(idx)
-                        remaining_indices.pop(i)
-                        remaining_weights.pop(i)
-                        break
-
-            merged_samples = [weighted_samples[i][0] for i in indices]
+            # Efraimidis-Spirakis: key = random()^(1/weight), take k largest
+            keys_and_samples = [(random.random() ** (1.0 / w), s) for s, w in weighted_samples]
+            top_k = heapq.nlargest(k, keys_and_samples, key=lambda x: x[0])
+            merged_samples = [s for _, s in top_k]
 
         return ReservoirState(k=k, samples=merged_samples, n_seen=total_seen)
 

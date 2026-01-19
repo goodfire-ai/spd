@@ -21,6 +21,8 @@ from spd.routing import AllLayersRouter
 from spd.spd_types import Probability
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
 
+MaskType = Literal["stochastic", "ci"]
+
 
 @dataclass
 class OptimCELossConfig:
@@ -258,6 +260,7 @@ class OptimCIConfig:
     sampling: SamplingType
 
     ce_kl_rounding_threshold: float
+    mask_type: MaskType = "stochastic"
 
 
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
@@ -319,18 +322,24 @@ def optimize_ci_values(
         # Create CI outputs from current parameters
         ci_outputs = ci_params.create_ci_outputs(model, device)
 
-        mask_infos = calc_stochastic_component_mask_info(
-            causal_importances=ci_outputs.lower_leaky,
-            component_mask_sampling=config.sampling,
-            weight_deltas=weight_deltas,
-            router=AllLayersRouter(),
-        )
+        match config.mask_type:
+            case "stochastic":
+                mask_infos = calc_stochastic_component_mask_info(
+                    causal_importances=ci_outputs.lower_leaky,
+                    component_mask_sampling=config.sampling,
+                    weight_deltas=weight_deltas,
+                    router=AllLayersRouter(),
+                )
+            case "ci":
+                mask_infos = make_mask_infos(component_masks=ci_outputs.lower_leaky)
+
         out = model(tokens, mask_infos=mask_infos)
 
         imp_min_loss = importance_minimality_loss(
             ci_upper_leaky=ci_outputs.upper_leaky,
             current_frac_of_training=step / config.steps,
             pnorm=config.imp_min_config.pnorm,
+            beta=config.imp_min_config.beta,
             eps=config.imp_min_config.eps,
             p_anneal_start_frac=config.imp_min_config.p_anneal_start_frac,
             p_anneal_final_p=config.imp_min_config.p_anneal_final_p,

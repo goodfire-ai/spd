@@ -1,66 +1,111 @@
 <script lang="ts">
     import type { Loadable } from "../../lib";
-    import { requestComponentInterpretation, type Interpretation } from "../../lib/api";
+    import type { InterpretationDetail } from "../../lib/api";
+    import type { InterpretationBackendState } from "../../lib/useRun.svelte";
 
     interface Props {
-        interpretation: Loadable<Interpretation>;
-        layer?: string;
-        cIdx?: number;
-        onInterpretationGenerated?: (interp: Interpretation) => void;
+        interpretation: Loadable<InterpretationBackendState>;
+        interpretationDetail: Loadable<InterpretationDetail | null>;
+        onGenerate: () => void;
     }
 
-    let { interpretation, layer, cIdx, onInterpretationGenerated }: Props = $props();
+    let { interpretation, interpretationDetail, onGenerate }: Props = $props();
 
-    let requesting = $state(false);
-    let requestError = $state<string | null>(null);
-
-    const canRequest = $derived(layer !== undefined && cIdx !== undefined && onInterpretationGenerated !== undefined);
-
-    async function handleRequestInterpretation() {
-        if (!canRequest || requesting) return;
-        requesting = true;
-        requestError = null;
-
-        try {
-            const result = await requestComponentInterpretation(layer!, cIdx!);
-            onInterpretationGenerated!(result);
-        } catch (e) {
-            requestError = e instanceof Error ? e.message : String(e);
-        } finally {
-            requesting = false;
-        }
-    }
+    let showPrompt = $state(false);
 </script>
 
-<div class="interpretation-badge" class:loading={requesting}>
-    {#if interpretation?.status === "loaded"}
-        <span class="interpretation-label">{interpretation.data.label}</span>
-        <span class="confidence confidence-{interpretation.data.confidence}">{interpretation.data.confidence}</span>
-    {:else if interpretation?.status === "loading" || requesting}
-        <span class="interpretation-label loading-text">Generating interpretation...</span>
-    {:else if interpretation?.status === "error" || requestError}
-        <span class="interpretation-label error-text">{requestError || String(interpretation?.error)}</span>
-        {#if canRequest}
-            <button class="retry-btn" onclick={handleRequestInterpretation}>Retry</button>
+<div class="interpretation-container">
+    <div
+        class="interpretation-badge"
+        class:loading={(interpretation.status === "loaded" && interpretation.data.status === "generating") ||
+            interpretation.status === "loading"}
+    >
+        {#if interpretation.status === "loading"}
+            <span class="interpretation-label loading-text">Loading interpretations...</span>
+        {:else if interpretation.status === "loaded"}
+            {@const interpretationData = interpretation.data}
+            {#if interpretationData.status === "none"}
+                <button class="generate-btn" onclick={onGenerate}>Generate Interpretation</button>
+            {:else if interpretationData.status === "generating"}
+                <span class="interpretation-label loading-text">Generating interpretation...</span>
+            {:else if interpretationData.status === "generated"}
+                <div class="interpretation-content">
+                    <div class="interpretation-header">
+                        <span class="interpretation-label">{interpretationData.data.label}</span>
+                        <span class="confidence confidence-{interpretationData.data.confidence}"
+                            >{interpretationData.data.confidence}</span
+                        >
+                    </div>
+                    {#if interpretationDetail.status === "loaded" && interpretationDetail.data?.reasoning}
+                        <span class="interpretation-reasoning">{interpretationDetail.data.reasoning}</span>
+                    {:else if interpretationDetail.status === "loading"}
+                        <span class="interpretation-reasoning loading-text">Loading reasoning...</span>
+                    {/if}
+                </div>
+                <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
+                    {showPrompt ? "Hide" : "View"} Autointerp Prompt
+                </button>
+                <!-- Error state for generating -->
+            {:else if interpretationData.status === "generation-error"}
+                <span class="interpretation-label error-text">{String(interpretationData.error)}</span>
+                <button class="retry-btn" onclick={onGenerate}>Retry</button>
+            {/if}
+            <!-- Error state for fetching -->
+        {:else if interpretation.status === "error"}
+            <span class="interpretation-label error-text">{String(interpretation.error)}</span>
         {/if}
-    {:else if interpretation === null && canRequest}
-        <button class="generate-btn" onclick={handleRequestInterpretation}>Generate Interpretation</button>
-    {:else if interpretation === null}
-        <span class="interpretation-label muted">No interpretation available</span>
-    {:else}
-        <span class="interpretation-label muted">Something went wrong</span>
+    </div>
+
+    {#if showPrompt}
+        <div class="prompt-display">
+            {#if interpretationDetail.status === "loading"}
+                <span class="loading-text">Loading prompt...</span>
+            {:else if interpretationDetail.status === "error"}
+                <span class="error-text">Error loading prompt: {String(interpretationDetail.error)}</span>
+            {:else if interpretationDetail.status === "loaded" && interpretationDetail.data}
+                <pre>{interpretationDetail.data.prompt}</pre>
+            {:else}
+                <span class="loading-text">Loading prompt...</span>
+            {/if}
+        </div>
     {/if}
 </div>
 
 <style>
+    .interpretation-container {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
     .interpretation-badge {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: var(--space-2);
         padding: var(--space-2) var(--space-3);
         background: var(--bg-secondary);
         border-radius: var(--radius-md);
         border-left: 3px solid var(--color-accent, #6366f1);
+    }
+
+    .interpretation-content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+        flex: 1;
+        min-width: 0;
+    }
+
+    .interpretation-header {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .interpretation-reasoning {
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        line-height: 1.4;
     }
 
     .interpretation-badge.loading {
@@ -137,5 +182,40 @@
     .retry-btn:hover {
         background: var(--bg-surface);
         border-color: var(--border-strong);
+    }
+
+    .prompt-toggle {
+        margin-left: auto;
+        padding: var(--space-1) var(--space-2);
+        font-size: var(--text-xs);
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        font-weight: 500;
+    }
+
+    .prompt-toggle:hover {
+        background: var(--bg-surface);
+        border-color: var(--border-strong);
+    }
+
+    .prompt-display {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+        padding: var(--space-3);
+        max-height: 400px;
+        overflow: auto;
+    }
+
+    .prompt-display pre {
+        margin: 0;
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--text-secondary);
     }
 </style>

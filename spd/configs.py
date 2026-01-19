@@ -202,11 +202,20 @@ class FaithfulnessLossConfig(LossMetricConfig):
 
 class ImportanceMinimalityLossConfig(LossMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
-    pnorm: float
-    p_anneal_start_frac: float = 1.0
-    p_anneal_final_p: float | None = None
-    p_anneal_end_frac: float = 1.0
-    eps: float = 1e-12
+    pnorm: NonNegativeFloat
+    beta: NonNegativeFloat
+    p_anneal_start_frac: Probability = 1.0
+    p_anneal_final_p: NonNegativeFloat | None = None
+    p_anneal_end_frac: Probability = 1.0
+    eps: NonNegativeFloat = 1e-12
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_beta(cls, data: dict[str, Any]) -> dict[str, Any]:
+        if "beta" not in data:
+            logger.warning("beta not in ImportanceMinimalityLossConfig, defaulting to 0.0")
+            data["beta"] = 0.0
+        return data
 
 
 class UniformKSubsetRoutingConfig(BaseConfig):

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { TokenInfo } from "../../lib/localAttributionsTypes";
+    import type { TokenInfo } from "../../lib/promptAttributionsTypes";
 
     type Props = {
         tokens: TokenInfo[];

@@ -1,6 +1,6 @@
 <script lang="ts">
-    import type { TokenInfo } from "../../lib/localAttributionsTypes";
-    import type { PromptCard, OptimizeConfig, StoredGraph } from "./types";
+    import type { TokenInfo } from "../../lib/promptAttributionsTypes";
+    import type { PromptCard, OptimizeConfig, StoredGraph, MaskType } from "./types";
     import TokenDropdown from "./TokenDropdown.svelte";
 
     type Props = {
@@ -39,11 +39,13 @@
                 impMinCoeff: opt.imp_min_coeff,
                 steps: opt.steps,
                 pnorm: opt.pnorm,
+                beta: opt.beta,
                 ceLossCoeff: opt.ce_loss_coeff ?? 0,
                 klLossCoeff: opt.kl_loss_coeff ?? 0,
                 labelTokenId: opt.label_token,
                 labelTokenText: opt.label_str ?? "",
                 labelTokenPreview: opt.label_str,
+                maskType: opt.mask_type ?? "stochastic",
             };
         }
         return card.newGraphConfig;
@@ -95,11 +97,21 @@
             if (!opt) return false;
             // Compare all relevant params
             const stepsMatch = opt.steps === config.steps;
-            const impMinMatch = Math.abs(opt.imp_min_coeff - config.impMinCoeff) < 0.001;
-            const pnormMatch = Math.abs(opt.pnorm - config.pnorm) < 0.001;
+            const impMinMatch = Math.abs(opt.imp_min_coeff - config.impMinCoeff) < 0.0000001;
+            const pnormMatch = Math.abs(opt.pnorm - config.pnorm) < 0.0000001;
+            const betaMatch = Math.abs(opt.beta - config.beta) < 0.0000001;
             const ceMatch = (opt.ce_loss_coeff ?? 0) === config.ceLossCoeff && opt.label_token === config.labelTokenId;
             const klMatch = (opt.kl_loss_coeff ?? 0) === config.klLossCoeff;
-            return stepsMatch && impMinMatch && pnormMatch && ceMatch && klMatch;
+            const maskTypeMatch = (opt.mask_type ?? "stochastic") === config.maskType;
+            return (
+                stepsMatch &&
+                impMinMatch &&
+                pnormMatch &&
+                betaMatch &&
+                ceMatch &&
+                klMatch &&
+                maskTypeMatch
+            );
         });
     }
 
@@ -123,7 +135,7 @@
         {#each card.graphs as graph (graph.id)}
             <div class="graph-tab" class:active={graph.id === card.activeGraphId}>
                 <button class="tab-label" onclick={() => onSelectGraph(graph.id)}>
-                    {graph.label}
+                    {graph.label} <span class="graph-id">#{graph.id}</span>
                 </button>
                 <button class="tab-close" onclick={() => onCloseGraph(graph.id)}>×</button>
             </div>
@@ -190,7 +202,21 @@
                                 onOptimizeConfigChange({ pnorm: parseFloat(e.currentTarget.value) });
                             }}
                             min={0.1}
-                            max={1}
+                            max={2}
+                            step={0.1}
+                        />
+                    </label>
+                    <label>
+                        <span>beta</span>
+                        <input
+                            type="number"
+                            value={optConfig.beta}
+                            oninput={(e) => {
+                                if (e.currentTarget.value === "") return;
+                                onOptimizeConfigChange({ beta: parseFloat(e.currentTarget.value) });
+                            }}
+                            min={0}
+                            max={10}
                             step={0.1}
                         />
                     </label>
@@ -241,6 +267,17 @@
                             step={0.1}
                         />
                     </label>
+                    <!-- Mask type dropdown -->
+                    <label>
+                        <span>mask_type</span>
+                        <select
+                            value={optConfig.maskType}
+                            onchange={(e) => onOptimizeConfigChange({ maskType: e.currentTarget.value as MaskType })}
+                        >
+                            <option value="stochastic">stochastic</option>
+                            <option value="ci">ci</option>
+                        </select>
+                    </label>
                 {/if}
 
                 {#if showComputeButton}
@@ -269,6 +306,10 @@
                     <span>pnorm</span>
                     <input type="number" value={displayConfig.pnorm} disabled />
                 </label>
+                <label>
+                    <span>beta</span>
+                    <input type="number" value={displayConfig.beta} disabled />
+                </label>
                 {#if displayConfig.ceLossCoeff > 0}
                     <label>
                         <span>ce_coeff</span>
@@ -288,6 +329,10 @@
                         <input type="number" value={displayConfig.klLossCoeff} disabled />
                     </label>
                 {/if}
+                <label>
+                    <span>mask_type</span>
+                    <input type="text" value={displayConfig.maskType} disabled />
+                </label>
             </div>
         </div>
     {:else if activeGraph}
@@ -346,42 +391,6 @@
         flex-wrap: wrap;
     }
 
-    .info-icon {
-        position: relative;
-        cursor: help;
-        color: var(--text-muted);
-        font-size: var(--text-xs);
-        width: 14px;
-        height: 14px;
-        line-height: 14px;
-        text-align: center;
-        border: 1px solid var(--border-default);
-        border-radius: 50%;
-    }
-
-    .info-icon::after {
-        content: attr(data-tooltip);
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-top: 4px;
-        padding: var(--space-1) var(--space-2);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-default);
-        color: var(--text-secondary);
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        white-space: nowrap;
-        opacity: 0;
-        pointer-events: none;
-        z-index: 100;
-    }
-
-    .info-icon:hover::after {
-        opacity: 1;
-    }
-
     .compute-options label {
         display: flex;
         align-items: center;
@@ -409,6 +418,21 @@
     }
 
     .compute-options input[type="number"]:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .compute-options select {
+        padding: var(--space-1);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        cursor: pointer;
+    }
+
+    .compute-options select:focus {
         outline: none;
         border-color: var(--accent-primary-dim);
     }
@@ -485,6 +509,12 @@
         font-family: inherit;
         color: inherit;
         cursor: pointer;
+    }
+
+    .graph-id {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        opacity: 0.7;
     }
 
     .tab-close {
@@ -570,5 +600,10 @@
         color: var(--text-primary);
         font-size: var(--text-sm);
         font-family: var(--font-mono);
+    }
+
+    .staged-controls.readonly .compute-options input[type="text"] {
+        color: var(--text-muted);
+        cursor: not-allowed;
     }
 </style>
