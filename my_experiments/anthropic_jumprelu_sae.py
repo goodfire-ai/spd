@@ -138,7 +138,41 @@ class AnthropicJumpReLUSAE(nn.Module):
         # Track dead features
         self.num_batches_not_active = torch.zeros(m, device=cfg.get("device", "cpu"))
 
+        # Global normalization scale (computed once from data)
+        self.register_buffer("norm_scale", torch.tensor(1.0))
+
         self.to(cfg.get("dtype", torch.float32)).to(cfg.get("device", "cpu"))
+
+    def initialize_norm_scale_from_data(self, activation_store: ActivationsStore) -> None:
+        """
+        Compute global normalization scale from data.
+
+        Paper: "Dataset is scaled by a single constant such that E[||x||_2] = sqrt(n)"
+        We compute this constant once and reuse it for all batches.
+        """
+        n = self.cfg["act_size"]
+        target_norm = math.sqrt(n)
+
+        # Collect norms from multiple batches for robust estimation
+        all_norms = []
+        num_batches = self.cfg.get("norm_estimation_batches", 10)
+
+        with torch.no_grad():
+            for _ in range(num_batches):
+                batch = activation_store.next_batch()
+                norms = batch.norm(dim=-1)
+                all_norms.append(norms)
+
+            all_norms = torch.cat(all_norms)
+
+            # Use median for robustness to outliers
+            median_norm = all_norms.median()
+            scale = target_norm / (median_norm + 1e-8)
+
+            self.norm_scale = scale
+            print(
+                f"Computed global norm scale: {scale.item():.4f} (median norm: {median_norm.item():.4f})"
+            )
 
     def initialize_b_enc_from_data(self, activation_store: ActivationsStore, target_l0: int):
         """
@@ -171,7 +205,7 @@ class AnthropicJumpReLUSAE(nn.Module):
 
     def preprocess_input(
         self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | float | None]:
         """
         Normalize input.
 
@@ -186,14 +220,18 @@ class AnthropicJumpReLUSAE(nn.Module):
             x = x / (x_std + 1e-5)
             return x, x_mean, x_std
         elif self.cfg.get("anthropic_norm", True):
-            # Anthropic's normalization: scale so E[||x||_2] = sqrt(n)
-            # This is a batch-level scaling
-            n = x.shape[-1]
-            target_norm = math.sqrt(n)
-            actual_norm = x.norm(dim=-1).mean()
-            scale = target_norm / (actual_norm + 1e-8)
-            x = x * scale
-            return x, None, scale
+            # Anthropic's normalization: scale by global constant so E[||x||_2] = sqrt(n)
+            x = x * self.norm_scale
+
+            # Optional: clip outlier norms after scaling
+            max_norm = self.cfg.get("max_norm_clip", None)
+            if max_norm is not None:
+                norms = x.norm(dim=-1, keepdim=True)
+                clip_mask = norms > max_norm
+                if clip_mask.any():
+                    x = torch.where(clip_mask, x * (max_norm / (norms + 1e-8)), x)
+
+            return x, None, self.norm_scale
         return x, None, None
 
     def postprocess_output(
@@ -475,7 +513,12 @@ def train_anthropic_sae(
     """
     num_batches = cfg["num_tokens"] // cfg["batch_size"]
 
-    # Initialize b_enc from data
+    # Initialize global normalization scale from data
+    if cfg.get("anthropic_norm", True):
+        print("Computing global normalization scale from data...")
+        sae.initialize_norm_scale_from_data(activation_store)
+
+    # Initialize b_enc from data (must come after norm scale is set)
     if cfg.get("init_b_enc_from_data", True):
         print("Initializing b_enc from data...")
         sae.initialize_b_enc_from_data(activation_store, target_l0=cfg.get("target_l0", 10000))
@@ -576,7 +619,7 @@ def main(
     tanh_c: float = 4.0,
     epsilon: float = 2.0,
     lambda_P: float = 3e-6,
-    lambda_S: float = 1.0,
+    lambda_S: float = 0.3,
     target_l0: int = 2000,
     init_b_enc_from_data: bool = True,
     # Other
