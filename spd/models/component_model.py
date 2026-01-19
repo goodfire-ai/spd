@@ -30,6 +30,38 @@ from spd.utils.general_utils import resolve_class, runtime_cast
 from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 
 
+def _validate_checkpoint_ci_config_compatibility(
+    state_dict: dict[str, Tensor], ci_config: CiConfig
+) -> None:
+    """Validate that checkpoint CI weights match the config CI mode.
+
+    Fails fast with a clear error message if there's a mismatch between:
+    - Checkpoint having global CI weights (_global_ci_fn) but config specifying layerwise mode
+    - Checkpoint having layerwise CI weights (_ci_fns) but config specifying global mode
+
+    Args:
+        state_dict: The loaded checkpoint state dict
+        ci_config: The config specifying the expected CI mode
+
+    Raises:
+        AssertionError: If checkpoint and config CI modes don't match
+    """
+    has_global_ci_fn = any(k.startswith("_global_ci_fn") for k in state_dict)
+    has_ci_fns = any(k.startswith("_ci_fns") for k in state_dict)
+
+    match ci_config:
+        case GlobalCiConfig():
+            assert has_global_ci_fn, (
+                "Checkpoint has layerwise CI weights (_ci_fns keys) but config specifies global CI mode. "
+                "Cannot load a layerwise checkpoint with a GlobalCiConfig."
+            )
+        case LayerwiseCiConfig():
+            assert has_ci_fns, (
+                "Checkpoint has global CI weights (_global_ci_fn keys) but config specifies layerwise CI mode. "
+                "Cannot load a global checkpoint with a LayerwiseCiConfig."
+            )
+
+
 @dataclass
 class SPDRunInfo(RunInfo[Config]):
     """Run info from training a ComponentModel (i.e. from an SPD run)."""
@@ -125,8 +157,8 @@ class ComponentModel(LoadableModule):
                 self._ci_fns = nn.ModuleDict(
                     {k.replace(".", "-"): self.ci_fns[k] for k in sorted(self.ci_fns)}
                 )
-                self.global_ci_fn: nn.Module | None = None
-                self._global_ci_fn: nn.Module | None = None
+                self.global_ci_fn: GlobalSharedMLPCiFn | None = None
+                self._global_ci_fn: GlobalSharedMLPCiFn | None = None
 
         if sigmoid_type == "leaky_hard":
             self.lower_leaky_fn = SIGMOID_TYPES["lower_leaky_hard"]
@@ -204,6 +236,44 @@ class ComponentModel(LoadableModule):
         return components
 
     @staticmethod
+    def _get_module_input_dim(
+        target_module: nn.Module,
+        component: Components | None,
+        for_global_ci: bool,
+    ) -> int:
+        """Extract input dimension from a module based on type.
+
+        For embedding layers:
+        - In layerwise CI (for_global_ci=False): assert and fail
+        - In global CI (for_global_ci=True): return component.C
+
+        Args:
+            target_module: The module to extract input dimension from
+            component: The component (required for embedding case with for_global_ci=True)
+            for_global_ci: Whether this is for global CI (affects embedding handling)
+
+        Returns:
+            The input dimension as an integer
+        """
+        match target_module:
+            case nn.Linear():
+                return target_module.weight.shape[1]
+            case RadfordConv1D():
+                return target_module.weight.shape[0]
+            case Identity():
+                return target_module.d
+            case nn.Embedding():
+                assert for_global_ci, (
+                    "Embedding modules only supported for global CI "
+                    "(mlp ci_fn_type in layerwise CI uses component acts)"
+                )
+                assert component is not None
+                assert isinstance(component, EmbeddingComponents)
+                return component.C
+            case _:
+                raise ValueError(f"Module {type(target_module)} not supported")
+
+    @staticmethod
     def _create_ci_fn(
         target_module: nn.Module,
         C: int,
@@ -217,15 +287,11 @@ class ComponentModel(LoadableModule):
         if ci_fn_type == "mlp":
             return MLPCiFn(C=C, hidden_dims=ci_fn_hidden_dims)
 
-        match target_module:
-            case nn.Linear():
-                input_dim = target_module.weight.shape[1]
-            case RadfordConv1D():
-                input_dim = target_module.weight.shape[0]
-            case Identity():
-                input_dim = target_module.d
-            case _:
-                raise ValueError(f"Module {type(target_module)} not supported for {ci_fn_type=}")
+        input_dim = ComponentModel._get_module_input_dim(
+            target_module=target_module,
+            component=None,
+            for_global_ci=False,
+        )
 
         match ci_fn_type:
             case "vector_mlp":
@@ -258,31 +324,19 @@ class ComponentModel(LoadableModule):
         components: dict[str, Components],
         ci_fn_type: GlobalCiFnType,
         ci_fn_hidden_dims: list[int],
-    ) -> nn.Module:
+    ) -> GlobalSharedMLPCiFn:
         """Create a global CI function that takes all layer activations as input."""
         # Build layer_configs: layer_name -> (input_dim, C)
-        # For embedding layers, use the embedding output dimension as input_dim
         layer_configs: dict[str, tuple[int, int]] = {}
         for target_module_path, target_module_c in module_to_c.items():
             target_module = target_model.get_submodule(target_module_path)
             component = components[target_module_path]
 
-            match target_module:
-                case nn.Linear():
-                    input_dim = target_module.weight.shape[1]
-                case RadfordConv1D():
-                    input_dim = target_module.weight.shape[0]
-                case Identity():
-                    input_dim = target_module.d
-                case nn.Embedding():
-                    # For embeddings, use the embedding dimension as input_dim
-                    # (the output of get_component_acts which returns V[x])
-                    assert isinstance(component, EmbeddingComponents)
-                    input_dim = component.C
-                case _:
-                    raise ValueError(
-                        f"Module {type(target_module)} not supported for global CI with {ci_fn_type=}"
-                    )
+            input_dim = ComponentModel._get_module_input_dim(
+                target_module=target_module,
+                component=component,
+                for_global_ci=True,
+            )
 
             layer_configs[target_module_path] = (input_dim, target_module_c)
 
@@ -528,6 +582,8 @@ class ComponentModel(LoadableModule):
 
         handle_deprecated_state_dict_keys_(comp_model_weights)
 
+        _validate_checkpoint_ci_config_compatibility(comp_model_weights, config.ci_config)
+
         comp_model.load_state_dict(comp_model_weights)
         return comp_model
 
@@ -577,11 +633,11 @@ class ComponentModel(LoadableModule):
                 ci_fn_output_for_lower_leaky = ci_fn_output
 
             lower_leaky_output = self.lower_leaky_fn(ci_fn_output_for_lower_leaky)
-            assert lower_leaky_output.all() <= 1.0
+            assert (lower_leaky_output <= 1.0).all()
             causal_importances_lower_leaky[target_module_name] = lower_leaky_output
 
             upper_leaky_output = self.upper_leaky_fn(ci_fn_output)
-            assert upper_leaky_output.all() >= 0
+            assert (upper_leaky_output >= 0).all()
             causal_importances_upper_leaky[target_module_name] = upper_leaky_output
 
             pre_sigmoid[target_module_name] = ci_fn_output

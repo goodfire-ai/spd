@@ -725,4 +725,20 @@ class Config(BaseConfig):
                 "mask_scope='shared_across_batch'"
             )
 
+        self._validate_ci_config()
         return self
+
+    def _validate_ci_config(self) -> None:
+        """Validate that fn_type is compatible with ci_config mode."""
+        if isinstance(self.ci_config, LayerwiseCiConfig):
+            assert not self.ci_config.fn_type.startswith("global_"), (
+                f"LayerwiseCiConfig mode='layerwise' cannot use global fn_type "
+                f"'{self.ci_config.fn_type}'. Must use one of: mlp, vector_mlp, "
+                f"shared_mlp"
+            )
+        else:
+            # ci_config must be GlobalCiConfig (union exhaustiveness)
+            assert self.ci_config.fn_type.startswith("global_"), (
+                f"GlobalCiConfig mode='global' requires global fn_type, got "
+                f"'{self.ci_config.fn_type}'. Must use: global_shared_mlp"
+            )

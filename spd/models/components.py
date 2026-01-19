@@ -120,8 +120,8 @@ class GlobalSharedMLPCiFn(nn.Module):
     ):
         super().__init__()
 
-        # Store layer order for consistent concatenation/splitting
-        self.layer_order = list(layer_configs.keys())
+        # Store layer order for consistent concatenation/splitting (sorted for determinism)
+        self.layer_order = sorted(layer_configs.keys())
         self.layer_configs = layer_configs
 
         # Calculate dimensions
