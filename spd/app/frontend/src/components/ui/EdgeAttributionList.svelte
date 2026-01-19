@@ -143,20 +143,18 @@
 </script>
 
 <div class="edge-attribution-list">
-    {#if title || totalPages > 1}
-        <div class="header-row">
-            {#if title}
-                <span class="list-title">{title}</span>
-            {/if}
-            {#if totalPages > 1}
-                <div class="pagination">
-                    <button onclick={() => currentPage--} disabled={currentPage === 0}>&lt;</button>
-                    <span>{currentPage + 1} / {totalPages}</span>
-                    <button onclick={() => currentPage++} disabled={currentPage >= totalPages - 1}>&gt;</button>
-                </div>
-            {/if}
-        </div>
-    {/if}
+    <div class="header-row">
+        {#if title}
+            <span class="list-title">{title}</span>
+        {/if}
+        {#if totalPages > 1}
+            <div class="pagination">
+                <button onclick={() => currentPage--} disabled={currentPage === 0}>&lt;</button>
+                <span>{currentPage + 1} / {totalPages}</span>
+                <button onclick={() => currentPage++} disabled={currentPage >= totalPages - 1}>&gt;</button>
+            </div>
+        {/if}
+    </div>
     <div class="items">
         {#each paginatedItems as { key, value, normalizedMagnitude } (key)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
@@ -215,6 +213,7 @@
         display: flex;
         align-items: center;
         gap: var(--space-2);
+        min-height: 1.25rem; /* Ensure consistent height even when empty */
     }
 
     .list-title {
