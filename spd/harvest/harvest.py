@@ -11,6 +11,7 @@ Performance (SimpleStories, 600M tokens, batch_size=256):
 - ~1.1 hours for full dataset
 """
 
+import itertools
 import json
 import time
 from dataclasses import asdict, dataclass
@@ -66,7 +67,7 @@ def _normalize_component_acts(
 @dataclass
 class HarvestConfig:
     wandb_path: str
-    n_batches: int
+    n_batches: int | None
     batch_size: int
     ci_threshold: float
     activation_examples_per_component: int
@@ -227,15 +228,12 @@ def harvest_activation_contexts(
     train_iter = iter(train_loader)
     batches_processed = 0
     last_log_time = time.time()
-    for batch_idx in tqdm.tqdm(
-        range(config.n_batches), desc="Harvesting", disable=rank is not None
-    ):
+    batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
+    for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
         try:
             batch_data = extract_batch_data(next(train_iter))
         except StopIteration:
-            logger.info(
-                f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early."
-            )
+            logger.info(f"Dataset exhausted at batch {batch_idx}. Processing complete.")
             break
 
         # Skip batches not assigned to this rank
@@ -335,8 +333,8 @@ def merge_activation_contexts(wandb_path: str) -> None:
     # Load config from merged state (all workers use same config)
     config = HarvestConfig(
         wandb_path=wandb_path,
-        n_batches=0,  # Not used for merge, but required by HarvestConfig
-        batch_size=0,  # Not used for merge
+        n_batches=None,  # Not applicable for merge
+        batch_size=0,  # Not applicable for merge
         ci_threshold=merged_state.ci_threshold,
         activation_examples_per_component=merged_state.max_examples_per_component,
         activation_context_tokens_per_side=merged_state.context_tokens_per_side,

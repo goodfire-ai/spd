@@ -43,7 +43,7 @@ def main(
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
-        n_batches: Number of batches to process.
+        n_batches: Number of batches to process. If None, processes entire training dataset.
         batch_size: Batch size for processing.
         ci_threshold: CI threshold for component activation.
         activation_examples_per_component: Number of activation examples per component.
@@ -63,7 +63,6 @@ def main(
         merge_activation_contexts(wandb_path)
         return
 
-    assert n_batches is not None, "n_batches required for harvest (not merge)"
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
     config = HarvestConfig(
