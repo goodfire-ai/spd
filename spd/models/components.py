@@ -113,6 +113,35 @@ class VectorSharedMLPCiFn(nn.Module):
         return self.layers(x)
 
 
+class BilinearLayer(nn.Module):
+    """Bilinear gated layer: output = (W1 @ x + b1) * (W2 @ x + b2)"""
+
+    def __init__(self, input_dim: int, output_dim: int):
+        super().__init__()
+        self.linear1 = Linear(input_dim, output_dim, nonlinearity="linear")
+        self.linear2 = Linear(input_dim, output_dim, nonlinearity="linear")
+
+    @override
+    def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
+        return self.linear1(x) * self.linear2(x)
+
+
+class SwiGLULayer(nn.Module):
+    """SwiGLU gated layer: output = (W1 @ x + b1) * SiLU(W2 @ x + b2)"""
+
+    def __init__(self, input_dim: int, output_dim: int):
+        super().__init__()
+        self.linear1 = Linear(input_dim, output_dim, nonlinearity="linear")
+        self.linear2 = Linear(input_dim, output_dim, nonlinearity="linear")
+
+    @override
+    def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... d_out"]:
+        return self.linear1(x) * nn.functional.silu(self.linear2(x))
+
+
+GlobalCiFnLayerType = Literal["relu","gelu", "bilinear", "swiglu"]
+
+
 class GlobalSharedMLPCiFn(nn.Module):
     """Global CI function that concatenates all layer activations and outputs CI for all layers."""
 
@@ -120,6 +149,7 @@ class GlobalSharedMLPCiFn(nn.Module):
         self,
         layer_configs: dict[str, tuple[int, int]],  # layer_name -> (input_dim, C)
         hidden_dims: list[int],
+        layer_type: GlobalCiFnLayerType = "relu",
     ):
         super().__init__()
 
@@ -134,8 +164,17 @@ class GlobalSharedMLPCiFn(nn.Module):
         for i in range(len(hidden_dims)):
             in_dim = total_input_dim if i == 0 else hidden_dims[i - 1]
             output_dim = hidden_dims[i]
-            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
-            self.layers.append(nn.GELU())
+            match layer_type:
+                case "gelu":
+                    self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
+                    self.layers.append(nn.GELU())
+                case "relu":
+                    self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
+                    self.layers.append(nn.ReLU())
+                case "bilinear":
+                    self.layers.append(BilinearLayer(in_dim, output_dim))
+                case "swiglu":
+                    self.layers.append(SwiGLULayer(in_dim, output_dim))
         final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else total_input_dim
         self.layers.append(Linear(final_dim, total_C, nonlinearity="linear"))
 
