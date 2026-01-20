@@ -453,8 +453,8 @@ def main(
     layer: int = 8,
     site: str = "mlp_out",
     dict_size: int = 768 * 4,
-    # Auxiliary inputs - specify as "layer:site" pairs
-    aux_inputs: list[str] | None = None,
+    # Auxiliary inputs - specify as "layer:site" pairs (use tuple for immutable default)
+    aux_inputs: tuple[str, ...] = ("8:resid_mid", "8:resid_post"),
     # TopK settings
     top_k: int = 32,
     aux_penalty: float = 1 / 32,
@@ -480,7 +480,7 @@ def main(
         layer: Primary layer to extract activations from
         site: Primary hook site (mlp_out, resid_pre, resid_post, etc.)
         dict_size: SAE dictionary size
-        aux_inputs: Auxiliary inputs as "layer:site" pairs, e.g. ["9:mlp_out", "8:resid_pre"]
+        aux_inputs: Auxiliary inputs as "layer:site" pairs, e.g. ("9:mlp_out", "8:resid_pre")
         top_k: Number of top-k features to keep
         aux_penalty: Auxiliary loss penalty for dead features
         seed: Random seed
@@ -516,11 +516,6 @@ def main(
     # Build hook points list
     primary_hook_point = cfg["hook_point"]
     hook_points = [primary_hook_point]
-
-    # Parse auxiliary inputs
-    if aux_inputs is None:
-        # Default: use resid_mid and resid_post from same layer
-        aux_inputs = [f"{layer}:resid_mid", f"{layer}:resid_post"]
 
     aux_hook_points = []
     for aux_spec in aux_inputs:
