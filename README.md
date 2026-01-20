@@ -102,7 +102,7 @@ models like `ss_llama_simple_mlp-2L-wide`. This is configurable with `--batch_si
 First, collect component statistics (activation examples, correlations, token stats):
 
 ```bash
-spd-harvest spd/runs/abc123 --n_gpus 24
+spd-harvest goodfire/spd/runs/abc123 --n_gpus 24
 ```
 
 ### 2. Automated Interpretation
@@ -110,7 +110,7 @@ spd-harvest spd/runs/abc123 --n_gpus 24
 After harvesting, generate LLM interpretations of components:
 
 ```bash
-spd-autointerp wandb:spd/runs/abc123
+spd-autointerp goodfire/spd/runs/abc123
 ```
 
 Requires `OPENROUTER_API_KEY` env var.
@@ -120,7 +120,7 @@ Requires `OPENROUTER_API_KEY` env var.
 Compute component-to-component attribution strengths:
 
 ```bash
-spd-attributions wandb:spd/runs/abc123 --n_gpus 24
+spd-attributions goodfire/spd/runs/abc123 --n_gpus 24
 ```
 
 Can be run independently of harvest/autointerp.
