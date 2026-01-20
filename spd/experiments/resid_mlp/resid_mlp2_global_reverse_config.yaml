@@ -10,14 +10,15 @@ n_mask_samples: 1
 ci_config:
   mode: global
   fn_type: global_reverse_residual
-  d_resid_ci_fn: 256
-  reader_hidden_dims: [128]
+  d_resid_ci_fn: 1024
+  reader_hidden_dims: [1024, 1024]
   block_groups:
     # Process in reverse order: layer 1 before layer 0
     - name: "layer_1_mlp"
       patterns: ["layers.1.mlp_*"]
     - name: "layer_0_mlp"
       patterns: ["layers.0.mlp_*"]
+sampling: continuous
 sigmoid_type: "leaky_hard"
 module_info:
   - module_pattern: "layers.*.mlp_in"
@@ -30,31 +31,48 @@ use_delta_component: true
 # --- Loss config ---
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0001
+    coeff: 3e-5
     pnorm: 2.0
     beta: 0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 1.0
+    p_anneal_start_frac: 0
+    p_anneal_final_p: 0.5
+    p_anneal_end_frac: 1
+    eps: 1e-12
+  - classname: "StochasticReconSubsetLoss"
+    coeff: 0.5
+    routing:
+      type: uniform_k_subset
+  - classname: "PGDReconSubsetLoss"
+    coeff: 0.5
+    init: random
+    step_size: 1
+    n_steps: 1
+    mask_scope: shared_across_batch
+    routing:
+      type: uniform_k_subset
   - classname: "StochasticReconLoss"
     coeff: 1.0
+  - classname: "FaithfulnessLoss"
+    coeff: 10
 output_loss_type: mse
 
 # --- Training ---
 batch_size: 2048
 eval_batch_size: 2048
-steps: 25_000
+steps: 50_000
 lr_schedule:
-  start_val: 3e-4
-  fn_type: constant
+  start_val: 5e-4
+  fn_type: cosine
+  final_val_frac: 0.9
   warmup_pct: 0.0
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
+faithfulness_warmup_weight_decay: 0
 
 # --- Logging & Saving ---
-train_log_freq: 100
+train_log_freq: 50
 eval_freq: 500
 n_eval_steps: 100
 slow_eval_freq: 5_000
@@ -77,15 +95,16 @@ eval_metric_configs:
       - layer_pattern: "layers.*.mlp_out"
         k: 25
   - classname: "CI_L0"
-    groups:
-      layer_0:
-        - "layers.0.*"
-      layer_1:
-        - "layers.1.*"
-      total:
-        - "*"
+    groups: null
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
+    coeff: null
+  - classname: "PGDReconLoss"
+    coeff: null
+    init: random
+    step_size: 0.1
+    n_steps: 20
+    mask_scope: shared_across_batch
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
