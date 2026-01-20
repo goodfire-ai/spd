@@ -300,6 +300,8 @@ def merge_activation_contexts(wandb_path: str) -> None:
     """Merge partial harvest results from parallel workers.
 
     Looks for worker_*.pt state files and merges them into final harvest results.
+
+    Uses streaming merge to avoid OOM - loads one file at a time instead of all at once.
     """
     from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
     from spd.utils.wandb_utils import parse_wandb_run_path
@@ -314,28 +316,30 @@ def merge_activation_contexts(wandb_path: str) -> None:
     assert worker_files, f"No worker state files found in {state_dir}"
     logger.info(f"Found {len(worker_files)} worker state files to merge")
 
-    # Load all states
-    states = []
-    for worker_file in tqdm.tqdm(worker_files, desc="Loading worker states"):
-        states.append(torch.load(worker_file, weights_only=False))
+    # Load first file to initialize merged state
+    logger.info(f"Loading worker 0: {worker_files[0].name}")
+    merged_state: HarvesterState = torch.load(worker_files[0], weights_only=False)
+    logger.info(f"Loaded worker 0: {merged_state.total_tokens_processed:,} tokens")
 
-    # Merge states
-    logger.info("Merging states...")
-    merged_state = HarvesterState.merge(states)
-    logger.info(f"Merged. Total tokens: {merged_state.total_tokens_processed:,}")
+    # Stream remaining files one at a time
+    for worker_file in tqdm.tqdm(worker_files[1:], desc="Merging worker states"):
+        state = torch.load(worker_file, weights_only=False)
+        merged_state.merge_into(state)
+        # state will be garbage collected here before loading the next file
+
+    logger.info(f"Merge complete. Total tokens: {merged_state.total_tokens_processed:,}")
 
     # Build harvester from merged state and generate results
     harvester = Harvester.from_state(merged_state, torch.device("cpu"))
 
-    # Load config from first worker state (all workers use same config)
-    first_state = states[0]
+    # Load config from merged state (all workers use same config)
     config = HarvestConfig(
         wandb_path=wandb_path,
         n_batches=0,  # Not used for merge, but required by HarvestConfig
         batch_size=0,  # Not used for merge
-        ci_threshold=first_state.ci_threshold,
-        activation_examples_per_component=first_state.max_examples_per_component,
-        activation_context_tokens_per_side=first_state.context_tokens_per_side,
+        ci_threshold=merged_state.ci_threshold,
+        activation_examples_per_component=merged_state.max_examples_per_component,
+        activation_context_tokens_per_side=merged_state.context_tokens_per_side,
         pmi_token_top_k=40,  # Standard value
     )
 

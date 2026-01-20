@@ -21,12 +21,14 @@ from jaxtyping import Bool
 from torch import Tensor
 
 from spd.app.backend.compute import get_sources_by_target
+from spd.data import train_loader_and_tokenizer
 from spd.dataset_attributions.harvester import AttributionHarvester
 from spd.dataset_attributions.loaders import get_attributions_dir
 from spd.dataset_attributions.storage import DatasetAttributionStorage
 from spd.harvest.loaders import load_activation_contexts_summary
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -128,8 +130,6 @@ def harvest_attributions(
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
     """
-    from spd.data import train_loader_and_tokenizer
-    from spd.utils.distributed_utils import get_device
 
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
