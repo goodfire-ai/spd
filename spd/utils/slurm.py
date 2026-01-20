@@ -200,14 +200,14 @@ def submit_slurm_job(
     final_script_path = SBATCH_SCRIPTS_DIR / f"{script_name_prefix}_{job_id}.sh"
     temp_script_path.rename(final_script_path)
 
-    # Create empty log file(s) for tailing
+    # Create empty log file(s) for tailing (best-effort, SLURM creates the actual logs)
     if is_array:
         assert n_array_tasks is not None, "n_array_tasks required for array jobs"
         for i in range(1, n_array_tasks + 1):
-            (SLURM_LOGS_DIR / f"slurm-{job_id}_{i}.out").touch()
+            _touch_log_file(SLURM_LOGS_DIR / f"slurm-{job_id}_{i}.out")
         log_pattern = str(SLURM_LOGS_DIR / f"slurm-{job_id}_*.out")
     else:
-        (SLURM_LOGS_DIR / f"slurm-{job_id}.out").touch()
+        _touch_log_file(SLURM_LOGS_DIR / f"slurm-{job_id}.out")
         log_pattern = str(SLURM_LOGS_DIR / f"slurm-{job_id}.out")
 
     return SubmitResult(
