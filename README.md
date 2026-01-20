@@ -95,7 +95,8 @@ After training an SPD model, you can run several post-processing steps which cre
 that can be viewed in the app.
 
 Note, the default batch size for harvest and dataset attributions is 256, which works well for
-models like `ss_llama_simple_mlp-2L-wide`. This is configurable with `--batch_size`.
+models like `ss_llama_simple_mlp-2L-wide`. This is configurable with `--batch_size`. You should also
+configure `--n_gpus` based on how many gpus you have available. You can use any number you'd like.
 
 ### 1. Harvest Component Statistics
 
