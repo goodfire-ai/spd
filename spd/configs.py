@@ -155,18 +155,6 @@ class MemTaskConfig(BaseConfig):
         default="mem",
         description="Identifier for the mem decomposition task",
     )
-    expand: bool = Field(
-        default=False,
-        description="Whether to expand model dimensions before decomposition",
-    )
-    d_model_new: int | None = Field(
-        default=None,
-        description="New d_model dimension (must be >= original d_model). Required if expand=True.",
-    )
-    d_mlp_new: int | None = Field(
-        default=None,
-        description="New d_mlp dimension (must be >= original d_mlp). Required if expand=True.",
-    )
 
 
 class ModulePatternInfoConfig(BaseConfig):
