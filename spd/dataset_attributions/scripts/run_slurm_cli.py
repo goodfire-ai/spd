@@ -16,7 +16,7 @@ def submit_attributions(
     wandb_path: str,
     n_gpus: int,
     n_batches: int | None = None,
-    batch_size: int = 64,
+    batch_size: int = 256,
     ci_threshold: float = 0.0,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "48:00:00",
