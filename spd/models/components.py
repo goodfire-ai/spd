@@ -282,6 +282,16 @@ class GlobalReverseResidualCiFn(nn.Module):
         """
         super().__init__()
 
+        if attn_config is not None:
+            assert d_resid_ci_fn % attn_config.n_heads == 0, (
+                f"d_resid_ci_fn ({d_resid_ci_fn}) must be divisible by "
+                f"attn_config.n_heads ({attn_config.n_heads})"
+            )
+            d_head = d_resid_ci_fn // attn_config.n_heads
+            assert d_head % 2 == 0, (
+                f"d_head ({d_head}) must be even for RoPE. "
+                f"d_resid_ci_fn={d_resid_ci_fn}, n_heads={attn_config.n_heads}"
+            )
         self.d_resid_ci_fn = d_resid_ci_fn
         self.n_blocks = len(block_configs)
         self.block_safe_names = [name.replace(".", "-") for name, _, _, _ in block_configs]
