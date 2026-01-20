@@ -328,6 +328,7 @@ class TestConfigIntegration:
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
                     "pnorm": 1.0,
+                    "beta": 0.5,
                     "eps": 1e-12,
                 },
                 {
@@ -382,6 +383,7 @@ class TestConfigIntegration:
                     "classname": "ImportanceMinimalityLoss",
                     "coeff": 0.001,
                     "pnorm": 1.0,
+                    "beta": 0.5,
                     "eps": 1e-12,
                 }
             ],
