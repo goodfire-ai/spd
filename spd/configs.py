@@ -42,6 +42,27 @@ class BlockGroupConfig(BaseConfig):
     )
 
 
+class TransitionAttnConfig(BaseConfig):
+    """Configuration for self-attention in global reverse residual transitions.
+
+    When provided, transitions use a full transformer block: attention → residual → MLP → residual.
+    Uses RoPE (Rotary Position Embeddings) for sequence length generalization.
+    """
+
+    n_heads: PositiveInt = Field(
+        ...,
+        description="Number of attention heads. Must divide d_resid_ci_fn.",
+    )
+    max_len: PositiveInt = Field(
+        default=2048,
+        description="Maximum sequence length for RoPE embeddings.",
+    )
+    rope_base: float = Field(
+        default=10000.0,
+        description="Base for RoPE frequency computation.",
+    )
+
+
 class GlobalCiConfig(BaseConfig):
     """Configuration for global CI function (single function for all layers).
 
@@ -75,6 +96,12 @@ class GlobalCiConfig(BaseConfig):
         "Order determines processing sequence (first = processed first, typically unembed). "
         "Required when fn_type='global_reverse_residual', ignored otherwise.",
     )
+    transition_attn_config: TransitionAttnConfig | None = Field(
+        default=None,
+        description="Self-attention config for transitions in global_reverse_residual. "
+        "If None, uses MLP-only transitions (original behavior). "
+        "Only applies when fn_type='global_reverse_residual'.",
+    )
 
     @model_validator(mode="after")
     def validate_ci_config(self) -> Self:
@@ -89,9 +116,17 @@ class GlobalCiConfig(BaseConfig):
             assert self.reader_hidden_dims is not None, (
                 "reader_hidden_dims must be specified when fn_type='global_reverse_residual'"
             )
+            if self.transition_attn_config is not None:
+                assert self.d_resid_ci_fn % self.transition_attn_config.n_heads == 0, (
+                    f"d_resid_ci_fn ({self.d_resid_ci_fn}) must be divisible by "
+                    f"transition_attn_config.n_heads ({self.transition_attn_config.n_heads})"
+                )
         elif self.fn_type == "global_shared_mlp":
             assert self.hidden_dims is not None, (
                 "hidden_dims must be specified when fn_type='global_shared_mlp'"
+            )
+            assert self.transition_attn_config is None, (
+                "transition_attn_config is only valid for global_reverse_residual"
             )
         return self
 

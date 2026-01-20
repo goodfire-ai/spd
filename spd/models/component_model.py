@@ -350,6 +350,7 @@ class ComponentModel(LoadableModule):
                     block_configs=block_configs,
                     d_resid_ci_fn=d_resid_ci_fn,
                     reader_hidden_dims=reader_hidden_dims,
+                    attn_config=ci_config.transition_attn_config,
                 )
 
     def _extract_output(self, raw_output: Any) -> Tensor:
