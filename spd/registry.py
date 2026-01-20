@@ -79,6 +79,12 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/resid_mlp/resid_mlp1_global_reverse_config.yaml"),
         expected_runtime=3,
     ),
+    "resid_mlp2_global_reverse": ExperimentConfig(
+        task_name="resid_mlp",
+        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
+        config_path=Path("spd/experiments/resid_mlp/resid_mlp2_global_reverse_config.yaml"),
+        expected_runtime=5,
+    ),
     "resid_mlp2": ExperimentConfig(
         task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
@@ -163,6 +169,12 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_simple_mlp-2L-wide.yaml"),
+        expected_runtime=480,
+    ),
+    "ss_llama_simple_mlp-2L-wide_global_reverse": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/ss_llama_simple_mlp-2L-wide_global_reverse.yaml"),
         expected_runtime=480,
     ),
     "ss_llama_simple_mlp": ExperimentConfig(
