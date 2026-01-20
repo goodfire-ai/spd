@@ -11,11 +11,11 @@ ci_config:
   mode: global
   fn_type: global_reverse_residual
   d_resid_ci_fn: 256
-  hidden_dims: [128]
+  reader_hidden_dims: [128]
   block_groups:
     # Process in reverse order: mlp_out (closer to output) before mlp_in (closer to input)
     - name: "layer_0_mlp"
-      patterns: ["layers.0.mlp_out", "layers.0.mlp_in"]
+      patterns: ["layers.0.mlp_*"]
 sigmoid_type: "leaky_hard"
 module_info:
   - module_pattern: "layers.*.mlp_in"

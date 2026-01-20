@@ -54,8 +54,15 @@ class GlobalCiConfig(BaseConfig):
         ...,
         description="Type of global CI function: global_shared_mlp or global_reverse_residual",
     )
-    hidden_dims: list[NonNegativeInt] = Field(
-        ..., description="Hidden dimensions for the CI function MLPs (readers in reverse residual)"
+    hidden_dims: list[NonNegativeInt] | None = Field(
+        default=None,
+        description="Hidden dimensions for global_shared_mlp CI function. "
+        "Use reader_hidden_dims for global_reverse_residual.",
+    )
+    reader_hidden_dims: list[NonNegativeInt] | None = Field(
+        default=None,
+        description="Hidden dimensions for reader MLPs in global_reverse_residual. "
+        "Required when fn_type='global_reverse_residual', ignored otherwise.",
     )
     d_resid_ci_fn: PositiveInt | None = Field(
         default=None,
@@ -70,7 +77,7 @@ class GlobalCiConfig(BaseConfig):
     )
 
     @model_validator(mode="after")
-    def validate_reverse_residual_config(self) -> Self:
+    def validate_ci_config(self) -> Self:
         if self.fn_type == "global_reverse_residual":
             assert self.d_resid_ci_fn is not None, (
                 "d_resid_ci_fn must be specified when fn_type='global_reverse_residual'"
@@ -78,6 +85,13 @@ class GlobalCiConfig(BaseConfig):
             assert self.block_groups is not None and len(self.block_groups) > 0, (
                 "block_groups must be specified with at least one block when "
                 "fn_type='global_reverse_residual'"
+            )
+            assert self.reader_hidden_dims is not None, (
+                "reader_hidden_dims must be specified when fn_type='global_reverse_residual'"
+            )
+        elif self.fn_type == "global_shared_mlp":
+            assert self.hidden_dims is not None, (
+                "hidden_dims must be specified when fn_type='global_shared_mlp'"
             )
         return self
 

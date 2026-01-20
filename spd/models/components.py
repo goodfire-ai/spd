@@ -163,14 +163,13 @@ class GlobalReverseResidualCiFn(nn.Module):
        - Reader reads from residual stream, outputs CI values for all modules in block
        - Transition updates residual stream for next block (except after last block)
 
-    All projectors, readers, and transitions have unique weights per block.
     """
 
     def __init__(
         self,
         block_configs: list[tuple[str, list[str], list[int], list[int]]],
         d_resid_ci_fn: int,
-        hidden_dims: list[int],
+        reader_hidden_dims: list[int],
     ):
         """Initialize the reverse residual CI function.
 
@@ -178,18 +177,18 @@ class GlobalReverseResidualCiFn(nn.Module):
             block_configs: List of (block_name, module_names, input_dims, c_values) tuples.
                 Ordered in processing order (first block processed first).
             d_resid_ci_fn: Dimension of the residual stream.
-            hidden_dims: Hidden dimensions for reader MLPs.
+            reader_hidden_dims: Hidden dimensions for reader MLPs.
         """
         super().__init__()
 
         self.d_resid_ci_fn = d_resid_ci_fn
-        self.block_names = [name for name, _, _, _ in block_configs]
+        self.n_blocks = len(block_configs)
         self.block_safe_names = [name.replace(".", "-") for name, _, _, _ in block_configs]
         self.block_module_names = [modules for _, modules, _, _ in block_configs]
         self.block_input_dims = [dims for _, _, dims, _ in block_configs]
         self.block_c_values = [cs for _, _, _, cs in block_configs]
 
-        self._projectors = nn.ModuleDict()
+        self._inp_projectors = nn.ModuleDict()
         self._readers = nn.ModuleDict()
         self._transitions = nn.ModuleDict()
 
@@ -198,21 +197,21 @@ class GlobalReverseResidualCiFn(nn.Module):
             total_input_dim = sum(input_dims)
             total_c = sum(c_values)
 
-            self._projectors[safe_name] = Linear(
+            self._inp_projectors[safe_name] = Linear(
                 total_input_dim, d_resid_ci_fn, nonlinearity="relu"
             )
 
             reader_layers = nn.Sequential()
-            for i in range(len(hidden_dims)):
-                in_dim = d_resid_ci_fn if i == 0 else hidden_dims[i - 1]
-                out_dim = hidden_dims[i]
+            for i in range(len(reader_hidden_dims)):
+                in_dim = d_resid_ci_fn if i == 0 else reader_hidden_dims[i - 1]
+                out_dim = reader_hidden_dims[i]
                 reader_layers.append(Linear(in_dim, out_dim, nonlinearity="relu"))
                 reader_layers.append(nn.GELU())
-            final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else d_resid_ci_fn
+            final_dim = reader_hidden_dims[-1] if len(reader_hidden_dims) > 0 else d_resid_ci_fn
             reader_layers.append(Linear(final_dim, total_c, nonlinearity="linear"))
             self._readers[safe_name] = reader_layers
 
-            if block_idx < len(block_configs) - 1:
+            if block_idx < self.n_blocks - 1:
                 self._transitions[safe_name] = Linear(
                     d_resid_ci_fn, d_resid_ci_fn, nonlinearity="relu"
                 )
@@ -231,7 +230,7 @@ class GlobalReverseResidualCiFn(nn.Module):
 
         all_outputs: dict[str, Float[Tensor, "... C"]] = {}
 
-        for block_idx in range(len(self.block_names)):
+        for block_idx in range(self.n_blocks):
             safe_name = self.block_safe_names[block_idx]
             module_names = self.block_module_names[block_idx]
             c_values = self.block_c_values[block_idx]
@@ -239,7 +238,7 @@ class GlobalReverseResidualCiFn(nn.Module):
             block_acts = [input_acts[name] for name in module_names]
             concat_acts = torch.cat(block_acts, dim=-1)
 
-            projection = self._projectors[safe_name](concat_acts)
+            projection = self._inp_projectors[safe_name](concat_acts)
             residual = residual + projection
 
             ci_output = self._readers[safe_name](residual)
@@ -248,7 +247,7 @@ class GlobalReverseResidualCiFn(nn.Module):
             for module_name, module_ci in zip(module_names, split_outputs, strict=True):
                 all_outputs[module_name] = module_ci
 
-            if block_idx < len(self.block_names) - 1:
+            if block_idx < self.n_blocks - 1:
                 residual = self._transitions[safe_name](residual)
 
         return all_outputs

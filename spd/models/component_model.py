@@ -298,15 +298,18 @@ class ComponentModel(LoadableModule):
 
         match ci_fn_type:
             case "global_shared_mlp":
+                assert ci_fn_hidden_dims is not None  # validated by Pydantic
                 return GlobalSharedMLPCiFn(
                     layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims
                 )
             case "global_reverse_residual":
-                # block_groups and d_resid_ci_fn are validated by Pydantic
+                # block_groups, d_resid_ci_fn, reader_hidden_dims are validated by Pydantic
                 block_groups = ci_config.block_groups
                 d_resid_ci_fn = ci_config.d_resid_ci_fn
+                reader_hidden_dims = ci_config.reader_hidden_dims
                 assert block_groups is not None  # for type narrowing
                 assert d_resid_ci_fn is not None  # for type narrowing
+                assert reader_hidden_dims is not None  # for type narrowing
 
                 # Build block_configs from block_groups
                 block_configs: list[tuple[str, list[str], list[int], list[int]]] = []
@@ -346,7 +349,7 @@ class ComponentModel(LoadableModule):
                 return GlobalReverseResidualCiFn(
                     block_configs=block_configs,
                     d_resid_ci_fn=d_resid_ci_fn,
-                    hidden_dims=ci_fn_hidden_dims,
+                    reader_hidden_dims=reader_hidden_dims,
                 )
 
     def _extract_output(self, raw_output: Any) -> Tensor:

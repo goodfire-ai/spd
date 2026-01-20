@@ -10,18 +10,18 @@ ci_config:
   mode: global
   fn_type: global_reverse_residual
   d_resid_ci_fn: 512
-  hidden_dims: [256]
+  reader_hidden_dims: [256]
   block_groups:
     # Process in reverse order: layer 1 before layer 0
     # Within each layer: MLP before attention (closer to output first)
     - name: "layer_1_mlp"
-      patterns: ["h.1.mlp.down_proj", "h.1.mlp.c_fc"]
+      patterns: ["h.1.mlp.*"]
     - name: "layer_1_attn"
-      patterns: ["h.1.attn.o_proj", "h.1.attn.v_proj", "h.1.attn.k_proj", "h.1.attn.q_proj"]
+      patterns: ["h.1.attn.*"]
     - name: "layer_0_mlp"
-      patterns: ["h.0.mlp.down_proj", "h.0.mlp.c_fc"]
+      patterns: ["h.0.mlp.*"]
     - name: "layer_0_attn"
-      patterns: ["h.0.attn.o_proj", "h.0.attn.v_proj", "h.0.attn.k_proj", "h.0.attn.q_proj"]
+      patterns: ["h.0.attn.*"]
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
