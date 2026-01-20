@@ -31,7 +31,6 @@ def submit_attributions(
     ci_threshold: float = 0.0,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "48:00:00",
-    max_concurrent: int | None = None,
     job_suffix: str | None = None,
 ) -> None:
     """Submit multi-GPU attribution harvesting job to SLURM.
@@ -49,7 +48,6 @@ def submit_attributions(
         ci_threshold: CI threshold for filtering components.
         partition: SLURM partition name.
         time: Job time limit.
-        max_concurrent: Maximum concurrent array tasks. If None, all run at once.
         job_suffix: Optional suffix for SLURM job names (e.g., "1h" -> "spd-attr-1h").
     """
     run_id = f"attr-{secrets.token_hex(4)}"
@@ -79,7 +77,6 @@ def submit_attributions(
         partition=partition,
         n_gpus=1,  # 1 GPU per worker
         time=time,
-        max_concurrent_tasks=max_concurrent,
         snapshot_branch=snapshot_branch,
     )
     array_script = generate_array_script(array_config, worker_commands)

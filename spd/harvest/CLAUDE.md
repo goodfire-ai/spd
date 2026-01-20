@@ -13,7 +13,7 @@ spd-harvest <wandb_path> --n_gpus 24
 
 # With optional parameters
 spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8 \
-    --batch_size 256 --ci_threshold 1e-6 --time 24:00:00 --max_concurrent 12 --job_suffix 30m
+    --batch_size 256 --ci_threshold 1e-6 --time 24:00:00 --job_suffix 30m
 ```
 
 The command:

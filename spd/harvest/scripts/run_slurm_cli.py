@@ -3,8 +3,8 @@
 Thin wrapper for fast --help. Heavy imports deferred to run_slurm.py.
 
 Usage:
-    spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8
-    spd-harvest <wandb_path> --n_batches 2000 --n_gpus 24
+    spd-harvest <wandb_path> --n_gpus 24
+    spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8  # Only process 1000 batches
 """
 
 import fire
@@ -23,7 +23,6 @@ def harvest(
     pmi_token_top_k: int = 40,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "24:00:00",
-    max_concurrent: int | None = None,
     job_suffix: str | None = None,
 ) -> None:
     """Submit multi-GPU harvest job to SLURM.
@@ -32,8 +31,8 @@ def harvest(
     then a merge job that combines results after all workers complete.
 
     Examples:
-        spd-harvest wandb:spd/runs/abc123 --n_batches 2000 --n_gpus 24
-        spd-harvest wandb:spd/runs/abc123 --n_gpus 24  # Process entire dataset
+        spd-harvest wandb:spd/runs/abc123 --n_gpus 24
+        spd-harvest wandb:spd/runs/abc123 --n_batches 1000 --n_gpus 8  # Only process 1000 batches
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
@@ -47,7 +46,6 @@ def harvest(
         pmi_token_top_k: Number of top- and bottom-k tokens by PMI to include.
         partition: SLURM partition name.
         time: Job time limit for worker jobs.
-        max_concurrent: Maximum concurrent array tasks. If None, all run at once.
         job_suffix: Optional suffix for SLURM job names (e.g., "v2" -> "spd-harvest-v2").
     """
     from spd.harvest.scripts.run_slurm import harvest as harvest_impl
@@ -63,7 +61,6 @@ def harvest(
         pmi_token_top_k=pmi_token_top_k,
         partition=partition,
         time=time,
-        max_concurrent=max_concurrent,
         job_suffix=job_suffix,
     )
 

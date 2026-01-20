@@ -13,7 +13,7 @@ spd-attributions <wandb_path> --n_gpus 24
 
 # With optional parameters
 spd-attributions <wandb_path> --n_batches 1000 --n_gpus 8 \
-    --batch_size 64 --ci_threshold 1e-6 --time 48:00:00 --max_concurrent 12
+    --batch_size 64 --ci_threshold 1e-6 --time 48:00:00
 ```
 
 The command:

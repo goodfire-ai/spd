@@ -5,8 +5,8 @@ that runs after all workers complete. Creates a git snapshot to ensure consisten
 code across all workers even if jobs are queued.
 
 Usage:
-    spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8
-    spd-harvest <wandb_path> --n_batches 2000 --n_gpus 24
+    spd-harvest <wandb_path> --n_gpus 24
+    spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8  # Only process 1000 batches
 """
 
 import secrets
@@ -34,7 +34,6 @@ def harvest(
     pmi_token_top_k: int = 40,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "24:00:00",
-    max_concurrent: int | None = None,
     job_suffix: str | None = None,
 ) -> None:
     """Submit multi-GPU harvest job to SLURM.
@@ -55,7 +54,6 @@ def harvest(
         pmi_token_top_k: Number of top- and bottom-k tokens by PMI to include.
         partition: SLURM partition name.
         time: Job time limit for worker jobs.
-        max_concurrent: Maximum concurrent array tasks. If None, all run at once.
         job_suffix: Optional suffix for SLURM job names (e.g., "v2" -> "spd-harvest-v2").
     """
     run_id = f"harvest-{secrets.token_hex(4)}"
@@ -88,7 +86,6 @@ def harvest(
         partition=partition,
         n_gpus=1,  # 1 GPU per worker
         time=time,
-        max_concurrent_tasks=max_concurrent,
         snapshot_branch=snapshot_branch,
     )
     array_script = generate_array_script(array_config, worker_commands)
