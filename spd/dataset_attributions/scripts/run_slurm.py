@@ -25,8 +25,8 @@ from spd.utils.slurm import (
 
 def submit_attributions(
     wandb_path: str,
-    n_batches: int,
     n_gpus: int,
+    n_batches: int | None = None,
     batch_size: int = 64,
     ci_threshold: float = 0.0,
     partition: str = DEFAULT_PARTITION_NAME,
@@ -43,6 +43,7 @@ def submit_attributions(
     Args:
         wandb_path: WandB run path for the target decomposition run.
         n_batches: Total number of batches to process (divided among workers).
+            If None, processes entire training dataset.
         n_gpus: Number of GPUs (each gets its own array task).
         batch_size: Batch size for processing.
         ci_threshold: CI threshold for filtering components.
@@ -61,10 +62,11 @@ def submit_attributions(
     # SLURM arrays are 1-indexed, so task ID 1 -> rank 0, etc.
     worker_commands = []
     for rank in range(n_gpus):
+        n_batches_arg = f"--n_batches {n_batches} " if n_batches is not None else ""
         cmd = (
             f"python -m spd.dataset_attributions.scripts.run "
             f'"{wandb_path}" '
-            f"--n_batches {n_batches} "
+            f"{n_batches_arg}"
             f"--batch_size {batch_size} "
             f"--ci_threshold {ci_threshold} "
             f"--rank {rank} "

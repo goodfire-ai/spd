@@ -5,8 +5,11 @@ Offline GPU pipeline that collects component statistics in a single pass over tr
 ## Usage (SLURM)
 
 ```bash
-# Submit 24-GPU SLURM job
+# Process specific number of batches
 spd-harvest <wandb_path> --n_batches 2000 --n_gpus 24
+
+# Process entire training dataset (omit --n_batches)
+spd-harvest <wandb_path> --n_gpus 24
 
 # With optional parameters
 spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8 \
@@ -19,13 +22,18 @@ The command:
 3. Each task processes batches where `batch_idx % world_size == rank`
 4. Submits a merge job (depends on array completion) that combines all worker results
 
+**Note**: `--n_batches` is optional. If omitted, the pipeline processes the entire training dataset.
+
 ## Usage (non-SLURM)
 
 For environments without SLURM, run the worker script directly:
 
 ```bash
-# Single GPU
+# Single GPU with specific number of batches
 python -m spd.harvest.scripts.run <wandb_path> --n_batches 1000
+
+# Single GPU processing entire dataset (omit --n_batches)
+python -m spd.harvest.scripts.run <wandb_path>
 
 # Multi-GPU (run in parallel via shell, tmux, etc.)
 python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4 &

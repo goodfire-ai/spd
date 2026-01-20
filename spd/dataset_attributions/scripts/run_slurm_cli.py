@@ -14,8 +14,8 @@ from spd.settings import DEFAULT_PARTITION_NAME
 
 def submit_attributions(
     wandb_path: str,
-    n_batches: int,
     n_gpus: int,
+    n_batches: int | None = None,
     batch_size: int = 64,
     ci_threshold: float = 0.0,
     partition: str = DEFAULT_PARTITION_NAME,
@@ -30,11 +30,12 @@ def submit_attributions(
 
     Examples:
         spd-attributions wandb:spd/runs/abc123 --n_batches 1000 --n_gpus 8
-        spd-attributions wandb:spd/runs/abc123 --n_batches 2000 --n_gpus 24
+        spd-attributions wandb:spd/runs/abc123 --n_gpus 24  # Process entire dataset
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
         n_batches: Total number of batches to process (divided among workers).
+            If None, processes entire training dataset.
         n_gpus: Number of GPUs (each gets its own array task).
         batch_size: Batch size for processing.
         ci_threshold: CI threshold for filtering components.

@@ -12,6 +12,7 @@ Uses residual-based storage for scalability:
 See CLAUDE.md in this directory for usage instructions.
 """
 
+import itertools
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,7 +37,7 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 @dataclass
 class DatasetAttributionConfig:
     wandb_path: str
-    n_batches: int
+    n_batches: int | None
     batch_size: int
     ci_threshold: float
 
@@ -195,13 +196,12 @@ def harvest_attributions(
 
     # Process batches
     train_iter = iter(train_loader)
-    for batch_idx in tqdm.tqdm(range(config.n_batches), desc="Attribution batches"):
+    batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
+    for batch_idx in tqdm.tqdm(batch_range, desc="Attribution batches"):
         try:
             batch_data = next(train_iter)
         except StopIteration:
-            logger.info(
-                f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early."
-            )
+            logger.info(f"Dataset exhausted at batch {batch_idx}. Processing complete.")
             break
         # Skip batches not assigned to this rank
         if world_size is not None and batch_idx % world_size != rank:
