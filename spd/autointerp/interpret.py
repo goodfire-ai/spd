@@ -23,7 +23,7 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.compute import get_model_n_blocks
-from spd.autointerp.prompt_template import format_prompt_template
+from spd.autointerp.prompt_template import INTERPRETATION_SCHEMA, format_prompt_template
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.configs import LMTaskConfig
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
@@ -79,28 +79,6 @@ RETRYABLE_ERRORS = (
 
 class OpenRouterModelName(StrEnum):
     GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
-
-
-INTERPRETATION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "label": {
-            "type": "string",
-            "description": "3-10 word label describing what the component detects/represents",
-        },
-        "confidence": {
-            "type": "string",
-            "enum": ["low", "medium", "high"],
-            "description": "How clear-cut the interpretation is",
-        },
-        "reasoning": {
-            "type": "string",
-            "description": "2-4 sentences explaining the evidence and ambiguities",
-        },
-    },
-    "required": ["label", "confidence", "reasoning"],
-    "additionalProperties": False,
-}
 
 
 @dataclass

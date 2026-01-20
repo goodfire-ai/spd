@@ -63,18 +63,14 @@ export function useRun() {
         clusterMapping = null;
     }
 
-    /** Fetch run-scoped data (prompts, tokens, interpretations) */
+    /** Fetch run-scoped data that can load asynchronously (prompts, interpretations) */
     function fetchRunScopedData() {
         prompts = { status: "loading" };
-        allTokens = { status: "loading" };
         interpretations = { status: "loading" };
 
         api.listPrompts()
             .then((p) => (prompts = { status: "loaded", data: p }))
             .catch((error) => (prompts = { status: "error", error }));
-        api.getAllTokens()
-            .then((t) => (allTokens = { status: "loaded", data: t }))
-            .catch((error) => (allTokens = { status: "error", error }));
         api.getAllInterpretations()
             .then((i) => {
                 interpretations = {
@@ -93,11 +89,19 @@ export function useRun() {
             .catch((error) => (interpretations = { status: "error", error }));
     }
 
+    /** Fetch tokens - must complete before run is considered loaded */
+    async function fetchTokens(): Promise<TokenInfo[]> {
+        allTokens = { status: "loading" };
+        const tokens = await api.getAllTokens();
+        allTokens = { status: "loaded", data: tokens };
+        return tokens;
+    }
+
     async function loadRun(wandbPath: string, contextLength: number) {
         run = { status: "loading" };
         try {
             await api.loadRun(wandbPath, contextLength);
-            const status = await api.getStatus();
+            const [status] = await Promise.all([api.getStatus(), fetchTokens()]);
             if (status) {
                 run = { status: "loaded", data: status };
                 fetchRunScopedData();
@@ -119,8 +123,12 @@ export function useRun() {
         try {
             const status = await api.getStatus();
             if (status) {
+                // Fetch tokens if we don't have them (e.g., page refresh)
+                if (allTokens.status === "uninitialized") {
+                    await fetchTokens();
+                }
                 run = { status: "loaded", data: status };
-                // Fetch run-scoped data if we don't have it (e.g., page refresh)
+                // Fetch other run-scoped data if we don't have it
                 if (interpretations.status === "uninitialized") {
                     fetchRunScopedData();
                 }

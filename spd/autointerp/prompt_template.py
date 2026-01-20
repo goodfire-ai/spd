@@ -52,6 +52,7 @@ INTERPRETATION_SCHEMA = {
         },
     },
     "required": ["label", "confidence", "reasoning"],
+    "additionalProperties": False,
 }
 
 INTERPRETATION_SCHEMA_JSON_STR = json.dumps(INTERPRETATION_SCHEMA, indent=2)

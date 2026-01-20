@@ -127,12 +127,15 @@ class ComponentModel(LoadableModule):
 
         match ci_config:
             case LayerwiseCiConfig():
-                raw_layerwise_ci_fns = ComponentModel._create_layerwise_ci_fns(
-                    target_model=target_model,
-                    module_to_c=self.module_to_c,
-                    ci_fn_type=ci_config.fn_type,
-                    ci_fn_hidden_dims=ci_config.hidden_dims,
-                )
+                raw_layerwise_ci_fns = {
+                    path: ComponentModel._create_layerwise_ci_fn(
+                        target_module=target_model.get_submodule(path),
+                        C=C,
+                        ci_fn_type=ci_config.fn_type,
+                        ci_fn_hidden_dims=ci_config.hidden_dims,
+                    )
+                    for path, C in self.module_to_c.items()
+                }
                 self.ci_fn = LayerwiseCiFnWrapper(
                     ci_fns=raw_layerwise_ci_fns,
                     components=self.components,
@@ -226,24 +229,10 @@ class ComponentModel(LoadableModule):
         return components
 
     @staticmethod
-    def _get_module_input_dim(
-        target_module: nn.Module,
-        component: Components | None,
-        for_global_ci: bool,
-    ) -> int:
-        """Extract input dimension from a module based on type.
+    def _get_module_input_dim(target_module: nn.Module) -> int:
+        """Extract input dimension from a Linear-like module.
 
-        For embedding layers:
-        - In layerwise CI (for_global_ci=False): assert and fail
-        - In global CI (for_global_ci=True): return component.C
-
-        Args:
-            target_module: The module to extract input dimension from
-            component: The component (required for embedding case with for_global_ci=True)
-            for_global_ci: Whether this is for global CI (affects embedding handling)
-
-        Returns:
-            The input dimension as an integer
+        For embedding layers, this should not be called - handle them separately.
         """
         match target_module:
             case nn.Linear():
@@ -252,16 +241,11 @@ class ComponentModel(LoadableModule):
                 return target_module.weight.shape[0]
             case Identity():
                 return target_module.d
-            case nn.Embedding():
-                assert for_global_ci, (
-                    "Embedding modules only supported for global CI "
-                    "(mlp ci_fn_type in layerwise CI uses component acts)"
-                )
-                assert component is not None
-                assert isinstance(component, EmbeddingComponents)
-                return component.C
             case _:
-                raise ValueError(f"Module {type(target_module)} not supported")
+                raise ValueError(
+                    f"Module {type(target_module)} not supported. "
+                    "Embedding modules should be handled separately."
+                )
 
     @staticmethod
     def _create_layerwise_ci_fn(
@@ -277,35 +261,13 @@ class ComponentModel(LoadableModule):
         if ci_fn_type == "mlp":
             return MLPCiFn(C=C, hidden_dims=ci_fn_hidden_dims)
 
-        input_dim = ComponentModel._get_module_input_dim(
-            target_module=target_module,
-            component=None,
-            for_global_ci=False,
-        )
+        input_dim = ComponentModel._get_module_input_dim(target_module)
 
         match ci_fn_type:
             case "vector_mlp":
                 return VectorMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
             case "shared_mlp":
                 return VectorSharedMLPCiFn(C=C, input_dim=input_dim, hidden_dims=ci_fn_hidden_dims)
-
-    @staticmethod
-    def _create_layerwise_ci_fns(
-        target_model: nn.Module,
-        module_to_c: dict[str, int],
-        ci_fn_type: LayerwiseCiFnType,
-        ci_fn_hidden_dims: list[int],
-    ) -> dict[str, nn.Module]:
-        layerwise_ci_fns: dict[str, nn.Module] = {}
-        for target_module_path, target_module_c in module_to_c.items():
-            target_module = target_model.get_submodule(target_module_path)
-            layerwise_ci_fns[target_module_path] = ComponentModel._create_layerwise_ci_fn(
-                target_module=target_module,
-                C=target_module_c,
-                ci_fn_type=ci_fn_type,
-                ci_fn_hidden_dims=ci_fn_hidden_dims,
-            )
-        return layerwise_ci_fns
 
     @staticmethod
     def _create_global_ci_fn(
@@ -324,11 +286,13 @@ class ComponentModel(LoadableModule):
             target_module = target_model.get_submodule(target_module_path)
             component = components[target_module_path]
 
-            input_dim = ComponentModel._get_module_input_dim(
-                target_module=target_module,
-                component=component,
-                for_global_ci=True,
-            )
+            # For embeddings, global CI uses component acts (C dimensions)
+            # For linear-like modules, use the actual input dimension
+            if isinstance(target_module, nn.Embedding):
+                assert isinstance(component, EmbeddingComponents)
+                input_dim = component.C
+            else:
+                input_dim = ComponentModel._get_module_input_dim(target_module)
 
             layer_configs[target_module_path] = (input_dim, target_module_c)
 

@@ -2,18 +2,43 @@
 
 Offline GPU pipeline that collects component statistics in a single pass over training data. Produces data consumed by the autointerp module (`spd/autointerp/`) and the app (`spd/app/`).
 
-## Usage
+## Usage (SLURM)
 
 ```bash
-# Local execution
-python -m spd.harvest.scripts.run_harvest <wandb_path> \
-    --n_batches 1000 \
-    --batch_size 256 \
-    --context_length 512
+# Submit 24-GPU SLURM job
+spd-harvest <wandb_path> --n_batches 2000 --n_gpus 24
 
-# Via SLURM (supports multi-GPU parallelism)
-spd-harvest <wandb_path>
+# With optional parameters
+spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8 \
+    --batch_size 256 --ci_threshold 1e-6 --time 24:00:00 --max_concurrent 12 --job_suffix 30m
 ```
+
+The command:
+1. Creates a git snapshot branch for reproducibility (jobs may be queued)
+2. Submits a SLURM job array with N tasks (one per GPU)
+3. Each task processes batches where `batch_idx % world_size == rank`
+4. Submits a merge job (depends on array completion) that combines all worker results
+
+## Usage (non-SLURM)
+
+For environments without SLURM, run the worker script directly:
+
+```bash
+# Single GPU
+python -m spd.harvest.scripts.run <wandb_path> --n_batches 1000
+
+# Multi-GPU (run in parallel via shell, tmux, etc.)
+python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4 &
+python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 1 --world_size 4 &
+python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 2 --world_size 4 &
+python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 3 --world_size 4 &
+wait
+
+# Merge results after all workers complete
+python -m spd.harvest.scripts.run <path> --merge
+```
+
+Each worker processes batches where `batch_idx % world_size == rank`, then the merge step combines all partial results.
 
 ## Data Storage
 
@@ -25,16 +50,30 @@ SPD_OUT_DIR/harvest/<run_id>/
 │   ├── config.json
 │   ├── summary.json          # Lightweight {component_key: {layer, idx, mean_ci}}
 │   └── components.jsonl      # One ComponentData per line (quite big - usually ≈10gb)
-└── correlations/
-    ├── component_correlations.pt
-    └── token_stats.pt
+├── correlations/
+│   ├── component_correlations.pt
+│   └── token_stats.pt
+└── worker_states/
+    └── worker_*.pt           # Per-worker states (cleaned up after merge)
 ```
 
 ## Architecture
 
-### Harvest (`harvest.py`)
+### SLURM Launcher (`scripts/run_slurm.py`, `scripts/run_slurm_cli.py`)
 
-Main entry point. Orchestrates the `Harvester` to process batches and saves results.
+Entry point via `spd-harvest`. Submits array job + dependent merge job.
+
+### Worker Script (`scripts/run.py`)
+
+Internal script called by SLURM jobs. Supports:
+- `--rank R --world_size N`: Process subset of batches
+- `--merge`: Combine per-rank results into final files
+
+### Harvest Logic (`harvest.py`)
+
+Main harvesting functions:
+- `harvest_activation_contexts()`: Process batches for a single rank
+- `merge_activation_contexts()`: Combine results from all ranks
 
 ### Harvester (`lib/harvester.py`)
 
