@@ -1299,6 +1299,8 @@ def test_global_ci_save_and_load():
         # Verify global CI function weights specifically
         global_ci_fn = cm.ci_fn._global_ci_fn
         global_ci_fn_loaded = cm_loaded.ci_fn._global_ci_fn
+        assert isinstance(global_ci_fn, GlobalSharedMLPCiFn)
+        assert isinstance(global_ci_fn_loaded, GlobalSharedMLPCiFn)
         assert global_ci_fn_loaded.layer_order == global_ci_fn.layer_order
         for p1, p2 in zip(global_ci_fn.parameters(), global_ci_fn_loaded.parameters(), strict=True):
             torch.testing.assert_close(p1, p2)

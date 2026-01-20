@@ -1,3 +1,4 @@
+import fnmatch
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from spd.models.components import (
     ComponentsMaskInfo,
     EmbeddingComponents,
     GlobalCiFnWrapper,
+    GlobalReverseResidualCiFn,
     GlobalSharedMLPCiFn,
     Identity,
     LayerwiseCiFnWrapper,
@@ -27,7 +29,7 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
-from spd.spd_types import GlobalCiFnType, LayerwiseCiFnType, ModelPath
+from spd.spd_types import LayerwiseCiFnType, ModelPath
 from spd.utils.general_utils import resolve_class
 from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 
@@ -141,8 +143,7 @@ class ComponentModel(LoadableModule):
                     target_model=target_model,
                     module_to_c=self.module_to_c,
                     components=self.components,
-                    ci_fn_type=ci_config.fn_type,
-                    ci_fn_hidden_dims=ci_config.hidden_dims,
+                    ci_config=ci_config,
                 )
                 self.ci_fn = GlobalCiFnWrapper(
                     global_ci_fn=raw_global_ci_fn,
@@ -311,10 +312,12 @@ class ComponentModel(LoadableModule):
         target_model: nn.Module,
         module_to_c: dict[str, int],
         components: dict[str, Components],
-        ci_fn_type: GlobalCiFnType,
-        ci_fn_hidden_dims: list[int],
-    ) -> GlobalSharedMLPCiFn:
+        ci_config: GlobalCiConfig,
+    ) -> GlobalSharedMLPCiFn | GlobalReverseResidualCiFn:
         """Create a global CI function that takes all layer activations as input."""
+        ci_fn_type = ci_config.fn_type
+        ci_fn_hidden_dims = ci_config.hidden_dims
+
         # Build layer_configs: layer_name -> (input_dim, C)
         layer_configs: dict[str, tuple[int, int]] = {}
         for target_module_path, target_module_c in module_to_c.items():
@@ -333,6 +336,45 @@ class ComponentModel(LoadableModule):
             case "global_shared_mlp":
                 return GlobalSharedMLPCiFn(
                     layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims
+                )
+            case "global_reverse_residual":
+                assert ci_config.block_groups is not None
+                assert ci_config.d_resid_ci_fn is not None
+
+                # Build block_configs from block_groups
+                block_configs: list[tuple[str, list[str], list[int], list[int]]] = []
+                all_matched_modules: set[str] = set()
+
+                for block_group in ci_config.block_groups:
+                    matched_modules: list[str] = []
+                    for pattern in block_group.patterns:
+                        matches = [name for name in module_to_c if fnmatch.fnmatch(name, pattern)]
+                        assert matches, (
+                            f"Block pattern '{pattern}' in block '{block_group.name}' "
+                            f"matched no modules. Available: {list(module_to_c.keys())}"
+                        )
+                        matched_modules.extend(matches)
+
+                    for module in matched_modules:
+                        assert module not in all_matched_modules, (
+                            f"Module '{module}' matched multiple block groups"
+                        )
+                        all_matched_modules.add(module)
+
+                    input_dims = [layer_configs[m][0] for m in matched_modules]
+                    c_values = [layer_configs[m][1] for m in matched_modules]
+
+                    block_configs.append((block_group.name, matched_modules, input_dims, c_values))
+
+                assert all_matched_modules == set(module_to_c.keys()), (
+                    f"Some modules not in any block group. "
+                    f"Missing: {set(module_to_c.keys()) - all_matched_modules}"
+                )
+
+                return GlobalReverseResidualCiFn(
+                    block_configs=block_configs,
+                    d_resid_ci_fn=ci_config.d_resid_ci_fn,
+                    hidden_dims=list(ci_fn_hidden_dims),
                 )
 
     def _extract_output(self, raw_output: Any) -> Tensor:

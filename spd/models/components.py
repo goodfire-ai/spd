@@ -151,6 +151,108 @@ class GlobalSharedMLPCiFn(nn.Module):
         return {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
 
 
+class GlobalReverseResidualCiFn(nn.Module):
+    """Global CI function that processes blocks in reverse order with a residual stream.
+
+    Architecture:
+    1. Initialize residual stream to zeros (batch..., d_resid_ci_fn)
+    2. Process blocks in order (typically: unembed → layer N MLP → layer N attn → ... → embed)
+    3. For each block:
+       - Concat relevant activations from all modules in the block
+       - Project to d_resid_ci_fn and add to residual stream
+       - Reader reads from residual stream, outputs CI values for all modules in block
+       - Transition updates residual stream for next block (except after last block)
+
+    All projectors, readers, and transitions have unique weights per block.
+    """
+
+    def __init__(
+        self,
+        block_configs: list[tuple[str, list[str], list[int], list[int]]],
+        d_resid_ci_fn: int,
+        hidden_dims: list[int],
+    ):
+        """Initialize the reverse residual CI function.
+
+        Args:
+            block_configs: List of (block_name, module_names, input_dims, c_values) tuples.
+                Ordered in processing order (first block processed first).
+            d_resid_ci_fn: Dimension of the residual stream.
+            hidden_dims: Hidden dimensions for reader MLPs.
+        """
+        super().__init__()
+
+        self.d_resid_ci_fn = d_resid_ci_fn
+        self.block_names = [name for name, _, _, _ in block_configs]
+        self.block_module_names = [modules for _, modules, _, _ in block_configs]
+        self.block_input_dims = [dims for _, _, dims, _ in block_configs]
+        self.block_c_values = [cs for _, _, _, cs in block_configs]
+
+        self._projectors = nn.ModuleDict()
+        self._readers = nn.ModuleDict()
+        self._transitions = nn.ModuleDict()
+
+        for block_idx, (block_name, _, input_dims, c_values) in enumerate(block_configs):
+            safe_name = block_name.replace(".", "-")
+            total_input_dim = sum(input_dims)
+            total_c = sum(c_values)
+
+            self._projectors[safe_name] = Linear(
+                total_input_dim, d_resid_ci_fn, nonlinearity="relu"
+            )
+
+            reader_layers = nn.Sequential()
+            for i in range(len(hidden_dims)):
+                in_dim = d_resid_ci_fn if i == 0 else hidden_dims[i - 1]
+                out_dim = hidden_dims[i]
+                reader_layers.append(Linear(in_dim, out_dim, nonlinearity="relu"))
+                reader_layers.append(nn.GELU())
+            final_dim = hidden_dims[-1] if hidden_dims else d_resid_ci_fn
+            reader_layers.append(Linear(final_dim, total_c, nonlinearity="linear"))
+            self._readers[safe_name] = reader_layers
+
+            if block_idx < len(block_configs) - 1:
+                self._transitions[safe_name] = Linear(
+                    d_resid_ci_fn, d_resid_ci_fn, nonlinearity="relu"
+                )
+
+    @override
+    def forward(
+        self,
+        input_acts: dict[str, Float[Tensor, "... d_in"]],
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        first_tensor = next(iter(input_acts.values()))
+        batch_shape = first_tensor.shape[:-1]
+        device = first_tensor.device
+        dtype = first_tensor.dtype
+
+        residual = torch.zeros(*batch_shape, self.d_resid_ci_fn, device=device, dtype=dtype)
+
+        all_outputs: dict[str, Float[Tensor, "... C"]] = {}
+
+        for block_idx, block_name in enumerate(self.block_names):
+            safe_name = block_name.replace(".", "-")
+            module_names = self.block_module_names[block_idx]
+            c_values = self.block_c_values[block_idx]
+
+            block_acts = [input_acts[name] for name in module_names]
+            concat_acts = torch.cat(block_acts, dim=-1)
+
+            projection = self._projectors[safe_name](concat_acts)
+            residual = residual + projection
+
+            ci_output = self._readers[safe_name](residual)
+
+            split_outputs = torch.split(ci_output, c_values, dim=-1)
+            for module_name, module_ci in zip(module_names, split_outputs, strict=True):
+                all_outputs[module_name] = module_ci
+
+            if block_idx < len(self.block_names) - 1:
+                residual = self._transitions[safe_name](residual)
+
+        return all_outputs
+
+
 WeightDeltaAndMask = tuple[Float[Tensor, "d_out d_in"], Float[Tensor, "..."]]
 
 
@@ -448,7 +550,7 @@ class LayerwiseCiFnWrapper(nn.Module):
 
 
 class GlobalCiFnWrapper(nn.Module):
-    """Wraps GlobalSharedMLPCiFn with a unified interface.
+    """Wraps global CI functions with a unified interface.
 
     Transforms embedding layer inputs to component activations before calling
     the underlying global CI function.
@@ -456,7 +558,7 @@ class GlobalCiFnWrapper(nn.Module):
 
     def __init__(
         self,
-        global_ci_fn: GlobalSharedMLPCiFn,
+        global_ci_fn: GlobalSharedMLPCiFn | GlobalReverseResidualCiFn,
         components: dict[str, Components],
     ):
         super().__init__()
