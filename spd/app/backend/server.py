@@ -29,6 +29,7 @@ from spd.app.backend.routers import (
     agents_router,
     clusters_router,
     correlations_router,
+    dataset_attributions_router,
     dataset_search_router,
     graphs_router,
     intervention_router,
@@ -152,6 +153,7 @@ app.include_router(correlations_router)
 app.include_router(clusters_router)
 app.include_router(intervention_router)
 app.include_router(dataset_search_router)
+app.include_router(dataset_attributions_router)
 app.include_router(agents_router)
 
 
