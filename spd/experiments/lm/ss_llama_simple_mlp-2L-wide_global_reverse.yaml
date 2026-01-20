@@ -9,6 +9,9 @@ ci_config:
   fn_type: global_reverse_residual
   d_resid_ci_fn: 2048
   reader_hidden_dims: [1024, 1024]
+  transition_attn_config:
+    n_heads: 8
+    max_len: 2048
   block_groups:
     # Process in reverse order: layer 1 before layer 0
     # Within each layer: MLP before attention (closer to output first)

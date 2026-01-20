@@ -1,8 +1,9 @@
 # Sweep config for ss_llama_simple_mlp-2L-wide_global_reverse
 # Sweeps over importance minimality coefficient
+# Values aligned with layerwise 2L-wide experiments
 
 global:
   loss_metric_configs:
     - classname: "ImportanceMinimalityLoss"
       coeff:
-        values: [1e-2, 1e-3, 1e-4, 1e-5]
+        values: [0.1, 0.05, 0.01, 0.005, 0.001, 0.0005]
