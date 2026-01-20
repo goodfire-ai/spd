@@ -9,8 +9,8 @@ n_mask_samples: 1
 ci_config:
   mode: global
   fn_type: global_reverse_residual
-  d_resid_ci_fn: 512
-  reader_hidden_dims: [256]
+  d_resid_ci_fn: 2048
+  reader_hidden_dims: [1024, 1024]
   block_groups:
     # Process in reverse order: layer 1 before layer 0
     # Within each layer: MLP before attention (closer to output first)
