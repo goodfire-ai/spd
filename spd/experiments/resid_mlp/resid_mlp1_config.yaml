@@ -1,85 +1,97 @@
-# ResidualMLP 1 layer
-# --- WandB ---
 wandb_project: spd
 wandb_run_name: null
-wandb_run_name_prefix: ""
-
-# --- General ---
+wandb_run_name_prefix: ''
 seed: 0
 n_mask_samples: 1
 ci_config:
-  mode: layerwise
-  fn_type: mlp
-  hidden_dims: [16]
-sigmoid_type: "leaky_hard"
+  mode: global
+  fn_type: global_shared_mlp
+  hidden_dims:
+  - 256
+sampling: continuous
+sigmoid_type: leaky_hard
 module_info:
-  - module_pattern: "layers.*.mlp_in"
-    C: 100
-  - module_pattern: "layers.*.mlp_out"
-    C: 100
+- module_pattern: layers.*.mlp_in
+  C: 100
+- module_pattern: layers.*.mlp_out
+  C: 100
 identity_module_info: null
 use_delta_component: true
-
-# --- Loss config ---
 loss_metric_configs:
-  - classname: "ImportanceMinimalityLoss"
-    coeff: 1e-5
-    pnorm: 2.0
-    beta: 0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 1.0
-  - classname: "StochasticReconLoss"
-    coeff: 1.0
+- coeff: 1.0e-05
+  classname: ImportanceMinimalityLoss
+  pnorm: 2.0
+  beta: 0.0
+  p_anneal_start_frac: 0.0
+  p_anneal_final_p: 0.5
+  p_anneal_end_frac: 1.0
+  eps: 1.0e-12
+- coeff: 0.5
+  classname: StochasticReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+- coeff: 0.5
+  init: random
+  step_size: 1.0
+  n_steps: 1
+  mask_scope: shared_across_batch
+  classname: PGDReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+- coeff: 10.0
+  classname: FaithfulnessLoss
+- coeff: 1.0
+  classname: StochasticReconLoss
 output_loss_type: mse
-
-# --- Training ---
-batch_size: 2048
-eval_batch_size: 2048
-steps: 20_000
 lr_schedule:
-  start_val: 2e-3
-  fn_type: constant
+  start_val: 0.005
   warmup_pct: 0.0
-
-# --- Faithfulness Warmup ---
+  final_val_frac: 0.1
+  fn_type: cosine
+steps: 100000
+batch_size: 2048
+gradient_accumulation_steps: 1
+grad_clip_norm_components: null
+grad_clip_norm_ci_fns: null
 faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
-
-# --- Logging & Saving ---
 train_log_freq: 100
 eval_freq: 500
+eval_batch_size: 2048
+slow_eval_freq: 5000
 n_eval_steps: 100
-slow_eval_freq: 5_000
 slow_eval_on_first_step: true
 save_freq: null
-ci_alive_threshold: 0.1
-n_examples_until_dead: 204_800
 eval_metric_configs:
-  - classname: "CIHistograms"
-    n_batches_accum: 5
-  - classname: "ComponentActivationDensity"
-  - classname: "PermutedCIPlots"
-    identity_patterns: ["layers.*.mlp_in"]
-    dense_patterns: ["layers.*.mlp_out"]
-  - classname: "IdentityCIError"
-    identity_ci:
-      - layer_pattern: "layers.*.mlp_in"
-        n_features: 100
-    dense_ci:
-      - layer_pattern: "layers.*.mlp_out"
-        k: 50
-  - classname: "CI_L0"
-    groups: null
-  - classname: "CIMeanPerComponent"
-  - classname: "StochasticHiddenActsReconLoss"
-
-# --- Pretrained model info ---
-pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
-pretrained_model_path: "wandb:goodfire/spd-pre-Sep-2025/runs/pziyck78"
-
-# --- Task Specific ---
+- classname: CIHistograms
+  n_batches_accum: 5
+- classname: ComponentActivationDensity
+- classname: PermutedCIPlots
+  identity_patterns:
+  - layers.*.mlp_in
+  dense_patterns:
+  - layers.*.mlp_out
+- classname: IdentityCIError
+  identity_ci:
+  - layer_pattern: layers.*.mlp_in
+    n_features: 100
+  dense_ci:
+  - layer_pattern: layers.*.mlp_out
+    k: 50
+- classname: CI_L0
+  groups: null
+- classname: CIMeanPerComponent
+- coeff: null
+  classname: StochasticHiddenActsReconLoss
+ci_alive_threshold: 0.1
+n_examples_until_dead: 204800
+pretrained_model_class: spd.experiments.resid_mlp.models.ResidMLP
+pretrained_model_path: wandb:goodfire/spd-pre-Sep-2025/runs/pziyck78
+pretrained_model_name: null
+pretrained_model_output_attr: null
+tokenizer_name: null
 task_config:
   task_name: resid_mlp
   feature_probability: 0.01
-  data_generation_type: "at_least_zero_active"
+  data_generation_type: at_least_zero_active
