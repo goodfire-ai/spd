@@ -24,12 +24,14 @@ import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "batchtopk"))
 
+from functools import partial
+
 from config import get_default_cfg, post_init_cfg
 from datasets import load_dataset
 from torch.utils.data import DataLoader, TensorDataset
 from transformer_lens import HookedTransformer
 
-from logs import init_wandb, log_model_performance, save_checkpoint
+from logs import init_wandb, save_checkpoint
 
 
 class MultiInputActivationsStore:
@@ -302,6 +304,80 @@ class MultiInputBatchTopKSAE(nn.Module):
         self.W_dec.data = W_dec_normed
 
 
+def _reconstr_hook(activation, hook, sae_out):
+    return sae_out
+
+
+def _zero_abl_hook(activation, hook):
+    return torch.zeros_like(activation)
+
+
+def _mean_abl_hook(activation, hook):
+    return activation.mean([0, 1]).expand_as(activation)
+
+
+@torch.no_grad()
+def log_multi_input_model_performance(
+    wandb_run,
+    step: int,
+    model: HookedTransformer,
+    activation_store: MultiInputActivationsStore,
+    sae: MultiInputBatchTopKSAE,
+    index: str | None = None,
+) -> None:
+    """Log model performance metrics for multi-input SAE."""
+    cfg = sae.cfg
+    batch_tokens = activation_store.get_batch_tokens()[: cfg["batch_size"] // cfg["seq_len"]]
+
+    # Get activations from all hook points
+    activations_dict = activation_store.get_activations(batch_tokens)
+
+    # Prepare inputs for SAE
+    primary_hp = activation_store.primary_hook_point
+    primary_batch = activations_dict[primary_hp].reshape(-1, cfg["primary_act_size"])
+    aux_batches = [
+        activations_dict[hp].reshape(-1, cfg["primary_act_size"])
+        for hp in activation_store.hook_points[1:]
+    ]
+
+    # Get SAE reconstruction
+    sae_output = sae(primary_batch, aux_batches)["sae_out"]
+    sae_output = sae_output.reshape(batch_tokens.shape[0], batch_tokens.shape[1], -1)
+
+    # Compute losses
+    original_loss = model(batch_tokens, return_type="loss").item()
+    reconstr_loss = model.run_with_hooks(
+        batch_tokens,
+        fwd_hooks=[(primary_hp, partial(_reconstr_hook, sae_out=sae_output))],
+        return_type="loss",
+    ).item()
+    zero_loss = model.run_with_hooks(
+        batch_tokens,
+        fwd_hooks=[(primary_hp, _zero_abl_hook)],
+        return_type="loss",
+    ).item()
+    mean_loss = model.run_with_hooks(
+        batch_tokens,
+        fwd_hooks=[(primary_hp, _mean_abl_hook)],
+        return_type="loss",
+    ).item()
+
+    ce_degradation = original_loss - reconstr_loss
+    zero_degradation = original_loss - zero_loss
+    mean_degradation = original_loss - mean_loss
+
+    log_dict = {
+        "performance/ce_degradation": ce_degradation,
+        "performance/recovery_from_zero": (reconstr_loss - zero_loss) / zero_degradation,
+        "performance/recovery_from_mean": (reconstr_loss - mean_loss) / mean_degradation,
+    }
+
+    if index is not None:
+        log_dict = {f"{k}_{index}": v for k, v in log_dict.items()}
+
+    wandb_run.log(log_dict, step=step)
+
+
 def train_multi_input_sae(
     sae: MultiInputBatchTopKSAE,
     activation_store: MultiInputActivationsStore,
@@ -340,8 +416,7 @@ def train_multi_input_sae(
         wandb_run.log(log_dict, step=i)
 
         if i % cfg.get("perf_log_freq", 1000) == 0:
-            # Log performance using primary hook point
-            log_model_performance(wandb_run, i, model, activation_store, sae, index="multi_input")
+            log_multi_input_model_performance(wandb_run, i, model, activation_store, sae)
 
         if i % cfg.get("checkpoint_freq", 10000) == 0:
             save_checkpoint(wandb_run, sae, cfg, i)
@@ -369,9 +444,9 @@ def main(
     # Training settings
     num_tokens: int = 100_000_000,
     batch_size: int = 4096,
-    lr: float = 1e-4,
+    lr: float = 3e-4,
     beta1: float = 0.9,
-    beta2: float = 0.999,
+    beta2: float = 0.99,
     weight_decay: float = 0.0,
     # Model settings
     model_name: str = "gpt2-small",
@@ -444,8 +519,8 @@ def main(
 
     # Parse auxiliary inputs
     if aux_inputs is None:
-        # Default: use next layer's mlp_out as auxiliary input
-        aux_inputs = [f"{layer + 1}:{site}"]
+        # Default: use resid_mid and resid_post from same layer
+        aux_inputs = [f"{layer}:resid_mid", f"{layer}:resid_post"]
 
     aux_hook_points = []
     for aux_spec in aux_inputs:
