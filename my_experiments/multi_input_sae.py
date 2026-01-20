@@ -183,7 +183,6 @@ class MultiInputBatchTopKSAE(nn.Module):
         self.W_dec = nn.Parameter(
             nn.init.kaiming_uniform_(torch.empty(self.dict_size, self.primary_size))
         )
-        self.b_dec = nn.Parameter(torch.zeros(self.primary_size))
 
         # Initialize decoder from encoder (using primary input portion)
         with torch.no_grad():
@@ -212,12 +211,8 @@ class MultiInputBatchTopKSAE(nn.Module):
         # Concatenate all inputs for the encoder
         encoder_input = torch.cat([primary_input] + aux_inputs, dim=-1)
 
-        # Center using primary input's bias
-        x_cent = encoder_input.clone()
-        x_cent[:, : self.primary_size] = x_cent[:, : self.primary_size] - self.b_dec
-
         # Encode
-        acts = F.relu(x_cent @ self.W_enc + self.b_enc)
+        acts = F.relu(encoder_input @ self.W_enc + self.b_enc)
 
         # BatchTopK
         acts_topk = torch.topk(acts.flatten(), self.cfg["top_k"] * primary_input.shape[0], dim=-1)
@@ -228,7 +223,7 @@ class MultiInputBatchTopKSAE(nn.Module):
         )
 
         # Decode to primary input space only
-        x_reconstruct = acts_topk @ self.W_dec + self.b_dec
+        x_reconstruct = acts_topk @ self.W_dec
 
         # Update dead feature tracking
         self.update_inactive_features(acts_topk)
