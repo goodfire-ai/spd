@@ -8,9 +8,10 @@ wandb_run_name_prefix: ""
 seed: 0
 n_mask_samples: 1
 ci_config:
-  mode: layerwise
-  fn_type: mlp
-  hidden_dims: [128]
+  mode: global
+  fn_type: global_shared_mlp
+  hidden_dims:
+  - 1024
 sigmoid_type: "leaky_hard"
 module_info:
   - module_pattern: "layers.*.mlp_in"
@@ -21,24 +22,41 @@ use_delta_component: true
 
 # --- Loss config ---
 loss_metric_configs:
-  - classname: "ImportanceMinimalityLoss"
-    coeff: 1e-5
-    pnorm: 2.0
-    beta: 0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 1.0
-  - classname: "StochasticReconLoss"
-    coeff: 1.0
+- coeff: 2.0e-05
+  classname: ImportanceMinimalityLoss
+  pnorm: 2.0
+  beta: 0.0
+  p_anneal_start_frac: 0.0
+  p_anneal_final_p: 0.5
+  p_anneal_end_frac: 1.0
+  eps: 1.0e-12
+- coeff: 0.5
+  classname: StochasticReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+- coeff: 0.5
+  init: random
+  step_size: 1.0
+  n_steps: 1
+  mask_scope: shared_across_batch
+  classname: PGDReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+- coeff: 10.0
+  classname: FaithfulnessLoss
+# - coeff: 0.5
+#   classname: StochasticReconLoss
 output_loss_type: mse
 
 # --- Training ---
 batch_size: 2048
 eval_batch_size: 2048
-steps: 50_000
+steps: 100_000
 lr_schedule:
-  start_val: 1e-3
-  fn_type: constant
+  start_val: 0.0005
+  fn_type: cosine
   warmup_pct: 0.0
+  final_val_frac: 0.1
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
