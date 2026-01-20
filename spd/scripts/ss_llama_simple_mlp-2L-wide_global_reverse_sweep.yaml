@@ -5,4 +5,4 @@ global:
   loss_metric_configs:
     - classname: "ImportanceMinimalityLoss"
       coeff:
-        values: [1e-2, 1e-3, 1e-4, 1e-5]
+        values: [2e-3, 3e-3]
