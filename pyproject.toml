@@ -43,7 +43,6 @@ dev = [
     "ruff",
     "basedpyright<1.32.0", # pyright and wandb issues, see https://github.com/goodfire-ai/spd/pull/232
     "pre-commit",
-    "sqlite-web>=0.6.5",
 ]
 
 [project.scripts]
@@ -52,6 +51,7 @@ spd-local = "spd.scripts.run_local:cli"
 spd-clustering = "spd.clustering.scripts.run_pipeline:cli"
 spd-harvest = "spd.harvest.scripts.run_slurm_cli:cli"
 spd-autointerp = "spd.autointerp.scripts.run_slurm_cli:cli"
+spd-attributions = "spd.dataset_attributions.scripts.run_slurm_cli:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]

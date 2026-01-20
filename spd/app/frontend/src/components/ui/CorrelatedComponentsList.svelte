@@ -1,9 +1,12 @@
 <script lang="ts">
-    import type { CorrelatedComponent } from "../../lib/localAttributionsTypes";
+    import { getContext } from "svelte";
+    import type { CorrelatedComponent } from "../../lib/promptAttributionsTypes";
     import { displaySettings } from "../../lib/displaySettings.svelte";
-    import { runState } from "../../lib/runState.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import SetOverlapVis from "./SetOverlapVis.svelte";
-    import { lerp } from "../local-attr/graphUtils";
+    import { lerp } from "../prompt-attr/graphUtils";
+
+    const runState = getContext<RunContext>(RUN_KEY);
 
     type Props = {
         items: CorrelatedComponent[];
@@ -14,19 +17,15 @@
     let { items, onComponentClick, pageSize = 40 }: Props = $props();
 
     function getInterpretationLabel(componentKey: string): string | null {
-        return runState.getInterpretation(componentKey)?.label ?? null;
+        const interp = runState.getInterpretation(componentKey);
+        if (interp.status === "loaded" && interp.data.status === "generated") return interp.data.data.label;
+        return null;
     }
 
     let currentPage = $state(0);
     let hoveredKey = $state<string | null>(null);
     const totalPages = $derived(Math.ceil(items.length / pageSize));
     const paginatedItems = $derived(items.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
-
-    // Reset page when items change
-    $effect(() => {
-        items; // eslint-disable-line @typescript-eslint/no-unused-expressions
-        currentPage = 0;
-    });
 
     function getBorderColor(score: number): string {
         const intensity = lerp(0.3, 1, score);

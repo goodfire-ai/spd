@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal, override
+from typing import TYPE_CHECKING, Literal, override
 
 import einops
 import torch
@@ -8,6 +8,9 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 
 from spd.utils.module_utils import _NonlinearityType, init_param_
+
+if TYPE_CHECKING:
+    from spd.spd_types import LayerwiseCiFnType
 
 
 class ParallelLinear(nn.Module):
@@ -108,6 +111,44 @@ class VectorSharedMLPCiFn(nn.Module):
     @override
     def forward(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
         return self.layers(x)
+
+
+class GlobalSharedMLPCiFn(nn.Module):
+    """Global CI function that concatenates all layer activations and outputs CI for all layers."""
+
+    def __init__(
+        self,
+        layer_configs: dict[str, tuple[int, int]],  # layer_name -> (input_dim, C)
+        hidden_dims: list[int],
+    ):
+        super().__init__()
+
+        self.layer_order = sorted(layer_configs.keys())
+        self.layer_configs = layer_configs
+        self.split_sizes = [layer_configs[name][1] for name in self.layer_order]
+
+        total_input_dim = sum(input_dim for input_dim, _ in layer_configs.values())
+        total_C = sum(C for _, C in layer_configs.values())
+
+        self.layers = nn.Sequential()
+        for i in range(len(hidden_dims)):
+            in_dim = total_input_dim if i == 0 else hidden_dims[i - 1]
+            output_dim = hidden_dims[i]
+            self.layers.append(Linear(in_dim, output_dim, nonlinearity="relu"))
+            self.layers.append(nn.GELU())
+        final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else total_input_dim
+        self.layers.append(Linear(final_dim, total_C, nonlinearity="linear"))
+
+    @override
+    def forward(
+        self,
+        input_acts: dict[str, Float[Tensor, "... d_in"]],
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        inputs_list = [input_acts[name] for name in self.layer_order]
+        concatenated = torch.cat(inputs_list, dim=-1)
+        output = self.layers(concatenated)
+        split_outputs = torch.split(output, self.split_sizes, dim=-1)
+        return {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
 
 
 WeightDeltaAndMask = tuple[Float[Tensor, "d_out d_in"], Float[Tensor, "..."]]
@@ -360,3 +401,81 @@ def make_mask_infos(
         )
 
     return result
+
+
+class LayerwiseCiFnWrapper(nn.Module):
+    """Wraps a dict of per-layer CI functions with a unified interface.
+
+    Calls each layer's CI function independently on its corresponding input activations.
+    """
+
+    def __init__(
+        self,
+        ci_fns: dict[str, nn.Module],
+        components: dict[str, Components],
+        ci_fn_type: "LayerwiseCiFnType",
+    ):
+        super().__init__()
+        self.layer_names = sorted(ci_fns.keys())
+        self.components = components
+        self.ci_fn_type = ci_fn_type
+
+        # Store as ModuleDict with "." replaced by "-" for state dict compatibility
+        self._ci_fns = nn.ModuleDict(
+            {name.replace(".", "-"): ci_fns[name] for name in self.layer_names}
+        )
+
+    @override
+    def forward(
+        self,
+        layer_acts: dict[str, Float[Tensor, "..."]],
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        outputs: dict[str, Float[Tensor, "... C"]] = {}
+
+        for layer_name in self.layer_names:
+            ci_fn = self._ci_fns[layer_name.replace(".", "-")]
+            input_acts = layer_acts[layer_name]
+
+            # MLPCiFn expects component activations, others take raw input
+            if self.ci_fn_type == "mlp":
+                ci_fn_input = self.components[layer_name].get_component_acts(input_acts)
+            else:
+                ci_fn_input = input_acts
+
+            outputs[layer_name] = ci_fn(ci_fn_input)
+
+        return outputs
+
+
+class GlobalCiFnWrapper(nn.Module):
+    """Wraps GlobalSharedMLPCiFn with a unified interface.
+
+    Transforms embedding layer inputs to component activations before calling
+    the underlying global CI function.
+    """
+
+    def __init__(
+        self,
+        global_ci_fn: GlobalSharedMLPCiFn,
+        components: dict[str, Components],
+    ):
+        super().__init__()
+        self._global_ci_fn = global_ci_fn
+        self.components = components
+
+    @override
+    def forward(
+        self,
+        layer_acts: dict[str, Float[Tensor, "..."]],
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        transformed: dict[str, Float[Tensor, ...]] = {}
+
+        for layer_name, acts in layer_acts.items():
+            component = self.components[layer_name]
+            if isinstance(component, EmbeddingComponents):
+                # Embeddings pass token IDs; convert to component activations
+                transformed[layer_name] = component.get_component_acts(acts)
+            else:
+                transformed[layer_name] = acts
+
+        return self._global_ci_fn(transformed)
