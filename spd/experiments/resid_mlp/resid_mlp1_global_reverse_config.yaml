@@ -10,12 +10,12 @@ n_mask_samples: 1
 ci_config:
   mode: global
   fn_type: global_reverse_residual
-  d_resid_ci_fn: 256
-  reader_hidden_dims: [128]
+  d_resid_ci_fn: 512
+  reader_hidden_dims: [512]
   block_groups:
-    # Process in reverse order: mlp_out (closer to output) before mlp_in (closer to input)
     - name: "layer_0_mlp"
       patterns: ["layers.0.mlp_*"]
+sampling: continuous
 sigmoid_type: "leaky_hard"
 module_info:
   - module_pattern: "layers.*.mlp_in"
@@ -31,19 +31,36 @@ loss_metric_configs:
     coeff: 1e-5
     pnorm: 2.0
     beta: 0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 1.0
+    p_anneal_start_frac: 0
+    p_anneal_final_p: 0.5
+    p_anneal_end_frac: 1
+    eps: 1e-12
+  - classname: "StochasticReconSubsetLoss"
+    coeff: 0.5
+    routing:
+      type: uniform_k_subset
+  - classname: "PGDReconSubsetLoss"
+    coeff: 0.5
+    init: random
+    step_size: 1
+    n_steps: 1
+    mask_scope: shared_across_batch
+    routing:
+      type: uniform_k_subset
   - classname: "StochasticReconLoss"
     coeff: 1.0
+  - classname: "FaithfulnessLoss"
+    coeff: 10
 output_loss_type: mse
 
 # --- Training ---
 batch_size: 2048
 eval_batch_size: 2048
-steps: 20_000
+steps: 100_000
 lr_schedule:
-  start_val: 2e-3
-  fn_type: constant
+  start_val: 5e-3
+  fn_type: cosine
+  final_val_frac: 0.1
   warmup_pct: 0.0
 
 # --- Faithfulness Warmup ---
@@ -78,6 +95,7 @@ eval_metric_configs:
     groups: null
   - classname: "CIMeanPerComponent"
   - classname: "StochasticHiddenActsReconLoss"
+    coeff: null
 
 # --- Pretrained model info ---
 pretrained_model_class: "spd.experiments.resid_mlp.models.ResidMLP"
