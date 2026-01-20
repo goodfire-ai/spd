@@ -1,22 +1,33 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import { clusterMapping } from "../../lib/clusterMapping.svelte";
     import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
     import {
         isInterventableNode,
-        type ActivationContextsSummary,
         type LayerInfo,
         type NodePosition,
         type TokenInfo,
-    } from "../../lib/localAttributionsTypes";
-    import { runState } from "../../lib/runState.svelte";
-    import { calcTooltipPos, computeClusterSpans, computeComponentOffsets, lerp, sortComponentsByCluster, sortComponentsByImportance, type ClusterSpan } from "./graphUtils";
+    } from "../../lib/promptAttributionsTypes";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
+
+    const runState = getContext<RunContext>(RUN_KEY);
+    import {
+        calcTooltipPos,
+        computeClusterSpans,
+        computeComponentOffsets,
+        lerp,
+        sortComponentsByCluster,
+        sortComponentsByImportance,
+        type ClusterSpan,
+    } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
     import type { StoredGraph } from "./types";
     import ViewControls from "./ViewControls.svelte";
+    import { useZoomPan } from "../../lib/useZoomPan.svelte";
+    import ZoomControls from "../../lib/ZoomControls.svelte";
 
     // Layout constants
     const COMPONENT_SIZE = 6;
@@ -27,6 +38,7 @@
     const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
     const CLUSTER_BAR_HEIGHT = 3;
     const CLUSTER_BAR_GAP = 2;
+    const LAYER_X_OFFSET = 3; // Horizontal offset per layer to avoid edge overlap
 
     // Logits display constants
     const MAX_PREDICTIONS = 5;
@@ -56,14 +68,15 @@
         onHideUnpinnedEdgesChange: (value: boolean) => void;
         onHideNodeCardChange: (value: boolean) => void;
         // Other props
-        activationContextsSummary: ActivationContextsSummary | null;
         runningIntervention: boolean;
+        generatingSubgraph: boolean;
         onSelectionChange: (selection: Set<string>) => void;
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
         onDeleteRun: (runId: number) => void;
         onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRun>;
         onDeleteFork: (forkId: number) => void;
+        onGenerateGraphFromSelection: () => void;
     };
 
     let {
@@ -87,14 +100,15 @@
         onCiThresholdChange,
         onHideUnpinnedEdgesChange,
         onHideNodeCardChange,
-        activationContextsSummary,
         runningIntervention,
+        generatingSubgraph,
         onSelectionChange,
         onRunIntervention,
         onSelectRun,
         onDeleteRun,
         onForkRun,
         onDeleteFork,
+        onGenerateGraphFromSelection,
     }: Props = $props();
 
     // Fork modal state
@@ -158,11 +172,17 @@
     let tooltipPos = $state({ x: 0, y: 0 });
     let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
+    // Refs
+    let graphContainer: HTMLDivElement;
+
+    // Zoom/pan
+    const zoom = useZoomPan(() => graphContainer);
+
     // Get cluster ID of hovered node or bar (for cluster-wide rotation effect)
     const hoveredClusterId = $derived.by(() => {
         if (hoveredBarClusterId !== null) return hoveredBarClusterId;
         if (!hoveredNode) return undefined;
-        return clusterMapping.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
+        return runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx);
     });
 
     // Check if a node is in the same cluster as the hovered node (for cluster rotation effect)
@@ -171,7 +191,7 @@
         if (hoveredClusterId === undefined || hoveredClusterId === null) return false;
         const [layer, , cIdxStr] = nodeKey.split(":");
         const cIdx = parseInt(cIdxStr);
-        const nodeClusterId = clusterMapping.getClusterId(layer, cIdx);
+        const nodeClusterId = runState.getClusterId(layer, cIdx);
         return nodeClusterId === hoveredClusterId;
     }
 
@@ -304,17 +324,27 @@
             seqXStarts.push(seqXStarts[i] + seqWidths[i]);
         }
 
-        // Y positions
+        // Assign Y positions (output at top, wte at bottom)
         const rowYPositions: Record<string, number> = {};
-        let currentY = MARGIN.top;
-        for (const row of rows.slice().reverse()) {
-            rowYPositions[row] = currentY;
-            currentY += COMPONENT_SIZE + layerGap;
+        for (let i = 0; i < rows.length; i++) {
+            const distanceFromEnd = rows.length - 1 - i;
+            rowYPositions[rows[i]] = MARGIN.top + distanceFromEnd * (COMPONENT_SIZE + layerGap);
         }
 
+        // Map each layer to its row's Y position and X offset
+        // X offset: output (last row) at center, others alternate +/- based on distance
         const layerYPositions: Record<string, number> = {};
+        const layerXOffsets: Record<string, number> = {};
         for (const layer of allLayers) {
-            layerYPositions[layer] = rowYPositions[getRowKey(layer)];
+            const rowKey = getRowKey(layer);
+            layerYPositions[layer] = rowYPositions[rowKey];
+            const rowIdx = rows.indexOf(rowKey);
+            const distanceFromOutput = rows.length - 1 - rowIdx;
+            if (distanceFromOutput === 0 || layer === "wte") {
+                layerXOffsets[layer] = 0;
+            } else {
+                layerXOffsets[layer] = distanceFromOutput % 2 === 1 ? LAYER_X_OFFSET : -LAYER_X_OFFSET;
+            }
         }
 
         // Position nodes and compute cluster spans
@@ -328,7 +358,7 @@
                 const layerNodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
                 if (!layerNodes) continue;
 
-                let baseX = seqXStarts[seqIdx] + COL_PADDING;
+                let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
                 if (isQkv) {
@@ -343,7 +373,7 @@
 
                 // Output nodes always sort by probability; internal nodes sort by cluster if mapping loaded, else by CI
                 const sorted =
-                    layer === "output" || !clusterMapping.mapping
+                    layer === "output" || !runState.clusterMapping
                         ? sortComponentsByImportance(
                               layerNodes,
                               layer,
@@ -356,7 +386,7 @@
                               layer,
                               seqIdx,
                               graph.data.nodeCiVals,
-                              clusterMapping.getClusterId.bind(clusterMapping),
+                              runState.getClusterId,
                           );
                 const offsets = computeComponentOffsets(sorted, COMPONENT_SIZE, componentGap);
                 for (const cIdx of layerNodes) {
@@ -367,7 +397,7 @@
                 }
 
                 // Compute cluster spans for this layer/seqIdx (skip output layer)
-                if (layer !== "output" && clusterMapping.mapping) {
+                if (layer !== "output" && runState.clusterMapping) {
                     const spans = computeClusterSpans(
                         sorted,
                         layer,
@@ -376,7 +406,7 @@
                         baseY,
                         COMPONENT_SIZE,
                         offsets,
-                        clusterMapping.getClusterId.bind(clusterMapping),
+                        runState.getClusterId,
                     );
                     allClusterSpans.push(...spans);
                 }
@@ -440,10 +470,6 @@
         }
         hoveredNode = { layer, seqIdx, cIdx };
         tooltipPos = calcTooltipPos(event.clientX, event.clientY);
-
-        if (layer !== "output" && activationContextsSummary) {
-            runState.loadComponentDetail(layer, cIdx);
-        }
     }
 
     function handleNodeMouseLeave() {
@@ -460,19 +486,25 @@
     }
 
     // Drag-to-select handlers
+    // Converts mouse event to SVG logical coordinates (accounting for zoom transform)
     function getSvgPoint(event: MouseEvent): { x: number; y: number } | null {
         if (!svgElement) return null;
         const container = svgElement.parentElement!;
         const rect = container.getBoundingClientRect();
+        // Get container-relative position (with scroll offset)
+        const containerX = event.clientX - rect.left + container.scrollLeft;
+        const containerY = event.clientY - rect.top + container.scrollTop;
+        // Convert to logical SVG coordinates by reversing the zoom transform
         return {
-            x: event.clientX - rect.left + container.scrollLeft,
-            y: event.clientY - rect.top + container.scrollTop,
+            x: (containerX - zoom.translateX) / zoom.scale,
+            y: (containerY - zoom.translateY) / zoom.scale,
         };
     }
 
     function handleSvgMouseDown(event: MouseEvent) {
         // Only start drag on left mouse button and not on a node
-        if (event.button !== 0) return;
+        // Skip if shift is held (shift+drag is used for panning)
+        if (event.button !== 0 || event.shiftKey) return;
         const target = event.target as Element;
         if (target.closest(".node-group")) return;
 
@@ -551,6 +583,13 @@
         };
     });
 
+    // Pan start - middle-click or shift+left-click (shift avoids conflict with drag-to-select)
+    function handlePanStart(event: MouseEvent) {
+        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+            zoom.startPan(event);
+        }
+    }
+
     // Edge rendering
     function getEdgePath(src: string, tgt: string): string {
         const srcPos = layout.nodePositions[src];
@@ -579,6 +618,10 @@
     function formatProb(prob: number): string {
         if (prob >= 0.01) return (prob * 100).toFixed(1) + "%";
         return (prob * 100).toExponential(1) + "%";
+    }
+
+    function formatLogit(logit: number): string {
+        return logit.toFixed(2);
     }
 
     function getRowLabel(layer: string): string {
@@ -616,182 +659,226 @@
         <!-- Intervention controls -->
         <div class="intervention-controls">
             <span class="node-count">{selectedCount} / {interventableCount} selected</span>
+            <span
+                class="info-icon"
+                data-tooltip="NOTE: Biases in each layer that have them are always active, regardless of which nodes are selected"
+                >?</span
+            >
             <div class="button-group">
                 <button onclick={selectAll}>Select All</button>
                 <button onclick={clearSelection}>Clear</button>
                 <button
-                    class="run-btn"
-                    onclick={onRunIntervention}
-                    disabled={selectedCount === 0 || runningIntervention}
+                    class="generate-btn"
+                    onclick={onGenerateGraphFromSelection}
+                    disabled={generatingSubgraph ||
+                        selectedCount === 0 ||
+                        (interventableCount > 0 && selectedCount === interventableCount)}
+                    title={selectedCount === 0
+                        ? "Select nodes to include in subgraph"
+                        : "Generate a subgraph showing only attributions between selected nodes"}
                 >
-                    {runningIntervention ? "Running..." : "Run"}
+                    {generatingSubgraph ? "Generating..." : "Generate subgraph"}
+                </button>
+                <button class="run-btn" onclick={onRunIntervention} disabled={runningIntervention}>
+                    {runningIntervention ? "Running..." : "Run forward pass"}
                 </button>
             </div>
         </div>
 
         <!-- Graph wrapper for sticky layout -->
-        <div class="graph-wrapper">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+            class="graph-wrapper"
+            class:panning={zoom.isPanning}
+            onwheel={zoom.handleWheel}
+            onmousedown={handlePanStart}
+            onmousemove={zoom.updatePan}
+            onmouseup={zoom.endPan}
+            onmouseleave={zoom.endPan}
+        >
+            <ZoomControls
+                scale={zoom.scale}
+                onZoomIn={zoom.zoomIn}
+                onZoomOut={zoom.zoomOut}
+                onReset={zoom.reset}
+                hint="Shift+drag to pan"
+            />
+
             <!-- Sticky layer labels (left) -->
             <div class="layer-labels-container" style="width: {LABEL_WIDTH}px;">
-                <svg width={LABEL_WIDTH} height={layout.height} style="display: block;">
-                    {#each Object.entries(layout.layerYPositions) as [layer, y] (layer)}
-                        {@const yCenter = y + COMPONENT_SIZE / 2}
-                        <text
-                            x={LABEL_WIDTH - 10}
-                            y={yCenter}
-                            text-anchor="end"
-                            dominant-baseline="middle"
-                            font-size="10"
-                            font-weight="500"
-                            font-family="'Berkeley Mono', 'SF Mono', monospace"
-                            fill={colors.textSecondary}>{getRowLabel(layer)}</text
-                        >
-                    {/each}
+                <svg
+                    width={LABEL_WIDTH}
+                    height={layout.height * zoom.scale + Math.max(zoom.translateY, 0)}
+                    style="display: block;"
+                >
+                    <g transform="translate(0, {zoom.translateY}) scale(1, {zoom.scale})">
+                        {#each Object.entries(layout.layerYPositions) as [layer, y] (layer)}
+                            {@const yCenter = y + COMPONENT_SIZE / 2}
+                            <text
+                                x={LABEL_WIDTH - 10}
+                                y={yCenter}
+                                text-anchor="end"
+                                dominant-baseline="middle"
+                                font-size="10"
+                                font-weight="500"
+                                font-family="'Berkeley Mono', 'SF Mono', monospace"
+                                fill={colors.textSecondary}>{getRowLabel(layer)}</text
+                            >
+                        {/each}
+                    </g>
                 </svg>
             </div>
 
             <!-- Scrollable graph area -->
-            <div class="graph-container">
+            <div class="graph-container" bind:this={graphContainer}>
                 <svg
                     bind:this={svgElement}
-                    width={layout.width}
-                    height={layout.height}
+                    width={layout.width * zoom.scale + Math.max(zoom.translateX, 0)}
+                    height={layout.height * zoom.scale + Math.max(zoom.translateY, 0)}
                     style="display: block;"
                     onmousedown={handleSvgMouseDown}
                     onmousemove={handleSvgMouseMove}
                     onmouseup={handleSvgMouseUp}
                     onmouseleave={handleSvgMouseUp}
                 >
-                    <!-- Edges -->
-                    <g class="edges-layer" opacity="0.6">
-                        {#each filteredEdges as edge (`${edge.src}-${edge.tgt}`)}
-                            {@const path = getEdgePath(edge.src, edge.tgt)}
-                            {#if path}
-                                <path
-                                    d={path}
-                                    stroke={getEdgeColor(edge.val)}
-                                    stroke-width={getEdgeWidth(edge.val)}
-                                    fill="none"
-                                    opacity={getEdgeOpacity(edge.val)}
+                    <g transform="translate({zoom.translateX}, {zoom.translateY}) scale({zoom.scale})">
+                        <!-- Edges -->
+                        <g class="edges-layer" opacity="0.6">
+                            {#each filteredEdges as edge (`${edge.src}-${edge.tgt}`)}
+                                {@const path = getEdgePath(edge.src, edge.tgt)}
+                                {#if path}
+                                    <path
+                                        d={path}
+                                        stroke={getEdgeColor(edge.val)}
+                                        stroke-width={getEdgeWidth(edge.val)}
+                                        fill="none"
+                                        opacity={getEdgeOpacity(edge.val)}
+                                    />
+                                {/if}
+                            {/each}
+                        </g>
+
+                        <!-- Cluster bars (below nodes) -->
+                        <g class="cluster-bars-layer">
+                            {#each layout.clusterSpans as span (`${span.layer}:${span.seqIdx}:${span.clusterId}`)}
+                                {@const isHighlighted = hoveredClusterId === span.clusterId}
+                                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                                <rect
+                                    class="cluster-bar"
+                                    class:highlighted={isHighlighted}
+                                    x={span.xStart}
+                                    y={span.y + CLUSTER_BAR_GAP}
+                                    width={span.xEnd - span.xStart}
+                                    height={CLUSTER_BAR_HEIGHT}
+                                    rx="1"
+                                    onmouseenter={() => (hoveredBarClusterId = span.clusterId)}
+                                    onmouseleave={() => (hoveredBarClusterId = null)}
                                 />
-                            {/if}
-                        {/each}
-                    </g>
+                            {/each}
+                        </g>
 
-                    <!-- Cluster bars (below nodes) -->
-                    <g class="cluster-bars-layer">
-                        {#each layout.clusterSpans as span (`${span.layer}:${span.seqIdx}:${span.clusterId}`)}
-                            {@const isHighlighted = hoveredClusterId === span.clusterId}
-                            <!-- svelte-ignore a11y_no_static_element_interactions -->
+                        <!-- Nodes -->
+                        <g class="nodes-layer">
+                            {#each allNodes as nodeKey (nodeKey)}
+                                {@const pos = layout.nodePositions[nodeKey]}
+                                {@const [layer, seqIdx, cIdx] = nodeKey.split(":")}
+                                {@const interventable = isInterventableNode(nodeKey)}
+                                {@const selected = interventable && isNodeSelected(nodeKey)}
+                                {@const inSameCluster = isNodeInSameCluster(nodeKey)}
+                                {@const isHoveredComponent = nodeMatchesHoveredComponent(nodeKey)}
+                                {@const isDimmed =
+                                    (hoveredNode !== null || hoveredBarClusterId !== null) &&
+                                    !isHoveredComponent &&
+                                    !inSameCluster &&
+                                    !selected}
+                                {#if pos}
+                                    <g
+                                        class="node-group"
+                                        class:selected
+                                        class:non-interventable={!interventable}
+                                        onmouseenter={(e) => handleNodeMouseEnter(e, layer, +seqIdx, +cIdx)}
+                                        onmouseleave={handleNodeMouseLeave}
+                                        onclick={() => handleNodeClick(nodeKey)}
+                                    >
+                                        <rect
+                                            x={pos.x - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
+                                            y={pos.y - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
+                                            width={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
+                                            height={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
+                                            fill="transparent"
+                                        />
+                                        <rect
+                                            class="node"
+                                            class:cluster-hovered={inSameCluster}
+                                            class:dimmed={isDimmed}
+                                            x={pos.x - COMPONENT_SIZE / 2}
+                                            y={pos.y - COMPONENT_SIZE / 2}
+                                            width={COMPONENT_SIZE}
+                                            height={COMPONENT_SIZE}
+                                            fill={!interventable
+                                                ? colors.textMuted
+                                                : selected
+                                                  ? colors.accent
+                                                  : colors.nodeDefault}
+                                            stroke={selected ? colors.accent : "none"}
+                                            stroke-width={selected ? 2 : 0}
+                                            rx="1"
+                                            opacity={!interventable ? 0.3 : selected ? 1 : 0.4}
+                                        />
+                                    </g>
+                                {/if}
+                            {/each}
+                        </g>
+
+                        <!-- Selection rectangle -->
+                        {#if selectionRect}
                             <rect
-                                class="cluster-bar"
-                                class:highlighted={isHighlighted}
-                                x={span.xStart}
-                                y={span.y + CLUSTER_BAR_GAP}
-                                width={span.xEnd - span.xStart}
-                                height={CLUSTER_BAR_HEIGHT}
-                                rx="1"
-                                onmouseenter={() => (hoveredBarClusterId = span.clusterId)}
-                                onmouseleave={() => (hoveredBarClusterId = null)}
+                                class="selection-rect"
+                                x={selectionRect.x}
+                                y={selectionRect.y}
+                                width={selectionRect.width}
+                                height={selectionRect.height}
+                                fill="rgba(99, 102, 241, 0.1)"
+                                stroke={colors.accent}
+                                stroke-width="1"
+                                stroke-dasharray="4 2"
                             />
-                        {/each}
+                        {/if}
                     </g>
-
-                    <!-- Nodes -->
-                    <g class="nodes-layer">
-                        {#each allNodes as nodeKey (nodeKey)}
-                            {@const pos = layout.nodePositions[nodeKey]}
-                            {@const [layer, seqIdx, cIdx] = nodeKey.split(":")}
-                            {@const interventable = isInterventableNode(nodeKey)}
-                            {@const selected = interventable && isNodeSelected(nodeKey)}
-                            {@const inSameCluster = isNodeInSameCluster(nodeKey)}
-                            {@const isHoveredComponent = nodeMatchesHoveredComponent(nodeKey)}
-                            {@const isDimmed =
-                                (hoveredNode !== null || hoveredBarClusterId !== null) &&
-                                !isHoveredComponent &&
-                                !inSameCluster &&
-                                !selected}
-                            {#if pos}
-                                <g
-                                    class="node-group"
-                                    class:selected
-                                    class:non-interventable={!interventable}
-                                    onmouseenter={(e) => handleNodeMouseEnter(e, layer, +seqIdx, +cIdx)}
-                                    onmouseleave={handleNodeMouseLeave}
-                                    onclick={() => handleNodeClick(nodeKey)}
-                                >
-                                    <rect
-                                        x={pos.x - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
-                                        y={pos.y - COMPONENT_SIZE / 2 - HIT_AREA_PADDING}
-                                        width={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
-                                        height={COMPONENT_SIZE + HIT_AREA_PADDING * 2}
-                                        fill="transparent"
-                                    />
-                                    <rect
-                                        class="node"
-                                        class:cluster-hovered={inSameCluster}
-                                        class:dimmed={isDimmed}
-                                        x={pos.x - COMPONENT_SIZE / 2}
-                                        y={pos.y - COMPONENT_SIZE / 2}
-                                        width={COMPONENT_SIZE}
-                                        height={COMPONENT_SIZE}
-                                        fill={!interventable
-                                            ? colors.textMuted
-                                            : selected
-                                              ? colors.accent
-                                              : colors.nodeDefault}
-                                        stroke={selected ? colors.accent : "none"}
-                                        stroke-width={selected ? 2 : 0}
-                                        rx="1"
-                                        opacity={!interventable ? 0.3 : selected ? 1 : 0.4}
-                                    />
-                                </g>
-                            {/if}
-                        {/each}
-                    </g>
-
-                    <!-- Selection rectangle -->
-                    {#if selectionRect}
-                        <rect
-                            class="selection-rect"
-                            x={selectionRect.x}
-                            y={selectionRect.y}
-                            width={selectionRect.width}
-                            height={selectionRect.height}
-                            fill="rgba(99, 102, 241, 0.1)"
-                            stroke={colors.accent}
-                            stroke-width="1"
-                            stroke-dasharray="4 2"
-                        />
-                    {/if}
                 </svg>
 
                 <!-- Sticky token labels (bottom) -->
                 <div class="token-labels-container">
-                    <svg width={layout.width} height="50" style="display: block;">
-                        {#each tokens as token, i (i)}
-                            {@const colCenter = layout.seqXStarts[i] + layout.seqWidths[i] / 2}
-                            <text
-                                x={colCenter}
-                                y="20"
-                                text-anchor="middle"
-                                font-size="11"
-                                font-family="'Berkeley Mono', 'SF Mono', monospace"
-                                font-weight="500"
-                                fill={colors.textPrimary}
-                                style="white-space: pre"
-                            >
-                                {token}
-                            </text>
-                            <text
-                                x={colCenter}
-                                y="36"
-                                text-anchor="middle"
-                                font-size="9"
-                                font-family="'Berkeley Mono', 'SF Mono', monospace"
-                                fill={colors.textMuted}>[{i}]</text
-                            >
-                        {/each}
+                    <svg
+                        width={layout.width * zoom.scale + Math.max(zoom.translateX, 0)}
+                        height="50"
+                        style="display: block;"
+                    >
+                        <g transform="translate({zoom.translateX}, 0) scale({zoom.scale}, 1)">
+                            {#each tokens as token, i (i)}
+                                {@const colCenter = layout.seqXStarts[i] + layout.seqWidths[i] / 2}
+                                <text
+                                    x={colCenter}
+                                    y="20"
+                                    text-anchor="middle"
+                                    font-size="11"
+                                    font-family="'Berkeley Mono', 'SF Mono', monospace"
+                                    font-weight="500"
+                                    fill={colors.textPrimary}
+                                    style="white-space: pre"
+                                >
+                                    {token}
+                                </text>
+                                <text
+                                    x={colCenter}
+                                    y="36"
+                                    text-anchor="middle"
+                                    font-size="9"
+                                    font-family="'Berkeley Mono', 'SF Mono', monospace"
+                                    fill={colors.textMuted}>[{i}]</text
+                                >
+                            {/each}
+                        </g>
                     </svg>
                 </div>
             </div>
@@ -868,10 +955,14 @@
                                                     {#if pred}
                                                         <span class="pred-token">"{pred.token}"</span>
                                                         <span class="pred-prob spd"
-                                                            >SPD: {formatProb(pred.spd_prob)}</span
+                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(
+                                                                pred.logit,
+                                                            )})</span
                                                         >
                                                         <span class="pred-prob targ"
-                                                            >Targ: {formatProb(pred.target_prob)}</span
+                                                            >Targ: {formatProb(pred.target_prob)} (logit: {formatLogit(
+                                                                pred.target_logit,
+                                                            )})</span
                                                         >
                                                     {:else}
                                                         -
@@ -937,8 +1028,14 @@
                                                                 >
                                                                     {#if pred}
                                                                         <span class="pred-token">"{pred.token}"</span>
-                                                                        <span class="pred-prob"
-                                                                            >{formatProb(pred.spd_prob)}</span
+                                                                        <span class="pred-prob spd"
+                                                                            >SPD: {formatProb(pred.spd_prob)} (logit: {formatLogit(
+                                                                                pred.logit,
+                                                                            )})</span
+                                                                        >
+                                                                        <span class="pred-prob targ"
+                                                                            >Targ: {formatProb(pred.target_prob)} (logit:
+                                                                            {formatLogit(pred.target_logit)})</span
                                                                         >
                                                                     {:else}
                                                                         -
@@ -966,9 +1063,9 @@
             {hoveredNode}
             {tooltipPos}
             {hideNodeCard}
-            {activationContextsSummary}
             outputProbs={graph.data.outputProbs}
             nodeCiVals={graph.data.nodeCiVals}
+            nodeSubcompActs={graph.data.nodeSubcompActs}
             {tokens}
             edgesBySource={graph.data.edgesBySource}
             edgesByTarget={graph.data.edgesByTarget}
@@ -1085,6 +1182,21 @@
         border-color: var(--border-strong);
     }
 
+    .generate-btn {
+        background: var(--status-info) !important;
+        color: white !important;
+        border-color: var(--status-info) !important;
+    }
+
+    .generate-btn:hover:not(:disabled) {
+        filter: brightness(1.1);
+    }
+
+    .generate-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
     .run-btn {
         background: var(--accent-primary) !important;
         color: white !important;
@@ -1103,6 +1215,11 @@
     .graph-wrapper {
         display: flex;
         overflow: hidden;
+        position: relative;
+    }
+
+    .graph-wrapper.panning {
+        cursor: grabbing;
     }
 
     .layer-labels-container {

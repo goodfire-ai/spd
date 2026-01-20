@@ -2,7 +2,7 @@
  * API client for /api/prompts endpoints.
  */
 
-import type { PromptPreview } from "../localAttributionsTypes";
+import type { PromptPreview } from "../promptAttributionsTypes";
 import { API_URL, ApiError, fetchJson } from "./index";
 
 export async function listPrompts(): Promise<PromptPreview[]> {

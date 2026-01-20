@@ -1,6 +1,6 @@
 """Unified FastAPI server for the SPD app.
 
-Merges the main app backend with the local attributions server.
+Merges the main app backend with the prompt attributions server.
 Supports multiple runs, on-demand attribution graph computation,
 and activation contexts generation.
 
@@ -8,7 +8,9 @@ Usage:
     python -m spd.app.backend.server --port 8000
 """
 
+import time
 import traceback
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import fire
@@ -18,14 +20,16 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from spd.app.backend.database import LocalAttrDB
+from spd.app.backend.database import PromptAttrDB
 from spd.app.backend.routers import (
     activation_contexts_router,
+    agents_router,
     clusters_router,
     correlations_router,
+    dataset_attributions_router,
     dataset_search_router,
     graphs_router,
     intervention_router,
@@ -44,7 +48,7 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     """Initialize DB connection at startup. Model loaded on-demand via /api/runs/load."""
     manager = StateManager.get()
 
-    db = LocalAttrDB(check_same_thread=False)
+    db = PromptAttrDB(check_same_thread=False)
     db.init_schema()
     manager.initialize(db)
 
@@ -69,14 +73,17 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-# comment out if wanted
-# @app.middleware("http")
-# async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]):
-#     """Log all incoming requests and their responses."""
-#     logger.info(f"[REQUEST] {request.method} {request.url.path}?{request.url.query}")
-#     response = await call_next(request)
-#     logger.info(f"[RESPONSE] {request.method} {request.url.path} -> {response.status_code}")
-#     return response
+@app.middleware("http")
+async def log_request_timing(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Log timing for slow requests (>1s)."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    if duration_ms > 1000:
+        logger.warning(f"[SLOW] {request.method} {request.url.path} -> {duration_ms:.1f}ms")
+    return response
 
 
 @app.exception_handler(RequestValidationError)
@@ -146,6 +153,8 @@ app.include_router(correlations_router)
 app.include_router(clusters_router)
 app.include_router(intervention_router)
 app.include_router(dataset_search_router)
+app.include_router(dataset_attributions_router)
+app.include_router(agents_router)
 
 
 def cli(port: int = 8000) -> None:

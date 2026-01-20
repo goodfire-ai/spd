@@ -128,12 +128,13 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 - Supports both local paths and `wandb:project/runs/run_id` format for model loading
 - Centralized experiment registry (`spd/registry.py`) manages all experiment configurations
 
-**Harvest & Autointerp Modules:**
+**Harvest, Autointerp & Dataset Attributions Modules:**
 
 - `spd/harvest/` - Offline GPU pipeline for collecting component statistics (correlations, token stats, activation examples)
 - `spd/autointerp/` - LLM-based automated interpretation of components
-- Data stored at `SPD_OUT_DIR/{harvest,autointerp}/<run_id>/`
-- See `spd/harvest/CLAUDE.md` and `spd/autointerp/CLAUDE.md` for details
+- `spd/dataset_attributions/` - Multi-GPU pipeline for computing component-to-component attribution strengths aggregated over training data
+- Data stored at `SPD_OUT_DIR/{harvest,autointerp,dataset_attributions}/<run_id>/`
+- See `spd/harvest/CLAUDE.md`, `spd/autointerp/CLAUDE.md`, and `spd/dataset_attributions/CLAUDE.md` for details
 
 **Output Directory (`SPD_OUT_DIR`):**
 
@@ -158,6 +159,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 │   ├── app/                         # Web visualization app (see app/CLAUDE.md)
 │   ├── autointerp/                  # LLM interpretation (see autointerp/CLAUDE.md)
 │   ├── clustering/                  # Component clustering (see clustering/CLAUDE.md)
+│   ├── dataset_attributions/        # Dataset attributions (see dataset_attributions/CLAUDE.md)
 │   ├── harvest/                     # Statistics collection (see harvest/CLAUDE.md)
 │   ├── experiments/                 # Experiment implementations
 │   │   ├── tms/                     # Toy Model of Superposition
@@ -189,8 +191,9 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 |---------|-------------|-------------|
 | `spd-run` | `spd/scripts/run.py` | SLURM-based experiment runner |
 | `spd-local` | `spd/scripts/run_local.py` | Local experiment runner |
-| `spd-harvest` | `spd/harvest/scripts/cli.py` | Submit harvest SLURM job |
+| `spd-harvest` | `spd/harvest/scripts/run_slurm_cli.py` | Submit harvest SLURM job |
 | `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
+| `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
 
 ### Files to Skip When Searching
@@ -217,10 +220,13 @@ Use `spd/` as the search root (not repo root) to avoid noise.
 - `spd-local` → `spd/scripts/run_local.py` → `spd/run_spd.py` directly
 
 **Harvest Pipeline:**
-- `spd-harvest` → `spd/harvest/scripts/cli.py` → `spd/utils/slurm.py` → `spd/harvest/harvest.py`
+- `spd-harvest` → `spd/harvest/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → SLURM array → `spd/harvest/scripts/run.py` → `spd/harvest/harvest.py`
 
 **Autointerp Pipeline:**
 - `spd-autointerp` → `spd/autointerp/scripts/cli.py` → `spd/utils/slurm.py` → `spd/autointerp/interpret.py`
+
+**Dataset Attributions Pipeline:**
+- `spd-attributions` → `spd/dataset_attributions/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → SLURM array → `spd/dataset_attributions/harvest.py`
 
 **Clustering Pipeline:**
 - `spd-clustering` → `spd/clustering/scripts/run_pipeline.py` → `spd/utils/slurm.py` → `spd/clustering/scripts/run_clustering.py`
@@ -256,7 +262,7 @@ The app has its own detailed documentation in `spd/app/CLAUDE.md` and `spd/app/R
 Collect component statistics (activation examples, correlations, token stats) for a run:
 
 ```bash
-spd-harvest <wandb_path>              # Submit SLURM job to harvest statistics
+spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8    # Submit SLURM job to harvest statistics
 ```
 
 See `spd/harvest/CLAUDE.md` for details.

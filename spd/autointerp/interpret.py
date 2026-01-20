@@ -1,6 +1,7 @@
 import asyncio
 import json
 import random
+import time
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -22,11 +23,13 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.compute import get_model_n_blocks
-from spd.autointerp.prompt_template import format_prompt_template
+from spd.autointerp.prompt_template import INTERPRETATION_SCHEMA, format_prompt_template
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.configs import LMTaskConfig
+from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.harvest import HarvestResult
 from spd.harvest.schemas import ComponentData
+from spd.harvest.storage import TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
@@ -36,6 +39,31 @@ BASE_DELAY_S = 0.5
 MAX_DELAY_S = 60.0
 JITTER_FACTOR = 0.5
 MAX_CONCURRENT_REQUESTS = 50
+MAX_REQUESTS_PER_MINUTE = 300  # Gemini flash has 400 RPM limit
+
+
+class RateLimiter:
+    """Sliding window rate limiter for async code."""
+
+    def __init__(self, max_requests: int, period_seconds: float):
+        self.max_requests = max_requests
+        self.period = period_seconds
+        self.timestamps: list[float] = []
+        self.lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        async with self.lock:
+            now = time.monotonic()
+            self.timestamps = [t for t in self.timestamps if now - t < self.period]
+
+            if len(self.timestamps) >= self.max_requests:
+                sleep_time = self.timestamps[0] + self.period - now
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+                self.timestamps = self.timestamps[1:]
+
+            self.timestamps.append(time.monotonic())
+
 
 RETRYABLE_ERRORS = (
     TooManyRequestsResponseError,
@@ -50,32 +78,7 @@ RETRYABLE_ERRORS = (
 
 
 class OpenRouterModelName(StrEnum):
-    GEMINI_2_5_FLASH = "google/gemini-2.5-flash"
     GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
-
-
-INTERPRETATION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "label": {
-            "type": "string",
-            "description": "3-10 word label describing what the component detects/represents",
-        },
-        "confidence": {
-            "type": "string",
-            "enum": ["low", "medium", "high"],
-            "description": "How clear-cut the interpretation is",
-        },
-        "reasoning": {
-            "type": "string",
-            "description": "2-4 sentences explaining the evidence and ambiguities",
-        },
-    },
-    "required": ["label", "confidence", "reasoning"],
-    "additionalProperties": False,
-}
-
-FAKING_RESPONSES = False
 
 
 @dataclass
@@ -156,25 +159,17 @@ async def interpret_component(
     component: ComponentData,
     arch: ArchitectureInfo,
     tokenizer: PreTrainedTokenizerBase,
-    max_examples: int,
+    input_token_stats: TokenPRLift,
+    output_token_stats: TokenPRLift,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
     prompt = format_prompt_template(
-        component=component, arch=arch, tokenizer=tokenizer, max_examples=max_examples
+        component=component,
+        arch=arch,
+        tokenizer=tokenizer,
+        input_token_stats=input_token_stats,
+        output_token_stats=output_token_stats,
     )
-
-    if FAKING_RESPONSES:
-        return (
-            InterpretationResult(
-                component_key=component.component_key,
-                label="The concept of love",
-                confidence="high",
-                reasoning="The component fires when the word 'love' is present in the input.",
-                raw_response='{"label": "The concept of love", "confidence": "high", "reasoning": "..."}',
-            ),
-            0,
-            0,
-        )
 
     try:
         raw, in_tok, out_tok = await chat_with_retry(
@@ -214,6 +209,7 @@ async def interpret_component(
             confidence=confidence,
             reasoning=reasoning,
             raw_response=raw,
+            prompt=prompt,
         ),
         in_tok,
         out_tok,
@@ -226,7 +222,8 @@ async def interpret_all(
     openrouter_api_key: str,
     interpreter_model: str,
     output_path: Path,
-    max_examples_per_component: int,
+    token_stats: TokenStatsStorage,
+    limit: int | None = None,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
@@ -243,11 +240,14 @@ async def interpret_all(
 
     components_sorted = sorted(components, key=lambda c: c.mean_ci, reverse=True)
     remaining = [c for c in components_sorted if c.component_key not in completed]
+    if limit is not None:
+        remaining = remaining[:limit]
     print(f"Interpreting {len(remaining)} components")
     start_idx = len(results)
 
     output_lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE, period_seconds=60.0)
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
@@ -258,15 +258,31 @@ async def interpret_all(
         client: OpenRouter,
         cost_tracker: CostTracker,
     ) -> None:
+        await rate_limiter.acquire()
         async with semaphore:
             try:
+                # Compute token stats for this component
+                input_stats = get_input_token_stats(
+                    token_stats, component.component_key, tokenizer, top_k=20
+                )
+                output_stats = get_output_token_stats(
+                    token_stats, component.component_key, tokenizer, top_k=50
+                )
+                assert input_stats is not None, (
+                    f"No input token stats for {component.component_key}"
+                )
+                assert output_stats is not None, (
+                    f"No output token stats for {component.component_key}"
+                )
+
                 res = await interpret_component(
                     client=client,
                     model=interpreter_model,
                     component=component,
                     arch=arch,
                     tokenizer=tokenizer,
-                    max_examples=max_examples_per_component,
+                    input_token_stats=input_stats,
+                    output_token_stats=output_stats,
                 )
                 if res is None:
                     logger.error(f"Failed to interpret {component.component_key}")
@@ -333,12 +349,20 @@ def run_interpret(
     openrouter_api_key: str,
     interpreter_model: str,
     activation_contexts_dir: Path,
+    correlations_dir: Path,
     autointerp_dir: Path,
-    max_examples_per_component: int,
+    limit: int | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
     output_path = autointerp_dir / "results.jsonl"
+
+    # Load token stats
+    token_stats_path = correlations_dir / "token_stats.pt"
+    assert token_stats_path.exists(), (
+        f"token_stats.pt not found at {token_stats_path}. Run harvest first."
+    )
+    token_stats = TokenStatsStorage.load(token_stats_path)
 
     results = asyncio.run(
         interpret_all(
@@ -347,7 +371,8 @@ def run_interpret(
             openrouter_api_key=openrouter_api_key,
             interpreter_model=interpreter_model,
             output_path=output_path,
-            max_examples_per_component=max_examples_per_component,
+            token_stats=token_stats,
+            limit=limit,
         )
     )
 

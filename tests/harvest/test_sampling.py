@@ -225,13 +225,13 @@ class TestReservoirSampler:
 
 class TestReservoirStateMerge:
     def test_merge_underfilled_reservoirs(self) -> None:
-        state1: ReservoirState[str] = ReservoirState(k=5, samples=["a", "b"], n_seen=2)
-        state2: ReservoirState[str] = ReservoirState(k=5, samples=["c"], n_seen=1)
+        state1: ReservoirState[str] = ReservoirState(k=5, samples=["a", "b"], n_seen=100)
+        state2: ReservoirState[str] = ReservoirState(k=5, samples=["c"], n_seen=100)
 
         merged = ReservoirState.merge([state1, state2])
 
         assert merged.k == 5
-        assert merged.n_seen == 3
+        assert merged.n_seen == 200
         assert set(merged.samples) == {"a", "b", "c"}
 
     def test_merge_preserves_k(self) -> None:
