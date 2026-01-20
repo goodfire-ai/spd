@@ -5,8 +5,8 @@ that runs after all workers complete. Creates a git snapshot to ensure consisten
 code across all workers even if jobs are queued.
 
 Usage:
+    spd-attributions <wandb_path> --n_gpus 24
     spd-attributions <wandb_path> --n_batches 1000 --n_gpus 8
-    spd-attributions <wandb_path> --n_batches 2000 --n_gpus 24
 """
 
 import secrets

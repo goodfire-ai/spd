@@ -333,8 +333,8 @@ def merge_activation_contexts(wandb_path: str) -> None:
     # Load config from merged state (all workers use same config)
     config = HarvestConfig(
         wandb_path=wandb_path,
-        n_batches=0,  # Not used for merge, but required by HarvestConfig
-        batch_size=0,  # Not used for merge
+        n_batches=None,  # Not applicable for merge
+        batch_size=0,  # Not applicable for merge
         ci_threshold=merged_state.ci_threshold,
         activation_examples_per_component=merged_state.max_examples_per_component,
         activation_context_tokens_per_side=merged_state.context_tokens_per_side,
