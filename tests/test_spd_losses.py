@@ -5,7 +5,7 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.configs import UniformKSubsetRoutingConfig
+from spd.configs import LayerwiseCiConfig, UniformKSubsetRoutingConfig
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
@@ -40,8 +40,7 @@ def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel
     comp_model = ComponentModel(
         target_model=target,
         module_path_info=[ModulePathInfo(module_path="fc", C=1)],
-        ci_fn_hidden_dims=[2],
-        ci_fn_type="mlp",
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
         pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
