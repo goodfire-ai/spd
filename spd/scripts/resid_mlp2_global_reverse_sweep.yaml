@@ -1,11 +1,11 @@
 # Sweep config for resid_mlp2_global_reverse
-# Sweeps over importance minimality coefficient and learning rate
+# Base config: ImpMin coeff=3e-5, LR start=5e-4
 
 global:
   lr_schedule:
     start_val:
-      values: [5e-3, 3e-3, 2e-3, 1.5e-3]
+      values: [1e-3, 5e-4, 2e-4]
   loss_metric_configs:
     - classname: "ImportanceMinimalityLoss"
       coeff:
-        values: [5e-5, 3e-5, 1e-5, 8e-6, 5e-6, 3e-6, 1e-6]
+        values: [1e-4, 5e-5, 3e-5, 1e-5]
