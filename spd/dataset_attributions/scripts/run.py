@@ -22,14 +22,14 @@ from spd.dataset_attributions.harvest import (
 
 def main(
     wandb_path: str,
-    n_batches: int = 0,
+    n_batches: int | None = None,
     batch_size: int = 64,
     ci_threshold: float = 0.0,
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
 ) -> None:
-    """Compute dataset attributions.
+    """Compute dataset attributions, or merge results.
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
@@ -38,20 +38,23 @@ def main(
         ci_threshold: CI threshold for filtering components. Components with mean_ci <= threshold
             are excluded. Default 0.0 includes all components.
         rank: Worker rank for parallel execution (0 to world_size-1).
-        world_size: Total number of workers for parallel execution.
-        merge: If True, merge existing rank files instead of computing.
+        world_size: Total number of workers. If specified with rank, only processes
+            batches where batch_idx % world_size == rank.
+        merge: If True, merge partial results from workers.
     """
     if merge:
+        assert rank is None and world_size is None, "Cannot specify rank/world_size with --merge"
+        print(f"Merging attribution results for {wandb_path}")
         merge_attributions(wandb_path)
         return
 
-    assert n_batches > 0, "--n_batches is required when not using --merge"
+    assert n_batches is not None, "n_batches required for harvest (not merge)"
+    assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
-    if rank is not None:
-        assert world_size is not None, "--world_size required with --rank"
-        print(f"Worker {rank}/{world_size}: processing batches where idx % {world_size} == {rank}")
+    if world_size is not None:
+        print(f"Distributed harvest: {wandb_path} (rank {rank}/{world_size})")
     else:
-        print(f"Computing dataset attributions: {n_batches} batches, batch_size={batch_size}")
+        print(f"Single-GPU harvest: {wandb_path}")
 
     config = DatasetAttributionConfig(
         wandb_path=wandb_path,

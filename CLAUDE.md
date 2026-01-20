@@ -191,7 +191,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 |---------|-------------|-------------|
 | `spd-run` | `spd/scripts/run.py` | SLURM-based experiment runner |
 | `spd-local` | `spd/scripts/run_local.py` | Local experiment runner |
-| `spd-harvest` | `spd/harvest/scripts/cli.py` | Submit harvest SLURM job |
+| `spd-harvest` | `spd/harvest/scripts/run_slurm_cli.py` | Submit harvest SLURM job |
 | `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
@@ -220,7 +220,7 @@ Use `spd/` as the search root (not repo root) to avoid noise.
 - `spd-local` → `spd/scripts/run_local.py` → `spd/run_spd.py` directly
 
 **Harvest Pipeline:**
-- `spd-harvest` → `spd/harvest/scripts/cli.py` → `spd/utils/slurm.py` → `spd/harvest/harvest.py`
+- `spd-harvest` → `spd/harvest/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → SLURM array → `spd/harvest/scripts/run.py` → `spd/harvest/harvest.py`
 
 **Autointerp Pipeline:**
 - `spd-autointerp` → `spd/autointerp/scripts/cli.py` → `spd/utils/slurm.py` → `spd/autointerp/interpret.py`
@@ -262,7 +262,7 @@ The app has its own detailed documentation in `spd/app/CLAUDE.md` and `spd/app/R
 Collect component statistics (activation examples, correlations, token stats) for a run:
 
 ```bash
-spd-harvest <wandb_path>              # Submit SLURM job to harvest statistics
+spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8    # Submit SLURM job to harvest statistics
 ```
 
 See `spd/harvest/CLAUDE.md` for details.

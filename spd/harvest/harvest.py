@@ -21,6 +21,7 @@ import tqdm
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.data import train_loader_and_tokenizer
 from spd.harvest.lib.harvester import Harvester, HarvesterState
 from spd.harvest.schemas import (
     ActivationExample,
@@ -31,6 +32,7 @@ from spd.harvest.schemas import (
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 
 
@@ -176,15 +178,24 @@ def _build_harvest_result(
     )
 
 
-def harvest(
+def harvest_activation_contexts(
     config: HarvestConfig,
     activation_contexts_dir: Path,
     correlations_dir: Path,
+    rank: int | None = None,
+    world_size: int | None = None,
 ) -> None:
-    """Single-pass harvest of token stats, activation contexts, and correlations."""
-    from spd.data import train_loader_and_tokenizer
-    from spd.models.component_model import SPDRunInfo
-    from spd.utils.distributed_utils import get_device
+    """Single-pass harvest of token stats, activation contexts, and correlations.
+
+    Args:
+        config: Harvest configuration.
+        activation_contexts_dir: Directory to save activation contexts.
+        correlations_dir: Directory to save correlations.
+        rank: Worker rank for parallel execution (0 to world_size-1).
+        world_size: Total number of workers. If specified with rank, only processes
+            batches where batch_idx % world_size == rank.
+    """
+    assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
@@ -214,106 +225,28 @@ def harvest(
     )
 
     train_iter = iter(train_loader)
-    for batch_idx in tqdm.tqdm(range(config.n_batches), desc="Harvesting"):
+    batches_processed = 0
+    last_log_time = time.time()
+    for batch_idx in tqdm.tqdm(
+        range(config.n_batches), desc="Harvesting", disable=rank is not None
+    ):
         try:
-            batch = extract_batch_data(next(train_iter)).to(device)
+            batch_data = extract_batch_data(next(train_iter))
         except StopIteration:
             logger.info(
                 f"Dataset exhausted at batch {batch_idx}/{config.n_batches}. Finishing early."
             )
             break
 
-        with torch.no_grad():
-            out = model(batch, cache_type="input")
-            probs = torch.softmax(out.output, dim=-1)
-
-            ci_dict = model.calc_causal_importances(
-                pre_weight_acts=out.cache,
-                detach_inputs=True,
-                sampling=spd_config.sampling,
-            ).lower_leaky
-
-            ci: Float[Tensor, "B S n_comp"] = torch.cat(
-                [ci_dict[layer] for layer in layer_names], dim=2
-            )
-            expected_n_comp = sum(model.module_to_c[layer] for layer in layer_names)
-            assert ci.shape[2] == expected_n_comp
-
-            component_acts = model.get_all_component_acts(out.cache)
-            normalized_acts = _normalize_component_acts(component_acts, u_norms)
-            subcomp_acts: Float[Tensor, "B S n_comp"] = torch.cat(
-                [normalized_acts[layer] for layer in layer_names],
-                dim=2,
-            )
-
-            harvester.process_batch(batch, ci, probs, subcomp_acts)
-
-    logger.info(f"Batch processing complete. Total tokens: {harvester.total_tokens_processed:,}")
-
-    result = _build_harvest_result(harvester, config)
-    result.save(activation_contexts_dir, correlations_dir)
-    logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
-
-
-def _harvest_worker(
-    rank: int,
-    world_size: int,
-    wandb_path: str,
-    n_batches: int,
-    batch_size: int,
-    ci_threshold: float,
-    activation_examples_per_component: int,
-    activation_context_tokens_per_side: int,
-    state_dir: Path,
-) -> None:
-    """Worker function for parallel harvesting. Runs in subprocess."""
-    from spd.data import train_loader_and_tokenizer
-
-    device = torch.device(f"cuda:{rank}")
-    logger.info(f"[Worker {rank}] Starting on {device}")
-
-    run_info = SPDRunInfo.from_path(wandb_path)
-    model = ComponentModel.from_run_info(run_info).to(device)
-    model.eval()
-
-    spd_config = run_info.config
-    train_loader, tokenizer = train_loader_and_tokenizer(spd_config, batch_size)
-
-    layer_names = list(model.target_module_paths)
-    vocab_size = tokenizer.vocab_size
-    assert isinstance(vocab_size, int)
-
-    u_norms = _compute_u_norms(model)
-
-    harvester = Harvester(
-        layer_names=layer_names,
-        c_per_layer=model.module_to_c,
-        vocab_size=vocab_size,
-        ci_threshold=ci_threshold,
-        max_examples_per_component=activation_examples_per_component,
-        context_tokens_per_side=activation_context_tokens_per_side,
-        device=device,
-    )
-
-    train_iter = iter(train_loader)
-    batches_processed = 0
-    last_log_time = time.time()
-    for batch_idx in range(n_batches):
-        try:
-            batch_data = extract_batch_data(next(train_iter))
-        except StopIteration:
-            logger.info(
-                f"[Worker {rank}] Dataset exhausted at batch {batch_idx}/{n_batches}. "
-                f"Finishing early.",
-            )
-            break
-        if batch_idx % world_size != rank:
+        # Skip batches not assigned to this rank
+        if world_size is not None and batch_idx % world_size != rank:
             continue
 
         batch = batch_data.to(device)
         with torch.no_grad():
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
+
             ci_dict = model.calc_causal_importances(
                 pre_weight_acts=out.cache,
                 detach_inputs=True,
@@ -337,96 +270,80 @@ def _harvest_worker(
 
         batches_processed += 1
         now = time.time()
-        if now - last_log_time >= 10:
+        if rank is not None and now - last_log_time >= 10:
             logger.info(f"[Worker {rank}] {batches_processed} batches")
             last_log_time = now
 
     logger.info(
-        f"[Worker {rank}] Done. {batches_processed} batches, "
-        f"{harvester.total_tokens_processed:,} tokens",
+        f"{'[Worker ' + str(rank) + '] ' if rank is not None else ''}"
+        f"Processing complete. {batches_processed} batches, "
+        f"{harvester.total_tokens_processed:,} tokens"
     )
-    state = harvester.get_state()
-    state_path = state_dir / f"worker_{rank}.pt"
-    torch.save(state, state_path)
-    logger.info(f"[Worker {rank}] Saved state to {state_path}")
 
-    # Explicitly clean up CUDA resources to avoid slow process exit
-    del model, harvester
-    torch.cuda.empty_cache()
+    # Save results (with rank suffix if distributed)
+    if rank is not None:
+        # Distributed: save worker state
+        state = harvester.get_state()
+        state_dir = activation_contexts_dir.parent / "worker_states"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_path = state_dir / f"worker_{rank}.pt"
+        torch.save(state, state_path)
+        logger.info(f"[Worker {rank}] Saved state to {state_path}")
+    else:
+        # Single GPU: save full result
+        result = _build_harvest_result(harvester, config)
+        result.save(activation_contexts_dir, correlations_dir)
+        logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
 
 
-def harvest_parallel(
-    config: HarvestConfig,
-    n_gpus: int,
-    activation_contexts_dir: Path,
-    correlations_dir: Path,
-) -> None:
-    """Parallel harvest across multiple GPUs using multiprocessing."""
-    import tempfile
+def merge_activation_contexts(wandb_path: str) -> None:
+    """Merge partial harvest results from parallel workers.
 
-    import torch.multiprocessing as mp
+    Looks for worker_*.pt state files and merges them into final harvest results.
+    """
+    from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
+    from spd.utils.wandb_utils import parse_wandb_run_path
 
-    from spd.data import train_loader_and_tokenizer
-    from spd.models.component_model import ComponentModel, SPDRunInfo
+    _, _, run_id = parse_wandb_run_path(wandb_path)
+    activation_contexts_dir = get_activation_contexts_dir(run_id)
+    correlations_dir = get_correlations_dir(run_id)
+    state_dir = activation_contexts_dir.parent / "worker_states"
 
-    # Pre-cache model and dataset before spawning workers
-    logger.info("Pre-caching model and dataset...")
-    run_info = SPDRunInfo.from_path(config.wandb_path)
-    _ = ComponentModel.from_run_info(run_info)
-    _, _ = train_loader_and_tokenizer(run_info.config, config.batch_size)
-    logger.info("Pre-caching complete. Spawning workers...")
+    # Find all worker state files
+    worker_files = sorted(state_dir.glob("worker_*.pt"))
+    assert worker_files, f"No worker state files found in {state_dir}"
+    logger.info(f"Found {len(worker_files)} worker state files to merge")
 
-    mp.set_start_method("spawn", force=True)
+    # Load all states
+    states = []
+    for worker_file in tqdm.tqdm(worker_files, desc="Loading worker states"):
+        states.append(torch.load(worker_file, weights_only=False))
 
-    with tempfile.TemporaryDirectory() as state_dir:
-        state_dir_path = Path(state_dir)
-
-        processes = []
-        for rank in range(n_gpus):
-            p = mp.Process(
-                target=_harvest_worker,
-                args=(
-                    rank,
-                    n_gpus,
-                    config.wandb_path,
-                    config.n_batches,
-                    config.batch_size,
-                    config.ci_threshold,
-                    config.activation_examples_per_component,
-                    config.activation_context_tokens_per_side,
-                    state_dir_path,
-                ),
-            )
-            p.start()
-            processes.append(p)
-
-        logger.info(f"Launched {n_gpus} workers. Waiting for completion...")
-        for i, p in enumerate(processes):
-            logger.info(f"Joining worker {i}...")
-            p.join()
-            logger.info(f"Worker {i} joined (exit code {p.exitcode})")
-            if p.exitcode != 0:
-                # Kill remaining workers and fail fast
-                for remaining in processes[i + 1 :]:
-                    remaining.terminate()
-                    remaining.join()
-                raise RuntimeError(
-                    f"Worker {p.pid} failed with exit code {p.exitcode}. "
-                    "Check stderr above for traceback."
-                )
-
-        logger.info("All workers finished. Loading states from disk...")
-        states = []
-        for rank in range(n_gpus):
-            state_path = state_dir_path / f"worker_{rank}.pt"
-            states.append(torch.load(state_path, weights_only=False))
-
+    # Merge states
     logger.info("Merging states...")
     merged_state = HarvesterState.merge(states)
     logger.info(f"Merged. Total tokens: {merged_state.total_tokens_processed:,}")
 
+    # Build harvester from merged state and generate results
     harvester = Harvester.from_state(merged_state, torch.device("cpu"))
+
+    # Load config from first worker state (all workers use same config)
+    first_state = states[0]
+    config = HarvestConfig(
+        wandb_path=wandb_path,
+        n_batches=0,  # Not used for merge, but required by HarvestConfig
+        batch_size=0,  # Not used for merge
+        ci_threshold=first_state.ci_threshold,
+        activation_examples_per_component=first_state.max_examples_per_component,
+        activation_context_tokens_per_side=first_state.context_tokens_per_side,
+        pmi_token_top_k=40,  # Standard value
+    )
 
     result = _build_harvest_result(harvester, config)
     result.save(activation_contexts_dir, correlations_dir)
-    logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
+    logger.info(f"Saved merged results to {activation_contexts_dir} and {correlations_dir}")
+
+    # Clean up worker state files
+    for worker_file in worker_files:
+        worker_file.unlink()
+    logger.info(f"Deleted {len(worker_files)} worker state files")

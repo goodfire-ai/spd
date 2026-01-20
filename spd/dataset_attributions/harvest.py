@@ -300,8 +300,5 @@ def merge_attributions(wandb_path: str) -> None:
 
     # Clean up per-rank files after successful merge
     for rank_file in rank_files:
-        try:
-            rank_file.unlink()
-        except FileNotFoundError:
-            logger.warning(f"File {rank_file} not found, skipping deletion")
+        rank_file.unlink()
     logger.info(f"Deleted {len(rank_files)} per-rank files")
