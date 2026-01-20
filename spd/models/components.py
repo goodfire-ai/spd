@@ -184,6 +184,7 @@ class GlobalReverseResidualCiFn(nn.Module):
 
         self.d_resid_ci_fn = d_resid_ci_fn
         self.block_names = [name for name, _, _, _ in block_configs]
+        self.block_safe_names = [name.replace(".", "-") for name, _, _, _ in block_configs]
         self.block_module_names = [modules for _, modules, _, _ in block_configs]
         self.block_input_dims = [dims for _, _, dims, _ in block_configs]
         self.block_c_values = [cs for _, _, _, cs in block_configs]
@@ -192,8 +193,8 @@ class GlobalReverseResidualCiFn(nn.Module):
         self._readers = nn.ModuleDict()
         self._transitions = nn.ModuleDict()
 
-        for block_idx, (block_name, _, input_dims, c_values) in enumerate(block_configs):
-            safe_name = block_name.replace(".", "-")
+        for block_idx, (_, _, input_dims, c_values) in enumerate(block_configs):
+            safe_name = self.block_safe_names[block_idx]
             total_input_dim = sum(input_dims)
             total_c = sum(c_values)
 
@@ -207,7 +208,7 @@ class GlobalReverseResidualCiFn(nn.Module):
                 out_dim = hidden_dims[i]
                 reader_layers.append(Linear(in_dim, out_dim, nonlinearity="relu"))
                 reader_layers.append(nn.GELU())
-            final_dim = hidden_dims[-1] if hidden_dims else d_resid_ci_fn
+            final_dim = hidden_dims[-1] if len(hidden_dims) > 0 else d_resid_ci_fn
             reader_layers.append(Linear(final_dim, total_c, nonlinearity="linear"))
             self._readers[safe_name] = reader_layers
 
@@ -230,8 +231,8 @@ class GlobalReverseResidualCiFn(nn.Module):
 
         all_outputs: dict[str, Float[Tensor, "... C"]] = {}
 
-        for block_idx, block_name in enumerate(self.block_names):
-            safe_name = block_name.replace(".", "-")
+        for block_idx in range(len(self.block_names)):
+            safe_name = self.block_safe_names[block_idx]
             module_names = self.block_module_names[block_idx]
             c_values = self.block_c_values[block_idx]
 
