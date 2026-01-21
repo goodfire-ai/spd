@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { computeMaxAbsComponentAct } from "../../lib/colors";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
     import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/promptAttributionsTypes";
@@ -166,6 +167,12 @@
         const [clickedLayer, clickedSeqIdx, clickedCIdx] = nodeKey.split(":");
         onPinComponent(clickedLayer, parseInt(clickedCIdx), parseInt(clickedSeqIdx));
     }
+
+    // Compute global max absolute component act for normalization (used by both activating examples and probe)
+    const maxAbsComponentAct = $derived.by(() => {
+        if (componentData.componentDetail?.status !== "loaded") return 1;
+        return computeMaxAbsComponentAct(componentData.componentDetail.data.example_component_acts);
+    });
 </script>
 
 <div class="component-node-card">
@@ -193,6 +200,7 @@
                     exampleCi={componentData.componentDetail.data.example_ci}
                     exampleComponentActs={componentData.componentDetail.data.example_component_acts}
                     {activatingTokens}
+                    {maxAbsComponentAct}
                 />
             {/if}
         {:else if componentData.componentDetail?.status === "error"}
@@ -202,7 +210,7 @@
         {/if}
     </div>
 
-    <ComponentProbeInput {layer} componentIdx={cIdx} />
+    <ComponentProbeInput {layer} componentIdx={cIdx} {maxAbsComponentAct} />
 
     <!-- Prompt attributions -->
     {#if displaySettings.showEdgeAttributions && hasAnyEdges}

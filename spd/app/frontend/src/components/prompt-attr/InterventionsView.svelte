@@ -591,7 +591,6 @@
         };
     });
 
-
     // Edge rendering
     function getEdgePath(src: string, tgt: string): string {
         const srcPos = layout.nodePositions[src];

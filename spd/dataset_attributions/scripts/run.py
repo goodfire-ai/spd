@@ -23,7 +23,7 @@ from spd.dataset_attributions.harvest import (
 def main(
     wandb_path: str,
     n_batches: int | None = None,
-    batch_size: int = 64,
+    batch_size: int = 256,
     ci_threshold: float = 0.0,
     rank: int | None = None,
     world_size: int | None = None,

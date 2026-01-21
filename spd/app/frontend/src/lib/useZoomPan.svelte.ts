@@ -43,7 +43,11 @@ export function useZoomPan(getContainer: () => HTMLElement | null) {
             else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) delta *= container.clientHeight;
 
             const rect = container.getBoundingClientRect();
-            zoom(event.clientX - rect.left + container.scrollLeft, event.clientY - rect.top + container.scrollTop, 1 - delta * ZOOM_SENSITIVITY);
+            zoom(
+                event.clientX - rect.left + container.scrollLeft,
+                event.clientY - rect.top + container.scrollTop,
+                1 - delta * ZOOM_SENSITIVITY,
+            );
         };
 
         container.addEventListener("wheel", handleWheel, { passive: false });
