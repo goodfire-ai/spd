@@ -21,19 +21,19 @@ use_delta_component: true
 # --- Loss config ---
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0001
+    coeff: 7.5e-6
     pnorm: 2.0
     beta: 0
   - classname: "StochasticReconSubsetLoss"
-    coeff: 2.0
+    coeff: 0.5
   - classname: "PGDReconSubsetLoss"
-    coeff: 2.0
+    coeff: 0.5
     init: random
     step_size: 1.0
     n_steps: 1
     mask_scope: shared_across_batch
   - classname: "FaithfulnessLoss"
-    coeff: 0.0
+    coeff: 10.0
 output_loss_type: mse
 
 # --- Training ---
@@ -42,8 +42,8 @@ eval_batch_size: 2048
 steps: 25000
 lr_schedule:
   start_val: 3e-4
-  fn_type: constant
-  warmup_pct: 0.0
+  fn_type: cosine
+  final_val_frac: 0.1
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
