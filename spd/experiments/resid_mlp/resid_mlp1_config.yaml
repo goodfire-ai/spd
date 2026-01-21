@@ -7,8 +7,8 @@ wandb_run_name_prefix: ""
 # --- General ---
 seed: 0
 n_mask_samples: 1
-ci_fn_type: "mlp"
-ci_fn_hidden_dims: [16]
+ci_fn_type: "shared_mlp"
+ci_fn_hidden_dims: [256]
 sigmoid_type: "leaky_hard"
 module_info:
   - module_pattern: "layers.*.mlp_in"
@@ -21,13 +21,22 @@ use_delta_component: true
 # --- Loss config ---
 loss_metric_configs:
   - classname: "ImportanceMinimalityLoss"
-    coeff: 1e-5
-    pnorm: 2.0
-    beta: 0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 1.0
-  - classname: "StochasticReconLoss"
-    coeff: 1.0
+    coeff: 2e-6
+    pnorm: 1.0
+    beta: 1
+    p_anneal_start_frac: 0.0
+    p_anneal_final_p: 0.3
+    p_anneal_end_frac: 1.0
+  - classname: "StochasticReconSubsetLoss"
+    coeff: 0.5
+  - classname: "PGDReconSubsetLoss"
+    coeff: 0.5
+    init: random
+    step_size: 1.0
+    n_steps: 1
+    mask_scope: shared_across_batch
+  - classname: "FaithfulnessLoss"
+    coeff: 10.0
 output_loss_type: mse
 
 # --- Training ---
