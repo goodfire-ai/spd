@@ -563,12 +563,13 @@
         }
     }
 
-    // Pan start - left-click or middle-click, not on nodes
     function handlePanStart(event: MouseEvent) {
-        if (event.button !== 0 && event.button !== 1) return;
         const target = event.target as Element;
         if (target.closest(".node-group") || target.closest(".cluster-bar")) return;
-        zoom.startPan(event);
+        // Pan on shift+left-click or middle-click
+        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+            zoom.startPan(event);
+        }
     }
 
     // Update edge classes based on state (DOM manipulation for performance with @html edges)
@@ -597,13 +598,12 @@
     class="graph-wrapper"
     class:panning={zoom.isPanning}
     bind:this={graphContainer}
-    onwheel={zoom.handleWheel}
     onmousedown={handlePanStart}
     onmousemove={zoom.updatePan}
     onmouseup={zoom.endPan}
     onmouseleave={zoom.endPan}
 >
-    <ZoomControls scale={zoom.scale} onZoomIn={zoom.zoomIn} onZoomOut={zoom.zoomOut} onReset={zoom.reset} />
+    <ZoomControls scale={zoom.scale} onZoomIn={zoom.zoomIn} onZoomOut={zoom.zoomOut} onReset={zoom.reset} hint="Shift+drag to pan, Shift+scroll to zoom" />
 
     <div class="layer-labels-container" style="width: {LABEL_WIDTH}px;">
         <svg width={LABEL_WIDTH} height={svgHeight} style="display: block;">

@@ -501,19 +501,27 @@
         };
     }
 
+    function handlePanStart(event: MouseEvent) {
+        // Pan on shift+left-click or middle-click
+        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+            zoom.startPan(event);
+            return;
+        }
+        // Otherwise handle drag-to-select
+        if (event.button === 0 && !event.shiftKey) {
+            handleSvgMouseDown(event);
+        }
+    }
+
     function handleSvgMouseDown(event: MouseEvent) {
-        // Only start drag on left mouse button and not on a node
-        // Skip if shift is held (shift+drag is used for panning)
-        if (event.button !== 0 || event.shiftKey) return;
         const target = event.target as Element;
         if (target.closest(".node-group")) return;
 
-        event.preventDefault(); // Prevent text selection while dragging
-
+        event.preventDefault();
         const point = getSvgPoint(event);
         if (!point) return;
 
-        hoveredNode = null; // Clear tooltip when starting drag
+        hoveredNode = null;
         isDragging = true;
         dragStart = point;
         dragCurrent = point;
@@ -583,12 +591,6 @@
         };
     });
 
-    // Pan start - middle-click or shift+left-click (shift avoids conflict with drag-to-select)
-    function handlePanStart(event: MouseEvent) {
-        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
-            zoom.startPan(event);
-        }
-    }
 
     // Edge rendering
     function getEdgePath(src: string, tgt: string): string {
@@ -690,7 +692,6 @@
         <div
             class="graph-wrapper"
             class:panning={zoom.isPanning}
-            onwheel={zoom.handleWheel}
             onmousedown={handlePanStart}
             onmousemove={zoom.updatePan}
             onmouseup={zoom.endPan}
@@ -701,7 +702,7 @@
                 onZoomIn={zoom.zoomIn}
                 onZoomOut={zoom.zoomOut}
                 onReset={zoom.reset}
-                hint="Shift+drag to pan"
+                hint="Shift+drag to pan, Shift+scroll to zoom"
             />
 
             <!-- Sticky layer labels (left) -->
@@ -736,7 +737,6 @@
                     width={layout.width * zoom.scale + Math.max(zoom.translateX, 0)}
                     height={layout.height * zoom.scale + Math.max(zoom.translateY, 0)}
                     style="display: block;"
-                    onmousedown={handleSvgMouseDown}
                     onmousemove={handleSvgMouseMove}
                     onmouseup={handleSvgMouseUp}
                     onmouseleave={handleSvgMouseUp}
