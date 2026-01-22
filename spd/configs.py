@@ -13,7 +13,34 @@ from pydantic import (
 
 from spd.base_config import BaseConfig
 from spd.log import logger
-from spd.spd_types import CiFnType, ModelPath, Probability
+from spd.spd_types import GlobalCiFnType, LayerwiseCiFnType, ModelPath, Probability
+
+
+class LayerwiseCiConfig(BaseConfig):
+    """Configuration for layerwise CI functions (one per layer)."""
+
+    mode: Literal["layerwise"] = "layerwise"
+    fn_type: LayerwiseCiFnType = Field(
+        ..., description="Type of layerwise CI function: mlp, vector_mlp, or shared_mlp"
+    )
+    hidden_dims: list[NonNegativeInt] = Field(
+        ..., description="Hidden dimensions for the CI function MLP"
+    )
+
+
+class GlobalCiConfig(BaseConfig):
+    """Configuration for global CI function (single function for all layers)."""
+
+    mode: Literal["global"] = "global"
+    fn_type: GlobalCiFnType = Field(
+        ..., description="Type of global CI function: global_shared_mlp"
+    )
+    hidden_dims: list[NonNegativeInt] = Field(
+        ..., description="Hidden dimensions for the global CI function MLP"
+    )
+
+
+CiConfig = LayerwiseCiConfig | GlobalCiConfig
 
 
 class ScheduleConfig(BaseConfig):
@@ -148,6 +175,15 @@ class LMTaskConfig(BaseConfig):
     )
 
 
+class MemTaskConfig(BaseConfig):
+    """Task configuration for the mem decomposition task."""
+
+    task_name: Literal["mem"] = Field(
+        default="mem",
+        description="Identifier for the mem decomposition task",
+    )
+
+
 class ModulePatternInfoConfig(BaseConfig):
     """Configuration for a module pattern with its number of components.
 
@@ -184,11 +220,16 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def default_beta(cls, data: dict[str, Any]) -> dict[str, Any]:
-        if "beta" not in data:
+    def handle_deprecated_config_keys(cls, config_dict: dict[str, Any]) -> dict[str, Any]:
+        """Migrate old pnorm_1 to pnorm and add default for beta. Ignore deprecated pnorm_2."""
+        if "pnorm_1" in config_dict:
+            config_dict["pnorm"] = config_dict.pop("pnorm_1")
+        # pnorm_2 is deprecated and no longer used - remove if present
+        config_dict.pop("pnorm_2", None)
+        if "beta" not in config_dict:
             logger.warning("beta not in ImportanceMinimalityLossConfig, defaulting to 0.0")
-            data["beta"] = 0.0
-        return data
+            config_dict["beta"] = 0.0
+        return config_dict
 
 
 class UniformKSubsetRoutingConfig(BaseConfig):
@@ -371,7 +412,7 @@ EvalOnlyMetricConfigType = (
 )
 MetricConfigType = LossMetricConfigType | EvalOnlyMetricConfigType
 
-TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
+TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig | MemTaskConfig
 
 SamplingType = Literal["continuous", "binomial"]
 
@@ -397,13 +438,10 @@ class Config(BaseConfig):
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
     )
-    ci_fn_type: CiFnType = Field(
-        default="vector_mlp",
-        description="Type of causal importance function used to calculate the causal importance.",
-    )
-    ci_fn_hidden_dims: list[NonNegativeInt] = Field(
-        default=[8],
-        description="Hidden dimensions for the causal importance function used to calculate the causal importance",
+    ci_config: CiConfig = Field(
+        ...,
+        description="Configuration for the causal importance function. "
+        "Use LayerwiseCiConfig for per-layer CI functions or GlobalCiConfig for a single global CI function.",
     )
     sampling: SamplingType = Field(
         default="continuous",
@@ -457,9 +495,10 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
+    output_loss_type: Literal["mse", "kl", "mem"] = Field(
         ...,
-        description="Metric used to measure recon error between model outputs and targets",
+        description="Metric used to measure recon error between model outputs and targets. "
+        "Use 'mem' for tasks that only care about the final sequence position.",
     )
 
     # --- Training ---
@@ -614,8 +653,6 @@ class Config(BaseConfig):
         "pretrained_model_name_hf": "pretrained_model_name",
         "recon_coeff": "ci_recon_coeff",
         "recon_layerwise_coeff": "ci_recon_layerwise_coeff",
-        "gate_type": "ci_fn_type",
-        "gate_hidden_dims": "ci_fn_hidden_dims",
     }
 
     @model_validator(mode="before")

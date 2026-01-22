@@ -1,0 +1,94 @@
+wandb_project: spd
+wandb_run_name: null
+wandb_run_name_prefix: '' #hej
+seed: 0
+C: 300
+n_mask_samples: 1
+ci_fn_type: shared_mlp
+ci_fn_hidden_dims:
+- 300
+sampling: continuous
+sigmoid_type: leaky_hard
+target_module_patterns:
+# - block.attn.q_proj
+# - block.attn.k_proj
+# - block.attn.v_proj
+# - block.attn.o_proj
+- block.mlp.up_proj
+- block.mlp.down_proj
+# - unembed
+identity_module_patterns: null
+use_delta_component: true
+loss_metric_configs:
+- coeff: 0.2
+  classname: ImportanceMinimalityLoss
+  pnorm: 2.0
+  beta: 0.0
+  p_anneal_start_frac: 0.0
+  p_anneal_final_p: 0.5
+  p_anneal_end_frac: 1.0
+  eps: 1.0e-12
+- coeff: 0.5
+  classname: StochasticReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+- coeff: 0.5
+  init: random
+  step_size: 1.0
+  n_steps: 1
+  mask_scope: shared_across_batch
+  classname: PGDReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+# - coeff: 0.5
+#   classname: CIMaskedReconLoss
+- coeff: 1
+  classname: FaithfulnessLoss
+output_loss_type: mem
+lr: 1e-3
+steps: 20000
+batch_size: 3200
+gradient_accumulation_steps: 1
+grad_clip_norm: null
+faithfulness_warmup_steps: 100
+faithfulness_warmup_lr: 0.01
+faithfulness_warmup_weight_decay: 0.1
+lr_schedule: cosine
+lr_exponential_halflife: null
+lr_warmup_pct: 0.0
+out_dir: null
+train_log_freq: 100
+eval_freq: 1000
+eval_batch_size: 500
+slow_eval_freq: 2000
+n_eval_steps: 1
+slow_eval_on_first_step: true
+save_freq: null
+eval_metric_configs:
+- classname: CIHistograms
+  n_batches_accum: 5
+- classname: ComponentActivationDensity
+- classname: CI_L0
+  groups: null
+- classname: CIMeanPerComponent
+- coeff: null
+  classname: CIMaskedReconLoss
+- coeff: null
+  classname: StochasticReconLoss
+- coeff: null
+  classname: UnmaskedReconLoss
+- coeff: null
+  init: random
+  step_size: 0.1
+  n_steps: 20
+  mask_scope: shared_across_batch
+  classname: PGDReconLoss
+ci_alive_threshold: 0.01
+n_examples_until_dead: 1000
+pretrained_model_class: spd.experiments.mem.models.MemTransformer
+pretrained_model_path: wandb:goodfire/spd/runs/uxtycpvo
+pretrained_model_name: null
+pretrained_model_output_attr: null
+tokenizer_name: null
+task_config:
+  task_name: mem

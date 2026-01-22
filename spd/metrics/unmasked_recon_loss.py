@@ -14,7 +14,7 @@ from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 def _unmasked_recon_loss_update(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
 ) -> tuple[Float[Tensor, ""], int]:
@@ -27,7 +27,12 @@ def _unmasked_recon_loss_update(
     )
     out = model(batch, mask_infos=all_ones_mask_infos)
     loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-    n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
+    if output_loss_type == "mse":
+        n_examples = out.shape.numel()
+    elif output_loss_type == "mem":
+        n_examples = out.shape[0]  # batch size only for mem
+    else:  # kl
+        n_examples = out.shape[:-1].numel()
     return loss, n_examples
 
 
@@ -39,7 +44,7 @@ def _unmasked_recon_loss_compute(
 
 def unmasked_recon_loss(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
 ) -> Float[Tensor, ""]:
@@ -61,10 +66,10 @@ class UnmaskedReconLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: Literal["mse", "kl", "mem"],
     ) -> None:
         self.model = model
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.output_loss_type: Literal["mse", "kl", "mem"] = output_loss_type
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 

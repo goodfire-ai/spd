@@ -51,7 +51,7 @@ def compute_total_loss(
     sampling: SamplingType,
     use_delta_component: bool,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: Literal["mse", "kl", "mem"],
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 

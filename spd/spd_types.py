@@ -45,9 +45,8 @@ RootPath = Annotated[
     Path, BeforeValidator(to_root_path), PlainSerializer(lambda x: str(from_root_path(x)))
 ]
 
-
 Probability = Annotated[float, Ge(0), Le(1)]
 
-TaskName = Literal["tms", "resid_mlp", "lm", "ih"]
-
-CiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]
+TaskName = Literal["tms", "resid_mlp", "lm", "ih", "mem"]
+LayerwiseCiFnType = Literal["mlp", "vector_mlp", "shared_mlp"]
+GlobalCiFnType = Literal["global_shared_mlp"]
