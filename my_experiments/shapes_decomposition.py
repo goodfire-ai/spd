@@ -119,10 +119,10 @@ def train_shapes_model(
     model: MultiAttributeCNNSingleHead,
     train_loader: DataLoader,
     device: str,
-    epochs: int = 20,
-    lr: float = 0.001,
-    weight_decay: float = 0.0,
-    log_wandb: bool = False,
+    epochs: int,
+    lr: float,
+    weight_decay: float,
+    log_wandb: bool,
 ) -> int:
     """Train the shapes CNN.
 
@@ -517,9 +517,7 @@ def plot_component_attribute_correlation(
     final_checkpoint = out_dir / f"model_{spd_config.steps}.pth"
     if not final_checkpoint.exists():
         checkpoints = list(out_dir.glob("model_*.pth"))
-        if not checkpoints:
-            logger.warning("No checkpoint found. Skipping visualizations.")
-            return
+        assert checkpoints, f"No checkpoints found in {out_dir} after SPD training - pipeline bug"
         final_checkpoint = max(checkpoints, key=lambda p: int(p.stem.split("_")[1]))
 
     mlp_model.eval()

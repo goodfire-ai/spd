@@ -24,6 +24,7 @@ import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "batchtopk"))
 
+from collections.abc import Iterator
 from functools import partial
 
 from config import get_default_cfg, post_init_cfg
@@ -63,6 +64,11 @@ class MultiInputActivationsStore:
         # Determine the maximum layer we need to run to
         self.max_layer = self._get_max_layer()
 
+        # Initialize dataloader state (will be populated on first next_batch call)
+        self.activation_buffer: dict[str, torch.Tensor] | None = None
+        self.dataloader: DataLoader | None = None
+        self.dataloader_iter: Iterator[tuple[torch.Tensor, ...]] | None = None
+
     def _get_tokens_column(self):
         sample = next(self.dataset)
         if "tokens" in sample:
@@ -81,12 +87,9 @@ class MultiInputActivationsStore:
             # Parse layer from hook point name (e.g., "blocks.8.hook_mlp_out" -> 8)
             parts = hp.split(".")
             for i, part in enumerate(parts):
-                if part == "blocks" and i + 1 < len(parts):
-                    try:
-                        layer = int(parts[i + 1])
-                        max_layer = max(max_layer, layer)
-                    except ValueError:
-                        pass
+                if part == "blocks" and i + 1 < len(parts) and parts[i + 1].isdigit():
+                    layer = int(parts[i + 1])
+                    max_layer = max(max_layer, layer)
         return max_layer + 1  # +1 because stop_at_layer is exclusive
 
     def get_batch_tokens(self):
@@ -136,6 +139,12 @@ class MultiInputActivationsStore:
         tensors = [self.activation_buffer[hp] for hp in self.hook_points]
         return DataLoader(TensorDataset(*tensors), batch_size=self.cfg["batch_size"], shuffle=True)
 
+    def _refill_buffer(self) -> None:
+        """Refill the activation buffer and reset the dataloader iterator."""
+        self.activation_buffer = self._fill_buffer()
+        self.dataloader = self._get_dataloader()
+        self.dataloader_iter = iter(self.dataloader)
+
     def next_batch(self) -> tuple[torch.Tensor, ...]:
         """
         Get next batch of activations.
@@ -143,13 +152,20 @@ class MultiInputActivationsStore:
         Returns a tuple of tensors, one per hook point.
         The first tensor is the primary target for reconstruction.
         """
-        try:
-            return next(self.dataloader_iter)
-        except (StopIteration, AttributeError):
-            self.activation_buffer = self._fill_buffer()
-            self.dataloader = self._get_dataloader()
-            self.dataloader_iter = iter(self.dataloader)
-            return next(self.dataloader_iter)
+        # Initialize on first call
+        if self.dataloader_iter is None:
+            self._refill_buffer()
+            assert self.dataloader_iter is not None
+
+        # Get next batch, refilling buffer if exhausted
+        batch = next(self.dataloader_iter, None)
+        if batch is None:
+            self._refill_buffer()
+            assert self.dataloader_iter is not None
+            batch = next(self.dataloader_iter, None)
+            assert batch is not None, "Empty dataloader after refill - buffer too small"
+
+        return batch
 
 
 class MultiInputBatchTopKSAE(nn.Module):
