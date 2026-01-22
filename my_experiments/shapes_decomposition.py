@@ -248,7 +248,7 @@ def main(
     n_train_samples: int = 10000,
     n_test_samples: int = 2000,
     output_dir: str | None = None,
-    wandb_project: str | None = "shapes_decomposition",
+    wandb_project: str | None = "shapes_decomposition_v6",
 ) -> None:
     """Main experiment function.
 
@@ -402,10 +402,8 @@ def main(
         ci_fn_type="linear",
         ci_fn_hidden_dims=[256],
         sigmoid_type="leaky_hard",
+        # Note: SPD only supports Linear layers, not Conv2d
         module_info=[
-            {"module_pattern": "conv1", "C": n_components},
-            {"module_pattern": "conv2", "C": n_components},
-            {"module_pattern": "conv3", "C": n_components},
             {"module_pattern": "fc1", "C": n_components},
             {"module_pattern": "fc2", "C": n_components},
         ],
