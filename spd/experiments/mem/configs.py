@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, PositiveInt
+from pydantic import Field, PositiveInt, model_validator
 
 from spd.base_config import BaseConfig
 
@@ -17,6 +17,16 @@ class MemModelConfig(BaseConfig):
         default=True, description="Whether to use LayerNorm (disable for easier interpretability)"
     )
     device: str = "cpu"
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_norm_type(cls, data: Any) -> Any:
+        """Migrate old `norm_type` field to `use_layer_norm`."""
+        if isinstance(data, dict) and "norm_type" in data:
+            norm_type = data.pop("norm_type")
+            if "use_layer_norm" not in data:
+                data["use_layer_norm"] = norm_type == "layernorm"
+        return data
 
 
 class MemTrainConfig(BaseConfig):
