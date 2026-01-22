@@ -619,12 +619,6 @@ class ShapesComponentDashboard:
                     selectivity_matrix[row, comp_idx] = np.mean(ci[labels == val])
                 row += 1
 
-        # Normalize per component
-        for comp_idx in range(n_components):
-            col_sum = selectivity_matrix[:, comp_idx].sum()
-            if col_sum > 0:
-                selectivity_matrix[:, comp_idx] /= col_sum
-
         fig, ax = plt.subplots(figsize=(min(20, n_components // 5 + 4), 6))
 
         im = ax.imshow(selectivity_matrix, cmap="viridis", aspect="auto")
@@ -639,8 +633,8 @@ class ShapesComponentDashboard:
         ax.axhline(2.5, color="white", linewidth=2)
         ax.axhline(5.5, color="white", linewidth=2)
 
-        plt.colorbar(im, ax=ax, label="Normalized CI")
-        ax.set_title(f"{layer} - Component Selectivity Heatmap\n(Normalized CI by attribute value)")
+        plt.colorbar(im, ax=ax, label="Mean CI")
+        ax.set_title(f"{layer} - Component Selectivity Heatmap\n(Mean CI by attribute value)")
 
         plt.tight_layout()
         return fig
