@@ -305,6 +305,12 @@ class GlobalReverseResidualCiFn(nn.Module):
         self._attn_transitions: nn.ModuleDict | None = (
             nn.ModuleDict() if attn_config is not None else None
         )
+        self._ln_pre_attn: nn.ModuleDict | None = (
+            nn.ModuleDict() if attn_config is not None else None
+        )
+        self._ln_pre_mlp: nn.ModuleDict | None = (
+            nn.ModuleDict() if attn_config is not None else None
+        )
 
         for block_idx, (_, _, input_dims, c_values) in enumerate(block_configs):
             safe_name = self.block_safe_names[block_idx]
@@ -331,12 +337,16 @@ class GlobalReverseResidualCiFn(nn.Module):
                 )
                 if attn_config is not None:
                     assert self._attn_transitions is not None
+                    assert self._ln_pre_attn is not None
+                    assert self._ln_pre_mlp is not None
                     self._attn_transitions[safe_name] = SelfAttention(
                         d_model=d_resid_ci_fn,
                         n_heads=attn_config.n_heads,
                         max_len=attn_config.max_len,
                         rope_base=attn_config.rope_base,
                     )
+                    self._ln_pre_attn[safe_name] = nn.RMSNorm(d_resid_ci_fn)
+                    self._ln_pre_mlp[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
     @override
     def forward(
@@ -370,14 +380,18 @@ class GlobalReverseResidualCiFn(nn.Module):
                 all_outputs[module_name] = module_ci
 
             if block_idx < self.n_blocks - 1:
-                # With attention: attn → residual add → MLP → residual add
+                # With attention: ln → attn → residual add → ln → MLP → residual add
                 # Without attention: MLP → residual add
                 if self._attn_transitions is not None:
-                    attn_out = self._attn_transitions[safe_name](residual)
+                    assert self._ln_pre_attn is not None
+                    assert self._ln_pre_mlp is not None
+                    attn_out = self._attn_transitions[safe_name](self._ln_pre_attn[safe_name](residual))
                     residual = residual + attn_out
-
-                mlp_out = self._transitions[safe_name](residual)
-                residual = residual + mlp_out
+                    mlp_out = self._transitions[safe_name](self._ln_pre_mlp[safe_name](residual))
+                    residual = residual + mlp_out
+                else:
+                    mlp_out = self._transitions[safe_name](residual)
+                    residual = residual + mlp_out
 
         return all_outputs
 
