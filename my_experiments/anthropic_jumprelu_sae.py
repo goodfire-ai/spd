@@ -704,7 +704,7 @@ def main(
     batch_size: int = 4096,
     lr: float = 2e-4,
     beta1: float = 0.9,
-    beta2: float = 0.999,
+    beta2: float = 0.99,
     weight_decay: float = 0.0,
     # Model settings
     model_name: str = "gpt2-small",

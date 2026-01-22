@@ -451,6 +451,7 @@ def main(
     dict_size: int = 768 * 4,
     # Auxiliary inputs - specify as "layer:site" pairs (use tuple for immutable default)
     aux_inputs: tuple[str, ...] = ("8:resid_mid", "8:resid_post"),
+    # aux_inputs: tuple[str, ...] = (),
     # TopK settings
     top_k: int = 32,
     aux_penalty: float = 1 / 32,
