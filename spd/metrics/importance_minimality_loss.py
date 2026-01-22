@@ -57,10 +57,15 @@ def _importance_minimality_loss_update(
     p_anneal_final_p: float | None,
     p_anneal_end_frac: float,
     current_frac_of_training: float,
-) -> tuple[dict[str, Float[Tensor, " C"]], int]:
+) -> tuple[dict[str, Float[Tensor, " C"]], dict[str, Float[Tensor, " C"]], int]:
     """Calculate per-component sums of (ci_upper_leaky + eps) ** pnorm over batch/seq.
 
-    Returns per-layer per-component sums and the number of batch/seq elements.
+    Returns:
+        - per_component_sums: per-layer per-component sums for the main loss term
+        - per_component_sums_for_log: per-layer per-component sums for the log term,
+          computed with ci_upper_leaky clamped to max 1.0 and using half the pnorm
+        - n_examples: the number of batch/seq elements
+
     These are used to compute the final loss by averaging over batch/seq
     and summing over components.
 
@@ -76,34 +81,45 @@ def _importance_minimality_loss_update(
         p_anneal_final_p=p_anneal_final_p,
         p_anneal_end_frac=p_anneal_end_frac,
     )
+    pnorm_for_log = 0.5
     per_component_sums: dict[str, Float[Tensor, " C"]] = {}
+    per_component_sums_for_log: dict[str, Float[Tensor, " C"]] = {}
     for layer_name, layer_ci_upper_leaky in ci_upper_leaky.items():
         # NOTE: layer_ci_upper_leaky already >= 0, with shape [... C] where ... is batch/seq
         pnorm_result = (layer_ci_upper_leaky + eps) ** pnorm
         # Sum over batch/seq to get per-component sum [C]
         per_component_sums[layer_name] = pnorm_result.sum(dim=tuple(range(pnorm_result.dim() - 1)))
+
+        # For log term: clamp ci_upper_leaky to max 1.0 and use half the pnorm
+        layer_ci_clamped = layer_ci_upper_leaky.clamp(max=1.0)
+        pnorm_result_for_log = (layer_ci_clamped + eps) ** pnorm_for_log
+        per_component_sums_for_log[layer_name] = pnorm_result_for_log.sum(
+            dim=tuple(range(pnorm_result_for_log.dim() - 1))
+        )
     n_examples = next(iter(ci_upper_leaky.values())).shape[:-1].numel()
-    return per_component_sums, n_examples
+    return per_component_sums, per_component_sums_for_log, n_examples
 
 
 def _importance_minimality_loss_compute(
     per_component_sums: dict[str, Float[Tensor, " C"]],
+    per_component_sums_for_log: dict[str, Float[Tensor, " C"]],
     n_examples: int,
     beta: float,
 ) -> Float[Tensor, ""]:
     """Compute final loss from accumulated per-component sums.
 
     For each layer:
-    1. Divide per-component sums by n_examples to get means over batch/seq (i.e. per_component_mean)
-    2. Calculate (per_component_mean + beta * per_component_mean * log2(1 + layer_sums)).sum()
+    1. Divide per_component_sums by n_examples to get means over batch/seq (i.e. per_component_mean)
+    2. Use per_component_sums_for_log inside the log2 term (computed with clamped CI and half pnorm)
+    3. Calculate (per_component_mean + beta * per_component_mean * log2(1 + layer_sums_for_log)).sum()
 
     Then sum contributions from all layers.
     """
     total_loss = torch.tensor(0.0, device=next(iter(per_component_sums.values())).device)
-    for layer_sums in per_component_sums.values():
+    for layer_name, layer_sums in per_component_sums.items():
+        layer_sums_for_log = per_component_sums_for_log[layer_name]
         per_component_mean = layer_sums / n_examples
-        layer_loss = (
-            per_component_mean + beta * per_component_mean * torch.log2(1 + layer_sums)
+        layer_loss = (beta * per_component_mean * torch.log2(1 + layer_sums_for_log)
         ).sum()
         total_loss += layer_loss
     return total_loss
@@ -128,7 +144,7 @@ def importance_minimality_loss(
     functions are stateless.
     """
 
-    per_component_sums, n_examples = _importance_minimality_loss_update(
+    per_component_sums, per_component_sums_for_log, n_examples = _importance_minimality_loss_update(
         ci_upper_leaky=ci_upper_leaky,
         pnorm=pnorm,
         eps=eps,
@@ -139,6 +155,7 @@ def importance_minimality_loss(
     )
     return _importance_minimality_loss_compute(
         per_component_sums=per_component_sums,
+        per_component_sums_for_log=per_component_sums_for_log,
         n_examples=n_examples,
         beta=beta,
     )
@@ -183,6 +200,7 @@ class ImportanceMinimalityLoss(Metric):
         self.device = device
         # Track per-layer per-component sums for proper aggregation
         self.per_component_sums: dict[str, Float[Tensor, " C"]] = {}
+        self.per_component_sums_for_log: dict[str, Float[Tensor, " C"]] = {}
         self.n_examples = torch.tensor(0, device=device)
 
     @override
@@ -193,31 +211,43 @@ class ImportanceMinimalityLoss(Metric):
         current_frac_of_training: float,
         **_: Any,
     ) -> None:
-        per_component_sums, n_examples = _importance_minimality_loss_update(
-            ci_upper_leaky=ci.upper_leaky,
-            pnorm=self.pnorm,
-            eps=self.eps,
-            current_frac_of_training=current_frac_of_training,
-            p_anneal_start_frac=self.p_anneal_start_frac,
-            p_anneal_final_p=self.p_anneal_final_p,
-            p_anneal_end_frac=self.p_anneal_end_frac,
+        per_component_sums, per_component_sums_for_log, n_examples = (
+            _importance_minimality_loss_update(
+                ci_upper_leaky=ci.upper_leaky,
+                pnorm=self.pnorm,
+                eps=self.eps,
+                current_frac_of_training=current_frac_of_training,
+                p_anneal_start_frac=self.p_anneal_start_frac,
+                p_anneal_final_p=self.p_anneal_final_p,
+                p_anneal_end_frac=self.p_anneal_end_frac,
+            )
         )
         # Accumulate per-layer per-component sums across batches
         for layer_name, layer_sums in per_component_sums.items():
             if layer_name not in self.per_component_sums:
                 self.per_component_sums[layer_name] = torch.zeros_like(layer_sums)
             self.per_component_sums[layer_name] += layer_sums
+
+            layer_sums_for_log = per_component_sums_for_log[layer_name]
+            if layer_name not in self.per_component_sums_for_log:
+                self.per_component_sums_for_log[layer_name] = torch.zeros_like(layer_sums_for_log)
+            self.per_component_sums_for_log[layer_name] += layer_sums_for_log
         self.n_examples += n_examples
 
     @override
     def compute(self) -> Float[Tensor, ""]:
         reduced_sums: dict[str, Float[Tensor, " C"]] = {}
+        reduced_sums_for_log: dict[str, Float[Tensor, " C"]] = {}
         for layer_name, layer_sums in self.per_component_sums.items():
             reduced_sums[layer_name] = all_reduce(layer_sums, op=ReduceOp.SUM)
+            reduced_sums_for_log[layer_name] = all_reduce(
+                self.per_component_sums_for_log[layer_name], op=ReduceOp.SUM
+            )
         n_examples = int(all_reduce(self.n_examples, op=ReduceOp.SUM))
 
         return _importance_minimality_loss_compute(
             per_component_sums=reduced_sums,
+            per_component_sums_for_log=reduced_sums_for_log,
             n_examples=n_examples,
             beta=self.beta,
         )
