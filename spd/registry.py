@@ -175,7 +175,7 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_simple_mlp-2L-wide_global_reverse.yaml"),
-        expected_runtime=480,
+        expected_runtime=1680,
     ),
     "ss_llama_simple_mlp": ExperimentConfig(
         task_name="lm",
