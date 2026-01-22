@@ -58,18 +58,61 @@ class MultiAttributeCNNSingleHead(nn.Module):
         }
 
 
-class ShapesMLP(nn.Module):
-    """Just the MLP part of the shapes CNN for decomposition."""
+class ShapesCNNWrapper(nn.Module):
+    """Wrapper around MultiAttributeCNNSingleHead that outputs a single tensor.
 
-    def __init__(self, flat_size: int, hidden_dim: int, output_dim: int):
+    SPD requires models to output a single tensor, not a dict.
+    """
+
+    def __init__(
+        self,
+        img_size: int = 32,
+        hidden_dim: int = 64,
+        n_shapes: int = 3,
+        n_colors: int = 3,
+        n_sizes: int = 2,
+    ):
         super().__init__()
-        self.fc1 = nn.Linear(flat_size, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        self.img_size = img_size
+        self.n_shapes = n_shapes
+        self.n_colors = n_colors
+        self.n_sizes = n_sizes
+
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+
+        self.flat_size = 64 * (img_size // 8) * (img_size // 8)
+
+        self.fc1 = nn.Linear(self.flat_size, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, n_shapes + n_colors + n_sizes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = self.pool(F.relu(self.conv3(x)))
+        x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
+
+    @staticmethod
+    def from_multi_attribute_cnn(cnn: MultiAttributeCNNSingleHead) -> "ShapesCNNWrapper":
+        """Create a wrapper by copying weights from a MultiAttributeCNNSingleHead."""
+        wrapper = ShapesCNNWrapper(
+            img_size=cnn.img_size,
+            hidden_dim=cnn.fc1.out_features,
+            n_shapes=cnn.n_shapes,
+            n_colors=cnn.n_colors,
+            n_sizes=cnn.n_sizes,
+        )
+        wrapper.conv1.load_state_dict(cnn.conv1.state_dict())
+        wrapper.conv2.load_state_dict(cnn.conv2.state_dict())
+        wrapper.conv3.load_state_dict(cnn.conv3.state_dict())
+        wrapper.fc1.load_state_dict(cnn.fc1.state_dict())
+        wrapper.fc2.load_state_dict(cnn.fc2.state_dict())
+        return wrapper
 
 
 # Attribute labels
@@ -100,7 +143,7 @@ class ShapesComponentDashboard:
             config_dict = yaml.safe_load(f)
         self.config = Config(**config_dict)
 
-        # Load the full CNN model
+        # Load the full CNN model and create wrapper
         self.cnn_model = MultiAttributeCNNSingleHead(img_size=32, hidden_dim=64)
         cnn_path = self.experiment_dir / "trained_shapes_cnn.pth"
         self.cnn_model.load_state_dict(torch.load(cnn_path, map_location=device, weights_only=True))
@@ -108,26 +151,16 @@ class ShapesComponentDashboard:
         self.cnn_model.eval()
         self.cnn_model.requires_grad_(False)
 
-        # Create the MLP model (for decomposition)
-        output_dim = self.cnn_model.n_shapes + self.cnn_model.n_colors + self.cnn_model.n_sizes
-        self.mlp_model = ShapesMLP(
-            flat_size=self.cnn_model.flat_size,
-            hidden_dim=64,
-            output_dim=output_dim,
-        )
-        # Copy weights from CNN
-        self.mlp_model.fc1.weight.data = self.cnn_model.fc1.weight.data.clone()
-        self.mlp_model.fc1.bias.data = self.cnn_model.fc1.bias.data.clone()
-        self.mlp_model.fc2.weight.data = self.cnn_model.fc2.weight.data.clone()
-        self.mlp_model.fc2.bias.data = self.cnn_model.fc2.bias.data.clone()
-        self.mlp_model = self.mlp_model.to(device)
-        self.mlp_model.eval()
-        self.mlp_model.requires_grad_(False)
+        # Create the wrapper model (same architecture used for decomposition)
+        self.target_model = ShapesCNNWrapper.from_multi_attribute_cnn(self.cnn_model)
+        self.target_model = self.target_model.to(device)
+        self.target_model.eval()
+        self.target_model.requires_grad_(False)
 
         # Create and load component model
-        module_path_info = expand_module_patterns(self.mlp_model, self.config.all_module_info)
+        module_path_info = expand_module_patterns(self.target_model, self.config.all_module_info)
         self.component_model = ComponentModel(
-            target_model=self.mlp_model,
+            target_model=self.target_model,
             module_path_info=module_path_info,
             ci_fn_type=self.config.ci_fn_type,
             ci_fn_hidden_dims=self.config.ci_fn_hidden_dims,
@@ -158,13 +191,36 @@ class ShapesComponentDashboard:
         self._precompute_activations()
         print("Dashboard ready!")
 
-    def _get_conv_features(self, images: torch.Tensor) -> torch.Tensor:
-        """Get flattened conv features from images."""
-        with torch.no_grad():
-            x = self.cnn_model.pool(F.relu(self.cnn_model.conv1(images)))
-            x = self.cnn_model.pool(F.relu(self.cnn_model.conv2(x)))
-            x = self.cnn_model.pool(F.relu(self.cnn_model.conv3(x)))
-            return x.view(x.size(0), -1)
+    def _get_pre_weight_acts(self, image: torch.Tensor) -> dict[str, torch.Tensor]:
+        """Get pre-weight activations for all decomposed layers."""
+        pre_weight_acts = {}
+        model = self.target_model
+
+        # Conv1 input is the raw image
+        if "conv1" in self.component_model.components:
+            pre_weight_acts["conv1"] = image
+
+        # Conv2 input is pool(relu(conv1(image)))
+        x1 = model.pool(F.relu(model.conv1(image)))
+        if "conv2" in self.component_model.components:
+            pre_weight_acts["conv2"] = x1
+
+        # Conv3 input is pool(relu(conv2(...)))
+        x2 = model.pool(F.relu(model.conv2(x1)))
+        if "conv3" in self.component_model.components:
+            pre_weight_acts["conv3"] = x2
+
+        # FC1 input is flattened conv3 output
+        x3 = model.pool(F.relu(model.conv3(x2)))
+        x3_flat = x3.view(x3.size(0), -1)
+        if "fc1" in self.component_model.components:
+            pre_weight_acts["fc1"] = x3_flat
+
+        # FC2 input is relu(fc1(...))
+        if "fc2" in self.component_model.components:
+            pre_weight_acts["fc2"] = F.relu(model.fc1(x3_flat))
+
+        return pre_weight_acts
 
     def _precompute_activations(self):
         """Pre-compute component activations for all test samples."""
@@ -172,12 +228,15 @@ class ShapesComponentDashboard:
 
         self.test_images = []
         self.test_labels = {"shape": [], "color": [], "size": []}
-        self.activations_fc1 = []
-        self.activations_fc2 = []
-        self.causal_importance_fc1 = []
-        self.causal_importance_fc2 = []
-        self.pre_sigmoid_ci_fc1 = []
-        self.pre_sigmoid_ci_fc2 = []
+
+        # Dynamic storage for all layers
+        self.activations: dict[str, list] = {layer: [] for layer in self.component_model.components}
+        self.causal_importance: dict[str, list] = {
+            layer: [] for layer in self.component_model.components
+        }
+        self.pre_sigmoid_ci: dict[str, list] = {
+            layer: [] for layer in self.component_model.components
+        }
 
         with torch.no_grad():
             for idx in indices:
@@ -189,67 +248,49 @@ class ShapesComponentDashboard:
                 for attr in ["shape", "color", "size"]:
                     self.test_labels[attr].append(labels[attr].item())
 
-                # Get conv features
-                conv_features = self._get_conv_features(image)
+                # Get pre-weight activations for all layers
+                pre_weight_acts = self._get_pre_weight_acts(image)
 
-                # Get activations for fc1
-                if "fc1" in self.component_model.components:
-                    component_fc1 = self.component_model.components["fc1"]
-                    acts_fc1 = component_fc1.get_component_acts(conv_features)
-                    self.activations_fc1.append(acts_fc1[0].cpu().numpy())
-
-                # Get activations for fc2
-                if "fc2" in self.component_model.components:
-                    hidden = F.relu(self.mlp_model.fc1(conv_features))
-                    component_fc2 = self.component_model.components["fc2"]
-                    acts_fc2 = component_fc2.get_component_acts(hidden)
-                    self.activations_fc2.append(acts_fc2[0].cpu().numpy())
+                # Get component activations for each layer
+                for layer_name, component in self.component_model.components.items():
+                    if layer_name in pre_weight_acts:
+                        acts = component.get_component_acts(pre_weight_acts[layer_name])
+                        self.activations[layer_name].append(acts[0].cpu().numpy())
 
                 # Get causal importance
-                pre_weight_acts = {}
-                if "fc1" in self.component_model.components:
-                    pre_weight_acts["fc1"] = conv_features
-                if "fc2" in self.component_model.components:
-                    hidden = F.relu(self.mlp_model.fc1(conv_features))
-                    pre_weight_acts["fc2"] = hidden
-
                 ci_outputs = self.component_model.calc_causal_importances(
                     pre_weight_acts=pre_weight_acts,
                     sampling="continuous",
                     detach_inputs=False,
                 )
 
-                if "fc1" in ci_outputs.lower_leaky:
-                    self.causal_importance_fc1.append(
-                        ci_outputs.lower_leaky["fc1"][0].cpu().numpy()
-                    )
-                if "fc2" in ci_outputs.lower_leaky:
-                    self.causal_importance_fc2.append(
-                        ci_outputs.lower_leaky["fc2"][0].cpu().numpy()
-                    )
-                if "fc1" in ci_outputs.pre_sigmoid:
-                    self.pre_sigmoid_ci_fc1.append(ci_outputs.pre_sigmoid["fc1"][0].cpu().numpy())
-                if "fc2" in ci_outputs.pre_sigmoid:
-                    self.pre_sigmoid_ci_fc2.append(ci_outputs.pre_sigmoid["fc2"][0].cpu().numpy())
+                # Store CI values for each layer
+                for layer_name in self.component_model.components:
+                    if layer_name in ci_outputs.lower_leaky:
+                        self.causal_importance[layer_name].append(
+                            ci_outputs.lower_leaky[layer_name][0].cpu().numpy()
+                        )
+                    if layer_name in ci_outputs.pre_sigmoid:
+                        self.pre_sigmoid_ci[layer_name].append(
+                            ci_outputs.pre_sigmoid[layer_name][0].cpu().numpy()
+                        )
 
         self.test_images = np.array(self.test_images)
         for attr in ["shape", "color", "size"]:
             self.test_labels[attr] = np.array(self.test_labels[attr])
 
-        if self.activations_fc1:
-            self.activations_fc1 = np.array(self.activations_fc1)
-            self.causal_importance_fc1 = np.array(self.causal_importance_fc1)
-        if self.activations_fc2:
-            self.activations_fc2 = np.array(self.activations_fc2)
-            self.causal_importance_fc2 = np.array(self.causal_importance_fc2)
-        if self.pre_sigmoid_ci_fc1:
-            self.pre_sigmoid_ci_fc1 = np.array(self.pre_sigmoid_ci_fc1)
-        if self.pre_sigmoid_ci_fc2:
-            self.pre_sigmoid_ci_fc2 = np.array(self.pre_sigmoid_ci_fc2)
+        # Convert lists to arrays for all layers
+        for layer_name in self.component_model.components:
+            if self.activations[layer_name]:
+                self.activations[layer_name] = np.array(self.activations[layer_name])
+            if self.causal_importance[layer_name]:
+                self.causal_importance[layer_name] = np.array(self.causal_importance[layer_name])
+            if self.pre_sigmoid_ci[layer_name]:
+                self.pre_sigmoid_ci[layer_name] = np.array(self.pre_sigmoid_ci[layer_name])
 
     def get_activation_distribution(self, layer: str, component_idx: int):
         """Plot the distribution of activation values for this component."""
-        activations = self.activations_fc1 if layer == "fc1" else self.activations_fc2
+        activations = self.activations.get(layer, [])
         if len(activations) == 0 or component_idx >= activations.shape[1]:
             return None
 
@@ -283,7 +324,7 @@ class ShapesComponentDashboard:
 
     def get_causal_importance_distribution(self, layer: str, component_idx: int):
         """Plot the distribution of causal importance values."""
-        ci_values = self.causal_importance_fc1 if layer == "fc1" else self.causal_importance_fc2
+        ci_values = self.causal_importance.get(layer, [])
         if len(ci_values) == 0 or component_idx >= ci_values.shape[1]:
             return None
 
@@ -318,7 +359,7 @@ class ShapesComponentDashboard:
 
     def get_top_activating_examples(self, layer: str, component_idx: int, n_examples: int = 16):
         """Show examples with highest activation for this component."""
-        activations = self.activations_fc1 if layer == "fc1" else self.activations_fc2
+        activations = self.activations.get(layer, [])
         if len(activations) == 0 or component_idx >= activations.shape[1]:
             return None
 
@@ -351,7 +392,7 @@ class ShapesComponentDashboard:
 
     def get_top_ci_examples(self, layer: str, component_idx: int, n_examples: int = 16):
         """Show examples with highest causal importance."""
-        pre_sigmoid_ci = self.pre_sigmoid_ci_fc1 if layer == "fc1" else self.pre_sigmoid_ci_fc2
+        pre_sigmoid_ci = self.pre_sigmoid_ci.get(layer, [])
         if len(pre_sigmoid_ci) == 0 or component_idx >= pre_sigmoid_ci.shape[1]:
             return None
 
@@ -384,7 +425,7 @@ class ShapesComponentDashboard:
 
     def get_attribute_activation_analysis(self, layer: str, component_idx: int, attribute: str):
         """Analyze component activations by attribute value."""
-        activations = self.activations_fc1 if layer == "fc1" else self.activations_fc2
+        activations = self.activations.get(layer, [])
         if len(activations) == 0 or component_idx >= activations.shape[1]:
             return None
 
@@ -445,7 +486,7 @@ class ShapesComponentDashboard:
 
     def get_attribute_ci_analysis(self, layer: str, component_idx: int, attribute: str):
         """Analyze causal importance by attribute value."""
-        ci_values = self.causal_importance_fc1 if layer == "fc1" else self.causal_importance_fc2
+        ci_values = self.causal_importance.get(layer, [])
         if len(ci_values) == 0 or component_idx >= ci_values.shape[1]:
             return None
 
@@ -501,8 +542,8 @@ class ShapesComponentDashboard:
 
     def get_all_attributes_summary(self, layer: str, component_idx: int):
         """Summary plot showing activation patterns across all attributes."""
-        activations = self.activations_fc1 if layer == "fc1" else self.activations_fc2
-        ci_values = self.causal_importance_fc1 if layer == "fc1" else self.causal_importance_fc2
+        activations = self.activations.get(layer, [])
+        ci_values = self.causal_importance.get(layer, [])
 
         if len(activations) == 0 or component_idx >= activations.shape[1]:
             return None
@@ -544,8 +585,8 @@ class ShapesComponentDashboard:
 
     def get_selectivity_metrics(self, layer: str, component_idx: int):
         """Compute selectivity metrics for the component."""
-        activations = self.activations_fc1 if layer == "fc1" else self.activations_fc2
-        ci_values = self.causal_importance_fc1 if layer == "fc1" else self.causal_importance_fc2
+        activations = self.activations.get(layer, [])
+        ci_values = self.causal_importance.get(layer, [])
 
         if len(activations) == 0 or component_idx >= activations.shape[1]:
             return "Component not found"
@@ -597,7 +638,7 @@ class ShapesComponentDashboard:
 
     def get_component_attribute_heatmap(self, layer: str):
         """Heatmap showing which components are selective for which attributes."""
-        ci_values = self.causal_importance_fc1 if layer == "fc1" else self.causal_importance_fc2
+        ci_values = self.causal_importance.get(layer, [])
         if len(ci_values) == 0:
             return None
 
@@ -655,9 +696,7 @@ def create_dashboard(experiment_dir: str, checkpoint_step: int | None = None):
     }
 
     def get_alive_components(layer: str, threshold: float = 0.01) -> list[int]:
-        ci_values = (
-            dashboard.causal_importance_fc1 if layer == "fc1" else dashboard.causal_importance_fc2
-        )
+        ci_values = dashboard.causal_importance.get(layer, [])
         if len(ci_values) == 0:
             return list(range(max_components[layer]))
 
