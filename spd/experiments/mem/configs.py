@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, PositiveInt
+from pydantic import Field, PositiveInt, model_validator
 
 from spd.base_config import BaseConfig
 
@@ -18,6 +18,16 @@ class MemModelConfig(BaseConfig):
     )
     device: str = "cpu"
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_norm_type(cls, data: Any) -> Any:
+        """Migrate old `norm_type` field to `use_layer_norm`."""
+        if isinstance(data, dict) and "norm_type" in data:
+            norm_type = data.pop("norm_type")
+            if "use_layer_norm" not in data:
+                data["use_layer_norm"] = norm_type == "layernorm"
+        return data
+
 
 class MemTrainConfig(BaseConfig):
     """Configuration for training a MemTransformer model."""
@@ -31,6 +41,18 @@ class MemTrainConfig(BaseConfig):
     print_freq: PositiveInt = 100
     lr: float
     lr_schedule: Literal["linear", "cosine", "constant"] = "constant"
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_nested_norm_type(cls, data: Any) -> Any:
+        """Migrate old `norm_type` field in nested mem_model_config to `use_layer_norm`."""
+        if isinstance(data, dict) and "mem_model_config" in data:
+            mem_cfg = data.get("mem_model_config")
+            if isinstance(mem_cfg, dict) and "norm_type" in mem_cfg:
+                norm_type = mem_cfg.pop("norm_type")
+                if "use_layer_norm" not in mem_cfg:
+                    mem_cfg["use_layer_norm"] = norm_type == "layernorm"
+        return data
 
 
 class MemTaskConfig(BaseConfig):

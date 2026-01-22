@@ -1,31 +1,29 @@
 wandb_project: spd
 wandb_run_name: null
-wandb_run_name_prefix: '' #hej
+wandb_run_name_prefix: ''
 seed: 0
-C: 300
 n_mask_samples: 1
-ci_fn_type: shared_mlp
-ci_fn_hidden_dims:
-- 300
+ci_config:
+  mode: layerwise
+  fn_type: shared_mlp
+  hidden_dims:
+  - 300
 sampling: continuous
 sigmoid_type: leaky_hard
-target_module_patterns:
-# - block.attn.q_proj
-# - block.attn.k_proj
-# - block.attn.v_proj
-# - block.attn.o_proj
-- block.mlp.up_proj
-- block.mlp.down_proj
-# - unembed
-identity_module_patterns: null
+module_info:
+  - module_pattern: block.mlp.up_proj
+    C: 300
+  - module_pattern: block.mlp.down_proj
+    C: 300
+identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.2
+- coeff: 0.05
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
-  beta: 0.0
+  beta: 1.0
   p_anneal_start_frac: 0.0
-  p_anneal_final_p: 0.5
+  p_anneal_final_p: 0.3
   p_anneal_end_frac: 1.0
   eps: 1.0e-12
 - coeff: 0.5
@@ -40,23 +38,20 @@ loss_metric_configs:
   classname: PGDReconSubsetLoss
   routing:
     type: uniform_k_subset
-# - coeff: 0.5
-#   classname: CIMaskedReconLoss
-- coeff: 1
+- coeff: 1.0
   classname: FaithfulnessLoss
 output_loss_type: mem
-lr: 1e-3
-steps: 20000
-batch_size: 3200
+steps: 100000
+batch_size: 2048
 gradient_accumulation_steps: 1
-grad_clip_norm: null
+lr_schedule:
+  start_val: 1e-3
+  fn_type: cosine
+  warmup_pct: 0.0
+  final_val_frac: 0.0
 faithfulness_warmup_steps: 100
 faithfulness_warmup_lr: 0.01
 faithfulness_warmup_weight_decay: 0.1
-lr_schedule: cosine
-lr_exponential_halflife: null
-lr_warmup_pct: 0.0
-out_dir: null
 train_log_freq: 100
 eval_freq: 1000
 eval_batch_size: 500
@@ -86,7 +81,7 @@ eval_metric_configs:
 ci_alive_threshold: 0.01
 n_examples_until_dead: 1000
 pretrained_model_class: spd.experiments.mem.models.MemTransformer
-pretrained_model_path: wandb:goodfire/spd/runs/uxtycpvo
+pretrained_model_path: wandb:linda-linsefors-n-a/Luisus mem/t-c8147012
 pretrained_model_name: null
 pretrained_model_output_attr: null
 tokenizer_name: null
