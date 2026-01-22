@@ -256,10 +256,10 @@ class GlobalReverseResidualCiFn(nn.Module):
     3. For each block:
        - Concat relevant activations from all modules in the block
        - Project to d_resid_ci_fn and add to residual stream
-       - Reader reads from residual stream, outputs CI values for all modules in block
-       - Transition updates residual stream for next block (except after last block)
-         - If attn_config is provided: attention → residual add → MLP → residual add
-         - Otherwise: simple MLP transition
+       - RMSNorm → Reader MLP outputs CI values for all modules in block
+       - Transition updates residual stream for next block (except after last block):
+         - If attn_config is provided: RMSNorm → attn → add → RMSNorm → MLP → add
+         - Otherwise: RMSNorm → MLP → add
 
     """
 
@@ -301,8 +301,13 @@ class GlobalReverseResidualCiFn(nn.Module):
 
         self._inp_projectors = nn.ModuleDict()
         self._readers = nn.ModuleDict()
+        self._reader_norms = nn.ModuleDict()
         self._transitions = nn.ModuleDict()
+        self._transition_norms = nn.ModuleDict()
         self._attn_transitions: nn.ModuleDict | None = (
+            nn.ModuleDict() if attn_config is not None else None
+        )
+        self._attn_norms: nn.ModuleDict | None = (
             nn.ModuleDict() if attn_config is not None else None
         )
 
@@ -324,19 +329,23 @@ class GlobalReverseResidualCiFn(nn.Module):
             final_dim = reader_hidden_dims[-1] if len(reader_hidden_dims) > 0 else d_resid_ci_fn
             reader_layers.append(Linear(final_dim, total_c, nonlinearity="linear"))
             self._readers[safe_name] = reader_layers
+            self._reader_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
             if block_idx < self.n_blocks - 1:
                 self._transitions[safe_name] = Linear(
                     d_resid_ci_fn, d_resid_ci_fn, nonlinearity="relu"
                 )
+                self._transition_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
                 if attn_config is not None:
                     assert self._attn_transitions is not None
+                    assert self._attn_norms is not None
                     self._attn_transitions[safe_name] = SelfAttention(
                         d_model=d_resid_ci_fn,
                         n_heads=attn_config.n_heads,
                         max_len=attn_config.max_len,
                         rope_base=attn_config.rope_base,
                     )
+                    self._attn_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
     @override
     def forward(
@@ -363,20 +372,23 @@ class GlobalReverseResidualCiFn(nn.Module):
             projection = self._inp_projectors[safe_name](concat_acts)
             residual = residual + projection
 
-            ci_output = self._readers[safe_name](residual)
+            ci_output = self._readers[safe_name](self._reader_norms[safe_name](residual))
 
             split_outputs = torch.split(ci_output, c_values, dim=-1)
             for module_name, module_ci in zip(module_names, split_outputs, strict=True):
                 all_outputs[module_name] = module_ci
 
             if block_idx < self.n_blocks - 1:
-                # With attention: attn → residual add → MLP → residual add
-                # Without attention: MLP → residual add
+                # With attention: norm → attn → residual add → norm → MLP → residual add
+                # Without attention: norm → MLP → residual add
                 if self._attn_transitions is not None:
-                    attn_out = self._attn_transitions[safe_name](residual)
+                    assert self._attn_norms is not None
+                    attn_out = self._attn_transitions[safe_name](
+                        self._attn_norms[safe_name](residual)
+                    )
                     residual = residual + attn_out
 
-                mlp_out = self._transitions[safe_name](residual)
+                mlp_out = self._transitions[safe_name](self._transition_norms[safe_name](residual))
                 residual = residual + mlp_out
 
         return all_outputs
