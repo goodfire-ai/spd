@@ -196,9 +196,16 @@ class TestImportanceMinimalityLoss:
         # per_component_sums = [1+3, 2+4] = [4, 6]
         # n_examples = 2
         # per_component_mean = [2, 3]
-        # layer_loss = sum(per_component_mean * (1 + beta * log2(1 + layer_sums)))
-        #            = 2 * (1 + log2(5)) + 3 * (1 + log2(7))
-        expected_beta_1 = 2.0 * (1 + math.log2(5)) + 3.0 * (1 + math.log2(7))
+        #
+        # For the log term, ci_upper_leaky is clamped to max 1.0 and uses pnorm/2:
+        # ci_clamped = [[1.0, 1.0], [1.0, 1.0]]
+        # pnorm_for_log = 0.5
+        # layer_sums_for_log = [1**0.5 + 1**0.5, 1**0.5 + 1**0.5] = [2, 2]
+        #
+        # layer_loss = sum(per_component_mean + beta * per_component_mean * log2(1 + layer_sums_for_log))
+        #            = (2 + 1 * 2 * log2(3)) + (3 + 1 * 3 * log2(3))
+        #            = 5 + 5 * log2(3)
+        expected_beta_1 = 5.0 * (1 + math.log2(3))
         # beta=0 => layer_loss = sum(per_component_mean) = 5
         expected_beta_0 = 5.0
 
