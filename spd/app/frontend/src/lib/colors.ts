@@ -65,6 +65,18 @@ export function getComponentActivationColor(value: number, normalizedAbs: number
     }
 }
 
+/** Compute the max absolute value across all component activations (for normalization) */
+export function computeMaxAbsComponentAct(exampleComponentActs: number[][]): number {
+    let max = 0;
+    for (const row of exampleComponentActs) {
+        for (const val of row) {
+            const abs = Math.abs(val);
+            if (abs > max) max = abs;
+        }
+    }
+    return max === 0 ? 1 : max;
+}
+
 /** Get output header gradient background based on probability */
 export function getOutputHeaderColor(prob: number): string {
     const { r, g, b } = colors.outputBase;

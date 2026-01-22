@@ -18,6 +18,11 @@ Usage (SLURM submission):
     spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8
 """
 
+from spd.harvest.harvest import (
+    HarvestConfig,
+    harvest_activation_contexts,
+    merge_activation_contexts,
+)
 from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -38,7 +43,7 @@ def main(
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
-        n_batches: Number of batches to process.
+        n_batches: Number of batches to process. If None, processes entire training dataset.
         batch_size: Batch size for processing.
         ci_threshold: CI threshold for component activation.
         activation_examples_per_component: Number of activation examples per component.
@@ -49,11 +54,6 @@ def main(
             batches where batch_idx % world_size == rank.
         merge: If True, merge partial results from workers.
     """
-    from spd.harvest.harvest import (
-        HarvestConfig,
-        harvest_activation_contexts,
-        merge_activation_contexts,
-    )
 
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
@@ -63,7 +63,6 @@ def main(
         merge_activation_contexts(wandb_path)
         return
 
-    assert n_batches is not None, "n_batches required for harvest (not merge)"
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
     config = HarvestConfig(

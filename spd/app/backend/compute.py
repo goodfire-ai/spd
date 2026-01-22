@@ -6,7 +6,7 @@ to avoid importing script files with global execution.
 
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, override
 
 import torch
@@ -65,15 +65,10 @@ class Node:
     layer: str
     seq_pos: int
     component_idx: int
-    _str_cache: str = field(default="", init=False, repr=False, compare=False)
-
-    def __post_init__(self) -> None:
-        """Cache string representation for efficient repeated lookups."""
-        self._str_cache = f"{self.layer}:{self.seq_pos}:{self.component_idx}"
 
     @override
     def __str__(self) -> str:
-        return self._str_cache
+        return f"{self.layer}:{self.seq_pos}:{self.component_idx}"
 
 
 @dataclass

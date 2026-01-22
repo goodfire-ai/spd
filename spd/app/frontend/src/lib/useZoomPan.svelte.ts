@@ -1,55 +1,59 @@
 /**
  * Shared zoom/pan state and handlers for SVG graph visualizations.
- *
- * Usage:
- *   let container: HTMLDivElement;
- *   const zoom = useZoomPan(() => container);
- *
- *   // In template:
- *   <div bind:this={container} onwheel={zoom.handleWheel} onmousemove={zoom.updatePan} ...>
- *     <svg width={width * zoom.scale + Math.max(zoom.translateX, 0)} ...>
- *       <g transform="translate({zoom.translateX}, {zoom.translateY}) scale({zoom.scale})">
- *
- * Pan-start logic differs between components, so call zoom.startPan(event)
- * from your own mousedown handler after checking your conditions.
+ * - Shift + scroll to zoom
+ * - Shift + drag (or middle-click drag) to pan
  */
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 4;
 const ZOOM_SENSITIVITY = 0.002;
+const LINE_HEIGHT = 16;
 
 export function useZoomPan(getContainer: () => HTMLElement | null) {
     let scale = $state(1);
     let translateX = $state(0);
     let translateY = $state(0);
     let isPanning = $state(false);
-
-    // Not reactive - only used internally
     let panStart: { x: number; y: number; tx: number; ty: number } | null = null;
 
-    function zoomAt(px: number, py: number, factor: number) {
+    function zoom(centerX: number, centerY: number, factor: number) {
         const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
         if (newScale === scale) return;
-
         const ratio = newScale / scale;
-        translateX = px - (px - translateX) * ratio;
-        translateY = py - (py - translateY) * ratio;
+        translateX = centerX - (centerX - translateX) * ratio;
+        translateY = centerY - (centerY - translateY) * ratio;
         scale = newScale;
     }
 
-    function handleWheel(event: WheelEvent) {
-        event.preventDefault();
+    // Attach non-passive wheel listener for Shift+scroll zoom
+    $effect(() => {
         const container = getContainer();
         if (!container) return;
 
-        const rect = container.getBoundingClientRect();
-        const mouseX = event.clientX - rect.left + container.scrollLeft;
-        const mouseY = event.clientY - rect.top + container.scrollTop;
+        const handleWheel = (event: WheelEvent) => {
+            if (!event.shiftKey) return;
+            event.preventDefault();
 
-        zoomAt(mouseX, mouseY, 1 - event.deltaY * ZOOM_SENSITIVITY);
-    }
+            // Shift+wheel on some platforms converts deltaY to deltaX
+            let delta = event.deltaY || event.deltaX;
+            if (!delta) return;
 
-    /** Call from mousedown handler after checking your pan-start conditions */
+            // Normalize to pixels
+            if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) delta *= LINE_HEIGHT;
+            else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) delta *= container.clientHeight;
+
+            const rect = container.getBoundingClientRect();
+            zoom(
+                event.clientX - rect.left + container.scrollLeft,
+                event.clientY - rect.top + container.scrollTop,
+                1 - delta * ZOOM_SENSITIVITY,
+            );
+        };
+
+        container.addEventListener("wheel", handleWheel, { passive: false });
+        return () => container.removeEventListener("wheel", handleWheel);
+    });
+
     function startPan(event: MouseEvent) {
         event.preventDefault();
         isPanning = true;
@@ -70,17 +74,13 @@ export function useZoomPan(getContainer: () => HTMLElement | null) {
     function zoomIn() {
         const container = getContainer();
         if (!container) return;
-        const x = container.clientWidth / 2 + container.scrollLeft;
-        const y = container.clientHeight / 2 + container.scrollTop;
-        zoomAt(x, y, 1.25);
+        zoom(container.clientWidth / 2 + container.scrollLeft, container.clientHeight / 2 + container.scrollTop, 1.25);
     }
 
     function zoomOut() {
         const container = getContainer();
         if (!container) return;
-        const x = container.clientWidth / 2 + container.scrollLeft;
-        const y = container.clientHeight / 2 + container.scrollTop;
-        zoomAt(x, y, 0.8);
+        zoom(container.clientWidth / 2 + container.scrollLeft, container.clientHeight / 2 + container.scrollTop, 0.8);
     }
 
     function reset() {
@@ -102,7 +102,6 @@ export function useZoomPan(getContainer: () => HTMLElement | null) {
         get isPanning() {
             return isPanning;
         },
-        handleWheel,
         startPan,
         updatePan,
         endPan,

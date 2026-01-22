@@ -38,20 +38,16 @@
     }
 </script>
 
-<span class="token-highlights">
-    {#each tokenStrings as tok, i (i)}
-        <span
+<span class="token-highlights"
+    >{#each tokenStrings as tok, i (i)}<span
             class="token-highlight"
             style="background-color:{getBgColor(
                 tokenCi[i],
                 tokenComponentActs[i],
             )};--underline-color:{getUnderlineColor(tokenComponentActs[i])}"
-            data-tooltip={getTooltipText(tokenCi[i], tokenComponentActs[i])}
-        >
-            {tok}
-        </span>
-    {/each}
-</span>
+            data-tooltip={getTooltipText(tokenCi[i], tokenComponentActs[i])}>{tok}</span
+        >{/each}</span
+>
 
 <style>
     .token-highlights {

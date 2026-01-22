@@ -44,57 +44,33 @@ class HarvesterState:
     # Reservoir states
     reservoir_states: list[ReservoirState[ActivationExampleTuple]]
 
-    @staticmethod
-    def merge(states: list["HarvesterState"]) -> "HarvesterState":
-        """Merge multiple HarvesterStates from parallel workers into one."""
-        assert len(states) > 0
-        first = states[0]
+    def merge_into(self, other: "HarvesterState") -> None:
+        """Merge another HarvesterState into this one (in-place accumulation).
 
-        for s in states[1:]:
-            assert s.layer_names == first.layer_names
-            assert s.c_per_layer == first.c_per_layer
-            assert s.vocab_size == first.vocab_size
-            assert s.ci_threshold == first.ci_threshold
-            assert s.max_examples_per_component == first.max_examples_per_component
-            assert s.context_tokens_per_side == first.context_tokens_per_side
-            assert len(s.reservoir_states) == len(first.reservoir_states)
+        This is the streaming merge primitive used to avoid OOM when merging many workers.
+        """
+        assert other.layer_names == self.layer_names
+        assert other.c_per_layer == self.c_per_layer
+        assert other.vocab_size == self.vocab_size
+        assert other.ci_threshold == self.ci_threshold
+        assert other.max_examples_per_component == self.max_examples_per_component
+        assert other.context_tokens_per_side == self.context_tokens_per_side
+        assert len(other.reservoir_states) == len(self.reservoir_states)
 
-        # Sum tensor accumulators
-        firing_counts = torch.stack([s.firing_counts for s in states]).sum(dim=0)
-        ci_sums = torch.stack([s.ci_sums for s in states]).sum(dim=0)
-        count_ij = torch.stack([s.count_ij for s in states]).sum(dim=0)
-        input_token_counts = torch.stack([s.input_token_counts for s in states]).sum(dim=0)
-        input_token_totals = torch.stack([s.input_token_totals for s in states]).sum(dim=0)
-        output_token_prob_mass = torch.stack([s.output_token_prob_mass for s in states]).sum(dim=0)
-        output_token_prob_totals = torch.stack([s.output_token_prob_totals for s in states]).sum(
-            dim=0
-        )
-        total_tokens_processed = sum(s.total_tokens_processed for s in states)
+        # Accumulate tensor stats
+        self.firing_counts += other.firing_counts
+        self.ci_sums += other.ci_sums
+        self.count_ij += other.count_ij
+        self.input_token_counts += other.input_token_counts
+        self.input_token_totals += other.input_token_totals
+        self.output_token_prob_mass += other.output_token_prob_mass
+        self.output_token_prob_totals += other.output_token_prob_totals
+        self.total_tokens_processed += other.total_tokens_processed
 
-        # Merge reservoir states
-        n_components = len(first.reservoir_states)
-        merged_reservoirs = [
-            ReservoirState.merge([s.reservoir_states[i] for s in states])
-            for i in range(n_components)
-        ]
-
-        return HarvesterState(
-            layer_names=first.layer_names,
-            c_per_layer=first.c_per_layer,
-            vocab_size=first.vocab_size,
-            ci_threshold=first.ci_threshold,
-            max_examples_per_component=first.max_examples_per_component,
-            context_tokens_per_side=first.context_tokens_per_side,
-            firing_counts=firing_counts,
-            ci_sums=ci_sums,
-            count_ij=count_ij,
-            input_token_counts=input_token_counts,
-            input_token_totals=input_token_totals,
-            output_token_prob_mass=output_token_prob_mass,
-            output_token_prob_totals=output_token_prob_totals,
-            total_tokens_processed=total_tokens_processed,
-            reservoir_states=merged_reservoirs,
-        )
+        # Merge reservoir states pairwise
+        for i in range(len(self.reservoir_states)):
+            merged = ReservoirState.merge([self.reservoir_states[i], other.reservoir_states[i]])
+            self.reservoir_states[i] = merged
 
 
 class Harvester:

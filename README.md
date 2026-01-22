@@ -89,35 +89,46 @@ spd-run --experiments <experiment_name> --sweep --n_agents <n-agents> [--cpu]
         values: [0.05, 0.1]
   ```
 
-### `spd-harvest` - Component Statistics Collection
+## Post-Processing Pipeline
 
-Collect component statistics (activation examples, correlations, token stats) for a trained run:
+After training an SPD model, you can run several post-processing steps which create artifacts
+that can be viewed in the app.
 
-```bash
-spd-harvest wandb:spd/runs/abc123 1000              # Harvest with 1000 batches
-spd-harvest wandb:spd/runs/abc123 8000 --n_gpus 8   # Multi-GPU harvest
-```
+Note, the default batch size for harvest and dataset attributions is 256, which works well for
+models like `ss_llama_simple_mlp-2L-wide`. This is configurable with `--batch_size`. You should also
+configure `--n_gpus` based on how many gpus you have available. You can use any number you'd like.
 
-See `spd/harvest/CLAUDE.md` for details.
+### 1. Harvest Component Statistics
 
-### `spd-autointerp` - Automated Interpretation
-
-Generate LLM interpretations for harvested components:
+First, collect component statistics (activation examples, correlations, token stats):
 
 ```bash
-spd-autointerp wandb:spd/runs/abc123
+spd-harvest goodfire/spd/runs/abc123 --n_gpus 24
 ```
 
-Requires `OPENROUTER_API_KEY` env var. See `spd/autointerp/CLAUDE.md` for details.
+### 2. Automated Interpretation
 
-### `spd-clustering` - Clustering Pipeline
-
-Run clustering analysis on SPD decompositions:
+After harvesting, generate LLM interpretations of components:
 
 ```bash
-spd-clustering --config path/to/config.yaml
-spd-clustering --config config.yaml --local        # Run locally instead of SLURM
+spd-autointerp goodfire/spd/runs/abc123
 ```
+
+Requires `OPENROUTER_API_KEY` env var.
+
+### 3. Dataset Attributions
+
+Compute component-to-component attribution strengths:
+
+```bash
+spd-attributions goodfire/spd/runs/abc123 --n_gpus 24
+```
+
+Can be run independently of harvest/autointerp.
+
+### 4. Clustering (TODO)
+
+Component clustering analysis is under development.
 
 ### Direct Script Execution
 

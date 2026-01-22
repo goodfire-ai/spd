@@ -117,9 +117,14 @@ async def chat_with_retry(
                 messages=messages,
                 response_format=response_format,
             )
-            message = response.choices[0].message
+            choice = response.choices[0]
+            message = choice.message
             assert isinstance(message.content, str)
             assert response.usage is not None
+
+            if choice.finish_reason == "length":
+                logger.warning(f"{context_label}: Response truncated at {max_tokens} tokens")
+
             return (
                 message.content,
                 int(response.usage.prompt_tokens),
@@ -183,7 +188,7 @@ async def interpret_component(
                     strict=True,
                 )
             ),
-            max_tokens=300,
+            max_tokens=1500,
             context_label=component.component_key,
         )
     except RuntimeError as e:

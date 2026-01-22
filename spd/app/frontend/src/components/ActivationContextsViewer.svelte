@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { computeMaxAbsComponentAct } from "../lib/colors";
     import { hasAnyCorrelationStats } from "../lib/displaySettings.svelte";
     import type { ActivationContextsSummary, ComponentSummary } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
@@ -179,6 +180,12 @@
     function formatMeanCi(ci: number): string {
         return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
     }
+
+    // Compute global max absolute component act for normalization (used by both activating examples and probe)
+    const maxAbsComponentAct = $derived.by(() => {
+        if (componentData.componentDetail?.status !== "loaded") return 1;
+        return computeMaxAbsComponentAct(componentData.componentDetail.data.example_component_acts);
+    });
 </script>
 
 <div class="viewer-content">
@@ -243,6 +250,7 @@
                 exampleCi={componentData.componentDetail.data.example_ci}
                 exampleComponentActs={componentData.componentDetail.data.example_component_acts}
                 activatingTokens={inputTopRecall.map(({ token }) => token)}
+                {maxAbsComponentAct}
             />
         {:else if componentData.componentDetail?.status === "error"}
             <StatusText>Error loading component data: {String(componentData.componentDetail.error)}</StatusText>
@@ -250,7 +258,11 @@
             <StatusText>Something went wrong loading component data.</StatusText>
         {/if}
 
-        <ComponentProbeInput layer={selectedLayer} componentIdx={currentMetadata.subcomponent_idx} />
+        <ComponentProbeInput
+            layer={selectedLayer}
+            componentIdx={currentMetadata.subcomponent_idx}
+            {maxAbsComponentAct}
+        />
 
         <div class="token-stats-row">
             {#if componentData.tokenStats.status === "uninitialized" || componentData.tokenStats.status === "loading"}

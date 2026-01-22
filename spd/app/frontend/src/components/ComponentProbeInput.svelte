@@ -1,14 +1,16 @@
 <script lang="ts">
     import type { ComponentProbeResult } from "../lib/promptAttributionsTypes";
-    import { getTokenHighlightBg } from "../lib/colors";
     import { probeComponent } from "../lib/api";
+    import TokenHighlights from "./TokenHighlights.svelte";
+    import { displaySettings } from "../lib/displaySettings.svelte";
 
     interface Props {
         layer: string;
         componentIdx: number;
+        maxAbsComponentAct: number;
     }
 
-    let { layer, componentIdx }: Props = $props();
+    let { layer, componentIdx, maxAbsComponentAct }: Props = $props();
 
     let probeText = $state("");
     let probeResult = $state<ComponentProbeResult | null>(null);
@@ -43,8 +45,7 @@
 
     // Re-run probe when layer or component changes (if there's text)
     $effect(() => {
-        layer; // eslint-disable-line @typescript-eslint/no-unused-expressions
-        componentIdx; // eslint-disable-line @typescript-eslint/no-unused-expressions
+        void [layer, componentIdx]; // track dependencies
         probeResult = null;
         probeError = null;
         if (probeText.trim()) {
@@ -55,11 +56,16 @@
 </script>
 
 <div class="probe-section">
-    <h5>Test Custom Text</h5>
+    <div class="header-with-hint">
+        <h5>Custom Text</h5>
+        {#if displaySettings.exampleColorMode === "ci"}
+            <span class="hint">(Change "Color by" above to "Both" to see subcomponent activations)</span>
+        {/if}
+    </div>
     <input
         type="text"
         class="probe-input"
-        placeholder="Enter text to test..."
+        placeholder="Enter text..."
         value={probeText}
         oninput={onProbeInput}
     />
@@ -69,14 +75,13 @@
         <p class="probe-error">{probeError}</p>
     {:else if probeResult && probeResult.tokens.length > 0}
         <div class="probe-result">
-            <span class="probe-tokens"
-                >{#each probeResult.tokens as tok, i (i)}<span
-                        class="probe-token"
-                        style="background-color:{getTokenHighlightBg(probeResult.ci_values[i])}"
-                        title="CI: {probeResult.ci_values[i].toFixed(4)}, Act: {probeResult.subcomp_acts[i].toFixed(4)}"
-                        >{tok}</span
-                    >{/each}</span
-            >
+            <TokenHighlights
+                tokenStrings={probeResult.tokens}
+                tokenCi={probeResult.ci_values}
+                tokenComponentActs={probeResult.subcomp_acts}
+                colorMode={displaySettings.exampleColorMode}
+                {maxAbsComponentAct}
+            />
         </div>
     {/if}
 </div>
@@ -88,12 +93,26 @@
         border: 1px solid var(--border-default);
     }
 
+    .header-with-hint {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+    }
+
     h5 {
-        margin: 0 0 var(--space-2) 0;
+        margin: 0;
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
         font-weight: 600;
+    }
+
+    .hint {
+        font-size: var(--text-xs);
+        font-family: var(--font-sans);
+        color: var(--text-muted);
+        font-style: italic;
     }
 
     .probe-input {
@@ -133,22 +152,14 @@
 
     .probe-result {
         margin-top: var(--space-2);
+        padding: var(--space-2) var(--space-2) 30px var(--space-2);
+        background: var(--bg-inset);
+        border: 1px solid var(--border-default);
         overflow-x: auto;
+        font-size: var(--text-xs);
     }
 
-    .probe-tokens {
-        display: inline;
-        white-space: pre-wrap;
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-    }
-
-    .probe-token {
-        display: inline;
-        padding: 1px 0;
-        margin-right: 1px;
-        border-right: 1px solid var(--border-subtle);
-        white-space: pre;
-        cursor: help;
+    .probe-result :global(.token-highlight) {
+        font-size: var(--text-xs);
     }
 </style>

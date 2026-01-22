@@ -9,22 +9,11 @@
         exampleComponentActs: number[][]; // [n_examples, window_size]
         // Unique activating tokens (from pr_tokens, already sorted by recall)
         activatingTokens: string[];
+        // Global max for normalization
+        maxAbsComponentAct: number;
     }
 
-    let { exampleTokens, exampleCi, exampleComponentActs, activatingTokens }: Props = $props();
-
-    // Compute max absolute component act for normalization (display-only concern)
-    let maxAbsComponentAct = $derived.by(() => {
-        let max = 0;
-        for (const row of exampleComponentActs) {
-            for (const val of row) {
-                const abs = Math.abs(val);
-                if (abs > max) max = abs;
-            }
-        }
-        if (max === 0) throw new Error("No nonzero component acts found");
-        return max;
-    });
+    let { exampleTokens, exampleCi, exampleComponentActs, activatingTokens, maxAbsComponentAct }: Props = $props();
 
     let currentPage = $state(0);
     let pageSize = $state(20);
