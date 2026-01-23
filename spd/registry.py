@@ -67,24 +67,6 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         expected_runtime=3,
         canonical_run="wandb:goodfire/spd/runs/s-62fce8c4",
     ),
-    "resid_mlp1_global": ExperimentConfig(
-        task_name="resid_mlp",
-        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
-        config_path=Path("spd/experiments/resid_mlp/resid_mlp1_global_config.yaml"),
-        expected_runtime=3,
-    ),
-    "resid_mlp1_global_reverse": ExperimentConfig(
-        task_name="resid_mlp",
-        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
-        config_path=Path("spd/experiments/resid_mlp/resid_mlp1_global_reverse_config.yaml"),
-        expected_runtime=3,
-    ),
-    "resid_mlp2_global_reverse": ExperimentConfig(
-        task_name="resid_mlp",
-        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
-        config_path=Path("spd/experiments/resid_mlp/resid_mlp2_global_reverse_config.yaml"),
-        expected_runtime=5,
-    ),
     "resid_mlp2": ExperimentConfig(
         task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
