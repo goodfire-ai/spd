@@ -1,12 +1,28 @@
+# Simple Stories Llama Simple MLP 2L Wide - Global Reverse Residual CI
 wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
 n_mask_samples: 1
 ci_config:
-  mode: layerwise
-  fn_type: shared_mlp
-  hidden_dims: [1250]
+  mode: global
+  fn_type: global_reverse_residual
+  d_resid_ci_fn: 2048
+  reader_hidden_dims: [1024, 1024]
+  transition_attn_config:
+    n_heads: 8
+    max_len: 2048
+  block_groups:
+    # Process in reverse order: layer 1 before layer 0
+    # Within each layer: MLP before attention (closer to output first)
+    - name: "layer_1_mlp"
+      patterns: ["h.1.mlp.*"]
+    - name: "layer_1_attn"
+      patterns: ["h.1.attn.*"]
+    - name: "layer_0_mlp"
+      patterns: ["h.0.mlp.*"]
+    - name: "layer_0_attn"
+      patterns: ["h.0.attn.*"]
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:

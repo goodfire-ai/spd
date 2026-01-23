@@ -13,7 +13,125 @@ from pydantic import (
 
 from spd.base_config import BaseConfig
 from spd.log import logger
-from spd.spd_types import CiFnType, ModelPath, Probability
+from spd.spd_types import GlobalCiFnType, LayerwiseCiFnType, ModelPath, Probability
+
+
+class LayerwiseCiConfig(BaseConfig):
+    """Configuration for layerwise CI functions (one per layer)."""
+
+    mode: Literal["layerwise"] = "layerwise"
+    fn_type: LayerwiseCiFnType = Field(
+        ..., description="Type of layerwise CI function: mlp, vector_mlp, or shared_mlp"
+    )
+    hidden_dims: list[NonNegativeInt] = Field(
+        ..., description="Hidden dimensions for the CI function MLP"
+    )
+
+
+class BlockGroupConfig(BaseConfig):
+    """Defines a group of modules processed together in global reverse residual CI.
+
+    Modules within a block have their activations concatenated, projected to the residual
+    stream dimension, and processed together by a single reader network.
+    """
+
+    name: str = Field(..., description="Block identifier (e.g. 'unembed', 'layer_2_mlp')")
+    patterns: list[str] = Field(
+        ...,
+        description="Module patterns for this block (fnmatch-style, e.g. ['layers.2.mlp_*'])",
+    )
+
+
+class TransitionAttnConfig(BaseConfig):
+    """Configuration for self-attention in global reverse residual transitions.
+
+    When provided, transitions use a full transformer block: attention → residual → MLP → residual.
+    Uses RoPE (Rotary Position Embeddings) for sequence length generalization.
+    """
+
+    n_heads: PositiveInt = Field(
+        ...,
+        description="Number of attention heads. Must divide d_resid_ci_fn.",
+    )
+    max_len: PositiveInt = Field(
+        default=2048,
+        description="Maximum sequence length for RoPE embeddings.",
+    )
+    rope_base: float = Field(
+        default=10000.0,
+        description="Base for RoPE frequency computation.",
+    )
+
+
+class GlobalCiConfig(BaseConfig):
+    """Configuration for global CI function (single function for all layers).
+
+    For fn_type='global_shared_mlp': Concatenates all activations, processes through MLP.
+    For fn_type='global_reverse_residual': Processes blocks in reverse order with residual stream.
+    """
+
+    mode: Literal["global"] = "global"
+    fn_type: GlobalCiFnType = Field(
+        ...,
+        description="Type of global CI function: global_shared_mlp or global_reverse_residual",
+    )
+    hidden_dims: list[NonNegativeInt] | None = Field(
+        default=None,
+        description="Hidden dimensions for global_shared_mlp CI function. "
+        "Use reader_hidden_dims for global_reverse_residual.",
+    )
+    reader_hidden_dims: list[NonNegativeInt] | None = Field(
+        default=None,
+        description="Hidden dimensions for reader MLPs in global_reverse_residual. "
+        "Required when fn_type='global_reverse_residual', ignored otherwise.",
+    )
+    d_resid_ci_fn: PositiveInt | None = Field(
+        default=None,
+        description="Residual stream dimension for global_reverse_residual. "
+        "Required when fn_type='global_reverse_residual', ignored otherwise.",
+    )
+    block_groups: list[BlockGroupConfig] | None = Field(
+        default=None,
+        description="Ordered list of block groups for global_reverse_residual. "
+        "Order determines processing sequence (first = processed first, typically unembed). "
+        "Required when fn_type='global_reverse_residual', ignored otherwise.",
+    )
+    transition_attn_config: TransitionAttnConfig | None = Field(
+        default=None,
+        description="Self-attention config for transitions in global_reverse_residual. "
+        "If None, uses MLP-only transitions (original behavior). "
+        "Only applies when fn_type='global_reverse_residual'.",
+    )
+
+    @model_validator(mode="after")
+    def validate_ci_config(self) -> Self:
+        if self.fn_type == "global_reverse_residual":
+            assert self.d_resid_ci_fn is not None, (
+                "d_resid_ci_fn must be specified when fn_type='global_reverse_residual'"
+            )
+            assert self.block_groups is not None and len(self.block_groups) > 0, (
+                "block_groups must be specified with at least one block when "
+                "fn_type='global_reverse_residual'"
+            )
+            assert self.reader_hidden_dims is not None, (
+                "reader_hidden_dims must be specified when fn_type='global_reverse_residual'"
+            )
+            if self.transition_attn_config is not None:
+                assert self.d_resid_ci_fn % self.transition_attn_config.n_heads == 0, (
+                    f"d_resid_ci_fn ({self.d_resid_ci_fn}) must be divisible by "
+                    f"transition_attn_config.n_heads ({self.transition_attn_config.n_heads})"
+                )
+        elif self.fn_type == "global_shared_mlp":
+            assert self.hidden_dims is not None, (
+                "hidden_dims must be specified when fn_type='global_shared_mlp'"
+            )
+            assert self.transition_attn_config is None, (
+                "transition_attn_config is only valid for global_reverse_residual"
+            )
+        return self
+
+
+CiConfig = LayerwiseCiConfig | GlobalCiConfig
 
 
 class ScheduleConfig(BaseConfig):
@@ -184,7 +302,15 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def default_beta(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate_old_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
+        # Migrate pnorm_1 to pnorm (intermediate format)
+        if "pnorm_1" in data and "pnorm" not in data:
+            data["pnorm"] = data.pop("pnorm_1")
+        elif "pnorm_1" in data:
+            data.pop("pnorm_1")
+        # Remove deprecated pnorm_2
+        data.pop("pnorm_2", None)
+        # Default beta if missing
         if "beta" not in data:
             logger.warning("beta not in ImportanceMinimalityLossConfig, defaulting to 0.0")
             data["beta"] = 0.0
@@ -397,13 +523,10 @@ class Config(BaseConfig):
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
     )
-    ci_fn_type: CiFnType = Field(
-        default="vector_mlp",
-        description="Type of causal importance function used to calculate the causal importance.",
-    )
-    ci_fn_hidden_dims: list[NonNegativeInt] = Field(
-        default=[8],
-        description="Hidden dimensions for the causal importance function used to calculate the causal importance",
+    ci_config: CiConfig = Field(
+        ...,
+        description="Configuration for the causal importance function. "
+        "Use LayerwiseCiConfig for per-layer CI functions or GlobalCiConfig for a single global CI function.",
     )
     sampling: SamplingType = Field(
         default="continuous",
@@ -614,8 +737,6 @@ class Config(BaseConfig):
         "pretrained_model_name_hf": "pretrained_model_name",
         "recon_coeff": "ci_recon_coeff",
         "recon_layerwise_coeff": "ci_recon_layerwise_coeff",
-        "gate_type": "ci_fn_type",
-        "gate_hidden_dims": "ci_fn_hidden_dims",
     }
 
     @model_validator(mode="before")
@@ -626,6 +747,7 @@ class Config(BaseConfig):
         config_dict.pop("eval_metrics", None)
 
         cls._migrate_to_module_info(config_dict)
+        cls._migrate_to_ci_config(config_dict)
         migrate_to_lr_schedule_config(config_dict)
 
         for key in list(config_dict.keys()):
@@ -675,6 +797,44 @@ class Config(BaseConfig):
             config_dict["identity_module_info"] = [
                 {"module_pattern": p, "C": global_c} for p in identity_patterns
             ]
+
+    @classmethod
+    def _migrate_to_ci_config(cls, config_dict: dict[str, Any]) -> None:
+        """Migrate old ci_fn_type/ci_fn_hidden_dims/use_global_ci to new ci_config structure."""
+        has_old_fields = (
+            "ci_fn_type" in config_dict
+            or "ci_fn_hidden_dims" in config_dict
+            or "use_global_ci" in config_dict
+        )
+        if not has_old_fields:
+            return
+
+        logger.info(
+            "Migrating old ci_fn_type/ci_fn_hidden_dims/use_global_ci to ci_config structure"
+        )
+
+        ci_fn_type = config_dict.pop("ci_fn_type", "vector_mlp")
+        ci_fn_hidden_dims = config_dict.pop("ci_fn_hidden_dims", [8])
+        use_global_ci = config_dict.pop("use_global_ci", False)
+
+        # Determine if this is a global CI function
+        is_global = use_global_ci or ci_fn_type.startswith("global_")
+
+        if is_global:
+            # Map layerwise type to global type if use_global_ci was set
+            if not ci_fn_type.startswith("global_"):
+                ci_fn_type = "global_shared_mlp"
+            config_dict["ci_config"] = {
+                "mode": "global",
+                "fn_type": ci_fn_type,
+                "hidden_dims": ci_fn_hidden_dims,
+            }
+        else:
+            config_dict["ci_config"] = {
+                "mode": "layerwise",
+                "fn_type": ci_fn_type,
+                "hidden_dims": ci_fn_hidden_dims,
+            }
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:

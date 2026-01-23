@@ -152,10 +152,9 @@ def optimize(
     model = ComponentModel(
         target_model=target_model,
         module_path_info=module_path_info,
-        ci_fn_type=config.ci_fn_type,
-        ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-        pretrained_model_output_attr=config.pretrained_model_output_attr,
+        ci_config=config.ci_config,
         sigmoid_type=config.sigmoid_type,
+        pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
 
     if ln_stds is not None:
@@ -196,10 +195,10 @@ def optimize(
             tgt.V.data = src.U.data.T
 
     component_params: list[torch.nn.Parameter] = []
-    ci_fn_params: list[torch.nn.Parameter] = []
     for name in component_model.target_module_paths:
         component_params.extend(component_model.components[name].parameters())
-        ci_fn_params.extend(component_model.ci_fns[name].parameters())
+
+    ci_fn_params = list(component_model.ci_fn.parameters())
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
