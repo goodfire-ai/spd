@@ -306,6 +306,12 @@ def evaluate(
     for _ in range(n_eval_steps):
         batch_raw = next(eval_iterator)
         batch = extract_batch_data(batch_raw).to(device)
+        # Extract labels for mem_ce loss type (tuple format: (inputs, labels))
+        labels = (
+            batch_raw[1].to(device)
+            if run_config.output_loss_type == "mem_ce" and isinstance(batch_raw, tuple)
+            else None
+        )
 
         target_output: OutputWithCache = model(batch, cache_type="input")
         ci = model.calc_causal_importances(
@@ -322,6 +328,7 @@ def evaluate(
                 ci=ci,
                 current_frac_of_training=current_frac_of_training,
                 weight_deltas=weight_deltas,
+                labels=labels,
             )
 
     outputs: MetricOutType = {}
