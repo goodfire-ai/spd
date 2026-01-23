@@ -705,6 +705,9 @@ def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
             )
             # module path has "." replaced with "-"
             new_key = f"_components.{target_module_path.replace('.', '-')}.{new_key.split('.')[-1]}"
+        # Old checkpoints had _ci_fns.* at top level, now under ci_fn._ci_fns.*
+        if new_key.startswith("_ci_fns.") and not new_key.startswith("ci_fn."):
+            new_key = "ci_fn." + new_key
         # replace if modified
         if new_key != key:
             state_dict[new_key] = state_dict.pop(key)

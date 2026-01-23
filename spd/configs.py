@@ -302,7 +302,15 @@ class ImportanceMinimalityLossConfig(LossMetricConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def default_beta(cls, data: dict[str, Any]) -> dict[str, Any]:
+    def migrate_old_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
+        # Migrate pnorm_1 to pnorm (intermediate format)
+        if "pnorm_1" in data and "pnorm" not in data:
+            data["pnorm"] = data.pop("pnorm_1")
+        elif "pnorm_1" in data:
+            data.pop("pnorm_1")
+        # Remove deprecated pnorm_2
+        data.pop("pnorm_2", None)
+        # Default beta if missing
         if "beta" not in data:
             logger.warning("beta not in ImportanceMinimalityLossConfig, defaulting to 0.0")
             data["beta"] = 0.0
@@ -739,6 +747,7 @@ class Config(BaseConfig):
         config_dict.pop("eval_metrics", None)
 
         cls._migrate_to_module_info(config_dict)
+        cls._migrate_to_ci_config(config_dict)
         migrate_to_lr_schedule_config(config_dict)
 
         for key in list(config_dict.keys()):
@@ -788,6 +797,44 @@ class Config(BaseConfig):
             config_dict["identity_module_info"] = [
                 {"module_pattern": p, "C": global_c} for p in identity_patterns
             ]
+
+    @classmethod
+    def _migrate_to_ci_config(cls, config_dict: dict[str, Any]) -> None:
+        """Migrate old ci_fn_type/ci_fn_hidden_dims/use_global_ci to new ci_config structure."""
+        has_old_fields = (
+            "ci_fn_type" in config_dict
+            or "ci_fn_hidden_dims" in config_dict
+            or "use_global_ci" in config_dict
+        )
+        if not has_old_fields:
+            return
+
+        logger.info(
+            "Migrating old ci_fn_type/ci_fn_hidden_dims/use_global_ci to ci_config structure"
+        )
+
+        ci_fn_type = config_dict.pop("ci_fn_type", "vector_mlp")
+        ci_fn_hidden_dims = config_dict.pop("ci_fn_hidden_dims", [8])
+        use_global_ci = config_dict.pop("use_global_ci", False)
+
+        # Determine if this is a global CI function
+        is_global = use_global_ci or ci_fn_type.startswith("global_")
+
+        if is_global:
+            # Map layerwise type to global type if use_global_ci was set
+            if not ci_fn_type.startswith("global_"):
+                ci_fn_type = "global_shared_mlp"
+            config_dict["ci_config"] = {
+                "mode": "global",
+                "fn_type": ci_fn_type,
+                "hidden_dims": ci_fn_hidden_dims,
+            }
+        else:
+            config_dict["ci_config"] = {
+                "mode": "layerwise",
+                "fn_type": ci_fn_type,
+                "hidden_dims": ci_fn_hidden_dims,
+            }
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
