@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import wandb
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from pydantic import BaseModel
 from pydantic.v1.utils import deep_update
 from torch import Tensor
@@ -230,7 +230,8 @@ def calc_kl_divergence_lm(
 def calc_sum_recon_loss_lm(
     pred: Float[Tensor, "... vocab"],
     target: Float[Tensor, "... vocab"],
-    loss_type: Literal["mse", "kl", "mem"],
+    loss_type: Literal["mse", "kl", "mem", "mem_ce"],
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> Float[Tensor, ""]:
     """Calculate the reconstruction loss for a language model without reduction.
 
@@ -241,6 +242,8 @@ def calc_sum_recon_loss_lm(
             - "mse": Mean squared error across all positions
             - "kl": KL divergence across all positions
             - "mem": KL divergence at the final sequence position only (for mem task)
+            - "mem_ce": Cross-entropy at the final sequence position against labels (mem task only)
+        labels: Target labels for mem_ce loss type. Required when loss_type is "mem_ce".
 
     Returns:
         The summed loss (not yet divided by number of examples)
@@ -256,6 +259,13 @@ def calc_sum_recon_loss_lm(
             pred_final = pred[:, -1, :]  # [batch, vocab]
             target_final = target[:, -1, :]  # [batch, vocab]
             loss = calc_kl_divergence_lm(pred=pred_final, target=target_final, reduce=False).sum()
+        case "mem_ce":
+            # Cross-entropy at the final sequence position against target labels
+            # pred shape: [batch, seq_len, vocab] -> take [:, -1, :]
+            assert labels is not None, "labels required for mem_ce loss type"
+            pred_final = pred[:, -1, :]  # [batch, vocab]
+            # F.cross_entropy with reduction='none' returns per-sample loss
+            loss = F.cross_entropy(pred_final, labels, reduction="sum")
     return loss
 
 

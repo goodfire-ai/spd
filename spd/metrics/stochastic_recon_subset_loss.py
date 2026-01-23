@@ -18,12 +18,13 @@ def _stochastic_recon_subset_loss_update(
     model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     router: Router,
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     device = get_obj_device(ci)
@@ -43,11 +44,11 @@ def _stochastic_recon_subset_loss_update(
     for stoch_mask_infos in stoch_mask_infos_list:
         out = model(batch, mask_infos=stoch_mask_infos)
         loss_type = output_loss_type
-        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
+        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type, labels=labels)
         if loss_type == "mse":
             n_examples += out.shape.numel()
-        elif loss_type == "mem":
-            # For mem loss, we only count the final position
+        elif loss_type in ("mem", "mem_ce"):
+            # For mem/mem_ce loss, we only count the final position
             n_examples += out.shape[0]  # batch size only
         else:  # kl
             n_examples += out.shape[:-1].numel()
@@ -66,12 +67,13 @@ def stochastic_recon_subset_loss(
     model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing: SubsetRoutingType,
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _stochastic_recon_subset_loss_update(
         model=model,
@@ -83,6 +85,7 @@ def stochastic_recon_subset_loss(
         ci=ci,
         weight_deltas=weight_deltas,
         router=get_subset_router(routing, batch.device),
+        labels=labels,
     )
     return _stochastic_recon_subset_loss_compute(sum_loss, n_examples)
 
@@ -99,14 +102,14 @@ class StochasticReconSubsetLoss(Metric):
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
-        output_loss_type: Literal["mse", "kl", "mem"],
+        output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
         routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
-        self.output_loss_type: Literal["mse", "kl", "mem"] = output_loss_type
+        self.output_loss_type: Literal["mse", "kl", "mem", "mem_ce"] = output_loss_type
         self.router = get_subset_router(routing, device)
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
@@ -119,6 +122,7 @@ class StochasticReconSubsetLoss(Metric):
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
+        labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _stochastic_recon_subset_loss_update(
@@ -131,6 +135,7 @@ class StochasticReconSubsetLoss(Metric):
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
             router=self.router,
+            labels=labels,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

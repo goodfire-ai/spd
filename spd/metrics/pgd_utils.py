@@ -22,9 +22,10 @@ def pgd_masked_recon_loss_update(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     router: Router,
     pgd_config: PGDConfig,
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> tuple[Float[Tensor, ""], int]:
     """Central implementation of PGD masked reconstruction loss.
 
@@ -59,6 +60,7 @@ def pgd_masked_recon_loss_update(
         target_out=target_out,
         output_loss_type=output_loss_type,
         batch_dims=batch_dims,
+        labels=labels,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -90,7 +92,7 @@ def calc_multibatch_pgd_masked_recon_loss(
     model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     create_data_iter: CreateDataIter,
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     router: Router,
     sampling: SamplingType,
     use_delta_component: bool,
@@ -161,8 +163,9 @@ def _forward_with_adv_sources(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing_masks: RoutingMasks,
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     batch_dims: tuple[int, ...],
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ):
     expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
@@ -183,12 +186,14 @@ def _forward_with_adv_sources(
     )
     out = model(batch, mask_infos=mask_infos)
 
-    sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+    sum_loss = calc_sum_recon_loss_lm(
+        pred=out, target=target_out, loss_type=output_loss_type, labels=labels
+    )
 
     if output_loss_type == "mse":
         n_examples = target_out.shape.numel()
-    elif output_loss_type == "mem":
-        n_examples = target_out.shape[0]  # batch size only for mem
+    elif output_loss_type in ("mem", "mem_ce"):
+        n_examples = target_out.shape[0]  # batch size only for mem/mem_ce
     else:  # kl
         n_examples = target_out.shape[:-1].numel()
 
@@ -203,7 +208,7 @@ def _multibatch_pgd_fwd_bwd(
     data_iter: Iterator[Int[Tensor, "..."]]
     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: torch.device | str,
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     router: Router,
     sampling: SamplingType,
     batch_dims: tuple[int, ...],

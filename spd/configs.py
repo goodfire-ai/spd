@@ -495,10 +495,11 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl", "mem"] = Field(
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"] = Field(
         ...,
         description="Metric used to measure recon error between model outputs and targets. "
-        "Use 'mem' for tasks that only care about the final sequence position.",
+        "Use 'mem' for tasks that only care about the final sequence position (KL). "
+        "Use 'mem_ce' for cross-entropy against target labels at final position (mem experiment only).",
     )
 
     # --- Training ---

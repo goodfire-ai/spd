@@ -252,7 +252,14 @@ def optimize(
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
 
         for _ in range(config.gradient_accumulation_steps):
-            microbatch = extract_batch_data(next(train_iterator)).to(device)
+            microbatch_raw = next(train_iterator)
+            microbatch = extract_batch_data(microbatch_raw).to(device)
+            # Extract labels for mem_ce loss type (tuple format: (inputs, labels))
+            microbatch_labels = (
+                microbatch_raw[1].to(device)
+                if config.output_loss_type == "mem_ce" and isinstance(microbatch_raw, tuple)
+                else None
+            )
 
             # NOTE: we need to call the wrapped_model at least once each step in order to setup
             # the DDP gradient syncing for all parameters in the component model. Gradients will
@@ -280,6 +287,7 @@ def optimize(
                 use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
+                labels=microbatch_labels,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 

@@ -16,11 +16,12 @@ from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 def _ci_masked_recon_subset_loss_update(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
     router: Router,
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> tuple[Float[Tensor, ""], int]:
     subset_routing_masks = router.get_masks(
         module_names=model.target_module_paths,
@@ -33,11 +34,11 @@ def _ci_masked_recon_subset_loss_update(
     )
     out = model(batch, mask_infos=mask_infos)
     loss_type = output_loss_type
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
+    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type, labels=labels)
     if loss_type == "mse":
         n_examples = out.shape.numel()
-    elif loss_type == "mem":
-        n_examples = out.shape[0]  # batch size only for mem
+    elif loss_type in ("mem", "mem_ce"):
+        n_examples = out.shape[0]  # batch size only for mem/mem_ce
     else:  # kl
         n_examples = out.shape[:-1].numel()
     return loss, n_examples
@@ -51,11 +52,12 @@ def _ci_masked_recon_subset_loss_compute(
 
 def ci_masked_recon_subset_loss(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
     routing: SubsetRoutingType,
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
         model=model,
@@ -64,6 +66,7 @@ def ci_masked_recon_subset_loss(
         target_out=target_out,
         ci=ci,
         router=get_subset_router(routing, batch.device),
+        labels=labels,
     )
     return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
 
@@ -77,11 +80,11 @@ class CIMaskedReconSubsetLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl", "mem"],
+        output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
         routing: SubsetRoutingType,
     ) -> None:
         self.model = model
-        self.output_loss_type: Literal["mse", "kl", "mem"] = output_loss_type
+        self.output_loss_type: Literal["mse", "kl", "mem", "mem_ce"] = output_loss_type
         self.router = get_subset_router(routing, device)
 
         self.sum_loss = torch.tensor(0.0, device=device)
@@ -94,6 +97,7 @@ class CIMaskedReconSubsetLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
+        labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
@@ -103,6 +107,7 @@ class CIMaskedReconSubsetLoss(Metric):
             target_out=target_out,
             ci=ci.lower_leaky,
             router=self.router,
+            labels=labels,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples
