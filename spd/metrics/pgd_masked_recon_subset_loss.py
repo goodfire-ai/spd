@@ -18,11 +18,12 @@ def pgd_recon_subset_loss(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
     routing: SubsetRoutingType,
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = pgd_masked_recon_loss_update(
         model=model,
@@ -33,6 +34,7 @@ def pgd_recon_subset_loss(
         output_loss_type=output_loss_type,
         router=get_subset_router(routing, batch.device),
         pgd_config=pgd_config,
+        labels=labels,
     )
     return sum_loss / n_examples
 
@@ -47,14 +49,14 @@ class PGDReconSubsetLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl", "mem"],
+        output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
         use_delta_component: bool,
         pgd_config: PGDConfig,
         routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
-        self.output_loss_type: Literal["mse", "kl", "mem"] = output_loss_type
+        self.output_loss_type: Literal["mse", "kl", "mem", "mem_ce"] = output_loss_type
         self.use_delta_component: bool = use_delta_component
         self.router = get_subset_router(routing, device)
 
@@ -69,6 +71,7 @@ class PGDReconSubsetLoss(Metric):
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
+        labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
         **_: Any,
     ) -> None:
         sum_loss, n_examples = pgd_masked_recon_loss_update(
@@ -80,6 +83,7 @@ class PGDReconSubsetLoss(Metric):
             output_loss_type=self.output_loss_type,
             router=self.router,
             pgd_config=self.pgd_config,
+            labels=labels,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

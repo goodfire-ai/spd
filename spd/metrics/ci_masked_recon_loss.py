@@ -14,19 +14,20 @@ from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 def _ci_masked_recon_loss_update(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> tuple[Float[Tensor, ""], int]:
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
     out = model(batch, mask_infos=mask_infos)
     loss_type = output_loss_type
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
+    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type, labels=labels)
     if loss_type == "mse":
         n_examples = out.shape.numel()
-    elif loss_type == "mem":
-        n_examples = out.shape[0]  # batch size only for mem
+    elif loss_type in ("mem", "mem_ce"):
+        n_examples = out.shape[0]  # batch size only for mem/mem_ce
     else:  # kl
         n_examples = out.shape[:-1].numel()
     return loss, n_examples
@@ -40,10 +41,11 @@ def _ci_masked_recon_loss_compute(
 
 def ci_masked_recon_loss(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl", "mem"],
+    output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
     ci: dict[str, Float[Tensor, "... C"]],
+    labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_loss_update(
         model=model,
@@ -51,6 +53,7 @@ def ci_masked_recon_loss(
         batch=batch,
         target_out=target_out,
         ci=ci,
+        labels=labels,
     )
     return _ci_masked_recon_loss_compute(sum_loss, n_examples)
 
@@ -61,10 +64,13 @@ class CIMaskedReconLoss(Metric):
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
-        self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl", "mem"]
+        self,
+        model: ComponentModel,
+        device: str,
+        output_loss_type: Literal["mse", "kl", "mem", "mem_ce"],
     ) -> None:
         self.model = model
-        self.output_loss_type: Literal["mse", "kl", "mem"] = output_loss_type
+        self.output_loss_type: Literal["mse", "kl", "mem", "mem_ce"] = output_loss_type
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -75,6 +81,7 @@ class CIMaskedReconLoss(Metric):
         batch: Int[Tensor, "..."] | Float[Tensor, "..."],
         target_out: Float[Tensor, "... vocab"],
         ci: CIOutputs,
+        labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_loss_update(
@@ -83,6 +90,7 @@ class CIMaskedReconLoss(Metric):
             batch=batch,
             target_out=target_out,
             ci=ci.lower_leaky,
+            labels=labels,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples
