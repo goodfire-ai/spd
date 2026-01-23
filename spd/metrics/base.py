@@ -27,6 +27,7 @@ class Metric(Protocol):
         ci: CIOutputs,
         current_frac_of_training: float,
         weight_deltas: dict[str, Float[Tensor, "... C"]],
+        labels: Int[Tensor, "batch"] | None = None,  # noqa: F821
     ) -> None:
         """Update metric state with a batch of data."""
         ...
