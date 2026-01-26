@@ -1,38 +1,24 @@
 <script lang="ts">
     import { getTokenHighlightBg, getComponentActivationColor } from "../lib/colors";
-    import type { ExampleColorMode } from "../lib/displaySettings.svelte";
 
     interface Props {
         tokenStrings: string[];
         tokenCi: number[]; // CI values (0-1)
         tokenComponentActs: number[]; // Component activations (can be negative)
-        colorMode: ExampleColorMode;
         maxAbsComponentAct: number; // For normalizing component act colors
     }
 
-    let { tokenStrings, tokenCi, tokenComponentActs, colorMode, maxAbsComponentAct }: Props = $props();
+    let { tokenStrings, tokenCi, tokenComponentActs, maxAbsComponentAct }: Props = $props();
 
     function getTooltipText(ci: number, componentAct: number): string {
-        if (colorMode === "ci") {
-            return `CI: ${ci.toFixed(3)}`;
-        } else if (colorMode === "component_act") {
-            return `Act: ${componentAct.toFixed(3)}`;
-        } else {
-            return `CI: ${ci.toFixed(3)} | Act: ${componentAct.toFixed(3)}`;
-        }
+        return `CI: ${ci.toFixed(3)} | Act: ${componentAct.toFixed(3)}`;
     }
 
-    function getBgColor(ci: number, componentAct: number): string {
-        if (colorMode === "component_act") {
-            const normalizedAbs = Math.abs(componentAct) / maxAbsComponentAct;
-            return getComponentActivationColor(componentAct, normalizedAbs);
-        } else {
-            return getTokenHighlightBg(ci);
-        }
+    function getBgColor(ci: number): string {
+        return getTokenHighlightBg(ci);
     }
 
     function getUnderlineColor(componentAct: number): string {
-        if (colorMode !== "both") return "transparent";
         const normalizedAbs = Math.abs(componentAct) / maxAbsComponentAct;
         return getComponentActivationColor(componentAct, normalizedAbs);
     }
@@ -41,10 +27,9 @@
 <span class="token-highlights"
     >{#each tokenStrings as tok, i (i)}<span
             class="token-highlight"
-            style="background-color:{getBgColor(
-                tokenCi[i],
+            style="background-color:{getBgColor(tokenCi[i])};--underline-color:{getUnderlineColor(
                 tokenComponentActs[i],
-            )};--underline-color:{getUnderlineColor(tokenComponentActs[i])}"
+            )}"
             data-tooltip={getTooltipText(tokenCi[i], tokenComponentActs[i])}>{tok}</span
         >{/each}</span
 >
