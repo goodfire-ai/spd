@@ -1,9 +1,11 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { onMount, getContext } from "svelte";
     import { computeMaxAbsComponentAct } from "../../lib/colors";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
+    import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/promptAttributionsTypes";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "../ui/ComponentCorrelationMetrics.svelte";
@@ -14,10 +16,15 @@
     import StatusText from "../ui/StatusText.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
 
+    const runState = getContext<RunContext>(RUN_KEY);
+
     type Props = {
         layer: string;
         cIdx: number;
         seqIdx: number;
+        ciVal: number | null;
+        subcompAct: number | null;
+        token: string;
         edgesBySource: Map<string, Edge[]>;
         edgesByTarget: Map<string, Edge[]>;
         tokens: string[];
@@ -25,7 +32,21 @@
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     };
 
-    let { layer, cIdx, seqIdx, edgesBySource, edgesByTarget, tokens, outputProbs, onPinComponent }: Props = $props();
+    let {
+        layer,
+        cIdx,
+        seqIdx,
+        ciVal,
+        subcompAct,
+        token,
+        edgesBySource,
+        edgesByTarget,
+        tokens,
+        outputProbs,
+        onPinComponent,
+    }: Props = $props();
+
+    const clusterId = $derived(runState.clusterMapping?.data[`${layer}:${cIdx}`]);
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -176,11 +197,24 @@
 </script>
 
 <div class="component-node-card">
-    <SectionHeader title="Position {seqIdx}" level="h4">
-        {#if componentData.componentDetail?.status === "loaded"}
-            <span class="mean-ci">Mean CI: {formatNumericalValue(componentData.componentDetail.data.mean_ci)}</span>
-        {/if}
-    </SectionHeader>
+    <div class="card-header">
+        <h3 class="node-identifier">{getLayerDisplayName(layer)}:{seqIdx}:{cIdx}</h3>
+        <div class="token-display">"{token}"</div>
+        <div class="header-metrics">
+            {#if ciVal !== null}
+                <span class="metric">CI: {formatNumericalValue(ciVal)}</span>
+            {/if}
+            {#if subcompAct !== null}
+                <span class="metric">Subcomp Act: {formatNumericalValue(subcompAct)}</span>
+            {/if}
+            {#if clusterId !== undefined}
+                <span class="metric">Cluster: {clusterId ?? "null"}</span>
+            {/if}
+            {#if componentData.componentDetail?.status === "loaded"}
+                <span class="metric">Mean CI: {formatNumericalValue(componentData.componentDetail.data.mean_ci)}</span>
+            {/if}
+        </div>
+    </div>
 
     <InterpretationBadge
         interpretation={componentData.interpretation}
@@ -295,11 +329,39 @@
         color: var(--text-primary);
     }
 
-    .mean-ci {
-        font-weight: 400;
-        color: var(--text-muted);
+    .card-header {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        padding-bottom: var(--space-2);
+        border-bottom: 1px solid var(--border-default);
+    }
+
+    .node-identifier {
+        font-size: var(--text-base);
         font-family: var(--font-mono);
-        margin-left: var(--space-2);
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .token-display {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+    }
+
+    .header-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-3);
+    }
+
+    .metric {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+        font-weight: 600;
     }
 
     .token-stats-row {

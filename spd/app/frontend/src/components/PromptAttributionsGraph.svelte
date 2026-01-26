@@ -460,10 +460,6 @@
         return visibleSvg + hitAreaSvg;
     });
 
-    function isNodePinned(layer: string, seqIdx: number, cIdx: number): boolean {
-        return pinnedNodeKeys.has(`${layer}:${seqIdx}:${cIdx}`);
-    }
-
     // Check if a node key should be highlighted (pinned or hovered component)
     function isNodeHighlighted(nodeKey: string): boolean {
         return pinnedNodeKeys.has(nodeKey) || nodeMatchesHoveredComponent(nodeKey);
@@ -772,7 +768,7 @@
     {/if}
 
     <!-- Node tooltip -->
-    {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)}
+    {#if hoveredNode}
         <NodeTooltip
             {hoveredNode}
             {tooltipPos}

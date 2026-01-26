@@ -798,6 +798,8 @@
                             <StagedNodesPanel
                                 stagedNodes={pinnedNodes}
                                 outputProbs={activeGraph.data.outputProbs}
+                                nodeCiVals={activeGraph.data.nodeCiVals}
+                                nodeSubcompActs={activeGraph.data.nodeSubcompActs}
                                 tokens={activeCard.tokens}
                                 edgesBySource={activeGraph.data.edgesBySource}
                                 edgesByTarget={activeGraph.data.edgesByTarget}
