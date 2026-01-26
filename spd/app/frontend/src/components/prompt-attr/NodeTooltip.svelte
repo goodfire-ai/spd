@@ -1,12 +1,8 @@
 <script lang="ts">
-    import { getContext } from "svelte";
     import type { OutputProbEntry, Edge } from "../../lib/promptAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
-    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
-
-    const runState = getContext<RunContext>(RUN_KEY);
 
     type HoveredNode = {
         layer: string;
@@ -62,11 +58,6 @@
         return nodeSubcompActs[key] ?? null;
     });
 
-    // Get cluster ID for component nodes (undefined = no mapping, null = singleton, number = cluster)
-    const clusterId = $derived(
-        isComponent ? runState.clusterMapping?.data[`${hoveredNode.layer}:${hoveredNode.cIdx}`] : undefined,
-    );
-
     const token = $derived.by(() => {
         if (hoveredNode.seqIdx >= tokens.length) {
             throw new Error(
@@ -84,17 +75,8 @@
     onmouseleave={onMouseLeave}
     onwheel={(e) => e.stopPropagation()}
 >
-    <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
-    {#if isComponent && ciVal !== null}
-        <div class="ci-value">CI: {ciVal.toFixed(3)}</div>
-    {/if}
-    {#if isComponent && subcompAct !== null}
-        <div class="subcomp-act">Subcomp Act: {subcompAct.toFixed(3)}</div>
-    {/if}
-    {#if clusterId !== undefined}
-        <div class="cluster-id">Cluster: {clusterId ?? "null"}</div>
-    {/if}
     {#if isWte}
+        <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
         <p class="wte-info">Input embedding at position {hoveredNode.seqIdx}</p>
         <div class="wte-content">
             <div class="wte-token">"{token}"</div>
@@ -104,6 +86,7 @@
             </p>
         </div>
     {:else if isOutput}
+        <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
     {:else if !hideNodeCard}
         <!-- Key forces remount when component identity changes, so ComponentNodeCard can load on mount -->
@@ -112,6 +95,9 @@
                 layer={hoveredNode.layer}
                 cIdx={hoveredNode.cIdx}
                 seqIdx={hoveredNode.seqIdx}
+                {ciVal}
+                {subcompAct}
+                {token}
                 {edgesBySource}
                 {edgesByTarget}
                 {tokens}
@@ -136,28 +122,12 @@
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
-    .ci-value {
-        font-size: var(--text-sm);
+    .node-tooltip h3 {
+        font-size: var(--text-base);
         font-family: var(--font-mono);
-        color: var(--accent-primary);
         font-weight: 600;
-        margin: var(--space-1) 0 var(--space-2) 0;
-    }
-
-    .subcomp-act {
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        color: var(--accent-secondary);
-        font-weight: 600;
-        margin: var(--space-1) 0 var(--space-2) 0;
-    }
-
-    .cluster-id {
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        color: var(--text-secondary);
-        font-weight: 600;
-        margin: var(--space-1) 0 var(--space-2) 0;
+        color: var(--text-primary);
+        margin: 0 0 var(--space-2) 0;
     }
 
     .wte-info {
