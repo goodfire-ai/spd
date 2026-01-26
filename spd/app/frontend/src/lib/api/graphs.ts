@@ -2,7 +2,7 @@
  * API client for /api/graphs endpoints.
  */
 
-import type { GraphData, TokenizeResult, TokenInfo } from "../promptAttributionsTypes";
+import type { GraphData, TokenizeResponse, TokenInfo } from "../promptAttributionsTypes";
 import { buildEdgeIndexes } from "../promptAttributionsTypes";
 import { API_URL, ApiError, fetchJson } from "./index";
 
@@ -75,7 +75,7 @@ async function parseGraphSSEStream(
     return result;
 }
 
-export async function computeGraphStreaming(
+export async function computeGraphStream(
     params: ComputeGraphParams,
     onProgress?: (progress: GraphProgress) => void,
 ): Promise<GraphData> {
@@ -113,7 +113,7 @@ export type ComputeGraphOptimizedParams = {
     maskType: MaskType;
 };
 
-export async function computeGraphOptimizedStreaming(
+export async function computeGraphOptimizedStream(
     params: ComputeGraphOptimizedParams,
     onProgress?: (progress: GraphProgress) => void,
 ): Promise<GraphData> {
@@ -158,10 +158,10 @@ export async function getGraphs(promptId: number, normalize: NormalizeType, ciTh
     });
 }
 
-export async function tokenizeText(text: string): Promise<TokenizeResult> {
+export async function tokenizeText(text: string): Promise<TokenizeResponse> {
     const url = new URL(`${API_URL}/api/graphs/tokenize`);
     url.searchParams.set("text", text);
-    return fetchJson<TokenizeResult>(url.toString(), { method: "POST" });
+    return fetchJson<TokenizeResponse>(url.toString(), { method: "POST" });
 }
 
 export async function getAllTokens(): Promise<TokenInfo[]> {

@@ -4,7 +4,7 @@
 
 import { API_URL } from "./index";
 
-export type RunState = {
+export type LoadedRun = {
     id: number;
     wandb_path: string;
     config_yaml: string;
@@ -14,13 +14,13 @@ export type RunState = {
     backend_user: string;
 };
 
-export async function getStatus(): Promise<RunState | null> {
+export async function getStatus(): Promise<LoadedRun | null> {
     const response = await fetch(`${API_URL}/api/status`);
     const data = await response.json();
     return data;
 }
 
-export async function getWhoami(): Promise<string> {
+export async function whoami(): Promise<string> {
     const response = await fetch(`${API_URL}/api/whoami`);
     const data = await response.json();
     return data.user;

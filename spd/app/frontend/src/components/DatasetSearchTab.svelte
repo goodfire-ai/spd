@@ -30,7 +30,7 @@
     }
 
     async function loadPage(page: number) {
-        currentPageResults = await api.getDatasetSearchPage(page, pageSize);
+        currentPageResults = await api.getDatasetResults(page, pageSize);
         currentPage = page;
     }
 

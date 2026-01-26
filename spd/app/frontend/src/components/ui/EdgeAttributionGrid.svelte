@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { EdgeAttribution, OutputProbEntry } from "../../lib/promptAttributionsTypes";
+    import type { EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
     import EdgeAttributionList from "./EdgeAttributionList.svelte";
     import SectionHeader from "./SectionHeader.svelte";
 
@@ -15,7 +15,7 @@
         onClick: (key: string) => void;
         // Optional: only needed for prompt-level attributions with wte/output pseudo-layers
         tokens?: string[];
-        outputProbs?: Record<string, OutputProbEntry>;
+        outputProbs?: Record<string, OutputProbability>;
     };
 
     let {

@@ -1,10 +1,10 @@
 <script lang="ts">
-    import { onMount, getContext } from "svelte";
+    import { onMount, getContext, tick } from "svelte";
     import { computeMaxAbsComponentAct } from "../../lib/colors";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
-    import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/promptAttributionsTypes";
+    import type { EdgeData, EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
@@ -18,6 +18,11 @@
 
     const runState = getContext<RunContext>(RUN_KEY);
 
+    // Performance lifecycle tracking
+    const PERF_TIMING_ENABLED = true;
+    let mountTime = $state(0);
+    let hasLoggedFullyLoaded = $state(false);
+
     type Props = {
         layer: string;
         cIdx: number;
@@ -25,10 +30,10 @@
         ciVal: number | null;
         subcompAct: number | null;
         token: string;
-        edgesBySource: Map<string, Edge[]>;
-        edgesByTarget: Map<string, Edge[]>;
+        edgesBySource: Map<string, EdgeData[]>;
+        edgesByTarget: Map<string, EdgeData[]>;
         tokens: string[];
-        outputProbs: Record<string, OutputProbEntry>;
+        outputProbs: Record<string, OutputProbability>;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;
     };
 
@@ -62,12 +67,51 @@
     // Debounce to avoid bombarding backend when hovering over many nodes quickly.
     const componentData = useComponentData();
     const HOVER_DEBOUNCE_MS = 200;
+    const perfKey = `${layer}:${cIdx}`;
 
     onMount(() => {
+        mountTime = performance.now();
+        if (PERF_TIMING_ENABLED) {
+            performance.mark(`mount:${perfKey}`);
+            console.log(`[Render ${perfKey}] Mounted`);
+        }
+
         const timeout = setTimeout(() => {
             componentData.load(layer, cIdx);
         }, HOVER_DEBOUNCE_MS);
         return () => clearTimeout(timeout);
+    });
+
+    // Track when all data is loaded and painted (Svelte 5 runes mode)
+    $effect(() => {
+        // Check if all data is loaded (not just loading states)
+        const allLoaded =
+            componentData.componentDetail?.status === "loaded" &&
+            componentData.correlations?.status === "loaded" &&
+            componentData.tokenStats?.status === "loaded" &&
+            componentData.datasetAttributions?.status === "loaded" &&
+            componentData.interpretationDetail?.status === "loaded";
+
+        if (PERF_TIMING_ENABLED && allLoaded && !hasLoggedFullyLoaded) {
+            hasLoggedFullyLoaded = true;
+            const dataLoadedTime = performance.now();
+            const timeSinceMount = dataLoadedTime - mountTime;
+
+            // Use tick() to wait for DOM update, then rAF for paint
+            tick().then(() => {
+                requestAnimationFrame(() => {
+                    const paintTime = performance.now();
+                    const timeToPaint = paintTime - mountTime;
+                    performance.mark(`painted:${perfKey}`);
+
+                    console.log(
+                        `[Render ${perfKey}] Fully loaded & painted`,
+                        `\n  mount -> data loaded: ${timeSinceMount.toFixed(0)}ms`,
+                        `\n  mount -> painted: ${timeToPaint.toFixed(0)}ms`,
+                    );
+                });
+            });
+        }
     });
 
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
@@ -142,9 +186,9 @@
     const N_EDGES_TO_DISPLAY = 20;
 
     function getTopEdgeAttributions(
-        edges: Edge[],
+        edges: EdgeData[],
         isPositive: boolean,
-        getKey: (e: Edge) => string,
+        getKey: (e: EdgeData) => string,
     ): EdgeAttribution[] {
         const filtered = edges.filter((e) => (isPositive ? e.val > 0 : e.val < 0));
         const sorted = filtered

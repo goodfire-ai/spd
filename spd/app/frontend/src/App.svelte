@@ -20,7 +20,7 @@
 
     onMount(() => {
         runState.syncStatus();
-        api.getWhoami().then((user) => (backendUser = { status: "loaded", data: user }));
+        api.whoami().then((user) => (backendUser = { status: "loaded", data: user }));
     });
 </script>
 

@@ -7,8 +7,13 @@
 
 import type { Loadable } from ".";
 import * as api from "./api";
-import type { RunState as RunData, Interpretation } from "./api";
-import type { ActivationContextsSummary, ComponentDetail, PromptPreview, TokenInfo } from "./promptAttributionsTypes";
+import type { LoadedRun as RunData, InterpretationHeadline } from "./api";
+import type {
+    ActivationContextsSummary,
+    PromptPreview,
+    SubcomponentActivationContexts,
+    TokenInfo,
+} from "./promptAttributionsTypes";
 
 /** Maps component keys to cluster IDs. Singletons (unclustered components) have null values. */
 export type ClusterMappingData = Record<string, number | null>;
@@ -28,7 +33,7 @@ type ClusterMapping = {
 export type InterpretationBackendState =
     | { status: "none" }
     | { status: "generating" }
-    | { status: "generated"; data: Interpretation }
+    | { status: "generated"; data: InterpretationHeadline }
     | { status: "generation-error"; error: unknown };
 
 export function useRun() {
@@ -51,7 +56,7 @@ export function useRun() {
     let activationContextsSummary = $state<Loadable<ActivationContextsSummary>>({ status: "uninitialized" });
 
     /** Cached component details keyed by component key (layer:cIdx) - non-reactive */
-    let _componentDetailsCache: Record<string, ComponentDetail> = {};
+    let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {
@@ -170,12 +175,12 @@ export function useRun() {
         }
     }
 
-    /** Get component detail (fetches once, then cached) */
-    async function getComponentDetail(layer: string, cIdx: number): Promise<ComponentDetail> {
+    /** Get activation context detail (fetches once, then cached) */
+    async function getActivationContextDetail(layer: string, cIdx: number): Promise<SubcomponentActivationContexts> {
         const cacheKey = `${layer}:${cIdx}`;
         if (cacheKey in _componentDetailsCache) return _componentDetailsCache[cacheKey];
 
-        const detail = await api.getComponentDetail(layer, cIdx);
+        const detail = await api.getActivationContextDetail(layer, cIdx);
         _componentDetailsCache[cacheKey] = detail;
         return detail;
     }
@@ -230,7 +235,7 @@ export function useRun() {
         refreshPrompts,
         getInterpretation,
         setInterpretation,
-        getComponentDetail,
+        getActivationContextDetail,
         loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,

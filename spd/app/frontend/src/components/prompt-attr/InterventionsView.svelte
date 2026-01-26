@@ -43,7 +43,7 @@
     // Logits display constants
     const MAX_PREDICTIONS = 5;
 
-    import type { ForkedInterventionRun } from "../../lib/interventionTypes";
+    import type { ForkedInterventionRunSummary } from "../../lib/interventionTypes";
 
     type Props = {
         graph: StoredGraph;
@@ -74,7 +74,7 @@
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
         onDeleteRun: (runId: number) => void;
-        onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRun>;
+        onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRunSummary>;
         onDeleteFork: (forkId: number) => void;
         onGenerateGraphFromSelection: () => void;
     };

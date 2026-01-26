@@ -2,25 +2,29 @@
  * API client for /api/activation_contexts endpoints.
  */
 
-import type { ActivationContextsSummary, ComponentDetail, ComponentProbeResult } from "../promptAttributionsTypes";
+import type {
+    ActivationContextsSummary,
+    ComponentProbeResult,
+    SubcomponentActivationContexts,
+} from "../promptAttributionsTypes";
 import { API_URL, fetchJson } from "./index";
-
-// Types for activation contexts
-export type SubcomponentActivationContexts = {
-    subcomponent_idx: number;
-    mean_ci: number;
-    example_tokens: string[][];
-    example_ci: number[][];
-    example_component_acts: number[][];
-};
 
 export async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {
     return fetchJson<ActivationContextsSummary>(`${API_URL}/api/activation_contexts/summary`);
 }
 
-export async function getComponentDetail(layer: string, componentIdx: number): Promise<ComponentDetail> {
-    return fetchJson<ComponentDetail>(
-        `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}`,
+/** Default limit for initial load - keeps payload small for fast initial render.
+ * TODO: Add pagination to fetch remaining examples after initial view loads.
+ */
+const ACTIVATION_EXAMPLES_INITIAL_LIMIT = 30;
+
+export async function getActivationContextDetail(
+    layer: string,
+    componentIdx: number,
+    limit: number = ACTIVATION_EXAMPLES_INITIAL_LIMIT,
+): Promise<SubcomponentActivationContexts> {
+    return fetchJson<SubcomponentActivationContexts>(
+        `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}?limit=${limit}`,
     );
 }
 

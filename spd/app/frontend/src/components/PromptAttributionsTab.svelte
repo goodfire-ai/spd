@@ -422,7 +422,7 @@
         };
 
         try {
-            const data = await api.computeGraphStreaming(
+            const data = await api.computeGraphStream(
                 {
                     promptId: cardId,
                     normalize: activeGraph.viewSettings.normalizeEdges,
@@ -537,7 +537,7 @@
                     params.klLossCoeff = optConfig.klLossCoeff;
                 }
 
-                data = await api.computeGraphOptimizedStreaming(params, (progress) => {
+                data = await api.computeGraphOptimizedStream(params, (progress) => {
                     if (graphCompute.status !== "computing") return;
                     if (progress.stage === "graph") {
                         graphCompute.progress.currentStage = 1;
@@ -552,7 +552,7 @@
                     normalize: defaultViewSettings.normalizeEdges,
                     ciThreshold: defaultViewSettings.ciThreshold,
                 };
-                data = await api.computeGraphStreaming(params, (progress) => {
+                data = await api.computeGraphStream(params, (progress) => {
                     if (graphCompute.status !== "computing") return;
                     graphCompute.progress.stages[0].progress = progress.current / progress.total;
                 });

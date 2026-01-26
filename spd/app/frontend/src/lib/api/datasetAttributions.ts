@@ -20,7 +20,7 @@ export type DatasetAttributionMetadata = {
     ciThreshold: number | null;
 };
 
-export async function getDatasetAttributionMetadata(): Promise<DatasetAttributionMetadata> {
+export async function getAttributionMetadata(): Promise<DatasetAttributionMetadata> {
     const data = await fetchJson<{
         available: boolean;
         n_batches_processed: number | null;

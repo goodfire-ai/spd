@@ -9,7 +9,7 @@ export type PromptPreview = {
     preview: string;
 };
 
-export type Edge = {
+export type EdgeData = {
     src: string; // "layer:seq:cIdx"
     tgt: string; // "layer:seq:cIdx"
     val: number;
@@ -21,7 +21,7 @@ export type EdgeAttribution = {
     normalizedMagnitude: number; // |value| / maxAbsValue, for color intensity (0-1)
 };
 
-export type OutputProbEntry = {
+export type OutputProbability = {
     prob: number; // CI-masked (SPD model) probability
     logit: number; // CI-masked (SPD model) raw logit
     target_prob: number; // Target model probability
@@ -35,10 +35,10 @@ export type GraphData = {
     id: number;
     graphType: GraphType;
     tokens: string[];
-    edges: Edge[];
-    edgesBySource: Map<string, Edge[]>; // nodeKey -> edges where this node is source
-    edgesByTarget: Map<string, Edge[]>; // nodeKey -> edges where this node is target
-    outputProbs: Record<string, OutputProbEntry>; // key is "seq:cIdx"
+    edges: EdgeData[];
+    edgesBySource: Map<string, EdgeData[]>; // nodeKey -> edges where this node is source
+    edgesByTarget: Map<string, EdgeData[]>; // nodeKey -> edges where this node is target
+    outputProbs: Record<string, OutputProbability>; // key is "seq:cIdx"
     nodeCiVals: Record<string, number>; // node key -> CI value (or output prob for output nodes or 1 for wte node)
     nodeSubcompActs: Record<string, number>; // node key -> subcomponent activation (v_i^T @ a)
     maxAbsAttr: number; // max absolute edge value
@@ -48,12 +48,12 @@ export type GraphData = {
 };
 
 /** Build edge indexes from flat edge array (single pass) */
-export function buildEdgeIndexes(edges: Edge[]): {
-    edgesBySource: Map<string, Edge[]>;
-    edgesByTarget: Map<string, Edge[]>;
+export function buildEdgeIndexes(edges: EdgeData[]): {
+    edgesBySource: Map<string, EdgeData[]>;
+    edgesByTarget: Map<string, EdgeData[]>;
 } {
-    const edgesBySource = new Map<string, Edge[]>();
-    const edgesByTarget = new Map<string, Edge[]>();
+    const edgesBySource = new Map<string, EdgeData[]>();
+    const edgesByTarget = new Map<string, EdgeData[]>();
 
     for (const edge of edges) {
         const bySrc = edgesBySource.get(edge.src);
@@ -91,15 +91,15 @@ export type OptimizationResult = {
     mask_type: MaskType;
 };
 
-export type ComponentSummary = {
+export type SubcomponentMetadata = {
     subcomponent_idx: number;
     mean_ci: number;
 };
 
-export type ActivationContextsSummary = Record<string, ComponentSummary[]>;
+export type ActivationContextsSummary = Record<string, SubcomponentMetadata[]>;
 
 // Note: Token P/R/lift stats come from /token_stats endpoint (batch job), not here
-export type ComponentDetail = {
+export type SubcomponentActivationContexts = {
     subcomponent_idx: number;
     mean_ci: number;
     example_tokens: string[][];
@@ -116,7 +116,7 @@ export type CorrelatedComponent = {
     n_tokens: number; // Total tokens
 };
 
-export type ComponentCorrelations = {
+export type ComponentCorrelationsResponse = {
     precision: CorrelatedComponent[];
     recall: CorrelatedComponent[];
     jaccard: CorrelatedComponent[];
@@ -134,12 +134,12 @@ export type TokenPRLiftPMI = {
 };
 
 // Token stats from batch job - includes both input and output stats
-export type TokenStats = {
+export type TokenStatsResponse = {
     input: TokenPRLiftPMI; // What tokens activate this component
     output: TokenPRLiftPMI; // What tokens this component predicts
 };
 
-export type TokenizeResult = {
+export type TokenizeResponse = {
     token_ids: number[];
     tokens: string[];
     text: string;

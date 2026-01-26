@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { OutputProbEntry, Edge } from "../../lib/promptAttributionsTypes";
+    import type { OutputProbability, EdgeData } from "../../lib/promptAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
@@ -14,12 +14,12 @@
         hoveredNode: HoveredNode;
         tooltipPos: { x: number; y: number };
         hideNodeCard?: boolean;
-        outputProbs: Record<string, OutputProbEntry>;
+        outputProbs: Record<string, OutputProbability>;
         nodeCiVals: Record<string, number>;
         nodeSubcompActs: Record<string, number>;
         tokens: string[];
-        edgesBySource: Map<string, Edge[]>;
-        edgesByTarget: Map<string, Edge[]>;
+        edgesBySource: Map<string, EdgeData[]>;
+        edgesByTarget: Map<string, EdgeData[]>;
         onMouseEnter: () => void;
         onMouseLeave: () => void;
         onPinComponent?: (layer: string, cIdx: number, seqIdx: number) => void;

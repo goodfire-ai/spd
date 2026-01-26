@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../lib/colors";
     import { hasAnyCorrelationStats } from "../lib/displaySettings.svelte";
-    import type { ActivationContextsSummary, ComponentSummary } from "../lib/promptAttributionsTypes";
+    import type { ActivationContextsSummary, SubcomponentMetadata } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
@@ -30,7 +30,7 @@
     // Layer metadata is already sorted by mean_ci desc from backend
     let currentLayerMetadata = $derived(activationContextsSummary[selectedLayer]);
     let totalPages = $derived(currentLayerMetadata.length);
-    let currentMetadata = $derived<ComponentSummary>(currentLayerMetadata[currentPage]);
+    let currentMetadata = $derived<SubcomponentMetadata>(currentLayerMetadata[currentPage]);
 
     // Component data hook - call load() explicitly when component changes
     const componentData = useComponentData();
@@ -203,6 +203,7 @@
             <label for="page-input">Subcomponent:</label>
             <button onclick={previousPage} disabled={currentPage === 0}>&lt;</button>
             <input
+                id="page-input"
                 type="number"
                 min="1"
                 max={totalPages}

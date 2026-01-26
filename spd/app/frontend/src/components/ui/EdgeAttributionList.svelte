@@ -1,6 +1,6 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import type { EdgeAttribution, OutputProbEntry, TokenInfo } from "../../lib/promptAttributionsTypes";
+    import type { EdgeAttribution, OutputProbability, TokenInfo } from "../../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../prompt-attr/graphUtils";
@@ -15,7 +15,7 @@
         title?: string;
         // Optional: only needed for prompt-level attributions with wte/output pseudo-layers
         tokens?: string[];
-        outputProbs?: Record<string, OutputProbEntry>;
+        outputProbs?: Record<string, OutputProbability>;
     };
 
     let { items, onClick, pageSize, direction, title, tokens, outputProbs }: Props = $props();

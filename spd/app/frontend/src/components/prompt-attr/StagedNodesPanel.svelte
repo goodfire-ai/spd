@@ -1,17 +1,17 @@
 <script lang="ts">
-    import type { OutputProbEntry, PinnedNode, Edge } from "../../lib/promptAttributionsTypes";
+    import type { OutputProbability, PinnedNode, EdgeData } from "../../lib/promptAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
     type Props = {
         stagedNodes: PinnedNode[];
-        outputProbs: Record<string, OutputProbEntry>;
+        outputProbs: Record<string, OutputProbability>;
         nodeCiVals: Record<string, number>;
         nodeSubcompActs: Record<string, number>;
         tokens: string[];
-        edgesBySource: Map<string, Edge[]>;
-        edgesByTarget: Map<string, Edge[]>;
+        edgesBySource: Map<string, EdgeData[]>;
+        edgesByTarget: Map<string, EdgeData[]>;
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
     };
 

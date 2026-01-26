@@ -40,7 +40,7 @@ export async function searchDataset(query: string, split: string): Promise<Datas
     return (await response.json()) as DatasetSearchMetadata;
 }
 
-export async function getDatasetSearchPage(page: number, pageSize: number): Promise<DatasetSearchPage> {
+export async function getDatasetResults(page: number, pageSize: number): Promise<DatasetSearchPage> {
     const url = new URL(`${API_URL}/api/dataset/results`);
     url.searchParams.set("page", String(page));
     url.searchParams.set("page_size", String(pageSize));

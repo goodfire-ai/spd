@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { PromptPreview, PinnedNode, TokenizeResult } from "../../lib/promptAttributionsTypes";
+    import type { PromptPreview, PinnedNode, TokenizeResponse } from "../../lib/promptAttributionsTypes";
     import { tokenizeText } from "../../lib/api";
     import type { PromptGenerateState } from "./types";
 
@@ -36,7 +36,7 @@
     }: Props = $props();
 
     let customText = $state("");
-    let tokenizeResult = $state<TokenizeResult | null>(null);
+    let tokenizeResult = $state<TokenizeResponse | null>(null);
     let tokenizeLoading = $state(false);
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 

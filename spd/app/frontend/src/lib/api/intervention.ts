@@ -2,7 +2,7 @@
  * API client for /api/intervention endpoints.
  */
 
-import type { ForkedInterventionRun, InterventionRunSummary, RunInterventionRequest } from "../interventionTypes";
+import type { ForkedInterventionRunSummary, InterventionRunSummary, RunInterventionRequest } from "../interventionTypes";
 import { API_URL } from "./index";
 
 export async function runAndSaveIntervention(request: RunInterventionRequest): Promise<InterventionRunSummary> {
@@ -41,7 +41,7 @@ export async function forkInterventionRun(
     runId: number,
     tokenReplacements: [number, number][],
     topK: number = 10,
-): Promise<ForkedInterventionRun> {
+): Promise<ForkedInterventionRunSummary> {
     const response = await fetch(`${API_URL}/api/intervention/runs/${runId}/fork`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -51,7 +51,7 @@ export async function forkInterventionRun(
         const error = await response.json();
         throw new Error(error.detail || "Failed to fork intervention run");
     }
-    return (await response.json()) as ForkedInterventionRun;
+    return (await response.json()) as ForkedInterventionRunSummary;
 }
 
 export async function deleteForkedInterventionRun(forkId: number): Promise<void> {

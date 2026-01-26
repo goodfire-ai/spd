@@ -2,31 +2,31 @@
  * API client for /api/correlations endpoints.
  */
 
-import type { ComponentCorrelations, TokenStats } from "../promptAttributionsTypes";
+import type { ComponentCorrelationsResponse, TokenStatsResponse } from "../promptAttributionsTypes";
 import { API_URL, fetchJson } from "./index";
 
 export async function getComponentCorrelations(
     layer: string,
     componentIdx: number,
     topK: number,
-): Promise<ComponentCorrelations> {
+): Promise<ComponentCorrelationsResponse> {
     const url = new URL(`${API_URL}/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
-    return fetchJson<ComponentCorrelations>(url.toString());
+    return fetchJson<ComponentCorrelationsResponse>(url.toString());
 }
 
 export async function getComponentTokenStats(
     layer: string,
     componentIdx: number,
     topK: number,
-): Promise<TokenStats | null> {
+): Promise<TokenStatsResponse | null> {
     const url = new URL(`${API_URL}/api/correlations/token_stats/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
-    return fetchJson<TokenStats | null>(url.toString());
+    return fetchJson<TokenStatsResponse | null>(url.toString());
 }
 
 // Interpretation headline (bulk-fetched) - lightweight data for badges
-export type Interpretation = {
+export type InterpretationHeadline = {
     label: string;
     confidence: "low" | "medium" | "high";
 };
@@ -37,8 +37,8 @@ export type InterpretationDetail = {
     prompt: string;
 };
 
-export async function getAllInterpretations(): Promise<Record<string, Interpretation>> {
-    return fetchJson<Record<string, Interpretation>>(`${API_URL}/api/correlations/interpretations`);
+export async function getAllInterpretations(): Promise<Record<string, InterpretationHeadline>> {
+    return fetchJson<Record<string, InterpretationHeadline>>(`${API_URL}/api/correlations/interpretations`);
 }
 
 export async function getInterpretationDetail(layer: string, componentIdx: number): Promise<InterpretationDetail> {
@@ -47,8 +47,8 @@ export async function getInterpretationDetail(layer: string, componentIdx: numbe
     );
 }
 
-export async function requestComponentInterpretation(layer: string, componentIdx: number): Promise<Interpretation> {
-    return fetchJson<Interpretation>(
+export async function requestComponentInterpretation(layer: string, componentIdx: number): Promise<InterpretationHeadline> {
+    return fetchJson<InterpretationHeadline>(
         `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
         { method: "POST" },
     );
