@@ -53,15 +53,66 @@ const SPECIAL_LAYERS: Record<string, string> = {
     output: "output",
 };
 
+// Cache for detected architecture from the full model
+let cachedArchitecture: Architecture | null = null;
+
+/**
+ * Detect architecture from a collection of layer names.
+ * Llama has gate_proj/up_proj, GPT-2 has c_fc.
+ *
+ * This should be called once with all available layer names to establish
+ * the architecture for the session, ensuring down_proj is aliased correctly.
+ */
+export function detectArchitectureFromLayers(layers: string[]): Architecture {
+    const hasLlamaLayers = layers.some(
+        (layer) => layer.includes("gate_proj") || layer.includes("up_proj")
+    );
+    if (hasLlamaLayers) {
+        return "llama";
+    }
+
+    const hasGPT2Layers = layers.some((layer) => layer.includes("c_fc"));
+    if (hasGPT2Layers) {
+        return "gpt2";
+    }
+
+    return "unknown";
+}
+
+/**
+ * Set the architecture for aliasing operations.
+ * Call this when you have access to all layer names (e.g., when loading a graph).
+ */
+export function setArchitecture(layers: string[]): void {
+    cachedArchitecture = detectArchitectureFromLayers(layers);
+}
+
 /**
  * Detect architecture from layer name.
- * Llama has gate_proj/up_proj, GPT-2 has c_fc.
+ * Uses cached architecture if available (set via setArchitecture()),
+ * otherwise falls back to single-layer detection.
+ *
+ * Note: down_proj appears in both architectures with different meanings:
+ * - GPT-2: down_proj -> "out" (second MLP projection)
+ * - Llama: down_proj -> "down" (third MLP projection after gate/up)
+ *
+ * Single-layer detection cannot distinguish these cases reliably.
  */
 function detectArchitecture(layer: string): Architecture {
+    // Use cached architecture if available
+    if (cachedArchitecture !== null) {
+        return cachedArchitecture;
+    }
+
+    // Fallback: single-layer detection (less reliable for down_proj)
     if (layer.includes("gate_proj") || layer.includes("up_proj")) {
         return "llama";
     }
     if (layer.includes("c_fc")) {
+        return "gpt2";
+    }
+    // down_proj is ambiguous without context, default to GPT-2
+    if (layer.includes("down_proj")) {
         return "gpt2";
     }
     return "unknown";
