@@ -772,7 +772,7 @@
     {/if}
 
     <!-- Node tooltip -->
-    {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)}
+    {#if hoveredNode}
         <NodeTooltip
             {hoveredNode}
             {tooltipPos}
