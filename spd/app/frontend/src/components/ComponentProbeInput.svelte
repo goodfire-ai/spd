@@ -2,7 +2,6 @@
     import type { ComponentProbeResult } from "../lib/promptAttributionsTypes";
     import { probeComponent } from "../lib/api";
     import TokenHighlights from "./TokenHighlights.svelte";
-    import { displaySettings } from "../lib/displaySettings.svelte";
 
     interface Props {
         layer: string;
@@ -56,12 +55,7 @@
 </script>
 
 <div class="probe-section">
-    <div class="header-with-hint">
-        <h5>Custom Text</h5>
-        {#if displaySettings.exampleColorMode === "ci"}
-            <span class="hint">(Change "Color by" above to "Both" to see subcomponent activations)</span>
-        {/if}
-    </div>
+    <h5>Custom Text</h5>
     <input type="text" class="probe-input" placeholder="Enter text..." value={probeText} oninput={onProbeInput} />
     {#if probeLoading}
         <p class="probe-status">Loading...</p>
@@ -73,7 +67,6 @@
                 tokenStrings={probeResult.tokens}
                 tokenCi={probeResult.ci_values}
                 tokenComponentActs={probeResult.subcomp_acts}
-                colorMode={displaySettings.exampleColorMode}
                 {maxAbsComponentAct}
             />
         </div>
@@ -87,26 +80,12 @@
         border: 1px solid var(--border-default);
     }
 
-    .header-with-hint {
-        display: flex;
-        align-items: baseline;
-        gap: var(--space-2);
-        margin-bottom: var(--space-2);
-    }
-
     h5 {
-        margin: 0;
+        margin: 0 0 var(--space-2) 0;
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
         font-weight: 600;
-    }
-
-    .hint {
-        font-size: var(--text-xs);
-        font-family: var(--font-sans);
-        color: var(--text-muted);
-        font-style: italic;
     }
 
     .probe-input {

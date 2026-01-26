@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { displaySettings, EXAMPLE_COLOR_MODE_LABELS, type ExampleColorMode } from "../lib/displaySettings.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
@@ -112,18 +111,6 @@
                 {/each}
             </select>
         </div>
-        <div class="color-mode-control">
-            <label for="color-mode-select">Color by:</label>
-            <select
-                id="color-mode-select"
-                value={displaySettings.exampleColorMode}
-                onchange={(e) => (displaySettings.exampleColorMode = e.currentTarget.value as ExampleColorMode)}
-            >
-                {#each Object.entries(EXAMPLE_COLOR_MODE_LABELS) as [mode, label] (mode)}
-                    <option value={mode}>{label}</option>
-                {/each}
-            </select>
-        </div>
     </div>
     <div class="examples">
         <div class="examples-inner">
@@ -133,7 +120,6 @@
                         tokenStrings={exampleTokens[idx]}
                         tokenCi={exampleCi[idx]}
                         tokenComponentActs={exampleComponentActs[idx]}
-                        colorMode={displaySettings.exampleColorMode}
                         {maxAbsComponentAct}
                     />
                 </div>
@@ -176,16 +162,14 @@
     }
 
     .filter-control,
-    .page-size-control,
-    .color-mode-control {
+    .page-size-control {
         display: flex;
         align-items: center;
         gap: var(--space-2);
     }
 
     .filter-control label,
-    .page-size-control label,
-    .color-mode-control label {
+    .page-size-control label {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
@@ -194,8 +178,7 @@
     }
 
     .filter-control select,
-    .page-size-control select,
-    .color-mode-control select {
+    .page-size-control select {
         border: 1px solid var(--border-default);
         border-radius: var(--radius-sm);
         padding: var(--space-1) var(--space-2);
@@ -208,8 +191,7 @@
     }
 
     .filter-control select:focus,
-    .page-size-control select:focus,
-    .color-mode-control select:focus {
+    .page-size-control select:focus {
         outline: none;
         border-color: var(--accent-primary-dim);
     }
