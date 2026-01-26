@@ -10,7 +10,7 @@
         NodePosition,
     } from "../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
-    import { getRowLabel as getRowLabelAlias } from "../lib/layerAliasing";
+    import { getAliasedRowLabel } from "../lib/layerAliasing";
     import { colors, getEdgeColor, getOutputNodeColor, getSubcompActColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
@@ -136,7 +136,7 @@
     function getRowLabel(layer: string): string {
         const rowKey = getRowKey(layer);
         const isQkvGroup = rowKey.endsWith(".qkv");
-        return getRowLabelAlias(layer, isQkvGroup);
+        return getAliasedRowLabel(layer, isQkvGroup);
     }
 
     // Use pre-computed values from backend, derive max CI

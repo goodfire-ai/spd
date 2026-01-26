@@ -122,12 +122,15 @@ export function getLayerAlias(layer: string): string {
  * Get a short row label for grouped display in graphs.
  * Used for Y-axis labels where space is limited.
  *
- * Examples:
- * - "h.0.mlp.c_fc" -> "L0.in"
- * - "h.2.attn.q_proj" -> "L2.q" (but QKV are typically grouped as "L2.qkv")
- * - "lm_head" -> "W_U"
+ * @param layer - Internal layer name (e.g., "h.0.mlp.c_fc")
+ * @param isQkvGroup - Whether this represents a grouped QKV row
+ * @returns Short label (e.g., "L0.in", "L2.qkv")
+ *
+ * @example
+ * getAliasedRowLabel("h.0.mlp.c_fc") // => "L0.in"
+ * getAliasedRowLabel("h.2.attn.q_proj", true) // => "L2.qkv"
  */
-export function getRowLabel(layer: string, isQkvGroup = false): string {
+export function getAliasedRowLabel(layer: string, isQkvGroup = false): string {
     if (layer in SPECIAL_LAYERS) {
         return SPECIAL_LAYERS[layer];
     }
