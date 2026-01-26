@@ -10,6 +10,7 @@
         type NodePosition,
         type TokenInfo,
     } from "../../lib/promptAttributionsTypes";
+    import { getRowLabel as getRowLabelAlias } from "../../lib/layerAliasing";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
@@ -626,12 +627,9 @@
     }
 
     function getRowLabel(layer: string): string {
-        const info = parseLayer(layer);
         const rowKey = getRowKey(layer);
-        if (rowKey.endsWith(".qkv")) return `${info.block}.q/k/v`;
-        if (layer === "wte" || layer === "output") return layer;
-        if (layer === "lm_head") return "W_U";
-        return `${info.block}.${info.subtype}`;
+        const isQkvGroup = rowKey.endsWith(".qkv");
+        return getRowLabelAlias(layer, isQkvGroup);
     }
 </script>
 
