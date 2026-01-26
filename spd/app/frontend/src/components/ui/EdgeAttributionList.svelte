@@ -36,71 +36,58 @@
         return { status: "none" };
     }
 
-    // Get display info for a key - returns label and whether it's a token (pseudo-layer) node
-    // Token nodes (wte/output) show the token string; component nodes show interpretation label
-    function getDisplayInfo(key: string): { label: string; isTokenNode: boolean; isOutputToken?: boolean } {
+    // Check if a key refers to a pseudo-layer token node (wte/output)
+    function isTokenNode(key: string): boolean {
+        const layer = key.split(":")[0];
+        return layer === "wte" || layer === "output";
+    }
+
+    // Get display label for token nodes (wte/output pseudo-layers)
+    function getTokenLabel(key: string): string {
         const parts = key.split(":");
 
-        // Handle prompt attributions with 3-part keys (layer:seq:cIdx)
+        // Prompt attributions: 3-part keys (layer:seq:cIdx)
         if (tokens && outputProbs && parts.length === 3) {
-            const layer = parts[0];
-            const seqIdx = parseInt(parts[1]);
-            const cIdx = parts[2];
+            const [layer, seqStr, cIdx] = parts;
+            const seqIdx = parseInt(seqStr);
 
-            // wte (input embedding) nodes: show the token at this sequence position
             if (layer === "wte") {
                 if (seqIdx < 0 || seqIdx >= tokens.length) {
                     throw new Error(
                         `EdgeAttributionList: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`,
                     );
                 }
-                return { label: tokens[seqIdx], isTokenNode: true };
+                return tokens[seqIdx];
             }
 
-            // output nodes: show the predicted token string
             if (layer === "output") {
                 const entry = outputProbs[`${seqIdx}:${cIdx}`];
                 if (!entry) {
                     throw new Error(`EdgeAttributionList: output node ${key} not found in outputProbs`);
                 }
-                return { label: entry.token, isTokenNode: true };
+                return entry.token;
             }
         }
 
-        // Handle dataset attributions with 2-part keys (layer:cIdx)
+        // Dataset attributions: 2-part keys (layer:cIdx)
         if (parts.length === 2) {
-            const layer = parts[0];
-            const cIdx = parts[1];
+            const [layer, cIdx] = parts;
 
-            // wte node in dataset attributions: single pseudo-component
             if (layer === "wte") {
-                return { label: "Input Embeddings", isTokenNode: true };
+                return "Input Embeddings";
             }
 
-            // output nodes in dataset attributions: show token string
-            // Format: output:tokenId where tokenId is the vocab index
             if (layer === "output") {
                 const vocabIdx = parseInt(cIdx);
                 // Tokens are guaranteed loaded when run is loaded (see useRun.svelte.ts)
-                const tokens = (runState.allTokens as { status: "loaded"; data: TokenInfo[] }).data;
-                const tokenInfo = tokens.find((t) => t.id === vocabIdx);
+                const allTokens = (runState.allTokens as { status: "loaded"; data: TokenInfo[] }).data;
+                const tokenInfo = allTokens.find((t) => t.id === vocabIdx);
                 if (!tokenInfo) throw new Error(`Token not found for vocab index ${vocabIdx}`);
-                return { label: tokenInfo.string, isTokenNode: true, isOutputToken: true };
+                return tokenInfo.string;
             }
         }
 
-        // Component nodes: show interpretation label or "N/A"
-        const interp = getInterpretation(key);
-
-        if (interp.status === "generated")
-            return {
-                label: interp.data.label,
-                isTokenNode: false,
-            };
-
-        if (interp.status === "generating") return { label: "Generating...", isTokenNode: false };
-
-        return { label: "N/A", isTokenNode: false };
+        throw new Error(`getTokenLabel called on non-token node: ${key}`);
     }
 
     let currentPage = $state(0);
@@ -159,14 +146,16 @@
         {#each paginatedItems as { key, value, normalizedMagnitude } (key)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
-            {@const displayInfo = getDisplayInfo(key)}
-            {@const interp = !displayInfo.isTokenNode ? getInterpretation(key) : undefined}
-            {@const isHovered = hoveredKey === key}
+            {@const formattedKey = formatNodeKeyForDisplay(key)}
+            {@const isToken = isTokenNode(key)}
+            {@const interp = isToken ? undefined : getInterpretation(key)}
+            {@const hasInterpretation = interp?.status === "generated"}
+            {@const pillLabel = hasInterpretation ? interp.data.label : formattedKey}
             <div class="pill-container" onmouseenter={(e) => handleMouseEnter(key, e)} onmouseleave={handleMouseLeave}>
                 <button class="edge-pill" style="background: {bgColor};" onclick={() => onClick(key)}>
-                    <span class="node-key" style="color: {textColor};">{formatNodeKeyForDisplay(key)}</span>
+                    <span class="node-key" style="color: {textColor};">{pillLabel}</span>
                 </button>
-                {#if isHovered && tooltipPosition}
+                {#if hoveredKey === key && tooltipPosition}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
                         class="tooltip"
@@ -175,9 +164,10 @@
                         onmouseleave={handleMouseLeave}
                     >
                         <div class="tooltip-value">Attribution: {value.toFixed(3)}</div>
-                        {#if !displayInfo.isTokenNode && interp?.status === "generated"}
-                            <button class="tooltip-label copyable" onclick={() => copyToClipboard(interp.data.label)}>
-                                {interp.data.label}
+                        {#if hasInterpretation}
+                            <div class="tooltip-label">{interp.data.label}</div>
+                            <button class="tooltip-node-key copyable" onclick={() => copyToClipboard(formattedKey)}>
+                                {formattedKey}
                                 <svg
                                     class="copy-icon"
                                     width="12"
@@ -192,8 +182,8 @@
                                 </svg>
                             </button>
                             <div class="tooltip-confidence">Confidence: {interp.data.confidence}</div>
-                        {:else if displayInfo.isTokenNode}
-                            <div class="tooltip-token">Token: {displayInfo.label}</div>
+                        {:else if isToken}
+                            <div class="tooltip-token">Token: {getTokenLabel(key)}</div>
                         {/if}
                     </div>
                 {/if}
@@ -263,6 +253,9 @@
 
     .pill-container {
         position: relative;
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 100%;
     }
 
     .edge-pill {
@@ -276,11 +269,16 @@
         border: 1px solid var(--border-default);
         font-family: inherit;
         font-size: inherit;
+        max-width: 100%;
+        overflow: hidden;
     }
 
     .node-key {
         font-family: var(--font-mono);
         font-size: var(--text-xs);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .tooltip {
@@ -317,9 +315,17 @@
         font-size: var(--text-sm);
         color: var(--text-primary);
         margin-bottom: var(--space-1);
+        word-wrap: break-word;
     }
 
-    .tooltip-label.copyable {
+    .tooltip-node-key {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        margin-bottom: var(--space-1);
+    }
+
+    .tooltip-node-key.copyable {
         display: flex;
         align-items: center;
         gap: var(--space-2);
@@ -333,16 +339,16 @@
         text-align: left;
     }
 
-    .tooltip-label.copyable:hover {
+    .tooltip-node-key.copyable:hover {
         background: var(--bg-surface);
     }
 
-    .tooltip-label.copyable .copy-icon {
+    .tooltip-node-key.copyable .copy-icon {
         opacity: 0.4;
         flex-shrink: 0;
     }
 
-    .tooltip-label.copyable:hover .copy-icon {
+    .tooltip-node-key.copyable:hover .copy-icon {
         opacity: 0.8;
     }
 

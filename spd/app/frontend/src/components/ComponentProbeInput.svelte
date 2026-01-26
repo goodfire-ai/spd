@@ -62,13 +62,7 @@
             <span class="hint">(Change "Color by" above to "Both" to see subcomponent activations)</span>
         {/if}
     </div>
-    <input
-        type="text"
-        class="probe-input"
-        placeholder="Enter text..."
-        value={probeText}
-        oninput={onProbeInput}
-    />
+    <input type="text" class="probe-input" placeholder="Enter text..." value={probeText} oninput={onProbeInput} />
     {#if probeLoading}
         <p class="probe-status">Loading...</p>
     {:else if probeError}
