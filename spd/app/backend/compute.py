@@ -10,12 +10,13 @@ from dataclasses import dataclass
 from typing import Any, override
 
 import torch
+import torch.nn.functional as F
 from jaxtyping import Bool, Float
 from torch import Tensor, nn
 from tqdm.auto import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.optim_cis import OptimCIConfig, compute_label_prob, optimize_ci_values
+from spd.app.backend.optim_cis import OptimCIConfig, optimize_ci_values
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
@@ -537,6 +538,19 @@ def compute_prompt_attributions(
         show_progress=show_progress,
         on_progress=on_progress,
     )
+
+
+def compute_label_prob(
+    model: ComponentModel,
+    tokens: Tensor,
+    ci_lower_leaky: dict[str, Tensor],
+    label_token: int,
+) -> float:
+    """Compute probability of label_token at final position with CI mask."""
+    mask_infos = make_mask_infos(ci_lower_leaky, routing_masks="all")
+    logits = model(tokens, mask_infos=mask_infos)
+    probs = F.softmax(logits[0, -1, :], dim=-1)
+    return float(probs[label_token].item())
 
 
 def compute_prompt_attributions_optimized(

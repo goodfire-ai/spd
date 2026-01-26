@@ -88,6 +88,8 @@ export type OptimizationResult = {
     label_prob: number | null;
     // KL loss param (optional)
     kl_loss_coeff: number | null;
+    // Sequence position for both CE and KL losses
+    loss_seq_pos: number;
     mask_type: MaskType;
 };
 

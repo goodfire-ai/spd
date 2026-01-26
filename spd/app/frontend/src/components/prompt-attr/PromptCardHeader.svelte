@@ -42,6 +42,7 @@
                 beta: opt.beta,
                 ceLossCoeff: opt.ce_loss_coeff ?? 0,
                 klLossCoeff: opt.kl_loss_coeff ?? 0,
+                lossSeqPos: opt.loss_seq_pos,
                 labelTokenId: opt.label_token,
                 labelTokenText: opt.label_str ?? "",
                 labelTokenPreview: opt.label_str,
@@ -102,8 +103,18 @@
             const betaMatch = Math.abs(opt.beta - config.beta) < 0.0000001;
             const ceMatch = (opt.ce_loss_coeff ?? 0) === config.ceLossCoeff && opt.label_token === config.labelTokenId;
             const klMatch = (opt.kl_loss_coeff ?? 0) === config.klLossCoeff;
+            const lossSeqPosMatch = opt.loss_seq_pos === config.lossSeqPos;
             const maskTypeMatch = (opt.mask_type ?? "stochastic") === config.maskType;
-            return stepsMatch && impMinMatch && pnormMatch && betaMatch && ceMatch && klMatch && maskTypeMatch;
+            return (
+                stepsMatch &&
+                impMinMatch &&
+                pnormMatch &&
+                betaMatch &&
+                ceMatch &&
+                klMatch &&
+                lossSeqPosMatch &&
+                maskTypeMatch
+            );
         });
     }
 
@@ -259,6 +270,26 @@
                             step={0.1}
                         />
                     </label>
+                    <!-- Target sequence position (used by both CE and KL) -->
+                    <label class="seq-pos-input">
+                        <span>loss_seq_pos</span>
+                        <input
+                            type="number"
+                            value={optConfig.lossSeqPos}
+                            oninput={(e) => {
+                                if (e.currentTarget.value === "") return;
+                                onOptimizeConfigChange({ lossSeqPos: parseInt(e.currentTarget.value) });
+                            }}
+                            min={0}
+                            max={card.tokens.length - 1}
+                            step={1}
+                        />
+                        {#if optConfig.lossSeqPos >= 0 && optConfig.lossSeqPos < card.tokens.length}
+                            <span class="token-preview">{card.tokens[optConfig.lossSeqPos]}</span>
+                        {:else}
+                            <span class="token-preview token-preview-final">invalid</span>
+                        {/if}
+                    </label>
                     <!-- Mask type dropdown -->
                     <label>
                         <span>mask_type</span>
@@ -319,6 +350,17 @@
                     <label>
                         <span>kl_coeff</span>
                         <input type="number" value={displayConfig.klLossCoeff} disabled />
+                    </label>
+                {/if}
+                {#if displayConfig.ceLossCoeff > 0 || displayConfig.klLossCoeff > 0}
+                    <label class="seq-pos-input">
+                        <span>loss_seq_pos</span>
+                        <input type="number" value={displayConfig.lossSeqPos} disabled />
+                        {#if displayConfig.lossSeqPos >= 0 && displayConfig.lossSeqPos < card.tokens.length}
+                            <span class="token-preview">{card.tokens[displayConfig.lossSeqPos]}</span>
+                        {:else}
+                            <span class="token-preview token-preview-final">invalid</span>
+                        {/if}
                     </label>
                 {/if}
                 <label>
@@ -435,6 +477,33 @@
 
     .compute-options .label-token-input {
         flex-wrap: wrap;
+    }
+
+    .compute-options .seq-pos-input {
+        flex-wrap: nowrap;
+    }
+
+    .compute-options .seq-pos-input input[type="number"] {
+        width: 60px;
+    }
+
+    .staged-controls.readonly .seq-pos-input input[type="number"] {
+        width: 60px;
+    }
+
+    .token-preview {
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        font-family: var(--font-mono);
+        padding: 2px 4px;
+        background: var(--bg-inset);
+        border: 1px solid var(--border-subtle);
+        white-space: pre;
+    }
+
+    .token-preview-final {
+        font-style: italic;
+        color: var(--text-muted);
     }
 
     .token-id-hint {

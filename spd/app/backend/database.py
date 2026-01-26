@@ -56,6 +56,8 @@ class OptimizationParams(BaseModel):
     ce_loss_coeff: float | None = None
     # KL loss param (optional)
     kl_loss_coeff: float | None = None
+    # Sequence position for both CE and KL losses
+    loss_seq_pos: int
 
 
 class StoredGraph(BaseModel):
@@ -186,6 +188,7 @@ class PromptAttrDB:
                 imp_min_coeff REAL,
                 ce_loss_coeff REAL,
                 kl_loss_coeff REAL,
+                loss_seq_pos INTEGER,
                 steps INTEGER,
                 pnorm REAL,
                 beta REAL,
@@ -217,7 +220,7 @@ class PromptAttrDB:
 
             -- One optimized graph per unique parameter combination
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, beta, mask_type)
+                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, loss_seq_pos, steps, pnorm, beta, mask_type)
                 WHERE graph_type = 'optimized';
 
             -- One manual graph per unique node set (using hash for reliable uniqueness)
@@ -510,6 +513,7 @@ class PromptAttrDB:
         imp_min_coeff = None
         ce_loss_coeff = None
         kl_loss_coeff = None
+        loss_seq_pos = None
         steps = None
         pnorm = None
         beta = None
@@ -521,6 +525,7 @@ class PromptAttrDB:
             imp_min_coeff = graph.optimization_params.imp_min_coeff
             ce_loss_coeff = graph.optimization_params.ce_loss_coeff
             kl_loss_coeff = graph.optimization_params.kl_loss_coeff
+            loss_seq_pos = graph.optimization_params.loss_seq_pos
             steps = graph.optimization_params.steps
             pnorm = graph.optimization_params.pnorm
             beta = graph.optimization_params.beta
@@ -539,10 +544,11 @@ class PromptAttrDB:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, graph_type,
-                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
+                    label_token, imp_min_coeff, ce_loss_coeff,
+                    kl_loss_coeff, loss_seq_pos, steps, pnorm,
                     beta, mask_type, included_nodes, included_nodes_hash,
                     edges_data, output_probs_data, node_ci_vals, node_subcomp_acts, label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
@@ -550,6 +556,7 @@ class PromptAttrDB:
                     imp_min_coeff,
                     ce_loss_coeff,
                     kl_loss_coeff,
+                    loss_seq_pos,
                     steps,
                     pnorm,
                     beta,
@@ -621,6 +628,7 @@ class PromptAttrDB:
                 label_token=row["label_token"],
                 ce_loss_coeff=row["ce_loss_coeff"],
                 kl_loss_coeff=row["kl_loss_coeff"],
+                loss_seq_pos=row["loss_seq_pos"],
             )
             label_prob = row["label_prob"]
 
@@ -653,8 +661,8 @@ class PromptAttrDB:
         conn = self._get_conn()
         rows = conn.execute(
             """SELECT id, graph_type, edges_data, output_probs_data, node_ci_vals,
-                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
-                      steps, pnorm, beta, mask_type, label_prob,
+                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff,
+                      kl_loss_coeff, loss_seq_pos, steps, pnorm, beta, mask_type, label_prob,
                       included_nodes
                FROM graphs
                WHERE prompt_id = ?
@@ -670,8 +678,8 @@ class PromptAttrDB:
         conn = self._get_conn()
         row = conn.execute(
             """SELECT id, prompt_id, graph_type, edges_data, output_probs_data, node_ci_vals,
-                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
-                      steps, pnorm, beta, mask_type, label_prob,
+                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff,
+                      kl_loss_coeff, loss_seq_pos, steps, pnorm, beta, mask_type, label_prob,
                       included_nodes
                FROM graphs
                WHERE id = ?""",

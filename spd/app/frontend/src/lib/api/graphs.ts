@@ -110,6 +110,7 @@ export type ComputeGraphOptimizedParams = {
     labelToken?: number;
     ceLossCoeff?: number;
     klLossCoeff?: number;
+    lossSeqPos: number; // Sequence position for both CE and KL losses
     maskType: MaskType;
 };
 
@@ -136,6 +137,7 @@ export async function computeGraphOptimizedStreaming(
     if (params.klLossCoeff !== undefined) {
         url.searchParams.set("kl_loss_coeff", String(params.klLossCoeff));
     }
+    url.searchParams.set("loss_seq_pos", String(params.lossSeqPos));
     url.searchParams.set("mask_type", params.maskType);
 
     const response = await fetch(url.toString(), { method: "POST" });

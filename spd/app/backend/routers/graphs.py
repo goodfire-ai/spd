@@ -79,6 +79,8 @@ class OptimizationResult(BaseModel):
     label_prob: float | None = None
     # KL loss param (optional)
     kl_loss_coeff: float | None = None
+    # Sequence position for both CE and KL losses
+    loss_seq_pos: int
 
 
 class GraphDataWithOptimization(GraphData):
@@ -473,7 +475,9 @@ def compute_graph_optimized_stream(
     loaded: DepLoadedRun,
     manager: DepStateManager,
     ci_threshold: Annotated[float, Query()],
-    mask_type: Annotated[MaskType, Query()] = "stochastic",
+    mask_type: Annotated[MaskType, Query()],
+    # Sequence position for both CE and KL losses
+    loss_seq_pos: Annotated[int, Query()],
     # Optional CE loss params (required together)
     label_token: Annotated[int | None, Query()] = None,
     ce_loss_coeff: Annotated[float | None, Query(gt=0)] = None,
@@ -484,6 +488,7 @@ def compute_graph_optimized_stream(
 
     At least one of (ce_loss_coeff, kl_loss_coeff) must be provided.
     If ce_loss_coeff is provided, label_token is also required.
+    loss_seq_pos specifies the sequence position to optimize.
     """
     # Validation
     if ce_loss_coeff is None and kl_loss_coeff is None:
@@ -518,15 +523,18 @@ def compute_graph_optimized_stream(
         label_token=label_token,
         ce_loss_coeff=ce_loss_coeff,
         kl_loss_coeff=kl_loss_coeff,
+        loss_seq_pos=loss_seq_pos,
     )
 
     ce_loss_config: OptimCELossConfig | None = None
     if ce_loss_coeff is not None:
         assert label_token is not None
-        ce_loss_config = OptimCELossConfig(coeff=ce_loss_coeff, label_token=label_token)
+        ce_loss_config = OptimCELossConfig(
+            coeff=ce_loss_coeff, label_token=label_token, loss_seq_pos=loss_seq_pos
+        )
     kl_loss_config: OptimKLLossConfig | None = None
     if kl_loss_coeff is not None:
-        kl_loss_config = OptimKLLossConfig(coeff=kl_loss_coeff)
+        kl_loss_config = OptimKLLossConfig(coeff=kl_loss_coeff, loss_seq_pos=loss_seq_pos)
 
     optim_config = OptimCIConfig(
         seed=0,
@@ -612,6 +620,7 @@ def compute_graph_optimized_stream(
                 ce_loss_coeff=ce_loss_coeff,
                 label_prob=result.label_prob,
                 kl_loss_coeff=kl_loss_coeff,
+                loss_seq_pos=loss_seq_pos,
             ),
         )
 
@@ -735,6 +744,7 @@ def stored_graph_to_response(
             ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
             label_prob=graph.label_prob,
             kl_loss_coeff=graph.optimization_params.kl_loss_coeff,
+            loss_seq_pos=graph.optimization_params.loss_seq_pos,
         ),
     )
 
