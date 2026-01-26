@@ -514,6 +514,10 @@ def compute_graph_optimized_stream(
     token_strings = [loaded.token_strings[t] for t in token_ids]
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
+    # Slice tokens to only include positions <= loss_seq_pos
+    num_tokens = loss_seq_pos + 1
+    token_strings_sliced = token_strings[:num_tokens]
+
     opt_params = OptimizationParams(
         imp_min_coeff=imp_min_coeff,
         steps=steps,
@@ -588,12 +592,12 @@ def compute_graph_optimized_stream(
 
         filtered_node_ci_vals = {k: v for k, v in result.node_ci_vals.items() if v > ci_threshold}
         node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
-            filtered_node_ci_vals, len(token_ids), out_probs
+            filtered_node_ci_vals, num_tokens, out_probs
         )
         edges_data, max_abs_attr = process_edges_for_response(
             raw_edges=result.edges,
             normalize=normalize,
-            num_tokens=len(token_ids),
+            num_tokens=num_tokens,
             node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
             is_optimized=True,
         )
@@ -601,7 +605,7 @@ def compute_graph_optimized_stream(
         return GraphDataWithOptimization(
             id=graph_id,
             graphType="optimized",
-            tokens=token_strings,
+            tokens=token_strings_sliced,
             edges=edges_data,
             outputProbs=out_probs,
             nodeCiVals=node_ci_vals_with_pseudo,
