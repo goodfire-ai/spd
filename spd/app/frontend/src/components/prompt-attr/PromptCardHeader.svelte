@@ -483,11 +483,7 @@
         flex-wrap: nowrap;
     }
 
-    .compute-options .seq-pos-input input[type="number"] {
-        width: 60px;
-    }
-
-    .staged-controls.readonly .seq-pos-input input[type="number"] {
+    .seq-pos-input input[type="number"] {
         width: 60px;
     }
 

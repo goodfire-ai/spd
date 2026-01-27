@@ -251,6 +251,23 @@ class OptimCIConfig:
     ce_kl_rounding_threshold: float
     mask_type: MaskType
 
+    def get_loss_seq_pos(self, default: int) -> int:
+        """Get the sequence position for loss computation.
+
+        Returns the loss_seq_pos from CE config if available, otherwise KL config,
+        otherwise falls back to the provided default.
+        """
+        if self.ce_loss_config is not None and self.kl_loss_config is not None:
+            assert self.ce_loss_config.loss_seq_pos == self.kl_loss_config.loss_seq_pos, (
+                f"CE and KL loss configs must have same loss_seq_pos: {self.ce_loss_config.loss_seq_pos} != {self.kl_loss_config.loss_seq_pos}"
+            )
+
+        if self.ce_loss_config is not None:
+            return self.ce_loss_config.loss_seq_pos
+        if self.kl_loss_config is not None:
+            return self.kl_loss_config.loss_seq_pos
+        return default
+
 
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
 
@@ -364,14 +381,8 @@ def optimize_ci_values(
             l0_stats = compute_l0_stats(ci_outputs, ci_alive_threshold=0.0)
 
             # Compute CE/KL metrics for the target sequence position
+            loss_seq_pos = config.get_loss_seq_pos(default=tokens.shape[1] - 1)
             with torch.no_grad():
-                # Use CE target position if available, otherwise KL, otherwise default to final position
-                loss_seq_pos = tokens.shape[1] - 1
-                if config.ce_loss_config is not None:
-                    loss_seq_pos = config.ce_loss_config.loss_seq_pos
-                elif config.kl_loss_config is not None:
-                    loss_seq_pos = config.kl_loss_config.loss_seq_pos
-
                 ce_kl_stats = compute_specific_pos_ce_kl(
                     model=model,
                     batch=tokens,

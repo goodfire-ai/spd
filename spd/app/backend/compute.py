@@ -631,12 +631,9 @@ def compute_prompt_attributions_optimized(
     with torch.no_grad():
         pre_weight_acts = model(tokens, cache_type="input").cache
 
-    # Extract loss_seq_pos from optimization config
-    loss_seq_pos: int | None = None
-    if optim_config.ce_loss_config is not None:
-        loss_seq_pos = optim_config.ce_loss_config.loss_seq_pos
-    elif optim_config.kl_loss_config is not None:
-        loss_seq_pos = optim_config.kl_loss_config.loss_seq_pos
+    # Extract loss_seq_pos from optimization config (None means use all positions)
+    n_seq = tokens.shape[1]
+    loss_seq_pos: int | None = optim_config.get_loss_seq_pos(default=n_seq - 1)
 
     result = compute_edges_from_ci(
         model=model,
