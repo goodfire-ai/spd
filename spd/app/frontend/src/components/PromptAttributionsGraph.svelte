@@ -21,6 +21,7 @@
         computeComponentOffsets,
         computeClusterSpans,
         type ClusterSpan,
+        type TooltipPos,
     } from "./prompt-attr/graphUtils";
     import NodeTooltip from "./prompt-attr/NodeTooltip.svelte";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
@@ -71,7 +72,7 @@
     let hoveredEdge = $state<HoveredEdge | null>(null);
     let hoveredBarClusterId = $state<number | null>(null);
     let isHoveringTooltip = $state(false);
-    let tooltipPos = $state({ x: 0, y: 0 });
+    let tooltipPos = $state<TooltipPos>({ left: 0, top: 0 });
     let edgeTooltipPos = $state({ x: 0, y: 0 });
 
     // Alt/Option key temporarily toggles hide unpinned edges
@@ -518,7 +519,8 @@
         }
 
         hoveredNode = { layer, seqIdx, cIdx };
-        tooltipPos = calcTooltipPos(event.clientX, event.clientY);
+        const size = layer === "wte" || layer === "output" ? "small" : "large";
+        tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 
     function handleNodeMouseLeave() {

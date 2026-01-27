@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { OutputProbability, EdgeData } from "../../lib/promptAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
+    import type { TooltipPos } from "./graphUtils";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
@@ -12,7 +13,7 @@
 
     type Props = {
         hoveredNode: HoveredNode;
-        tooltipPos: { x: number; y: number };
+        tooltipPos: TooltipPos;
         hideNodeCard?: boolean;
         outputProbs: Record<string, OutputProbability>;
         nodeCiVals: Record<string, number>;
@@ -66,11 +67,21 @@
         }
         return tokens[hoveredNode.seqIdx];
     });
+
+    const positionStyle = $derived.by(() => {
+        const parts: string[] = [];
+        if (tooltipPos.left !== undefined) parts.push(`left: ${tooltipPos.left}px`);
+        if (tooltipPos.right !== undefined) parts.push(`right: ${tooltipPos.right}px`);
+        if (tooltipPos.top !== undefined) parts.push(`top: ${tooltipPos.top}px`);
+        if (tooltipPos.bottom !== undefined) parts.push(`bottom: ${tooltipPos.bottom}px`);
+        if (tooltipPos.maxHeight !== undefined) parts.push(`max-height: ${tooltipPos.maxHeight}px`);
+        return parts.join("; ");
+    });
 </script>
 
 <div
     class="node-tooltip"
-    style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"
+    style={positionStyle}
     onmouseenter={onMouseEnter}
     onmouseleave={onMouseLeave}
     onwheel={(e) => e.stopPropagation()}
