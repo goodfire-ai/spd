@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount, getContext, tick } from "svelte";
+    import { getContext } from "svelte";
     import { computeMaxAbsComponentAct } from "../../lib/colors";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     // import { useComponentData } from "../../lib/useComponentData.svelte";
@@ -15,14 +15,9 @@
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
-    import { useComponentDataCached } from "../../lib/useComponentDataCached.svelte";
+    import { useComponentDataExpectCached } from "../../lib/useComponentDataExpectCached.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
-
-    // Performance lifecycle tracking
-    const PERF_TIMING_ENABLED = true;
-    let mountTime = $state(0);
-    let hasLoggedFullyLoaded = $state(false);
 
     type Props = {
         layer: string;
@@ -67,50 +62,7 @@
     // so we only need to load once on mount (no effect watching props).
     // Reads from prefetched cache for activation contexts, correlations, token stats.
     // Dataset attributions and interpretation details are fetched on-demand.
-    const componentData = useComponentDataCached();
-    const perfKey = `${layer}:${cIdx}`;
-
-    onMount(() => {
-        mountTime = performance.now();
-        if (PERF_TIMING_ENABLED) {
-            performance.mark(`mount:${perfKey}`);
-            console.log(`[Render ${perfKey}] Mounted`);
-        }
-
-        componentData.load(layer, cIdx);
-    });
-
-    // Track when all data is loaded and painted (Svelte 5 runes mode)
-    $effect(() => {
-        // Check if all data is loaded (not just loading states)
-        const allLoaded =
-            componentData.componentDetail?.status === "loaded" &&
-            componentData.correlations?.status === "loaded" &&
-            componentData.tokenStats?.status === "loaded" &&
-            componentData.datasetAttributions?.status === "loaded" &&
-            componentData.interpretationDetail?.status === "loaded";
-
-        if (PERF_TIMING_ENABLED && allLoaded && !hasLoggedFullyLoaded) {
-            hasLoggedFullyLoaded = true;
-            const dataLoadedTime = performance.now();
-            const timeSinceMount = dataLoadedTime - mountTime;
-
-            // Use tick() to wait for DOM update, then rAF for paint
-            tick().then(() => {
-                requestAnimationFrame(() => {
-                    const paintTime = performance.now();
-                    const timeToPaint = paintTime - mountTime;
-                    performance.mark(`painted:${perfKey}`);
-
-                    console.log(
-                        `[Render ${perfKey}] Fully loaded & painted`,
-                        `\n  mount -> data loaded: ${timeSinceMount.toFixed(0)}ms`,
-                        `\n  mount -> painted: ${timeToPaint.toFixed(0)}ms`,
-                    );
-                });
-            });
-        }
-    });
+    const componentData = useComponentDataExpectCached();
 
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 15;

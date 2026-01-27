@@ -1,5 +1,5 @@
 /**
- * Cached version of useComponentData that reads from prefetched cache.
+ * Hook for reading component data from prefetched cache.
  *
  * IMPORTANT: prefetchComponentData() must be called before using this hook,
  * otherwise it will throw on cache miss.
@@ -28,12 +28,14 @@ export type { ComponentAttributions as DatasetAttributions };
 export type ComponentCoords = { layer: string; cIdx: number };
 
 /**
- * Cached hook for loading component data from prefetched cache.
+ * Hook for reading component data from prefetched cache.
  *
  * Reads activation contexts, correlations, and token stats synchronously from cache.
  * Dataset attributions and interpretation details are fetched on-demand.
+ *
+ * For fetching data via network, use useComponentData instead.
  */
-export function useComponentDataCached() {
+export function useComponentDataExpectCached() {
     const runState = getContext<RunContext>(RUN_KEY);
 
     // These are read synchronously from cache
@@ -57,20 +59,20 @@ export function useComponentDataCached() {
 
         // Read cached data synchronously (throws if not prefetched)
         try {
-            componentDetail = { status: "loaded", data: runState.getCachedComponentDetail(componentKey) };
+            componentDetail = { status: "loaded", data: runState.expectCachedComponentDetail(componentKey) };
         } catch (e) {
             componentDetail = { status: "error", error: e };
         }
 
         try {
-            correlations = { status: "loaded", data: runState.getCachedCorrelations(componentKey) };
+            correlations = { status: "loaded", data: runState.expectCachedCorrelations(componentKey) };
         } catch {
             // Correlations may not exist for all components
             correlations = { status: "loaded", data: null };
         }
 
         try {
-            tokenStats = { status: "loaded", data: runState.getCachedTokenStats(componentKey) };
+            tokenStats = { status: "loaded", data: runState.expectCachedTokenStats(componentKey) };
         } catch {
             // Token stats may not exist for all components
             tokenStats = { status: "loaded", data: null };
