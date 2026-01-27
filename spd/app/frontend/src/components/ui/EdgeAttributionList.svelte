@@ -103,7 +103,7 @@
         }
 
         // Dataset attributions: 2-part keys (layer:cIdx) have no position
-        return `'${tokenText}'`;
+        return `'${tokenText}' (${layerLabel})`;
     }
 
     let currentPage = $state(0);
