@@ -56,9 +56,7 @@
         </div>
         <p class="stats">
             <strong>Position:</strong>
-            {seqIdx} |
-            <strong>Vocab ID:</strong>
-            {cIdx}
+            {seqIdx}
         </p>
     {:else if allPositions}
         <p><strong>"{allPositions[0].token}"</strong></p>

@@ -1,9 +1,11 @@
 <script lang="ts">
     import { getContext, onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../../lib/colors";
-    import { displaySettings, anyCorrelationStatsEnabled } from "../../lib/displaySettings.svelte";
+    import { COMPONENT_CARD_CONSTANTS } from "../../lib/componentCardConstants";
+    import { anyCorrelationStatsEnabled, displaySettings } from "../../lib/displaySettings.svelte";
+    import type { EdgeAttribution, EdgeData, OutputProbability } from "../../lib/promptAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
-    import type { EdgeData, EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
+    import { useComponentDataExpectCached } from "../../lib/useComponentDataExpectCached.svelte";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "../ComponentProbeInput.svelte";
@@ -14,7 +16,6 @@
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
-    import { useComponentDataExpectCached } from "../../lib/useComponentDataExpectCached.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
@@ -67,9 +68,6 @@
         componentData.load(layer, cIdx);
     });
 
-    const N_TOKENS_TO_DISPLAY_INPUT = 50;
-    const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
-
     // Derive token lists from loaded tokenStats (null if not loaded or no data)
     const inputTokenLists = $derived.by(() => {
         const tokenStats = componentData.tokenStats;
@@ -79,7 +77,7 @@
                 title: "Top Recall",
                 mathNotation: "P(token | component fires)",
                 items: tokenStats.data.input.top_recall
-                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: 1,
             },
@@ -87,7 +85,7 @@
                 title: "Top Precision",
                 mathNotation: "P(component fires | token)",
                 items: tokenStats.data.input.top_precision
-                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: 1,
             },
@@ -107,7 +105,7 @@
                 title: "Top PMI",
                 mathNotation: "positive association with predictions",
                 items: tokenStats.data.output.top_pmi
-                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
@@ -115,7 +113,7 @@
                 title: "Bottom PMI",
                 mathNotation: "negative association with predictions",
                 items: tokenStats.data.output.bottom_pmi
-                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
@@ -253,7 +251,7 @@
             {incomingNegative}
             {outgoingPositive}
             {outgoingNegative}
-            pageSize={4}
+            pageSize={COMPONENT_CARD_CONSTANTS.PROMPT_ATTRIBUTIONS_PAGE_SIZE}
             onClick={handleEdgeNodeClick}
             {tokens}
             {outputProbs}

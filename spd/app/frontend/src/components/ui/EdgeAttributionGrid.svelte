@@ -121,7 +121,7 @@
 
     .edge-lists-grid {
         display: flex;
-        flex-wrap: wrap;
+        flex-direction: column;
         gap: var(--space-4);
     }
 

@@ -168,16 +168,15 @@ export function getLayerAlias(layer: string): string {
 }
 
 /**
- * Get a short row label for grouped display in graphs.
- * Used for Y-axis labels where space is limited.
+ * Get a row label for grouped display in graphs.
  *
  * @param layer - Internal layer name (e.g., "h.0.mlp.c_fc")
  * @param isQkvGroup - Whether this represents a grouped QKV row
- * @returns Short label (e.g., "L0.in", "L2.qkv")
+ * @returns Label (e.g., "L0.mlp.in", "L2.attn.qkv")
  *
  * @example
- * getAliasedRowLabel("h.0.mlp.c_fc") // => "L0.in"
- * getAliasedRowLabel("h.2.attn.q_proj", true) // => "L2.qkv"
+ * getAliasedRowLabel("h.0.mlp.c_fc") // => "L0.mlp.in"
+ * getAliasedRowLabel("h.2.attn.q_proj", true) // => "L2.attn.qkv"
  */
 export function getAliasedRowLabel(layer: string, isQkvGroup = false): string {
     if (layer in SPECIAL_LAYERS) {
@@ -190,17 +189,17 @@ export function getAliasedRowLabel(layer: string, isQkvGroup = false): string {
     }
 
     if (isQkvGroup) {
-        return `L${parsed.block}.qkv`;
+        return `L${parsed.block}.${parsed.moduleType}.qkv`;
     }
 
     const arch = detectArchitecture(layer);
     const alias = ALIASES[arch][parsed.submodule];
 
     if (!alias) {
-        return `L${parsed.block}.${parsed.submodule}`;
+        return `L${parsed.block}.${parsed.moduleType}.${parsed.submodule}`;
     }
 
-    return `L${parsed.block}.${alias}`;
+    return `L${parsed.block}.${parsed.moduleType}.${alias}`;
 }
 
 /**

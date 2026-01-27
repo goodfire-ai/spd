@@ -1,6 +1,6 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import type { EdgeAttribution, OutputProbability, TokenInfo } from "../../lib/promptAttributionsTypes";
+    import type { EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../prompt-attr/graphUtils";
@@ -42,8 +42,8 @@
         return layer === "wte" || layer === "output";
     }
 
-    // Get display label for token nodes (wte/output pseudo-layers)
-    function getTokenLabel(key: string): string {
+    // Get the raw token text for a token node (used in tooltips)
+    function getTokenText(key: string): string {
         const parts = key.split(":");
 
         // Prompt attributions: 3-part keys (layer:seq:cIdx)
@@ -69,25 +69,41 @@
             }
         }
 
-        // Dataset attributions: 2-part keys (layer:cIdx)
+        // Dataset attributions: 2-part keys (layer:cIdx) - cIdx is vocab ID
         if (parts.length === 2) {
             const [layer, cIdx] = parts;
 
-            if (layer === "wte") {
-                return "Input Embeddings";
-            }
-
-            if (layer === "output") {
+            if (layer === "wte" || layer === "output") {
                 const vocabIdx = parseInt(cIdx);
                 // Tokens are guaranteed loaded when run is loaded (see useRun.svelte.ts)
-                const allTokens = (runState.allTokens as { status: "loaded"; data: TokenInfo[] }).data;
-                const tokenInfo = allTokens.find((t) => t.id === vocabIdx);
+                if (runState.allTokens.status !== "loaded") {
+                    throw new Error(`allTokens not loaded (status: ${runState.allTokens.status})`);
+                }
+                const tokenInfo = runState.allTokens.data.find((t) => t.id === vocabIdx);
                 if (!tokenInfo) throw new Error(`Token not found for vocab index ${vocabIdx}`);
                 return tokenInfo.string;
             }
         }
 
-        throw new Error(`getTokenLabel called on non-token node: ${key}`);
+        throw new Error(`getTokenText called on non-token node: ${key}`);
+    }
+
+    // Get formatted display label for token nodes (used in pills)
+    // Format: "'token' (Input:2)" or "'token' (Output:5)" (quotes make whitespace visible)
+    function getFormattedTokenLabel(key: string): string {
+        const parts = key.split(":");
+        const layer = parts[0];
+        const tokenText = getTokenText(key);
+        const layerLabel = layer === "wte" ? "Input" : "Output";
+
+        // Prompt attributions: 3-part keys (layer:seq:cIdx) include position
+        if (parts.length === 3) {
+            const seqIdx = parseInt(parts[1]);
+            return `'${tokenText}' (${layerLabel}:${seqIdx})`;
+        }
+
+        // Dataset attributions: 2-part keys (layer:cIdx) have no position
+        return `'${tokenText}' (${layerLabel})`;
     }
 
     let currentPage = $state(0);
@@ -150,7 +166,11 @@
             {@const isToken = isTokenNode(key)}
             {@const interp = isToken ? undefined : getInterpretation(key)}
             {@const hasInterpretation = interp?.status === "generated"}
-            {@const pillLabel = hasInterpretation ? interp.data.label : formattedKey}
+            {@const pillLabel = hasInterpretation
+                ? interp.data.label
+                : isToken
+                  ? getFormattedTokenLabel(key)
+                  : formattedKey}
             <div class="pill-container" onmouseenter={(e) => handleMouseEnter(key, e)} onmouseleave={handleMouseLeave}>
                 <button class="edge-pill" style="background: {bgColor};" onclick={() => onClick(key)}>
                     <span class="node-key" style="color: {textColor};">{pillLabel}</span>
@@ -183,7 +203,7 @@
                             </button>
                             <div class="tooltip-confidence">Confidence: {interp.data.confidence}</div>
                         {:else if isToken}
-                            <div class="tooltip-token">Token: {getTokenLabel(key)}</div>
+                            <div class="tooltip-token">Token: '{getTokenText(key)}'</div>
                         {/if}
                     </div>
                 {/if}

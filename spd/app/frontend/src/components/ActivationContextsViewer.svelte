@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../lib/colors";
     import { anyCorrelationStatsEnabled } from "../lib/displaySettings.svelte";
+    import { COMPONENT_CARD_CONSTANTS } from "../lib/componentCardConstants";
     import { getLayerAlias } from "../lib/layerAliasing";
     import type { ActivationContextsSummary, SubcomponentMetadata } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
@@ -12,9 +13,7 @@
     import SectionHeader from "./ui/SectionHeader.svelte";
     import StatusText from "./ui/StatusText.svelte";
     import TokenStatsSection from "./ui/TokenStatsSection.svelte";
-
-    const N_TOKENS_TO_DISPLAY_INPUT = 80;
-    const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
+    import DatasetAttributionsSection from "./ui/DatasetAttributionsSection.svelte";
 
     type Props = {
         activationContextsSummary: ActivationContextsSummary;
@@ -125,7 +124,7 @@
                 title: "Top Recall",
                 mathNotation: "P(token | component fires)",
                 items: ts.data.input.top_recall
-                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: 1,
             },
@@ -133,7 +132,7 @@
                 title: "Top Precision",
                 mathNotation: "P(component fires | token)",
                 items: ts.data.input.top_precision
-                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: 1,
             },
@@ -153,7 +152,7 @@
                 title: "Top PMI",
                 mathNotation: "positive association with predictions",
                 items: ts.data.output.top_pmi
-                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
@@ -161,7 +160,7 @@
                 title: "Bottom PMI",
                 mathNotation: "negative association with predictions",
                 items: ts.data.output.bottom_pmi
-                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
@@ -264,6 +263,21 @@
             {maxAbsComponentAct}
         />
 
+        <!-- Dataset attributions -->
+        {#if componentData.datasetAttributions?.status === "loaded" && componentData.datasetAttributions.data}
+            <DatasetAttributionsSection attributions={componentData.datasetAttributions.data} />
+        {:else if componentData.datasetAttributions?.status === "loading"}
+            <div class="dataset-attributions-loading">
+                <SectionHeader title="Dataset Attributions" />
+                <StatusText>Loading...</StatusText>
+            </div>
+        {:else if componentData.datasetAttributions?.status === "error"}
+            <div class="dataset-attributions-loading">
+                <SectionHeader title="Dataset Attributions" />
+                <StatusText>Error: {String(componentData.datasetAttributions.error)}</StatusText>
+            </div>
+        {/if}
+
         <div class="token-stats-row">
             {#if componentData.tokenStats.status === "uninitialized" || componentData.tokenStats.status === "loading"}
                 <StatusText>Loading token stats...</StatusText>
@@ -295,7 +309,10 @@
                 {:else if componentData.correlations.data === null}
                     <StatusText>No correlations data. Run harvest pipeline first.</StatusText>
                 {:else}
-                    <ComponentCorrelationMetrics correlations={componentData.correlations.data} pageSize={10} />
+                    <ComponentCorrelationMetrics
+                        correlations={componentData.correlations.data}
+                        pageSize={COMPONENT_CARD_CONSTANTS.CORRELATIONS_PAGE_SIZE}
+                    />
                 {/if}
             </div>
         {/if}
@@ -463,6 +480,12 @@
     }
 
     .correlations-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .dataset-attributions-loading {
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
