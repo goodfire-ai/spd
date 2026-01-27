@@ -1,8 +1,7 @@
 <script lang="ts">
     import { getContext, onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../../lib/colors";
-    import { displaySettings } from "../../lib/displaySettings.svelte";
-    // import { useComponentData } from "../../lib/useComponentData.svelte";
+    import { displaySettings, anyCorrelationStatsEnabled } from "../../lib/displaySettings.svelte";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import type { EdgeData, EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
@@ -306,22 +305,24 @@
     </div>
 
     <!-- Component correlations -->
-    <div class="correlations-section">
-        <SectionHeader title="Correlated Components" />
-        {#if componentData.correlations.status === "loading"}
-            <StatusText>Loading...</StatusText>
-        {:else if componentData.correlations.status === "loaded" && componentData.correlations.data}
-            <ComponentCorrelationMetrics
-                correlations={componentData.correlations.data}
-                pageSize={16}
-                onComponentClick={handleCorrelationClick}
-            />
-        {:else if componentData.correlations.status === "error"}
-            <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
-        {:else}
-            <StatusText>No correlations available.</StatusText>
-        {/if}
-    </div>
+    {#if anyCorrelationStatsEnabled()}
+        <div class="correlations-section">
+            <SectionHeader title="Correlated Components" />
+            {#if componentData.correlations.status === "loading"}
+                <StatusText>Loading...</StatusText>
+            {:else if componentData.correlations.status === "loaded" && componentData.correlations.data}
+                <ComponentCorrelationMetrics
+                    correlations={componentData.correlations.data}
+                    pageSize={16}
+                    onComponentClick={handleCorrelationClick}
+                />
+            {:else if componentData.correlations.status === "error"}
+                <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
+            {:else}
+                <StatusText>No correlations available.</StatusText>
+            {/if}
+        </div>
+    {/if}
 </div>
 
 <style>

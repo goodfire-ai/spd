@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../lib/colors";
-    import { hasAnyCorrelationStats } from "../lib/displaySettings.svelte";
+    import { anyCorrelationStatsEnabled } from "../lib/displaySettings.svelte";
     import { getLayerAlias } from "../lib/layerAliasing";
     import type { ActivationContextsSummary, SubcomponentMetadata } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
@@ -15,8 +15,6 @@
 
     const N_TOKENS_TO_DISPLAY_INPUT = 80;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 30;
-
-    const showCorrelations = $derived(hasAnyCorrelationStats());
 
     type Props = {
         activationContextsSummary: ActivationContextsSummary;
@@ -287,7 +285,7 @@
         </div>
 
         <!-- Component correlations -->
-        {#if showCorrelations}
+        {#if anyCorrelationStatsEnabled()}
             <div class="correlations-section">
                 <SectionHeader title="Correlated Components" />
                 {#if componentData.correlations.status === "uninitialized" || componentData.correlations.status === "loading"}

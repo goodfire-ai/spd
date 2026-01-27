@@ -37,7 +37,7 @@ export const displaySettings = $state({
     nodeColorMode: "ci" as NodeColorMode,
 });
 
-export function hasAnyCorrelationStats() {
+export function anyCorrelationStatsEnabled() {
     return (
         displaySettings.showPmi ||
         displaySettings.showPrecision ||
