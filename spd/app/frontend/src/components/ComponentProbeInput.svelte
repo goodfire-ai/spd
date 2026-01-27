@@ -55,8 +55,13 @@
 </script>
 
 <div class="probe-section">
-    <h5>Custom Text</h5>
-    <input type="text" class="probe-input" placeholder="Enter text..." value={probeText} oninput={onProbeInput} />
+    <input
+        type="text"
+        class="probe-input"
+        placeholder="Enter a custom prompt here...."
+        value={probeText}
+        oninput={onProbeInput}
+    />
     {#if probeLoading}
         <p class="probe-status">Loading...</p>
     {:else if probeError}
@@ -78,14 +83,6 @@
         padding: var(--space-2);
         background: var(--bg-surface);
         border: 1px solid var(--border-default);
-    }
-
-    h5 {
-        margin: 0 0 var(--space-2) 0;
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
-        font-weight: 600;
     }
 
     .probe-input {
