@@ -13,15 +13,6 @@ export const NODE_COLOR_MODE_LABELS: Record<NodeColorMode, string> = {
     subcomp_act: "Subcomp Act",
 };
 
-// Example color mode for activation contexts viewer
-export type ExampleColorMode = "ci" | "component_act" | "both";
-
-export const EXAMPLE_COLOR_MODE_LABELS: Record<ExampleColorMode, string> = {
-    ci: "CI",
-    component_act: "Component Act",
-    both: "Both",
-};
-
 export const CORRELATION_STAT_LABELS: Record<CorrelationStatType, string> = {
     pmi: "PMI",
     precision: "Precision",
@@ -44,7 +35,6 @@ export const displaySettings = $state({
     showSetOverlapVis: true,
     showEdgeAttributions: true,
     nodeColorMode: "ci" as NodeColorMode,
-    exampleColorMode: "ci" as ExampleColorMode,
 });
 
 export function hasAnyCorrelationStats() {
