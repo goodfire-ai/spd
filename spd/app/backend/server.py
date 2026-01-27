@@ -28,6 +28,7 @@ from spd.app.backend.routers import (
     activation_contexts_router,
     agents_router,
     clusters_router,
+    component_data_router,
     correlations_router,
     dataset_attributions_router,
     dataset_search_router,
@@ -69,20 +70,73 @@ app.add_middleware(
     allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Length"],  # Allow frontend to see response size
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+@app.middleware("http")
+async def add_timing_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Add Timing-Allow-Origin header for Resource Timing API access."""
+    response = await call_next(request)
+    response.headers["Timing-Allow-Origin"] = "*"
+    return response
+
+
+# Request counter for tracking concurrency (performance debugging)
+_request_counter = 0
+_active_requests = 0
+
+# Enable verbose request logging for performance debugging
+PERF_DEBUG_ENABLED = True
 
 
 @app.middleware("http")
 async def log_request_timing(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    """Log timing for slow requests (>1s)."""
+    """Log timing for requests (all when PERF_DEBUG_ENABLED, otherwise just slow >1s)."""
+    global _request_counter, _active_requests
+
+    _request_counter += 1
+    req_id = _request_counter
+    _active_requests += 1
+    concurrent = _active_requests
+
     start = time.perf_counter()
+
+    # Log request arrival for concurrency debugging
+    if PERF_DEBUG_ENABLED:
+        path = request.url.path
+        # Only log component data endpoints
+        if (
+            "/activation_contexts/" in path
+            or "/correlations/" in path
+            or "/dataset_attributions/" in path
+            or "/component_data/" in path
+        ):
+            logger.info(f"[REQ {req_id}] START {path} (concurrent: {concurrent})")
+
     response = await call_next(request)
+
     duration_ms = (time.perf_counter() - start) * 1000
-    if duration_ms > 1000:
+    _active_requests -= 1
+
+    # Log completion
+    if PERF_DEBUG_ENABLED:
+        path = request.url.path
+        if (
+            "/activation_contexts/" in path
+            or "/correlations/" in path
+            or "/dataset_attributions/" in path
+            or "/component_data/" in path
+        ):
+            logger.info(f"[REQ {req_id}] END {path} -> {duration_ms:.1f}ms")
+    elif duration_ms > 1000:
         logger.warning(f"[SLOW] {request.method} {request.url.path} -> {duration_ms:.1f}ms")
+
     return response
 
 
@@ -155,6 +209,7 @@ app.include_router(intervention_router)
 app.include_router(dataset_search_router)
 app.include_router(dataset_attributions_router)
 app.include_router(agents_router)
+app.include_router(component_data_router)
 
 
 def cli(port: int = 8000) -> None:

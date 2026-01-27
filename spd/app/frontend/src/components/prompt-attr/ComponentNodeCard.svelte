@@ -2,7 +2,7 @@
     import { onMount, getContext, tick } from "svelte";
     import { computeMaxAbsComponentAct } from "../../lib/colors";
     import { displaySettings } from "../../lib/displaySettings.svelte";
-    import { useComponentData } from "../../lib/useComponentData.svelte";
+    // import { useComponentData } from "../../lib/useComponentData.svelte";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import type { EdgeData, EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
@@ -15,6 +15,7 @@
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
+    import { useComponentDataBundled } from "../../lib/useComponentDataBundled.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
@@ -65,8 +66,8 @@
     // Parents use {#key} or {#each} keys to remount this component when layer/cIdx change,
     // so we only need to load once on mount (no effect watching props).
     // Debounce to avoid bombarding backend when hovering over many nodes quickly.
-    const componentData = useComponentData();
-    const HOVER_DEBOUNCE_MS = 200;
+    const componentData = useComponentDataBundled();
+    const HOVER_DEBOUNCE_MS = 100;
     const perfKey = `${layer}:${cIdx}`;
 
     onMount(() => {

@@ -34,7 +34,7 @@
 
     // Component data hook - call load() explicitly when component changes
     const componentData = useComponentData();
-    const DEBOUNCE_MS = 300;
+    const DEBOUNCE_MS = 100;
     let loadTimeout: ReturnType<typeof setTimeout> | null = null;
 
     // Load data for current component (debounced to avoid spamming on rapid navigation)

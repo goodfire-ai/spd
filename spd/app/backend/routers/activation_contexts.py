@@ -4,15 +4,16 @@ These endpoints serve activation context data from the harvest pipeline output.
 """
 
 from collections import defaultdict
+from typing import Annotated
 
 import torch
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
-from spd.app.backend.utils import log_errors
+from spd.app.backend.utils import log_errors, log_timing
 from spd.harvest.loaders import load_component_activation_contexts
 from spd.utils.distributed_utils import get_device
 
@@ -63,13 +64,23 @@ def get_activation_contexts_summary(
 
 
 @router.get("/{layer}/{component_idx}")
+@log_timing
 @log_errors
 def get_activation_context_detail(
     layer: str,
     component_idx: int,
     loaded: DepLoadedRun,
+    limit: Annotated[int | None, Query(ge=1, description="Max examples to return")] = None,
 ) -> SubcomponentActivationContexts:
-    """Return full activation context data for a single component."""
+    """Return full activation context data for a single component.
+
+    Args:
+        limit: Maximum number of activation examples to return. If None, returns all.
+               Use limit=30 for initial load, then fetch more via pagination if needed.
+
+    TODO: Add offset parameter for pagination to allow fetching remaining examples
+          after initial view is loaded.
+    """
     component_key = f"{layer}:{component_idx}"
     comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
 
@@ -83,9 +94,14 @@ def get_activation_context_detail(
         assert tid in token_strings, f"Token ID {tid} not in vocab"
         return token_strings[tid]
 
-    example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in comp.activation_examples]
-    example_ci = [ex.ci_values for ex in comp.activation_examples]
-    example_component_acts = [ex.component_acts for ex in comp.activation_examples]
+    # Apply limit to examples
+    examples = comp.activation_examples
+    if limit is not None:
+        examples = examples[:limit]
+
+    example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in examples]
+    example_ci = [ex.ci_values for ex in examples]
+    example_component_acts = [ex.component_acts for ex in examples]
 
     return SubcomponentActivationContexts(
         subcomponent_idx=comp.component_idx,

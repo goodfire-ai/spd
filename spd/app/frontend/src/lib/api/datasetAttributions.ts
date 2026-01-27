@@ -5,9 +5,9 @@
 import { API_URL, fetchJson } from "./index";
 
 export type DatasetAttributionEntry = {
-    componentKey: string;
+    component_key: string;
     layer: string;
-    componentIdx: number;
+    component_idx: number;
     value: number;
 };
 
@@ -41,22 +41,11 @@ export async function getAttributionMetadata(): Promise<DatasetAttributionMetada
 }
 
 export type ComponentAttributions = {
-    positiveSources: DatasetAttributionEntry[];
-    negativeSources: DatasetAttributionEntry[];
-    positiveTargets: DatasetAttributionEntry[];
-    negativeTargets: DatasetAttributionEntry[];
+    positive_sources: DatasetAttributionEntry[];
+    negative_sources: DatasetAttributionEntry[];
+    positive_targets: DatasetAttributionEntry[];
+    negative_targets: DatasetAttributionEntry[];
 };
-
-function mapEntries(
-    entries: Array<{ component_key: string; layer: string; component_idx: number; value: number }>,
-): DatasetAttributionEntry[] {
-    return entries.map((e) => ({
-        componentKey: e.component_key,
-        layer: e.layer,
-        componentIdx: e.component_idx,
-        value: e.value,
-    }));
-}
 
 export async function getComponentAttributions(
     layer: string,
@@ -65,20 +54,7 @@ export async function getComponentAttributions(
 ): Promise<ComponentAttributions> {
     const url = new URL(`${API_URL}/api/dataset_attributions/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("k", String(k));
-
-    const data = await fetchJson<{
-        positive_sources: Array<{ component_key: string; layer: string; component_idx: number; value: number }>;
-        negative_sources: Array<{ component_key: string; layer: string; component_idx: number; value: number }>;
-        positive_targets: Array<{ component_key: string; layer: string; component_idx: number; value: number }>;
-        negative_targets: Array<{ component_key: string; layer: string; component_idx: number; value: number }>;
-    }>(url.toString());
-
-    return {
-        positiveSources: mapEntries(data.positive_sources),
-        negativeSources: mapEntries(data.negative_sources),
-        positiveTargets: mapEntries(data.positive_targets),
-        negativeTargets: mapEntries(data.negative_targets),
-    };
+    return fetchJson<ComponentAttributions>(url.toString());
 }
 
 export async function getAttributionSources(
@@ -90,22 +66,7 @@ export async function getAttributionSources(
     const url = new URL(`${API_URL}/api/dataset_attributions/${encodeURIComponent(layer)}/${componentIdx}/sources`);
     url.searchParams.set("k", String(k));
     url.searchParams.set("sign", sign);
-
-    const data = await fetchJson<
-        Array<{
-            component_key: string;
-            layer: string;
-            component_idx: number;
-            value: number;
-        }>
-    >(url.toString());
-
-    return data.map((entry) => ({
-        componentKey: entry.component_key,
-        layer: entry.layer,
-        componentIdx: entry.component_idx,
-        value: entry.value,
-    }));
+    return fetchJson<DatasetAttributionEntry[]>(url.toString());
 }
 
 export async function getAttributionTargets(
@@ -117,22 +78,7 @@ export async function getAttributionTargets(
     const url = new URL(`${API_URL}/api/dataset_attributions/${encodeURIComponent(layer)}/${componentIdx}/targets`);
     url.searchParams.set("k", String(k));
     url.searchParams.set("sign", sign);
-
-    const data = await fetchJson<
-        Array<{
-            component_key: string;
-            layer: string;
-            component_idx: number;
-            value: number;
-        }>
-    >(url.toString());
-
-    return data.map((entry) => ({
-        componentKey: entry.component_key,
-        layer: entry.layer,
-        componentIdx: entry.component_idx,
-        value: entry.value,
-    }));
+    return fetchJson<DatasetAttributionEntry[]>(url.toString());
 }
 
 export async function getAttributionBetween(
