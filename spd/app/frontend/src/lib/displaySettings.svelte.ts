@@ -36,6 +36,7 @@ export const displaySettings = $state({
     showEdgeAttributions: true,
     nodeColorMode: "ci" as NodeColorMode,
     meanCiCutoff: 1e-7,
+    showAutoInterpPromptButton: false,
 });
 
 export function anyCorrelationStatsEnabled() {

@@ -373,13 +373,13 @@ class AppRunner:
                 concurrent.futures.wait([backend_future, frontend_future])
                 backend_future.result()
                 frontend_future.result()
+                time.sleep(0.1)
 
             print(f"{AnsiEsc.DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{AnsiEsc.RESET}\n")
+            time.sleep(0.1)
 
-            print(f"{AnsiEsc.GREEN}{AnsiEsc.BOLD}✓ Ready!{AnsiEsc.RESET}\n")
-            print(f"{AnsiEsc.DIM}Backend   http://localhost:{bport}/{AnsiEsc.RESET}")
             print(
-                f"{AnsiEsc.BOLD}Frontend  {AnsiEsc.GREEN}{AnsiEsc.UNDERLINE}http://localhost:{fport}/{AnsiEsc.RESET}\n"
+                f"{AnsiEsc.BOLD}Ready: {AnsiEsc.GREEN}{AnsiEsc.UNDERLINE}http://localhost:{fport}/{AnsiEsc.RESET}\n"
             )
 
             self.monitor_child_liveness()

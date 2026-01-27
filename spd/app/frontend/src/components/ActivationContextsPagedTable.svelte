@@ -13,7 +13,8 @@
     let { exampleTokens, exampleCi, exampleComponentActs, maxAbsComponentAct }: Props = $props();
 
     let currentPage = $state(0);
-    let pageSize = $state(20);
+    let pageSize = $state(10);
+    let tokenFilter = $state<string | null>(null);
 
     let nExamples = $derived(exampleTokens.length);
 

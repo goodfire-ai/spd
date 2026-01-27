@@ -86,6 +86,16 @@
                         />
                         <span class="stat-label">Edge attributions</span>
                     </label>
+                    <label class="checkbox-item single-row">
+                        <input
+                            type="checkbox"
+                            checked={displaySettings.showAutoInterpPromptButton}
+                            onchange={() =>
+                                (displaySettings.showAutoInterpPromptButton =
+                                    !displaySettings.showAutoInterpPromptButton)}
+                        />
+                        <span class="stat-label">Autointerp prompt button</span>
+                    </label>
                 </div>
             </div>
             <div class="settings-section">

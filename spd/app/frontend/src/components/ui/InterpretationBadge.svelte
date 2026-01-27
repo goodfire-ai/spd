@@ -2,6 +2,7 @@
     import type { Loadable } from "../../lib";
     import type { InterpretationDetail } from "../../lib/api";
     import type { InterpretationBackendState } from "../../lib/useRun.svelte";
+    import { displaySettings } from "../../lib/displaySettings.svelte";
 
     interface Props {
         interpretation: Loadable<InterpretationBackendState>;
@@ -40,11 +41,16 @@
                         <span class="interpretation-reasoning">{interpretationDetail.data.reasoning}</span>
                     {:else if interpretationDetail.status === "loading"}
                         <span class="interpretation-reasoning loading-text">Loading reasoning...</span>
+                        <br /><br /><br />
+                        <!-- breaks are a hacky way to reduce the observed height change once the
+                        reasoning loads -->
                     {/if}
                 </div>
-                <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
-                    {showPrompt ? "Hide" : "View"} Autointerp Prompt
-                </button>
+                {#if displaySettings.showAutoInterpPromptButton}
+                    <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
+                        {showPrompt ? "Hide" : "View"} Autointerp Prompt
+                    </button>
+                {/if}
                 <!-- Error state for generating -->
             {:else if interpretationData.status === "generation-error"}
                 <span class="interpretation-label error-text">{String(interpretationData.error)}</span>
@@ -56,7 +62,7 @@
         {/if}
     </div>
 
-    {#if showPrompt}
+    {#if displaySettings.showAutoInterpPromptButton && showPrompt}
         <div class="prompt-display">
             {#if interpretationDetail.status === "loading"}
                 <span class="loading-text">Loading prompt...</span>

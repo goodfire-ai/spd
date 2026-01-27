@@ -23,10 +23,12 @@
         type StoredGraph,
         type GraphComputeState,
         type PromptGenerateState,
+        type MaskType,
         type OptimizeConfig,
         type PromptCard,
         type ViewSettings,
     } from "./prompt-attr/types";
+    import TokenDropdown from "./prompt-attr/TokenDropdown.svelte";
     import ViewControls from "./prompt-attr/ViewControls.svelte";
     import PromptAttributionsGraph from "./PromptAttributionsGraph.svelte";
 
@@ -97,9 +99,9 @@
 
     // Default view settings for new graphs
     const defaultViewSettings: ViewSettings = {
-        topK: 200,
-        componentGap: 4,
-        layerGap: 30,
+        topK: 1000,
+        componentGap: 8,
+        layerGap: 40,
         normalizeEdges: "layer",
         ciThreshold: 0,
     };
@@ -736,11 +738,6 @@
                     <!-- Prompt header with compute options and graph tabs -->
                     <PromptCardHeader
                         card={activeCard}
-                        isLoading={graphCompute.status === "computing" && graphCompute.cardId === activeCard.id}
-                        tokens={allTokens}
-                        onUseOptimizedChange={handleUseOptimizedChange}
-                        onOptimizeConfigChange={handleOptimizeConfigChange}
-                        onCompute={computeGraphForCard}
                         onSelectGraph={handleSelectGraph}
                         onCloseGraph={handleCloseGraph}
                         onNewGraph={handleEnterNewGraphMode}
@@ -876,7 +873,182 @@
                                 <ComputeProgressOverlay state={graphCompute.progress} />
                             {:else}
                                 <div class="empty-state">
-                                    <p>Click <strong>Compute</strong> to generate the attribution graph</p>
+                                    <div class="compute-controls">
+                                        <label class="checkbox">
+                                            <input
+                                                type="checkbox"
+                                                checked={activeCard.useOptimized}
+                                                onchange={(e) => handleUseOptimizedChange(e.currentTarget.checked)}
+                                            />
+                                            <span>Optimize</span>
+                                        </label>
+                                        {#if activeCard.useOptimized}
+                                            <details class="opt-params-details">
+                                                <summary>Parameters</summary>
+                                                <div class="compute-options">
+                                                    <label>
+                                                        <span>imp_min_coeff</span>
+                                                        <input
+                                                            type="number"
+                                                            value={activeCard.newGraphConfig.impMinCoeff}
+                                                            oninput={(e) => {
+                                                                if (e.currentTarget.value === "") return;
+                                                                handleOptimizeConfigChange({
+                                                                    impMinCoeff: parseFloat(e.currentTarget.value),
+                                                                });
+                                                            }}
+                                                            min={0.001}
+                                                            max={10}
+                                                            step={0.01}
+                                                        />
+                                                    </label>
+                                                    <label>
+                                                        <span>steps</span>
+                                                        <input
+                                                            type="number"
+                                                            value={activeCard.newGraphConfig.steps}
+                                                            oninput={(e) => {
+                                                                if (e.currentTarget.value === "") return;
+                                                                handleOptimizeConfigChange({
+                                                                    steps: parseInt(e.currentTarget.value),
+                                                                });
+                                                            }}
+                                                            min={10}
+                                                            max={5000}
+                                                            step={100}
+                                                        />
+                                                    </label>
+                                                    <label>
+                                                        <span>pnorm</span>
+                                                        <input
+                                                            type="number"
+                                                            value={activeCard.newGraphConfig.pnorm}
+                                                            oninput={(e) => {
+                                                                if (e.currentTarget.value === "") return;
+                                                                handleOptimizeConfigChange({
+                                                                    pnorm: parseFloat(e.currentTarget.value),
+                                                                });
+                                                            }}
+                                                            min={0.1}
+                                                            max={2}
+                                                            step={0.1}
+                                                        />
+                                                    </label>
+                                                    <label>
+                                                        <span>beta</span>
+                                                        <input
+                                                            type="number"
+                                                            value={activeCard.newGraphConfig.beta}
+                                                            oninput={(e) => {
+                                                                if (e.currentTarget.value === "") return;
+                                                                handleOptimizeConfigChange({
+                                                                    beta: parseFloat(e.currentTarget.value),
+                                                                });
+                                                            }}
+                                                            min={0}
+                                                            max={10}
+                                                            step={0.1}
+                                                        />
+                                                    </label>
+                                                    <label>
+                                                        <span>ce_coeff</span>
+                                                        <input
+                                                            type="number"
+                                                            value={activeCard.newGraphConfig.ceLossCoeff}
+                                                            oninput={(e) => {
+                                                                if (e.currentTarget.value === "") return;
+                                                                handleOptimizeConfigChange({
+                                                                    ceLossCoeff: parseFloat(e.currentTarget.value),
+                                                                });
+                                                            }}
+                                                            min={0}
+                                                            step={0.1}
+                                                        />
+                                                    </label>
+                                                    <label class="label-token-input">
+                                                        <span>Label</span>
+                                                        <TokenDropdown
+                                                            tokens={allTokens}
+                                                            value={activeCard.newGraphConfig.labelTokenText}
+                                                            selectedTokenId={activeCard.newGraphConfig.labelTokenId}
+                                                            onSelect={(tokenId, tokenString) => {
+                                                                handleOptimizeConfigChange({
+                                                                    labelTokenText: tokenString,
+                                                                    labelTokenId: tokenId,
+                                                                    labelTokenPreview:
+                                                                        tokenId !== null ? tokenString : "",
+                                                                });
+                                                            }}
+                                                            placeholder="Search token..."
+                                                        />
+                                                        {#if activeCard.newGraphConfig.labelTokenId !== null}
+                                                            <span class="token-id-hint"
+                                                                >#{activeCard.newGraphConfig.labelTokenId}</span
+                                                            >
+                                                        {/if}
+                                                    </label>
+                                                    <label>
+                                                        <span>kl_coeff</span>
+                                                        <input
+                                                            type="number"
+                                                            value={activeCard.newGraphConfig.klLossCoeff}
+                                                            oninput={(e) => {
+                                                                if (e.currentTarget.value === "") return;
+                                                                handleOptimizeConfigChange({
+                                                                    klLossCoeff: parseFloat(e.currentTarget.value),
+                                                                });
+                                                            }}
+                                                            min={0}
+                                                            step={0.1}
+                                                        />
+                                                    </label>
+                                                    <label class="seq-pos-input">
+                                                        <span>loss_seq_pos</span>
+                                                        <input
+                                                            type="number"
+                                                            value={activeCard.newGraphConfig.lossSeqPos}
+                                                            oninput={(e) => {
+                                                                if (e.currentTarget.value === "") return;
+                                                                handleOptimizeConfigChange({
+                                                                    lossSeqPos: parseInt(e.currentTarget.value),
+                                                                });
+                                                            }}
+                                                            min={0}
+                                                            max={activeCard.tokens.length - 1}
+                                                            step={1}
+                                                        />
+                                                        {#if activeCard.newGraphConfig.lossSeqPos >= 0 && activeCard.newGraphConfig.lossSeqPos < activeCard.tokens.length}
+                                                            <span class="token-preview"
+                                                                >{activeCard.tokens[
+                                                                    activeCard.newGraphConfig.lossSeqPos
+                                                                ]}</span
+                                                            >
+                                                        {:else}
+                                                            <span class="token-preview token-preview-invalid"
+                                                                >invalid</span
+                                                            >
+                                                        {/if}
+                                                    </label>
+                                                    <label>
+                                                        <span>mask_type</span>
+                                                        <select
+                                                            value={activeCard.newGraphConfig.maskType}
+                                                            onchange={(e) =>
+                                                                handleOptimizeConfigChange({
+                                                                    maskType: e.currentTarget.value as MaskType,
+                                                                })}
+                                                        >
+                                                            <option value="stochastic">stochastic</option>
+                                                            <option value="ci">ci</option>
+                                                        </select>
+                                                    </label>
+                                                </div>
+                                            </details>
+                                        {/if}
+                                        <button class="btn-compute-center" onclick={() => computeGraphForCard()}>
+                                            Compute
+                                        </button>
+                                    </div>
                                 </div>
                             {/if}
                         </div>
@@ -1054,6 +1226,148 @@
 
     .empty-state .error-text {
         color: var(--status-negative-bright);
+    }
+
+    .btn-compute-center {
+        padding: var(--space-2) var(--space-4);
+        background: var(--bg-elevated);
+        border: 1px dashed var(--accent-primary-dim);
+        font-size: var(--text-base);
+        font-family: var(--font-mono);
+        font-weight: 500;
+        color: var(--accent-primary);
+        cursor: pointer;
+    }
+
+    .btn-compute-center:hover {
+        background: var(--bg-inset);
+        border-style: solid;
+        border-color: var(--accent-primary);
+    }
+
+    .compute-controls {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--space-3);
+    }
+
+    .opt-params-details {
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        padding: var(--space-2);
+    }
+
+    .opt-params-details summary {
+        cursor: pointer;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+        user-select: none;
+    }
+
+    .opt-params-details summary:hover {
+        color: var(--text-primary);
+    }
+
+    .opt-params-details[open] summary {
+        margin-bottom: var(--space-2);
+    }
+
+    .compute-options {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .compute-options label {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
+    }
+
+    .compute-options label span {
+        font-weight: 500;
+        font-size: var(--text-xs);
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+    }
+
+    .compute-options input[type="number"] {
+        width: 110px;
+        padding: var(--space-1);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+    }
+
+    .compute-options input[type="number"]:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .compute-options select {
+        padding: var(--space-1);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        cursor: pointer;
+    }
+
+    .compute-options select:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .compute-controls label.checkbox {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+        font-size: var(--text-sm);
+        font-family: var(--font-sans);
+        color: var(--text-secondary);
+    }
+
+    .compute-options .label-token-input {
+        flex-wrap: wrap;
+    }
+
+    .compute-options .seq-pos-input {
+        flex-wrap: nowrap;
+    }
+
+    .seq-pos-input input[type="number"] {
+        width: 60px;
+    }
+
+    .token-preview {
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+        font-family: var(--font-mono);
+        padding: 2px 4px;
+        background: var(--bg-inset);
+        border: 1px solid var(--border-subtle);
+        white-space: pre;
+    }
+
+    .token-preview-invalid {
+        font-style: italic;
+        color: var(--text-muted);
+    }
+
+    .token-id-hint {
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        font-family: var(--font-mono);
     }
 
     .error-banner {
