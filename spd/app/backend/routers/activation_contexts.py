@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
-from spd.app.backend.utils import log_errors, log_timing
+from spd.app.backend.utils import log_errors
 from spd.harvest.loaders import (
     load_component_activation_contexts,
     load_component_activation_contexts_bulk,
@@ -67,7 +67,6 @@ def get_activation_contexts_summary(
 
 
 @router.get("/{layer}/{component_idx}")
-@log_timing
 @log_errors
 def get_activation_context_detail(
     layer: str,
@@ -123,7 +122,6 @@ class BulkActivationContextsRequest(BaseModel):
 
 
 @router.post("/bulk")
-@log_timing
 @log_errors
 def get_activation_contexts_bulk(
     request: BulkActivationContextsRequest,

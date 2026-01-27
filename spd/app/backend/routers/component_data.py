@@ -17,7 +17,7 @@ from spd.app.backend.routers.correlations import (
     get_component_token_stats_bulk,
 )
 from spd.app.backend.schemas import SubcomponentActivationContexts
-from spd.app.backend.utils import log_errors, log_timing
+from spd.app.backend.utils import log_errors
 
 router = APIRouter(prefix="/api/component_data", tags=["component_data"])
 
@@ -40,7 +40,6 @@ class BulkComponentDataResponse(BaseModel):
 
 
 @router.post("/bulk")
-@log_timing
 @log_errors
 def get_component_data_bulk(
     request: BulkComponentDataRequest,

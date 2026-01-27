@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun
-from spd.app.backend.utils import log_errors, log_timing
+from spd.app.backend.utils import log_errors
 from spd.harvest import analysis
 from spd.harvest.loaders import load_component_activation_contexts
 from spd.log import logger
@@ -101,7 +101,6 @@ def get_all_interpretations(
 
 
 @router.get("/interpretations/{layer}/{component_idx}")
-@log_timing
 @log_errors
 def get_interpretation_detail(
     layer: str,
@@ -238,7 +237,6 @@ async def request_component_interpretation(
 
 
 @router.get("/token_stats/{layer}/{component_idx}")
-@log_timing
 @log_errors
 def get_component_token_stats(
     layer: str,
@@ -301,7 +299,6 @@ class BulkTokenStatsRequest(BaseModel):
 
 
 @router.post("/components/bulk")
-@log_timing
 @log_errors
 def get_component_correlations_bulk(
     request: BulkCorrelationsRequest,
@@ -366,7 +363,6 @@ def get_component_correlations_bulk(
 
 
 @router.post("/token_stats/bulk")
-@log_timing
 @log_errors
 def get_component_token_stats_bulk(
     request: BulkTokenStatsRequest,
@@ -411,7 +407,6 @@ def get_component_token_stats_bulk(
 
 
 @router.get("/components/{layer}/{component_idx}")
-@log_timing
 @log_errors
 def get_component_correlations(
     layer: str,

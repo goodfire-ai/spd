@@ -8,7 +8,13 @@
 
 import { getContext } from "svelte";
 import type { Loadable } from ".";
-import { ApiError, getComponentAttributions, getInterpretationDetail, requestComponentInterpretation } from "./api";
+import {
+    ApiError,
+    getActivationContextDetail,
+    getComponentAttributions,
+    getInterpretationDetail,
+    requestComponentInterpretation,
+} from "./api";
 import type { ComponentAttributions, InterpretationDetail } from "./api";
 import type {
     SubcomponentCorrelationsResponse,
@@ -18,6 +24,8 @@ import type {
 import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./useRun.svelte";
 
 const DATASET_ATTRIBUTIONS_TOP_K = 20;
+/** Fetch more activation examples in background after initial cached load */
+const ACTIVATION_EXAMPLES_FULL_LIMIT = 200;
 
 export type { ComponentAttributions as DatasetAttributions };
 
@@ -42,9 +50,24 @@ export function useComponentDataExpectCached() {
 
         const isStale = () => requestId !== thisRequestId;
 
-        componentDetail = { status: "loaded", data: runState.expectCachedComponentDetail(componentKey) };
+        const cachedDetail = runState.expectCachedComponentDetail(componentKey);
+        componentDetail = { status: "loaded", data: cachedDetail };
         correlations = { status: "loaded", data: runState.expectCachedCorrelations(componentKey) };
         tokenStats = { status: "loaded", data: runState.expectCachedTokenStats(componentKey) };
+
+        // Fetch more activation examples in background (overwrites cached data when complete)
+        getActivationContextDetail(layer, cIdx, ACTIVATION_EXAMPLES_FULL_LIMIT)
+            .then((data) => {
+                if (isStale()) return;
+                // Only update if we got more examples than cached
+                if (data.example_tokens.length > cachedDetail.example_tokens.length) {
+                    componentDetail = { status: "loaded", data };
+                }
+            })
+            .catch((error) => {
+                if (isStale()) return;
+                componentDetail = { status: "error", error };
+            });
 
         datasetAttributions = { status: "loading" };
         getComponentAttributions(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K)

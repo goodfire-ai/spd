@@ -166,7 +166,7 @@
 
         // Prefetch component data for all components in loaded graphs
         const allComponentKeys = graphs.flatMap((g) => extractComponentKeys(g.data));
-        const uniqueKeys = [...new globalThis.Set(allComponentKeys)];
+        const uniqueKeys = [...new Set(allComponentKeys)];
         if (uniqueKeys.length > 0) {
             await runState.prefetchComponentData(uniqueKeys);
         }

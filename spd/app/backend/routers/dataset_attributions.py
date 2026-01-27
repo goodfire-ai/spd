@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from torch import Tensor, nn
 
 from spd.app.backend.dependencies import DepLoadedRun
-from spd.app.backend.utils import log_errors, log_timing
+from spd.app.backend.utils import log_errors
 from spd.dataset_attributions.storage import (
     DatasetAttributionEntry as StorageEntry,
 )
@@ -131,7 +131,6 @@ def get_attribution_metadata(loaded: DepLoadedRun) -> DatasetAttributionMetadata
 
 
 @router.get("/{layer}/{component_idx}")
-@log_timing
 @log_errors
 def get_component_attributions(
     layer: str,

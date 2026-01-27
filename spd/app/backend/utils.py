@@ -71,31 +71,3 @@ def timer(name: str):
     yield
     end = time.perf_counter()
     logger.info(f"{name} took {end - start:.1f}ms")
-
-
-def log_timing[T: Callable[..., Any]](func: T) -> T:
-    """Decorator to log endpoint timing for performance analysis."""
-
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        start = time.perf_counter()
-        result = func(*args, **kwargs)
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        logger.info(f"[PERF] {func.__name__} completed in {elapsed_ms:.1f}ms")
-        return result
-
-    return wrapper  # pyright: ignore[reportReturnType]
-
-
-async def log_timing_async[T: Callable[..., Any]](func: T) -> T:
-    """Decorator to log endpoint timing for async functions."""
-
-    @functools.wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        start = time.perf_counter()
-        result = await func(*args, **kwargs)
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        logger.info(f"[PERF] {func.__name__} completed in {elapsed_ms:.1f}ms")
-        return result
-
-    return wrapper  # pyright: ignore[reportReturnType]
