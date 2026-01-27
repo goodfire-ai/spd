@@ -171,7 +171,7 @@
             graphs,
             activeGraphId: graphs.length > 0 ? graphs[0].id : null,
             activeView: "graph",
-            newGraphConfig: defaultOptimizeConfig(),
+            newGraphConfig: defaultOptimizeConfig(tokens.length),
             useOptimized: false,
         };
         promptCards = [...promptCards, newCard];
@@ -528,6 +528,7 @@
                     outputProbThreshold: 0.01,
                     ciThreshold: defaultViewSettings.ciThreshold,
                     maskType: optConfig.maskType,
+                    lossSeqPos: optConfig.lossSeqPos,
                 };
                 if (useCE) {
                     params.labelToken = optConfig.labelTokenId!;

@@ -10,12 +10,13 @@ from dataclasses import dataclass
 from typing import Any, override
 
 import torch
+import torch.nn.functional as F
 from jaxtyping import Bool, Float
 from torch import Tensor, nn
 from tqdm.auto import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.optim_cis import OptimCIConfig, compute_label_prob, optimize_ci_values
+from spd.app.backend.optim_cis import OptimCIConfig, optimize_ci_values
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
@@ -69,6 +70,13 @@ class Node:
     @override
     def __str__(self) -> str:
         return f"{self.layer}:{self.seq_pos}:{self.component_idx}"
+
+
+def _get_seq_pos(node_key: str) -> int:
+    """Extract sequence position from node key format 'layer:seq:cIdx'."""
+    parts = node_key.split(":")
+    assert len(parts) == 3, f"Invalid node key format: {node_key}"
+    return int(parts[1])
 
 
 @dataclass
@@ -255,12 +263,16 @@ def _compute_edges_for_target(
     target_info: LayerAliveInfo,
     source_infos: list[LayerAliveInfo],
     cache: dict[str, Tensor],
-    n_seq: int,
+    loss_seq_pos: int,
 ) -> list[Edge]:
     """Compute all edges flowing into a single target layer.
 
     For each alive (s_out, c_out) in the target layer, computes gradient-based
     attribution strengths from all alive source components.
+
+    Args:
+        loss_seq_pos: Maximum sequence position to include (inclusive).
+                      Only compute edges for target positions <= loss_seq_pos.
     """
     edges: list[Edge] = []
     out_pre_detach: Float[Tensor, "1 s C"] = cache[f"{target}_pre_detach"]
@@ -268,7 +280,7 @@ def _compute_edges_for_target(
         cache[f"{source}_post_detach"] for source in sources
     ]
 
-    for s_out in range(n_seq):
+    for s_out in range(loss_seq_pos + 1):
         s_out_alive_c = [c for c in target_info.alive_c_idxs if target_info.alive_mask[s_out, c]]
         if not s_out_alive_c:
             continue
@@ -316,6 +328,7 @@ def compute_edges_from_ci(
     device: str,
     show_progress: bool,
     on_progress: ProgressCallback | None = None,
+    loss_seq_pos: int | None = None,
 ) -> PromptAttributionResult:
     """Core edge computation from pre-computed CI values.
 
@@ -331,8 +344,14 @@ def compute_edges_from_ci(
 
     We compute CI-masked output probs separately (for display) before running the unmasked
     forward pass used for gradient computation.
+
+    Args:
+        loss_seq_pos: Maximum sequence position to include (inclusive).
+                      If None, includes all positions (default behavior).
     """
     n_seq = tokens.shape[1]
+    if loss_seq_pos is None:
+        loss_seq_pos = n_seq - 1
 
     # Compute CI-masked output probs (for display) before the gradient computation
     with torch.no_grad():
@@ -402,7 +421,7 @@ def compute_edges_from_ci(
             target_info=alive_info[target],
             source_infos=[alive_info[source] for source in sources],
             cache=cache,
-            n_seq=n_seq,
+            loss_seq_pos=loss_seq_pos,
         )
         edges.extend(target_edges)
 
@@ -421,12 +440,18 @@ def compute_edges_from_ci(
         component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky
     )
 
+    # Filter nodes and output tensors to only include positions <= loss_seq_pos
+    node_ci_vals = {k: v for k, v in node_ci_vals.items() if _get_seq_pos(k) <= loss_seq_pos}
+    node_subcomp_acts = {
+        k: v for k, v in node_subcomp_acts.items() if _get_seq_pos(k) <= loss_seq_pos
+    }
+
     return PromptAttributionResult(
         edges=edges,
-        ci_masked_out_probs=ci_masked_out_probs[0],
-        ci_masked_out_logits=comp_output_with_cache.output[0],
-        target_out_probs=target_out_probs[0],
-        target_out_logits=target_out_logits[0],
+        ci_masked_out_probs=ci_masked_out_probs[0, : loss_seq_pos + 1],
+        ci_masked_out_logits=comp_output_with_cache.output[0, : loss_seq_pos + 1],
+        target_out_probs=target_out_probs[0, : loss_seq_pos + 1],
+        target_out_logits=target_out_logits[0, : loss_seq_pos + 1],
         node_ci_vals=node_ci_vals,
         node_subcomp_acts=node_subcomp_acts,
     )
@@ -499,6 +524,7 @@ def compute_prompt_attributions(
     show_progress: bool,
     on_progress: ProgressCallback | None = None,
     included_nodes: set[str] | None = None,
+    loss_seq_pos: int | None = None,
 ) -> PromptAttributionResult:
     """Compute prompt attributions using the model's natural CI values.
 
@@ -508,6 +534,10 @@ def compute_prompt_attributions(
     If included_nodes is provided, CI values for non-included nodes are zeroed out
     before edge computation. This efficiently filters to only compute edges between
     the specified nodes (useful for generating graphs from a selection).
+
+    Args:
+        loss_seq_pos: Maximum sequence position to include (inclusive).
+                      If None, includes all positions (default behavior).
     """
     with torch.no_grad():
         output_with_cache = model(tokens, cache_type="input")
@@ -536,7 +566,21 @@ def compute_prompt_attributions(
         device=device,
         show_progress=show_progress,
         on_progress=on_progress,
+        loss_seq_pos=loss_seq_pos,
     )
+
+
+def compute_label_prob(
+    model: ComponentModel,
+    tokens: Tensor,
+    ci_lower_leaky: dict[str, Tensor],
+    label_token: int,
+) -> float:
+    """Compute probability of label_token at final position with CI mask."""
+    mask_infos = make_mask_infos(ci_lower_leaky, routing_masks="all")
+    logits = model(tokens, mask_infos=mask_infos)
+    probs = F.softmax(logits[0, -1, :], dim=-1)
+    return float(probs[label_token].item())
 
 
 def compute_prompt_attributions_optimized(
@@ -587,6 +631,10 @@ def compute_prompt_attributions_optimized(
     with torch.no_grad():
         pre_weight_acts = model(tokens, cache_type="input").cache
 
+    # Extract loss_seq_pos from optimization config (None means use all positions)
+    n_seq = tokens.shape[1]
+    loss_seq_pos: int | None = optim_config.get_loss_seq_pos(default=n_seq - 1)
+
     result = compute_edges_from_ci(
         model=model,
         tokens=tokens,
@@ -599,6 +647,7 @@ def compute_prompt_attributions_optimized(
         device=device,
         show_progress=show_progress,
         on_progress=on_progress,
+        loss_seq_pos=loss_seq_pos,
     )
 
     return OptimizedPromptAttributionResult(

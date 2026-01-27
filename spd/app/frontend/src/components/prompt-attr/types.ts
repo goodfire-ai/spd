@@ -48,6 +48,8 @@ export type OptimizeConfig = {
     ceLossCoeff: number;
     // KL loss settings (active when klLossCoeff > 0)
     klLossCoeff: number;
+    // Sequence position for both CE and KL losses
+    lossSeqPos: number;
     // Common settings
     impMinCoeff: number;
     steps: number;
@@ -87,13 +89,14 @@ export type PromptGenerateState =
     | { status: "generating"; progress: number; count: number }
     | { status: "error"; error: string };
 
-export function defaultOptimizeConfig(): OptimizeConfig {
+export function defaultOptimizeConfig(numTokens: number): OptimizeConfig {
     return {
         labelTokenText: "",
         labelTokenId: null,
         labelTokenPreview: null,
         ceLossCoeff: 0,
         klLossCoeff: 0,
+        lossSeqPos: numTokens - 1,
         impMinCoeff: 0.1,
         steps: 2000,
         pnorm: 0.3,
