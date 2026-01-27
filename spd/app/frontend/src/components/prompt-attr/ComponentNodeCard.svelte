@@ -1,7 +1,8 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
     import { computeMaxAbsComponentAct } from "../../lib/colors";
-    import { displaySettings } from "../../lib/displaySettings.svelte";
+    import { COMPONENT_CARD_CONSTANTS } from "../../lib/componentCardConstants";
+    import { displaySettings, hasAnyCorrelationStats } from "../../lib/displaySettings.svelte";
     import { useComponentData } from "../../lib/useComponentData.svelte";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import type { Edge, EdgeAttribution, OutputProbEntry } from "../../lib/promptAttributionsTypes";
@@ -70,9 +71,6 @@
         return () => clearTimeout(timeout);
     });
 
-    const N_TOKENS_TO_DISPLAY_INPUT = 50;
-    const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
-
     // Derive token lists from loaded tokenStats (null if not loaded or no data)
     const inputTokenLists = $derived.by(() => {
         const tokenStats = componentData.tokenStats;
@@ -82,7 +80,7 @@
                 title: "Top Recall",
                 mathNotation: "P(token | component fires)",
                 items: tokenStats.data.input.top_recall
-                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: 1,
             },
@@ -90,7 +88,7 @@
                 title: "Top Precision",
                 mathNotation: "P(component fires | token)",
                 items: tokenStats.data.input.top_precision
-                    .slice(0, N_TOKENS_TO_DISPLAY_INPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: 1,
             },
@@ -110,7 +108,7 @@
                 title: "Top PMI",
                 mathNotation: "positive association with predictions",
                 items: tokenStats.data.output.top_pmi
-                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
@@ -118,12 +116,14 @@
                 title: "Bottom PMI",
                 mathNotation: "negative association with predictions",
                 items: tokenStats.data.output.bottom_pmi
-                    .slice(0, N_TOKENS_TO_DISPLAY_OUTPUT)
+                    .slice(0, COMPONENT_CARD_CONSTANTS.N_OUTPUT_TOKENS)
                     .map(([token, value]) => ({ token, value })),
                 maxScale: maxAbsPmi,
             },
         ];
     });
+
+    const showCorrelations = $derived(hasAnyCorrelationStats());
 
     // Activating tokens from token stats (for highlighting)
     const activatingTokens = $derived.by(() => {
@@ -256,7 +256,7 @@
             {incomingNegative}
             {outgoingPositive}
             {outgoingNegative}
-            pageSize={4}
+            pageSize={COMPONENT_CARD_CONSTANTS.PROMPT_ATTRIBUTIONS_PAGE_SIZE}
             onClick={handleEdgeNodeClick}
             {tokens}
             {outputProbs}
@@ -302,22 +302,24 @@
     </div>
 
     <!-- Component correlations -->
-    <div class="correlations-section">
-        <SectionHeader title="Correlated Components" />
-        {#if componentData.correlations?.status === "loading"}
-            <StatusText>Loading...</StatusText>
-        {:else if componentData.correlations?.status === "loaded" && componentData.correlations.data}
-            <ComponentCorrelationMetrics
-                correlations={componentData.correlations.data}
-                pageSize={16}
-                onComponentClick={handleCorrelationClick}
-            />
-        {:else if componentData.correlations?.status === "error"}
-            <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
-        {:else}
-            <StatusText>No correlations available.</StatusText>
-        {/if}
-    </div>
+    {#if showCorrelations}
+        <div class="correlations-section">
+            <SectionHeader title="Correlated Components" />
+            {#if componentData.correlations?.status === "loading"}
+                <StatusText>Loading...</StatusText>
+            {:else if componentData.correlations?.status === "loaded" && componentData.correlations.data}
+                <ComponentCorrelationMetrics
+                    correlations={componentData.correlations.data}
+                    pageSize={COMPONENT_CARD_CONSTANTS.CORRELATIONS_PAGE_SIZE}
+                    onComponentClick={handleCorrelationClick}
+                />
+            {:else if componentData.correlations?.status === "error"}
+                <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
+            {:else}
+                <StatusText>No correlations available.</StatusText>
+            {/if}
+        </div>
+    {/if}
 </div>
 
 <style>

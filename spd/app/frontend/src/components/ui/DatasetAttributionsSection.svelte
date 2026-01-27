@@ -6,6 +6,7 @@
      * - "Incoming" = sources that attribute TO this component (this component is the target)
      * - "Outgoing" = targets that this component attributes TO (this component is the source)
      */
+    import { COMPONENT_CARD_CONSTANTS } from "../../lib/componentCardConstants";
     import type { EdgeAttribution } from "../../lib/promptAttributionsTypes";
     import type { DatasetAttributions } from "../../lib/useComponentData.svelte";
     import EdgeAttributionGrid from "./EdgeAttributionGrid.svelte";
@@ -16,8 +17,6 @@
     };
 
     let { attributions, onComponentClick }: Props = $props();
-
-    const PAGE_SIZE = 4;
 
     function handleClick(key: string) {
         if (onComponentClick) {
@@ -57,6 +56,6 @@
     incomingNegative={negativeSources}
     outgoingPositive={positiveTargets}
     outgoingNegative={negativeTargets}
-    pageSize={PAGE_SIZE}
+    pageSize={COMPONENT_CARD_CONSTANTS.DATASET_ATTRIBUTIONS_PAGE_SIZE}
     onClick={handleClick}
 />
