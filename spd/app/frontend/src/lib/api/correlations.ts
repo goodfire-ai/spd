@@ -25,38 +25,6 @@ export async function getComponentTokenStats(
     return fetchJson<TokenStatsResponse | null>(url.toString());
 }
 
-/**
- * Bulk fetch correlations for multiple components.
- * Returns a dict keyed by component_key. Components not found are omitted.
- * Note: top_k=20 is sufficient for initial display (shown in ComponentCorrelationMetrics).
- */
-export async function getComponentCorrelationsBulk(
-    componentKeys: string[],
-    topK: number = 20,
-): Promise<Record<string, ComponentCorrelationsResponse>> {
-    return fetchJson<Record<string, ComponentCorrelationsResponse>>(`${API_URL}/api/correlations/components/bulk`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ component_keys: componentKeys, top_k: topK }),
-    });
-}
-
-/**
- * Bulk fetch token stats for multiple components.
- * Returns a dict keyed by component_key. Components not found are omitted.
- * Note: top_k=30 is sufficient for initial display.
- */
-export async function getComponentTokenStatsBulk(
-    componentKeys: string[],
-    topK: number = 30,
-): Promise<Record<string, TokenStatsResponse>> {
-    return fetchJson<Record<string, TokenStatsResponse>>(`${API_URL}/api/correlations/token_stats/bulk`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ component_keys: componentKeys, top_k: topK }),
-    });
-}
-
 // Interpretation headline (bulk-fetched) - lightweight data for badges
 export type InterpretationHeadline = {
     label: string;
