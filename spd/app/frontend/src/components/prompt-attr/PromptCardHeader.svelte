@@ -56,6 +56,28 @@
     const optConfig = $derived(card.newGraphConfig);
     const useOptimized = $derived(card.useOptimized);
 
+    // Local state for numeric inputs (blur-on-change pattern to preserve cursor position)
+    let localImpMinCoeff = $state(optConfig.impMinCoeff);
+    let localSteps = $state(optConfig.steps);
+    let localPnorm = $state(optConfig.pnorm);
+    let localBeta = $state(optConfig.beta);
+    let localCeLossCoeff = $state(optConfig.ceLossCoeff);
+    let localKlLossCoeff = $state(optConfig.klLossCoeff);
+    let localLossSeqPos = $state(optConfig.lossSeqPos);
+
+    // Sync local state when props change externally
+    $effect(() => void (localImpMinCoeff = optConfig.impMinCoeff));
+    $effect(() => void (localSteps = optConfig.steps));
+    $effect(() => void (localPnorm = optConfig.pnorm));
+    $effect(() => void (localBeta = optConfig.beta));
+    $effect(() => void (localCeLossCoeff = optConfig.ceLossCoeff));
+    $effect(() => void (localKlLossCoeff = optConfig.klLossCoeff));
+    $effect(() => void (localLossSeqPos = optConfig.lossSeqPos));
+
+    function applyIfChanged<T>(local: T, prop: T, update: Partial<OptimizeConfig>) {
+        if (local !== prop) onOptimizeConfigChange(update);
+    }
+
     // Derived: whether each loss type is active (for validation)
     const useCE = $derived(optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null);
     const useKL = $derived(optConfig.klLossCoeff > 0);
@@ -171,11 +193,9 @@
                         <span>imp_min_coeff</span>
                         <input
                             type="number"
-                            value={optConfig.impMinCoeff}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ impMinCoeff: parseFloat(e.currentTarget.value) });
-                            }}
+                            bind:value={localImpMinCoeff}
+                            onblur={() => applyIfChanged(localImpMinCoeff, optConfig.impMinCoeff, { impMinCoeff: localImpMinCoeff })}
+                            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                             min={0.001}
                             max={10}
                             step={0.01}
@@ -185,11 +205,9 @@
                         <span>steps</span>
                         <input
                             type="number"
-                            value={optConfig.steps}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ steps: parseInt(e.currentTarget.value) });
-                            }}
+                            bind:value={localSteps}
+                            onblur={() => applyIfChanged(localSteps, optConfig.steps, { steps: localSteps })}
+                            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                             min={10}
                             max={5000}
                             step={100}
@@ -199,11 +217,9 @@
                         <span>pnorm</span>
                         <input
                             type="number"
-                            value={optConfig.pnorm}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ pnorm: parseFloat(e.currentTarget.value) });
-                            }}
+                            bind:value={localPnorm}
+                            onblur={() => applyIfChanged(localPnorm, optConfig.pnorm, { pnorm: localPnorm })}
+                            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                             min={0.1}
                             max={2}
                             step={0.1}
@@ -213,11 +229,9 @@
                         <span>beta</span>
                         <input
                             type="number"
-                            value={optConfig.beta}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ beta: parseFloat(e.currentTarget.value) });
-                            }}
+                            bind:value={localBeta}
+                            onblur={() => applyIfChanged(localBeta, optConfig.beta, { beta: localBeta })}
+                            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                             min={0}
                             max={10}
                             step={0.1}
@@ -228,11 +242,9 @@
                         <span>ce_coeff</span>
                         <input
                             type="number"
-                            value={optConfig.ceLossCoeff}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ ceLossCoeff: parseFloat(e.currentTarget.value) });
-                            }}
+                            bind:value={localCeLossCoeff}
+                            onblur={() => applyIfChanged(localCeLossCoeff, optConfig.ceLossCoeff, { ceLossCoeff: localCeLossCoeff })}
+                            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                             min={0}
                             step={0.1}
                         />
@@ -261,11 +273,9 @@
                         <span>kl_coeff</span>
                         <input
                             type="number"
-                            value={optConfig.klLossCoeff}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ klLossCoeff: parseFloat(e.currentTarget.value) });
-                            }}
+                            bind:value={localKlLossCoeff}
+                            onblur={() => applyIfChanged(localKlLossCoeff, optConfig.klLossCoeff, { klLossCoeff: localKlLossCoeff })}
+                            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                             min={0}
                             step={0.1}
                         />
@@ -275,17 +285,15 @@
                         <span>loss_seq_pos</span>
                         <input
                             type="number"
-                            value={optConfig.lossSeqPos}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onOptimizeConfigChange({ lossSeqPos: parseInt(e.currentTarget.value) });
-                            }}
+                            bind:value={localLossSeqPos}
+                            onblur={() => applyIfChanged(localLossSeqPos, optConfig.lossSeqPos, { lossSeqPos: localLossSeqPos })}
+                            onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
                             min={0}
                             max={card.tokens.length - 1}
                             step={1}
                         />
-                        {#if optConfig.lossSeqPos >= 0 && optConfig.lossSeqPos < card.tokens.length}
-                            <span class="token-preview">{card.tokens[optConfig.lossSeqPos]}</span>
+                        {#if localLossSeqPos >= 0 && localLossSeqPos < card.tokens.length}
+                            <span class="token-preview">{card.tokens[localLossSeqPos]}</span>
                         {:else}
                             <span class="token-preview token-preview-final">invalid</span>
                         {/if}
