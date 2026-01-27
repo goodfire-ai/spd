@@ -69,15 +69,11 @@
             }
         }
 
-        // Dataset attributions: 2-part keys (layer:cIdx)
+        // Dataset attributions: 2-part keys (layer:cIdx) - cIdx is vocab ID
         if (parts.length === 2) {
             const [layer, cIdx] = parts;
 
-            if (layer === "wte") {
-                return "Input Embeddings";
-            }
-
-            if (layer === "output") {
+            if (layer === "wte" || layer === "output") {
                 const vocabIdx = parseInt(cIdx);
                 // Tokens are guaranteed loaded when run is loaded (see useRun.svelte.ts)
                 if (runState.allTokens.status !== "loaded") {
@@ -106,10 +102,6 @@
         }
 
         // Dataset attributions: 2-part keys (layer:cIdx) have no position
-        // For wte, tokenText is "Input Embeddings" - don't quote that
-        if (layer === "wte") {
-            return `wte: ${tokenText}`;
-        }
         return `${layer}: '${tokenText}'`;
     }
 
