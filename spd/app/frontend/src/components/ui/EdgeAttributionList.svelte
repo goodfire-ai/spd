@@ -275,6 +275,7 @@
         font-family: var(--font-mono);
         font-size: var(--text-xs);
         overflow-wrap: break-word;
+        text-align: left;
     }
 
     .tooltip {
