@@ -121,11 +121,12 @@
 
     .edge-lists-grid {
         display: flex;
-        flex-wrap: wrap;
         gap: var(--space-4);
     }
 
     .edge-list-group {
+        flex: 1;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
