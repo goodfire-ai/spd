@@ -931,6 +931,7 @@
                             <table>
                                 <thead>
                                     <tr>
+                                        <th class="rank-header">Input</th>
                                         {#each run.result.input_tokens as token, idx (idx)}
                                             <th title={token}>
                                                 <span class="token-text">"{token}"</span>
@@ -941,6 +942,7 @@
                                 <tbody>
                                     {#each Array(Math.min(3, MAX_PREDICTIONS)) as _, rank (rank)}
                                         <tr>
+                                            <td class="rank-label">rank {rank + 1}</td>
                                             {#each run.result.predictions_per_position as preds, idx (idx)}
                                                 {@const pred = preds[rank]}
                                                 <td
@@ -1002,6 +1004,7 @@
                                             <table>
                                                 <thead>
                                                     <tr>
+                                                        <th class="rank-header">Input</th>
                                                         {#each fork.result.input_tokens as token, idx (idx)}
                                                             {@const isChanged = fork.token_replacements.some(
                                                                 (r) => r[0] === idx,
@@ -1015,6 +1018,7 @@
                                                 <tbody>
                                                     {#each Array(Math.min(3, MAX_PREDICTIONS)) as _, rank (rank)}
                                                         <tr>
+                                                            <td class="rank-label">rank {rank + 1}</td>
                                                             {#each fork.result.predictions_per_position as preds, idx (idx)}
                                                                 {@const pred = preds[rank]}
                                                                 <td
@@ -1437,8 +1441,22 @@
         color: var(--text-secondary);
     }
 
+    .logits-mini th.rank-header {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
     .logits-mini .token-text {
         font-size: 9px;
+    }
+
+    .logits-mini td.rank-label {
+        background: var(--bg-surface);
+        color: var(--text-secondary);
+        font-weight: 500;
+        font-size: 9px;
+        text-align: left;
+        padding-left: 6px;
     }
 
     .logits-mini td {
