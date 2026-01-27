@@ -268,7 +268,6 @@
                 exampleTokens={componentData.componentDetail.data.example_tokens}
                 exampleCi={componentData.componentDetail.data.example_ci}
                 exampleComponentActs={componentData.componentDetail.data.example_component_acts}
-                activatingTokens={inputTopRecall.map(({ token }) => token)}
                 {maxAbsComponentAct}
             />
         {:else if componentData.componentDetail.status === "error"}

@@ -120,13 +120,6 @@
         ];
     });
 
-    // Activating tokens from token stats (for highlighting)
-    const activatingTokens = $derived.by(() => {
-        const tokenStats = componentData.tokenStats;
-        if (tokenStats === null || tokenStats.status !== "loaded" || tokenStats.data === null) return [];
-        return tokenStats.data.input.top_recall.map(([token]) => token);
-    });
-
     // Format mean CI or subcomponent activation for display
     function formatNumericalValue(val: number): string {
         return Math.abs(val) < 0.001 ? val.toExponential(2) : val.toFixed(3);
@@ -230,7 +223,6 @@
                     exampleTokens={componentData.componentDetail.data.example_tokens}
                     exampleCi={componentData.componentDetail.data.example_ci}
                     exampleComponentActs={componentData.componentDetail.data.example_component_acts}
-                    {activatingTokens}
                     {maxAbsComponentAct}
                 />
             {/if}
