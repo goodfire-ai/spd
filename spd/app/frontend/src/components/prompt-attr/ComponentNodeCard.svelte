@@ -282,24 +282,27 @@
         </div>
     {/if}
 
-    <div class="token-stats-row">
-        {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
-            <StatusText>Loading token stats...</StatusText>
-        {:else if componentData.tokenStats.status === "error"}
-            <StatusText>Error: {String(componentData.tokenStats.error)}</StatusText>
-        {:else}
-            <TokenStatsSection
-                sectionTitle="Input Tokens"
-                sectionSubtitle="(what activates this component)"
-                lists={inputTokenLists}
-            />
+    <div class="token-stats-section">
+        <SectionHeader title="Token Statistics" />
+        <div class="token-stats-row">
+            {#if componentData.tokenStats === null || componentData.tokenStats.status === "loading"}
+                <StatusText>Loading token stats...</StatusText>
+            {:else if componentData.tokenStats.status === "error"}
+                <StatusText>Error: {String(componentData.tokenStats.error)}</StatusText>
+            {:else}
+                <TokenStatsSection
+                    sectionTitle="Input Tokens"
+                    sectionSubtitle="(what activates this component)"
+                    lists={inputTokenLists}
+                />
 
-            <TokenStatsSection
-                sectionTitle="Output Tokens"
-                sectionSubtitle="(what this component predicts)"
-                lists={outputTokenLists}
-            />
-        {/if}
+                <TokenStatsSection
+                    sectionTitle="Output Tokens"
+                    sectionSubtitle="(what this component predicts)"
+                    lists={outputTokenLists}
+                />
+            {/if}
+        </div>
     </div>
 
     <!-- Component correlations -->
@@ -365,6 +368,12 @@
         font-family: var(--font-mono);
         color: var(--text-secondary);
         font-weight: 600;
+    }
+
+    .token-stats-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
     }
 
     .token-stats-row {
