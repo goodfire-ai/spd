@@ -28,10 +28,10 @@ export const CORRELATION_STAT_DESCRIPTIONS: Record<CorrelationStatType, string> 
 };
 
 export const displaySettings = $state({
-    showPmi: true,
-    showPrecision: true,
-    showRecall: true,
-    showJaccard: true,
+    showPmi: false,
+    showPrecision: false,
+    showRecall: false,
+    showJaccard: false,
     showSetOverlapVis: true,
     showEdgeAttributions: true,
     nodeColorMode: "ci" as NodeColorMode,
