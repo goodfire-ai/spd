@@ -1,5 +1,7 @@
 /** Types for the prompt attributions visualizer */
 
+import { getLayerAlias, formatNodeKeyWithAliases } from "./layerAliasing";
+
 // Server API types
 
 export type PromptPreview = {
@@ -88,6 +90,8 @@ export type OptimizationResult = {
     label_prob: number | null;
     // KL loss param (optional)
     kl_loss_coeff: number | null;
+    // Sequence position for both CE and KL losses
+    loss_seq_pos: number;
     mask_type: MaskType;
 };
 
@@ -199,21 +203,14 @@ export type ComponentProbeResult = {
     subcomp_acts: number[];
 };
 
-// Display name mapping for special layers
-const LAYER_DISPLAY_NAMES: Record<string, string> = {
-    lm_head: "W_U",
-};
-
-/** Get display name for a layer (e.g., "lm_head" -> "W_U") */
+/** Get display name for a layer (e.g., "h.0.mlp.c_fc" -> "L0.mlp.in") */
 export function getLayerDisplayName(layer: string): string {
-    return LAYER_DISPLAY_NAMES[layer] ?? layer;
+    return getLayerAlias(layer);
 }
 
 /** Format a node key for display, replacing layer names with display names */
 export function formatNodeKeyForDisplay(nodeKey: string): string {
-    const [layer, ...rest] = nodeKey.split(":");
-    const displayName = getLayerDisplayName(layer);
-    return [displayName, ...rest].join(":");
+    return formatNodeKeyWithAliases(nodeKey);
 }
 
 // Node intervention helpers

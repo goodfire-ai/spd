@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 5 make app)",
+      "Bash(pkill:*)",
+      "Bash(timeout 8 make app)",
+      "Bash(timeout 15 make app)",
+      "Bash(chmod:*)",
+      "Bash(bash:*)",
+      "Bash(timeout -k 3 12 make app)",
+      "Bash(python3:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(sacct:*)",
+      "Bash(git add:*)",
+      "Bash(npm run check:*)",
+      "Bash(squeue:*)",
+      "Bash(source:*)",
+      "Bash(python:*)",
+      "Bash(make test:*)",
+      "Bash(scontrol show:*)",
+      "Bash(sudo grep:*)",
+      "Bash(sudo tail:*)",
+      "Bash(for job_id in 9157 4740 368 366 3345 4640 2599 2598 4638)",
+      "Bash(do echo -n '$job_id: ')",
+      "Bash(done)",
+      "Bash(basedpyright:*)",
+      "Bash(ss -tlnp:*)",
+      "Bash(sudo ss:*)",
+      "Bash(curl:*)",
+      "Bash(sqlite3:*)",
+      "Bash(dd:*)",
+      "Bash(find:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr edit:*)",
+      "Bash(npm run lint)",
+      "mcp__ide__getDiagnostics",
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(ruff check:*)",
+      "Bash(ls:*)",
+      "Bash(make type:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enabledMcpjsonServers": [
+    "svelte-llm"
+  ]
+}

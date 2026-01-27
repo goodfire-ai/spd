@@ -325,6 +325,8 @@ def test_compute_optimized_stream(app_with_prompt: tuple[TestClient, int]):
             "normalize": "none",
             "ci_threshold": 0.0,
             "output_prob_threshold": 0.01,
+            "mask_type": "stochastic",
+            "loss_seq_pos": 2,
         },
     )
     assert response.status_code == 200

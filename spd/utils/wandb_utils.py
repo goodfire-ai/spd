@@ -270,8 +270,8 @@ def download_wandb_file(run: Run, wandb_run_dir: Path, file_name: str) -> Path:
     """
     file_on_wandb = run.file(file_name)
     assert isinstance(file_on_wandb, File)
-    path = Path(file_on_wandb.download(exist_ok=True, replace=False, root=str(wandb_run_dir)).name)
-    return path
+    file_on_wandb.download(exist_ok=True, replace=False, root=str(wandb_run_dir))
+    return wandb_run_dir / file_name
 
 
 def init_wandb(

@@ -260,25 +260,22 @@
 
     .edge-pill {
         display: inline-flex;
-        align-items: center;
+        align-items: flex-start;
         gap: var(--space-2);
         padding: 2px 4px;
         border-radius: 3px;
-        white-space: nowrap;
         cursor: default;
         border: 1px solid var(--border-default);
         font-family: inherit;
         font-size: inherit;
         max-width: 100%;
-        overflow: hidden;
     }
 
     .node-key {
         font-family: var(--font-mono);
         font-size: var(--text-xs);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: break-word;
+        text-align: left;
     }
 
     .tooltip {
