@@ -400,9 +400,7 @@ def compute_graph_stream(
         edges_data, max_abs_attr = process_edges_for_response(
             raw_edges=result.edges,
             normalize=normalize,
-            num_tokens=len(token_ids),
             node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
-            is_optimized=False,
         )
 
         return GraphData(
@@ -597,9 +595,7 @@ def compute_graph_optimized_stream(
         edges_data, max_abs_attr = process_edges_for_response(
             raw_edges=result.edges,
             normalize=normalize,
-            num_tokens=num_tokens,
             node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
-            is_optimized=True,
         )
 
         return GraphDataWithOptimization(
@@ -652,17 +648,10 @@ def _add_pseudo_layer_nodes(
 def process_edges_for_response(
     raw_edges: list[Edge],
     normalize: NormalizeType,
-    num_tokens: int,
     node_ci_vals_with_pseudo: dict[str, float],
-    is_optimized: bool,
     edge_limit: int = GLOBAL_EDGE_LIMIT,
 ) -> tuple[list[EdgeData], float]:
     """Process edges: filter by CI, normalize, and limit."""
-
-    # Filter to final seq position for optimized graphs
-    if is_optimized:
-        final_seq_pos = num_tokens - 1
-        raw_edges = [e for e in raw_edges if e.target.seq_pos == final_seq_pos]
 
     # Only include edges that connect to nodes in node_ci_vals_with_pseudo
     node_keys = set(node_ci_vals_with_pseudo.keys())
@@ -701,9 +690,7 @@ def stored_graph_to_response(
     edges_data, max_abs_attr = process_edges_for_response(
         raw_edges=graph.edges,
         normalize=normalize,
-        num_tokens=num_tokens,
         node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
-        is_optimized=is_optimized,
     )
 
     if not is_optimized:
