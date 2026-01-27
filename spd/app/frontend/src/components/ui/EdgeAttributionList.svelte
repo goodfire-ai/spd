@@ -42,6 +42,16 @@
         return layer === "wte" || layer === "output";
     }
 
+    // Escape special characters in token text for display
+    // Converts invisible/layout-breaking characters to visible escape sequences
+    function escapeTokenText(text: string): string {
+        return text
+            .replace(/\n/g, "\\n")
+            .replace(/\r/g, "\\r")
+            .replace(/\t/g, "\\t")
+            .replace(/'/g, "\\'");
+    }
+
     // Get the raw token text for a token node (used in tooltips)
     function getTokenText(key: string): string {
         const parts = key.split(":");
@@ -98,11 +108,12 @@
         const parts = key.split(":");
         const layer = parts[0];
         const tokenText = getTokenText(key);
+        const escapedTokenText = escapeTokenText(tokenText);
 
         // Prompt attributions: 3-part keys (layer:seq:cIdx) include position
         if (parts.length === 3) {
             const seqIdx = parseInt(parts[1]);
-            return `${layer} (pos ${seqIdx}): '${tokenText}'`;
+            return `${layer} (pos ${seqIdx}): '${escapedTokenText}'`;
         }
 
         // Dataset attributions: 2-part keys (layer:cIdx) have no position
@@ -110,7 +121,7 @@
         if (layer === "wte") {
             return `wte: ${tokenText}`;
         }
-        return `${layer}: '${tokenText}'`;
+        return `${layer}: '${escapedTokenText}'`;
     }
 
     let currentPage = $state(0);
