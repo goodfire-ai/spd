@@ -187,13 +187,6 @@
         ];
     });
 
-    // Activating tokens from token stats (for highlighting in table)
-    let inputTopRecall = $derived.by(() => {
-        const tokenStats = componentData.tokenStats;
-        if (tokenStats.status !== "loaded" || tokenStats.data === null) return [];
-        return tokenStats.data.input.top_recall.map(([token, value]) => ({ token, value }));
-    });
-
     // Format mean CI for display
     function formatMeanCi(ci: number): string {
         return ci < 0.001 ? ci.toExponential(2) : ci.toFixed(3);
