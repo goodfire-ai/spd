@@ -10,7 +10,7 @@ import {
 } from "./api";
 import type { ComponentAttributions, InterpretationDetail } from "./api";
 import type {
-    ComponentCorrelationsResponse,
+    SubcomponentCorrelationsResponse,
     SubcomponentActivationContexts,
     TokenStatsResponse,
 } from "./promptAttributionsTypes";
@@ -41,7 +41,7 @@ export function useComponentData() {
 
     let componentDetail = $state<Loadable<SubcomponentActivationContexts>>({ status: "uninitialized" });
     // null inside Loadable means "no data for this component" (404)
-    let correlations = $state<Loadable<ComponentCorrelationsResponse | null>>({ status: "uninitialized" });
+    let correlations = $state<Loadable<SubcomponentCorrelationsResponse | null>>({ status: "uninitialized" });
     let tokenStats = $state<Loadable<TokenStatsResponse | null>>({ status: "uninitialized" });
     let datasetAttributions = $state<Loadable<ComponentAttributions | null>>({ status: "uninitialized" });
 

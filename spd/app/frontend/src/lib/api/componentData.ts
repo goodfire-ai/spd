@@ -1,7 +1,7 @@
 /** API client for bulk component data endpoint. */
 
 import type {
-    ComponentCorrelationsResponse,
+    SubcomponentCorrelationsResponse,
     SubcomponentActivationContexts,
     TokenStatsResponse,
 } from "../promptAttributionsTypes";
@@ -9,7 +9,7 @@ import { API_URL, fetchJson } from "./index";
 
 export interface BulkComponentDataResponse {
     activation_contexts: Record<string, SubcomponentActivationContexts>;
-    correlations: Record<string, ComponentCorrelationsResponse>;
+    correlations: Record<string, SubcomponentCorrelationsResponse>;
     token_stats: Record<string, TokenStatsResponse>;
 }
 

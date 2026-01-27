@@ -267,9 +267,9 @@
     {:else if componentData.datasetAttributions.status === "loaded"}
         {#if componentData.datasetAttributions.data !== null}
             <DatasetAttributionsSection
-                    attributions={componentData.datasetAttributions.data}
-                    onComponentClick={handleCorrelationClick}
-                />
+                attributions={componentData.datasetAttributions.data}
+                onComponentClick={handleCorrelationClick}
+            />
         {:else}
             <StatusText>No dataset attributions available.</StatusText>
         {/if}

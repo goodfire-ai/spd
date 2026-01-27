@@ -111,7 +111,7 @@ export type SubcomponentActivationContexts = {
     example_component_acts: number[][];
 };
 
-export type CorrelatedComponent = {
+export type CorrelatedSubcomponent = {
     component_key: string;
     score: number;
     count_i: number; // Subject (query component) firing count
@@ -120,12 +120,12 @@ export type CorrelatedComponent = {
     n_tokens: number; // Total tokens
 };
 
-export type ComponentCorrelationsResponse = {
-    precision: CorrelatedComponent[];
-    recall: CorrelatedComponent[];
-    jaccard: CorrelatedComponent[];
-    pmi: CorrelatedComponent[];
-    bottom_pmi: CorrelatedComponent[];
+export type SubcomponentCorrelationsResponse = {
+    precision: CorrelatedSubcomponent[];
+    recall: CorrelatedSubcomponent[];
+    jaccard: CorrelatedSubcomponent[];
+    pmi: CorrelatedSubcomponent[];
+    bottom_pmi: CorrelatedSubcomponent[];
 };
 
 // Token P/R/lift/PMI for a single category (input or output)
@@ -197,7 +197,7 @@ export type LayoutResult = {
 };
 
 // Component probe result
-export type ComponentProbeResult = {
+export type SubcomponentProbeResult = {
     tokens: string[];
     ci_values: number[];
     subcomp_acts: number[];

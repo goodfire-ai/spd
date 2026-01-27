@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { ComponentProbeResult } from "../lib/promptAttributionsTypes";
+    import type { SubcomponentProbeResult } from "../lib/promptAttributionsTypes";
     import { probeComponent } from "../lib/api";
     import TokenHighlights from "./TokenHighlights.svelte";
 
@@ -12,7 +12,7 @@
     let { layer, componentIdx, maxAbsComponentAct }: Props = $props();
 
     let probeText = $state("");
-    let probeResult = $state<ComponentProbeResult | null>(null);
+    let probeResult = $state<SubcomponentProbeResult | null>(null);
     let probeLoading = $state(false);
     let probeError = $state<string | null>(null);
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;

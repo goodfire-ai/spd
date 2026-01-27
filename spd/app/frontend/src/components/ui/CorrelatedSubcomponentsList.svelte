@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { formatNodeKeyWithAliases } from "../../lib/layerAliasing";
-    import type { CorrelatedComponent } from "../../lib/promptAttributionsTypes";
+    import type { CorrelatedSubcomponent } from "../../lib/promptAttributionsTypes";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import SetOverlapVis from "./SetOverlapVis.svelte";
@@ -10,7 +10,7 @@
     const runState = getContext<RunContext>(RUN_KEY);
 
     type Props = {
-        items: CorrelatedComponent[];
+        items: CorrelatedSubcomponent[];
         onComponentClick?: (componentKey: string) => void;
         pageSize: number;
     };

@@ -1,13 +1,13 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
-    import type { CorrelatedComponent } from "../../lib/promptAttributionsTypes";
+    import type { CorrelatedSubcomponent } from "../../lib/promptAttributionsTypes";
     import { colors } from "../../lib/colors";
-    import CorrelatedComponentsList from "../ui/CorrelatedComponentsList.svelte";
+    import CorrelatedSubcomponentsList from "../ui/CorrelatedSubcomponentsList.svelte";
 
     type Props = {
         title: string;
         mathNotation?: Snippet;
-        items: CorrelatedComponent[];
+        items: CorrelatedSubcomponent[];
         pageSize: number;
         onComponentClick?: (componentKey: string) => void;
     };
@@ -27,7 +27,7 @@
                 <span class="math-notation">{@render mathNotation()}</span>
             {/if}
         </h5>
-        <CorrelatedComponentsList {items} {onComponentClick} {pageSize} />
+        <CorrelatedSubcomponentsList {items} {onComponentClick} {pageSize} />
     </div>
 {/if}
 

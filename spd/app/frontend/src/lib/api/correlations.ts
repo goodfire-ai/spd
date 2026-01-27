@@ -2,17 +2,17 @@
  * API client for /api/correlations endpoints.
  */
 
-import type { ComponentCorrelationsResponse, TokenStatsResponse } from "../promptAttributionsTypes";
+import type { SubcomponentCorrelationsResponse, TokenStatsResponse } from "../promptAttributionsTypes";
 import { API_URL, fetchJson } from "./index";
 
 export async function getComponentCorrelations(
     layer: string,
     componentIdx: number,
     topK: number,
-): Promise<ComponentCorrelationsResponse> {
+): Promise<SubcomponentCorrelationsResponse> {
     const url = new URL(`${API_URL}/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
-    return fetchJson<ComponentCorrelationsResponse>(url.toString());
+    return fetchJson<SubcomponentCorrelationsResponse>(url.toString());
 }
 
 export async function getComponentTokenStats(

@@ -9,12 +9,12 @@ import type { Loadable } from ".";
 import * as api from "./api";
 import type { LoadedRun as RunData, InterpretationHeadline } from "./api";
 import type {
-    ActivationContextsSummary,
-    ComponentCorrelationsResponse,
+    SubcomponentCorrelationsResponse,
     PromptPreview,
     SubcomponentActivationContexts,
     TokenInfo,
     TokenStatsResponse,
+    SubcomponentMetadata,
 } from "./promptAttributionsTypes";
 
 /** Maps component keys to cluster IDs. Singletons (unclustered components) have null values. */
@@ -55,11 +55,13 @@ export function useRun() {
     let allTokens = $state<Loadable<TokenInfo[]>>({ status: "uninitialized" });
 
     /** Activation contexts summary */
-    let activationContextsSummary = $state<Loadable<ActivationContextsSummary>>({ status: "uninitialized" });
+    let activationContextsSummary = $state<Loadable<Record<string, SubcomponentMetadata[]>>>({
+        status: "uninitialized",
+    });
 
     // Cached component data keyed by component key (layer:cIdx) - non-reactive
     let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
-    let _correlationsCache: Record<string, ComponentCorrelationsResponse> = {};
+    let _correlationsCache: Record<string, SubcomponentCorrelationsResponse> = {};
     let _tokenStatsCache: Record<string, TokenStatsResponse> = {};
 
     // Prefetch parameters for bulk component data
@@ -228,7 +230,7 @@ export function useRun() {
      * Read cached correlations.
      * Returns null if component has no correlation data (e.g., rarely-firing components).
      */
-    function expectCachedCorrelations(componentKey: string): ComponentCorrelationsResponse | null {
+    function expectCachedCorrelations(componentKey: string): SubcomponentCorrelationsResponse | null {
         return _correlationsCache[componentKey] ?? null;
     }
 
