@@ -64,9 +64,7 @@ let cachedArchitecture: Architecture | null = null;
  * the architecture for the session, ensuring down_proj is aliased correctly.
  */
 export function detectArchitectureFromLayers(layers: string[]): Architecture {
-    const hasLlamaLayers = layers.some(
-        (layer) => layer.includes("gate_proj") || layer.includes("up_proj")
-    );
+    const hasLlamaLayers = layers.some((layer) => layer.includes("gate_proj") || layer.includes("up_proj"));
     if (hasLlamaLayers) {
         return "llama";
     }
