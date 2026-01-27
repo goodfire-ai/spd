@@ -573,6 +573,10 @@
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
 
+            // Prefetch component data BEFORE state update so cache is populated when components mount
+            const componentKeys = extractComponentKeys(data);
+            await runState.prefetchComponentData(componentKeys);
+
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
 
@@ -597,10 +601,6 @@
                     activeGraphId: data.id,
                 };
             });
-
-            // Prefetch component data for all components in the graph
-            const componentKeys = extractComponentKeys(data);
-            await runState.prefetchComponentData(componentKeys);
 
             graphCompute = { status: "idle" };
         } catch (error) {
