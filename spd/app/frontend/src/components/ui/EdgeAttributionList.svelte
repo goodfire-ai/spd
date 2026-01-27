@@ -89,20 +89,21 @@
     }
 
     // Get formatted display label for token nodes (used in pills)
-    // Format: "wte (pos 2): 'the'" or "output: 'cat'" (quotes make whitespace visible)
+    // Format: "'token' (Input:2)" or "'token' (Output:5)" (quotes make whitespace visible)
     function getFormattedTokenLabel(key: string): string {
         const parts = key.split(":");
         const layer = parts[0];
         const tokenText = getTokenText(key);
+        const layerLabel = layer === "wte" ? "Input" : "Output";
 
         // Prompt attributions: 3-part keys (layer:seq:cIdx) include position
         if (parts.length === 3) {
             const seqIdx = parseInt(parts[1]);
-            return `${layer} (pos ${seqIdx}): '${tokenText}'`;
+            return `'${tokenText}' (${layerLabel}:${seqIdx})`;
         }
 
         // Dataset attributions: 2-part keys (layer:cIdx) have no position
-        return `${layer}: '${tokenText}'`;
+        return `'${tokenText}'`;
     }
 
     let currentPage = $state(0);
