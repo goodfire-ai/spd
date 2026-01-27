@@ -13,10 +13,13 @@ def calc_stochastic_component_mask_info(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     router: Router,
 ) -> dict[str, ComponentsMaskInfo]:
-    ci_sample = next(iter(causal_importances.values()))
-    leading_dims = ci_sample.shape[:-1]
-    device = ci_sample.device
-    dtype = ci_sample.dtype
+    first_ci = next(iter(causal_importances.values()))
+    device = first_ci.device
+    dtype = first_ci.dtype
+
+    per_layer_leading_dims: dict[str, tuple[int, ...]] = {
+        layer: tuple(ci.shape[:-1]) for layer, ci in causal_importances.items()
+    }
 
     component_masks: dict[str, Float[Tensor, "... C"]] = {}
     for layer, ci in causal_importances.items():
@@ -33,12 +36,12 @@ def calc_stochastic_component_mask_info(
         for layer in causal_importances:
             weight_deltas_and_masks[layer] = (
                 weight_deltas[layer],
-                torch.rand(leading_dims, device=device, dtype=dtype),
+                torch.rand(per_layer_leading_dims[layer], device=device, dtype=dtype),
             )
 
     routing_masks = router.get_masks(
         module_names=list(causal_importances.keys()),
-        mask_shape=leading_dims,
+        mask_shapes=per_layer_leading_dims,
     )
 
     return make_mask_infos(

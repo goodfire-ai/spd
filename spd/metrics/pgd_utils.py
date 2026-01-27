@@ -30,19 +30,24 @@ def pgd_masked_recon_loss_update(
 
     Optimizes adversarial stochastic masks and optionally weight deltas for the given objective function.
     """
-    batch_dims = next(iter(ci.values())).shape[:-1]
+    per_layer_leading_dims: dict[str, tuple[int, ...]] = {
+        layer: tuple(layer_ci.shape[:-1]) for layer, layer_ci in ci.items()
+    }
 
-    routing_masks = router.get_masks(module_names=model.target_module_paths, mask_shape=batch_dims)
+    routing_masks = router.get_masks(
+        module_names=model.target_module_paths, mask_shapes=per_layer_leading_dims
+    )
 
     adv_sources: dict[str, Float[Tensor, "*batch_dims mask_c"]] = {}
     for module_name in model.target_module_paths:
         module_c = model.module_to_c[module_name]
         mask_c = module_c if weight_deltas is None else module_c + 1
+        layer_leading_dims = per_layer_leading_dims[module_name]
         match pgd_config.mask_scope:
             case "unique_per_datapoint":
-                shape = torch.Size([*batch_dims, mask_c])
+                shape = torch.Size([*layer_leading_dims, mask_c])
             case "shared_across_batch":
-                singleton_batch_dims = [1 for _ in batch_dims]
+                singleton_batch_dims = [1 for _ in layer_leading_dims]
                 shape = torch.Size([*singleton_batch_dims, mask_c])
         adv_sources[module_name] = _get_pgd_init_tensor(
             pgd_config.init, shape, batch.device
@@ -58,7 +63,7 @@ def pgd_masked_recon_loss_update(
         routing_masks=routing_masks,
         target_out=target_out,
         output_loss_type=output_loss_type,
-        batch_dims=batch_dims,
+        per_layer_leading_dims=per_layer_leading_dims,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -137,7 +142,6 @@ def calc_multibatch_pgd_masked_recon_loss(
         output_loss_type=output_loss_type,
         sampling=sampling,
         router=router,
-        batch_dims=batch_dims,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -162,9 +166,11 @@ def _forward_with_adv_sources(
     routing_masks: RoutingMasks,
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
-    batch_dims: tuple[int, ...],
+    per_layer_leading_dims: dict[str, tuple[int, ...]],
 ):
-    expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
+    expanded_adv_sources = {
+        k: v.expand(*per_layer_leading_dims[k], -1) for k, v in adv_sources.items()
+    }
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
     match weight_deltas:
         case None:
@@ -203,7 +209,6 @@ def _multibatch_pgd_fwd_bwd(
     output_loss_type: Literal["mse", "kl"],
     router: Router,
     sampling: SamplingType,
-    batch_dims: tuple[int, ...],
 ) -> tuple[Float[Tensor, ""], int, dict[str, Float[Tensor, "*ones mask_c"]]]:
     """Perform a forward and backward pass over multiple batches with gradient accumulation.
 
@@ -236,7 +241,8 @@ def _multibatch_pgd_fwd_bwd(
         # It's important that we call this every microbatch to ensure stochastic routing masks are
         # sampled independently for each example.
         routing_masks = router.get_masks(
-            module_names=model.target_module_paths, mask_shape=batch_dims
+            module_names=model.target_module_paths,
+            mask_shapes={layer: tuple(layer_ci.shape[:-1]) for layer, layer_ci in ci.items()},
         )
 
         batch_sum_loss, batch_n_examples = _forward_with_adv_sources(
@@ -248,7 +254,9 @@ def _multibatch_pgd_fwd_bwd(
             routing_masks=routing_masks,
             target_out=target_model_output.output,
             output_loss_type=output_loss_type,
-            batch_dims=batch_dims,
+            per_layer_leading_dims={
+                layer: tuple(layer_ci.shape[:-1]) for layer, layer_ci in ci.items()
+            },
         )
 
         pgd_step_accum_sum_loss += batch_sum_loss

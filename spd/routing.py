@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from typing import Literal, override
 
 import torch
@@ -15,8 +16,22 @@ from spd.models.components import RoutingMasks
 
 class Router(ABC):
     @abstractmethod
-    def get_masks(self, module_names: list[str], mask_shape: tuple[int, ...]) -> RoutingMasks:
+    def get_masks(
+        self,
+        module_names: list[str],
+        mask_shapes: Mapping[str, tuple[int, ...]] | tuple[int, ...],
+    ) -> RoutingMasks:
         pass
+
+    @staticmethod
+    def _resolve_shapes(
+        module_names: list[str],
+        mask_shapes: Mapping[str, tuple[int, ...]] | tuple[int, ...],
+    ) -> dict[str, tuple[int, ...]]:
+        if isinstance(mask_shapes, tuple):
+            return {name: mask_shapes for name in module_names}
+        assert set(mask_shapes) == set(module_names)
+        return dict(mask_shapes)
 
 
 class UniformKSubsetRouter(Router):
@@ -28,14 +43,27 @@ class UniformKSubsetRouter(Router):
 
     @override
     def get_masks(
-        self, module_names: list[str], mask_shape: tuple[int, ...]
+        self,
+        module_names: list[str],
+        mask_shapes: Mapping[str, tuple[int, ...]] | tuple[int, ...],
     ) -> dict[str, Bool[Tensor, "..."]]:
+        shapes = self._resolve_shapes(module_names, mask_shapes)
+        unique_shapes = set(shapes.values())
+        assert len(unique_shapes) == 1, (
+            f"UniformKSubsetRouter requires all modules to have the same mask shape, "
+            f"got {shapes}"
+        )
+        mask_shape = unique_shapes.pop()
         return sample_uniform_k_subset_routing_masks(mask_shape, module_names, self.device)
 
 
 class AllLayersRouter(Router):
     @override
-    def get_masks(self, module_names: list[str], mask_shape: tuple[int, ...]) -> Literal["all"]:
+    def get_masks(
+        self,
+        module_names: list[str],
+        mask_shapes: Mapping[str, tuple[int, ...]] | tuple[int, ...],
+    ) -> Literal["all"]:
         return "all"
 
 
@@ -46,11 +74,14 @@ class StaticProbabilityRouter(Router):
 
     @override
     def get_masks(
-        self, module_names: list[str], mask_shape: tuple[int, ...]
+        self,
+        module_names: list[str],
+        mask_shapes: Mapping[str, tuple[int, ...]] | tuple[int, ...],
     ) -> dict[str, Bool[Tensor, "..."]]:
-        """returns a { <layer>: [batch, seq] } dict of tensors, where each batch (batch_idx,
-        seq_idx) is routed to with probability p"""
-        return {mod: torch.rand(*mask_shape, device=self.device) < self.p for mod in module_names}
+        shapes = self._resolve_shapes(module_names, mask_shapes)
+        return {
+            mod: torch.rand(*shapes[mod], device=self.device) < self.p for mod in module_names
+        }
 
 
 class LayerRouter(Router):
@@ -60,12 +91,15 @@ class LayerRouter(Router):
 
     @override
     def get_masks(
-        self, module_names: list[str], mask_shape: tuple[int, ...]
+        self,
+        module_names: list[str],
+        mask_shapes: Mapping[str, tuple[int, ...]] | tuple[int, ...],
     ) -> dict[str, Bool[Tensor, "..."]]:
+        shapes = self._resolve_shapes(module_names, mask_shapes)
         out = {}
         for mod in module_names:
             f = torch.ones if mod == self.layer_name else torch.zeros
-            out[mod] = f(*mask_shape, device=self.device, dtype=torch.bool)
+            out[mod] = f(*shapes[mod], device=self.device, dtype=torch.bool)
         return out
 
 

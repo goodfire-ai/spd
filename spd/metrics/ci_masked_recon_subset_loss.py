@@ -24,7 +24,7 @@ def _ci_masked_recon_subset_loss_update(
 ) -> tuple[Float[Tensor, ""], int]:
     subset_routing_masks = router.get_masks(
         module_names=model.target_module_paths,
-        mask_shape=next(iter(ci.values())).shape[:-1],
+        mask_shapes={layer: tuple(layer_ci.shape[:-1]) for layer, layer_ci in ci.items()},
     )
     mask_infos = make_mask_infos(
         component_masks=ci,
