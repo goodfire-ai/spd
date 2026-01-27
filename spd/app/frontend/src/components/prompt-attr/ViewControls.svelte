@@ -42,7 +42,7 @@
     let localTopK = $state(topK);
     let localComponentGap = $state(componentGap);
     let localLayerGap = $state(layerGap);
-    let localCiThreshold = $derived.by(() => (ciThreshold?.status === "loaded" ? ciThreshold.data.toString() : ""));
+    let localCiThreshold = $derived.by(() => (ciThreshold.status === "loaded" ? ciThreshold.data.toString() : ""));
 
     // Sync local state when props change externally
     $effect(() => void (localTopK = topK));
@@ -75,20 +75,20 @@
             step={100}
         />
     </label>
-    <label class:loading={ciThreshold?.status === "loading"}>
+    <label class:loading={ciThreshold.status === "loading"}>
         <span>Node CI Threshold</span>
         <input
             type="number"
             bind:value={localCiThreshold}
             onblur={() => {
                 const v = parseFloat(localCiThreshold);
-                const currentValue = ciThreshold?.status === "loaded" ? ciThreshold.data : null;
+                const currentValue = ciThreshold.status === "loaded" ? ciThreshold.data : null;
                 if (!isNaN(v) && v !== currentValue) onCiThresholdChange(v);
             }}
             onkeydown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             min={0}
             step={0.1}
-            disabled={ciThreshold?.status === "loading"}
+            disabled={ciThreshold.status === "loading"}
         />
     </label>
     <label>

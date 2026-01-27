@@ -15,7 +15,7 @@
 
 <div class="app-layout">
     <header class="top-bar">
-        {#if runState.run?.status === "loaded" && runState.run.data}
+        {#if runState.run.status === "loaded"}
             <div class="run-menu" onmouseenter={() => (showRunMenu = true)} onmouseleave={() => (showRunMenu = false)}>
                 <button type="button" class="run-menu-trigger">
                     <span class="run-path">{runState.run.data.wandb_path}</span>
@@ -40,7 +40,7 @@
             >
                 Dataset Search
             </button>
-            {#if runState.run?.status === "loaded" && runState.run.data}
+            {#if runState.run.status === "loaded" && runState.run.data}
                 <button
                     type="button"
                     class="tab-button"
@@ -61,7 +61,7 @@
         </nav>
 
         <div class="top-bar-spacer"></div>
-        {#if runState.run?.status === "loaded" && runState.run.data}
+        {#if runState.run.status === "loaded"}
             <div class="cluster-path-input-container">
                 <ClusterPathInput />
             </div>
@@ -70,7 +70,7 @@
     </header>
 
     <main class="main-content">
-        {#if runState.run?.status === "error"}
+        {#if runState.run.status === "error"}
             <div class="warning-banner">
                 {runState.run.error}
             </div>

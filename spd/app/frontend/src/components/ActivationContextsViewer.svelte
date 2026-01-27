@@ -120,7 +120,7 @@
     // Derive token lists from loaded tokenStats (null if not loaded or no data)
     const inputTokenLists = $derived.by(() => {
         const ts = componentData.tokenStats;
-        if (ts?.status !== "loaded" || ts.data === null) return null;
+        if (ts.status !== "loaded" || ts.data === null) return null;
         return [
             {
                 title: "Top Recall",
@@ -143,7 +143,7 @@
 
     const outputTokenLists = $derived.by(() => {
         const ts = componentData.tokenStats;
-        if (ts?.status !== "loaded" || ts.data === null) return null;
+        if (ts.status !== "loaded" || ts.data === null) return null;
         // Compute max absolute PMI for scaling
         const maxAbsPmi = Math.max(
             ts.data.output.top_pmi[0]?.[1] ?? 0,
@@ -172,7 +172,7 @@
     // Activating tokens from token stats (for highlighting in table)
     let inputTopRecall = $derived.by(() => {
         const tokenStats = componentData.tokenStats;
-        if (tokenStats?.status !== "loaded" || tokenStats.data === null) return [];
+        if (tokenStats.status !== "loaded" || tokenStats.data === null) return [];
         return tokenStats.data.input.top_recall.map(([token, value]) => ({ token, value }));
     });
 
@@ -183,7 +183,7 @@
 
     // Compute global max absolute component act for normalization (used by both activating examples and probe)
     const maxAbsComponentAct = $derived.by(() => {
-        if (componentData.componentDetail?.status !== "loaded") return 1;
+        if (componentData.componentDetail.status !== "loaded") return 1;
         return computeMaxAbsComponentAct(componentData.componentDetail.data.example_component_acts);
     });
 </script>
@@ -243,9 +243,9 @@
         />
 
         <!-- Activation examples -->
-        {#if componentData.componentDetail?.status === "loading"}
+        {#if componentData.componentDetail.status === "loading"}
             <div class="loading">Loading component data...</div>
-        {:else if componentData.componentDetail?.status === "loaded"}
+        {:else if componentData.componentDetail.status === "loaded"}
             <ActivationContextsPagedTable
                 exampleTokens={componentData.componentDetail.data.example_tokens}
                 exampleCi={componentData.componentDetail.data.example_ci}
@@ -253,7 +253,7 @@
                 activatingTokens={inputTopRecall.map(({ token }) => token)}
                 {maxAbsComponentAct}
             />
-        {:else if componentData.componentDetail?.status === "error"}
+        {:else if componentData.componentDetail.status === "error"}
             <StatusText>Error loading component data: {String(componentData.componentDetail.error)}</StatusText>
         {:else}
             <StatusText>Something went wrong loading component data.</StatusText>

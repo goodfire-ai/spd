@@ -57,10 +57,15 @@ export function useRun() {
     /** Activation contexts summary */
     let activationContextsSummary = $state<Loadable<ActivationContextsSummary>>({ status: "uninitialized" });
 
-    /** Cached component details keyed by component key (layer:cIdx) - non-reactive */
+    // Cached component data keyed by component key (layer:cIdx) - non-reactive
     let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
     let _correlationsCache: Record<string, ComponentCorrelationsResponse> = {};
     let _tokenStatsCache: Record<string, TokenStatsResponse> = {};
+
+    // Prefetch parameters for bulk component data
+    const PREFETCH_ACTIVATION_CONTEXTS_LIMIT = 30;
+    const PREFETCH_CORRELATIONS_TOP_K = 20;
+    const PREFETCH_TOKEN_STATS_TOP_K = 30;
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {
@@ -194,14 +199,17 @@ export function useRun() {
     /**
      * Bulk prefetch component data for all given component keys.
      * Uses a single combined endpoint to avoid GIL contention from concurrent requests.
-     * Call this after graph computation with all component keys from the graph.
      */
     async function prefetchComponentData(componentKeys: string[]): Promise<void> {
         if (componentKeys.length === 0) return;
 
-        const response = await api.getComponentDataBulk(componentKeys);
+        const response = await api.getComponentDataBulk(
+            componentKeys,
+            PREFETCH_ACTIVATION_CONTEXTS_LIMIT,
+            PREFETCH_CORRELATIONS_TOP_K,
+            PREFETCH_TOKEN_STATS_TOP_K,
+        );
 
-        // Merge into caches
         Object.assign(_componentDetailsCache, response.activation_contexts);
         Object.assign(_correlationsCache, response.correlations);
         Object.assign(_tokenStatsCache, response.token_stats);
@@ -217,32 +225,19 @@ export function useRun() {
     }
 
     /**
-     * Read cached correlations. Throws if not prefetched.
+     * Read cached correlations.
+     * Returns null if component has no correlation data (e.g., rarely-firing components).
      */
-    function expectCachedCorrelations(componentKey: string): ComponentCorrelationsResponse {
-        const cached = _correlationsCache[componentKey];
-        if (!cached) throw new Error(`Correlations not prefetched: ${componentKey}`);
-        return cached;
+    function expectCachedCorrelations(componentKey: string): ComponentCorrelationsResponse | null {
+        return _correlationsCache[componentKey] ?? null;
     }
 
     /**
-     * Read cached token stats. Throws if not prefetched.
+     * Read cached token stats.
+     * Returns null if component has no token stats (e.g., rarely-firing components).
      */
-    function expectCachedTokenStats(componentKey: string): TokenStatsResponse {
-        const cached = _tokenStatsCache[componentKey];
-        if (!cached) throw new Error(`Token stats not prefetched: ${componentKey}`);
-        return cached;
-    }
-
-    /**
-     * Check if a component's data is cached (all 3: details, correlations, tokenStats).
-     */
-    function isComponentCached(componentKey: string): boolean {
-        return (
-            componentKey in _componentDetailsCache &&
-            componentKey in _correlationsCache &&
-            componentKey in _tokenStatsCache
-        );
+    function expectCachedTokenStats(componentKey: string): TokenStatsResponse | null {
+        return _tokenStatsCache[componentKey] ?? null;
     }
 
     /** Load activation contexts summary (fire-and-forget, updates state) */
@@ -300,7 +295,6 @@ export function useRun() {
         expectCachedComponentDetail,
         expectCachedCorrelations,
         expectCachedTokenStats,
-        isComponentCached,
         loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,

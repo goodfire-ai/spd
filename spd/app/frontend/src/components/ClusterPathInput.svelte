@@ -8,7 +8,7 @@
 
     const loadedRun = $derived.by(() => {
         const run = runState.run;
-        if (run?.status !== "loaded") {
+        if (run.status !== "loaded") {
             throw new Error("Run is not loaded");
         }
         return run.data;

@@ -1,12 +1,9 @@
 /**
  * Hook for reading component data from prefetched cache.
  *
- * IMPORTANT: prefetchComponentData() must be called before using this hook,
- * otherwise it will throw on cache miss.
- *
- * This hook provides instant access to component data without network requests.
- * Data for activation contexts, correlations, and token stats is read from cache.
- * Dataset attributions and interpretation details are still fetched on-demand.
+ * prefetchComponentData() must be called before using this hook.
+ * Activation contexts, correlations, and token stats are read from cache.
+ * Dataset attributions and interpretation details are fetched on-demand.
  */
 
 import { getContext } from "svelte";
@@ -20,30 +17,18 @@ import type {
 } from "./promptAttributionsTypes";
 import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./useRun.svelte";
 
-/** Dataset attributions top-k */
 const DATASET_ATTRIBUTIONS_TOP_K = 20;
 
 export type { ComponentAttributions as DatasetAttributions };
 
 export type ComponentCoords = { layer: string; cIdx: number };
 
-/**
- * Hook for reading component data from prefetched cache.
- *
- * Reads activation contexts, correlations, and token stats synchronously from cache.
- * Dataset attributions and interpretation details are fetched on-demand.
- *
- * For fetching data via network, use useComponentData instead.
- */
 export function useComponentDataExpectCached() {
     const runState = getContext<RunContext>(RUN_KEY);
 
-    // These are read synchronously from cache
     let componentDetail = $state<Loadable<SubcomponentActivationContexts>>({ status: "uninitialized" });
     let correlations = $state<Loadable<ComponentCorrelationsResponse | null>>({ status: "uninitialized" });
     let tokenStats = $state<Loadable<TokenStatsResponse | null>>({ status: "uninitialized" });
-
-    // These are still fetched on-demand
     let datasetAttributions = $state<Loadable<ComponentAttributions | null>>({ status: "uninitialized" });
     let interpretationDetail = $state<Loadable<InterpretationDetail | null>>({ status: "uninitialized" });
 
@@ -57,28 +42,10 @@ export function useComponentDataExpectCached() {
 
         const isStale = () => requestId !== thisRequestId;
 
-        // Read cached data synchronously (throws if not prefetched)
-        try {
-            componentDetail = { status: "loaded", data: runState.expectCachedComponentDetail(componentKey) };
-        } catch (e) {
-            componentDetail = { status: "error", error: e };
-        }
+        componentDetail = { status: "loaded", data: runState.expectCachedComponentDetail(componentKey) };
+        correlations = { status: "loaded", data: runState.expectCachedCorrelations(componentKey) };
+        tokenStats = { status: "loaded", data: runState.expectCachedTokenStats(componentKey) };
 
-        try {
-            correlations = { status: "loaded", data: runState.expectCachedCorrelations(componentKey) };
-        } catch {
-            // Correlations may not exist for all components
-            correlations = { status: "loaded", data: null };
-        }
-
-        try {
-            tokenStats = { status: "loaded", data: runState.expectCachedTokenStats(componentKey) };
-        } catch {
-            // Token stats may not exist for all components
-            tokenStats = { status: "loaded", data: null };
-        }
-
-        // Fetch dataset attributions on-demand (not cached)
         datasetAttributions = { status: "loading" };
         getComponentAttributions(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K)
             .then((data) => {

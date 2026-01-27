@@ -1,9 +1,4 @@
-/**
- * API client for /api/component_data bulk endpoint.
- *
- * Fetches all component data in a single request to avoid GIL contention
- * and reduce HTTP roundtrip overhead.
- */
+/** API client for bulk component data endpoint. */
 
 import type {
     ComponentCorrelationsResponse,
@@ -20,16 +15,13 @@ export interface BulkComponentDataResponse {
 
 /**
  * Bulk fetch all component data in a single request.
- *
  * Combines activation contexts, correlations, and token stats.
- * This eliminates GIL contention from multiple concurrent requests
- * and reduces HTTP roundtrips from 3 to 1.
  */
 export async function getComponentDataBulk(
     componentKeys: string[],
-    activationContextsLimit: number = 30,
-    correlationsTopK: number = 20,
-    tokenStatsTopK: number = 30,
+    activationContextsLimit: number,
+    correlationsTopK: number,
+    tokenStatsTopK: number,
 ): Promise<BulkComponentDataResponse> {
     return fetchJson<BulkComponentDataResponse>(`${API_URL}/api/component_data/bulk`, {
         method: "POST",
