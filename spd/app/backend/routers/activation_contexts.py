@@ -14,7 +14,10 @@ from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors, log_timing
-from spd.harvest.loaders import load_component_activation_contexts
+from spd.harvest.loaders import (
+    load_component_activation_contexts,
+    load_component_activation_contexts_bulk,
+)
 from spd.utils.distributed_utils import get_device
 
 
@@ -110,6 +113,55 @@ def get_activation_context_detail(
         example_ci=example_ci,
         example_component_acts=example_component_acts,
     )
+
+
+class BulkActivationContextsRequest(BaseModel):
+    """Request for bulk activation contexts."""
+
+    component_keys: list[str]  # ["h.0.mlp.c_fc:5", "h.1.attn.q_proj:12", ...]
+    limit: int = 30
+
+
+@router.post("/bulk")
+@log_timing
+@log_errors
+def get_activation_contexts_bulk(
+    request: BulkActivationContextsRequest,
+    loaded: DepLoadedRun,
+) -> dict[str, SubcomponentActivationContexts]:
+    """Bulk fetch activation contexts for multiple components.
+
+    Returns a dict keyed by component_key. Components not found are omitted.
+    Uses optimized bulk loader with single file handle and sorted seeks.
+    """
+    PADDING_SENTINEL = -1
+    token_strings = loaded.token_strings
+
+    def token_str(tid: int) -> str:
+        if tid == PADDING_SENTINEL:
+            return "<pad>"
+        if tid not in token_strings:
+            return f"<unk:{tid}>"
+        return token_strings[tid]
+
+    # Bulk load all components with single file handle
+    components = load_component_activation_contexts_bulk(
+        loaded.harvest.run_id, request.component_keys
+    )
+
+    # Convert to response format with limit applied
+    result: dict[str, SubcomponentActivationContexts] = {}
+    for key, comp in components.items():
+        examples = comp.activation_examples[: request.limit]
+        result[key] = SubcomponentActivationContexts(
+            subcomponent_idx=comp.component_idx,
+            mean_ci=comp.mean_ci,
+            example_tokens=[[token_str(tid) for tid in ex.token_ids] for ex in examples],
+            example_ci=[ex.ci_values for ex in examples],
+            example_component_acts=[ex.component_acts for ex in examples],
+        )
+
+    return result
 
 
 @router.post("/probe")

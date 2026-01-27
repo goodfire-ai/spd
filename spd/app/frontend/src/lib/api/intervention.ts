@@ -2,7 +2,11 @@
  * API client for /api/intervention endpoints.
  */
 
-import type { ForkedInterventionRunSummary, InterventionRunSummary, RunInterventionRequest } from "../interventionTypes";
+import type {
+    ForkedInterventionRunSummary,
+    InterventionRunSummary,
+    RunInterventionRequest,
+} from "../interventionTypes";
 import { API_URL } from "./index";
 
 export async function runAndSaveIntervention(request: RunInterventionRequest): Promise<InterventionRunSummary> {

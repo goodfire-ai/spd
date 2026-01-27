@@ -10,9 +10,11 @@ import * as api from "./api";
 import type { LoadedRun as RunData, InterpretationHeadline } from "./api";
 import type {
     ActivationContextsSummary,
+    ComponentCorrelationsResponse,
     PromptPreview,
     SubcomponentActivationContexts,
     TokenInfo,
+    TokenStatsResponse,
 } from "./promptAttributionsTypes";
 
 /** Maps component keys to cluster IDs. Singletons (unclustered components) have null values. */
@@ -57,6 +59,8 @@ export function useRun() {
 
     /** Cached component details keyed by component key (layer:cIdx) - non-reactive */
     let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
+    let _correlationsCache: Record<string, ComponentCorrelationsResponse> = {};
+    let _tokenStatsCache: Record<string, TokenStatsResponse> = {};
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {
@@ -65,6 +69,8 @@ export function useRun() {
         interpretations = { status: "uninitialized" };
         activationContextsSummary = { status: "uninitialized" };
         _componentDetailsCache = {};
+        _correlationsCache = {};
+        _tokenStatsCache = {};
         clusterMapping = null;
     }
 
@@ -185,6 +191,72 @@ export function useRun() {
         return detail;
     }
 
+    /**
+     * Bulk prefetch component data for all given component keys.
+     * Uses a single combined endpoint to avoid GIL contention from concurrent requests.
+     * Call this after graph computation with all component keys from the graph.
+     */
+    async function prefetchComponentData(componentKeys: string[]): Promise<void> {
+        if (componentKeys.length === 0) return;
+
+        const startTime = performance.now();
+        console.log(`[Prefetch] Starting bulk fetch for ${componentKeys.length} components`);
+
+        // Single combined request - eliminates GIL contention
+        const response = await api.getComponentDataBulk(componentKeys);
+
+        // Merge into caches
+        Object.assign(_componentDetailsCache, response.activation_contexts);
+        Object.assign(_correlationsCache, response.correlations);
+        Object.assign(_tokenStatsCache, response.token_stats);
+
+        const elapsed = performance.now() - startTime;
+        console.log(
+            `[Prefetch] Complete in ${elapsed.toFixed(0)}ms:`,
+            `${Object.keys(response.activation_contexts).length} details,`,
+            `${Object.keys(response.correlations).length} correlations,`,
+            `${Object.keys(response.token_stats).length} tokenStats`,
+        );
+    }
+
+    /**
+     * Get cached component detail. Throws if not prefetched.
+     */
+    function getCachedComponentDetail(componentKey: string): SubcomponentActivationContexts {
+        const cached = _componentDetailsCache[componentKey];
+        if (!cached) throw new Error(`Component detail not prefetched: ${componentKey}`);
+        return cached;
+    }
+
+    /**
+     * Get cached correlations. Throws if not prefetched.
+     */
+    function getCachedCorrelations(componentKey: string): ComponentCorrelationsResponse {
+        const cached = _correlationsCache[componentKey];
+        if (!cached) throw new Error(`Correlations not prefetched: ${componentKey}`);
+        return cached;
+    }
+
+    /**
+     * Get cached token stats. Throws if not prefetched.
+     */
+    function getCachedTokenStats(componentKey: string): TokenStatsResponse {
+        const cached = _tokenStatsCache[componentKey];
+        if (!cached) throw new Error(`Token stats not prefetched: ${componentKey}`);
+        return cached;
+    }
+
+    /**
+     * Check if a component's data is cached (all 3: details, correlations, tokenStats).
+     */
+    function isComponentCached(componentKey: string): boolean {
+        return (
+            componentKey in _componentDetailsCache &&
+            componentKey in _correlationsCache &&
+            componentKey in _tokenStatsCache
+        );
+    }
+
     /** Load activation contexts summary (fire-and-forget, updates state) */
     function loadActivationContextsSummary() {
         if (activationContextsSummary.status === "loaded" || activationContextsSummary.status === "loading") return;
@@ -236,6 +308,11 @@ export function useRun() {
         getInterpretation,
         setInterpretation,
         getActivationContextDetail,
+        prefetchComponentData,
+        getCachedComponentDetail,
+        getCachedCorrelations,
+        getCachedTokenStats,
+        isComponentCached,
         loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,

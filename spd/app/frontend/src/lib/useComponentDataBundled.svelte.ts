@@ -11,7 +11,11 @@ import { getContext } from "svelte";
 import type { Loadable } from ".";
 import { getComponentDataBundle, requestComponentInterpretation, getInterpretationDetail } from "./api";
 import type { ComponentAttributions, InterpretationDetail } from "./api";
-import type { ComponentCorrelationsResponse, SubcomponentActivationContexts, TokenStatsResponse } from "./promptAttributionsTypes";
+import type {
+    ComponentCorrelationsResponse,
+    SubcomponentActivationContexts,
+    TokenStatsResponse,
+} from "./promptAttributionsTypes";
 import { RUN_KEY, type InterpretationBackendState, type RunContext } from "./useRun.svelte";
 
 /** Correlations are paginated in the UI, so fetch more */
@@ -64,7 +68,14 @@ export function useComponentDataBundled() {
 
         const startTime = performance.now();
 
-        getComponentDataBundle(layer, cIdx, CORRELATIONS_TOP_K, TOKEN_STATS_TOP_K, DATASET_ATTRIBUTIONS_TOP_K, DETAIL_LIMIT)
+        getComponentDataBundle(
+            layer,
+            cIdx,
+            CORRELATIONS_TOP_K,
+            TOKEN_STATS_TOP_K,
+            DATASET_ATTRIBUTIONS_TOP_K,
+            DETAIL_LIMIT,
+        )
             .then((bundle) => {
                 if (isStale()) return;
 
@@ -90,7 +101,10 @@ export function useComponentDataBundled() {
                     correlations = { status: "loaded", data: bundle.correlations };
                 } else if (bundle.errors.correlations) {
                     // 404 = no data for this component (treat as null, not error)
-                    if (bundle.errors.correlations.includes("404") || bundle.errors.correlations.includes("not found")) {
+                    if (
+                        bundle.errors.correlations.includes("404") ||
+                        bundle.errors.correlations.includes("not found")
+                    ) {
                         correlations = { status: "loaded", data: null };
                     } else {
                         correlations = { status: "error", error: new Error(bundle.errors.correlations) };
@@ -114,7 +128,10 @@ export function useComponentDataBundled() {
                 if (bundle.attributions !== null) {
                     datasetAttributions = { status: "loaded", data: bundle.attributions };
                 } else if (bundle.errors.attributions) {
-                    if (bundle.errors.attributions.includes("404") || bundle.errors.attributions.includes("not found")) {
+                    if (
+                        bundle.errors.attributions.includes("404") ||
+                        bundle.errors.attributions.includes("not found")
+                    ) {
                         datasetAttributions = { status: "loaded", data: null };
                     } else {
                         datasetAttributions = { status: "error", error: new Error(bundle.errors.attributions) };
@@ -132,7 +149,10 @@ export function useComponentDataBundled() {
                     ) {
                         interpretationDetail = { status: "loaded", data: null };
                     } else {
-                        interpretationDetail = { status: "error", error: new Error(bundle.errors.interpretation_detail) };
+                        interpretationDetail = {
+                            status: "error",
+                            error: new Error(bundle.errors.interpretation_detail),
+                        };
                     }
                 } else {
                     interpretationDetail = { status: "loaded", data: null };
@@ -143,7 +163,10 @@ export function useComponentDataBundled() {
 
                 const elapsed = performance.now() - startTime;
                 if (PERF_TIMING_ENABLED) {
-                    console.error(`[ComponentDataBundled ${componentKey}] Failed after ${elapsed.toFixed(0)}ms:`, error);
+                    console.error(
+                        `[ComponentDataBundled ${componentKey}] Failed after ${elapsed.toFixed(0)}ms:`,
+                        error,
+                    );
                 }
 
                 // Set all to error state

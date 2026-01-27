@@ -15,7 +15,7 @@
     import SectionHeader from "../ui/SectionHeader.svelte";
     import StatusText from "../ui/StatusText.svelte";
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
-    import { useComponentDataBundled } from "../../lib/useComponentDataBundled.svelte";
+    import { useComponentDataCached } from "../../lib/useComponentDataCached.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
@@ -65,9 +65,9 @@
     // Component data hook - call load() explicitly on mount.
     // Parents use {#key} or {#each} keys to remount this component when layer/cIdx change,
     // so we only need to load once on mount (no effect watching props).
-    // Debounce to avoid bombarding backend when hovering over many nodes quickly.
-    const componentData = useComponentDataBundled();
-    const HOVER_DEBOUNCE_MS = 100;
+    // Reads from prefetched cache for activation contexts, correlations, token stats.
+    // Dataset attributions and interpretation details are fetched on-demand.
+    const componentData = useComponentDataCached();
     const perfKey = `${layer}:${cIdx}`;
 
     onMount(() => {
@@ -77,10 +77,7 @@
             console.log(`[Render ${perfKey}] Mounted`);
         }
 
-        const timeout = setTimeout(() => {
-            componentData.load(layer, cIdx);
-        }, HOVER_DEBOUNCE_MS);
-        return () => clearTimeout(timeout);
+        componentData.load(layer, cIdx);
     });
 
     // Track when all data is loaded and painted (Svelte 5 runes mode)

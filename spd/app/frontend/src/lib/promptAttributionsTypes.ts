@@ -230,3 +230,28 @@ export function isInterventableNode(nodeKey: string): boolean {
 export function filterInterventableNodes(nodeKeys: Iterable<string>): Set<string> {
     return new Set([...nodeKeys].filter(isInterventableNode));
 }
+
+/**
+ * Convert a node key (layer:seq:cIdx) to a component key (layer:cIdx).
+ * Component keys are used for caching/fetching component data.
+ */
+export function nodeKeyToComponentKey(nodeKey: string): string {
+    const [layer, , cIdx] = nodeKey.split(":");
+    return `${layer}:${cIdx}`;
+}
+
+/**
+ * Extract unique component keys from a graph.
+ * Filters out non-interventable nodes (wte, output) and returns unique layer:cIdx keys.
+ */
+export function extractComponentKeys(graph: GraphData): string[] {
+    const componentKeys = new Set<string>();
+
+    for (const nodeKey of Object.keys(graph.nodeCiVals)) {
+        if (isInterventableNode(nodeKey)) {
+            componentKeys.add(nodeKeyToComponentKey(nodeKey));
+        }
+    }
+
+    return Array.from(componentKeys);
+}

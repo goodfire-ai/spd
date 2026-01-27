@@ -2,6 +2,7 @@
     import { getContext } from "svelte";
     import * as api from "../lib/api";
     import {
+        extractComponentKeys,
         filterInterventableNodes,
         type GraphData,
         type PinnedNode,
@@ -162,6 +163,13 @@
                 };
             }),
         );
+
+        // Prefetch component data for all components in loaded graphs
+        const allComponentKeys = graphs.flatMap((g) => extractComponentKeys(g.data));
+        const uniqueKeys = [...new globalThis.Set(allComponentKeys)];
+        if (uniqueKeys.length > 0) {
+            await runState.prefetchComponentData(uniqueKeys);
+        }
 
         const newCard: PromptCard = {
             id: promptId,
@@ -439,6 +447,10 @@
             // Initialize composer state for the new graph
             getComposerState(data.id, Object.keys(data.nodeCiVals));
 
+            // Prefetch component data for all components in the subgraph
+            const componentKeys = extractComponentKeys(data);
+            await runState.prefetchComponentData(componentKeys);
+
             promptCards = promptCards.map((card) => {
                 if (card.id !== cardId) return card;
 
@@ -585,6 +597,11 @@
                     activeGraphId: data.id,
                 };
             });
+
+            // Prefetch component data for all components in the graph
+            const componentKeys = extractComponentKeys(data);
+            await runState.prefetchComponentData(componentKeys);
+
             graphCompute = { status: "idle" };
         } catch (error) {
             graphCompute = { status: "error", error: String(error) };

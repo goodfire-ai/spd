@@ -35,3 +35,18 @@ export async function probeComponent(text: string, layer: string, componentIdx: 
         body: JSON.stringify({ text, layer, component_idx: componentIdx }),
     });
 }
+
+/**
+ * Bulk fetch activation contexts for multiple components.
+ * Returns a dict keyed by component_key. Components not found are omitted.
+ */
+export async function getActivationContextsBulk(
+    componentKeys: string[],
+    limit: number = ACTIVATION_EXAMPLES_INITIAL_LIMIT,
+): Promise<Record<string, SubcomponentActivationContexts>> {
+    return fetchJson<Record<string, SubcomponentActivationContexts>>(`${API_URL}/api/activation_contexts/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ component_keys: componentKeys, limit }),
+    });
+}
