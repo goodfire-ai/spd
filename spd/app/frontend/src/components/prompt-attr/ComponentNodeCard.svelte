@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { getContext } from "svelte";
+    import { getContext, onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../../lib/colors";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     // import { useComponentData } from "../../lib/useComponentData.svelte";
@@ -64,13 +64,17 @@
     // Dataset attributions and interpretation details are fetched on-demand.
     const componentData = useComponentDataExpectCached();
 
+    onMount(() => {
+        componentData.load(layer, cIdx);
+    });
+
     const N_TOKENS_TO_DISPLAY_INPUT = 50;
     const N_TOKENS_TO_DISPLAY_OUTPUT = 15;
 
     // Derive token lists from loaded tokenStats (null if not loaded or no data)
     const inputTokenLists = $derived.by(() => {
         const tokenStats = componentData.tokenStats;
-        if (tokenStats?.status !== "loaded" || tokenStats.data === null) return null;
+        if (tokenStats.status !== "loaded" || tokenStats.data === null) return null;
         return [
             {
                 title: "Top Recall",
@@ -93,7 +97,7 @@
 
     const outputTokenLists = $derived.by(() => {
         const tokenStats = componentData.tokenStats;
-        if (tokenStats?.status !== "loaded" || tokenStats.data === null) return null;
+        if (tokenStats.status !== "loaded" || tokenStats.data === null) return null;
         // Compute max absolute PMI for scaling
         const maxAbsPmi = Math.max(
             tokenStats.data.output.top_pmi[0]?.[1] ?? 0,
@@ -185,7 +189,7 @@
 
     // Compute global max absolute component act for normalization (used by both activating examples and probe)
     const maxAbsComponentAct = $derived.by(() => {
-        if (componentData.componentDetail?.status !== "loaded") return 1;
+        if (componentData.componentDetail.status !== "loaded") return 1;
         return computeMaxAbsComponentAct(componentData.componentDetail.data.example_component_acts);
     });
 </script>
@@ -204,7 +208,7 @@
             {#if clusterId !== undefined}
                 <span class="metric">Cluster: {clusterId ?? "null"}</span>
             {/if}
-            {#if componentData.componentDetail?.status === "loaded"}
+            {#if componentData.componentDetail.status === "loaded"}
                 <span class="metric">Mean CI: {formatNumericalValue(componentData.componentDetail.data.mean_ci)}</span>
             {/if}
         </div>
@@ -219,9 +223,11 @@
     <!-- Activating examples (from harvest data) -->
     <div class="activating-examples-section">
         <SectionHeader title="Activating Examples" />
-        {#if componentData.componentDetail?.status === "loading"}
+        {#if componentData.componentDetail.status === "uninitialized"}
+            <StatusText>uninitialized</StatusText>
+        {:else if componentData.componentDetail.status === "loading"}
             <StatusText>Loading details...</StatusText>
-        {:else if componentData.componentDetail?.status === "loaded"}
+        {:else if componentData.componentDetail.status === "loaded"}
             {#if componentData.componentDetail.data.example_tokens.length > 0}
                 <ActivationContextsPagedTable
                     exampleTokens={componentData.componentDetail.data.example_tokens}
@@ -231,10 +237,8 @@
                     {maxAbsComponentAct}
                 />
             {/if}
-        {:else if componentData.componentDetail?.status === "error"}
+        {:else if componentData.componentDetail.status === "error"}
             <StatusText>Error loading details: {String(componentData.componentDetail.error)}</StatusText>
-        {:else}
-            <StatusText>Something went wrong loading details.</StatusText>
         {/if}
     </div>
 
@@ -258,17 +262,23 @@
     {/if}
 
     <!-- Dataset attributions  -->
-    {#if componentData.datasetAttributions?.status === "loaded" && componentData.datasetAttributions.data}
-        <DatasetAttributionsSection
-            attributions={componentData.datasetAttributions.data}
-            onComponentClick={handleCorrelationClick}
-        />
-    {:else if componentData.datasetAttributions?.status === "loading"}
+    {#if componentData.datasetAttributions.status === "uninitialized"}
+        <StatusText>uninitialized</StatusText>
+    {:else if componentData.datasetAttributions.status === "loaded"}
+        {#if componentData.datasetAttributions.data !== null}
+            <DatasetAttributionsSection
+                    attributions={componentData.datasetAttributions.data}
+                    onComponentClick={handleCorrelationClick}
+                />
+        {:else}
+            <StatusText>No dataset attributions available.</StatusText>
+        {/if}
+    {:else if componentData.datasetAttributions.status === "loading"}
         <div class="dataset-attributions-loading">
             <SectionHeader title="Dataset Attributions" />
             <StatusText>Loading...</StatusText>
         </div>
-    {:else if componentData.datasetAttributions?.status === "error"}
+    {:else if componentData.datasetAttributions.status === "error"}
         <div class="dataset-attributions-loading">
             <SectionHeader title="Dataset Attributions" />
             <StatusText>Error: {String(componentData.datasetAttributions.error)}</StatusText>
@@ -298,15 +308,15 @@
     <!-- Component correlations -->
     <div class="correlations-section">
         <SectionHeader title="Correlated Components" />
-        {#if componentData.correlations?.status === "loading"}
+        {#if componentData.correlations.status === "loading"}
             <StatusText>Loading...</StatusText>
-        {:else if componentData.correlations?.status === "loaded" && componentData.correlations.data}
+        {:else if componentData.correlations.status === "loaded" && componentData.correlations.data}
             <ComponentCorrelationMetrics
                 correlations={componentData.correlations.data}
                 pageSize={16}
                 onComponentClick={handleCorrelationClick}
             />
-        {:else if componentData.correlations?.status === "error"}
+        {:else if componentData.correlations.status === "error"}
             <StatusText>Error loading correlations: {String(componentData.correlations.error)}</StatusText>
         {:else}
             <StatusText>No correlations available.</StatusText>
