@@ -105,6 +105,25 @@
                     {/each}
                 </div>
             </div>
+            <div class="settings-section">
+                <h4>Component Filtering</h4>
+                <p class="settings-hint">Filter components in Components tab by mean CI</p>
+                <div class="cutoff-control">
+                    <label for="mean-ci-cutoff">Mean CI Cutoff:</label>
+                    <input
+                        id="mean-ci-cutoff"
+                        type="number"
+                        step="any"
+                        value={displaySettings.meanCiCutoff}
+                        oninput={(e) => {
+                            const val = parseFloat((e.target as HTMLInputElement).value);
+                            if (!isNaN(val) && val >= 0) {
+                                displaySettings.meanCiCutoff = val;
+                            }
+                        }}
+                    />
+                </div>
+            </div>
         </div>
     {/if}
 </div>
@@ -240,5 +259,33 @@
         margin: 0;
         cursor: pointer;
         accent-color: var(--accent-primary);
+    }
+
+    .cutoff-control {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+    }
+
+    .cutoff-control label {
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .cutoff-control input[type="number"] {
+        width: 100px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-sm);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        background: var(--bg-surface);
+        color: var(--text-primary);
+    }
+
+    .cutoff-control input[type="number"]:focus {
+        outline: none;
+        border-color: var(--accent-primary);
     }
 </style>

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../lib/colors";
-    import { anyCorrelationStatsEnabled } from "../lib/displaySettings.svelte";
+    import { anyCorrelationStatsEnabled, displaySettings } from "../lib/displaySettings.svelte";
     import { COMPONENT_CARD_CONSTANTS } from "../lib/componentCardConstants";
     import { getLayerAlias } from "../lib/layerAliasing";
     import type { ActivationContextsSummary, SubcomponentMetadata } from "../lib/promptAttributionsTypes";
@@ -26,7 +26,10 @@
     let selectedLayer = $state<string>(Object.keys(activationContextsSummary)[0]);
 
     // Layer metadata is already sorted by mean_ci desc from backend
-    let currentLayerMetadata = $derived(activationContextsSummary[selectedLayer]);
+    // Filter by mean CI cutoff for ordered navigation (but not for "go to index" search)
+    let currentLayerMetadata = $derived(
+        activationContextsSummary[selectedLayer].filter((m) => m.mean_ci >= displaySettings.meanCiCutoff),
+    );
     let totalPages = $derived(currentLayerMetadata.length);
     let currentMetadata = $derived<SubcomponentMetadata>(currentLayerMetadata[currentPage]);
 
@@ -53,6 +56,14 @@
         return () => {
             if (loadTimeout) clearTimeout(loadTimeout);
         };
+    });
+
+    // Reset page if cutoff changes cause current page to be out of bounds
+    $effect(() => {
+        if (currentPage >= totalPages && totalPages > 0) {
+            currentPage = 0;
+            loadCurrentComponent();
+        }
     });
 
     function handlePageInput(event: Event) {
@@ -82,11 +93,20 @@
             return;
         }
 
-        // Find the page index that contains this subcomponent index
+        // Search in unfiltered metadata to allow finding any component
+        const fullMetadata = activationContextsSummary[selectedLayer];
+        const component = fullMetadata.find((m) => m.subcomponent_idx === targetIdx);
+
+        if (!component) {
+            searchError = `Not found`;
+            return;
+        }
+
+        // Find the page index in filtered list
         const pageIndex = currentLayerMetadata.findIndex((m) => m.subcomponent_idx === targetIdx);
 
         if (pageIndex === -1) {
-            searchError = `Not found`;
+            searchError = `Below cutoff (${component.mean_ci.toExponential(2)})`;
             return;
         }
 

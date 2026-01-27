@@ -35,6 +35,7 @@ export const displaySettings = $state({
     showSetOverlapVis: true,
     showEdgeAttributions: true,
     nodeColorMode: "ci" as NodeColorMode,
+    meanCiCutoff: 1e-7,
 });
 
 export function anyCorrelationStatsEnabled() {
