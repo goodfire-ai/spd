@@ -313,12 +313,10 @@
     }
 
     .pill-content {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: 1fr auto;
         align-items: baseline;
-        gap: 2px 6px;
-        min-width: 0;
+        gap: 6px;
     }
 
     .interp-label {
@@ -334,7 +332,6 @@
         font-size: 9px;
         opacity: 0.7;
         text-align: right;
-        margin-left: auto;
     }
 
     .tooltip {
