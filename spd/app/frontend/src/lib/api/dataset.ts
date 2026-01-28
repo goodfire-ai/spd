@@ -53,3 +53,28 @@ export async function getDatasetResults(page: number, pageSize: number): Promise
 
     return (await response.json()) as DatasetSearchPage;
 }
+
+export type RandomSamplesResult = {
+    results: DatasetSearchResult[];
+    total_available: number;
+    seed: number;
+};
+
+export async function getRandomSamples(
+    nSamples: number = 100,
+    seed: number = 42,
+    split: "train" | "test" = "train",
+): Promise<RandomSamplesResult> {
+    const url = new URL(`${API_URL}/api/dataset/random`);
+    url.searchParams.set("n_samples", String(nSamples));
+    url.searchParams.set("seed", String(seed));
+    url.searchParams.set("split", split);
+
+    const response = await fetch(url.toString(), { method: "GET" });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get random samples");
+    }
+
+    return (await response.json()) as RandomSamplesResult;
+}

@@ -162,3 +162,59 @@ def get_dataset_results(
         total_results=total_results,
         total_pages=total_pages,
     )
+
+
+class RandomSamplesResult(BaseModel):
+    """Random samples from the dataset."""
+
+    results: list[DatasetSearchResult]
+    total_available: int
+    seed: int
+
+
+@router.get("/random")
+@log_errors
+def get_random_samples(
+    n_samples: Annotated[int, Query(ge=1, le=200)] = 100,
+    seed: Annotated[int, Query(ge=0)] = 42,
+    split: Annotated[str, Query(pattern="^(train|test)$")] = "train",
+) -> RandomSamplesResult:
+    """Get random samples from the SimpleStories dataset.
+
+    Args:
+        n_samples: Number of random samples to return (1-200)
+        seed: Random seed for reproducibility
+        split: Dataset split ("train" or "test")
+
+    Returns:
+        Random samples with metadata
+    """
+    logger.info(f"Loading SimpleStories dataset (split={split}) for random sampling...")
+    dataset = load_dataset("lennart-finke/SimpleStories", split=split)
+    assert isinstance(dataset, Dataset), f"Expected Dataset, got {type(dataset)}"
+
+    total_available = len(dataset)
+    actual_samples = min(n_samples, total_available)
+
+    shuffled = dataset.shuffle(seed=seed)
+    samples = shuffled.select(range(actual_samples))
+
+    results = []
+    for item in samples:
+        item_dict: dict[str, Any] = dict(item)
+        results.append(
+            DatasetSearchResult(
+                story=item_dict["story"],
+                occurrence_count=0,
+                topic=item_dict.get("topic"),
+                theme=item_dict.get("theme"),
+            )
+        )
+
+    logger.info(f"Returned {len(results)} random samples from {total_available} total stories")
+
+    return RandomSamplesResult(
+        results=results,
+        total_available=total_available,
+        seed=seed,
+    )
