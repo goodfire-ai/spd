@@ -522,6 +522,12 @@ def compute_graph_optimized_stream(
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     token_ids = prompt.token_ids
+    if loss_position >= len(token_ids):
+        raise HTTPException(
+            status_code=400,
+            detail=f"loss_position {loss_position} out of bounds for prompt with {len(token_ids)} tokens",
+        )
+
     token_strings = [loaded.token_strings[t] for t in token_ids]
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
