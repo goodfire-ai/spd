@@ -18,6 +18,9 @@ from spd.configs import (
     CIMaskedReconSubsetLossConfig,
     CIMeanPerComponentConfig,
     ComponentActivationDensityConfig,
+    ComponentDirectionsConfig,
+    ComponentWeightL1LossConfig,
+    ComponentWeightL2LossConfig,
     Config,
     FaithfulnessLossConfig,
     IdentityCIErrorConfig,
@@ -48,6 +51,9 @@ from spd.metrics.ci_masked_recon_loss import CIMaskedReconLoss
 from spd.metrics.ci_masked_recon_subset_loss import CIMaskedReconSubsetLoss
 from spd.metrics.ci_mean_per_component import CIMeanPerComponent
 from spd.metrics.component_activation_density import ComponentActivationDensity
+from spd.metrics.component_directions import ComponentDirections
+from spd.metrics.component_weight_l1_loss import ComponentWeightL1Loss
+from spd.metrics.component_weight_l2_loss import ComponentWeightL2Loss
 from spd.metrics.faithfulness_loss import FaithfulnessLoss
 from spd.metrics.identity_ci_error import IdentityCIError
 from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
@@ -139,6 +145,16 @@ def init_metric(
                 model=model,
                 device=device,
             )
+        case ComponentWeightL2LossConfig():
+            metric = ComponentWeightL2Loss(
+                model=model,
+                device=device,
+            )
+        case ComponentWeightL1LossConfig():
+            metric = ComponentWeightL1Loss(
+                model=model,
+                device=device,
+            )
         case CEandKLLossesConfig():
             metric = CEandKLLosses(
                 model=model,
@@ -175,6 +191,14 @@ def init_metric(
         case ComponentActivationDensityConfig():
             metric = ComponentActivationDensity(
                 model=model, device=device, ci_alive_threshold=run_config.ci_alive_threshold
+            )
+        case ComponentDirectionsConfig():
+            metric = ComponentDirections(
+                model=model,
+                device=device,
+                layer_name=cfg.layer_name,
+                n_components=cfg.n_components,
+                image_shape=cfg.image_shape,
             )
         case IdentityCIErrorConfig():
             metric = IdentityCIError(

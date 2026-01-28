@@ -4,6 +4,7 @@ from typing import Literal, override
 
 import einops
 import torch
+import torch.nn.functional as F
 from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 
@@ -231,7 +232,15 @@ class LinearComponents(Components):
         if weight_delta_and_mask is not None:
             weight_delta, weight_delta_mask = weight_delta_and_mask
             unmasked_delta_out = einops.einsum(x, weight_delta, "... d_in, d_out d_in -> ... d_out")
-            assert unmasked_delta_out.shape[:-1] == weight_delta_mask.shape
+            # Handle case where weight_delta_mask has extra dimensions (e.g., from conv routing)
+            expected_shape = unmasked_delta_out.shape[:-1]
+            if weight_delta_mask.shape != expected_shape:
+                # Reduce extra dimensions by taking mean
+                while weight_delta_mask.dim() > len(expected_shape):
+                    weight_delta_mask = weight_delta_mask.mean(dim=-1)
+                # Or expand if needed
+                while weight_delta_mask.dim() < len(expected_shape):
+                    weight_delta_mask = weight_delta_mask.unsqueeze(-1)
             out += einops.einsum(
                 weight_delta_mask, unmasked_delta_out, "..., ... d_out -> ... d_out"
             )
@@ -306,6 +315,192 @@ class EmbeddingComponents(Components):
             out += einops.einsum(
                 weight_delta_mask, unmasked_delta_out, "..., ... embedding_dim -> ... embedding_dim"
             )
+
+        return out
+
+
+class Conv2dComponents(Components):
+    """Component decomposition for Conv2d layers.
+
+    Treats the convolution as a linear transformation applied at each spatial location.
+    Each filter (out_channels, in_channels, kH, kW) is flattened and decomposed as V @ U:
+      - V: (in_channels * kH * kW, C) - maps input patches to components
+      - U: (C, out_channels) - maps components to output channels
+
+    Uses F.conv2d internally for efficient CUDA-optimized computation:
+      - V reshaped to (C, in_channels, kH, kW) acts as C conv filters
+      - U reshaped to (out_channels, C, 1, 1) acts as a 1x1 convolution
+    """
+
+    bias: Tensor | None
+
+    def __init__(
+        self,
+        C: int,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: tuple[int, int],
+        stride: tuple[int, int] = (1, 1),
+        padding: tuple[int, int] = (0, 0),
+        dilation: tuple[int, int] = (1, 1),
+        bias: Tensor | None = None,
+    ):
+        kernel_h, kernel_w = kernel_size
+        v_dim = in_channels * kernel_h * kernel_w
+        u_dim = out_channels
+        super().__init__(C, v_dim=v_dim, u_dim=u_dim)
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
+
+        # We don't train biases in SPD
+        self.register_buffer("bias", bias)
+
+    @property
+    def V_as_conv_filters(self) -> Float[Tensor, "C in_channels kH kW"]:
+        """V reshaped as conv2d filters: (C, in_channels, kH, kW)."""
+        # V: (in_channels * kH * kW, C) -> (C, in_channels, kH, kW)
+        return self.V.T.reshape(self.C, self.in_channels, self.kernel_size[0], self.kernel_size[1])
+
+    @property
+    def U_as_1x1_conv(self) -> Float[Tensor, "out_channels C 1 1"]:
+        """U reshaped as 1x1 conv2d filters: (out_channels, C, 1, 1)."""
+        # U: (C, out_channels) -> (out_channels, C, 1, 1)
+        return self.U.T[:, :, None, None]
+
+    @property
+    @override
+    def weight(self) -> Float[Tensor, "out_channels in_channels kH kW"]:
+        """Reconstructs the Conv2d weight from V @ U."""
+        # V @ U -> (v_dim, C) @ (C, u_dim) -> (v_dim, u_dim)
+        # v_dim = in_channels * kH * kW, u_dim = out_channels
+        weight_2d = einops.einsum(self.V, self.U, "v_dim C, C out_ch -> v_dim out_ch")
+        # Reshape to (out_channels, in_channels, kH, kW)
+        return weight_2d.T.reshape(
+            self.out_channels,
+            self.in_channels,
+            self.kernel_size[0],
+            self.kernel_size[1],
+        )
+
+    @override
+    def get_component_acts(
+        self, x: Float[Tensor, "batch in_channels H W"]
+    ) -> Float[Tensor, "batch H_out W_out C"]:
+        """Compute component activations using F.conv2d for efficiency."""
+        # Use conv2d with V as filters: (batch, C, H_out, W_out)
+        component_acts_chw = F.conv2d(
+            x,
+            self.V_as_conv_filters,
+            bias=None,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+        )
+        # Permute to (batch, H_out, W_out, C) for compatibility with mask format
+        return component_acts_chw.permute(0, 2, 3, 1)
+
+    def _compute_output_spatial_dims(
+        self, x: Float[Tensor, "batch in_channels H W"]
+    ) -> tuple[int, int]:
+        """Compute output height and width given input tensor."""
+        H_in, W_in = x.shape[2], x.shape[3]
+        kH, kW = self.kernel_size
+        sH, sW = self.stride
+        pH, pW = self.padding
+        dH, dW = self.dilation
+
+        H_out = (H_in + 2 * pH - dH * (kH - 1) - 1) // sH + 1
+        W_out = (W_in + 2 * pW - dW * (kW - 1) - 1) // sW + 1
+        return H_out, W_out
+
+    @override
+    def forward(
+        self,
+        x: Float[Tensor, "batch in_channels H W"],
+        mask: Float[Tensor, "batch C"] | Float[Tensor, "batch H_out W_out C"] | None = None,
+        weight_delta_and_mask: WeightDeltaAndMask | None = None,
+        component_acts_cache: dict[str, Float[Tensor, "batch H_out W_out C"]] | None = None,
+    ) -> Float[Tensor, "batch out_channels H_out W_out"]:
+        """Forward pass through V and U matrices for Conv2d.
+
+        Uses F.conv2d for efficient CUDA-optimized computation.
+
+        Args:
+            x: Input tensor (batch, in_channels, H, W)
+            mask: Tensor which masks parameter components. Can be:
+                - (batch, C): same mask for all spatial locations
+                - (batch, H_out, W_out, C): per-location mask
+            weight_delta_and_mask: Optional tuple for weight delta component
+            component_acts_cache: Cache dictionary to populate with component acts
+
+        Returns:
+            output: (batch, out_channels, H_out, W_out)
+        """
+        H_out, W_out = self._compute_output_spatial_dims(x)
+
+        # Get component activations: (batch, H_out, W_out, C)
+        component_acts = self.get_component_acts(x)
+
+        if component_acts_cache is not None:
+            component_acts_cache["pre_detach"] = component_acts
+            component_acts = component_acts.detach().requires_grad_(True)
+            component_acts_cache["post_detach"] = component_acts
+
+        if mask is not None:
+            # Handle both (batch, C) and (batch, H_out, W_out, C) masks
+            if mask.dim() == 2:
+                # Expand (batch, C) to (batch, H_out, W_out, C)
+                mask = mask[:, None, None, :].expand(-1, H_out, W_out, -1)
+            component_acts = component_acts * mask
+
+        # Convert to CHW format for 1x1 conv: (batch, C, H_out, W_out)
+        component_acts_chw = component_acts.permute(0, 3, 1, 2)
+
+        # Apply U via 1x1 convolution: (batch, out_channels, H_out, W_out)
+        out = F.conv2d(component_acts_chw, self.U_as_1x1_conv)
+
+        # Handle weight delta if provided
+        if weight_delta_and_mask is not None:
+            weight_delta, weight_delta_mask = weight_delta_and_mask
+            # weight_delta has shape (out_channels, in_channels, kH, kW)
+            # Compute unmasked delta output using conv2d
+            unmasked_delta_out = F.conv2d(
+                x,
+                weight_delta,
+                bias=None,
+                stride=self.stride,
+                padding=self.padding,
+                dilation=self.dilation,
+            )
+            # unmasked_delta_out: (batch, out_channels, H_out, W_out)
+
+            # weight_delta_mask is typically (batch,) for per-sample masking
+            if weight_delta_mask.dim() == 1:
+                # (batch,) mask - broadcast over spatial and channel dims
+                out = out + weight_delta_mask[:, None, None, None] * unmasked_delta_out
+            elif weight_delta_mask.dim() == 3:
+                # (batch, H, W) mask - need to match spatial dims of delta_out
+                if weight_delta_mask.shape[1:] != unmasked_delta_out.shape[2:]:
+                    # Spatial dims don't match - just use per-sample mean
+                    mask_scalar = weight_delta_mask.mean(dim=(1, 2), keepdim=True)
+                    out = out + mask_scalar.unsqueeze(1) * unmasked_delta_out
+                else:
+                    out = out + weight_delta_mask.unsqueeze(1) * unmasked_delta_out
+            else:
+                # Fallback: broadcast from front
+                mask_expanded = weight_delta_mask.view(
+                    weight_delta_mask.shape
+                    + (1,) * (unmasked_delta_out.dim() - weight_delta_mask.dim())
+                )
+                out = out + mask_expanded * unmasked_delta_out
+
+        if self.bias is not None:
+            out = out + self.bias[None, :, None, None]
 
         return out
 

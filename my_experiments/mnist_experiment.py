@@ -18,6 +18,9 @@ from spd.configs import (
     CIHistogramsConfig,
     CIMeanPerComponentConfig,
     ComponentActivationDensityConfig,
+    ComponentDirectionsConfig,
+    ComponentWeightL1LossConfig,
+    ComponentWeightL2LossConfig,
     Config,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
@@ -177,10 +180,12 @@ def main(
     train_weight_decay: float = 5e-4,
     spd_steps: int = 200000,
     spd_lr: float = 0.001,
+    spd_weight_decay: float = 0.0,
+    spd_l1_penalty: float = 3.0,
     n_components: int = 500,
     seed: int = 42,
-    output_dir: str | None = None,
-    wandb_project: str | None = None,
+    output_dir: str | None = "output/mnist_experiment_v2",
+    wandb_project: str | None = "mnist_experiment",
 ) -> None:
     """Main experiment function.
 
@@ -191,6 +196,8 @@ def main(
         train_weight_decay: Weight decay for MLP training
         spd_steps: Number of steps for SPD decomposition
         spd_lr: Learning rate for SPD decomposition
+        spd_weight_decay: L2 penalty for SPD component parameters (V and U matrices)
+        spd_l1_penalty: L1 penalty for SPD component parameters (V and U matrices)
         n_components: Number of components per layer for decomposition
         seed: Random seed
         output_dir: Output directory (defaults to ./output/mnist_experiment)
@@ -237,6 +244,8 @@ def main(
                 "train_weight_decay": train_weight_decay,
                 "spd_steps": spd_steps,
                 "spd_lr": spd_lr,
+                "spd_weight_decay": spd_weight_decay,
+                "spd_l1_penalty": spd_l1_penalty,
                 "n_components": n_components,
                 "seed": seed,
             }
@@ -348,7 +357,9 @@ def main(
                 n_steps=1,
                 mask_scope="unique_per_datapoint",
             ),
-        ],
+        ]
+        + ([ComponentWeightL2LossConfig(coeff=spd_weight_decay)] if spd_weight_decay > 0 else [])
+        + ([ComponentWeightL1LossConfig(coeff=spd_l1_penalty)] if spd_l1_penalty > 0 else []),
         output_loss_type="kl",
         lr_schedule=ScheduleConfig(start_val=spd_lr, fn_type="cosine", final_val_frac=0.0),
         steps=spd_steps,
@@ -374,6 +385,7 @@ def main(
             CIMeanPerComponentConfig(),
             CIHistogramsConfig(n_batches_accum=5),
             ComponentActivationDensityConfig(),
+            ComponentDirectionsConfig(layer_name="fc1", n_components=20, image_shape=(28, 28)),
             CI_L0Config(groups=None),
             UVPlotsConfig(identity_patterns=None, dense_patterns=None),
             StochasticAccuracyLayerwiseConfig(),

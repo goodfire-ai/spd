@@ -173,6 +173,14 @@ class FaithfulnessLossConfig(LossMetricConfig):
     classname: Literal["FaithfulnessLoss"] = "FaithfulnessLoss"
 
 
+class ComponentWeightL2LossConfig(LossMetricConfig):
+    classname: Literal["ComponentWeightL2Loss"] = "ComponentWeightL2Loss"
+
+
+class ComponentWeightL1LossConfig(LossMetricConfig):
+    classname: Literal["ComponentWeightL1Loss"] = "ComponentWeightL1Loss"
+
+
 class ImportanceMinimalityLossConfig(LossMetricConfig):
     classname: Literal["ImportanceMinimalityLoss"] = "ImportanceMinimalityLoss"
     pnorm: float
@@ -335,6 +343,13 @@ class UVPlotsConfig(BaseConfig):
     dense_patterns: list[str] | None
 
 
+class ComponentDirectionsConfig(BaseConfig):
+    classname: Literal["ComponentDirections"] = "ComponentDirections"
+    layer_name: str = "fc1"
+    n_components: int = 20
+    image_shape: tuple[int, int] = (28, 28)
+
+
 ReconLossConfigType = (
     UnmaskedReconLossConfig
     | CIMaskedReconLossConfig
@@ -349,7 +364,13 @@ ReconLossConfigType = (
     | StochasticHiddenActsReconLossConfig
 )
 
-LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
+LossMetricConfigType = (
+    FaithfulnessLossConfig
+    | ComponentWeightL2LossConfig
+    | ComponentWeightL1LossConfig
+    | ImportanceMinimalityLossConfig
+    | ReconLossConfigType
+)
 
 EvalOnlyMetricConfigType = (
     CEandKLLossesConfig
@@ -357,6 +378,7 @@ EvalOnlyMetricConfigType = (
     | CI_L0Config
     | CIMeanPerComponentConfig
     | ComponentActivationDensityConfig
+    | ComponentDirectionsConfig
     | IdentityCIErrorConfig
     | PermutedCIPlotsConfig
     | UVPlotsConfig

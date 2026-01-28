@@ -5,6 +5,7 @@ from functools import partial
 from typing import Any, Literal, NamedTuple, overload, override
 
 import torch
+import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
@@ -16,6 +17,7 @@ from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
     Components,
     ComponentsMaskInfo,
+    Conv2dComponents,
     EmbeddingComponents,
     Identity,
     LinearCiFn,
@@ -120,13 +122,17 @@ class ComponentModel(LoadableModule):
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
 
-    def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
+    def target_weight(
+        self, module_name: str
+    ) -> Float[Tensor, "rows cols"] | Float[Tensor, "out_ch in_ch kH kW"]:
         target_module = self.target_model.get_submodule(module_name)
 
         match target_module:
             case RadfordConv1D():
                 return target_module.weight.T
             case nn.Linear() | nn.Embedding():
+                return target_module.weight
+            case nn.Conv2d():
                 return target_module.weight
             case Identity():
                 p = next(self.parameters())
@@ -169,6 +175,29 @@ class ComponentModel(LoadableModule):
                     vocab_size=target_module.num_embeddings,
                     embedding_dim=target_module.embedding_dim,
                 )
+            case nn.Conv2d():
+                # Extract kernel_size, stride, padding, dilation as tuple[int, int]
+                # Conv2d stores these as tuple[int, ...] for 2D, we extract the first two elements
+                kernel_size: tuple[int, int] = (
+                    target_module.kernel_size[0],
+                    target_module.kernel_size[1],
+                )
+                stride: tuple[int, int] = (target_module.stride[0], target_module.stride[1])
+                pad = target_module.padding
+                assert not isinstance(pad, str), "String padding modes not supported"
+                padding: tuple[int, int] = (pad[0], pad[1])
+                dilation: tuple[int, int] = (target_module.dilation[0], target_module.dilation[1])
+
+                component = Conv2dComponents(
+                    C=C,
+                    in_channels=target_module.in_channels,
+                    out_channels=target_module.out_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    dilation=dilation,
+                    bias=target_module.bias.data if target_module.bias is not None else None,
+                )
             case _:
                 raise ValueError(f"Module {target_module} not supported")
 
@@ -195,9 +224,9 @@ class ComponentModel(LoadableModule):
         ci_fn_hidden_dims: list[int],
     ) -> nn.Module:
         """Helper to create a causal importance function (ci_fn) based on ci_fn_type and module type."""
-        if isinstance(target_module, nn.Embedding):
+        if isinstance(target_module, (nn.Embedding, nn.Conv2d)):
             assert ci_fn_type in ("mlp", "linear"), (
-                f"Embedding modules only supported for ci_fn_type='mlp' or 'linear', got {ci_fn_type}"
+                f"{type(target_module).__name__} modules only supported for ci_fn_type='mlp' or 'linear', got {ci_fn_type}"
             )
 
         if ci_fn_type == "mlp":
@@ -411,7 +440,52 @@ class ComponentModel(LoadableModule):
             if mask_info.routing_mask == "all":
                 return components_out
 
-            return torch.where(mask_info.routing_mask[..., None], components_out, output)
+            # Expand routing_mask to broadcast with output
+            routing_mask = mask_info.routing_mask
+
+            if output.dim() == 4:
+                # Conv output: (batch, C, H, W)
+                if routing_mask.dim() == 1:
+                    # (batch,) -> (batch, 1, 1, 1)
+                    routing_mask = routing_mask[:, None, None, None]
+                elif routing_mask.dim() == 3:
+                    # (batch, H_mask, W_mask) -> need (batch, 1, H_out, W_out)
+                    H_out, W_out = output.shape[2], output.shape[3]
+                    H_mask, W_mask = routing_mask.shape[1], routing_mask.shape[2]
+                    if H_mask != H_out or W_mask != W_out:
+                        # Resize mask to match output spatial dims using interpolation
+                        routing_mask = (
+                            F.interpolate(
+                                routing_mask.unsqueeze(1).float(),
+                                size=(H_out, W_out),
+                                mode="nearest",
+                            )
+                            .squeeze(1)
+                            .bool()
+                        )
+                    routing_mask = routing_mask.unsqueeze(1)  # (batch, 1, H, W)
+                else:
+                    # Unknown mask shape - try to broadcast
+                    while routing_mask.dim() < output.dim():
+                        routing_mask = routing_mask.unsqueeze(-1)
+            elif output.dim() == 2:
+                # Linear output: (batch, features)
+                if routing_mask.dim() == 1:
+                    # (batch,) -> (batch, 1)
+                    routing_mask = routing_mask.unsqueeze(-1)
+                elif routing_mask.dim() > 1:
+                    # Spatial mask for linear layer - collapse to per-sample
+                    # Take any() over spatial dims: if any spatial location is True, route the sample
+                    while routing_mask.dim() > 1:
+                        routing_mask = routing_mask.any(dim=-1)
+                    routing_mask = routing_mask.unsqueeze(-1)  # (batch, 1)
+            else:
+                # General case: add dimensions at the end
+                n_expand = output.dim() - routing_mask.dim()
+                for _ in range(n_expand):
+                    routing_mask = routing_mask.unsqueeze(-1)
+
+            return torch.where(routing_mask, components_out, output)
 
         # No component replacement - keep original output
         return None

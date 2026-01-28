@@ -23,6 +23,7 @@ from spd.models.component_model import (
 )
 from spd.models.components import (
     ComponentsMaskInfo,
+    Conv2dComponents,
     EmbeddingComponents,
     LinearComponents,
     MLPCiFn,
@@ -524,4 +525,250 @@ def test_routing():
     assert not torch.allclose(cm_routed_out[0], target_out[0])
 
     # but it should be the same for the second example (where it's not routed to components)
+    assert torch.allclose(cm_routed_out[1], target_out[1])
+
+
+class Conv2dTestModel(nn.Module):
+    """Simple test model with Conv2d layers for unit-testing."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1, bias=True)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1, bias=False)
+
+    @override
+    def forward(self, x: Float[Tensor, "batch 3 H W"]) -> Float[Tensor, "batch 32 H W"]:
+        x = self.conv1(x)
+        x = torch.relu(x)
+        x = self.conv2(x)
+        return x
+
+
+def test_conv2d_components_weight_reconstruction():
+    """Test that Conv2dComponents can reconstruct the weight from V @ U."""
+    in_channels = 3
+    out_channels = 16
+    kernel_size = (3, 3)
+    C = 8
+
+    conv2d_comp = Conv2dComponents(
+        C=C,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        bias=None,
+    )
+
+    weight = conv2d_comp.weight
+    assert weight.shape == (out_channels, in_channels, kernel_size[0], kernel_size[1])
+
+
+def test_conv2d_components_get_component_acts():
+    """Test component activations are computed correctly for Conv2d."""
+    batch_size = 2
+    in_channels = 3
+    out_channels = 16
+    kernel_size = (3, 3)
+    H, W = 8, 8
+    C = 10
+
+    conv2d_comp = Conv2dComponents(
+        C=C,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        padding=(1, 1),
+        bias=None,
+    )
+
+    x = torch.randn(batch_size, in_channels, H, W)
+    component_acts = conv2d_comp.get_component_acts(x)
+
+    # With padding=1 and kernel_size=3, output spatial dims should match input
+    H_out, W_out = conv2d_comp._compute_output_spatial_dims(x)
+    assert component_acts.shape == (batch_size, H_out, W_out, C)
+
+
+def test_conv2d_components_forward_shape():
+    """Test forward pass produces correct output shape."""
+    batch_size = 2
+    in_channels = 3
+    out_channels = 16
+    kernel_size = (3, 3)
+    H, W = 8, 8
+    C = 10
+
+    conv2d_comp = Conv2dComponents(
+        C=C,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        padding=(1, 1),
+        bias=torch.zeros(out_channels),
+    )
+
+    x = torch.randn(batch_size, in_channels, H, W)
+    out = conv2d_comp(x)
+
+    assert out.shape == (batch_size, out_channels, H, W)
+
+
+def test_conv2d_components_with_mask():
+    """Test that masking works correctly for Conv2d."""
+    batch_size = 2
+    in_channels = 3
+    out_channels = 16
+    kernel_size = (3, 3)
+    H, W = 8, 8
+    C = 10
+
+    conv2d_comp = Conv2dComponents(
+        C=C,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        padding=(1, 1),
+        bias=None,
+    )
+
+    x = torch.randn(batch_size, in_channels, H, W)
+
+    # Test with (batch, C) mask
+    mask = torch.ones(batch_size, C)
+    out_all = conv2d_comp(x, mask=mask)
+
+    mask_half = torch.zeros(batch_size, C)
+    mask_half[:, : C // 2] = 1.0
+    out_half = conv2d_comp(x, mask=mask_half)
+
+    # Output with half the components masked should be different
+    assert not torch.allclose(out_all, out_half)
+
+
+def test_conv2d_with_component_model():
+    """Test Conv2d integration with ComponentModel."""
+    model = Conv2dTestModel()
+    model.eval()
+    model.requires_grad_(False)
+
+    C = 8
+    cm = ComponentModel(
+        target_model=model,
+        module_path_info=[
+            ModulePathInfo(module_path="conv1", C=C),
+            ModulePathInfo(module_path="conv2", C=C),
+        ],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
+    )
+
+    # Check components were created correctly
+    assert isinstance(cm.components["conv1"], Conv2dComponents)
+    assert isinstance(cm.components["conv2"], Conv2dComponents)
+    assert cm.components["conv1"].C == C
+    assert cm.components["conv2"].C == C
+
+    # Check V and U matrices have correct shapes
+    # conv1: in=3, out=16, kernel=3x3 -> V: (3*3*3, C), U: (C, 16)
+    assert cm.components["conv1"].V.shape == (3 * 3 * 3, C)
+    assert cm.components["conv1"].U.shape == (C, 16)
+
+    # conv2: in=16, out=32, kernel=3x3 -> V: (16*3*3, C), U: (C, 32)
+    assert cm.components["conv2"].V.shape == (16 * 3 * 3, C)
+    assert cm.components["conv2"].U.shape == (C, 32)
+
+
+def test_conv2d_weight_delta_matches_target():
+    """Test that weight delta + component weight equals target weight."""
+    model = Conv2dTestModel()
+    model.eval()
+    model.requires_grad_(False)
+
+    C = 8
+    cm = ComponentModel(
+        target_model=model,
+        module_path_info=[
+            ModulePathInfo(module_path="conv1", C=C),
+            ModulePathInfo(module_path="conv2", C=C),
+        ],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
+    )
+
+    weight_deltas = cm.calc_weight_deltas()
+    for name in ["conv1", "conv2"]:
+        target_w = cm.target_weight(name)
+        comp_w = cm.components[name].weight
+        torch.testing.assert_close(target_w, comp_w + weight_deltas[name])
+
+
+def test_conv2d_full_weight_delta_matches_target_behaviour():
+    """Test that using full weight delta recovers target model behavior."""
+    model = Conv2dTestModel()
+    model.eval()
+    model.requires_grad_(False)
+
+    target_module_paths = ["conv1", "conv2"]
+    C = 8
+    cm = ComponentModel(
+        target_model=model,
+        module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
+    )
+
+    batch_size = 2
+    x = torch.randn(batch_size, 3, 8, 8)
+
+    # Forward with weight deltas and mask of all 1s
+    weight_deltas = cm.calc_weight_deltas()
+    component_masks = {name: torch.ones(batch_size, C) for name in target_module_paths}
+    weight_deltas_and_masks = {
+        name: (weight_deltas[name], torch.ones(batch_size)) for name in target_module_paths
+    }
+    mask_infos = make_mask_infos(component_masks, weight_deltas_and_masks=weight_deltas_and_masks)
+    out = cm(x, mask_infos=mask_infos)
+
+    # Should match target model output
+    torch.testing.assert_close(out, model(x))
+
+
+def test_conv2d_routing():
+    """Test that routing works correctly for Conv2d layers (4D output)."""
+    model = Conv2dTestModel()
+    model.eval()
+    model.requires_grad_(False)
+
+    C = 8
+    cm = ComponentModel(
+        target_model=model,
+        module_path_info=[ModulePathInfo(module_path="conv1", C=C)],
+        ci_fn_type="mlp",
+        ci_fn_hidden_dims=[4],
+        pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
+    )
+
+    batch_size = 2
+    x = torch.randn(batch_size, 3, 8, 8)
+
+    # Forward with routing: only route first example to components
+    use_components_for_first = ComponentsMaskInfo(
+        component_mask=torch.ones(batch_size, C),
+        routing_mask=torch.tensor([True, False]),  # route to components only for example 0
+    )
+
+    cm_routed_out = cm(x, mask_infos={"conv1": use_components_for_first})
+    target_out = model(x)
+
+    # The output should be different for example 0 (routed to components)
+    # but same for example 1 (uses original conv1)
+    # Note: Since components are randomly initialized, they won't match target
+    assert not torch.allclose(cm_routed_out[0], target_out[0])
     assert torch.allclose(cm_routed_out[1], target_out[1])

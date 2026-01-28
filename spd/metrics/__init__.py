@@ -12,6 +12,11 @@ from .ci_masked_recon_subset_loss import CIMaskedReconSubsetLoss as CIMaskedReco
 from .ci_masked_recon_subset_loss import ci_masked_recon_subset_loss as ci_masked_recon_subset_loss
 from .ci_mean_per_component import CIMeanPerComponent as CIMeanPerComponent
 from .component_activation_density import ComponentActivationDensity as ComponentActivationDensity
+from .component_directions import ComponentDirections as ComponentDirections
+from .component_weight_l1_loss import ComponentWeightL1Loss as ComponentWeightL1Loss
+from .component_weight_l1_loss import component_weight_l1_loss as component_weight_l1_loss
+from .component_weight_l2_loss import ComponentWeightL2Loss as ComponentWeightL2Loss
+from .component_weight_l2_loss import component_weight_l2_loss as component_weight_l2_loss
 from .faithfulness_loss import FaithfulnessLoss as FaithfulnessLoss
 from .faithfulness_loss import faithfulness_loss as faithfulness_loss
 from .identity_ci_error import IdentityCIError as IdentityCIError

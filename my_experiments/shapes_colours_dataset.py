@@ -211,13 +211,12 @@ class MultiAttributeCNNSingleHead(nn.Module):
         self.n_colors = n_colors
         self.n_sizes = n_sizes
 
-        # Convolutional backbone (same as before)
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        # Convolutional backbone
+        self.conv1 = nn.Conv2d(3, 8, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
 
-        self.flat_size = 64 * (img_size // 8) * (img_size // 8)
+        self.flat_size = 16 * (img_size // 4) * (img_size // 4)
 
         # Single MLP for all predictions
         self.fc1 = nn.Linear(self.flat_size, hidden_dim)
@@ -227,7 +226,6 @@ class MultiAttributeCNNSingleHead(nn.Module):
         # Conv backbone
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
-        x = self.pool(F.relu(self.conv3(x)))
 
         # Flatten and MLP
         x = x.view(x.size(0), -1)

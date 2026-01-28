@@ -50,8 +50,7 @@ class UniformKSubsetRouter(Router):
         shapes = self._resolve_shapes(module_names, mask_shapes)
         unique_shapes = set(shapes.values())
         assert len(unique_shapes) == 1, (
-            f"UniformKSubsetRouter requires all modules to have the same mask shape, "
-            f"got {shapes}"
+            f"UniformKSubsetRouter requires all modules to have the same mask shape, got {shapes}"
         )
         mask_shape = unique_shapes.pop()
         return sample_uniform_k_subset_routing_masks(mask_shape, module_names, self.device)
@@ -79,9 +78,7 @@ class StaticProbabilityRouter(Router):
         mask_shapes: Mapping[str, tuple[int, ...]] | tuple[int, ...],
     ) -> dict[str, Bool[Tensor, "..."]]:
         shapes = self._resolve_shapes(module_names, mask_shapes)
-        return {
-            mod: torch.rand(*shapes[mod], device=self.device) < self.p for mod in module_names
-        }
+        return {mod: torch.rand(*shapes[mod], device=self.device) < self.p for mod in module_names}
 
 
 class LayerRouter(Router):

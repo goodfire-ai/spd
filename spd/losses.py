@@ -8,6 +8,8 @@ from spd.configs import (
     CIMaskedReconLayerwiseLossConfig,
     CIMaskedReconLossConfig,
     CIMaskedReconSubsetLossConfig,
+    ComponentWeightL1LossConfig,
+    ComponentWeightL2LossConfig,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
@@ -25,6 +27,8 @@ from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
     ci_masked_recon_subset_loss,
+    component_weight_l1_loss,
+    component_weight_l2_loss,
     faithfulness_loss,
     importance_minimality_loss,
     pgd_recon_layerwise_loss,
@@ -65,6 +69,10 @@ def compute_total_loss(
         match cfg:
             case FaithfulnessLossConfig():
                 loss = faithfulness_loss(weight_deltas=weight_deltas)
+            case ComponentWeightL2LossConfig():
+                loss = component_weight_l2_loss(model=model)
+            case ComponentWeightL1LossConfig():
+                loss = component_weight_l1_loss(model=model)
             case ImportanceMinimalityLossConfig():
                 loss = importance_minimality_loss(
                     ci_upper_leaky=ci.upper_leaky,
