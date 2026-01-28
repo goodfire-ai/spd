@@ -3,14 +3,14 @@
  */
 
 import type { SubcomponentCorrelationsResponse, TokenStatsResponse } from "../promptAttributionsTypes";
-import { API_URL, fetchJson } from "./index";
+import { apiUrl, fetchJson } from "./index";
 
 export async function getComponentCorrelations(
     layer: string,
     componentIdx: number,
     topK: number,
 ): Promise<SubcomponentCorrelationsResponse> {
-    const url = new URL(`${API_URL}/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
+    const url = apiUrl(`/api/correlations/components/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
     return fetchJson<SubcomponentCorrelationsResponse>(url.toString());
 }
@@ -20,7 +20,7 @@ export async function getComponentTokenStats(
     componentIdx: number,
     topK: number,
 ): Promise<TokenStatsResponse | null> {
-    const url = new URL(`${API_URL}/api/correlations/token_stats/${encodeURIComponent(layer)}/${componentIdx}`);
+    const url = apiUrl(`/api/correlations/token_stats/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("top_k", String(topK));
     return fetchJson<TokenStatsResponse | null>(url.toString());
 }
@@ -38,12 +38,12 @@ export type InterpretationDetail = {
 };
 
 export async function getAllInterpretations(): Promise<Record<string, InterpretationHeadline>> {
-    return fetchJson<Record<string, InterpretationHeadline>>(`${API_URL}/api/correlations/interpretations`);
+    return fetchJson<Record<string, InterpretationHeadline>>("/api/correlations/interpretations");
 }
 
 export async function getInterpretationDetail(layer: string, componentIdx: number): Promise<InterpretationDetail> {
     return fetchJson<InterpretationDetail>(
-        `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
+        `/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
     );
 }
 
@@ -52,7 +52,7 @@ export async function requestComponentInterpretation(
     componentIdx: number,
 ): Promise<InterpretationHeadline> {
     return fetchJson<InterpretationHeadline>(
-        `${API_URL}/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
+        `/api/correlations/interpretations/${encodeURIComponent(layer)}/${componentIdx}`,
         { method: "POST" },
     );
 }

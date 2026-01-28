@@ -2,7 +2,7 @@
  * API client for /api/runs endpoints.
  */
 
-import { API_URL } from "./index";
+import { apiUrl } from "./index";
 
 export type LoadedRun = {
     id: number;
@@ -15,19 +15,19 @@ export type LoadedRun = {
 };
 
 export async function getStatus(): Promise<LoadedRun | null> {
-    const response = await fetch(`${API_URL}/api/status`);
+    const response = await fetch("/api/status");
     const data = await response.json();
     return data;
 }
 
 export async function whoami(): Promise<string> {
-    const response = await fetch(`${API_URL}/api/whoami`);
+    const response = await fetch("/api/whoami");
     const data = await response.json();
     return data.user;
 }
 
 export async function loadRun(wandbRunPath: string, contextLength: number): Promise<void> {
-    const url = new URL(`${API_URL}/api/runs/load`);
+    const url = apiUrl("/api/runs/load");
     url.searchParams.set("wandb_path", wandbRunPath);
     url.searchParams.set("context_length", String(contextLength));
     const response = await fetch(url.toString(), { method: "POST" });

@@ -7,10 +7,10 @@ import type {
     SubcomponentProbeResult,
     SubcomponentActivationContexts,
 } from "../promptAttributionsTypes";
-import { API_URL, fetchJson } from "./index";
+import { fetchJson } from "./index";
 
 export async function getActivationContextsSummary(): Promise<ActivationContextsSummary> {
-    return fetchJson<ActivationContextsSummary>(`${API_URL}/api/activation_contexts/summary`);
+    return fetchJson<ActivationContextsSummary>("/api/activation_contexts/summary");
 }
 
 /** Default limit for initial load - keeps payload small for fast initial render. */
@@ -22,7 +22,7 @@ export async function getActivationContextDetail(
     limit: number = ACTIVATION_EXAMPLES_INITIAL_LIMIT,
 ): Promise<SubcomponentActivationContexts> {
     return fetchJson<SubcomponentActivationContexts>(
-        `${API_URL}/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}?limit=${limit}`,
+        `/api/activation_contexts/${encodeURIComponent(layer)}/${componentIdx}?limit=${limit}`,
     );
 }
 
@@ -31,7 +31,7 @@ export async function probeComponent(
     layer: string,
     componentIdx: number,
 ): Promise<SubcomponentProbeResult> {
-    return fetchJson<SubcomponentProbeResult>(`${API_URL}/api/activation_contexts/probe`, {
+    return fetchJson<SubcomponentProbeResult>("/api/activation_contexts/probe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, layer, component_idx: componentIdx }),

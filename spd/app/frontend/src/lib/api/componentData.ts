@@ -5,7 +5,7 @@ import type {
     SubcomponentActivationContexts,
     TokenStatsResponse,
 } from "../promptAttributionsTypes";
-import { API_URL, fetchJson } from "./index";
+import { fetchJson } from "./index";
 
 export interface BulkComponentDataResponse {
     activation_contexts: Record<string, SubcomponentActivationContexts>;
@@ -23,7 +23,7 @@ export async function getComponentDataBulk(
     correlationsTopK: number,
     tokenStatsTopK: number,
 ): Promise<BulkComponentDataResponse> {
-    return fetchJson<BulkComponentDataResponse>(`${API_URL}/api/component_data/bulk`, {
+    return fetchJson<BulkComponentDataResponse>("/api/component_data/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

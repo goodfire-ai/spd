@@ -5,7 +5,7 @@
 import type { GraphData, TokenizeResponse, TokenInfo } from "../promptAttributionsTypes";
 import { buildEdgeIndexes } from "../promptAttributionsTypes";
 import { setArchitecture } from "../layerAliasing";
-import { API_URL, ApiError, fetchJson } from "./index";
+import { apiUrl, ApiError, fetchJson } from "./index";
 
 export type NormalizeType = "none" | "target" | "layer";
 
@@ -88,7 +88,7 @@ export async function computeGraphStream(
     params: ComputeGraphParams,
     onProgress?: (progress: GraphProgress) => void,
 ): Promise<GraphData> {
-    const url = new URL(`${API_URL}/api/graphs`);
+    const url = apiUrl("/api/graphs");
     url.searchParams.set("prompt_id", String(params.promptId));
     url.searchParams.set("normalize", String(params.normalize));
     url.searchParams.set("ci_threshold", String(params.ciThreshold));
@@ -128,7 +128,7 @@ export async function computeGraphOptimizedStream(
     params: ComputeGraphOptimizedParams,
     onProgress?: (progress: GraphProgress) => void,
 ): Promise<GraphData> {
-    const url = new URL(`${API_URL}/api/graphs/optimized/stream`);
+    const url = apiUrl("/api/graphs/optimized/stream");
     url.searchParams.set("prompt_id", String(params.promptId));
     url.searchParams.set("imp_min_coeff", String(params.impMinCoeff));
     url.searchParams.set("steps", String(params.steps));
@@ -155,7 +155,7 @@ export async function computeGraphOptimizedStream(
 }
 
 export async function getGraphs(promptId: number, normalize: NormalizeType, ciThreshold: number): Promise<GraphData[]> {
-    const url = new URL(`${API_URL}/api/graphs/${promptId}`);
+    const url = apiUrl(`/api/graphs/${promptId}`);
     url.searchParams.set("normalize", normalize);
     url.searchParams.set("ci_threshold", String(ciThreshold));
     const graphs = await fetchJson<Omit<GraphData, "edgesBySource" | "edgesByTarget">[]>(url.toString());
@@ -174,12 +174,12 @@ export async function getGraphs(promptId: number, normalize: NormalizeType, ciTh
 }
 
 export async function tokenizeText(text: string): Promise<TokenizeResponse> {
-    const url = new URL(`${API_URL}/api/graphs/tokenize`);
+    const url = apiUrl("/api/graphs/tokenize");
     url.searchParams.set("text", text);
     return fetchJson<TokenizeResponse>(url.toString(), { method: "POST" });
 }
 
 export async function getAllTokens(): Promise<TokenInfo[]> {
-    const response = await fetchJson<{ tokens: TokenInfo[] }>(`${API_URL}/api/graphs/tokens`);
+    const response = await fetchJson<{ tokens: TokenInfo[] }>("/api/graphs/tokens");
     return response.tokens;
 }

@@ -2,7 +2,7 @@
  * API client for /api/dataset_attributions endpoints.
  */
 
-import { API_URL, fetchJson } from "./index";
+import { apiUrl, fetchJson } from "./index";
 
 export type DatasetAttributionEntry = {
     component_key: string;
@@ -23,7 +23,7 @@ export async function getComponentAttributions(
     componentIdx: number,
     k: number = 10,
 ): Promise<ComponentAttributions> {
-    const url = new URL(`${API_URL}/api/dataset_attributions/${encodeURIComponent(layer)}/${componentIdx}`);
+    const url = apiUrl(`/api/dataset_attributions/${encodeURIComponent(layer)}/${componentIdx}`);
     url.searchParams.set("k", String(k));
     return fetchJson<ComponentAttributions>(url.toString());
 }

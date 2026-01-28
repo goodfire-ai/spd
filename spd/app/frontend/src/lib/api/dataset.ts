@@ -2,7 +2,7 @@
  * API client for /api/dataset endpoints.
  */
 
-import { API_URL } from "./index";
+import { apiUrl } from "./index";
 
 export type DatasetSearchResult = {
     story: string;
@@ -27,7 +27,7 @@ export type DatasetSearchPage = {
 };
 
 export async function searchDataset(query: string, split: string): Promise<DatasetSearchMetadata> {
-    const url = new URL(`${API_URL}/api/dataset/search`);
+    const url = apiUrl("/api/dataset/search");
     url.searchParams.set("query", query);
     url.searchParams.set("split", split);
 
@@ -41,7 +41,7 @@ export async function searchDataset(query: string, split: string): Promise<Datas
 }
 
 export async function getDatasetResults(page: number, pageSize: number): Promise<DatasetSearchPage> {
-    const url = new URL(`${API_URL}/api/dataset/results`);
+    const url = apiUrl("/api/dataset/results");
     url.searchParams.set("page", String(page));
     url.searchParams.set("page_size", String(pageSize));
 
@@ -65,7 +65,7 @@ export async function getRandomSamples(
     seed: number = 42,
     split: "train" | "test" = "train",
 ): Promise<RandomSamplesResult> {
-    const url = new URL(`${API_URL}/api/dataset/random`);
+    const url = apiUrl("/api/dataset/random");
     url.searchParams.set("n_samples", String(nSamples));
     url.searchParams.set("seed", String(seed));
     url.searchParams.set("split", split);
