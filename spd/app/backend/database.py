@@ -107,12 +107,10 @@ class PromptAttrDB:
 
     Schema:
     - runs: One row per SPD run (keyed by wandb_path)
-    - activation_contexts: Component metadata + generation config, 1:1 with runs
     - prompts: One row per stored prompt (token sequence), keyed by run_id
-    - original_component_seq_max_activations: Inverted index mapping components to prompts by a
-      component's max activation for that prompt
+    - graphs: Attribution graphs for prompts
 
-    Attribution graphs (edges) are computed on-demand at serve time, not stored.
+    Attribution graphs are computed on-demand and cached.
     """
 
     def __init__(self, db_path: Path | None = None, check_same_thread: bool = True):
@@ -164,19 +162,8 @@ class PromptAttrDB:
                 is_custom INTEGER NOT NULL DEFAULT 0
             );
 
-            CREATE TABLE IF NOT EXISTS original_component_seq_max_activations (
-                prompt_id INTEGER NOT NULL REFERENCES prompts(id),
-                component_key TEXT NOT NULL,
-                max_ci REAL NOT NULL,
-                positions TEXT NOT NULL
-            );
-
             CREATE INDEX IF NOT EXISTS idx_prompts_run_id
                 ON prompts(run_id);
-            CREATE INDEX IF NOT EXISTS idx_component_key
-                ON original_component_seq_max_activations(component_key);
-            CREATE INDEX IF NOT EXISTS idx_prompt_id
-                ON original_component_seq_max_activations(prompt_id);
 
             CREATE TABLE IF NOT EXISTS graphs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -297,48 +284,6 @@ class PromptAttrDB:
     # Prompt operations
     # -------------------------------------------------------------------------
 
-    def add_prompts(
-        self,
-        run_id: int,
-        prompts: list[tuple[list[int], dict[str, tuple[float, list[int]]]]],
-        context_length: int,
-    ) -> list[int]:
-        """Add multiple prompts to the database in a single transaction.
-
-        Args:
-            run_id: The run these prompts belong to.
-            prompts: List of (token_ids, active_components) tuples.
-            context_length: The context length setting used when generating these prompts.
-
-        Returns:
-            List of prompt IDs.
-        """
-        conn = self._get_conn()
-        prompt_ids: list[int] = []
-        component_rows: list[tuple[int, str, float, str]] = []
-
-        for token_ids, active_components in prompts:
-            cursor = conn.execute(
-                "INSERT INTO prompts (run_id, token_ids, context_length) VALUES (?, ?, ?)",
-                (run_id, json.dumps(token_ids), context_length),
-            )
-            prompt_id = cursor.lastrowid
-            assert prompt_id is not None
-            prompt_ids.append(prompt_id)
-
-            for component_key, (max_ci, positions) in active_components.items():
-                component_rows.append((prompt_id, component_key, max_ci, json.dumps(positions)))
-
-        if component_rows:
-            conn.executemany(
-                """INSERT INTO original_component_seq_max_activations
-                   (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)""",
-                component_rows,
-            )
-
-        conn.commit()
-        return prompt_ids
-
     def find_prompt_by_token_ids(
         self,
         run_id: int,
@@ -357,7 +302,6 @@ class PromptAttrDB:
         self,
         run_id: int,
         token_ids: list[int],
-        active_components: dict[str, tuple[float, list[int]]],
         context_length: int,
     ) -> int:
         """Add a custom prompt to the database, or return existing if duplicate.
@@ -365,7 +309,6 @@ class PromptAttrDB:
         Args:
             run_id: The run this prompt belongs to.
             token_ids: The token IDs for the prompt.
-            active_components: Dict mapping component_key to (max_ci, positions).
             context_length: The context length setting.
 
         Returns:
@@ -382,18 +325,6 @@ class PromptAttrDB:
         )
         prompt_id = cursor.lastrowid
         assert prompt_id is not None
-
-        component_rows = [
-            (prompt_id, component_key, max_ci, json.dumps(positions))
-            for component_key, (max_ci, positions) in active_components.items()
-        ]
-        if component_rows:
-            conn.executemany(
-                """INSERT INTO original_component_seq_max_activations
-                   (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)""",
-                component_rows,
-            )
-
         conn.commit()
         return prompt_id
 
@@ -431,57 +362,6 @@ class PromptAttrDB:
             (run_id, context_length),
         ).fetchall()
         return [row["id"] for row in rows]
-
-    def has_prompts(self, run_id: int, context_length: int) -> bool:
-        """Check if any prompts exist for a run with a specific context length."""
-        return self.get_prompt_count(run_id, context_length) > 0
-
-    # -------------------------------------------------------------------------
-    # Query operations
-    # -------------------------------------------------------------------------
-
-    def find_prompts_with_components(
-        self,
-        run_id: int,
-        component_keys: list[str],
-        require_all: bool = True,
-    ) -> list[int]:
-        """Find prompts where specified components are active.
-
-        Args:
-            run_id: The run to search within.
-            component_keys: List of component keys like "h.0.attn.q_proj:5".
-            require_all: If True, require ALL components to be active (intersection).
-                        If False, require ANY component to be active (union).
-
-        Returns:
-            List of prompt IDs matching the query.
-        """
-        assert component_keys, "No component keys provided"
-
-        conn = self._get_conn()
-        placeholders = ",".join("?" * len(component_keys))
-
-        if require_all:
-            query = f"""
-                SELECT ca.prompt_id
-                FROM original_component_seq_max_activations ca
-                JOIN prompts p ON ca.prompt_id = p.id
-                WHERE p.run_id = ? AND ca.component_key IN ({placeholders})
-                GROUP BY ca.prompt_id
-                HAVING COUNT(DISTINCT ca.component_key) = ?
-            """
-            rows = conn.execute(query, (run_id, *component_keys, len(component_keys))).fetchall()
-        else:
-            query = f"""
-                SELECT DISTINCT ca.prompt_id
-                FROM original_component_seq_max_activations ca
-                JOIN prompts p ON ca.prompt_id = p.id
-                WHERE p.run_id = ? AND ca.component_key IN ({placeholders})
-            """
-            rows = conn.execute(query, (run_id, *component_keys)).fetchall()
-
-        return [row["prompt_id"] for row in rows]
 
     # -------------------------------------------------------------------------
     # Graph operations

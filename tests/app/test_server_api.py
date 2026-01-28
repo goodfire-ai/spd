@@ -165,7 +165,6 @@ def app_with_prompt(app_with_state: TestClient) -> tuple[TestClient, int]:
     prompt_id = manager.db.add_custom_prompt(
         run_id=manager.run_state.run.id,
         token_ids=[0, 2, 1],
-        active_components={},  # Empty for testing
         context_length=manager.run_state.context_length,
     )
     return app_with_state, prompt_id

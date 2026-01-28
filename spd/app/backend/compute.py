@@ -743,57 +743,6 @@ def extract_node_subcomp_acts(
     return node_subcomp_acts
 
 
-def extract_active_from_ci(
-    ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]],
-    target_out_probs: Float[Tensor, "1 seq vocab"],
-    ci_threshold: float,
-    output_prob_threshold: float,
-    n_seq: int,
-) -> dict[str, tuple[float, list[int]]]:
-    """Build inverted index data directly from CI values.
-
-    For regular component layers, a component is active at positions where CI > threshold.
-    For the output layer, a token is active at positions where prob > threshold.
-    For wte, a single pseudo-component (idx 0) is always active at all positions.
-
-    Args:
-        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, n_components].
-        target_out_probs: Target model output probability tensor [1, seq, vocab].
-        ci_threshold: Threshold for component activation.
-        output_prob_threshold: Threshold for output token activation.
-        n_seq: Sequence length.
-
-    Returns:
-        Dict mapping component_key ("layer:c_idx") to (max_ci, positions).
-    """
-    active: dict[str, tuple[float, list[int]]] = {}
-
-    # Regular component layers
-    for layer, ci_tensor in ci_lower_leaky.items():
-        n_components = ci_tensor.shape[-1]
-        for c_idx in range(n_components):
-            ci_per_pos = ci_tensor[0, :, c_idx]
-            positions = torch.where(ci_per_pos > ci_threshold)[0].tolist()
-            if positions:
-                key = f"{layer}:{c_idx}"
-                max_ci = float(ci_per_pos.max().item())
-                active[key] = (max_ci, positions)
-
-    # Output layer - use probability threshold
-    for c_idx in range(target_out_probs.shape[-1]):
-        prob_per_pos = target_out_probs[0, :, c_idx]
-        positions = torch.where(prob_per_pos > output_prob_threshold)[0].tolist()
-        if positions:
-            key = f"output:{c_idx}"
-            max_prob = float(prob_per_pos.max().item())
-            active[key] = (max_prob, positions)
-
-    # WTE - single pseudo-component always active at all positions
-    active["wte:0"] = (1.0, list(range(n_seq)))
-
-    return active
-
-
 def get_model_n_blocks(model: nn.Module) -> int:
     """Get the number of blocks in the model."""
     from simple_stories_train.models.gpt2_simple import GPT2Simple
