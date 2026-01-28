@@ -94,22 +94,15 @@
         throw new Error(`getTokenText called on non-token node: ${key}`);
     }
 
-    // Get formatted display label for token nodes (used in pills)
-    // Format: "'token' (Input:2)" or "'token' (Output:5)" (quotes make whitespace visible)
-    function getFormattedTokenLabel(key: string): string {
-        const parts = key.split(":");
-        const layer = parts[0];
-        const tokenText = getTokenText(key);
-        const layerLabel = layer === "wte" ? "Input" : "Output";
+    // Get the quoted token string for display (e.g., "'hello'")
+    function getQuotedTokenLabel(key: string): string {
+        return `'${getTokenText(key)}'`;
+    }
 
-        // Prompt attributions: 3-part keys (layer:seq:cIdx) include position
-        if (parts.length === 3) {
-            const seqIdx = parseInt(parts[1]);
-            return `'${tokenText}' (${layerLabel}:${seqIdx})`;
-        }
-
-        // Dataset attributions: 2-part keys (layer:cIdx) have no position
-        return `'${tokenText}' (${layerLabel})`;
+    // Get the token type label for the right side (e.g., "Input" or "Output")
+    function getTokenTypeLabel(key: string): string {
+        const layer = key.split(":")[0];
+        return layer === "wte" ? "Input" : "Output";
     }
 
     let currentPage = $state(0);
@@ -172,21 +165,20 @@
             {@const isToken = isTokenNode(key)}
             {@const interp = isToken ? undefined : getInterpretation(key)}
             {@const hasInterpretation = interp?.status === "generated"}
-            {@const layerLabel = getLayerLabel(key)}
-            {@const pillLabel = hasInterpretation
-                ? interp.data.label
-                : isToken
-                  ? getFormattedTokenLabel(key)
-                  : formattedKey}
             <div class="pill-container" onmouseenter={(e) => handleMouseEnter(key, e)} onmouseleave={handleMouseLeave}>
                 <button class="edge-pill" style="background: {bgColor};" onclick={() => onClick(key)}>
                     {#if hasInterpretation}
                         <span class="pill-content">
-                            <span class="interp-label" style="color: {textColor};">{pillLabel}</span>
-                            <span class="layer-label" style="color: {textColor};">{layerLabel}</span>
+                            <span class="interp-label" style="color: {textColor};">{interp.data.label}</span>
+                            <span class="layer-label" style="color: {textColor};">{getLayerLabel(key)}</span>
+                        </span>
+                    {:else if isToken}
+                        <span class="pill-content">
+                            <span class="interp-label" style="color: {textColor};">{getQuotedTokenLabel(key)}</span>
+                            <span class="layer-label" style="color: {textColor};">{getTokenTypeLabel(key)}</span>
                         </span>
                     {:else}
-                        <span class="node-key" style="color: {textColor};">{pillLabel}</span>
+                        <span class="node-key" style="color: {textColor};">{formattedKey}</span>
                     {/if}
                 </button>
                 {#if hoveredKey === key && tooltipPosition}
