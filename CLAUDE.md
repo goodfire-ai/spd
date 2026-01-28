@@ -387,7 +387,7 @@ Downloaded runs are cached in `SPD_OUT_DIR/runs/<project>-<run_id>/`.
 
 Core principles:
 - **Fail fast** - assert assumptions, crash on violations, don't silently recover
-- **No backwards compat** - delete unused code, don't deprecate or add migration shims
+- **No legacy support** - delete unused code, don't add fallbacks for old formats or migration shims
 - **Narrow types** - avoid `| None` unless null is semantically meaningful; use discriminated unions over bags of optional fields
 - **No try/except for control flow** - check preconditions explicitly, then trust them
 - **YAGNI** - don't add abstractions, config options, or flexibility for hypothetical futures
@@ -474,7 +474,7 @@ value = config.key
 
 
 ### Other Important Software Development Practices
-- Backwards compatibility that adds complexity should be avoided.
+- Don't add legacy fallbacks or migration code - just change it and let old data be manually migrated if needed.
 - Delete unused code. 
 - If an argument is always x, strongly consider removing as an argument and just inlining
 - **Update CLAUDE.md files** when changing code structure, adding/removing files, or modifying key interfaces. Update the CLAUDE.md in the same directory (or nearest parent) as the changed files.

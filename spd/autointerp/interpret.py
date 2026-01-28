@@ -3,6 +3,7 @@ import json
 import random
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -360,7 +361,10 @@ def run_interpret(
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
-    output_path = autointerp_dir / "results.jsonl"
+
+    # Use timestamped filename to preserve old results
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = autointerp_dir / f"results_{timestamp}.jsonl"
 
     # Load token stats
     token_stats_path = correlations_dir / "token_stats.pt"

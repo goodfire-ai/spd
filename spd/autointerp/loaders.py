@@ -6,11 +6,14 @@ from spd.autointerp.schemas import InterpretationResult, get_autointerp_dir
 
 
 def load_interpretations(wandb_run_id: str) -> dict[str, InterpretationResult] | None:
-    """Load interpretation results from autointerp output."""
+    """Load interpretation results from autointerp output (latest timestamped file)."""
     autointerp_dir = get_autointerp_dir(wandb_run_id)
-    path = autointerp_dir / "results.jsonl"
-    if not path.exists():
+
+    # Find latest timestamped results file (lexicographic sort works for YYYYMMDD_HHMMSS)
+    result_files = sorted(autointerp_dir.glob("results_*.jsonl"))
+    if not result_files:
         return None
+    path = result_files[-1]
 
     results: dict[str, InterpretationResult] = {}
     with open(path) as f:
