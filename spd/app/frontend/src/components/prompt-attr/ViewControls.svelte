@@ -92,7 +92,7 @@
         />
     </label>
     <label>
-        <span>Node Gap</span>
+        <span>Horizontal Spread</span>
         <input
             type="number"
             bind:value={localComponentGap}
@@ -104,7 +104,7 @@
         />
     </label>
     <label>
-        <span>Layer Gap</span>
+        <span>Vertical Spread</span>
         <input
             type="number"
             bind:value={localLayerGap}
