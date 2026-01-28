@@ -23,11 +23,17 @@
             return `rgba(220, 38, 38, ${intensity})`;
         }
     }
+
+    // Text color for contrast - switch to white when background is intense
+    function getTextColor(value: number): string {
+        const intensity = Math.min(1, Math.abs(value) / maxScale);
+        return intensity > 0.5 ? "white" : "var(--text-primary)";
+    }
 </script>
 
 <div class="tokens">
     {#each items as { token, value } (token)}
-        <span class="token-pill" style="background: {getPmiBg(value)}" title={value.toFixed(3)}>{token}</span>
+        <span class="token-pill" style="background: {getPmiBg(value)}; color: {getTextColor(value)}" title={value.toFixed(3)}>{token}</span>
     {/each}
 </div>
 
