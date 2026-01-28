@@ -433,7 +433,7 @@ def compute_edges_from_ci(
     return PromptAttributionResult(
         edges=edges,
         ci_masked_out_probs=ci_masked_out_probs[0, : loss_seq_pos + 1],
-        ci_masked_out_logits=comp_output_with_cache.output[0, : loss_seq_pos + 1],
+        ci_masked_out_logits=ci_masked_logits[0, : loss_seq_pos + 1],
         target_out_probs=target_out_probs[0, : loss_seq_pos + 1],
         target_out_logits=target_out_logits[0, : loss_seq_pos + 1],
         node_ci_vals=node_ci_vals,
