@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from typing import Any, override
 
 import torch
-import torch.nn.functional as F
 from jaxtyping import Bool, Float
 from torch import Tensor, nn
 from tqdm.auto import tqdm
@@ -111,7 +110,6 @@ class OptimizedPromptAttributionResult:
     ci_masked_out_logits: Float[Tensor, "seq vocab"]  # CI-masked (SPD model) raw logits
     target_out_probs: Float[Tensor, "seq vocab"]  # Target model softmax probabilities
     target_out_logits: Float[Tensor, "seq vocab"]  # Target model raw logits
-    label_prob: float | None  # P(label_token) with optimized CI mask, None if KL-only
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
     node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
 
@@ -554,19 +552,6 @@ def compute_prompt_attributions(
     )
 
 
-def compute_label_prob(
-    model: ComponentModel,
-    tokens: Tensor,
-    ci_lower_leaky: dict[str, Tensor],
-    label_token: int,
-) -> float:
-    """Compute probability of label_token at final position with CI mask."""
-    mask_infos = make_mask_infos(ci_lower_leaky, routing_masks="all")
-    logits = model(tokens, mask_infos=mask_infos)
-    probs = F.softmax(logits[0, -1, :], dim=-1)
-    return float(probs[label_token].item())
-
-
 def compute_prompt_attributions_optimized(
     model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
@@ -599,14 +584,6 @@ def compute_prompt_attributions_optimized(
     )
     ci_outputs = ci_params.create_ci_outputs(model, device)
 
-    # Get label probability with optimized CI mask (if CE loss is used)
-    label_prob: float | None = None
-    if optim_config.ce_loss_config is not None:
-        with torch.no_grad():
-            label_prob = compute_label_prob(
-                model, tokens, ci_outputs.lower_leaky, optim_config.ce_loss_config.label_token
-            )
-
     # Signal transition to graph computation stage
     if on_progress is not None:
         on_progress(0, 1, "graph")
@@ -615,9 +592,8 @@ def compute_prompt_attributions_optimized(
     with torch.no_grad():
         pre_weight_acts = model(tokens, cache_type="input").cache
 
-    # Extract loss_seq_pos from optimization config (None means use all positions)
-    n_seq = tokens.shape[1]
-    loss_seq_pos: int | None = optim_config.get_loss_seq_pos(default=n_seq - 1)
+    # Extract loss_seq_pos from optimization config
+    loss_seq_pos = optim_config.loss_config.position
 
     result = compute_edges_from_ci(
         model=model,
@@ -640,7 +616,6 @@ def compute_prompt_attributions_optimized(
         ci_masked_out_logits=result.ci_masked_out_logits,
         target_out_probs=result.target_out_probs,
         target_out_logits=result.target_out_logits,
-        label_prob=label_prob,
         node_ci_vals=result.node_ci_vals,
         node_subcomp_acts=result.node_subcomp_acts,
     )

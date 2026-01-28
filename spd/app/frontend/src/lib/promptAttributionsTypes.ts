@@ -78,21 +78,29 @@ export function buildEdgeIndexes(edges: EdgeData[]): {
 
 export type MaskType = "stochastic" | "ci";
 
+export type CELossResult = {
+    type: "ce";
+    coeff: number;
+    position: number;
+    label_token: number;
+    label_str: string;
+};
+
+export type KLLossResult = {
+    type: "kl";
+    coeff: number;
+    position: number;
+};
+
+export type LossResult = CELossResult | KLLossResult;
+
 export type OptimizationResult = {
     imp_min_coeff: number;
     steps: number;
     pnorm: number;
     beta: number;
-    // CE loss params (optional - required together)
-    label_token: number | null;
-    label_str: string | null;
-    ce_loss_coeff: number | null;
-    label_prob: number | null;
-    // KL loss param (optional)
-    kl_loss_coeff: number | null;
-    // Sequence position for both CE and KL losses
-    loss_seq_pos: number;
     mask_type: MaskType;
+    loss: LossResult;
 };
 
 export type SubcomponentMetadata = {

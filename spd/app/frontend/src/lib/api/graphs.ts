@@ -106,6 +106,7 @@ export async function computeGraphStream(
 }
 
 export type MaskType = "stochastic" | "ci";
+export type LossType = "ce" | "kl";
 
 export type ComputeGraphOptimizedParams = {
     promptId: number;
@@ -116,11 +117,11 @@ export type ComputeGraphOptimizedParams = {
     normalize: NormalizeType;
     outputProbThreshold: number;
     ciThreshold: number;
-    labelToken?: number;
-    ceLossCoeff?: number;
-    klLossCoeff?: number;
-    lossSeqPos: number; // Sequence position for both CE and KL losses
     maskType: MaskType;
+    lossType: LossType;
+    lossCoeff: number;
+    lossPosition: number;
+    labelToken?: number; // Required for CE loss
 };
 
 export async function computeGraphOptimizedStream(
@@ -136,18 +137,13 @@ export async function computeGraphOptimizedStream(
     url.searchParams.set("normalize", String(params.normalize));
     url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
     url.searchParams.set("ci_threshold", String(params.ciThreshold));
-
+    url.searchParams.set("mask_type", params.maskType);
+    url.searchParams.set("loss_type", params.lossType);
+    url.searchParams.set("loss_coeff", String(params.lossCoeff));
+    url.searchParams.set("loss_position", String(params.lossPosition));
     if (params.labelToken !== undefined) {
         url.searchParams.set("label_token", String(params.labelToken));
     }
-    if (params.ceLossCoeff !== undefined) {
-        url.searchParams.set("ce_loss_coeff", String(params.ceLossCoeff));
-    }
-    if (params.klLossCoeff !== undefined) {
-        url.searchParams.set("kl_loss_coeff", String(params.klLossCoeff));
-    }
-    url.searchParams.set("loss_seq_pos", String(params.lossSeqPos));
-    url.searchParams.set("mask_type", params.maskType);
 
     const response = await fetch(url.toString(), { method: "POST" });
     if (!response.ok) {

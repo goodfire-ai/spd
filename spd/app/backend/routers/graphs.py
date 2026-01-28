@@ -22,7 +22,13 @@ from spd.app.backend.compute import (
 )
 from spd.app.backend.database import GraphType, OptimizationParams, StoredGraph
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
-from spd.app.backend.optim_cis import MaskType, OptimCELossConfig, OptimCIConfig, OptimKLLossConfig
+from spd.app.backend.optim_cis import (
+    CELossConfig,
+    KLLossConfig,
+    LossConfig,
+    MaskType,
+    OptimCIConfig,
+)
 from spd.app.backend.schemas import OutputProbability
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
@@ -64,6 +70,24 @@ class GraphData(BaseModel):
     l0_total: int  # total active components at current CI threshold
 
 
+class CELossResult(BaseModel):
+    """CE loss result (specific token target)."""
+
+    type: Literal["ce"] = "ce"
+    coeff: float
+    position: int
+    label_token: int
+    label_str: str
+
+
+class KLLossResult(BaseModel):
+    """KL loss result (distribution matching)."""
+
+    type: Literal["kl"] = "kl"
+    coeff: float
+    position: int
+
+
 class OptimizationResult(BaseModel):
     """Results from optimized CI computation."""
 
@@ -72,15 +96,7 @@ class OptimizationResult(BaseModel):
     pnorm: float
     beta: float
     mask_type: MaskType
-    # CE loss params (optional - required together)
-    label_token: int | None = None
-    label_str: str | None = None
-    ce_loss_coeff: float | None = None
-    label_prob: float | None = None
-    # KL loss param (optional)
-    kl_loss_coeff: float | None = None
-    # Sequence position for both CE and KL losses
-    loss_seq_pos: int
+    loss: CELossResult | KLLossResult
 
 
 class GraphDataWithOptimization(GraphData):
@@ -460,6 +476,9 @@ def _normalize_edges(edges: list[Edge], normalize: NormalizeType) -> list[Edge]:
     return out_edges
 
 
+LossType = Literal["ce", "kl"]
+
+
 @router.post("/optimized/stream")
 @log_errors
 def compute_graph_optimized_stream(
@@ -474,31 +493,27 @@ def compute_graph_optimized_stream(
     manager: DepStateManager,
     ci_threshold: Annotated[float, Query()],
     mask_type: Annotated[MaskType, Query()],
-    # Sequence position for both CE and KL losses
-    loss_seq_pos: Annotated[int, Query()],
-    # Optional CE loss params (required together)
+    loss_type: Annotated[LossType, Query()],
+    loss_coeff: Annotated[float, Query(gt=0)],
+    loss_position: Annotated[int, Query(ge=0)],
     label_token: Annotated[int | None, Query()] = None,
-    ce_loss_coeff: Annotated[float | None, Query(gt=0)] = None,
-    # Optional KL loss param
-    kl_loss_coeff: Annotated[float | None, Query(gt=0)] = None,
 ):
     """Compute optimized attribution graph for a prompt with streaming progress.
 
-    At least one of (ce_loss_coeff, kl_loss_coeff) must be provided.
-    If ce_loss_coeff is provided, label_token is also required.
-    loss_seq_pos specifies the sequence position to optimize.
+    loss_type determines whether to use CE (cross-entropy for specific token) or KL (distribution matching).
+    label_token is required when loss_type is "ce".
     """
-    # Validation
-    if ce_loss_coeff is None and kl_loss_coeff is None:
-        raise HTTPException(
-            status_code=400,
-            detail="At least one of ce_loss_coeff or kl_loss_coeff must be provided",
-        )
-    if ce_loss_coeff is not None and label_token is None:
-        raise HTTPException(
-            status_code=400,
-            detail="label_token is required when ce_loss_coeff is provided",
-        )
+    # Build loss config based on type
+    loss_config: LossConfig
+    match loss_type:
+        case "ce":
+            if label_token is None:
+                raise HTTPException(status_code=400, detail="label_token is required for CE loss")
+            loss_config = CELossConfig(
+                coeff=loss_coeff, position=loss_position, label_token=label_token
+            )
+        case "kl":
+            loss_config = KLLossConfig(coeff=loss_coeff, position=loss_position)
 
     lr = 1e-2
 
@@ -508,12 +523,11 @@ def compute_graph_optimized_stream(
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     token_ids = prompt.token_ids
-    label_str = loaded.token_strings[label_token] if label_token is not None else None
     token_strings = [loaded.token_strings[t] for t in token_ids]
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
-    # Slice tokens to only include positions <= loss_seq_pos
-    num_tokens = loss_seq_pos + 1
+    # Slice tokens to only include positions <= loss_position
+    num_tokens = loss_position + 1
     token_strings_sliced = token_strings[:num_tokens]
 
     opt_params = OptimizationParams(
@@ -522,21 +536,8 @@ def compute_graph_optimized_stream(
         pnorm=pnorm,
         beta=beta,
         mask_type=mask_type,
-        label_token=label_token,
-        ce_loss_coeff=ce_loss_coeff,
-        kl_loss_coeff=kl_loss_coeff,
-        loss_seq_pos=loss_seq_pos,
+        loss=loss_config,
     )
-
-    ce_loss_config: OptimCELossConfig | None = None
-    if ce_loss_coeff is not None:
-        assert label_token is not None
-        ce_loss_config = OptimCELossConfig(
-            coeff=ce_loss_coeff, label_token=label_token, loss_seq_pos=loss_seq_pos
-        )
-    kl_loss_config: OptimKLLossConfig | None = None
-    if kl_loss_coeff is not None:
-        kl_loss_config = OptimKLLossConfig(coeff=kl_loss_coeff, loss_seq_pos=loss_seq_pos)
 
     optim_config = OptimCIConfig(
         seed=0,
@@ -548,8 +549,7 @@ def compute_graph_optimized_stream(
         lr_warmup_pct=0.01,
         log_freq=max(1, steps // 4),
         imp_min_config=ImportanceMinimalityLossConfig(coeff=imp_min_coeff, pnorm=pnorm, beta=beta),
-        ce_loss_config=ce_loss_config,
-        kl_loss_config=kl_loss_config,
+        loss_config=loss_config,
         sampling=loaded.config.sampling,
         ce_kl_rounding_threshold=0.5,
         mask_type=mask_type,
@@ -584,7 +584,6 @@ def compute_graph_optimized_stream(
                 node_ci_vals=result.node_ci_vals,
                 node_subcomp_acts=result.node_subcomp_acts,
                 optimization_params=opt_params,
-                label_prob=result.label_prob,
             ),
         )
 
@@ -597,6 +596,19 @@ def compute_graph_optimized_stream(
             normalize=normalize,
             node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
         )
+
+        # Build loss result based on config type
+        loss_result: CELossResult | KLLossResult
+        match loss_config:
+            case CELossConfig(coeff=coeff, position=pos, label_token=label_tok):
+                loss_result = CELossResult(
+                    coeff=coeff,
+                    position=pos,
+                    label_token=label_tok,
+                    label_str=loaded.token_strings[label_tok],
+                )
+            case KLLossConfig(coeff=coeff, position=pos):
+                loss_result = KLLossResult(coeff=coeff, position=pos)
 
         return GraphDataWithOptimization(
             id=graph_id,
@@ -615,12 +627,7 @@ def compute_graph_optimized_stream(
                 pnorm=pnorm,
                 beta=beta,
                 mask_type=mask_type,
-                label_token=label_token,
-                label_str=label_str,
-                ce_loss_coeff=ce_loss_coeff,
-                label_prob=result.label_prob,
-                kl_loss_coeff=kl_loss_coeff,
-                loss_seq_pos=loss_seq_pos,
+                loss=loss_result,
             ),
         )
 
@@ -714,10 +721,20 @@ def stored_graph_to_response(
         )
 
     assert graph.optimization_params is not None
+    opt = graph.optimization_params
 
-    label_str: str | None = None
-    if graph.optimization_params.label_token is not None:
-        label_str = token_strings_map[graph.optimization_params.label_token]
+    # Build loss result based on stored config type
+    loss_result: CELossResult | KLLossResult
+    match opt.loss:
+        case CELossConfig(coeff=coeff, position=pos, label_token=label_tok):
+            loss_result = CELossResult(
+                coeff=coeff,
+                position=pos,
+                label_token=label_tok,
+                label_str=token_strings_map[label_tok],
+            )
+        case KLLossConfig(coeff=coeff, position=pos):
+            loss_result = KLLossResult(coeff=coeff, position=pos)
 
     return GraphDataWithOptimization(
         id=graph.id,
@@ -731,17 +748,12 @@ def stored_graph_to_response(
         maxAbsSubcompAct=compute_max_abs_subcomp_act(graph.node_subcomp_acts),
         l0_total=l0_total,
         optimization=OptimizationResult(
-            imp_min_coeff=graph.optimization_params.imp_min_coeff,
-            steps=graph.optimization_params.steps,
-            pnorm=graph.optimization_params.pnorm,
-            beta=graph.optimization_params.beta,
-            mask_type=graph.optimization_params.mask_type,
-            label_token=graph.optimization_params.label_token,
-            label_str=label_str,
-            ce_loss_coeff=graph.optimization_params.ce_loss_coeff,
-            label_prob=graph.label_prob,
-            kl_loss_coeff=graph.optimization_params.kl_loss_coeff,
-            loss_seq_pos=graph.optimization_params.loss_seq_pos,
+            imp_min_coeff=opt.imp_min_coeff,
+            steps=opt.steps,
+            pnorm=opt.pnorm,
+            beta=opt.beta,
+            mask_type=opt.mask_type,
+            loss=loss_result,
         ),
     )
 

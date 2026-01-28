@@ -3,6 +3,7 @@ import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/api";
 
 export type MaskType = "stochastic" | "ci";
+export type LossType = "ce" | "kl";
 
 export type ViewSettings = {
     topK: number;
@@ -40,17 +41,24 @@ export type PromptCard = {
     useOptimized: boolean; // whether to compute optimized graph
 };
 
-export type OptimizeConfig = {
-    // CE loss settings (active when ceLossCoeff > 0 AND labelTokenId is set)
+export type CELossConfig = {
+    type: "ce";
+    coeff: number;
+    position: number;
+    labelTokenId: number;
     labelTokenText: string;
-    labelTokenId: number | null;
-    labelTokenPreview: string | null;
-    ceLossCoeff: number;
-    // KL loss settings (active when klLossCoeff > 0)
-    klLossCoeff: number;
-    // Sequence position for both CE and KL losses
-    lossSeqPos: number;
-    // Common settings
+};
+
+export type KLLossConfig = {
+    type: "kl";
+    coeff: number;
+    position: number;
+};
+
+export type LossConfig = CELossConfig | KLLossConfig;
+
+export type OptimizeConfig = {
+    loss: LossConfig;
     impMinCoeff: number;
     steps: number;
     pnorm: number;
@@ -113,12 +121,13 @@ export type PromptGenerateState =
 
 export function defaultOptimizeConfig(numTokens: number): OptimizeConfig {
     return {
-        labelTokenText: "",
-        labelTokenId: null,
-        labelTokenPreview: null,
-        ceLossCoeff: 1,
-        klLossCoeff: 0,
-        lossSeqPos: numTokens - 1,
+        loss: {
+            type: "ce",
+            coeff: 1,
+            position: numTokens - 1,
+            labelTokenId: -1, // Invalid - must be set before use
+            labelTokenText: "",
+        },
         impMinCoeff: 0.001,
         steps: 2000,
         pnorm: 0.3,

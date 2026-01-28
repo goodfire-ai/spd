@@ -1,25 +1,17 @@
 <script lang="ts">
-    import type { OptimizeConfig, MaskType } from "./types";
+    import type { OptimizeConfig, MaskType, LossType, LossConfig } from "./types";
     import type { TokenInfo } from "../../lib/promptAttributionsTypes";
     import TokenDropdown from "./TokenDropdown.svelte";
-
-    type LossType = "kl" | "ce";
 
     type Props = {
         config: OptimizeConfig;
         tokens: string[];
         allTokens: TokenInfo[];
-        onChange: (partial: Partial<OptimizeConfig>) => void;
+        onChange: (newConfig: OptimizeConfig) => void;
     };
 
     let { config, tokens, allTokens, onChange }: Props = $props();
     let showAdvanced = $state(false);
-
-    // Determine which loss type is active based on coefficients
-    const activeLossType = $derived.by((): LossType => {
-        if (config.ceLossCoeff > 0) return "ce";
-        return "kl";
-    });
 
     // Slider value 0-100 controls impMinCoeff on log scale from 1e-5 to 10
     const sliderValue = $derived.by(() => {
@@ -29,45 +21,49 @@
 
     function handleSliderChange(value: number) {
         const impMinCoeff = 1e-5 * Math.pow(1e6, value / 100);
-        onChange({ impMinCoeff });
+        onChange({ ...config, impMinCoeff });
     }
 
     function handleLossTypeChange(newType: LossType) {
+        const position = config.loss.position;
+        const coeff = config.loss.coeff;
+        let newLoss: LossConfig;
         if (newType === "kl") {
-            onChange({
-                klLossCoeff: 1.0,
-                ceLossCoeff: 0,
-            });
+            newLoss = { type: "kl", coeff, position };
         } else {
-            onChange({
-                klLossCoeff: 0,
-                ceLossCoeff: 1.0,
-            });
+            newLoss = {
+                type: "ce",
+                coeff,
+                position,
+                labelTokenId: -1,
+                labelTokenText: "",
+            };
         }
+        onChange({ ...config, loss: newLoss });
     }
 
     const tokenAtSeqPos = $derived(
-        config.lossSeqPos >= 0 && config.lossSeqPos < tokens.length ? tokens[config.lossSeqPos] : null,
+        config.loss.position >= 0 && config.loss.position < tokens.length ? tokens[config.loss.position] : null,
     );
 </script>
 
 <div class="opt-settings">
     <!-- Loss type selection -->
     <div class="loss-type-options">
-        <label class="loss-type-option" class:selected={activeLossType === "kl"}>
+        <label class="loss-type-option" class:selected={config.loss.type === "kl"}>
             <input
                 type="radio"
                 name="loss-type"
-                checked={activeLossType === "kl"}
+                checked={config.loss.type === "kl"}
                 onchange={() => handleLossTypeChange("kl")}
             />
             <span class="option-name">KL Divergence</span>
         </label>
-        <label class="loss-type-option" class:selected={activeLossType === "ce"}>
+        <label class="loss-type-option" class:selected={config.loss.type === "ce"}>
             <input
                 type="radio"
                 name="loss-type"
-                checked={activeLossType === "ce"}
+                checked={config.loss.type === "ce"}
                 onchange={() => handleLossTypeChange("ce")}
             />
             <span class="option-name">Cross-Entropy</span>
@@ -80,32 +76,41 @@
         <input
             type="number"
             class="pos-input"
-            value={config.lossSeqPos}
+            value={config.loss.position}
             oninput={(e) => {
                 if (e.currentTarget.value === "") return;
-                onChange({ lossSeqPos: parseInt(e.currentTarget.value) });
+                const position = parseInt(e.currentTarget.value);
+                onChange({ ...config, loss: { ...config.loss, position } });
             }}
             min={0}
             max={tokens.length - 1}
             step={1}
         />
         {#if tokenAtSeqPos !== null}
-            (<span class="token-at-pos">{tokenAtSeqPos}</span>),
+            (<span class="token">{tokenAtSeqPos}</span>)
         {/if}
-        <span class="target-label">predict</span>
-        <TokenDropdown
-            tokens={allTokens}
-            value={config.labelTokenText}
-            selectedTokenId={config.labelTokenId}
-            onSelect={(tokenId, tokenString) => {
-                onChange({
-                    labelTokenText: tokenString,
-                    labelTokenId: tokenId,
-                    labelTokenPreview: tokenId !== null ? tokenString : "",
-                });
-            }}
-            placeholder="token..."
-        />
+        {#if config.loss.type === "ce"}
+            <span class="target-label">, predict</span>
+            <TokenDropdown
+                tokens={allTokens}
+                value={config.loss.labelTokenText}
+                selectedTokenId={config.loss.labelTokenId >= 0 ? config.loss.labelTokenId : null}
+                onSelect={(tokenId, tokenString) => {
+                    if (config.loss.type !== "ce")
+                        throw new Error(
+                            "inconsistent state: Token dropdown rendered but loss not type CE but no label token",
+                        );
+
+                    if (tokenId !== null) {
+                        onChange({
+                            ...config,
+                            loss: { ...config.loss, labelTokenId: tokenId, labelTokenText: tokenString },
+                        });
+                    }
+                }}
+                placeholder="token..."
+            />
+        {/if}
     </div>
 
     <!-- Sparsity slider -->
@@ -119,7 +124,7 @@
                 onchange={(e) => {
                     const val = parseFloat(e.currentTarget.value);
                     if (!isNaN(val) && val > 0) {
-                        onChange({ impMinCoeff: val });
+                        onChange({ ...config, impMinCoeff: val });
                     }
                 }}
             />
@@ -153,7 +158,7 @@
                         value={config.steps}
                         oninput={(e) => {
                             if (e.currentTarget.value === "") return;
-                            onChange({ steps: parseInt(e.currentTarget.value) });
+                            onChange({ ...config, steps: parseInt(e.currentTarget.value) });
                         }}
                         min={10}
                         max={5000}
@@ -167,7 +172,7 @@
                         value={config.pnorm}
                         oninput={(e) => {
                             if (e.currentTarget.value === "") return;
-                            onChange({ pnorm: parseFloat(e.currentTarget.value) });
+                            onChange({ ...config, pnorm: parseFloat(e.currentTarget.value) });
                         }}
                         min={0.1}
                         max={2}
@@ -181,7 +186,7 @@
                         value={config.beta}
                         oninput={(e) => {
                             if (e.currentTarget.value === "") return;
-                            onChange({ beta: parseFloat(e.currentTarget.value) });
+                            onChange({ ...config, beta: parseFloat(e.currentTarget.value) });
                         }}
                         min={0}
                         max={10}
@@ -192,33 +197,21 @@
                     <span class="label-text">mask_type</span>
                     <select
                         value={config.maskType}
-                        onchange={(e) => onChange({ maskType: e.currentTarget.value as MaskType })}
+                        onchange={(e) => onChange({ ...config, maskType: e.currentTarget.value as MaskType })}
                     >
                         <option value="stochastic">stochastic</option>
                         <option value="ci">ci</option>
                     </select>
                 </label>
                 <label>
-                    <span class="label-text">kl_coeff</span>
+                    <span class="label-text">loss_coeff</span>
                     <input
                         type="number"
-                        value={config.klLossCoeff}
+                        value={config.loss.coeff}
                         oninput={(e) => {
                             if (e.currentTarget.value === "") return;
-                            onChange({ klLossCoeff: parseFloat(e.currentTarget.value) });
-                        }}
-                        min={0}
-                        step={0.1}
-                    />
-                </label>
-                <label>
-                    <span class="label-text">ce_coeff</span>
-                    <input
-                        type="number"
-                        value={config.ceLossCoeff}
-                        oninput={(e) => {
-                            if (e.currentTarget.value === "") return;
-                            onChange({ ceLossCoeff: parseFloat(e.currentTarget.value) });
+                            const coeff = parseFloat(e.currentTarget.value);
+                            onChange({ ...config, loss: { ...config.loss, coeff } });
                         }}
                         min={0}
                         step={0.1}
@@ -304,14 +297,12 @@
         border-color: var(--accent-primary-dim);
     }
 
-    .token-at-pos {
-        padding: var(--space-1) var(--space-1);
-        background: var(--bg-inset);
-        border-radius: var(--radius-sm);
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-        color: var(--text-secondary);
+    .token {
         white-space: pre;
+        font-family: var(--font-mono);
+        background: var(--bg-inset);
+        padding: 0 var(--space-1);
+        border-radius: var(--radius-sm);
     }
 
     .slider-section {

@@ -8,14 +8,6 @@ export type CorrelationStatType = "pmi" | "precision" | "recall" | "jaccard";
 // Node color mode for graph visualization
 export type NodeColorMode = "ci" | "subcomp_act";
 
-// Optimization settings mode
-export type OptimizationMode = "intuitive" | "advanced";
-
-export const OPTIMIZATION_MODE_LABELS: Record<OptimizationMode, string> = {
-    intuitive: "Intuitive",
-    advanced: "Advanced",
-};
-
 export const NODE_COLOR_MODE_LABELS: Record<NodeColorMode, string> = {
     ci: "CI",
     subcomp_act: "Subcomp Act",
@@ -45,7 +37,6 @@ export const displaySettings = $state({
     nodeColorMode: "ci" as NodeColorMode,
     meanCiCutoff: 1e-7,
     showAutoInterpPromptButton: false,
-    optimizationMode: "intuitive" as OptimizationMode,
 });
 
 export function anyCorrelationStatsEnabled() {

@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from jaxtyping import Bool, Float
+from pydantic import BaseModel
 from torch import Tensor
 from tqdm.auto import tqdm
 
@@ -24,21 +25,24 @@ from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_
 MaskType = Literal["stochastic", "ci"]
 
 
-@dataclass
-class OptimCELossConfig:
-    """Cross-entropy loss config for CI optimization."""
+class CELossConfig(BaseModel):
+    """Cross-entropy loss: optimize for a specific token at a position."""
 
+    type: Literal["ce"] = "ce"
     coeff: float
+    position: int
     label_token: int
-    loss_seq_pos: int  # Sequence position to optimize for
 
 
-@dataclass
-class OptimKLLossConfig:
-    """KL divergence loss config for CI optimization."""
+class KLLossConfig(BaseModel):
+    """KL divergence loss: match target model distribution at a position."""
 
+    type: Literal["kl"] = "kl"
     coeff: float
-    loss_seq_pos: int  # Sequence position to optimize for
+    position: int
+
+
+LossConfig = CELossConfig | KLLossConfig
 
 
 @dataclass
@@ -241,32 +245,14 @@ class OptimCIConfig:
 
     log_freq: int
 
-    # Loss configs
+    # Loss config (exactly one of CE or KL)
     imp_min_config: ImportanceMinimalityLossConfig
-    ce_loss_config: OptimCELossConfig | None
-    kl_loss_config: OptimKLLossConfig | None
+    loss_config: LossConfig
 
     sampling: SamplingType
 
     ce_kl_rounding_threshold: float
     mask_type: MaskType
-
-    def get_loss_seq_pos(self, default: int) -> int:
-        """Get the sequence position for loss computation.
-
-        Returns the loss_seq_pos from CE config if available, otherwise KL config,
-        otherwise falls back to the provided default.
-        """
-        if self.ce_loss_config is not None and self.kl_loss_config is not None:
-            assert self.ce_loss_config.loss_seq_pos == self.kl_loss_config.loss_seq_pos, (
-                f"CE and KL loss configs must have same loss_seq_pos: {self.ce_loss_config.loss_seq_pos} != {self.kl_loss_config.loss_seq_pos}"
-            )
-
-        if self.ce_loss_config is not None:
-            return self.ce_loss_config.loss_seq_pos
-        if self.kl_loss_config is not None:
-            return self.kl_loss_config.loss_seq_pos
-        return default
 
 
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
@@ -352,28 +338,24 @@ def optimize_ci_values(
             p_anneal_end_frac=config.imp_min_config.p_anneal_end_frac,
         )
 
-        # Compute faithfulness losses (CE and/or KL)
-        faithfulness_loss = torch.tensor(0.0, device=device)
+        # Compute faithfulness loss (CE or KL)
         ce_loss_val: float | None = None
         kl_loss_val: float | None = None
 
-        if config.ce_loss_config is not None:
-            seq_pos = config.ce_loss_config.loss_seq_pos
-            ce_loss = F.cross_entropy(
-                out[0, seq_pos, :].unsqueeze(0),
-                torch.tensor([config.ce_loss_config.label_token], device=device),
-            )
-            faithfulness_loss = faithfulness_loss + config.ce_loss_config.coeff * ce_loss
-            ce_loss_val = ce_loss.item()
-
-        if config.kl_loss_config is not None:
-            seq_pos = config.kl_loss_config.loss_seq_pos
-            # KL divergence: encourage masked output to match target distribution
-            target_probs = F.softmax(target_out[0, seq_pos, :], dim=-1)
-            pred_log_probs = F.log_softmax(out[0, seq_pos, :], dim=-1)
-            kl_loss = F.kl_div(pred_log_probs, target_probs, reduction="sum")
-            faithfulness_loss = faithfulness_loss + config.kl_loss_config.coeff * kl_loss
-            kl_loss_val = kl_loss.item()
+        match config.loss_config:
+            case CELossConfig(coeff=coeff, position=pos, label_token=label_token):
+                ce_loss = F.cross_entropy(
+                    out[0, pos, :].unsqueeze(0),
+                    torch.tensor([label_token], device=device),
+                )
+                faithfulness_loss = coeff * ce_loss
+                ce_loss_val = ce_loss.item()
+            case KLLossConfig(coeff=coeff, position=pos):
+                target_probs = F.softmax(target_out[0, pos, :], dim=-1)
+                pred_log_probs = F.log_softmax(out[0, pos, :], dim=-1)
+                kl_loss = F.kl_div(pred_log_probs, target_probs, reduction="sum")
+                faithfulness_loss = coeff * kl_loss
+                kl_loss_val = kl_loss.item()
 
         total_loss = faithfulness_loss + imp_min_coeff * imp_min_loss
 
@@ -381,7 +363,6 @@ def optimize_ci_values(
             l0_stats = compute_l0_stats(ci_outputs, ci_alive_threshold=0.0)
 
             # Compute CE/KL metrics for the target sequence position
-            loss_seq_pos = config.get_loss_seq_pos(default=tokens.shape[1] - 1)
             with torch.no_grad():
                 ce_kl_stats = compute_specific_pos_ce_kl(
                     model=model,
@@ -389,7 +370,7 @@ def optimize_ci_values(
                     target_out=target_out,
                     ci=ci_outputs.lower_leaky,
                     rounding_threshold=config.ce_kl_rounding_threshold,
-                    loss_seq_pos=loss_seq_pos,
+                    loss_seq_pos=config.loss_config.position,
                 )
 
             log_terms: dict[str, float] = {
@@ -402,19 +383,17 @@ def optimize_ci_values(
                 log_terms["kl_loss"] = kl_loss_val
 
             # Log label probability if CE loss is used
-            if config.ce_loss_config is not None:
-                seq_pos = config.ce_loss_config.loss_seq_pos
-                stoch_label_prob = F.softmax(out[0, seq_pos, :], dim=-1)[
-                    config.ce_loss_config.label_token
-                ]
+            if isinstance(config.loss_config, CELossConfig):
+                pos = config.loss_config.position
+                label_token = config.loss_config.label_token
+                stoch_label_prob = F.softmax(out[0, pos, :], dim=-1)[label_token]
                 log_terms["stoch_masked_label_prob"] = stoch_label_prob.item()
 
                 with torch.no_grad():
-                    # Use model with CI mask to compute label probability at target position
                     mask_infos = make_mask_infos(ci_outputs.lower_leaky, routing_masks="all")
                     logits = model(tokens, mask_infos=mask_infos)
-                    probs = F.softmax(logits[0, seq_pos, :], dim=-1)
-                    ci_masked_label_prob = float(probs[config.ce_loss_config.label_token].item())
+                    probs = F.softmax(logits[0, pos, :], dim=-1)
+                    ci_masked_label_prob = float(probs[label_token].item())
                     log_terms["ci_masked_label_prob"] = ci_masked_label_prob
 
             tqdm.write(f"\n--- Step {step} ---")

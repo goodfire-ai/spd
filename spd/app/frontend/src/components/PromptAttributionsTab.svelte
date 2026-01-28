@@ -14,26 +14,24 @@
     import GraphTabs from "./prompt-attr/GraphTabs.svelte";
     import InterventionsView from "./prompt-attr/InterventionsView.svelte";
     import OptimizationParams from "./prompt-attr/OptimizationParams.svelte";
+    import OptimizationSettings from "./prompt-attr/OptimizationSettings.svelte";
     import PromptTabs from "./prompt-attr/PromptTabs.svelte";
     import StagedNodesPanel from "./prompt-attr/StagedNodesPanel.svelte";
-    import ViewTabs from "./prompt-attr/ViewTabs.svelte";
     import {
-        defaultOptimizeConfig,
         defaultDraftState,
+        defaultOptimizeConfig,
         type ComposerState,
         type DraftState,
-        type StoredGraph,
         type GraphComputeState,
         type OptimizeConfig,
         type PromptCard,
+        type StoredGraph,
         type TabViewState,
         type ViewSettings,
     } from "./prompt-attr/types";
     import ViewControls from "./prompt-attr/ViewControls.svelte";
+    import ViewTabs from "./prompt-attr/ViewTabs.svelte";
     import PromptAttributionsGraph from "./PromptAttributionsGraph.svelte";
-    import OptimizationSettings from "./prompt-attr/OptimizationSettings.svelte";
-    import OptimizationSettingsSimple from "./prompt-attr/OptimizationSettingsSimple.svelte";
-    import { displaySettings } from "../lib/displaySettings.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
@@ -132,9 +130,7 @@
     });
 
     // Check if a standard graph already exists for the active card
-    const hasStandardGraph = $derived(
-        activeCard?.graphs.some((g) => g.data.graphType === "standard") ?? false,
-    );
+    const hasStandardGraph = $derived(activeCard?.graphs.some((g) => g.data.graphType === "standard") ?? false);
 
     // Helper to update draft state (only valid when in draft view)
     function updateDraft(partial: Partial<DraftState>) {
@@ -284,13 +280,6 @@
         tabView = { view: "card", cardId };
     }
 
-    function handleCancelDraft() {
-        // Go back to last card if there are any
-        if (promptCards.length > 0) {
-            tabView = { view: "card", cardId: promptCards[promptCards.length - 1].id };
-        }
-    }
-
     function handleDismissError() {
         // Go back to draft on error dismissal
         tabView = { view: "draft", draft: defaultDraftState() };
@@ -326,10 +315,10 @@
         promptCards = promptCards.map((card) => (card.id === activeCard.id ? { ...card, useOptimized } : card));
     }
 
-    function handleOptimizeConfigChange(partial: Partial<OptimizeConfig>) {
+    function handleOptimizeConfigChange(newConfig: OptimizeConfig) {
         if (!activeCard) return;
         promptCards = promptCards.map((card) =>
-            card.id === activeCard.id ? { ...card, newGraphConfig: { ...card.newGraphConfig, ...partial } } : card,
+            card.id === activeCard.id ? { ...card, newGraphConfig: newConfig } : card,
         );
     }
 
@@ -596,18 +585,11 @@
             let data: GraphData;
 
             if (isOptimized) {
-                const useCE = optConfig.ceLossCoeff > 0 && optConfig.labelTokenId !== null;
-                const useKL = optConfig.klLossCoeff > 0;
-                // Validate: at least one loss type must be active
-                if (!useCE && !useKL) {
-                    throw new Error("At least one loss type must be active (set coeff > 0)");
-                }
-                // Validate: CE coeff > 0 requires label token
-                if (optConfig.ceLossCoeff > 0 && optConfig.labelTokenId === null) {
-                    throw new Error("Label token required when ce_coeff > 0");
+                // Validate CE loss requires valid label token
+                if (optConfig.loss.type === "ce" && optConfig.loss.labelTokenId < 0) {
+                    throw new Error("Label token required for CE loss");
                 }
 
-                // Build params with optional CE/KL settings
                 const params: api.ComputeGraphOptimizedParams = {
                     promptId: cardId,
                     normalize: defaultViewSettings.normalizeEdges,
@@ -618,15 +600,11 @@
                     outputProbThreshold: 0.01,
                     ciThreshold: defaultViewSettings.ciThreshold,
                     maskType: optConfig.maskType,
-                    lossSeqPos: optConfig.lossSeqPos,
+                    lossType: optConfig.loss.type,
+                    lossCoeff: optConfig.loss.coeff,
+                    lossPosition: optConfig.loss.position,
+                    labelToken: optConfig.loss.type === "ce" ? optConfig.loss.labelTokenId : undefined,
                 };
-                if (useCE) {
-                    params.labelToken = optConfig.labelTokenId!;
-                    params.ceLossCoeff = optConfig.ceLossCoeff;
-                }
-                if (useKL) {
-                    params.klLossCoeff = optConfig.klLossCoeff;
-                }
 
                 data = await api.computeGraphOptimizedStream(params, (progress) => {
                     if (graphCompute.status !== "computing") return;
@@ -781,54 +759,49 @@
                     {@const draft = tabView.draft}
                     <!-- New prompt staging area -->
                     <div class="draft-staging">
-                        <div class="draft-header">
-                            <h3>New Prompt</h3>
-                            {#if promptCards.length > 0}
-                                <button class="btn-cancel-draft" onclick={handleCancelDraft}>Cancel</button>
-                            {/if}
-                        </div>
-                        <div class="draft-input-area">
-                            <textarea
-                                class="draft-textarea"
-                                placeholder="Enter your prompt text... (Enter to compute, Shift+Enter for newline)"
-                                value={draft.text}
-                                oninput={(e) => handleDraftTextChange(e.currentTarget.value)}
-                                onkeydown={handleDraftKeydown}
-                                rows={3}
-                            ></textarea>
-                            {#if draft.tokenPreview.loading}
-                                <div class="token-preview-row loading">Tokenizing...</div>
-                            {:else if draft.tokenPreview.tokens.length > 0}
-                                <div class="token-preview-row">
-                                    {#each draft.tokenPreview.tokens as tok, i (i)}<span class="token">{tok}</span
-                                        >{/each}
-                                    <span class="token-count">({draft.tokenPreview.tokens.length} tokens)</span>
-                                </div>
-                            {/if}
-                        </div>
-                        <div class="draft-controls">
-                            <button
-                                class="btn-compute-draft"
-                                onclick={handleAddFromDraft}
-                                disabled={!draft.text.trim() || draft.isAdding}
-                            >
-                                {draft.isAdding ? "Adding..." : "Add Prompt"}
-                            </button>
-                        </div>
-
-                        {#if prompts.length > 0}
-                            <div class="existing-prompts">
-                                <h4>Or select an existing prompt ({prompts.length})</h4>
-                                <div class="prompt-list">
-                                    {#each prompts as prompt (prompt.id)}
-                                        <button class="prompt-item" onclick={() => handleSelectPrompt(prompt)}>
-                                            <span class="prompt-id">#{prompt.id}</span>
-                                            <span class="prompt-text">{prompt.preview}</span>
-                                        </button>
-                                    {/each}
-                                </div>
+                        <div class="draft-main">
+                            <div class="draft-input-section">
+                                <label class="draft-label">Enter prompt text</label>
+                                <textarea
+                                    class="draft-textarea"
+                                    placeholder="Type your prompt here... (Enter to add)"
+                                    value={draft.text}
+                                    oninput={(e) => handleDraftTextChange(e.currentTarget.value)}
+                                    onkeydown={handleDraftKeydown}
+                                    rows={2}
+                                ></textarea>
+                                {#if draft.tokenPreview.loading}
+                                    <div class="token-preview-row loading">Tokenizing...</div>
+                                {:else if draft.tokenPreview.tokens.length > 0}
+                                    <div class="token-preview-row">
+                                        {#each draft.tokenPreview.tokens as tok, i (i)}<span class="token">{tok}</span
+                                            >{/each}
+                                        <span class="token-count">{draft.tokenPreview.tokens.length} tokens</span>
+                                    </div>
+                                {/if}
+                                <button
+                                    class="btn-add-prompt"
+                                    onclick={handleAddFromDraft}
+                                    disabled={!draft.text.trim() || draft.isAdding}
+                                >
+                                    {draft.isAdding ? "Adding..." : "Add Prompt"}
+                                </button>
                             </div>
-                        {/if}
+
+                            {#if prompts.length > 0}
+                                <div class="existing-prompts-section">
+                                    <label class="draft-label">Or select existing ({prompts.length})</label>
+                                    <div class="prompt-list">
+                                        {#each prompts as prompt (prompt.id)}
+                                            <button class="prompt-item" onclick={() => handleSelectPrompt(prompt)}>
+                                                <span class="prompt-id">#{prompt.id}</span>
+                                                <span class="prompt-text">{prompt.preview}</span>
+                                            </button>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/if}
+                        </div>
                     </div>
                 {:else if activeCard}
                     <!-- Level 1: Tokens -->
@@ -985,21 +958,12 @@
                                             </label>
                                         {/if}
                                         {#if hasStandardGraph || activeCard.useOptimized}
-                                            {#if displaySettings.optimizationMode === "intuitive"}
-                                                <OptimizationSettingsSimple
-                                                    config={activeCard.newGraphConfig}
-                                                    tokens={activeCard.tokens}
-                                                    {allTokens}
-                                                    onChange={handleOptimizeConfigChange}
-                                                />
-                                            {:else}
-                                                <OptimizationSettings
-                                                    config={activeCard.newGraphConfig}
-                                                    tokens={activeCard.tokens}
-                                                    {allTokens}
-                                                    onChange={handleOptimizeConfigChange}
-                                                />
-                                            {/if}
+                                            <OptimizationSettings
+                                                config={activeCard.newGraphConfig}
+                                                tokens={activeCard.tokens}
+                                                {allTokens}
+                                                onChange={handleOptimizeConfigChange}
+                                            />
                                         {/if}
                                         <button class="btn-compute-center" onclick={() => computeGraphForCard()}>
                                             Compute
@@ -1215,44 +1179,32 @@
 
     /* Draft staging area styles */
     .draft-staging {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-4);
-        padding: var(--space-6);
-        max-width: 800px;
-        margin: 0 auto;
-    }
-
-    .draft-header {
+        flex: 1;
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: center;
+        padding: var(--space-6);
     }
 
-    .draft-header h3 {
-        margin: 0;
-        font-size: var(--text-lg);
-        font-weight: 600;
-        color: var(--text-primary);
+    .draft-main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--space-6);
+        max-width: 900px;
+        width: 100%;
+        align-items: start;
     }
 
-    .btn-cancel-draft {
-        padding: var(--space-1) var(--space-2);
-        background: transparent;
-        border: 1px solid var(--border-default);
-        color: var(--text-muted);
-        font-size: var(--text-sm);
-    }
-
-    .btn-cancel-draft:hover {
-        border-color: var(--border-strong);
-        color: var(--text-primary);
-    }
-
-    .draft-input-area {
+    .draft-input-section {
         display: flex;
         flex-direction: column;
         gap: var(--space-2);
+    }
+
+    .draft-label {
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--text-secondary);
     }
 
     .draft-textarea {
@@ -1264,7 +1216,7 @@
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         resize: vertical;
-        min-height: 80px;
+        min-height: 120px;
     }
 
     .draft-textarea:focus {
@@ -1274,6 +1226,27 @@
 
     .draft-textarea::placeholder {
         color: var(--text-muted);
+    }
+
+    .btn-add-prompt {
+        align-self: flex-start;
+        padding: var(--space-1) var(--space-3);
+        background: var(--accent-primary);
+        border: none;
+        color: white;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        font-weight: 500;
+        cursor: pointer;
+    }
+
+    .btn-add-prompt:hover:not(:disabled) {
+        background: var(--accent-primary-bright);
+    }
+
+    .btn-add-prompt:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
     .token-preview-row {
@@ -1306,49 +1279,16 @@
         margin-left: var(--space-2);
     }
 
-    .draft-controls {
+    .existing-prompts-section {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
-        gap: var(--space-3);
-    }
-
-    .btn-compute-draft {
-        padding: var(--space-2) var(--space-4);
-        background: var(--accent-primary);
-        border: none;
-        color: white;
-        font-size: var(--text-base);
-        font-family: var(--font-mono);
-        font-weight: 500;
-        cursor: pointer;
-    }
-
-    .btn-compute-draft:hover:not(:disabled) {
-        background: var(--accent-primary-bright);
-    }
-
-    .btn-compute-draft:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .existing-prompts {
-        border-top: 1px solid var(--border-default);
-        padding-top: var(--space-4);
-    }
-
-    .existing-prompts h4 {
-        margin: 0 0 var(--space-2) 0;
-        font-size: var(--text-sm);
-        font-weight: 500;
-        color: var(--text-muted);
+        gap: var(--space-2);
     }
 
     .prompt-list {
         display: flex;
         flex-direction: column;
-        max-height: 260px;
+        max-height: 400px;
         overflow-y: auto;
         background: var(--bg-inset);
         border: 1px solid var(--border-default);

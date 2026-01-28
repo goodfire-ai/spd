@@ -16,7 +16,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from spd.app.backend.compute import Edge, Node
-from spd.app.backend.optim_cis import MaskType
+from spd.app.backend.optim_cis import CELossConfig, KLLossConfig, LossConfig, MaskType
 from spd.app.backend.schemas import OutputProbability
 from spd.settings import REPO_ROOT
 
@@ -51,13 +51,7 @@ class OptimizationParams(BaseModel):
     pnorm: float
     beta: float
     mask_type: MaskType
-    # CE loss params (optional, must be set together)
-    label_token: int | None = None
-    ce_loss_coeff: float | None = None
-    # KL loss param (optional)
-    kl_loss_coeff: float | None = None
-    # Sequence position for both CE and KL losses
-    loss_seq_pos: int
+    loss: LossConfig
 
 
 class StoredGraph(BaseModel):
@@ -76,7 +70,6 @@ class StoredGraph(BaseModel):
 
     # Optimized-specific (None for other types)
     optimization_params: OptimizationParams | None = None
-    label_prob: float | None = None  # P(label_token) with optimized CI mask
 
     # Manual-specific (None for other types)
     included_nodes: list[str] | None = None  # Nodes included in this graph
@@ -171,15 +164,13 @@ class PromptAttrDB:
                 graph_type TEXT NOT NULL,  -- 'standard', 'optimized', 'manual'
 
                 -- Optimization params (NULL for non-optimized graphs)
-                label_token INTEGER,
                 imp_min_coeff REAL,
-                ce_loss_coeff REAL,
-                kl_loss_coeff REAL,
-                loss_seq_pos INTEGER,
                 steps INTEGER,
                 pnorm REAL,
                 beta REAL,
                 mask_type TEXT,
+                loss_config TEXT,  -- JSON: {type: "ce"|"kl", coeff, position, label_token?}
+                loss_config_hash TEXT,  -- SHA256 hash for uniqueness indexing
 
                 -- Manual graph params (NULL for non-manual graphs)
                 included_nodes TEXT,  -- JSON array of node keys in this graph
@@ -194,9 +185,6 @@ class PromptAttrDB:
                 -- Output probabilities: "seq:c_idx" -> {prob, token}
                 output_probs_data TEXT NOT NULL,
 
-                -- Optimization stats (NULL for non-optimized graphs)
-                label_prob REAL,
-
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -207,7 +195,7 @@ class PromptAttrDB:
 
             -- One optimized graph per unique parameter combination
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, loss_seq_pos, steps, pnorm, beta, mask_type)
+                ON graphs(prompt_id, imp_min_coeff, steps, pnorm, beta, mask_type, loss_config_hash)
                 WHERE graph_type = 'optimized';
 
             -- One manual graph per unique node set (using hash for reliable uniqueness)
@@ -389,28 +377,22 @@ class PromptAttrDB:
         node_subcomp_acts_json = json.dumps(graph.node_subcomp_acts)
 
         # Extract optimization-specific values (NULL for non-optimized graphs)
-        label_token = None
         imp_min_coeff = None
-        ce_loss_coeff = None
-        kl_loss_coeff = None
-        loss_seq_pos = None
         steps = None
         pnorm = None
         beta = None
         mask_type = None
-        label_prob = None
+        loss_config_json: str | None = None
+        loss_config_hash: str | None = None
 
         if graph.optimization_params:
-            label_token = graph.optimization_params.label_token
             imp_min_coeff = graph.optimization_params.imp_min_coeff
-            ce_loss_coeff = graph.optimization_params.ce_loss_coeff
-            kl_loss_coeff = graph.optimization_params.kl_loss_coeff
-            loss_seq_pos = graph.optimization_params.loss_seq_pos
             steps = graph.optimization_params.steps
             pnorm = graph.optimization_params.pnorm
             beta = graph.optimization_params.beta
             mask_type = graph.optimization_params.mask_type
-            label_prob = graph.label_prob
+            loss_config_json = graph.optimization_params.loss.model_dump_json()
+            loss_config_hash = hashlib.sha256(loss_config_json.encode()).hexdigest()
 
         # Extract manual-specific values (NULL for non-manual graphs)
         # Sort included_nodes and compute hash for reliable uniqueness
@@ -424,30 +406,27 @@ class PromptAttrDB:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, graph_type,
-                    label_token, imp_min_coeff, ce_loss_coeff,
-                    kl_loss_coeff, loss_seq_pos, steps, pnorm,
-                    beta, mask_type, included_nodes, included_nodes_hash,
-                    edges_data, output_probs_data, node_ci_vals, node_subcomp_acts, label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    imp_min_coeff, steps, pnorm, beta, mask_type,
+                    loss_config, loss_config_hash,
+                    included_nodes, included_nodes_hash,
+                    edges_data, output_probs_data, node_ci_vals, node_subcomp_acts)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
-                    label_token,
                     imp_min_coeff,
-                    ce_loss_coeff,
-                    kl_loss_coeff,
-                    loss_seq_pos,
                     steps,
                     pnorm,
                     beta,
                     mask_type,
+                    loss_config_json,
+                    loss_config_hash,
                     included_nodes_json,
                     included_nodes_hash,
                     edges_json,
                     probs_json,
                     node_ci_vals_json,
                     node_subcomp_acts_json,
-                    label_prob,
                 ),
             )
             conn.commit()
@@ -497,20 +476,23 @@ class PromptAttrDB:
         node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
 
         opt_params: OptimizationParams | None = None
-        label_prob: float | None = None
         if row["graph_type"] == "optimized":
+            loss_config_data = json.loads(row["loss_config"])
+            loss_type = loss_config_data["type"]
+            assert loss_type in ("ce", "kl"), f"Unknown loss type: {loss_type}"
+            loss_config: LossConfig
+            if loss_type == "ce":
+                loss_config = CELossConfig(**loss_config_data)
+            else:
+                loss_config = KLLossConfig(**loss_config_data)
             opt_params = OptimizationParams(
                 imp_min_coeff=row["imp_min_coeff"],
                 steps=row["steps"],
                 pnorm=row["pnorm"],
                 beta=row["beta"],
                 mask_type=row["mask_type"],
-                label_token=row["label_token"],
-                ce_loss_coeff=row["ce_loss_coeff"],
-                kl_loss_coeff=row["kl_loss_coeff"],
-                loss_seq_pos=row["loss_seq_pos"],
+                loss=loss_config,
             )
-            label_prob = row["label_prob"]
 
         # Parse manual-specific fields
         included_nodes: list[str] | None = None
@@ -525,7 +507,6 @@ class PromptAttrDB:
             node_ci_vals=node_ci_vals,
             node_subcomp_acts=node_subcomp_acts,
             optimization_params=opt_params,
-            label_prob=label_prob,
             included_nodes=included_nodes,
         )
 
@@ -541,9 +522,8 @@ class PromptAttrDB:
         conn = self._get_conn()
         rows = conn.execute(
             """SELECT id, graph_type, edges_data, output_probs_data, node_ci_vals,
-                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff,
-                      kl_loss_coeff, loss_seq_pos, steps, pnorm, beta, mask_type, label_prob,
-                      included_nodes
+                      node_subcomp_acts, imp_min_coeff, steps, pnorm, beta, mask_type,
+                      loss_config, included_nodes
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY
@@ -558,9 +538,8 @@ class PromptAttrDB:
         conn = self._get_conn()
         row = conn.execute(
             """SELECT id, prompt_id, graph_type, edges_data, output_probs_data, node_ci_vals,
-                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff,
-                      kl_loss_coeff, loss_seq_pos, steps, pnorm, beta, mask_type, label_prob,
-                      included_nodes
+                      node_subcomp_acts, imp_min_coeff, steps, pnorm, beta, mask_type,
+                      loss_config, included_nodes
                FROM graphs
                WHERE id = ?""",
             (graph_id,),
