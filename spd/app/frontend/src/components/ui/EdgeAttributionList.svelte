@@ -314,9 +314,11 @@
 
     .pill-content {
         display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1px;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 2px 6px;
+        min-width: 0;
     }
 
     .interp-label {
@@ -331,7 +333,8 @@
         font-family: var(--font-mono);
         font-size: 9px;
         opacity: 0.7;
-        text-align: left;
+        text-align: right;
+        margin-left: auto;
     }
 
     .tooltip {
