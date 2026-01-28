@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import type { EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
-    import { formatNodeKeyForDisplay } from "../../lib/promptAttributionsTypes";
+    import { formatNodeKeyForDisplay, getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../prompt-attr/graphUtils";
 
@@ -27,6 +27,12 @@
             return `${parts[0]}:${parts[2]}`; // layer:cIdx from layer:seq:cIdx
         }
         return key; // already layer:cIdx
+    }
+
+    // Extract just the aliased layer name from a key (e.g., "L0.attn.q" from "h.0.attn.q_proj:2:5")
+    function getLayerLabel(key: string): string {
+        const layer = key.split(":")[0];
+        return getLayerDisplayName(layer);
     }
 
     function getInterpretation(key: string): InterpretationBackendState {
@@ -166,6 +172,7 @@
             {@const isToken = isTokenNode(key)}
             {@const interp = isToken ? undefined : getInterpretation(key)}
             {@const hasInterpretation = interp?.status === "generated"}
+            {@const layerLabel = getLayerLabel(key)}
             {@const pillLabel = hasInterpretation
                 ? interp.data.label
                 : isToken
@@ -173,7 +180,14 @@
                   : formattedKey}
             <div class="pill-container" onmouseenter={(e) => handleMouseEnter(key, e)} onmouseleave={handleMouseLeave}>
                 <button class="edge-pill" style="background: {bgColor};" onclick={() => onClick(key)}>
-                    <span class="node-key" style="color: {textColor};">{pillLabel}</span>
+                    {#if hasInterpretation}
+                        <span class="pill-content">
+                            <span class="interp-label" style="color: {textColor};">{pillLabel}</span>
+                            <span class="layer-label" style="color: {textColor};">{layerLabel}</span>
+                        </span>
+                    {:else}
+                        <span class="node-key" style="color: {textColor};">{pillLabel}</span>
+                    {/if}
                 </button>
                 {#if hoveredKey === key && tooltipPosition}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -295,6 +309,28 @@
         font-family: var(--font-mono);
         font-size: var(--text-xs);
         overflow-wrap: break-word;
+        text-align: left;
+    }
+
+    .pill-content {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+    }
+
+    .interp-label {
+        font-family: var(--font-sans);
+        font-size: var(--text-xs);
+        font-weight: 500;
+        overflow-wrap: break-word;
+        text-align: left;
+    }
+
+    .layer-label {
+        font-family: var(--font-mono);
+        font-size: 9px;
+        opacity: 0.7;
         text-align: left;
     }
 
