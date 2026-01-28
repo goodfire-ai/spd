@@ -76,7 +76,7 @@
         />
     </label>
     <label class:loading={ciThreshold.status === "loading"}>
-        <span>Node CI Threshold</span>
+        <span>CI Threshold</span>
         <input
             type="number"
             bind:value={localCiThreshold}
@@ -132,7 +132,7 @@
                 checked={hideNodeCard}
                 onchange={(e) => onHideNodeCardChange(e.currentTarget.checked)}
             />
-            <span>Hide node card</span>
+            <span>Hide component card</span>
         </label>
     {/if}
 

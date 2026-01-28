@@ -660,7 +660,7 @@
             <span class="node-count">{selectedCount} / {interventableCount} selected</span>
             <span
                 class="info-icon"
-                data-tooltip="NOTE: Biases in each layer that have them are always active, regardless of which nodes are selected"
+                data-tooltip="NOTE: Biases in each layer that have them are always active, regardless of which components are selected"
                 >?</span
             >
             <div class="button-group">
@@ -673,8 +673,8 @@
                         selectedCount === 0 ||
                         (interventableCount > 0 && selectedCount === interventableCount)}
                     title={selectedCount === 0
-                        ? "Select nodes to include in subgraph"
-                        : "Generate a subgraph showing only attributions between selected nodes"}
+                        ? "Select components to include in subgraph"
+                        : "Generate a subgraph showing only attributions between selected components"}
                 >
                     {generatingSubgraph ? "Generating..." : "Generate subgraph"}
                 </button>
@@ -908,7 +908,7 @@
                     >
                         <div class="run-header">
                             <span class="run-time">{formatTime(run.created_at)}</span>
-                            <span class="run-nodes">{run.selected_nodes.length} nodes</span>
+                            <span class="run-nodes">{run.selected_nodes.length} components</span>
                             <button
                                 class="fork-btn"
                                 title="Fork with modified tokens"
