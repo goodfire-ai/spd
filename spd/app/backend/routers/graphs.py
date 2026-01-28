@@ -635,6 +635,7 @@ def _add_pseudo_layer_nodes(
     """Add wte and output pseudo-nodes for simpler rendering and filtering logic.
 
     wte nodes get CI=1.0 (always visible), output nodes use their CI-masked probability.
+    num_tokens determines how many WTE nodes to create (one per input position).
     """
     result = dict(node_ci_vals)
     for seq_pos in range(num_tokens):
@@ -680,6 +681,11 @@ def stored_graph_to_response(
     token_strings = [token_strings_map[t] for t in token_ids]
     num_tokens = len(token_ids)
     is_optimized = graph.optimization_params is not None
+
+    if is_optimized:
+        assert graph.optimization_params is not None
+        num_tokens = graph.optimization_params.loss_seq_pos + 1
+        token_strings = token_strings[:num_tokens]
 
     filtered_node_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
     l0_total = len(filtered_node_ci_vals)
