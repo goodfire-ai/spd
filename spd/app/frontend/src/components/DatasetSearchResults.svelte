@@ -1,8 +1,5 @@
 <script lang="ts">
-    import { getContext } from "svelte";
     import type { DatasetSearchResult } from "../lib/api";
-    import * as api from "../lib/api";
-    import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
 
     type Props = {
         results: DatasetSearchResult[];
@@ -14,14 +11,6 @@
     };
 
     let { results, page, pageSize, totalPages, onPageChange, query }: Props = $props();
-
-    const runState = getContext<RunContext>(RUN_KEY);
-
-    // Selection popup state
-    let selectedText = $state<string | null>(null);
-    let popupPosition = $state<{ x: number; y: number } | null>(null);
-    let isCreatingPrompt = $state(false);
-    let resultsContainer: HTMLElement | null = $state(null);
 
     function highlightQuery(text: string, searchQuery: string): string {
         if (!searchQuery) return escapeHtml(text);
@@ -53,116 +42,17 @@
     function nextPage() {
         if (page < totalPages) onPageChange(page + 1);
     }
-
-    function cleanSelectedText(text: string): string {
-        // Replace newlines and multiple spaces with single space, trim
-        return text
-            .replace(/[\r\n]+/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-    }
-
-    function handleMouseUp(_event: MouseEvent) {
-        const selection = window.getSelection();
-        if (!selection || selection.isCollapsed) {
-            selectedText = null;
-            popupPosition = null;
-            return;
-        }
-
-        const text = selection.toString();
-        if (!text.trim()) {
-            selectedText = null;
-            popupPosition = null;
-            return;
-        }
-
-        // Check if selection is within a .story-text element
-        const range = selection.getRangeAt(0);
-        const container = range.commonAncestorContainer;
-        const storyTextElement =
-            container instanceof Element
-                ? container.closest(".story-text")
-                : container.parentElement?.closest(".story-text");
-
-        if (!storyTextElement) {
-            selectedText = null;
-            popupPosition = null;
-            return;
-        }
-
-        const cleaned = cleanSelectedText(text);
-        if (!cleaned) {
-            selectedText = null;
-            popupPosition = null;
-            return;
-        }
-
-        selectedText = cleaned;
-
-        // Position popup near the selection
-        const rect = range.getBoundingClientRect();
-        const containerRect = resultsContainer?.getBoundingClientRect();
-        if (containerRect) {
-            popupPosition = {
-                x: rect.left + rect.width / 2 - containerRect.left,
-                y: rect.top - containerRect.top - 8,
-            };
-        }
-    }
-
-    function handleMouseDown() {
-        // Clear popup on new selection start
-        selectedText = null;
-        popupPosition = null;
-    }
-
-    async function handleUseAsPrompt() {
-        if (!selectedText || runState.run.status !== "loaded") return;
-
-        isCreatingPrompt = true;
-        try {
-            const prompt = await api.createCustomPrompt(selectedText);
-            // Clear selection after successful creation
-            window.getSelection()?.removeAllRanges();
-            selectedText = null;
-            popupPosition = null;
-            // Reload prompts list
-            runState.refreshPrompts();
-            alert(`Created prompt #${prompt.id}`);
-        } catch (err) {
-            console.error("Failed to create prompt:", err);
-            alert(`Failed to create prompt: ${err}`);
-        } finally {
-            isCreatingPrompt = false;
-        }
-    }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="results-container" bind:this={resultsContainer} onmouseup={handleMouseUp} onmousedown={handleMouseDown}>
-    {#if selectedText && popupPosition}
-        <div class="selection-popup" style="left: {popupPosition.x}px; top: {popupPosition.y}px;">
-            {#if runState.run.status === "loaded"}
-                <button class="use-as-prompt-button" onclick={handleUseAsPrompt} disabled={isCreatingPrompt}>
-                    {isCreatingPrompt ? "Creating..." : "Use as Prompt"}
-                </button>
-            {:else}
-                <span class="popup-hint">Load a run to use as prompt</span>
-            {/if}
-        </div>
-    {/if}
-
+<div class="results-container">
     <div class="results-list">
         {#each results as result, idx (idx)}
             <div class="result-card">
                 <div class="result-header">
                     <span class="result-index">#{(page - 1) * pageSize + idx + 1}</span>
-                    {#if result.occurrence_count > 0}
-                        <span class="occurrence-badge"
-                            >{result.occurrence_count} occurrence{result.occurrence_count > 1 ? "s" : ""}</span
-                        >
-                    {/if}
+                    <span class="occurrence-badge"
+                        >{result.occurrence_count} occurrence{result.occurrence_count > 1 ? "s" : ""}</span
+                    >
                     {#if result.topic}
                         <span class="tag topic">{result.topic}</span>
                     {/if}
@@ -194,56 +84,6 @@
         flex-direction: column;
         gap: var(--space-4);
         height: 100%;
-        position: relative;
-    }
-
-    .selection-popup {
-        position: absolute;
-        transform: translate(-50%, -100%);
-        z-index: 100;
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-strong);
-        border-radius: var(--radius-md);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        padding: var(--space-1);
-    }
-
-    .selection-popup::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        border: 6px solid transparent;
-        border-top-color: var(--border-strong);
-    }
-
-    .use-as-prompt-button {
-        padding: var(--space-1) var(--space-2);
-        background: var(--accent-primary);
-        color: white;
-        border: none;
-        border-radius: var(--radius-sm);
-        font-size: var(--text-xs);
-        font-weight: 500;
-        cursor: pointer;
-        white-space: nowrap;
-    }
-
-    .use-as-prompt-button:hover:not(:disabled) {
-        background: var(--accent-primary-dim);
-    }
-
-    .use-as-prompt-button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .popup-hint {
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-        padding: var(--space-1) var(--space-2);
-        white-space: nowrap;
     }
 
     .results-list {
