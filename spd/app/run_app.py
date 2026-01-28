@@ -241,7 +241,9 @@ class AppRunner:
                             continue
 
                         if pid is not None:
-                            print(f"  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} {name} started (pid {pid})")
+                            print(
+                                f"  {AnsiEsc.GREEN}✓{AnsiEsc.RESET} {name} started {AnsiEsc.DIM}(pid {pid}){AnsiEsc.RESET}"
+                            )
                         return
 
                     last_error = f"unexpected status {resp.status_code}"

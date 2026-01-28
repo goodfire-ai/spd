@@ -500,7 +500,7 @@
             status: "computing",
             cardId,
             progress: {
-                stages: [{ name: "Computing graph from selection", progress: 0 }],
+                stages: [{ name: "Computing attribution graph from selection", progress: 0 }],
                 currentStage: 0,
             },
         };
@@ -586,12 +586,12 @@
             ? {
                   stages: [
                       { name: "Optimizing", progress: 0 },
-                      { name: "Computing graph", progress: 0 },
+                      { name: "Computing attribution graph", progress: 0 },
                   ],
                   currentStage: 0,
               }
             : {
-                  stages: [{ name: "Computing graph", progress: 0 }],
+                  stages: [{ name: "Computing attribution graph", progress: 0 }],
                   currentStage: 0,
               };
 
