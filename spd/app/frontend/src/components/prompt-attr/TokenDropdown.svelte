@@ -182,7 +182,7 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
         border-radius: var(--radius-sm);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        box-shadow: var(--shadow-md);
         z-index: 10000;
     }
 

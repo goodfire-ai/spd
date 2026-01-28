@@ -126,8 +126,8 @@
     .component-pill {
         display: inline-flex;
         flex-direction: column;
-        gap: 2px;
-        padding: 4px 6px;
+        gap: var(--space-1);
+        padding: var(--space-1) var(--space-2);
         white-space: nowrap;
         cursor: default;
         position: relative;

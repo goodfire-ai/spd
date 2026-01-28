@@ -3,6 +3,8 @@
     import type { TokenInfo } from "../../lib/promptAttributionsTypes";
     import TokenDropdown from "./TokenDropdown.svelte";
 
+    type LossType = "kl" | "ce";
+
     type Props = {
         config: OptimizeConfig;
         tokens: string[];
@@ -11,153 +13,193 @@
     };
 
     let { config, tokens, allTokens, onChange }: Props = $props();
+    let showAdvanced = $state(false);
+
+    // Determine which loss type is active based on coefficients
+    const activeLossType = $derived.by((): LossType => {
+        if (config.ceLossCoeff > 0) return "ce";
+        return "kl";
+    });
+
+    // Slider value 0-100 controls impMinCoeff on log scale from 1e-5 to 10
+    const sliderValue = $derived.by(() => {
+        const value = (100 * Math.log10(config.impMinCoeff / 1e-5)) / 6;
+        return Math.round(Math.max(0, Math.min(100, value)));
+    });
+
+    function handleSliderChange(value: number) {
+        const impMinCoeff = 1e-5 * Math.pow(1e6, value / 100);
+        onChange({ impMinCoeff });
+    }
+
+    function handleLossTypeChange(newType: LossType) {
+        if (newType === "kl") {
+            onChange({
+                klLossCoeff: 1.0,
+                ceLossCoeff: 0,
+            });
+        } else {
+            onChange({
+                klLossCoeff: 0,
+                ceLossCoeff: 1.0,
+            });
+        }
+    }
 
     const tokenAtSeqPos = $derived(
         config.lossSeqPos >= 0 && config.lossSeqPos < tokens.length ? tokens[config.lossSeqPos] : null,
     );
-
-    const descriptions = {
-        impMinCoeff:
-            "Importance minimality coefficient. Higher values penalize components for being active, encouraging sparser circuits.",
-        steps: "Number of optimization steps. More steps allow for better convergence but take longer.",
-        pnorm: "P-norm exponent for importance minimality. Lower values (e.g. 0.3) encourage sparser solutions than L1.",
-        beta: "Temperature for stochastic mask sampling. Higher values make masks more deterministic.",
-        ceLossCoeff: "Cross-entropy loss coefficient. When > 0, penalizes circuits that don't predict the label token.",
-        klLossCoeff:
-            "KL divergence loss coefficient. When > 0, penalizes circuits that deviate from the original output distribution.",
-        lossSeqPos:
-            "Token position where the prediction loss is computed. The model predicts the next token at this position.",
-        labelToken: "The target token the model should predict at the loss position. Required when using CE loss.",
-        maskType:
-            "How to apply component masks. 'stochastic' samples binary masks from CI values; 'ci' uses CI values directly as soft masks.",
-    };
 </script>
 
 <div class="opt-settings">
-    <div class="settings-section">
-        <div class="section-header">Optimization</div>
-        <div class="settings-grid">
-            <label title={descriptions.steps}>
-                <span class="label-text">steps</span>
-                <input
-                    type="number"
-                    value={config.steps}
-                    oninput={(e) => {
-                        if (e.currentTarget.value === "") return;
-                        onChange({ steps: parseInt(e.currentTarget.value) });
-                    }}
-                    min={10}
-                    max={5000}
-                    step={100}
-                />
-            </label>
-            <label title={descriptions.impMinCoeff}>
-                <span class="label-text">imp_min_coeff</span>
-                <input
-                    type="number"
-                    value={config.impMinCoeff}
-                    oninput={(e) => {
-                        if (e.currentTarget.value === "") return;
-                        onChange({ impMinCoeff: parseFloat(e.currentTarget.value) });
-                    }}
-                    min={0.001}
-                    max={10}
-                    step={0.01}
-                />
-            </label>
-            <label title={descriptions.pnorm}>
-                <span class="label-text">pnorm</span>
-                <input
-                    type="number"
-                    value={config.pnorm}
-                    oninput={(e) => {
-                        if (e.currentTarget.value === "") return;
-                        onChange({ pnorm: parseFloat(e.currentTarget.value) });
-                    }}
-                    min={0.1}
-                    max={2}
-                    step={0.1}
-                />
-            </label>
-            <label title={descriptions.beta}>
-                <span class="label-text">beta</span>
-                <input
-                    type="number"
-                    value={config.beta}
-                    oninput={(e) => {
-                        if (e.currentTarget.value === "") return;
-                        onChange({ beta: parseFloat(e.currentTarget.value) });
-                    }}
-                    min={0}
-                    max={10}
-                    step={0.1}
-                />
-            </label>
-            <label title={descriptions.maskType}>
-                <span class="label-text">mask_type</span>
-                <select
-                    value={config.maskType}
-                    onchange={(e) => onChange({ maskType: e.currentTarget.value as MaskType })}
-                >
-                    <option value="stochastic">stochastic</option>
-                    <option value="ci">ci</option>
-                </select>
-            </label>
+    <!-- Loss type selection -->
+    <div class="loss-type-options">
+        <label class="loss-type-option" class:selected={activeLossType === "kl"}>
+            <input
+                type="radio"
+                name="loss-type"
+                checked={activeLossType === "kl"}
+                onchange={() => handleLossTypeChange("kl")}
+            />
+            <span class="option-name">KL Divergence</span>
+        </label>
+        <label class="loss-type-option" class:selected={activeLossType === "ce"}>
+            <input
+                type="radio"
+                name="loss-type"
+                checked={activeLossType === "ce"}
+                onchange={() => handleLossTypeChange("ce")}
+            />
+            <span class="option-name">Cross-Entropy</span>
+        </label>
+    </div>
+
+    <!-- Target position and token -->
+    <div class="target-section">
+        <span class="target-label">At position</span>
+        <input
+            type="number"
+            class="pos-input"
+            value={config.lossSeqPos}
+            oninput={(e) => {
+                if (e.currentTarget.value === "") return;
+                onChange({ lossSeqPos: parseInt(e.currentTarget.value) });
+            }}
+            min={0}
+            max={tokens.length - 1}
+            step={1}
+        />
+        {#if tokenAtSeqPos !== null}
+            (<span class="token-at-pos">{tokenAtSeqPos}</span>),
+        {/if}
+        <span class="target-label">predict</span>
+        <TokenDropdown
+            tokens={allTokens}
+            value={config.labelTokenText}
+            selectedTokenId={config.labelTokenId}
+            onSelect={(tokenId, tokenString) => {
+                onChange({
+                    labelTokenText: tokenString,
+                    labelTokenId: tokenId,
+                    labelTokenPreview: tokenId !== null ? tokenString : "",
+                });
+            }}
+            placeholder="token..."
+        />
+    </div>
+
+    <!-- Sparsity slider -->
+    <div class="slider-section">
+        <div class="slider-header">
+            <span class="section-label">Sparsity</span>
+            <input
+                type="text"
+                class="imp-min-input"
+                value={config.impMinCoeff.toPrecision(2)}
+                onchange={(e) => {
+                    const val = parseFloat(e.currentTarget.value);
+                    if (!isNaN(val) && val > 0) {
+                        onChange({ impMinCoeff: val });
+                    }
+                }}
+            />
+        </div>
+        <input
+            type="range"
+            class="sparsity-slider"
+            min={0}
+            max={100}
+            value={sliderValue}
+            oninput={(e) => handleSliderChange(parseInt(e.currentTarget.value))}
+        />
+        <div class="slider-labels">
+            <span class="slider-label">1e-5</span>
+            <span class="slider-label">10</span>
         </div>
     </div>
 
-    <div class="settings-section loss-section">
-        <div class="section-header">Loss Function</div>
+    <!-- Advanced toggle -->
+    <button class="advanced-toggle" onclick={() => (showAdvanced = !showAdvanced)}>
+        {showAdvanced ? "▼" : "▶"} Advanced
+    </button>
 
-        <div class="loss-target">
-            <span class="target-label">At position</span>
-            <input
-                type="number"
-                class="pos-input"
-                value={config.lossSeqPos}
-                title={descriptions.lossSeqPos}
-                oninput={(e) => {
-                    if (e.currentTarget.value === "") return;
-                    onChange({ lossSeqPos: parseInt(e.currentTarget.value) });
-                }}
-                min={0}
-                max={tokens.length - 1}
-                step={1}
-            />
-            {#if tokenAtSeqPos !== null}
-                <span class="token-at-pos">{tokenAtSeqPos}</span>
-            {:else}
-                <span class="token-at-pos invalid">invalid</span>
-            {/if}
-            <span class="target-label">predict</span>
-            <div class="label-input" title={descriptions.labelToken}>
-                <TokenDropdown
-                    tokens={allTokens}
-                    value={config.labelTokenText}
-                    selectedTokenId={config.labelTokenId}
-                    onSelect={(tokenId, tokenString) => {
-                        onChange({
-                            labelTokenText: tokenString,
-                            labelTokenId: tokenId,
-                            labelTokenPreview: tokenId !== null ? tokenString : "",
-                        });
-                    }}
-                    placeholder="token..."
-                />
-                {#if config.labelTokenId !== null}
-                    <span class="token-id-hint">#{config.labelTokenId}</span>
-                {/if}
-            </div>
-        </div>
-
-        <div class="loss-options">
-            <div class="loss-option" title={descriptions.klLossCoeff}>
-                <div class="loss-option-header">
-                    <span class="loss-name">KL Divergence</span>
-                    <span class="loss-desc">match original output distribution</span>
-                </div>
-                <label class="coeff-row">
-                    <span class="label-text">coeff</span>
+    {#if showAdvanced}
+        <div class="advanced-section">
+            <div class="settings-grid">
+                <label>
+                    <span class="label-text">steps</span>
+                    <input
+                        type="number"
+                        value={config.steps}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onChange({ steps: parseInt(e.currentTarget.value) });
+                        }}
+                        min={10}
+                        max={5000}
+                        step={100}
+                    />
+                </label>
+                <label>
+                    <span class="label-text">pnorm</span>
+                    <input
+                        type="number"
+                        value={config.pnorm}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onChange({ pnorm: parseFloat(e.currentTarget.value) });
+                        }}
+                        min={0.1}
+                        max={2}
+                        step={0.1}
+                    />
+                </label>
+                <label>
+                    <span class="label-text">beta</span>
+                    <input
+                        type="number"
+                        value={config.beta}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onChange({ beta: parseFloat(e.currentTarget.value) });
+                        }}
+                        min={0}
+                        max={10}
+                        step={0.1}
+                    />
+                </label>
+                <label>
+                    <span class="label-text">mask_type</span>
+                    <select
+                        value={config.maskType}
+                        onchange={(e) => onChange({ maskType: e.currentTarget.value as MaskType })}
+                    >
+                        <option value="stochastic">stochastic</option>
+                        <option value="ci">ci</option>
+                    </select>
+                </label>
+                <label>
+                    <span class="label-text">kl_coeff</span>
                     <input
                         type="number"
                         value={config.klLossCoeff}
@@ -169,15 +211,8 @@
                         step={0.1}
                     />
                 </label>
-            </div>
-
-            <div class="loss-option" title={descriptions.ceLossCoeff}>
-                <div class="loss-option-header">
-                    <span class="loss-name">Cross-Entropy</span>
-                    <span class="loss-desc">predict specific token at position</span>
-                </div>
-                <label class="coeff-row">
-                    <span class="label-text">coeff</span>
+                <label>
+                    <span class="label-text">ce_coeff</span>
                     <input
                         type="number"
                         value={config.ceLossCoeff}
@@ -191,137 +226,62 @@
                 </label>
             </div>
         </div>
-    </div>
+    {/if}
 </div>
 
 <style>
     .opt-settings {
         display: flex;
         flex-direction: column;
-        gap: var(--space-4);
-    }
-
-    .settings-section {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-    }
-
-    .section-header {
-        font-size: var(--text-xs);
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--text-muted);
-    }
-
-    .settings-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-        gap: var(--space-2);
-    }
-
-    .settings-grid label {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
-
-    .label-text {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--text-muted);
-        font-weight: 500;
-    }
-
-    .settings-grid input[type="number"],
-    .settings-grid select {
-        padding: var(--space-1) var(--space-2);
-        border: 1px solid var(--border-default);
-        background: var(--bg-elevated);
-        color: var(--text-primary);
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-    }
-
-    .settings-grid input[type="number"]:focus,
-    .settings-grid select:focus {
-        outline: none;
-        border-color: var(--accent-primary-dim);
-    }
-
-    .settings-grid select {
-        cursor: pointer;
-    }
-
-    .loss-section {
-        padding: var(--space-3);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-default);
-    }
-
-    .loss-options {
-        display: flex;
-        flex-direction: column;
         gap: var(--space-3);
+        max-width: 400px;
     }
 
-    .loss-option {
+    .loss-type-options {
         display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-        padding: var(--space-2);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-subtle);
-    }
-
-    .loss-option-header {
-        display: flex;
-        align-items: baseline;
         gap: var(--space-2);
     }
 
-    .loss-name {
-        font-size: var(--text-sm);
-        font-weight: 600;
-        color: var(--text-primary);
-    }
-
-    .loss-desc {
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-    }
-
-    .coeff-row {
+    .loss-type-option {
+        flex: 1;
         display: flex;
         align-items: center;
         gap: var(--space-2);
-    }
-
-    .coeff-row input[type="number"] {
-        width: 70px;
-        padding: var(--space-1) var(--space-2);
+        padding: var(--space-2);
+        background: var(--bg-elevated);
         border: 1px solid var(--border-default);
-        background: var(--bg-base);
-        color: var(--text-primary);
+        cursor: pointer;
+        transition: border-color var(--transition-normal);
+    }
+
+    .loss-type-option:hover {
+        border-color: var(--border-strong);
+    }
+
+    .loss-type-option.selected {
+        border-color: var(--accent-primary);
+        background: var(--bg-surface);
+    }
+
+    .loss-type-option input {
+        cursor: pointer;
+        accent-color: var(--accent-primary);
+    }
+
+    .option-name {
         font-size: var(--text-sm);
-        font-family: var(--font-mono);
+        font-weight: 500;
+        color: var(--text-primary);
     }
 
-    .coeff-row input[type="number"]:focus {
-        outline: none;
-        border-color: var(--accent-primary-dim);
-    }
-
-    .loss-target {
+    .target-section {
         display: flex;
         align-items: center;
         gap: var(--space-2);
         flex-wrap: wrap;
         padding: var(--space-2);
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-subtle);
-        margin-bottom: var(--space-2);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
     }
 
     .target-label {
@@ -345,30 +305,157 @@
     }
 
     .token-at-pos {
-        padding: 2px 6px;
-        background: var(--bg-elevated);
-        border: 1px solid var(--border-subtle);
+        padding: var(--space-1) var(--space-1);
+        background: var(--bg-inset);
+        border-radius: var(--radius-sm);
         font-family: var(--font-mono);
         font-size: var(--text-sm);
         color: var(--text-secondary);
         white-space: pre;
     }
 
-    .token-at-pos.invalid {
-        font-style: italic;
-        color: var(--status-negative);
-        border-color: var(--status-negative);
-    }
-
-    .label-input {
+    .slider-section {
         display: flex;
-        align-items: center;
+        flex-direction: column;
         gap: var(--space-1);
     }
 
-    .token-id-hint {
+    .slider-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .section-label {
+        font-size: var(--text-xs);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+    }
+
+    .imp-min-input {
+        width: 80px;
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+    }
+
+    .imp-min-input:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .slider-labels {
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .slider-label {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
+    }
+
+    .sparsity-slider {
+        width: 100%;
+        height: 20px;
+        appearance: none;
+        background: transparent;
+        cursor: pointer;
+    }
+
+    .sparsity-slider::-webkit-slider-runnable-track {
+        width: 100%;
+        height: 6px;
+        background: var(--border-default);
+        border-radius: var(--radius-sm);
+    }
+
+    .sparsity-slider::-webkit-slider-thumb {
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        background: var(--accent-primary);
+        border-radius: 50%;
+        cursor: pointer;
+        margin-top: -5px;
+    }
+
+    .sparsity-slider::-moz-range-track {
+        width: 100%;
+        height: 6px;
+        background: var(--border-default);
+        border-radius: var(--radius-sm);
+    }
+
+    .sparsity-slider::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        background: var(--accent-primary);
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+    }
+
+    .advanced-toggle {
+        background: none;
+        border: none;
+        padding: var(--space-1) 0;
         font-size: var(--text-xs);
         color: var(--text-muted);
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .advanced-toggle:hover {
+        color: var(--text-secondary);
+    }
+
+    .advanced-section {
+        padding: var(--space-2);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+    }
+
+    .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: var(--space-2);
+    }
+
+    .settings-grid label {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+    }
+
+    .label-text {
+        font-size: var(--text-xs);
         font-family: var(--font-mono);
+        color: var(--text-muted);
+    }
+
+    .settings-grid input[type="number"],
+    .settings-grid select {
+        padding: var(--space-1) var(--space-2);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+    }
+
+    .settings-grid input[type="number"]:focus,
+    .settings-grid select:focus {
+        outline: none;
+        border-color: var(--accent-primary-dim);
+    }
+
+    .settings-grid select {
+        cursor: pointer;
     }
 </style>

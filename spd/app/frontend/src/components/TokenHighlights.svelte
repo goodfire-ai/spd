@@ -43,9 +43,9 @@
 
     .token-highlight {
         display: inline;
-        padding: 1px 0 0 0;
+        padding: var(--space-1) 0 0 0;
         margin-right: 1px;
-        margin-bottom: 3px;
+        margin-bottom: var(--space-1);
         border-right: 1px solid var(--border-subtle);
         position: relative;
         white-space: pre;

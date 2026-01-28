@@ -11,7 +11,7 @@
     } from "../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
     import { getAliasedRowLabel } from "../lib/layerAliasing";
-    import { colors, getEdgeColor, getOutputNodeColor, getSubcompActColor } from "../lib/colors";
+    import { colors, getEdgeColor, getSubcompActColor, rgbToCss } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
         lerp,
@@ -478,8 +478,11 @@
             if (layer === "output") {
                 const probEntry = data.outputProbs[`${seqIdx}:${cIdx}`];
                 if (probEntry) {
-                    fill = getOutputNodeColor(probEntry.prob);
-                    opacity = 0.4 + probEntry.prob * 0.6;
+                    fill = rgbToCss(colors.outputBase);
+                    opacity = 0.2 + probEntry.prob * 0.8;
+                } else {
+                    // remove me. we should just assert this should be present
+                    console.error(`OutputNodeCard: no entry for ${seqIdx}:${cIdx}`);
                 }
             } else {
                 // Component nodes: color/opacity based on CI or subcomp activation
@@ -497,7 +500,7 @@
                         throw new Error(`Inconsistent state: intensity > 1: ${intensity}`);
                     }
                     fill = getSubcompActColor(subcompAct);
-                    opacity = 0.3 + intensity * 0.7;
+                    opacity = 0.2 + intensity * 0.8;
                 }
             }
 
@@ -844,7 +847,7 @@
     .node {
         transform-box: fill-box;
         transform-origin: center;
-        transition: transform 0.15s ease-out;
+        transition: transform var(--transition-normal);
     }
 
     .node.cluster-hovered {
@@ -867,8 +870,8 @@
         opacity: 0.5;
         cursor: pointer;
         transition:
-            opacity 0.15s ease-out,
-            fill 0.15s ease-out;
+            opacity var(--transition-normal),
+            fill var(--transition-normal);
     }
 
     .cluster-bar:hover,

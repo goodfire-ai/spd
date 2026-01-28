@@ -257,8 +257,8 @@
         color: var(--text-muted);
         cursor: pointer;
         transition:
-            color 0.15s,
-            border-color 0.15s;
+            color var(--transition-normal),
+            border-color var(--transition-normal);
     }
 
     .inner-tab:hover {

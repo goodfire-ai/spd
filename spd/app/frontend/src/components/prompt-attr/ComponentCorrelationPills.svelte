@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import type { CorrelatedSubcomponent } from "../../lib/promptAttributionsTypes";
-    import { colors } from "../../lib/colors";
+    import { colors, rgbToCss } from "../../lib/colors";
     import CorrelatedSubcomponentsList from "../ui/CorrelatedSubcomponentsList.svelte";
 
     type Props = {
@@ -18,8 +18,9 @@
 {#if items.length > 0}
     <div
         class="correlation-column"
-        style="--color-this: {colors.setOverlap.self}; --color-that: {colors.setOverlap.other}; --color-both: {colors
-            .setOverlap.both};"
+        style="--color-this: {rgbToCss(colors.setOverlap.self)}; --color-that: {rgbToCss(
+            colors.setOverlap.other,
+        )}; --color-both: {rgbToCss(colors.setOverlap.both)};"
     >
         <h5>
             {title}

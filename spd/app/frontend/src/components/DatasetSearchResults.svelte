@@ -154,7 +154,7 @@
     .story-text :global(mark) {
         background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
         color: var(--accent-primary);
-        padding: 0 2px;
+        padding: 0 var(--space-1);
         font-weight: 600;
     }
 

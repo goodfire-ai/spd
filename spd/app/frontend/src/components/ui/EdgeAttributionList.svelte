@@ -1,5 +1,6 @@
 <script lang="ts">
     import { getContext } from "svelte";
+    import { colors } from "../../lib/colors";
     import type { EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay, getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
@@ -133,10 +134,8 @@
 
     function getBgColor(normalizedMagnitude: number): string {
         const intensity = lerp(0, 0.8, normalizedMagnitude);
-        if (direction === "negative") {
-            return `rgba(220, 38, 38, ${intensity})`; // red
-        }
-        return `rgba(22, 74, 193, ${intensity})`; // blue
+        const { r, g, b } = direction === "negative" ? colors.negativeRgb : colors.positiveRgb;
+        return `rgba(${r}, ${g}, ${b}, ${intensity})`;
     }
 
     async function copyToClipboard(text: string) {
@@ -288,8 +287,8 @@
         display: inline-flex;
         align-items: flex-start;
         gap: var(--space-2);
-        padding: 2px 4px;
-        border-radius: 3px;
+        padding: var(--space-1) var(--space-1);
+        border-radius: var(--radius-sm);
         cursor: default;
         border: 1px solid var(--border-default);
         font-family: inherit;
@@ -308,7 +307,7 @@
         display: grid;
         grid-template-columns: 1fr auto;
         align-items: baseline;
-        gap: 6px;
+        gap: var(--space-2);
     }
 
     .interp-label {
@@ -333,8 +332,8 @@
         padding: var(--space-2) var(--space-3);
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
-        border-radius: 4px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-lg);
         z-index: 10000;
         min-width: 200px;
         max-width: 350px;
@@ -376,10 +375,10 @@
         gap: var(--space-2);
         background: none;
         border: none;
-        padding: 2px 4px;
-        margin: -2px -4px;
+        padding: var(--space-1) var(--space-1);
+        margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-1));
         margin-bottom: var(--space-1);
-        border-radius: 3px;
+        border-radius: var(--radius-sm);
         cursor: pointer;
         text-align: left;
     }

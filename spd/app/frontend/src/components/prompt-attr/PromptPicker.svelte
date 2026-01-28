@@ -170,7 +170,7 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
         border-radius: var(--radius-md);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-md);
         z-index: 1000;
         overflow: hidden;
     }
@@ -204,7 +204,7 @@
     .token-preview {
         display: flex;
         flex-wrap: wrap;
-        gap: 1px;
+        gap: 2px;
         align-items: center;
     }
 
@@ -215,7 +215,7 @@
     }
 
     .token {
-        padding: 2px 3px;
+        padding: var(--space-1) var(--space-1);
         background: var(--bg-inset);
         font-family: var(--font-mono);
         font-size: var(--text-sm);
@@ -368,7 +368,7 @@
     .mini-progress-fill {
         height: 100%;
         background: var(--status-positive);
-        transition: width 0.1s ease;
+        transition: width var(--transition-fast);
     }
 
     .generate-error {

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
+    import { colors, getEdgeColor, getOutputHeaderColor, rgbaToCss } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
     import {
@@ -837,7 +837,7 @@
                                 y={selectionRect.y}
                                 width={selectionRect.width}
                                 height={selectionRect.height}
-                                fill="rgba(99, 102, 241, 0.1)"
+                                fill={rgbaToCss(colors.positiveRgb, 0.1)}
                                 stroke={colors.accent}
                                 stroke-width="1"
                                 stroke-dasharray="4 2"
@@ -1261,9 +1261,9 @@
         transform-box: fill-box;
         transform-origin: center;
         transition:
-            opacity 0.1s,
-            fill 0.1s,
-            transform 0.15s ease-out;
+            opacity var(--transition-fast),
+            fill var(--transition-fast),
+            transform var(--transition-normal);
     }
 
     .node-group .node.cluster-hovered {
@@ -1292,8 +1292,8 @@
         opacity: 0.5;
         cursor: pointer;
         transition:
-            opacity 0.15s ease-out,
-            fill 0.15s ease-out;
+            opacity var(--transition-normal),
+            fill var(--transition-normal);
     }
 
     .cluster-bar:hover,
@@ -1367,7 +1367,7 @@
         border: 1px solid var(--border-default);
         padding: var(--space-2);
         cursor: pointer;
-        transition: border-color 0.1s;
+        transition: border-color var(--transition-fast);
     }
 
     .run-card:hover {

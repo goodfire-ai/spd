@@ -133,7 +133,7 @@
     .selector-content {
         max-width: 720px;
         width: 100%;
-        transition: opacity 0.2s;
+        transition: opacity var(--transition-slow);
     }
 
     .selector-content.dimmed {
@@ -195,8 +195,8 @@
         cursor: pointer;
         text-align: left;
         transition:
-            border-color 0.15s,
-            background 0.15s;
+            border-color var(--transition-normal),
+            background var(--transition-normal);
     }
 
     .run-card:hover:not(:disabled) {
