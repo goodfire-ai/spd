@@ -50,9 +50,11 @@
             <div class="result-card">
                 <div class="result-header">
                     <span class="result-index">#{(page - 1) * pageSize + idx + 1}</span>
-                    <span class="occurrence-badge"
-                        >{result.occurrence_count} occurrence{result.occurrence_count > 1 ? "s" : ""}</span
-                    >
+                    {#if result.occurrence_count > 0}
+                        <span class="occurrence-badge"
+                            >{result.occurrence_count} occurrence{result.occurrence_count !== 1 ? "s" : ""}</span
+                        >
+                    {/if}
                     {#if result.topic}
                         <span class="tag topic">{result.topic}</span>
                     {/if}

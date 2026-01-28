@@ -4,6 +4,7 @@ This module provides search functionality for the SimpleStories dataset,
 independent of any loaded SPD run. Results are cached in memory for pagination.
 """
 
+import random
 import time
 from typing import Annotated, Any
 
@@ -196,8 +197,10 @@ def get_random_samples(
     total_available = len(dataset)
     actual_samples = min(n_samples, total_available)
 
-    shuffled = dataset.shuffle(seed=seed)
-    samples = shuffled.select(range(actual_samples))
+    # Generate random indices directly instead of shuffling entire dataset (~100x faster)
+    rng = random.Random(seed)
+    indices = rng.sample(range(total_available), actual_samples)
+    samples = dataset.select(indices)
 
     results = []
     for item in samples:
