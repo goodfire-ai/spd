@@ -99,10 +99,10 @@
         return `'${getTokenText(key)}'`;
     }
 
-    // Get the token type label for the right side (e.g., "Input" or "Output")
+    // Get the token type label for the right side (e.g., "Input token" or "Output token")
     function getTokenTypeLabel(key: string): string {
         const layer = key.split(":")[0];
-        return layer === "wte" ? "Input" : "Output";
+        return layer === "wte" ? "Input token" : "Output token";
     }
 
     let currentPage = $state(0);
