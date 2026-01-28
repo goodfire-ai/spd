@@ -12,7 +12,6 @@ Starts backend and frontend with:
 from __future__ import annotations
 
 import atexit
-import concurrent.futures
 import contextlib
 import os
 import shutil
@@ -310,6 +309,7 @@ class AppRunner:
             time.sleep(1.0)
 
     def run(self) -> None:
+        """Launch the backend and frontend development servers."""
         print(f"{AnsiEsc.DIM}Logfile: {LOGFILE}{AnsiEsc.RESET}")
         print(f"{AnsiEsc.DIM}Finding available ports...{AnsiEsc.RESET}")
 
@@ -323,11 +323,11 @@ class AppRunner:
         print(f"{AnsiEsc.DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{AnsiEsc.RESET}")
 
         with open(LOGFILE, "a", buffering=1, encoding="utf-8") as logfile:
-            print(f"  {AnsiEsc.DIM}▸ Spawning backend and frontend...{AnsiEsc.RESET}")
-            backend_proc = self.spawn_backend(bport, logfile)
-            frontend_proc = self.spawn_frontend(fport, bport, logfile)
-
             check_host = "localhost"
+
+            # Start backend first and wait for it to be ready
+            print(f"  {AnsiEsc.DIM}▸ Spawning backend...{AnsiEsc.RESET}")
+            backend_proc = self.spawn_backend(bport, logfile)
 
             backend_checks = [
                 HealthCheck(
@@ -336,6 +336,18 @@ class AppRunner:
                     timeout=1.0,
                 )
             ]
+
+            self.wait_http_ready(
+                checks=backend_checks,
+                name="Backend",
+                port_for_tcp_hint=bport,
+                proc_getter=lambda: self.backend_process,
+                pid=backend_proc.pid,
+            )
+
+            # Start frontend after backend is ready
+            print(f"  {AnsiEsc.DIM}▸ Spawning frontend...{AnsiEsc.RESET}")
+            frontend_proc = self.spawn_frontend(fport, bport, logfile)
 
             frontend_checks = [
                 HealthCheck(
@@ -352,28 +364,13 @@ class AppRunner:
                 ),
             ]
 
-            print(f"  {AnsiEsc.DIM}▸ Waiting for servers to be ready...{AnsiEsc.RESET}")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                backend_future = executor.submit(
-                    self.wait_http_ready,
-                    checks=backend_checks,
-                    name="Backend",
-                    port_for_tcp_hint=bport,
-                    proc_getter=lambda: self.backend_process,
-                    pid=backend_proc.pid,
-                )
-                frontend_future = executor.submit(
-                    self.wait_http_ready,
-                    checks=frontend_checks,
-                    name="Frontend",
-                    port_for_tcp_hint=fport,
-                    proc_getter=lambda: self.frontend_process,
-                    pid=frontend_proc.pid,
-                )
-                concurrent.futures.wait([backend_future, frontend_future])
-                backend_future.result()
-                frontend_future.result()
-                time.sleep(0.1)
+            self.wait_http_ready(
+                checks=frontend_checks,
+                name="Frontend",
+                port_for_tcp_hint=fport,
+                proc_getter=lambda: self.frontend_process,
+                pid=frontend_proc.pid,
+            )
 
             print(f"{AnsiEsc.DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{AnsiEsc.RESET}\n")
             time.sleep(0.1)
