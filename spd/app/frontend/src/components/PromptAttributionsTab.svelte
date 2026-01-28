@@ -20,10 +20,12 @@
     import {
         defaultDraftState,
         defaultOptimizeConfig,
+        isOptimizeConfigValid,
+        validateOptimizeConfig,
         type ComposerState,
         type DraftState,
         type GraphComputeState,
-        type OptimizeConfig,
+        type OptimizeConfigDraft,
         type PromptCard,
         type StoredGraph,
         type TabViewState,
@@ -131,6 +133,14 @@
 
     // Check if a standard graph already exists for the active card
     const hasStandardGraph = $derived(activeCard?.graphs.some((g) => g.data.graphType === "standard") ?? false);
+
+    // Check if compute button should be enabled (config must be valid for optimized graphs)
+    const canCompute = $derived.by(() => {
+        if (!activeCard) return false;
+        const needsOptimized = hasStandardGraph || activeCard.useOptimized;
+        if (!needsOptimized) return true; // Standard graph mode - always valid
+        return isOptimizeConfigValid(activeCard.newGraphConfig);
+    });
 
     // Helper to update draft state (only valid when in draft view)
     function updateDraft(partial: Partial<DraftState>) {
@@ -315,7 +325,7 @@
         promptCards = promptCards.map((card) => (card.id === activeCard.id ? { ...card, useOptimized } : card));
     }
 
-    function handleOptimizeConfigChange(newConfig: OptimizeConfig) {
+    function handleOptimizeConfigChange(newConfig: OptimizeConfigDraft) {
         if (!activeCard) return;
         promptCards = promptCards.map((card) =>
             card.id === activeCard.id ? { ...card, newGraphConfig: newConfig } : card,
@@ -561,10 +571,16 @@
     async function computeGraphForCard() {
         if (!activeCard || !activeCard.tokenIds || graphCompute.status === "computing") return;
 
-        const optConfig = activeCard.newGraphConfig;
+        const draftConfig = activeCard.newGraphConfig;
         // If a standard graph exists, always use optimized (no point computing another standard)
         const isOptimized = hasStandardGraph || activeCard.useOptimized;
         const cardId = activeCard.id;
+
+        // Validate config (button should be disabled if invalid, so this is a safety check)
+        const validConfig = validateOptimizeConfig(draftConfig);
+        if (isOptimized && !validConfig) {
+            throw new Error("Invalid config: CE loss requires a target token");
+        }
 
         const initialProgress = isOptimized
             ? {
@@ -585,10 +601,8 @@
             let data: GraphData;
 
             if (isOptimized) {
-                // Validate CE loss requires valid label token
-                if (optConfig.loss.type === "ce" && optConfig.loss.labelTokenId < 0) {
-                    throw new Error("Label token required for CE loss");
-                }
+                // validConfig is guaranteed non-null here due to early return above
+                const optConfig = validConfig!;
 
                 const params: api.ComputeGraphOptimizedParams = {
                     promptId: cardId,
@@ -934,7 +948,7 @@
                             <div class="error-banner">
                                 {graphCompute.error}
                                 <button onclick={() => (graphCompute = { status: "idle" })}>Dismiss</button>
-                                <button onclick={() => computeGraphForCard()}>Retry</button>
+                                <button onclick={() => computeGraphForCard()} disabled={!canCompute}>Retry</button>
                             </div>
                         {/if}
 
@@ -963,9 +977,14 @@
                                                 tokens={activeCard.tokens}
                                                 {allTokens}
                                                 onChange={handleOptimizeConfigChange}
+                                                cardId={activeCard.id}
                                             />
                                         {/if}
-                                        <button class="btn-compute-center" onclick={() => computeGraphForCard()}>
+                                        <button
+                                            class="btn-compute-center"
+                                            onclick={() => computeGraphForCard()}
+                                            disabled={!canCompute}
+                                        >
                                             Compute
                                         </button>
                                     </div>

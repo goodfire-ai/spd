@@ -384,7 +384,6 @@ def compute_graph_stream(
             output_prob_threshold=output_prob_threshold,
             sampling=loaded.config.sampling,
             device=DEVICE,
-            show_progress=False,
             on_progress=on_progress,
             included_nodes=included_nodes_set,
         )
@@ -563,7 +562,6 @@ def compute_graph_optimized_stream(
             optim_config=optim_config,
             output_prob_threshold=output_prob_threshold,
             device=DEVICE,
-            show_progress=False,
             on_progress=on_progress,
         )
 
@@ -691,7 +689,7 @@ def stored_graph_to_response(
 
     if is_optimized:
         assert graph.optimization_params is not None
-        num_tokens = graph.optimization_params.loss_seq_pos + 1
+        num_tokens = graph.optimization_params.loss.position + 1
         token_strings = token_strings[:num_tokens]
 
     filtered_node_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}

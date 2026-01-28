@@ -37,16 +37,17 @@ export type PromptCard = {
     activeGraphId: number | null; // null means "new graph" mode when graphs exist, or initial state
     activeView: "graph" | "interventions";
     // Config for creating new graphs (per-card, not shared globally)
-    newGraphConfig: OptimizeConfig;
+    newGraphConfig: OptimizeConfigDraft;
     useOptimized: boolean; // whether to compute optimized graph
 };
 
-export type CELossConfig = {
+// Draft types for UI state (may be incomplete)
+export type CELossConfigDraft = {
     type: "ce";
     coeff: number;
     position: number;
-    labelTokenId: number;
-    labelTokenText: string;
+    labelTokenId: number | null; // null = not set yet
+    labelTokenText: string; // user input text (may not match a token yet)
 };
 
 export type KLLossConfig = {
@@ -55,10 +56,10 @@ export type KLLossConfig = {
     position: number;
 };
 
-export type LossConfig = CELossConfig | KLLossConfig;
+export type LossConfigDraft = CELossConfigDraft | KLLossConfig;
 
-export type OptimizeConfig = {
-    loss: LossConfig;
+export type OptimizeConfigDraft = {
+    loss: LossConfigDraft;
     impMinCoeff: number;
     steps: number;
     pnorm: number;
@@ -66,10 +67,43 @@ export type OptimizeConfig = {
     maskType: MaskType;
 };
 
+// Validated types for API calls (all required fields present)
+export type CELossConfigValid = {
+    type: "ce";
+    coeff: number;
+    position: number;
+    labelTokenId: number;
+    labelTokenText: string;
+};
+
+export type LossConfigValid = CELossConfigValid | KLLossConfig;
+
+export type OptimizeConfigValid = {
+    loss: LossConfigValid;
+    impMinCoeff: number;
+    steps: number;
+    pnorm: number;
+    beta: number;
+    maskType: MaskType;
+};
+
+/** Validate draft config, returning valid config or null if incomplete */
+export function validateOptimizeConfig(draft: OptimizeConfigDraft): OptimizeConfigValid | null {
+    if (draft.loss.type === "ce" && draft.loss.labelTokenId === null) {
+        return null;
+    }
+    return draft as OptimizeConfigValid;
+}
+
+/** Check if config is ready for submission */
+export function isOptimizeConfigValid(draft: OptimizeConfigDraft): draft is OptimizeConfigValid {
+    return validateOptimizeConfig(draft) !== null;
+}
+
 export type ComputeOptions = {
     ciThreshold: number;
     useOptimized: boolean;
-    optimizeConfig: OptimizeConfig;
+    optimizeConfig: OptimizeConfigValid;
 };
 
 export type LoadingStage = {
@@ -119,13 +153,13 @@ export type PromptGenerateState =
     | { status: "generating"; progress: number; count: number }
     | { status: "error"; error: string };
 
-export function defaultOptimizeConfig(numTokens: number): OptimizeConfig {
+export function defaultOptimizeConfig(numTokens: number): OptimizeConfigDraft {
     return {
         loss: {
             type: "ce",
             coeff: 1,
             position: numTokens - 1,
-            labelTokenId: -1, // Invalid - must be set before use
+            labelTokenId: null,
             labelTokenText: "",
         },
         impMinCoeff: 0.001,

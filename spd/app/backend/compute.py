@@ -12,7 +12,6 @@ from typing import Any, override
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor, nn
-from tqdm.auto import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.optim_cis import OptimCIConfig, optimize_ci_values
@@ -308,7 +307,6 @@ def compute_edges_from_ci(
     target_out_logits: Float[Tensor, "1 seq vocab"],
     output_prob_threshold: float,
     device: str,
-    show_progress: bool,
     on_progress: ProgressCallback | None = None,
     loss_seq_pos: int | None = None,
 ) -> PromptAttributionResult:
@@ -387,16 +385,8 @@ def compute_edges_from_ci(
     edges: list[Edge] = []
     total_source_layers = sum(len(sources) for sources in sources_by_target.values())
     progress_count = 0
-    pbar = (
-        tqdm(total=total_source_layers, desc="Source layers by target", leave=True)
-        if show_progress
-        else None
-    )
 
     for target, sources in sources_by_target.items():
-        if pbar is not None:
-            pbar.set_description(f"Source layers by target: {target}")
-
         target_edges = _compute_edges_for_target(
             target=target,
             sources=sources,
@@ -408,13 +398,8 @@ def compute_edges_from_ci(
         edges.extend(target_edges)
 
         progress_count += len(sources)
-        if pbar is not None:
-            pbar.update(len(sources))
         if on_progress is not None:
             on_progress(progress_count, total_source_layers, target)
-
-    if pbar is not None:
-        pbar.close()
 
     node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
     component_acts = model.get_all_component_acts(pre_weight_acts)
@@ -503,7 +488,6 @@ def compute_prompt_attributions(
     output_prob_threshold: float,
     sampling: SamplingType,
     device: str,
-    show_progress: bool,
     on_progress: ProgressCallback | None = None,
     included_nodes: set[str] | None = None,
     loss_seq_pos: int | None = None,
@@ -546,7 +530,6 @@ def compute_prompt_attributions(
         target_out_logits=target_out_logits,
         output_prob_threshold=output_prob_threshold,
         device=device,
-        show_progress=show_progress,
         on_progress=on_progress,
         loss_seq_pos=loss_seq_pos,
     )
@@ -559,7 +542,6 @@ def compute_prompt_attributions_optimized(
     optim_config: OptimCIConfig,
     output_prob_threshold: float,
     device: str,
-    show_progress: bool,
     on_progress: ProgressCallback | None = None,
 ) -> OptimizedPromptAttributionResult:
     """Compute prompt attributions using optimized sparse CI values.
@@ -605,7 +587,6 @@ def compute_prompt_attributions_optimized(
         target_out_logits=target_logits,
         output_prob_threshold=output_prob_threshold,
         device=device,
-        show_progress=show_progress,
         on_progress=on_progress,
         loss_seq_pos=loss_seq_pos,
     )

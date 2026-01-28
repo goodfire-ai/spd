@@ -1,16 +1,17 @@
 <script lang="ts">
-    import type { OptimizeConfig, MaskType, LossType, LossConfig } from "./types";
+    import type { OptimizeConfigDraft, MaskType, LossType, LossConfigDraft } from "./types";
     import type { TokenInfo } from "../../lib/promptAttributionsTypes";
     import TokenDropdown from "./TokenDropdown.svelte";
 
     type Props = {
-        config: OptimizeConfig;
+        config: OptimizeConfigDraft;
         tokens: string[];
         allTokens: TokenInfo[];
-        onChange: (newConfig: OptimizeConfig) => void;
+        onChange: (newConfig: OptimizeConfigDraft) => void;
+        cardId: number;
     };
 
-    let { config, tokens, allTokens, onChange }: Props = $props();
+    let { config, tokens, allTokens, onChange, cardId }: Props = $props();
     let showAdvanced = $state(false);
 
     // Slider value 0-100 controls impMinCoeff on log scale from 1e-5 to 10
@@ -28,7 +29,7 @@
     function handleLossTypeChange(newType: LossType) {
         const position = config.loss.position;
         const coeff = config.loss.coeff;
-        let newLoss: LossConfig;
+        let newLoss: LossConfigDraft;
         if (newType === "kl") {
             newLoss = { type: "kl", coeff, position };
         } else {
@@ -36,7 +37,7 @@
                 type: "ce",
                 coeff,
                 position,
-                labelTokenId: -1,
+                labelTokenId: null,
                 labelTokenText: "",
             };
         }
@@ -54,7 +55,7 @@
         <label class="loss-type-option" class:selected={config.loss.type === "kl"}>
             <input
                 type="radio"
-                name="loss-type"
+                name="loss-type-{cardId}"
                 checked={config.loss.type === "kl"}
                 onchange={() => handleLossTypeChange("kl")}
             />
@@ -63,7 +64,7 @@
         <label class="loss-type-option" class:selected={config.loss.type === "ce"}>
             <input
                 type="radio"
-                name="loss-type"
+                name="loss-type-{cardId}"
                 checked={config.loss.type === "ce"}
                 onchange={() => handleLossTypeChange("ce")}
             />
@@ -95,7 +96,7 @@
             <TokenDropdown
                 tokens={allTokens}
                 value={config.loss.labelTokenText}
-                selectedTokenId={config.loss.labelTokenId >= 0 ? config.loss.labelTokenId : null}
+                selectedTokenId={config.loss.labelTokenId}
                 onSelect={(tokenId, tokenString) => {
                     if (config.loss.type !== "ce")
                         throw new Error(
