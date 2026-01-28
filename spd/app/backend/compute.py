@@ -187,9 +187,25 @@ def get_sources_by_target(
     cache["wte_post_detach"] = wte_cache["wte_post_detach"]
     cache["output_pre_detach"] = comp_output_with_cache.output
 
-    # Build layer list: wte first, component layers (from model), output last
-    # Use model.target_module_paths to support all model architectures
-    layers = ["wte"] + list(model.target_module_paths) + ["output"]
+    # Build layer list: wte first, component layers, output last
+    layers = ["wte"]
+    component_layer_names = [
+        "attn.q_proj",
+        "attn.k_proj",
+        "attn.v_proj",
+        "attn.o_proj",
+        "mlp.c_fc",
+        "mlp.down_proj",
+    ]
+    n_blocks = get_model_n_blocks(model.target_model)
+    for i in range(n_blocks):
+        layers.extend([f"h.{i}.{layer_name}" for layer_name in component_layer_names])
+
+    # Add lm_head if it exists in target_module_paths (unembedding matrix)
+    if "lm_head" in model.target_module_paths:
+        layers.append("lm_head")
+
+    layers.append("output")
 
     # Test all pairs: wte can feed into anything, anything can feed into output
     test_pairs = []
