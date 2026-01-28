@@ -1,10 +1,9 @@
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
-const backendUrl = process.env.VITE_API_URL;
-if (!backendUrl) {
-    throw new Error("VITE_API_URL environment variable is required. Run the app via `make app` or `python -m spd.app.run_app`.");
-}
+// BACKEND_URL is set by run_app.py when launching the dev server.
+// Default to localhost:8000 for type checking and build (proxy only used during dev).
+const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
 
 // https://vite.dev/config/
 export default defineConfig({

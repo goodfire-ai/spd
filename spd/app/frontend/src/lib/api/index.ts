@@ -1,7 +1,7 @@
 /**
  * Shared API utilities and exports.
  *
- * In development, Vite proxies /api requests to the backend (configured via VITE_API_URL).
+ * In development, Vite proxies /api requests to the backend.
  * This allows the frontend to work regardless of which port the backend is on.
  */
 

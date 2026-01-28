@@ -294,7 +294,7 @@ class AppRunner:
         self, port: int, backend_port: int, logfile: TextIO
     ) -> subprocess.Popen[str]:
         env = os.environ.copy()
-        env["VITE_API_URL"] = f"http://localhost:{backend_port}"
+        env["BACKEND_URL"] = f"http://localhost:{backend_port}"
         cmd = ["npm", "run", "dev", "--", "--port", str(port), "--strictPort"]
         proc = _spawn(cmd, cwd=APP_DIR / "frontend", env=env, logfile=logfile)
         self.frontend_process = proc
