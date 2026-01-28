@@ -13,8 +13,8 @@ export async function getActivationContextsSummary(): Promise<ActivationContexts
     return fetchJson<ActivationContextsSummary>("/api/activation_contexts/summary");
 }
 
-/** Default limit for initial load - keeps payload small for fast initial render. */
-const ACTIVATION_EXAMPLES_INITIAL_LIMIT = 30;
+/** Default limit for initial load - 100 examples = 10 pages at 10 per page. */
+const ACTIVATION_EXAMPLES_INITIAL_LIMIT = 100;
 
 export async function getActivationContextDetail(
     layer: string,
