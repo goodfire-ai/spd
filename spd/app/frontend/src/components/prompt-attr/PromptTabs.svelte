@@ -129,17 +129,19 @@
 
     .btn-add-tab {
         padding: var(--space-1) var(--space-3);
-        background: var(--accent-primary-dim);
-        border: 1px solid var(--accent-primary);
-        color: var(--accent-primary-bright);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        color: var(--text-muted);
         flex-shrink: 0;
-        font-weight: 500;
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        cursor: pointer;
     }
 
     .btn-add-tab:hover:not(:disabled) {
-        background: var(--accent-primary);
-        border-color: var(--accent-primary-bright);
-        color: white;
+        background: var(--bg-inset);
+        border-color: var(--border-strong);
+        color: var(--text-primary);
     }
 
     .btn-add-tab:disabled {

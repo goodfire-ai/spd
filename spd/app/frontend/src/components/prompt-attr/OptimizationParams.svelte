@@ -129,8 +129,6 @@
     }
 
     .label-token {
-        background: var(--accent-primary-dim);
-        border-color: var(--accent-primary);
-        color: var(--accent-primary-bright);
+        font-weight: 500;
     }
 </style>

@@ -115,18 +115,17 @@
 
     .btn-add {
         padding: var(--space-1) var(--space-3);
-        background: var(--accent-primary-dim);
-        border: 1px solid var(--accent-primary);
-        color: var(--accent-primary-bright);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-default);
+        color: var(--text-muted);
         font-size: var(--text-xs);
         font-family: var(--font-mono);
-        font-weight: 500;
         cursor: pointer;
     }
 
     .btn-add:hover {
-        background: var(--accent-primary);
-        border-color: var(--accent-primary-bright);
-        color: white;
+        background: var(--bg-inset);
+        border-color: var(--border-strong);
+        color: var(--text-primary);
     }
 </style>

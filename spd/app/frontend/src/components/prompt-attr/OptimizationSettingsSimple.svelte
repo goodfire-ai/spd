@@ -21,21 +21,35 @@
         return "kl";
     });
 
-    // Slider value 0-100 (0 = sparsity, 100 = reconstruction)
-    // Derived from impMinCoeff: 1.0 -> 0, 0.01 -> 100
+    // Get the current loss coefficient based on active loss type
+    const currentLossCoeff = $derived(activeLossType === "kl" ? config.klLossCoeff : config.ceLossCoeff);
+
+    // Slider value 0-100 (0 = sparsity "1000:1", 50 = balanced "1:1", 100 = reconstruction "1:1000")
+    // Uses logarithmic scale: ratio = impMinCoeff / lossCoeff = 1000^(1 - value/50)
     const sliderValue = $derived.by(() => {
-        // impMinCoeff ranges from 1.0 (slider=0) to 0.01 (slider=100)
-        // t = (1.0 - impMinCoeff) / (1.0 - 0.01)
-        const t = (1.0 - config.impMinCoeff) / 0.99;
-        return Math.round(t * 100);
+        const lossCoeff = Math.max(currentLossCoeff, 0.001); // avoid division by zero
+        const ratio = config.impMinCoeff / lossCoeff;
+        // ratio = 1000^(1 - value/50), so value = 50 * (1 - log10(ratio) / 3)
+        const value = 50 * (1 - Math.log10(ratio) / 3);
+        return Math.round(Math.max(0, Math.min(100, value)));
     });
 
     function handleSliderChange(value: number) {
-        const t = value / 100;
-        // impMinCoeff: 1.0 at t=0, 0.01 at t=1
-        const impMinCoeff = 1.0 * (1 - t) + 0.01 * t;
-        // lossCoeff: 0.1 at t=0, 1.0 at t=1
-        const lossCoeff = 0.1 * (1 - t) + 1.0 * t;
+        // ratio = 1000^(1 - value/50)
+        const ratio = Math.pow(1000, 1 - value / 50);
+
+        let impMinCoeff: number;
+        let lossCoeff: number;
+
+        if (ratio >= 1) {
+            // Left half: impMinCoeff varies, lossCoeff = 1
+            impMinCoeff = ratio;
+            lossCoeff = 1;
+        } else {
+            // Right half: impMinCoeff = 1, lossCoeff varies
+            impMinCoeff = 1;
+            lossCoeff = 1 / ratio;
+        }
 
         const update: Partial<OptimizeConfig> = { impMinCoeff };
         if (activeLossType === "kl") {
@@ -47,9 +61,8 @@
     }
 
     function handleLossTypeChange(newType: LossType) {
-        // Calculate current lossCoeff from slider
-        const t = sliderValue / 100;
-        const lossCoeff = 0.1 * (1 - t) + 1.0 * t;
+        // Preserve the current loss coefficient when switching types
+        const lossCoeff = Math.max(currentLossCoeff, 1);
 
         if (newType === "kl") {
             onChange({
@@ -100,51 +113,49 @@
         </div>
     </div>
 
-    {#if activeLossType === "ce"}
-        <div class="ce-target-section">
-            <div class="ce-target-row">
-                <span class="target-label">At position</span>
-                <input
-                    type="number"
-                    class="pos-input"
-                    value={config.lossSeqPos}
-                    oninput={(e) => {
-                        if (e.currentTarget.value === "") return;
-                        onChange({ lossSeqPos: parseInt(e.currentTarget.value) });
+    <div class="target-section">
+        <div class="target-row">
+            <span class="target-label">At position</span>
+            <input
+                type="number"
+                class="pos-input"
+                value={config.lossSeqPos}
+                oninput={(e) => {
+                    if (e.currentTarget.value === "") return;
+                    onChange({ lossSeqPos: parseInt(e.currentTarget.value) });
+                }}
+                min={0}
+                max={tokens.length - 1}
+                step={1}
+            />
+            {#if tokenAtSeqPos !== null}
+                <span class="token-at-pos">{tokenAtSeqPos}</span>
+            {:else}
+                <span class="token-at-pos invalid">invalid</span>
+            {/if}
+            <span class="target-label">predict</span>
+            <div class="label-input">
+                <TokenDropdown
+                    tokens={allTokens}
+                    value={config.labelTokenText}
+                    selectedTokenId={config.labelTokenId}
+                    onSelect={(tokenId, tokenString) => {
+                        onChange({
+                            labelTokenText: tokenString,
+                            labelTokenId: tokenId,
+                            labelTokenPreview: tokenId !== null ? tokenString : "",
+                        });
                     }}
-                    min={0}
-                    max={tokens.length - 1}
-                    step={1}
+                    placeholder="token..."
                 />
-                {#if tokenAtSeqPos !== null}
-                    <span class="token-at-pos">{tokenAtSeqPos}</span>
-                {:else}
-                    <span class="token-at-pos invalid">invalid</span>
-                {/if}
-                <span class="target-label">predict</span>
-                <div class="label-input">
-                    <TokenDropdown
-                        tokens={allTokens}
-                        value={config.labelTokenText}
-                        selectedTokenId={config.labelTokenId}
-                        onSelect={(tokenId, tokenString) => {
-                            onChange({
-                                labelTokenText: tokenString,
-                                labelTokenId: tokenId,
-                                labelTokenPreview: tokenId !== null ? tokenString : "",
-                            });
-                        }}
-                        placeholder="token..."
-                    />
-                </div>
             </div>
         </div>
-    {/if}
+    </div>
 
     <div class="slider-section">
         <div class="slider-labels">
-            <span class="slider-label">Sparsity</span>
-            <span class="slider-label">Reconstruction</span>
+            <span class="slider-label">sparsity</span>
+            <span class="slider-label">reconstruction</span>
         </div>
         <input
             type="range"
@@ -154,14 +165,9 @@
             value={sliderValue}
             oninput={(e) => handleSliderChange(parseInt(e.currentTarget.value))}
         />
-        <div class="slider-value">
-            <span class="value-label">imp_min: {config.impMinCoeff.toFixed(2)}</span>
-            <span class="value-label">
-                {activeLossType === "kl" ? "kl" : "ce"}_coeff: {(activeLossType === "kl"
-                    ? config.klLossCoeff
-                    : config.ceLossCoeff
-                ).toFixed(2)}
-            </span>
+        <div class="slider-labels">
+            <span class="slider-label">1000:1</span>
+            <span class="slider-label">1:1000</span>
         </div>
     </div>
 </div>
@@ -232,13 +238,13 @@
         color: var(--text-muted);
     }
 
-    .ce-target-section {
+    .target-section {
         padding: var(--space-2);
         background: var(--bg-surface);
-        border: 1px dashed var(--border-default);
+        border: 1px solid var(--border-default);
     }
 
-    .ce-target-row {
+    .target-row {
         display: flex;
         align-items: center;
         gap: var(--space-2);
@@ -300,6 +306,7 @@
 
     .slider-label {
         font-size: var(--text-xs);
+        font-family: var(--font-mono);
         color: var(--text-muted);
     }
 
@@ -342,16 +349,5 @@
         border-radius: 50%;
         cursor: pointer;
         border: none;
-    }
-
-    .slider-value {
-        display: flex;
-        justify-content: space-between;
-    }
-
-    .value-label {
-        font-size: var(--text-xs);
-        font-family: var(--font-mono);
-        color: var(--text-muted);
     }
 </style>

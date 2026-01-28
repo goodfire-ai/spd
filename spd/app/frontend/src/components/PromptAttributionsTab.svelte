@@ -131,6 +131,11 @@
         return activeCard.graphs.find((g) => g.id === activeCard.activeGraphId) ?? null;
     });
 
+    // Check if a standard graph already exists for the active card
+    const hasStandardGraph = $derived(
+        activeCard?.graphs.some((g) => g.data.graphType === "standard") ?? false,
+    );
+
     // Helper to update draft state (only valid when in draft view)
     function updateDraft(partial: Partial<DraftState>) {
         if (tabView.view !== "draft") return;
@@ -568,7 +573,8 @@
         if (!activeCard || !activeCard.tokenIds || graphCompute.status === "computing") return;
 
         const optConfig = activeCard.newGraphConfig;
-        const isOptimized = activeCard.useOptimized;
+        // If a standard graph exists, always use optimized (no point computing another standard)
+        const isOptimized = hasStandardGraph || activeCard.useOptimized;
         const cardId = activeCard.id;
 
         const initialProgress = isOptimized
@@ -968,15 +974,17 @@
                             {:else}
                                 <div class="empty-state">
                                     <div class="compute-controls">
-                                        <label class="optimize-checkbox">
-                                            <input
-                                                type="checkbox"
-                                                checked={activeCard.useOptimized}
-                                                onchange={(e) => handleUseOptimizedChange(e.currentTarget.checked)}
-                                            />
-                                            <span>Optimize</span>
-                                        </label>
-                                        {#if activeCard.useOptimized}
+                                        {#if !hasStandardGraph}
+                                            <label class="optimize-checkbox">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={activeCard.useOptimized}
+                                                    onchange={(e) => handleUseOptimizedChange(e.currentTarget.checked)}
+                                                />
+                                                <span>Optimize</span>
+                                            </label>
+                                        {/if}
+                                        {#if hasStandardGraph || activeCard.useOptimized}
                                             {#if displaySettings.optimizationMode === "intuitive"}
                                                 <OptimizationSettingsSimple
                                                     config={activeCard.newGraphConfig}

@@ -109,6 +109,47 @@
     <div class="settings-section loss-section">
         <div class="section-header">Loss Function</div>
 
+        <div class="loss-target">
+            <span class="target-label">At position</span>
+            <input
+                type="number"
+                class="pos-input"
+                value={config.lossSeqPos}
+                title={descriptions.lossSeqPos}
+                oninput={(e) => {
+                    if (e.currentTarget.value === "") return;
+                    onChange({ lossSeqPos: parseInt(e.currentTarget.value) });
+                }}
+                min={0}
+                max={tokens.length - 1}
+                step={1}
+            />
+            {#if tokenAtSeqPos !== null}
+                <span class="token-at-pos">{tokenAtSeqPos}</span>
+            {:else}
+                <span class="token-at-pos invalid">invalid</span>
+            {/if}
+            <span class="target-label">predict</span>
+            <div class="label-input" title={descriptions.labelToken}>
+                <TokenDropdown
+                    tokens={allTokens}
+                    value={config.labelTokenText}
+                    selectedTokenId={config.labelTokenId}
+                    onSelect={(tokenId, tokenString) => {
+                        onChange({
+                            labelTokenText: tokenString,
+                            labelTokenId: tokenId,
+                            labelTokenPreview: tokenId !== null ? tokenString : "",
+                        });
+                    }}
+                    placeholder="token..."
+                />
+                {#if config.labelTokenId !== null}
+                    <span class="token-id-hint">#{config.labelTokenId}</span>
+                {/if}
+            </div>
+        </div>
+
         <div class="loss-options">
             <div class="loss-option" title={descriptions.klLossCoeff}>
                 <div class="loss-option-header">
@@ -130,66 +171,24 @@
                 </label>
             </div>
 
-            <div class="loss-option ce-option" title={descriptions.ceLossCoeff}>
+            <div class="loss-option" title={descriptions.ceLossCoeff}>
                 <div class="loss-option-header">
                     <span class="loss-name">Cross-Entropy</span>
                     <span class="loss-desc">predict specific token at position</span>
                 </div>
-                <div class="ce-fields">
-                    <label class="coeff-row">
-                        <span class="label-text">coeff</span>
-                        <input
-                            type="number"
-                            value={config.ceLossCoeff}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onChange({ ceLossCoeff: parseFloat(e.currentTarget.value) });
-                            }}
-                            min={0}
-                            step={0.1}
-                        />
-                    </label>
-                    <div class="ce-target">
-                        <span class="target-label">At position</span>
-                        <input
-                            type="number"
-                            class="pos-input"
-                            value={config.lossSeqPos}
-                            title={descriptions.lossSeqPos}
-                            oninput={(e) => {
-                                if (e.currentTarget.value === "") return;
-                                onChange({ lossSeqPos: parseInt(e.currentTarget.value) });
-                            }}
-                            min={0}
-                            max={tokens.length - 1}
-                            step={1}
-                        />
-                        {#if tokenAtSeqPos !== null}
-                            <span class="token-at-pos">{tokenAtSeqPos}</span>
-                        {:else}
-                            <span class="token-at-pos invalid">invalid</span>
-                        {/if}
-                        <span class="target-label">predict</span>
-                        <div class="label-input" title={descriptions.labelToken}>
-                            <TokenDropdown
-                                tokens={allTokens}
-                                value={config.labelTokenText}
-                                selectedTokenId={config.labelTokenId}
-                                onSelect={(tokenId, tokenString) => {
-                                    onChange({
-                                        labelTokenText: tokenString,
-                                        labelTokenId: tokenId,
-                                        labelTokenPreview: tokenId !== null ? tokenString : "",
-                                    });
-                                }}
-                                placeholder="token..."
-                            />
-                            {#if config.labelTokenId !== null}
-                                <span class="token-id-hint">#{config.labelTokenId}</span>
-                            {/if}
-                        </div>
-                    </div>
-                </div>
+                <label class="coeff-row">
+                    <span class="label-text">coeff</span>
+                    <input
+                        type="number"
+                        value={config.ceLossCoeff}
+                        oninput={(e) => {
+                            if (e.currentTarget.value === "") return;
+                            onChange({ ceLossCoeff: parseFloat(e.currentTarget.value) });
+                        }}
+                        min={0}
+                        step={0.1}
+                    />
+                </label>
             </div>
         </div>
     </div>
@@ -314,20 +313,15 @@
         border-color: var(--accent-primary-dim);
     }
 
-    .ce-fields {
-        display: flex;
-        flex-direction: column;
-        gap: var(--space-2);
-    }
-
-    .ce-target {
+    .loss-target {
         display: flex;
         align-items: center;
         gap: var(--space-2);
         flex-wrap: wrap;
         padding: var(--space-2);
-        background: var(--bg-inset);
-        border: 1px dashed var(--border-subtle);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        margin-bottom: var(--space-2);
     }
 
     .target-label {
