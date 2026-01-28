@@ -77,6 +77,28 @@ export type LoadingState = {
 /** Generic state for async actions without a meaningful result */
 export type ActionState = { status: "idle" } | { status: "loading" } | { status: "error"; error: string };
 
+/** State for the draft prompt input */
+export type DraftState = {
+    text: string;
+    tokenPreview: { tokens: string[]; loading: boolean };
+    isAdding: boolean;
+};
+
+export function defaultDraftState(): DraftState {
+    return {
+        text: "",
+        tokenPreview: { tokens: [], loading: false },
+        isAdding: false,
+    };
+}
+
+/** Discriminated union for the tab view - makes invalid states unrepresentable */
+export type TabViewState =
+    | { view: "draft"; draft: DraftState }
+    | { view: "loading" }
+    | { view: "card"; cardId: number }
+    | { view: "error"; error: string };
+
 /** State for graph computation - tracks which card is computing, progress, and errors */
 export type GraphComputeState =
     | { status: "idle" }

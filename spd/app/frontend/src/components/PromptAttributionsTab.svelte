@@ -11,26 +11,29 @@
     } from "../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ComputeProgressOverlay from "./prompt-attr/ComputeProgressOverlay.svelte";
+    import GraphTabs from "./prompt-attr/GraphTabs.svelte";
     import InterventionsView from "./prompt-attr/InterventionsView.svelte";
-    import PromptCardHeader from "./prompt-attr/PromptCardHeader.svelte";
-    import PromptCardTabs from "./prompt-attr/PromptCardTabs.svelte";
-    import PromptPicker from "./prompt-attr/PromptPicker.svelte";
+    import OptimizationParams from "./prompt-attr/OptimizationParams.svelte";
+    import PromptTabs from "./prompt-attr/PromptTabs.svelte";
     import StagedNodesPanel from "./prompt-attr/StagedNodesPanel.svelte";
+    import ViewTabs from "./prompt-attr/ViewTabs.svelte";
     import {
         defaultOptimizeConfig,
-        type ActionState,
+        defaultDraftState,
         type ComposerState,
+        type DraftState,
         type StoredGraph,
         type GraphComputeState,
-        type PromptGenerateState,
-        type MaskType,
         type OptimizeConfig,
         type PromptCard,
+        type TabViewState,
         type ViewSettings,
     } from "./prompt-attr/types";
-    import TokenDropdown from "./prompt-attr/TokenDropdown.svelte";
     import ViewControls from "./prompt-attr/ViewControls.svelte";
     import PromptAttributionsGraph from "./PromptAttributionsGraph.svelte";
+    import OptimizationSettings from "./prompt-attr/OptimizationSettings.svelte";
+    import OptimizationSettingsSimple from "./prompt-attr/OptimizationSettingsSimple.svelte";
+    import { displaySettings } from "../lib/displaySettings.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
@@ -55,14 +58,12 @@
 
     // Prompt cards state
     let promptCards = $state<PromptCard[]>([]);
-    let activeCardPromptId = $state<number | null>(null);
 
-    // Prompt picker state
-    let showPromptPicker = $state(false);
-    let filteredPrompts = $state<PromptPreview[]>([]);
-    let filterLoading = $state(false);
-    let isAddingCustomPrompt = $state(false);
-    let promptCardLoading = $state<ActionState>({ status: "idle" });
+    // Tab view state - discriminated union makes invalid states unrepresentable
+    let tabView = $state<TabViewState>({ view: "draft", draft: defaultDraftState() });
+
+    // Timer for debounced tokenization (not part of view state since it's internal)
+    let tokenizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Graph computation state
     let graphCompute = $state<GraphComputeState>({ status: "idle" });
@@ -70,9 +71,6 @@
     // Intervention loading state
     let runningIntervention = $state(false);
     let generatingSubgraph = $state(false);
-
-    // Prompt generation state
-    let promptGenerate = $state<PromptGenerateState>({ status: "idle" });
 
     // Refetching state (for CI threshold/normalize changes) - tracks which graph is being refetched
     let refetchingGraphId = $state<number | null>(null);
@@ -123,21 +121,29 @@
     // different tokens depending on context (continuation "##art" vs word-initial " art").
     // The dropdown's onSelect callback sets labelTokenId directly.
 
-    // Derived state
-    const activeCard = $derived(promptCards.find((c) => c.id === activeCardPromptId) ?? null);
+    // Derived state from tabView
+    const activeCardId = $derived(tabView.view === "card" ? tabView.cardId : null);
+    const activeCard = $derived(
+        activeCardId !== null ? (promptCards.find((c) => c.id === activeCardId) ?? null) : null,
+    );
     const activeGraph = $derived.by(() => {
-        const card = promptCards.find((c) => c.id === activeCardPromptId);
-        if (!card) return null;
-        return card.graphs.find((g) => g.id === card.activeGraphId) ?? null;
+        if (!activeCard) return null;
+        return activeCard.graphs.find((g) => g.id === activeCard.activeGraphId) ?? null;
     });
 
+    // Helper to update draft state (only valid when in draft view)
+    function updateDraft(partial: Partial<DraftState>) {
+        if (tabView.view !== "draft") return;
+        tabView = { view: "draft", draft: { ...tabView.draft, ...partial } };
+    }
+
     async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
-        promptCardLoading = { status: "loading" };
+        tabView = { view: "loading" };
         try {
             await addPromptCardInner(promptId, tokens, tokenIds, isCustom);
-            promptCardLoading = { status: "idle" };
+            tabView = { view: "card", cardId: promptId };
         } catch (error) {
-            promptCardLoading = { status: "error", error: String(error) };
+            tabView = { view: "error", error: String(error) };
         }
     }
 
@@ -185,40 +191,104 @@
             useOptimized: false,
         };
         promptCards = [...promptCards, newCard];
-        activeCardPromptId = promptId;
     }
 
     function handleSelectPrompt(prompt: PromptPreview) {
         // If prompt is already open as a card, just focus it
         const existingCard = promptCards.find((c) => c.id === prompt.id);
         if (existingCard) {
-            activeCardPromptId = prompt.id;
+            tabView = { view: "card", cardId: prompt.id };
             return;
         }
         addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, false);
     }
 
-    async function handleAddCustomPrompt(text: string) {
-        isAddingCustomPrompt = true;
+    // Create a new prompt from draft text and add as card
+    async function handleAddFromDraft() {
+        if (tabView.view !== "draft") return;
+        const draftText = tabView.draft.text;
+        if (!draftText.trim()) return;
+
+        updateDraft({ isAdding: true });
         try {
-            const prompt = await api.createCustomPrompt(text);
+            const prompt = await api.createCustomPrompt(draftText);
             // If prompt already exists (returned existing ID), just focus it
             const existingCard = promptCards.find((c) => c.id === prompt.id);
             if (existingCard) {
-                activeCardPromptId = prompt.id;
+                tabView = { view: "card", cardId: prompt.id };
                 return;
             }
             await addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, true);
-        } finally {
-            isAddingCustomPrompt = false;
+            // addPromptCard sets tabView to card on success
+        } catch (error) {
+            // If addPromptCard failed, we're already in error state
+            // If createCustomPrompt failed, stay in draft and show error
+            if (tabView.view === "draft") {
+                updateDraft({ isAdding: false });
+            }
+            throw error;
+        }
+    }
+
+    function handleStartNewDraft() {
+        tabView = { view: "draft", draft: defaultDraftState() };
+    }
+
+    function handleDraftTextChange(text: string) {
+        if (tabView.view !== "draft") return;
+        updateDraft({ text });
+
+        // Debounced tokenization for preview
+        if (tokenizeDebounceTimer) clearTimeout(tokenizeDebounceTimer);
+        if (!text.trim()) {
+            updateDraft({ tokenPreview: { tokens: [], loading: false } });
+            return;
+        }
+        updateDraft({ tokenPreview: { ...tabView.draft.tokenPreview, loading: true } });
+        tokenizeDebounceTimer = setTimeout(async () => {
+            try {
+                const result = await api.tokenizeText(text);
+                updateDraft({ tokenPreview: { tokens: result.tokens, loading: false } });
+            } catch {
+                updateDraft({ tokenPreview: { tokens: [], loading: false } });
+            }
+        }, 150);
+    }
+
+    function handleDraftKeydown(e: KeyboardEvent) {
+        // Enter without shift = add prompt, Shift+Enter = newline
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleAddFromDraft();
         }
     }
 
     function handleCloseCard(cardId: number) {
         promptCards = promptCards.filter((c) => c.id !== cardId);
-        if (activeCardPromptId === cardId) {
-            activeCardPromptId = promptCards.length > 0 ? promptCards[promptCards.length - 1].id : null;
+        if (activeCardId === cardId) {
+            // Switch to another card or back to draft
+            if (promptCards.length > 0) {
+                tabView = { view: "card", cardId: promptCards[promptCards.length - 1].id };
+            } else {
+                tabView = { view: "draft", draft: defaultDraftState() };
+            }
         }
+    }
+
+    function handleSelectCard(cardId: number) {
+        tabView = { view: "card", cardId };
+    }
+
+    function handleCancelDraft() {
+        // Go back to last card if there are any
+        if (promptCards.length > 0) {
+            tabView = { view: "card", cardId: promptCards[promptCards.length - 1].id };
+        }
+    }
+
+    function handleDismissError() {
+        // Go back to draft on error dismissal
+        tabView = { view: "draft", draft: defaultDraftState() };
     }
 
     function handleSelectGraph(graphId: number) {
@@ -684,94 +754,176 @@
     function handleLayerGapChange(value: number) {
         updateActiveGraphViewSettings({ layerGap: value });
     }
-
-    async function handleGeneratePrompts(nPrompts: number) {
-        if (promptGenerate.status === "generating") return;
-
-        promptGenerate = { status: "generating", progress: 0, count: 0 };
-
-        try {
-            await api.generatePrompts({ nPrompts }, (progress: number, count: number) => {
-                if (promptGenerate.status === "generating") {
-                    promptGenerate.progress = progress;
-                    promptGenerate.count = count;
-                }
-            });
-            await runState.refreshPrompts();
-            promptGenerate = { status: "idle" };
-        } catch (error) {
-            promptGenerate = { status: "error", error: String(error) };
-        }
-    }
 </script>
 
 <div class="prompt-attributions-tab">
     <div class="main-content">
         <div class="graph-container">
             <div class="card-tabs-row">
-                <PromptCardTabs
+                <PromptTabs
                     cards={promptCards}
-                    activeCardId={activeCardPromptId}
-                    onSelectCard={(id) => (activeCardPromptId = id)}
+                    {tabView}
+                    onSelectCard={handleSelectCard}
                     onCloseCard={handleCloseCard}
-                    onAddClick={() => (showPromptPicker = !showPromptPicker)}
-                />
-                <PromptPicker
-                    {prompts}
-                    {filteredPrompts}
-                    stagedNodes={pinnedNodes}
-                    filterByStaged={false}
-                    {filterLoading}
-                    {promptGenerate}
-                    {isAddingCustomPrompt}
-                    show={showPromptPicker}
-                    onSelectPrompt={handleSelectPrompt}
-                    onAddCustom={handleAddCustomPrompt}
-                    onFilterToggle={() => {}}
-                    onGenerate={handleGeneratePrompts}
-                    onClose={() => (showPromptPicker = false)}
+                    onSelectDraft={handleStartNewDraft}
+                    onAddClick={handleStartNewDraft}
                 />
             </div>
 
             <div class="card-content">
-                {#if activeCard}
-                    <!-- Prompt header with compute options and graph tabs -->
-                    <PromptCardHeader
-                        card={activeCard}
+                {#if tabView.view === "draft"}
+                    {@const draft = tabView.draft}
+                    <!-- New prompt staging area -->
+                    <div class="draft-staging">
+                        <div class="draft-header">
+                            <h3>New Prompt</h3>
+                            {#if promptCards.length > 0}
+                                <button class="btn-cancel-draft" onclick={handleCancelDraft}>Cancel</button>
+                            {/if}
+                        </div>
+                        <div class="draft-input-area">
+                            <textarea
+                                class="draft-textarea"
+                                placeholder="Enter your prompt text... (Enter to compute, Shift+Enter for newline)"
+                                value={draft.text}
+                                oninput={(e) => handleDraftTextChange(e.currentTarget.value)}
+                                onkeydown={handleDraftKeydown}
+                                rows={3}
+                            ></textarea>
+                            {#if draft.tokenPreview.loading}
+                                <div class="token-preview-row loading">Tokenizing...</div>
+                            {:else if draft.tokenPreview.tokens.length > 0}
+                                <div class="token-preview-row">
+                                    {#each draft.tokenPreview.tokens as tok, i (i)}<span class="token">{tok}</span
+                                        >{/each}
+                                    <span class="token-count">({draft.tokenPreview.tokens.length} tokens)</span>
+                                </div>
+                            {/if}
+                        </div>
+                        <div class="draft-controls">
+                            <button
+                                class="btn-compute-draft"
+                                onclick={handleAddFromDraft}
+                                disabled={!draft.text.trim() || draft.isAdding}
+                            >
+                                {draft.isAdding ? "Adding..." : "Add Prompt"}
+                            </button>
+                        </div>
+
+                        {#if prompts.length > 0}
+                            <div class="existing-prompts">
+                                <h4>Or select an existing prompt ({prompts.length})</h4>
+                                <div class="prompt-list">
+                                    {#each prompts as prompt (prompt.id)}
+                                        <button class="prompt-item" onclick={() => handleSelectPrompt(prompt)}>
+                                            <span class="prompt-id">#{prompt.id}</span>
+                                            <span class="prompt-text">{prompt.preview}</span>
+                                        </button>
+                                    {/each}
+                                </div>
+                            </div>
+                        {/if}
+                    </div>
+                {:else if activeCard}
+                    <!-- Level 1: Tokens -->
+                    <div class="prompt-tokens">
+                        {#each activeCard.tokens as tok, i (i)}
+                            <span class="token" class:custom={activeCard.isCustom}>{tok}</span>
+                        {/each}
+                    </div>
+
+                    <!-- Level 2: Graph tabs -->
+                    <GraphTabs
+                        graphs={activeCard.graphs}
+                        activeGraphId={activeCard.activeGraphId}
                         onSelectGraph={handleSelectGraph}
                         onCloseGraph={handleCloseGraph}
                         onNewGraph={handleEnterNewGraphMode}
                     />
 
                     {#if activeGraph}
-                        <!-- Sub-tabs within the selected graph -->
-                        <div class="graph-view-tabs">
-                            <button
-                                class="graph-view-tab"
-                                class:active={activeCard.activeView === "graph"}
-                                onclick={() => handleViewChange("graph")}
-                            >
-                                Attributions
-                            </button>
-                            <button
-                                class="graph-view-tab"
-                                class:active={activeCard.activeView === "interventions"}
-                                onclick={() => handleViewChange("interventions")}
-                            >
-                                Interventions
-                                {#if activeGraph.interventionRuns.length > 0}
-                                    <span class="badge">{activeGraph.interventionRuns.length}</span>
-                                {/if}
-                            </button>
-                        </div>
+                        <!-- Optimization params (if optimized graph) -->
+                        {#if activeGraph.data.optimization}
+                            <OptimizationParams
+                                optimization={activeGraph.data.optimization}
+                                tokens={activeCard.tokens}
+                            />
+                        {/if}
 
-                        {#if activeCard.activeView === "graph"}
-                            <div class="graph-area">
-                                <ViewControls
+                        <!-- Level 3: View tabs -->
+                        <div>
+                            <ViewTabs
+                                activeView={activeCard.activeView}
+                                interventionRunCount={activeGraph.interventionRuns.length}
+                                onViewChange={handleViewChange}
+                            />
+
+                            {#if activeCard.activeView === "graph"}
+                                <div class="graph-area">
+                                    <ViewControls
+                                        topK={activeGraph.viewSettings.topK}
+                                        componentGap={activeGraph.viewSettings.componentGap}
+                                        layerGap={activeGraph.viewSettings.layerGap}
+                                        {filteredEdgeCount}
+                                        normalizeEdges={activeGraph.viewSettings.normalizeEdges}
+                                        ciThreshold={refetchingGraphId === activeGraph.id
+                                            ? { status: "loading" }
+                                            : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
+                                        {hideUnpinnedEdges}
+                                        {hideNodeCard}
+                                        onTopKChange={handleTopKChange}
+                                        onComponentGapChange={handleComponentGapChange}
+                                        onLayerGapChange={handleLayerGapChange}
+                                        onNormalizeChange={handleNormalizeChange}
+                                        onCiThresholdChange={handleCiThresholdChange}
+                                        onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
+                                        onHideNodeCardChange={(v) => (hideNodeCard = v)}
+                                    />
+                                    <div class="graph-info">
+                                        <span class="l0-info"
+                                            ><strong>L0:</strong>
+                                            {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
+                                                .viewSettings.ciThreshold}</span
+                                        >
+                                        {#if pinnedNodes.length > 0}
+                                            <span class="pinned-count">{pinnedNodes.length} pinned</span>
+                                        {/if}
+                                    </div>
+                                    {#key activeGraph.id}
+                                        <PromptAttributionsGraph
+                                            data={activeGraph.data}
+                                            topK={activeGraph.viewSettings.topK}
+                                            componentGap={activeGraph.viewSettings.componentGap}
+                                            layerGap={activeGraph.viewSettings.layerGap}
+                                            {hideUnpinnedEdges}
+                                            {hideNodeCard}
+                                            stagedNodes={pinnedNodes}
+                                            onStagedNodesChange={handlePinnedNodesChange}
+                                            onEdgeCountChange={(count) => (filteredEdgeCount = count)}
+                                        />
+                                    {/key}
+                                </div>
+                                <StagedNodesPanel
+                                    stagedNodes={pinnedNodes}
+                                    outputProbs={activeGraph.data.outputProbs}
+                                    nodeCiVals={activeGraph.data.nodeCiVals}
+                                    nodeSubcompActs={activeGraph.data.nodeSubcompActs}
+                                    tokens={activeCard.tokens}
+                                    edgesBySource={activeGraph.data.edgesBySource}
+                                    edgesByTarget={activeGraph.data.edgesByTarget}
+                                    onStagedNodesChange={handlePinnedNodesChange}
+                                />
+                            {:else if activeComposerState}
+                                <InterventionsView
+                                    graph={activeGraph}
+                                    composerSelection={activeComposerState.selection}
+                                    activeRunId={activeComposerState.activeRunId}
+                                    tokens={activeCard.tokens}
+                                    tokenIds={activeCard.tokenIds}
+                                    {allTokens}
                                     topK={activeGraph.viewSettings.topK}
                                     componentGap={activeGraph.viewSettings.componentGap}
                                     layerGap={activeGraph.viewSettings.layerGap}
-                                    {filteredEdgeCount}
                                     normalizeEdges={activeGraph.viewSettings.normalizeEdges}
                                     ciThreshold={refetchingGraphId === activeGraph.id
                                         ? { status: "loading" }
@@ -785,76 +937,18 @@
                                     onCiThresholdChange={handleCiThresholdChange}
                                     onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
                                     onHideNodeCardChange={(v) => (hideNodeCard = v)}
+                                    {runningIntervention}
+                                    {generatingSubgraph}
+                                    onSelectionChange={handleComposerSelectionChange}
+                                    onRunIntervention={handleRunIntervention}
+                                    onSelectRun={handleSelectRun}
+                                    onDeleteRun={handleDeleteRun}
+                                    onForkRun={handleForkRun}
+                                    onDeleteFork={handleDeleteFork}
+                                    onGenerateGraphFromSelection={handleGenerateGraphFromSelection}
                                 />
-                                <div class="graph-info">
-                                    <span class="l0-info"
-                                        ><strong>L0:</strong>
-                                        {activeGraph.data.l0_total.toFixed(0)} active at ci threshold {activeGraph
-                                            .viewSettings.ciThreshold}</span
-                                    >
-                                    {#if pinnedNodes.length > 0}
-                                        <span class="pinned-count">{pinnedNodes.length} pinned</span>
-                                    {/if}
-                                </div>
-                                {#key activeGraph.id}
-                                    <PromptAttributionsGraph
-                                        data={activeGraph.data}
-                                        topK={activeGraph.viewSettings.topK}
-                                        componentGap={activeGraph.viewSettings.componentGap}
-                                        layerGap={activeGraph.viewSettings.layerGap}
-                                        {hideUnpinnedEdges}
-                                        {hideNodeCard}
-                                        stagedNodes={pinnedNodes}
-                                        onStagedNodesChange={handlePinnedNodesChange}
-                                        onEdgeCountChange={(count) => (filteredEdgeCount = count)}
-                                    />
-                                {/key}
-                            </div>
-                            <StagedNodesPanel
-                                stagedNodes={pinnedNodes}
-                                outputProbs={activeGraph.data.outputProbs}
-                                nodeCiVals={activeGraph.data.nodeCiVals}
-                                nodeSubcompActs={activeGraph.data.nodeSubcompActs}
-                                tokens={activeCard.tokens}
-                                edgesBySource={activeGraph.data.edgesBySource}
-                                edgesByTarget={activeGraph.data.edgesByTarget}
-                                onStagedNodesChange={handlePinnedNodesChange}
-                            />
-                        {:else if activeComposerState}
-                            <InterventionsView
-                                graph={activeGraph}
-                                composerSelection={activeComposerState.selection}
-                                activeRunId={activeComposerState.activeRunId}
-                                tokens={activeCard.tokens}
-                                tokenIds={activeCard.tokenIds}
-                                {allTokens}
-                                topK={activeGraph.viewSettings.topK}
-                                componentGap={activeGraph.viewSettings.componentGap}
-                                layerGap={activeGraph.viewSettings.layerGap}
-                                normalizeEdges={activeGraph.viewSettings.normalizeEdges}
-                                ciThreshold={refetchingGraphId === activeGraph.id
-                                    ? { status: "loading" }
-                                    : { status: "loaded", data: activeGraph.viewSettings.ciThreshold }}
-                                {hideUnpinnedEdges}
-                                {hideNodeCard}
-                                onTopKChange={handleTopKChange}
-                                onComponentGapChange={handleComponentGapChange}
-                                onLayerGapChange={handleLayerGapChange}
-                                onNormalizeChange={handleNormalizeChange}
-                                onCiThresholdChange={handleCiThresholdChange}
-                                onHideUnpinnedEdgesChange={(v) => (hideUnpinnedEdges = v)}
-                                onHideNodeCardChange={(v) => (hideNodeCard = v)}
-                                {runningIntervention}
-                                {generatingSubgraph}
-                                onSelectionChange={handleComposerSelectionChange}
-                                onRunIntervention={handleRunIntervention}
-                                onSelectRun={handleSelectRun}
-                                onDeleteRun={handleDeleteRun}
-                                onForkRun={handleForkRun}
-                                onDeleteFork={handleDeleteFork}
-                                onGenerateGraphFromSelection={handleGenerateGraphFromSelection}
-                            />
-                        {/if}
+                            {/if}
+                        </div>
                     {:else}
                         <!-- No graph yet -->
                         {#if graphCompute.status === "error"}
@@ -874,7 +968,7 @@
                             {:else}
                                 <div class="empty-state">
                                     <div class="compute-controls">
-                                        <label class="checkbox">
+                                        <label class="optimize-checkbox">
                                             <input
                                                 type="checkbox"
                                                 checked={activeCard.useOptimized}
@@ -883,167 +977,21 @@
                                             <span>Optimize</span>
                                         </label>
                                         {#if activeCard.useOptimized}
-                                            <details class="opt-params-details">
-                                                <summary>Parameters</summary>
-                                                <div class="compute-options">
-                                                    <label>
-                                                        <span>imp_min_coeff</span>
-                                                        <input
-                                                            type="number"
-                                                            value={activeCard.newGraphConfig.impMinCoeff}
-                                                            oninput={(e) => {
-                                                                if (e.currentTarget.value === "") return;
-                                                                handleOptimizeConfigChange({
-                                                                    impMinCoeff: parseFloat(e.currentTarget.value),
-                                                                });
-                                                            }}
-                                                            min={0.001}
-                                                            max={10}
-                                                            step={0.01}
-                                                        />
-                                                    </label>
-                                                    <label>
-                                                        <span>steps</span>
-                                                        <input
-                                                            type="number"
-                                                            value={activeCard.newGraphConfig.steps}
-                                                            oninput={(e) => {
-                                                                if (e.currentTarget.value === "") return;
-                                                                handleOptimizeConfigChange({
-                                                                    steps: parseInt(e.currentTarget.value),
-                                                                });
-                                                            }}
-                                                            min={10}
-                                                            max={5000}
-                                                            step={100}
-                                                        />
-                                                    </label>
-                                                    <label>
-                                                        <span>pnorm</span>
-                                                        <input
-                                                            type="number"
-                                                            value={activeCard.newGraphConfig.pnorm}
-                                                            oninput={(e) => {
-                                                                if (e.currentTarget.value === "") return;
-                                                                handleOptimizeConfigChange({
-                                                                    pnorm: parseFloat(e.currentTarget.value),
-                                                                });
-                                                            }}
-                                                            min={0.1}
-                                                            max={2}
-                                                            step={0.1}
-                                                        />
-                                                    </label>
-                                                    <label>
-                                                        <span>beta</span>
-                                                        <input
-                                                            type="number"
-                                                            value={activeCard.newGraphConfig.beta}
-                                                            oninput={(e) => {
-                                                                if (e.currentTarget.value === "") return;
-                                                                handleOptimizeConfigChange({
-                                                                    beta: parseFloat(e.currentTarget.value),
-                                                                });
-                                                            }}
-                                                            min={0}
-                                                            max={10}
-                                                            step={0.1}
-                                                        />
-                                                    </label>
-                                                    <label>
-                                                        <span>ce_coeff</span>
-                                                        <input
-                                                            type="number"
-                                                            value={activeCard.newGraphConfig.ceLossCoeff}
-                                                            oninput={(e) => {
-                                                                if (e.currentTarget.value === "") return;
-                                                                handleOptimizeConfigChange({
-                                                                    ceLossCoeff: parseFloat(e.currentTarget.value),
-                                                                });
-                                                            }}
-                                                            min={0}
-                                                            step={0.1}
-                                                        />
-                                                    </label>
-                                                    <label class="label-token-input">
-                                                        <span>Label</span>
-                                                        <TokenDropdown
-                                                            tokens={allTokens}
-                                                            value={activeCard.newGraphConfig.labelTokenText}
-                                                            selectedTokenId={activeCard.newGraphConfig.labelTokenId}
-                                                            onSelect={(tokenId, tokenString) => {
-                                                                handleOptimizeConfigChange({
-                                                                    labelTokenText: tokenString,
-                                                                    labelTokenId: tokenId,
-                                                                    labelTokenPreview:
-                                                                        tokenId !== null ? tokenString : "",
-                                                                });
-                                                            }}
-                                                            placeholder="Search token..."
-                                                        />
-                                                        {#if activeCard.newGraphConfig.labelTokenId !== null}
-                                                            <span class="token-id-hint"
-                                                                >#{activeCard.newGraphConfig.labelTokenId}</span
-                                                            >
-                                                        {/if}
-                                                    </label>
-                                                    <label>
-                                                        <span>kl_coeff</span>
-                                                        <input
-                                                            type="number"
-                                                            value={activeCard.newGraphConfig.klLossCoeff}
-                                                            oninput={(e) => {
-                                                                if (e.currentTarget.value === "") return;
-                                                                handleOptimizeConfigChange({
-                                                                    klLossCoeff: parseFloat(e.currentTarget.value),
-                                                                });
-                                                            }}
-                                                            min={0}
-                                                            step={0.1}
-                                                        />
-                                                    </label>
-                                                    <label class="seq-pos-input">
-                                                        <span>loss_seq_pos</span>
-                                                        <input
-                                                            type="number"
-                                                            value={activeCard.newGraphConfig.lossSeqPos}
-                                                            oninput={(e) => {
-                                                                if (e.currentTarget.value === "") return;
-                                                                handleOptimizeConfigChange({
-                                                                    lossSeqPos: parseInt(e.currentTarget.value),
-                                                                });
-                                                            }}
-                                                            min={0}
-                                                            max={activeCard.tokens.length - 1}
-                                                            step={1}
-                                                        />
-                                                        {#if activeCard.newGraphConfig.lossSeqPos >= 0 && activeCard.newGraphConfig.lossSeqPos < activeCard.tokens.length}
-                                                            <span class="token-preview"
-                                                                >{activeCard.tokens[
-                                                                    activeCard.newGraphConfig.lossSeqPos
-                                                                ]}</span
-                                                            >
-                                                        {:else}
-                                                            <span class="token-preview token-preview-invalid"
-                                                                >invalid</span
-                                                            >
-                                                        {/if}
-                                                    </label>
-                                                    <label>
-                                                        <span>mask_type</span>
-                                                        <select
-                                                            value={activeCard.newGraphConfig.maskType}
-                                                            onchange={(e) =>
-                                                                handleOptimizeConfigChange({
-                                                                    maskType: e.currentTarget.value as MaskType,
-                                                                })}
-                                                        >
-                                                            <option value="stochastic">stochastic</option>
-                                                            <option value="ci">ci</option>
-                                                        </select>
-                                                    </label>
-                                                </div>
-                                            </details>
+                                            {#if displaySettings.optimizationMode === "intuitive"}
+                                                <OptimizationSettingsSimple
+                                                    config={activeCard.newGraphConfig}
+                                                    tokens={activeCard.tokens}
+                                                    {allTokens}
+                                                    onChange={handleOptimizeConfigChange}
+                                                />
+                                            {:else}
+                                                <OptimizationSettings
+                                                    config={activeCard.newGraphConfig}
+                                                    tokens={activeCard.tokens}
+                                                    {allTokens}
+                                                    onChange={handleOptimizeConfigChange}
+                                                />
+                                            {/if}
                                         {/if}
                                         <button class="btn-compute-center" onclick={() => computeGraphForCard()}>
                                             Compute
@@ -1053,19 +1001,14 @@
                             {/if}
                         </div>
                     {/if}
-                {:else if promptCardLoading.status === "loading"}
+                {:else if tabView.view === "loading"}
                     <div class="empty-state">
                         <p>Loading prompt...</p>
                     </div>
-                {:else if promptCardLoading.status === "error"}
+                {:else if tabView.view === "error"}
                     <div class="empty-state">
-                        <p class="error-text">Error loading prompt: {promptCardLoading.error}</p>
-                        <button onclick={() => (promptCardLoading = { status: "idle" })}>Dismiss</button>
-                    </div>
-                {:else}
-                    <div class="empty-state">
-                        <p>Click <strong>+ Add Prompt</strong> to get started</p>
-                        <p class="hint">{prompts.length} prompts available</p>
+                        <p class="error-text">Error loading prompt: {tabView.error}</p>
+                        <button onclick={handleDismissError}>Dismiss</button>
                     </div>
                 {/if}
             </div>
@@ -1116,50 +1059,27 @@
         background: var(--bg-inset);
     }
 
-    .graph-view-tabs {
+    .prompt-tokens {
         display: flex;
-        gap: var(--space-1);
+        flex-wrap: wrap;
+        gap: 1px;
+        align-items: center;
     }
 
-    .graph-view-tab {
-        padding: var(--space-1) var(--space-3);
+    .prompt-tokens .token {
+        padding: 2px 3px;
         background: var(--bg-elevated);
-        border: 1px solid var(--border-default);
+        font-family: var(--font-mono);
         font-size: var(--text-sm);
-        font-weight: 500;
-        color: var(--text-secondary);
-        display: inline-flex;
-        align-items: center;
-        gap: var(--space-1);
-    }
-
-    .graph-view-tab:hover {
         color: var(--text-primary);
-        border-color: var(--border-strong);
-        background: var(--bg-surface);
+        white-space: pre;
+        border: 1px solid var(--border-subtle);
     }
 
-    .graph-view-tab.active {
-        color: white;
-        background: var(--accent-primary);
-        border-color: var(--accent-primary);
-    }
-
-    .graph-view-tab .badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 16px;
-        height: 16px;
-        padding: 0 4px;
-        font-size: var(--text-xs);
-        font-weight: 600;
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 8px;
-    }
-
-    .graph-view-tab.active .badge {
-        background: rgba(255, 255, 255, 0.3);
+    .prompt-tokens .token.custom {
+        background: var(--bg-inset);
+        border-color: var(--status-info);
+        color: var(--status-info-bright);
     }
 
     .graph-info {
@@ -1214,16 +1134,6 @@
         font-size: var(--text-base);
     }
 
-    .empty-state strong {
-        color: var(--accent-primary);
-    }
-
-    .empty-state .hint {
-        font-size: var(--text-sm);
-        color: var(--text-muted);
-        font-family: var(--font-mono);
-    }
-
     .empty-state .error-text {
         color: var(--status-negative-bright);
     }
@@ -1252,122 +1162,22 @@
         gap: var(--space-3);
     }
 
-    .opt-params-details {
-        border: 1px solid var(--border-default);
-        background: var(--bg-elevated);
-        padding: var(--space-2);
-    }
-
-    .opt-params-details summary {
-        cursor: pointer;
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        color: var(--text-secondary);
-        user-select: none;
-    }
-
-    .opt-params-details summary:hover {
-        color: var(--text-primary);
-    }
-
-    .opt-params-details[open] summary {
-        margin-bottom: var(--space-2);
-    }
-
-    .compute-options {
-        display: flex;
-        align-items: center;
-        gap: var(--space-3);
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-
-    .compute-options label {
+    .optimize-checkbox {
         display: flex;
         align-items: center;
         gap: var(--space-1);
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
-    }
-
-    .compute-options label span {
-        font-weight: 500;
-        font-size: var(--text-xs);
-        letter-spacing: 0.05em;
-        color: var(--text-muted);
-    }
-
-    .compute-options input[type="number"] {
-        width: 110px;
-        padding: var(--space-1);
-        border: 1px solid var(--border-default);
-        background: var(--bg-elevated);
-        color: var(--text-primary);
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-    }
-
-    .compute-options input[type="number"]:focus {
-        outline: none;
-        border-color: var(--accent-primary-dim);
-    }
-
-    .compute-options select {
-        padding: var(--space-1);
-        border: 1px solid var(--border-default);
-        background: var(--bg-elevated);
-        color: var(--text-primary);
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
         cursor: pointer;
     }
 
-    .compute-options select:focus {
-        outline: none;
-        border-color: var(--accent-primary-dim);
+    .optimize-checkbox:hover {
+        color: var(--text-primary);
     }
 
-    .compute-controls label.checkbox {
-        display: flex;
-        align-items: center;
-        gap: var(--space-1);
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
-        color: var(--text-secondary);
-    }
-
-    .compute-options .label-token-input {
-        flex-wrap: wrap;
-    }
-
-    .compute-options .seq-pos-input {
-        flex-wrap: nowrap;
-    }
-
-    .seq-pos-input input[type="number"] {
-        width: 60px;
-    }
-
-    .token-preview {
-        font-size: var(--text-xs);
-        color: var(--text-secondary);
-        font-family: var(--font-mono);
-        padding: 2px 4px;
-        background: var(--bg-inset);
-        border: 1px solid var(--border-subtle);
-        white-space: pre;
-    }
-
-    .token-preview-invalid {
-        font-style: italic;
-        color: var(--text-muted);
-    }
-
-    .token-id-hint {
-        font-size: var(--text-xs);
-        color: var(--text-muted);
-        font-family: var(--font-mono);
+    .optimize-checkbox input {
+        cursor: pointer;
     }
 
     .error-banner {
@@ -1393,5 +1203,184 @@
 
     .error-banner button:hover {
         background: var(--status-negative-bright);
+    }
+
+    /* Draft staging area styles */
+    .draft-staging {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+        padding: var(--space-6);
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    .draft-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .draft-header h3 {
+        margin: 0;
+        font-size: var(--text-lg);
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .btn-cancel-draft {
+        padding: var(--space-1) var(--space-2);
+        background: transparent;
+        border: 1px solid var(--border-default);
+        color: var(--text-muted);
+        font-size: var(--text-sm);
+    }
+
+    .btn-cancel-draft:hover {
+        border-color: var(--border-strong);
+        color: var(--text-primary);
+    }
+
+    .draft-input-area {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    .draft-textarea {
+        width: 100%;
+        padding: var(--space-3);
+        border: 1px solid var(--border-default);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        resize: vertical;
+        min-height: 80px;
+    }
+
+    .draft-textarea:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+
+    .draft-textarea::placeholder {
+        color: var(--text-muted);
+    }
+
+    .token-preview-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1px;
+        align-items: center;
+    }
+
+    .token-preview-row.loading {
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--text-muted);
+    }
+
+    .token-preview-row .token {
+        padding: 2px 3px;
+        background: var(--bg-inset);
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--status-info-bright);
+        white-space: pre;
+        border: 1px solid var(--status-info);
+    }
+
+    .token-preview-row .token-count {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--text-muted);
+        margin-left: var(--space-2);
+    }
+
+    .draft-controls {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-3);
+    }
+
+    .btn-compute-draft {
+        padding: var(--space-2) var(--space-4);
+        background: var(--accent-primary);
+        border: none;
+        color: white;
+        font-size: var(--text-base);
+        font-family: var(--font-mono);
+        font-weight: 500;
+        cursor: pointer;
+    }
+
+    .btn-compute-draft:hover:not(:disabled) {
+        background: var(--accent-primary-bright);
+    }
+
+    .btn-compute-draft:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .existing-prompts {
+        border-top: 1px solid var(--border-default);
+        padding-top: var(--space-4);
+    }
+
+    .existing-prompts h4 {
+        margin: 0 0 var(--space-2) 0;
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--text-muted);
+    }
+
+    .prompt-list {
+        display: flex;
+        flex-direction: column;
+        max-height: 260px;
+        overflow-y: auto;
+        background: var(--bg-inset);
+        border: 1px solid var(--border-default);
+    }
+
+    .prompt-item {
+        width: 100%;
+        padding: var(--space-2) var(--space-3);
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid var(--border-subtle);
+        cursor: pointer;
+        text-align: left;
+        display: flex;
+        gap: var(--space-2);
+        align-items: baseline;
+        color: var(--text-primary);
+    }
+
+    .prompt-item:last-child {
+        border-bottom: none;
+    }
+
+    .prompt-item:hover {
+        background: var(--bg-surface);
+    }
+
+    .prompt-id {
+        font-size: var(--text-xs);
+        font-family: var(--font-mono);
+        color: var(--text-muted);
+        flex-shrink: 0;
+    }
+
+    .prompt-text {
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--text-primary);
     }
 </style>

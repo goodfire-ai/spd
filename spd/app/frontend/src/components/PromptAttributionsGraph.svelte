@@ -177,7 +177,7 @@
     });
 
     // Build layout
-    const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height, clusterSpans } = $derived.by(() => {
+    const { nodePositions, layerYPositions, seqXStarts, width, height, clusterSpans } = $derived.by(() => {
         const nodesPerLayerSeq: Record<string, number[]> = {};
         const allLayers = new SvelteSet<string>();
         const allRows = new SvelteSet<string>();
@@ -342,7 +342,6 @@
         return {
             nodePositions,
             layerYPositions,
-            seqWidths,
             seqXStarts,
             width: widthVal,
             height: heightVal,
@@ -720,11 +719,11 @@
             <svg width={svgWidth} height="50" style="display: block;">
                 <g transform="translate({zoom.translateX}, 0) scale({zoom.scale}, 1)">
                     {#each data.tokens as token, i (i)}
-                        {@const colCenter = seqXStarts[i] + seqWidths[i] / 2}
+                        {@const colLeft = seqXStarts[i] + 8}
                         <text
-                            x={colCenter}
+                            x={colLeft}
                             y="20"
-                            text-anchor="middle"
+                            text-anchor="start"
                             font-size="11"
                             font-family="'Berkeley Mono', 'SF Mono', monospace"
                             font-weight="500"
@@ -734,9 +733,9 @@
                             {token}
                         </text>
                         <text
-                            x={colCenter}
+                            x={colLeft}
                             y="36"
-                            text-anchor="middle"
+                            text-anchor="start"
                             font-size="9"
                             font-family="'Berkeley Mono', 'SF Mono', monospace"
                             fill={colors.textMuted}>[{i}]</text

@@ -1,16 +1,19 @@
 <script lang="ts">
     import {
         type NodeColorMode,
+        type OptimizationMode,
         displaySettings,
         CORRELATION_STAT_LABELS,
         CORRELATION_STAT_DESCRIPTIONS,
         NODE_COLOR_MODE_LABELS,
+        OPTIMIZATION_MODE_LABELS,
     } from "../../lib/displaySettings.svelte";
     import GearIcon from "./icons/GearIcon.svelte";
 
     let showDropdown = $state(false);
 
     const colorModes: NodeColorMode[] = ["ci", "subcomp_act"];
+    const optimizationModes: OptimizationMode[] = ["intuitive", "advanced"];
 </script>
 
 <div
@@ -132,6 +135,23 @@
                             }
                         }}
                     />
+                </div>
+            </div>
+            <div class="settings-section">
+                <h4>Optimization Settings</h4>
+                <p class="settings-hint">Level of control for graph optimization</p>
+                <div class="radio-list">
+                    {#each optimizationModes as mode (mode)}
+                        <label class="radio-item">
+                            <input
+                                type="radio"
+                                name="optimization-mode"
+                                checked={displaySettings.optimizationMode === mode}
+                                onchange={() => (displaySettings.optimizationMode = mode)}
+                            />
+                            <span class="stat-label">{OPTIMIZATION_MODE_LABELS[mode]}</span>
+                        </label>
+                    {/each}
                 </div>
             </div>
         </div>
