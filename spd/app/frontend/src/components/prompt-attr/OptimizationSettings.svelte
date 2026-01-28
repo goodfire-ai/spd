@@ -21,7 +21,8 @@
 
     function handleSliderChange(value: number) {
         const impMinCoeff = 1e-5 * Math.pow(1e6, value / 100);
-        onChange({ ...config, impMinCoeff });
+        const rounded = parseFloat(impMinCoeff.toPrecision(2));
+        onChange({ ...config, impMinCoeff: rounded });
     }
 
     function handleLossTypeChange(newType: LossType) {
