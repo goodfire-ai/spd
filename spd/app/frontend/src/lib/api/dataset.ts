@@ -78,3 +78,37 @@ export async function getRandomSamples(
 
     return (await response.json()) as RandomSamplesResult;
 }
+
+export type TokenizedSample = {
+    tokens: string[];
+    next_token_probs: (number | null)[]; // Probability of next token; null for last position
+    topic: string | null;
+    theme: string | null;
+};
+
+export type RandomSamplesWithLossResult = {
+    results: TokenizedSample[];
+    total_available: number;
+    seed: number;
+};
+
+export async function getRandomSamplesWithLoss(
+    nSamples: number = 20,
+    seed: number = 42,
+    split: "train" | "test" = "train",
+    maxTokens: number = 256,
+): Promise<RandomSamplesWithLossResult> {
+    const url = apiUrl("/api/dataset/random_with_loss");
+    url.searchParams.set("n_samples", String(nSamples));
+    url.searchParams.set("seed", String(seed));
+    url.searchParams.set("split", split);
+    url.searchParams.set("max_tokens", String(maxTokens));
+
+    const response = await fetch(url.toString(), { method: "GET" });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get random samples with loss");
+    }
+
+    return (await response.json()) as RandomSamplesWithLossResult;
+}

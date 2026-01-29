@@ -2,6 +2,7 @@
     import type { PromptPreview, PinnedNode, TokenizeResponse } from "../../lib/promptAttributionsTypes";
     import { tokenizeText } from "../../lib/api";
     import type { PromptGenerateState } from "./types";
+    import ProbColoredTokens from "../ProbColoredTokens.svelte";
 
     type Props = {
         prompts: PromptPreview[];
@@ -102,7 +103,10 @@
                     <div class="token-preview-loading">...</div>
                 {:else if tokenizeResult && tokenizeResult.tokens.length > 0}
                     <div class="token-preview">
-                        {#each tokenizeResult.tokens as tok, i (i)}<span class="token">{tok}</span>{/each}
+                        <ProbColoredTokens
+                            tokens={tokenizeResult.tokens}
+                            nextTokenProbs={tokenizeResult.next_token_probs}
+                        />
                         <span class="token-count">({tokenizeResult.tokens.length})</span>
                     </div>
                 {/if}
@@ -212,16 +216,6 @@
         font-family: var(--font-mono);
         font-size: var(--text-sm);
         color: var(--text-muted);
-    }
-
-    .token {
-        padding: var(--space-1) var(--space-1);
-        background: var(--bg-inset);
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-        color: var(--status-info-bright);
-        white-space: pre;
-        border: 1px solid var(--status-info);
     }
 
     .token-count {

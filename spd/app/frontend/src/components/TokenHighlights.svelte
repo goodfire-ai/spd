@@ -6,12 +6,23 @@
         tokenCi: number[]; // CI values (0-1)
         tokenComponentActs: number[]; // Component activations (can be negative)
         maxAbsComponentAct: number; // For normalizing component act colors
+        tokenNextProbs?: (number | null)[]; // Probability of next token (optional)
     }
 
-    let { tokenStrings, tokenCi, tokenComponentActs, maxAbsComponentAct }: Props = $props();
+    let { tokenStrings, tokenCi, tokenComponentActs, maxAbsComponentAct, tokenNextProbs }: Props = $props();
 
-    function getTooltipText(ci: number, componentAct: number): string {
-        return `CI: ${ci.toFixed(3)} | Act: ${componentAct.toFixed(3)}`;
+    function getTooltipText(ci: number, componentAct: number, prob: number | null | undefined): string {
+        let text = `CI: ${ci.toFixed(3)} | Act: ${componentAct.toFixed(3)}`;
+        if (prob != null) {
+            text += ` | P(token): ${(prob * 100).toFixed(1)}%`;
+        }
+        return text;
+    }
+
+    // Shift by 1: position i shows probability that token i-1 predicted token i
+    function getProbAtPosition(i: number): number | null | undefined {
+        if (!tokenNextProbs || i === 0) return null;
+        return tokenNextProbs[i - 1];
     }
 
     function getBgColor(ci: number): string {
@@ -30,7 +41,7 @@
             style="background-color:{getBgColor(tokenCi[i])};--underline-color:{getUnderlineColor(
                 tokenComponentActs[i],
             )}"
-            data-tooltip={getTooltipText(tokenCi[i], tokenComponentActs[i])}>{tok}</span
+            data-tooltip={getTooltipText(tokenCi[i], tokenComponentActs[i], getProbAtPosition(i))}>{tok}</span
         >{/each}</span
 >
 

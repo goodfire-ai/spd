@@ -1,6 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import * as api from "../lib/api";
+    import ProbColoredTokens from "./ProbColoredTokens.svelte";
     import {
         extractComponentKeys,
         filterInterventableNodes,
@@ -148,17 +149,29 @@
         tabView = { view: "draft", draft: { ...tabView.draft, ...partial } };
     }
 
-    async function addPromptCard(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
+    async function addPromptCard(
+        promptId: number,
+        tokens: string[],
+        tokenIds: number[],
+        nextTokenProbs: (number | null)[],
+        isCustom: boolean,
+    ) {
         tabView = { view: "loading" };
         try {
-            await addPromptCardInner(promptId, tokens, tokenIds, isCustom);
+            await addPromptCardInner(promptId, tokens, tokenIds, nextTokenProbs, isCustom);
             tabView = { view: "card", cardId: promptId };
         } catch (error) {
             tabView = { view: "error", error: String(error) };
         }
     }
 
-    async function addPromptCardInner(promptId: number, tokens: string[], tokenIds: number[], isCustom: boolean) {
+    async function addPromptCardInner(
+        promptId: number,
+        tokens: string[],
+        tokenIds: number[],
+        nextTokenProbs: (number | null)[],
+        isCustom: boolean,
+    ) {
         // Fetch stored graphs for this prompt
         const storedGraphs = await api.getGraphs(
             promptId,
@@ -194,6 +207,7 @@
             id: promptId,
             tokens,
             tokenIds,
+            nextTokenProbs,
             isCustom,
             graphs,
             activeGraphId: graphs.length > 0 ? graphs[0].id : null,
@@ -211,7 +225,7 @@
             tabView = { view: "card", cardId: prompt.id };
             return;
         }
-        addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, false);
+        addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, prompt.next_token_probs, false);
     }
 
     // Create a new prompt from draft text and add as card
@@ -229,7 +243,7 @@
                 tabView = { view: "card", cardId: prompt.id };
                 return;
             }
-            await addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, true);
+            await addPromptCard(prompt.id, prompt.tokens, prompt.token_ids, prompt.next_token_probs, true);
             // addPromptCard sets tabView to card on success
         } catch (error) {
             // If addPromptCard failed, we're already in error state
@@ -252,16 +266,26 @@
         // Debounced tokenization for preview
         if (tokenizeDebounceTimer) clearTimeout(tokenizeDebounceTimer);
         if (!text.trim()) {
-            updateDraft({ tokenPreview: { tokens: [], loading: false } });
+            updateDraft({ tokenPreview: { status: "uninitialized" } });
             return;
         }
-        updateDraft({ tokenPreview: { ...tabView.draft.tokenPreview, loading: true } });
+        updateDraft({ tokenPreview: { status: "loading" } });
         tokenizeDebounceTimer = setTimeout(async () => {
             try {
                 const result = await api.tokenizeText(text);
-                updateDraft({ tokenPreview: { tokens: result.tokens, loading: false } });
-            } catch {
-                updateDraft({ tokenPreview: { tokens: [], loading: false } });
+                updateDraft({
+                    tokenPreview: {
+                        status: "loaded",
+                        data: { tokens: result.tokens, next_token_probs: result.next_token_probs },
+                    },
+                });
+            } catch (e) {
+                updateDraft({
+                    tokenPreview: {
+                        status: "error",
+                        error: e instanceof Error ? e.message : String(e),
+                    },
+                });
             }
         }, 150);
     }
@@ -784,13 +808,15 @@
                                     onkeydown={handleDraftKeydown}
                                     rows={2}
                                 ></textarea>
-                                {#if draft.tokenPreview.loading}
+                                {#if draft.tokenPreview.status === "loading"}
                                     <div class="token-preview-row loading">Tokenizing...</div>
-                                {:else if draft.tokenPreview.tokens.length > 0}
+                                {:else if draft.tokenPreview.status === "error"}
+                                    <div class="token-preview-row error">{draft.tokenPreview.error}</div>
+                                {:else if draft.tokenPreview.status === "loaded" && draft.tokenPreview.data.tokens.length > 0}
+                                    {@const { tokens, next_token_probs } = draft.tokenPreview.data}
                                     <div class="token-preview-row">
-                                        {#each draft.tokenPreview.tokens as tok, i (i)}<span class="token">{tok}</span
-                                            >{/each}
-                                        <span class="token-count">{draft.tokenPreview.tokens.length} tokens</span>
+                                        <ProbColoredTokens {tokens} nextTokenProbs={next_token_probs} />
+                                        <span class="token-count">{tokens.length} tokens</span>
                                     </div>
                                 {/if}
                                 <button
@@ -820,9 +846,7 @@
                 {:else if activeCard}
                     <!-- Level 1: Tokens -->
                     <div class="prompt-tokens">
-                        {#each activeCard.tokens as tok, i (i)}
-                            <span class="token" class:custom={activeCard.isCustom}>{tok}</span>
-                        {/each}
+                        <ProbColoredTokens tokens={activeCard.tokens} nextTokenProbs={activeCard.nextTokenProbs} />
                     </div>
 
                     <!-- Level 2: Graph tabs -->
@@ -885,6 +909,7 @@
                                     {#key activeGraph.id}
                                         <PromptAttributionsGraph
                                             data={activeGraph.data}
+                                            tokenIds={activeCard.tokenIds}
                                             topK={activeGraph.viewSettings.topK}
                                             componentGap={activeGraph.viewSettings.componentGap}
                                             layerGap={activeGraph.viewSettings.layerGap}
@@ -1055,22 +1080,6 @@
         flex-wrap: wrap;
         gap: 1px;
         align-items: center;
-    }
-
-    .prompt-tokens .token {
-        padding: 2px 3px;
-        background: var(--bg-elevated);
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-        color: var(--text-primary);
-        white-space: pre;
-        border: 1px solid var(--border-subtle);
-    }
-
-    .prompt-tokens .token.custom {
-        background: var(--bg-inset);
-        border-color: var(--status-info);
-        color: var(--status-info-bright);
     }
 
     .graph-info {
@@ -1281,14 +1290,10 @@
         color: var(--text-muted);
     }
 
-    .token-preview-row .token {
-        padding: 2px 3px;
-        background: var(--bg-inset);
+    .token-preview-row.error {
         font-family: var(--font-mono);
         font-size: var(--text-sm);
-        color: var(--status-info-bright);
-        white-space: pre;
-        border: 1px solid var(--status-info);
+        color: var(--status-negative);
     }
 
     .token-preview-row .token-count {

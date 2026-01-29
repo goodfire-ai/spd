@@ -11,7 +11,7 @@
     } from "../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
     import { getAliasedRowLabel } from "../lib/layerAliasing";
-    import { colors, getEdgeColor, getSubcompActColor, rgbToCss } from "../lib/colors";
+    import { colors, getEdgeColor, getSubcompActColor, rgbToCss, getNextTokenProbBgColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
         lerp,
@@ -45,6 +45,7 @@
 
     type Props = {
         data: GraphData;
+        tokenIds: number[];
         topK: number;
         componentGap: number;
         layerGap: number;
@@ -57,6 +58,7 @@
 
     let {
         data,
+        tokenIds,
         topK,
         componentGap,
         layerGap,
@@ -66,6 +68,25 @@
         onStagedNodesChange,
         onEdgeCountChange,
     }: Props = $props();
+
+    // Compute masked prediction probability of self given previous position.
+    // For token at position i, we look up outputProbs[(i-1):tokenIds[i]] - how well
+    // position i-1 predicted this token. First token has no previous, so null.
+    // NOTE: outputProbs only includes tokens with >=1% probability (backend threshold).
+    // If the correct token isn't found, it means the masked model gave it <1% probability.
+    const maskedSelfProbs = $derived.by(() => {
+        const probs: (number | null)[] = [];
+        for (let i = 0; i < data.tokens.length; i++) {
+            if (i === 0) {
+                probs.push(null); // First token has no previous position
+            } else {
+                const thisTokenId = tokenIds[i];
+                const entry = data.outputProbs[`${i - 1}:${thisTokenId}`];
+                probs.push(entry?.prob ?? null);
+            }
+        }
+        return probs;
+    });
 
     // UI state
     let hoveredNode = $state<HoveredNode | null>(null);
@@ -356,9 +377,20 @@
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
     // Check if a node key matches the currently hovered component (same layer:cIdx, any seqIdx)
+    // For wte nodes: match by token value (highlight same tokens across positions)
+    // For other nodes: match by layer:cIdx (highlight same component across positions)
     function nodeMatchesHoveredComponent(nodeKey: string): boolean {
-        if (!hoveredComponentKey) return false;
-        const [layer, , cIdx] = nodeKey.split(":");
+        if (!hoveredNode) return false;
+        const [layer, seqIdxStr, cIdx] = nodeKey.split(":");
+        const seqIdx = parseInt(seqIdxStr);
+
+        // For wte nodes, match by token value
+        if (hoveredNode.layer === "wte") {
+            if (layer !== "wte") return false;
+            return data.tokens[seqIdx] === data.tokens[hoveredNode.seqIdx];
+        }
+
+        // For other nodes, match by component key (layer:cIdx)
         return `${layer}:${cIdx}` === hoveredComponentKey;
     }
 
@@ -723,6 +755,7 @@
                 <g transform="translate({zoom.translateX}, 0) scale({zoom.scale}, 1)">
                     {#each data.tokens as token, i (i)}
                         {@const colLeft = seqXStarts[i] + 8}
+                        {@const maskedProb = maskedSelfProbs[i]}
                         <text
                             x={colLeft}
                             y="20"
@@ -743,6 +776,18 @@
                             font-family="'Berkeley Mono', 'SF Mono', monospace"
                             fill={colors.textMuted}>[{i}]</text
                         >
+                        <!-- Masked prediction probability dot: P(self | previous) -->
+                        {@const isFirstToken = i === 0}
+                        <circle
+                            cx={colLeft + 24}
+                            cy="33"
+                            r="4"
+                            fill={getNextTokenProbBgColor(maskedProb)}
+                            stroke={colors.textMuted}
+                            stroke-width="0.5"
+                        >
+                            <title>{maskedProb !== null ? `P(self): ${(maskedProb * 100).toFixed(1)}%` : isFirstToken ? "First token" : "P(self): <1%"}</title>
+                        </circle>
                     {/each}
                 </g>
             </svg>

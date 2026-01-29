@@ -94,3 +94,17 @@ export function rgbToCss(rgb: { r: number; g: number; b: number }): string {
 export function rgbaToCss(rgb: { r: number; g: number; b: number }, opacity: number): string {
     return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
 }
+
+/**
+ * Get background color for next-token probability visualization.
+ * High probability = green (expected), low probability = white.
+ */
+export function getNextTokenProbBgColor(prob: number | null): string {
+    if (prob === null) return "white";
+    const { r: gR, g: gG, b: gB } = colors.outputBase; // green
+    // Interpolate from white (255,255,255) to green based on probability
+    const r = Math.round(255 + (gR - 255) * prob);
+    const g = Math.round(255 + (gG - 255) * prob);
+    const b = Math.round(255 + (gB - 255) * prob);
+    return `rgb(${r}, ${g}, ${b})`;
+}

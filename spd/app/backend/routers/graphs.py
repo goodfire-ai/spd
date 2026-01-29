@@ -134,6 +134,7 @@ class TokenizeResponse(BaseModel):
     token_ids: list[int]
     tokens: list[str]
     text: str
+    next_token_probs: list[float | None]  # Probability of next token (last token is None)
 
 
 class TokenInfo(BaseModel):
@@ -284,13 +285,37 @@ def stream_computation(
 @router.post("/tokenize")
 @log_errors
 def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
-    """Tokenize text and return tokens for preview (special tokens filtered)."""
+    """Tokenize text and return tokens with probability of next token."""
+    device = get_device()
     token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
+
+    if len(token_ids) == 0:
+        return TokenizeResponse(
+            text=text,
+            token_ids=[],
+            tokens=[],
+            next_token_probs=[],
+        )
+
+    tokens_tensor = torch.tensor([token_ids], device=device)
+
+    with torch.no_grad():
+        logits = loaded.model(tokens_tensor)
+        probs = torch.softmax(logits, dim=-1)
+
+    # Get probability of next token at each position
+    next_token_probs: list[float | None] = []
+    for i in range(len(token_ids) - 1):
+        next_token_id = token_ids[i + 1]
+        prob = probs[0, i, next_token_id].item()
+        next_token_probs.append(prob)
+    next_token_probs.append(None)  # No next token for last position
 
     return TokenizeResponse(
         text=text,
         token_ids=token_ids,
         tokens=[loaded.token_strings[t] for t in token_ids],
+        next_token_probs=next_token_probs,
     )
 
 

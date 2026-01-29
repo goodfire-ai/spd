@@ -9,6 +9,7 @@ export type PromptPreview = {
     token_ids: number[];
     tokens: string[];
     preview: string;
+    next_token_probs: (number | null)[]; // Probability of next token (last is null)
 };
 
 export type EdgeData = {
@@ -155,6 +156,7 @@ export type TokenizeResponse = {
     token_ids: number[];
     tokens: string[];
     text: string;
+    next_token_probs: (number | null)[]; // Probability of next token (last is null)
 };
 
 export type TokenInfo = {
@@ -209,6 +211,7 @@ export type SubcomponentProbeResult = {
     tokens: string[];
     ci_values: number[];
     subcomp_acts: number[];
+    next_token_probs: (number | null)[]; // Probability of next token (last is null)
 };
 
 /** Get display name for a layer (e.g., "h.0.mlp.c_fc" -> "L0.mlp.in") */

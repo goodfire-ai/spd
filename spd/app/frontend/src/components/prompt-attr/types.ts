@@ -1,3 +1,4 @@
+import type { Loadable } from "../../lib";
 import type { GraphData } from "../../lib/promptAttributionsTypes";
 import type { InterventionRunSummary } from "../../lib/interventionTypes";
 import type { NormalizeType } from "../../lib/api";
@@ -32,6 +33,7 @@ export type PromptCard = {
     id: number; // database prompt ID
     tokens: string[];
     tokenIds: number[];
+    nextTokenProbs: (number | null)[]; // probability of each token given previous
     isCustom: boolean;
     graphs: StoredGraph[];
     activeGraphId: number | null; // null means "new graph" mode when graphs exist, or initial state
@@ -119,17 +121,23 @@ export type LoadingState = {
 /** Generic state for async actions without a meaningful result */
 export type ActionState = { status: "idle" } | { status: "loading" } | { status: "error"; error: string };
 
+/** Result from tokenize endpoint */
+export type TokenizeResult = {
+    tokens: string[];
+    next_token_probs: (number | null)[];
+};
+
 /** State for the draft prompt input */
 export type DraftState = {
     text: string;
-    tokenPreview: { tokens: string[]; loading: boolean };
+    tokenPreview: Loadable<TokenizeResult>;
     isAdding: boolean;
 };
 
 export function defaultDraftState(): DraftState {
     return {
         text: "",
-        tokenPreview: { tokens: [], loading: false },
+        tokenPreview: { status: "uninitialized" },
         isAdding: false,
     };
 }

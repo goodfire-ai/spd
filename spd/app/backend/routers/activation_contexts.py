@@ -35,6 +35,7 @@ class ComponentProbeResponse(BaseModel):
     tokens: list[str]
     ci_values: list[float]
     subcomp_acts: list[float]
+    next_token_probs: list[float | None]  # Probability of next token (last is None)
 
 
 router = APIRouter(prefix="/api/activation_contexts", tags=["activation_contexts"])
@@ -195,6 +196,18 @@ def probe_component(
     subcomp_acts_tensor = result.component_acts[request.layer]
     subcomp_acts = subcomp_acts_tensor[0, :, request.component_idx].tolist()
 
+    # Get probability of next token at each position
+    probs = result.target_out_probs[0]  # [seq, vocab]
+    next_token_probs: list[float | None] = []
+    for i in range(len(token_ids) - 1):
+        next_token_id = token_ids[i + 1]
+        prob = probs[i, next_token_id].item()
+        next_token_probs.append(prob)
+    next_token_probs.append(None)  # No next token for last position
+
     return ComponentProbeResponse(
-        tokens=token_strings, ci_values=ci_values, subcomp_acts=subcomp_acts
+        tokens=token_strings,
+        ci_values=ci_values,
+        subcomp_acts=subcomp_acts,
+        next_token_probs=next_token_probs,
     )

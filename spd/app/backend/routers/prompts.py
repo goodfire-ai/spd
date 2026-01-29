@@ -1,5 +1,6 @@
 """Prompt listing endpoints."""
 
+import torch
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -18,9 +19,31 @@ class PromptPreview(BaseModel):
     token_ids: list[int]
     tokens: list[str]
     preview: str
+    next_token_probs: list[float | None]  # Probability of next token (last is None)
 
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
+
+
+def compute_next_token_probs(token_ids: list[int], loaded: DepLoadedRun) -> list[float | None]:
+    """Compute P(next_token | prefix) for each position."""
+    if len(token_ids) == 0:
+        return []
+
+    device = next(loaded.model.parameters()).device
+    tokens_tensor = torch.tensor([token_ids], device=device)
+
+    with torch.no_grad():
+        logits = loaded.model(tokens_tensor)
+        probs = torch.softmax(logits, dim=-1)
+
+    result: list[float | None] = []
+    for i in range(len(token_ids) - 1):
+        next_token_id = token_ids[i + 1]
+        prob = probs[0, i, next_token_id].item()
+        result.append(prob)
+    result.append(None)  # No next token for last position
+    return result
 
 
 @router.get("")
@@ -35,12 +58,14 @@ def list_prompts(manager: DepStateManager, loaded: DepLoadedRun) -> list[PromptP
         prompt = db.get_prompt(pid)
         assert prompt is not None, f"Prompt {pid} in index but not in DB"
         token_strings = [loaded.token_strings[t] for t in prompt.token_ids]
+        next_token_probs = compute_next_token_probs(prompt.token_ids, loaded)
         results.append(
             PromptPreview(
                 id=prompt.id,
                 token_ids=prompt.token_ids,
                 tokens=token_strings,
                 preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
+                next_token_probs=next_token_probs,
             )
         )
     return results
@@ -70,9 +95,11 @@ def create_custom_prompt(
     )
 
     token_strings = [loaded.token_strings[t] for t in token_ids]
+    next_token_probs = compute_next_token_probs(token_ids, loaded)
     return PromptPreview(
         id=prompt_id,
         token_ids=token_ids,
         tokens=token_strings,
         preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
+        next_token_probs=next_token_probs,
     )

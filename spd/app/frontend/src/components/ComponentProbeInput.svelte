@@ -72,6 +72,7 @@
                 tokenStrings={probeResult.tokens}
                 tokenCi={probeResult.ci_values}
                 tokenComponentActs={probeResult.subcomp_acts}
+                tokenNextProbs={probeResult.next_token_probs}
                 {maxAbsComponentAct}
             />
         </div>
