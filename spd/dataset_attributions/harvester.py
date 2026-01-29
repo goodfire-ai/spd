@@ -45,7 +45,7 @@ class AttributionHarvester:
 
     def __init__(
         self,
-        model: ComponentModel,
+        model: ComponentModel[Any, Any],
         sources_by_target: dict[str, list[str]],
         n_components: int,
         vocab_size: int,
@@ -161,7 +161,7 @@ class AttributionHarvester:
 
         # Forward pass with gradients
         with torch.enable_grad():
-            comp_output: OutputWithCache = self.model(
+            comp_output: OutputWithCache[Any] = self.model(
                 tokens, mask_infos=mask_infos, cache_type="component_acts"
             )
 

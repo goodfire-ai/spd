@@ -13,6 +13,7 @@ from spd.experiments.resid_mlp.configs import ResidMLPModelConfig
 from spd.experiments.resid_mlp.models import ResidMLP
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.identity_insertion import insert_identity_operations_
+from spd.models.component_model import make_run_batch_lm, recon_loss_mse
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.general_utils import set_seed
@@ -131,6 +132,8 @@ def test_resid_mlp_decomposition_happy_path(tmp_path: Path) -> None:
         train_loader=train_loader,
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
+        run_batch=make_run_batch_lm(config.pretrained_model_output_attr),
+        reconstruction_loss=recon_loss_mse,
         out_dir=tmp_path,
     )
 

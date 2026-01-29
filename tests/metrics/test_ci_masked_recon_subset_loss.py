@@ -77,7 +77,6 @@ class TestCIMaskedReconSubsetLoss:
             for _ in range(2):
                 actual_loss = ci_masked_recon_subset_loss(
                     model=model,
-                    output_loss_type="mse",
                     batch=batch,
                     target_out=target_out,
                     ci=ci,

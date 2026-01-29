@@ -9,7 +9,7 @@ from spd.models.component_model import ComponentModel
 from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 
 
-class UVPlots(Metric):
+class UVPlots(Metric[Any, Any]):
     metric_section: ClassVar[str] = "figures"
 
     slow: ClassVar[bool] = True
@@ -17,7 +17,7 @@ class UVPlots(Metric):
 
     def __init__(
         self,
-        model: ComponentModel,
+        model: ComponentModel[Any, Any],
         sampling: SamplingType,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,

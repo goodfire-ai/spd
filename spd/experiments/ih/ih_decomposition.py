@@ -7,13 +7,11 @@ import wandb
 from spd.configs import Config, IHTaskConfig
 from spd.experiments.ih.model import InductionModelTargetRunInfo, InductionTransformer
 from spd.log import logger
+from spd.models.component_model import make_run_batch_lm, recon_loss_kl
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import (
-    save_pre_run_info,
-    set_seed,
-)
+from spd.utils.general_utils import save_pre_run_info, set_seed
 from spd.utils.run_utils import ExecutionStamp
 from spd.utils.wandb_utils import init_wandb
 
@@ -100,6 +98,8 @@ def main(
         train_loader=train_loader,
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
+        run_batch=make_run_batch_lm(config.pretrained_model_output_attr),
+        reconstruction_loss=recon_loss_kl,
         out_dir=out_dir,
     )
 

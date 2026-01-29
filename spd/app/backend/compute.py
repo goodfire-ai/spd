@@ -126,7 +126,7 @@ def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
 
 
 def get_sources_by_target(
-    model: ComponentModel,
+    model: ComponentModel[Any, Any],
     device: str,
     sampling: SamplingType,
 ) -> dict[str, list[str]]:
@@ -141,7 +141,7 @@ def get_sources_by_target(
     batch: Float[Tensor, "batch seq"] = torch.zeros(2, 3, dtype=torch.long, device=device)
 
     with torch.no_grad():
-        output_with_cache: OutputWithCache = model(batch, cache_type="input")
+        output_with_cache: OutputWithCache[Any] = model(batch, cache_type="input")
 
     with torch.no_grad():
         ci = model.calc_causal_importances(
@@ -170,7 +170,7 @@ def get_sources_by_target(
     wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
 
     with torch.enable_grad():
-        comp_output_with_cache: OutputWithCache = model(
+        comp_output_with_cache: OutputWithCache[Any] = model(
             batch,
             mask_infos=mask_infos,
             cache_type="component_acts",
@@ -305,7 +305,7 @@ def _compute_edges_for_target(
 
 
 def compute_edges_from_ci(
-    model: ComponentModel,
+    model: ComponentModel[Any, Any],
     tokens: Float[Tensor, "1 seq"],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
     pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
@@ -354,7 +354,7 @@ def compute_edges_from_ci(
         weight_deltas_and_masks=weight_deltas_and_masks,
     )
     with torch.enable_grad():
-        comp_output_with_cache: OutputWithCache = model(
+        comp_output_with_cache: OutputWithCache[Any] = model(
             tokens, mask_infos=unmasked_masks, cache_type="component_acts"
         )
 
@@ -490,7 +490,7 @@ def filter_ci_to_included_nodes(
 
 
 def compute_prompt_attributions(
-    model: ComponentModel,
+    model: ComponentModel[Any, Any],
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     output_prob_threshold: float,
@@ -540,7 +540,7 @@ def compute_prompt_attributions(
 
 
 def compute_prompt_attributions_optimized(
-    model: ComponentModel,
+    model: ComponentModel[Any, Any],
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     optim_config: OptimCIConfig,
@@ -624,7 +624,7 @@ class CIOnlyResult:
 
 
 def compute_ci_only(
-    model: ComponentModel,
+    model: ComponentModel[Any, Any],
     tokens: Float[Tensor, "1 seq"],
     sampling: SamplingType,
 ) -> CIOnlyResult:
@@ -642,7 +642,7 @@ def compute_ci_only(
         CIOnlyResult containing CI values per layer, target model output probabilities, pre-weight activations, and component activations.
     """
     with torch.no_grad():
-        output_with_cache: OutputWithCache = model(tokens, cache_type="input")
+        output_with_cache: OutputWithCache[Any] = model(tokens, cache_type="input")
         ci = model.calc_causal_importances(
             pre_weight_acts=output_with_cache.cache,
             sampling=sampling,
@@ -788,7 +788,7 @@ class InterventionResult:
 
 
 def compute_intervention_forward(
-    model: ComponentModel,
+    model: ComponentModel[Any, Any],
     tokens: Float[Tensor, "1 seq"],
     active_nodes: list[tuple[str, int, int]],  # [(layer, seq_pos, component_idx)]
     top_k: int,

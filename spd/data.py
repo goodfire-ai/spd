@@ -1,8 +1,10 @@
+from collections.abc import Generator
 from typing import Any
 
 import numpy as np
 import torch
 from datasets import Dataset, IterableDataset, load_dataset
+from jaxtyping import Int
 from numpy.typing import NDArray
 from torch import Tensor
 from torch.utils.data import DataLoader, DistributedSampler
@@ -151,7 +153,7 @@ def create_data_loader(
     dist_state: DistributedState | None = None,
     global_seed: int = 0,
     to_lower: bool = True,
-) -> tuple[DataLoader[Any], PreTrainedTokenizer]:
+) -> tuple[DataLoader[Int[Tensor, "batch seq"]], PreTrainedTokenizer]:
     """Create a DataLoader for the given dataset.
 
     Uses PyTorch's DistributedSampler to ensure each rank gets the correct
@@ -252,7 +254,7 @@ def create_data_loader(
     generator = torch.Generator(device="cpu")
     generator.manual_seed(seed)
 
-    loader = DataLoader[Dataset | IterableDataset](
+    loader = DataLoader[Int[Tensor, "batch seq"]](
         torch_dataset,  # pyright: ignore[reportArgumentType]
         batch_size=batch_size,
         sampler=sampler,
@@ -265,7 +267,7 @@ def create_data_loader(
     return loader, tokenizer
 
 
-def loop_dataloader[T](dl: DataLoader[T]):
+def loop_dataloader[T](dl: DataLoader[T]) -> Generator[T]:
     """Loop over a dataloader, resetting the iterator when it is exhausted.
 
     Ensures that each epoch gets different data, even when using a distributed sampler.

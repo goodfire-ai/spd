@@ -4,16 +4,14 @@ import gc
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-import torch.optim as optim
 import wandb
-from jaxtyping import Float, Int
 from PIL import Image
-from torch import Tensor
+from torch import optim
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -32,8 +30,7 @@ from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
-from spd.metrics.alive_components import AliveComponentsTracker
-from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.models.component_model import ComponentModel, OutputWithCache, ReconstructionLoss, RunBatch
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -41,11 +38,7 @@ from spd.utils.distributed_utils import (
     is_main_process,
     sync_across_processes,
 )
-from spd.utils.general_utils import (
-    dict_safe_update_,
-    extract_batch_data,
-    get_scheduled_value,
-)
+from spd.utils.general_utils import dict_safe_update_, get_scheduled_value
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import expand_module_patterns, replace_std_values_in_layernorm
 from spd.utils.run_utils import save_file
@@ -53,7 +46,7 @@ from spd.utils.wandb_utils import try_wandb
 
 
 def run_faithfulness_warmup(
-    component_model: ComponentModel,
+    component_model: ComponentModel[Any, Any],
     component_params: list[torch.nn.Parameter],
     config: Config,
 ) -> None:
@@ -111,15 +104,15 @@ def get_unique_metric_configs(
     return eval_metric_configs
 
 
-def optimize(
+def optimize[BatchT, OutputT](
     target_model: nn.Module,
     config: Config,
     device: str,
-    train_loader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    eval_loader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    train_loader: DataLoader[BatchT],
+    eval_loader: DataLoader[BatchT],
     n_eval_steps: int,
+    run_batch: RunBatch[BatchT, OutputT],
+    reconstruction_loss: ReconstructionLoss[OutputT],
     out_dir: Path | None,
     tied_weights: list[tuple[str, str]] | None = None,
     ln_stds: dict[str, float] | None = None,
@@ -129,9 +122,7 @@ def optimize(
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
 
-    def create_pgd_data_iter() -> (
-        Iterator[Int[Tensor, "..."]] | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
-    ):
+    def create_pgd_data_iter() -> Iterator[BatchT]:
         assert hasattr(train_loader, "generator") and train_loader.generator is not None
         train_loader.generator.manual_seed(config.seed)
         return iter(train_loader)
@@ -154,8 +145,9 @@ def optimize(
         module_path_info=module_path_info,
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-        pretrained_model_output_attr=config.pretrained_model_output_attr,
         sigmoid_type=config.sigmoid_type,
+        run_batch=run_batch,
+        reconstruction_loss=reconstruction_loss,
     )
 
     if ln_stds is not None:
@@ -166,6 +158,8 @@ def optimize(
     # Wrap model with DDP if distributed
     dist_state = get_distributed_state()
     wrapped_model: nn.Module = model
+
+    component_model: ComponentModel[BatchT, OutputT]
     if dist_state is not None:
         if dist_state.backend == "nccl":
             device_id = dist_state.local_rank
@@ -222,22 +216,6 @@ def optimize(
     eval_metric_configs = [
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
-    batch_dims: tuple[int, ...] | None = None
-
-    # Track which components are alive based on firing frequency
-    sample_batch = extract_batch_data(next(train_iterator))
-    batch_dims = (
-        sample_batch.shape[:-1]
-        if config.output_loss_type == "mse"  # if mse then input is a vector
-        else sample_batch.shape  # else it's a batch of token ids
-    )
-    alive_tracker = AliveComponentsTracker(
-        module_to_c=model.module_to_c,
-        device=device,
-        n_examples_until_dead=config.n_examples_until_dead,
-        ci_alive_threshold=config.ci_alive_threshold,
-        global_n_examples_per_batch=batch_dims.numel(),
-    )
 
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
@@ -253,20 +231,20 @@ def optimize(
         microbatch_log_data: defaultdict[str, float] = defaultdict(float)
 
         for _ in range(config.gradient_accumulation_steps):
-            microbatch = extract_batch_data(next(train_iterator)).to(device)
+            microbatch = next(train_iterator)
 
             # NOTE: we need to call the wrapped_model at least once each step in order to setup
             # the DDP gradient syncing for all parameters in the component model. Gradients will
             # sync regardless of whether the parameters are used in this call to wrapped_model.
-            target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
+            target_model_output: OutputWithCache[OutputT] = wrapped_model(
+                microbatch, cache_type="input"
+            )
 
             ci = component_model.calc_causal_importances(
                 pre_weight_acts=target_model_output.cache,
                 detach_inputs=False,
                 sampling=config.sampling,
             )
-
-            alive_tracker.update(ci=ci.lower_leaky)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
                 loss_metric_configs=config.loss_metric_configs,
@@ -280,7 +258,6 @@ def optimize(
                 sampling=config.sampling,
                 use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
-                output_loss_type=config.output_loss_type,
             )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
@@ -299,13 +276,6 @@ def optimize(
         if step % config.train_log_freq == 0:
             avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
             microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
-
-            alive_counts = alive_tracker.compute()
-            for target_module_path, n_alive_count in alive_counts.items():
-                n_alive_key = (
-                    f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
-                )
-                microbatch_log_data[n_alive_key] = n_alive_count
 
             grad_norms = get_grad_norms_dict(component_model, device)
             dict_safe_update_(
@@ -333,13 +303,11 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                assert batch_dims is not None, "batch_dims is not set"
                 multibatch_pgd_metrics = evaluate_multibatch_pgd(
                     multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
                     model=component_model,
                     create_data_iter=create_pgd_data_iter,
                     config=config,
-                    batch_dims=batch_dims,
                     device=device,
                 )
 

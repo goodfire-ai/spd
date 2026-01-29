@@ -43,7 +43,7 @@ class TestCIMaskedReconLayerwiseLoss:
 
         # Calculate actual loss
         actual_loss = ci_masked_recon_layerwise_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+            model=model, batch=batch, target_out=target_out, ci=ci
         )
 
         assert torch.allclose(actual_loss, expected_loss, rtol=1e-5), (
@@ -59,11 +59,9 @@ class TestCIMaskedReconLayerwiseLoss:
         target_out = torch.randn(1, 2, dtype=torch.float32)
         ci = {"fc": torch.tensor([[1.0]], dtype=torch.float32)}
 
-        loss_all = ci_masked_recon_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
-        )
+        loss_all = ci_masked_recon_loss(model=model, batch=batch, target_out=target_out, ci=ci)
         loss_layerwise = ci_masked_recon_layerwise_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+            model=model, batch=batch, target_out=target_out, ci=ci
         )
 
         # For single layer, results should be the same

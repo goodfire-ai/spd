@@ -13,6 +13,7 @@ import wandb
 from spd.configs import Config, TMSTaskConfig
 from spd.experiments.tms.models import TMSModel, TMSTargetRunInfo
 from spd.log import logger
+from spd.models.component_model import pass_first_tuple_element_to_model, recon_loss_mse
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.distributed_utils import get_device
@@ -105,6 +106,8 @@ def main(
         train_loader=train_loader,
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
+        run_batch=pass_first_tuple_element_to_model,
+        reconstruction_loss=recon_loss_mse,
         out_dir=out_dir,
         tied_weights=tied_weights,
     )

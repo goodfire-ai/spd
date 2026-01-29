@@ -16,6 +16,7 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 import torch
 import tqdm
@@ -34,10 +35,9 @@ from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data
 
 
-def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
+def _compute_u_norms(model: ComponentModel[Any, Any]) -> dict[str, Float[Tensor, " C"]]:
     """Compute ||U[c,:]|| for each component c in each layer.
 
     Component activations (v_i^T @ a) have a scale invariance: scaling V by α and U by 1/α
@@ -231,7 +231,7 @@ def harvest_activation_contexts(
     batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
     for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
         try:
-            batch_data = extract_batch_data(next(train_iter))
+            batch = next(train_iter)
         except StopIteration:
             logger.info(f"Dataset exhausted at batch {batch_idx}. Processing complete.")
             break
@@ -240,7 +240,6 @@ def harvest_activation_contexts(
         if world_size is not None and batch_idx % world_size != rank:
             continue
 
-        batch = batch_data.to(device)
         with torch.no_grad():
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)

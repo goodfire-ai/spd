@@ -92,7 +92,6 @@ class TestStochasticReconSubsetLoss:
                 model=model,
                 sampling="continuous",
                 n_mask_samples=2,
-                output_loss_type="mse",
                 batch=batch,
                 target_out=target_out,
                 ci=ci,

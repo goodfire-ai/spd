@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -9,21 +9,17 @@ from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
-def _ci_masked_recon_loss_update(
-    model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+def _ci_masked_recon_loss_update[BatchT, OutputT](
+    model: ComponentModel[BatchT, OutputT],
+    batch: BatchT,
+    target_out: OutputT,
     ci: dict[str, Float[Tensor, "... C"]],
 ) -> tuple[Float[Tensor, ""], int]:
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
     out = model(batch, mask_infos=mask_infos)
-    loss_type = output_loss_type
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-    return loss, out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+    return model.reconstruction_loss(out, target_out)
 
 
 def _ci_masked_recon_loss_compute(
@@ -32,16 +28,14 @@ def _ci_masked_recon_loss_compute(
     return sum_loss / n_examples
 
 
-def ci_masked_recon_loss(
-    model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+def ci_masked_recon_loss[BatchT, OutputT](
+    model: ComponentModel[BatchT, OutputT],
+    batch: BatchT,
+    target_out: OutputT,
     ci: dict[str, Float[Tensor, "... C"]],
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_loss_update(
         model=model,
-        output_loss_type=output_loss_type,
         batch=batch,
         target_out=target_out,
         ci=ci,
@@ -49,16 +43,17 @@ def ci_masked_recon_loss(
     return _ci_masked_recon_loss_compute(sum_loss, n_examples)
 
 
-class CIMaskedReconLoss(Metric):
+class CIMaskedReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
     """Recon loss when masking with CI values directly on all component layers."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
-        self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl"]
+        self,
+        model: ComponentModel[BatchT, OutputT],
+        device: str,
     ) -> None:
         self.model = model
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -66,14 +61,13 @@ class CIMaskedReconLoss(Metric):
     def update(
         self,
         *,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
+        batch: BatchT,
+        target_out: OutputT,
         ci: CIOutputs,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_loss_update(
             model=self.model,
-            output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,
             ci=ci.lower_leaky,

@@ -16,7 +16,6 @@ from spd.configs import LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data
 
 # =============================================================================
 # Schemas
@@ -120,7 +119,7 @@ def generate_prompts(
             if added_count >= n_prompts:
                 break
 
-            tokens = extract_batch_data(batch).to(DEVICE)
+            tokens = batch["input_ids"].to(DEVICE)
             batch_size, n_seq = tokens.shape
 
             # Compute CI for the whole batch

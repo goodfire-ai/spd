@@ -20,6 +20,8 @@ from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import (
     ComponentModel,
     SPDRunInfo,
+    pass_batch_directly_to_model,
+    recon_loss_mse,
 )
 from spd.models.components import (
     ComponentsMaskInfo,
@@ -91,8 +93,9 @@ def test_correct_parameters_require_grad():
         ],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=pass_batch_directly_to_model,
+        reconstruction_loss=recon_loss_mse,
     )
 
     for module_path, components in component_model.components.items():
@@ -175,8 +178,9 @@ def test_from_run_info():
             module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
             sigmoid_type=config.sigmoid_type,
+            run_batch=pass_batch_directly_to_model,
+            reconstruction_loss=recon_loss_mse,
         )
 
         save_file(cm.state_dict(), comp_model_dir / "model.pth")
@@ -282,8 +286,9 @@ def test_full_weight_delta_matches_target_behaviour():
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=pass_batch_directly_to_model,
+        reconstruction_loss=recon_loss_mse,
     )
 
     token_ids = torch.randint(
@@ -314,8 +319,9 @@ def test_input_cache_captures_pre_weight_input():
         module_path_info=[ModulePathInfo(module_path=p, C=2) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=pass_batch_directly_to_model,
+        reconstruction_loss=recon_loss_mse,
     )
 
     # WHEN we forward the component model with input caching
@@ -349,8 +355,9 @@ def test_weight_deltas():
         module_path_info=[ModulePathInfo(module_path=p, C=3) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=pass_batch_directly_to_model,
+        reconstruction_loss=recon_loss_mse,
     )
 
     # THEN the weight deltas match the target weight
@@ -384,8 +391,9 @@ def test_replacement_effects_fwd_pass():
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=pass_batch_directly_to_model,
+        reconstruction_loss=recon_loss_mse,
     )
 
     # WHEN we set the target model weights to be UV
@@ -440,8 +448,9 @@ def test_replacing_identity():
         module_path_info=[ModulePathInfo(module_path="linear.pre_identity", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=pass_batch_directly_to_model,
+        reconstruction_loss=recon_loss_mse,
     )
 
     # and a random input
@@ -490,8 +499,9 @@ def test_routing():
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=pass_batch_directly_to_model,
+        reconstruction_loss=recon_loss_mse,
     )
 
     # and a random input

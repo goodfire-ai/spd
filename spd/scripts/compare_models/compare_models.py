@@ -25,7 +25,7 @@ from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data, get_obj_device
+from spd.utils.general_utils import get_obj_device
 from spd.utils.run_utils import save_file
 
 
@@ -79,7 +79,7 @@ class ModelComparator:
             config.reference_model_path
         )
 
-    def _load_model_and_config(self, model_path: str) -> tuple[ComponentModel, Config]:
+    def _load_model_and_config(self, model_path: str) -> tuple[ComponentModel[Any, Any], Config]:
         """Load model and config using the standard pattern from existing codebase."""
         run_info = SPDRunInfo.from_path(model_path)
         model = ComponentModel.from_run_info(run_info)
@@ -233,7 +233,7 @@ class ModelComparator:
         )
 
     def compute_activation_densities(
-        self, model: ComponentModel, eval_iterator: Iterator[Any], n_steps: int
+        self, model: ComponentModel[Any, Any], eval_iterator: Iterator[Any], n_steps: int
     ) -> dict[str, Float[Tensor, " C"]]:
         """Compute activation densities using same logic as ComponentActivationDensity."""
 
@@ -250,8 +250,7 @@ class ModelComparator:
         model.eval()
         with torch.no_grad():
             for _step in range(n_steps):
-                batch = extract_batch_data(next(eval_iterator))
-                batch = batch.to(self.device)
+                batch = next(eval_iterator)["input_ids"].to(self.device)
                 pre_weight_acts = model(batch, cache_type="input").cache
 
                 ci = model.calc_causal_importances(

@@ -1,14 +1,18 @@
 """Shared test fixtures for loss function tests."""
 
-from typing import override
+from typing import Any, override
 
 import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, recon_loss_mse
 from spd.utils.module_utils import ModulePathInfo
+
+
+def _test_run_batch(target_model: nn.Module, batch: Tensor) -> Tensor:
+    return target_model(batch)
 
 
 class OneLayerLinearModel(nn.Module):
@@ -38,7 +42,7 @@ class TwoLayerLinearModel(nn.Module):
         return x
 
 
-def make_one_layer_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel:
+def make_one_layer_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel[Any, Any]:
     """Create a ComponentModel with a single linear layer for testing.
 
     Args:
@@ -58,8 +62,9 @@ def make_one_layer_component_model(weight: Float[Tensor, "d_out d_in"]) -> Compo
         module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=_test_run_batch,
+        reconstruction_loss=recon_loss_mse,
     )
 
     return comp_model
@@ -67,7 +72,7 @@ def make_one_layer_component_model(weight: Float[Tensor, "d_out d_in"]) -> Compo
 
 def make_two_layer_component_model(
     weight1: Float[Tensor, " d_hidden d_in"], weight2: Float[Tensor, " d_out d_hidden"]
-) -> ComponentModel:
+) -> ComponentModel[Any, Any]:
     """Create a ComponentModel with two linear layers for testing.
 
     Args:
@@ -95,8 +100,9 @@ def make_two_layer_component_model(
         ],
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
+        run_batch=_test_run_batch,
+        reconstruction_loss=recon_loss_mse,
     )
 
     return comp_model

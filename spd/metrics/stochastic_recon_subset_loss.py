@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -11,16 +11,15 @@ from spd.models.component_model import CIOutputs, ComponentModel
 from spd.routing import Router, get_subset_router
 from spd.utils.component_utils import calc_stochastic_component_mask_info
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
+from spd.utils.general_utils import get_obj_device
 
 
-def _stochastic_recon_subset_loss_update(
-    model: ComponentModel,
+def _stochastic_recon_subset_loss_update[BatchT, OutputT](
+    model: ComponentModel[BatchT, OutputT],
     sampling: SamplingType,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+    batch: BatchT,
+    target_out: OutputT,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     router: Router,
@@ -42,11 +41,9 @@ def _stochastic_recon_subset_loss_update(
 
     for stoch_mask_infos in stoch_mask_infos_list:
         out = model(batch, mask_infos=stoch_mask_infos)
-        loss_type = output_loss_type
-        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-        n_examples += out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+        loss, batch_n_examples = model.reconstruction_loss(out, target_out)
         sum_loss += loss
-
+        n_examples += batch_n_examples
     return sum_loss, n_examples
 
 
@@ -56,13 +53,12 @@ def _stochastic_recon_subset_loss_compute(
     return sum_loss / n_examples
 
 
-def stochastic_recon_subset_loss(
-    model: ComponentModel,
+def stochastic_recon_subset_loss[BatchT, OutputT](
+    model: ComponentModel[BatchT, OutputT],
     sampling: SamplingType,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+    batch: BatchT,
+    target_out: OutputT,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing: SubsetRoutingType,
@@ -71,36 +67,33 @@ def stochastic_recon_subset_loss(
         model=model,
         sampling=sampling,
         n_mask_samples=n_mask_samples,
-        output_loss_type=output_loss_type,
         batch=batch,
         target_out=target_out,
         ci=ci,
         weight_deltas=weight_deltas,
-        router=get_subset_router(routing, batch.device),
+        router=get_subset_router(routing, device=get_obj_device(model)),
     )
     return _stochastic_recon_subset_loss_compute(sum_loss, n_examples)
 
 
-class StochasticReconSubsetLoss(Metric):
+class StochasticReconSubsetLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
     """Recon loss when sampling with stochastic masks and routing to subsets of component layers."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel,
+        model: ComponentModel[BatchT, OutputT],
         device: str,
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
-        output_loss_type: Literal["mse", "kl"],
         routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
         self.router = get_subset_router(routing, device)
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
@@ -109,8 +102,8 @@ class StochasticReconSubsetLoss(Metric):
     def update(
         self,
         *,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
+        batch: BatchT,
+        target_out: OutputT,
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
@@ -119,7 +112,6 @@ class StochasticReconSubsetLoss(Metric):
             model=self.model,
             sampling=self.sampling,
             n_mask_samples=self.n_mask_samples,
-            output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,
             ci=ci.lower_leaky,

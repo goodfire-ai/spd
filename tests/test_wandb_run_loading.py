@@ -5,6 +5,8 @@ If you're willing to make breaking changes, see spd/scripts/run.py for creating 
 the canonical configs, and update the registry with your new run(s).
 """
 
+from typing import Any
+
 import pytest
 
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -12,12 +14,12 @@ from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
-def from_run_info(canonical_run: str) -> ComponentModel:
+def from_run_info(canonical_run: str) -> ComponentModel[Any, Any]:
     run_info = SPDRunInfo.from_path(canonical_run)
     return ComponentModel.from_run_info(run_info)
 
 
-def from_pretrained(canonical_run: str) -> ComponentModel:
+def from_pretrained(canonical_run: str) -> ComponentModel[Any, Any]:
     return ComponentModel.from_pretrained(canonical_run)
 
 

@@ -22,7 +22,7 @@ from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
 from spd.configs import Config, LMTaskConfig, ModulePatternInfoConfig, ScheduleConfig
-from spd.models.component_model import ComponentModel
+from spd.models.component_model import ComponentModel, make_run_batch_lm, recon_loss_kl
 from spd.utils.module_utils import expand_module_patterns
 
 DEVICE = "cpu"
@@ -117,8 +117,9 @@ def app_with_state():
             module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
             sigmoid_type=config.sigmoid_type,
+            run_batch=make_run_batch_lm(config.pretrained_model_output_attr),
+            reconstruction_loss=recon_loss_kl,
         )
         model.eval()
         sources_by_target = get_sources_by_target(
