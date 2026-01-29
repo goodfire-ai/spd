@@ -85,9 +85,12 @@ def generate_script(config: SlurmConfig, command: str, env: dict[str, str] | Non
     Returns:
         Complete SLURM script content as a string
     """
-    header = _generate_sbatch_header(config, is_array=False)
-    setup = _generate_setup_section(config, is_array=False)
-    env_exports = _generate_env_exports(env)
+    header = _sbatch_header(config, is_array=False)
+    if config.n_nodes == 1:
+        setup = _setup_section(config, is_array=False)
+    else:
+        setup = "# Multi-node job: each node sets up its own workspace in the srun command"
+    env_exports = _env_exports(env)
 
     return f"""\
 #!/bin/bash
@@ -134,10 +137,11 @@ def generate_array_script(
     else:
         array_range = f"1-{n_jobs}"
 
-    header = _generate_sbatch_header(config, is_array=True, array_range=array_range)
-    setup = _generate_setup_section(config, is_array=True)
-    env_exports = _generate_env_exports(env)
-    case_block = _generate_case_block(commands)
+    header = _sbatch_header(config, is_array=True, array_range=array_range)
+    # Multi-node: each node sets up its own workspace in the srun command (can't share /tmp)
+    setup = "" if config.n_nodes > 1 else _setup_section(config, is_array=True)
+    env_exports = _env_exports(env)
+    case_block = _case_block(commands)
 
     return f"""\
 #!/bin/bash
@@ -222,7 +226,7 @@ def submit_slurm_job(
 # =============================================================================
 
 
-def _generate_sbatch_header(
+def _sbatch_header(
     config: SlurmConfig,
     is_array: bool = False,
     array_range: str | None = None,
@@ -263,61 +267,50 @@ def _generate_sbatch_header(
     return "\n".join(lines)
 
 
-def _generate_setup_section(config: SlurmConfig, is_array: bool) -> str:
-    """Generate workspace creation and git/venv setup.
+def generate_git_snapshot_setup(work_dir: str, snapshot_branch: str) -> str:
+    """Generate bash commands for git snapshot workspace setup.
 
-    If snapshot_branch is set:
-    - Create workspace dir with trap for cleanup
-    - Clone repo to workspace
-    - Copy .env file
-    - Checkout snapshot branch
-    - uv sync and activate venv
+    This creates a temporary workspace with a clone of the repo at a specific branch,
+    sets up cleanup on exit, and activates the venv.
 
-    If snapshot_branch is None:
-    - Just cd to REPO_ROOT
-    - Activate existing venv
+    Args:
+        work_dir: Bash expression for the workspace directory (can include $SLURM_* vars)
+        snapshot_branch: Git branch to checkout
+
+    Returns:
+        Bash script fragment (no shebang, meant to be embedded in larger scripts)
     """
-    # Workspace directory naming
+    return f"""\
+WORK_DIR="{work_dir}"
+mkdir -p "$WORK_DIR"
+trap 'rm -rf "$WORK_DIR"' EXIT
+git clone "{REPO_ROOT}" "$WORK_DIR"
+cd "$WORK_DIR"
+[ -f "{REPO_ROOT}/.env" ] && cp "{REPO_ROOT}/.env" .env
+git checkout "{snapshot_branch}"
+deactivate 2>/dev/null || true
+unset VIRTUAL_ENV
+uv sync --no-dev --link-mode copy -q
+source .venv/bin/activate"""
+
+
+def _setup_section(config: SlurmConfig, is_array: bool) -> str:
+    """Generate workspace creation and git/venv setup."""
     if is_array:
         workspace_suffix = "${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}"
     else:
         workspace_suffix = "$SLURM_JOB_ID"
 
     if config.snapshot_branch is not None:
-        # Full git snapshot setup
-        return f"""\
-# Create job-specific working directory
-WORK_DIR="/tmp/spd/workspace-{config.job_name}-{workspace_suffix}"
-mkdir -p "$WORK_DIR"
-
-# Clean up the workspace when the script exits
-trap 'rm -rf "$WORK_DIR"' EXIT
-
-# Clone the repository to the job-specific directory
-git clone "{REPO_ROOT}" "$WORK_DIR"
-
-# Change to the cloned repository directory
-cd "$WORK_DIR"
-
-# Copy the .env file from the original repository for WandB authentication (if it exists)
-[ -f "{REPO_ROOT}/.env" ] && cp "{REPO_ROOT}/.env" .env
-
-# Checkout the snapshot branch to ensure consistent code
-git checkout "{config.snapshot_branch}"
-
-# Ensure that dependencies are using the snapshot branch
-deactivate 2>/dev/null || true
-unset VIRTUAL_ENV
-uv sync --no-dev --link-mode copy -q
-source .venv/bin/activate"""
+        work_dir = f"/tmp/spd/workspace-{config.job_name}-{workspace_suffix}"
+        return generate_git_snapshot_setup(work_dir, config.snapshot_branch)
     else:
-        # Simple setup without git clone
         return f"""\
 cd "{REPO_ROOT}"
 source .venv/bin/activate"""
 
 
-def _generate_env_exports(env: dict[str, str] | None) -> str:
+def _env_exports(env: dict[str, str] | None) -> str:
     """Generate export statements for environment variables.
 
     Returns empty string if env is None or empty, otherwise returns
@@ -329,7 +322,7 @@ def _generate_env_exports(env: dict[str, str] | None) -> str:
     return f"\n{exports}"
 
 
-def _generate_case_block(commands: list[str]) -> str:
+def _case_block(commands: list[str]) -> str:
     """Generate bash case statement for array jobs.
 
     SLURM arrays are 1-indexed, so command[0] goes in case 1).
