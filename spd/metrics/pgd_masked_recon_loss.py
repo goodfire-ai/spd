@@ -8,6 +8,7 @@ from torch.distributed import ReduceOp
 from spd.configs import PGDConfig
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.routing import AllLayersRouter
 from spd.utils.distributed_utils import all_reduce
@@ -21,6 +22,7 @@ def pgd_recon_loss[BatchT, OutputT](
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = pgd_masked_recon_loss_update(
         model=model,
@@ -30,6 +32,7 @@ def pgd_recon_loss[BatchT, OutputT](
         target_out=target_out,
         router=AllLayersRouter(),
         pgd_config=pgd_config,
+        reconstruction_loss=reconstruction_loss,
     )
     return sum_loss / n_examples
 
@@ -46,10 +49,12 @@ class PGDReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         device: str,
         pgd_config: PGDConfig,
         use_delta_component: bool,
+        reconstruction_loss: ReconstructionLoss[OutputT],
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
         self.use_delta_component: bool = use_delta_component
+        self.reconstruction_loss = reconstruction_loss
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -71,6 +76,7 @@ class PGDReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
             target_out=target_out,
             router=AllLayersRouter(),
             pgd_config=self.pgd_config,
+            reconstruction_loss=self.reconstruction_loss,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

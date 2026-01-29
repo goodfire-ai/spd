@@ -7,6 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.configs import SamplingType
 from spd.metrics.base import Metric
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.routing import AllLayersRouter
 from spd.utils.component_utils import calc_stochastic_component_mask_info
@@ -22,6 +23,7 @@ def _stochastic_recon_layerwise_loss_update[BatchT, OutputT](
     target_out: OutputT,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     device = get_obj_device(ci)
@@ -41,7 +43,7 @@ def _stochastic_recon_layerwise_loss_update[BatchT, OutputT](
     for stochastic_mask_infos in stochastic_mask_infos_list:
         for module_name, mask_info in stochastic_mask_infos.items():
             out = model(batch, mask_infos={module_name: mask_info})
-            loss, batch_n_examples = model.reconstruction_loss(out, target_out)
+            loss, batch_n_examples = reconstruction_loss(out, target_out)
             sum_loss += loss
             sum_n_examples += batch_n_examples
     return sum_loss, sum_n_examples
@@ -61,6 +63,7 @@ def stochastic_recon_layerwise_loss[BatchT, OutputT](
     target_out: OutputT,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> Float[Tensor, ""]:
     sum_loss, sum_n_examples = _stochastic_recon_layerwise_loss_update(
         model=model,
@@ -70,6 +73,7 @@ def stochastic_recon_layerwise_loss[BatchT, OutputT](
         target_out=target_out,
         ci=ci,
         weight_deltas=weight_deltas,
+        reconstruction_loss=reconstruction_loss,
     )
     return _stochastic_recon_layerwise_loss_compute(sum_loss, sum_n_examples)
 
@@ -86,11 +90,13 @@ class StochasticReconLayerwiseLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
+        reconstruction_loss: ReconstructionLoss[OutputT],
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
         self.use_delta_component: bool = use_delta_component
         self.n_mask_samples: int = n_mask_samples
+        self.reconstruction_loss = reconstruction_loss
         self.sum_loss = torch.tensor(0.0, device=device)
         self.sum_n_examples = torch.tensor(0, device=device)
 
@@ -112,6 +118,7 @@ class StochasticReconLayerwiseLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
             target_out=target_out,
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
+            reconstruction_loss=self.reconstruction_loss,
         )
         self.sum_loss += sum_loss
         self.sum_n_examples += sum_n_examples

@@ -9,6 +9,7 @@ from torch.distributed import ReduceOp
 
 from spd.configs import PGDConfig, PGDInitStrategy, PGDMultiBatchConfig, SamplingType
 from spd.log import logger
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
@@ -24,6 +25,7 @@ def pgd_masked_recon_loss_update[BatchT, OutputT](
     target_out: OutputT,
     router: Router,
     pgd_config: PGDConfig,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> tuple[Float[Tensor, ""], int]:
     """Central implementation of PGD masked reconstruction loss.
 
@@ -57,6 +59,7 @@ def pgd_masked_recon_loss_update[BatchT, OutputT](
         routing_masks=routing_masks,
         target_out=target_out,
         batch_dims=batch_dims,
+        reconstruction_loss=reconstruction_loss,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -90,6 +93,7 @@ def calc_multibatch_pgd_masked_recon_loss[BatchT, OutputT](
     sampling: SamplingType,
     use_delta_component: bool,
     device: str,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> Float[Tensor, ""]:
     """PGD masked reconstruction loss with gradient accumulation over multiple batches.
 
@@ -102,10 +106,10 @@ def calc_multibatch_pgd_masked_recon_loss[BatchT, OutputT](
         create_data_iter: Function to create an iterator over batches. This function should return
             an iterator which behaves identically each time. Specifically in terms of data ordering
             and shuffling.
-        output_loss_type: Loss type for reconstruction ("mse" or "kl")
         router: Router to use for routing masks
         sampling: Sampling mode for causal importance calculation
         use_delta_component: Whether to include weight delta component
+        reconstruction_loss: Function to compute reconstruction loss
     Returns:
         Final reconstruction loss after PGD optimization
     """
@@ -136,6 +140,7 @@ def calc_multibatch_pgd_masked_recon_loss[BatchT, OutputT](
         device=device,
         sampling=sampling,
         router=router,
+        reconstruction_loss=reconstruction_loss,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -160,6 +165,7 @@ def _forward_with_adv_sources[BatchT, OutputT](
     routing_masks: RoutingMasks,
     target_out: OutputT,
     batch_dims: tuple[int, ...],
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ):
     expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
@@ -180,7 +186,7 @@ def _forward_with_adv_sources[BatchT, OutputT](
     )
     out = model(batch, mask_infos=mask_infos)
 
-    sum_loss, n_examples = model.reconstruction_loss(out, target_out)
+    sum_loss, n_examples = reconstruction_loss(out, target_out)
 
     return sum_loss, n_examples
 
@@ -194,6 +200,7 @@ def _multibatch_pgd_fwd_bwd[BatchT, OutputT](
     device: torch.device | str,
     router: Router,
     sampling: SamplingType,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> tuple[Float[Tensor, ""], int, dict[str, Float[Tensor, "*ones mask_c"]]]:
     """Perform a forward and backward pass over multiple batches with gradient accumulation.
 
@@ -239,6 +246,7 @@ def _multibatch_pgd_fwd_bwd[BatchT, OutputT](
             routing_masks=routing_masks,
             target_out=target_model_output.output,
             batch_dims=batch_dims,
+            reconstruction_loss=reconstruction_loss,
         )
 
         pgd_step_accum_sum_loss += batch_sum_loss

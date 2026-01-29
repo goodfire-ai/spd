@@ -5,6 +5,7 @@ from torch import Tensor
 
 from spd.configs import SamplingType
 from spd.metrics import stochastic_recon_layerwise_loss, stochastic_recon_loss
+from spd.models.batch_and_loss_fns import recon_loss_mse
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.routing import Router
 from tests.metrics.fixtures import make_one_layer_component_model, make_two_layer_component_model
@@ -109,6 +110,7 @@ class TestStochasticReconLayerwiseLoss:
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=None,
+                reconstruction_loss=recon_loss_mse,
             )
 
             assert torch.allclose(actual_loss, torch.tensor(expected_loss), rtol=1e-5), (
@@ -133,6 +135,7 @@ class TestStochasticReconLayerwiseLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=None,
+            reconstruction_loss=recon_loss_mse,
         )
         loss_layerwise = stochastic_recon_layerwise_loss(
             model=model,
@@ -142,6 +145,7 @@ class TestStochasticReconLayerwiseLoss:
             target_out=target_out,
             ci=ci,
             weight_deltas=None,
+            reconstruction_loss=recon_loss_mse,
         )
 
         # For single layer, results should be the same

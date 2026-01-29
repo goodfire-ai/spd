@@ -22,6 +22,7 @@ from torch import Tensor
 
 from spd.base_config import BaseConfig
 from spd.configs import Config
+from spd.experiments.lm.loaders import load_lm_component_model_from_run_info
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
@@ -82,7 +83,8 @@ class ModelComparator:
     def _load_model_and_config(self, model_path: str) -> tuple[ComponentModel[Any, Any], Config]:
         """Load model and config using the standard pattern from existing codebase."""
         run_info = SPDRunInfo.from_path(model_path)
-        model = ComponentModel.from_run_info(run_info)
+        # TODO(oli): this should actually be generic (one of the only instances of this I think)
+        model = load_lm_component_model_from_run_info(run_info)
         model.to(self.device)
         model.eval()
         model.requires_grad_(False)

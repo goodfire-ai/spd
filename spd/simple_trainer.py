@@ -2,9 +2,8 @@
 
 import gc
 from collections import defaultdict
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -16,22 +15,13 @@ from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from spd.configs import (
-    Config,
-    LossMetricConfigType,
-    MetricConfigType,
-    PGDMultiBatchConfig,
-    PGDMultiBatchReconLossConfig,
-    PGDMultiBatchReconSubsetLossConfig,
-)
-from spd.data import loop_dataloader
-from spd.eval import evaluate, evaluate_multibatch_pgd
-from spd.identity_insertion import insert_identity_operations_
+from spd.configs import Config
+from spd.eval import evaluate
 from spd.log import logger
 from spd.losses import compute_total_loss
-from spd.metrics import faithfulness_loss
 from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import ComponentModel, OutputWithCache, TargetModel
+from spd.run_spd import get_unique_metric_configs, run_faithfulness_warmup
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -41,68 +31,9 @@ from spd.utils.distributed_utils import (
 )
 from spd.utils.general_utils import dict_safe_update_, get_scheduled_value, runtime_cast
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
-from spd.utils.module_utils import expand_module_patterns, replace_std_values_in_layernorm
+from spd.utils.module_utils import expand_module_patterns
 from spd.utils.run_utils import save_file
 from spd.utils.wandb_utils import try_wandb
-
-
-def run_faithfulness_warmup(
-    component_model: ComponentModel[Any, Any],
-    component_params: list[torch.nn.Parameter],
-    config: Config,
-) -> None:
-    """Run faithfulness warmup phase to improve initialization.
-
-    Args:
-        component_model: The component model to warm up
-        component_params: List of component parameters to optimize
-        config: Configuration object containing warmup settings
-    """
-
-    logger.info("Starting faithfulness warmup phase...")
-
-    assert component_params, "component_params is empty"
-
-    faithfulness_warmup_optimizer = optim.AdamW(
-        component_params,
-        lr=config.faithfulness_warmup_lr,
-        weight_decay=config.faithfulness_warmup_weight_decay,
-    )
-
-    for faithfulness_warmup_step in range(config.faithfulness_warmup_steps):
-        faithfulness_warmup_optimizer.zero_grad()
-        weight_deltas = component_model.calc_weight_deltas()
-        loss = faithfulness_loss(weight_deltas)
-        loss.backward()
-        faithfulness_warmup_optimizer.step()
-
-        if (
-            faithfulness_warmup_step % 100 == 0
-            or faithfulness_warmup_step == config.faithfulness_warmup_steps - 1
-        ):
-            logger.info(
-                f"Faithfulness warmup step {faithfulness_warmup_step + 1} / {config.faithfulness_warmup_steps}; Faithfulness loss: {loss.item():.9f}"
-            )
-    del faithfulness_warmup_optimizer
-    # TODO: we should reverse the order of these two calls
-    torch.cuda.empty_cache()
-    gc.collect()
-
-
-def get_unique_metric_configs(
-    loss_configs: list[LossMetricConfigType], eval_configs: list[MetricConfigType]
-) -> list[MetricConfigType]:
-    """If a metric appears in both loss and eval configs, only include the eval version."""
-    eval_config_names = [type(cfg).__name__ for cfg in eval_configs]
-    eval_metric_configs = eval_configs[:]
-    for cfg in loss_configs:
-        if type(cfg).__name__ not in eval_config_names:
-            eval_metric_configs.append(cfg)
-        else:
-            logger.warning(
-                f"{type(cfg).__name__} is in both loss and eval configs, only including eval config"
-            )
-    return eval_metric_configs
 
 
 def optimize[BatchT, OutputT](
@@ -111,47 +42,24 @@ def optimize[BatchT, OutputT](
     device: str,
     train_loader: DataLoader[BatchT],
     eval_loader: DataLoader[BatchT],
+    n_eval_steps: int,
     reconstruction_loss: ReconstructionLoss[OutputT],
     out_dir: Path | None,
-    tied_weights: list[tuple[str, str]] | None = None,
-    ln_stds: dict[str, float] | None = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
+    train_iterator = iter(train_loader)
+    eval_iterator = iter(eval_loader)
 
-    train_iterator = loop_dataloader(train_loader)
-    eval_iterator = loop_dataloader(eval_loader)
-
-    def create_pgd_data_iter() -> Iterator[BatchT]:
-        assert hasattr(train_loader, "generator") and train_loader.generator is not None
-        train_loader.generator.manual_seed(config.seed)
-        return iter(train_loader)
-
-    if is_main_process():
-        logger.info(f"Train+eval logs saved to directory: {out_dir}")
-
-    if config.identity_module_info is not None:
-        insert_identity_operations_(
-            runtime_cast(nn.Module, target_model),
-            identity_module_info=config.identity_module_info,
-        )
-
-    cast(nn.Module, target_model).requires_grad_(False)
-
-    module_path_info = expand_module_patterns(
-        runtime_cast(nn.Module, target_model), config.all_module_info
-    )
-
+    runtime_cast(nn.Module, target_model).requires_grad_(False)
     model = ComponentModel(
         target_model=target_model,
-        module_path_info=module_path_info,
+        module_path_info=expand_module_patterns(
+            runtime_cast(nn.Module, target_model), config.all_module_info
+        ),
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         sigmoid_type=config.sigmoid_type,
     )
-
-    if ln_stds is not None:
-        # model has ablated layernorms, patch in the fixed std values
-        replace_std_values_in_layernorm(model, ln_stds)
     model.to(device)
 
     # Wrap model with DDP if distributed
@@ -176,18 +84,6 @@ def optimize[BatchT, OutputT](
         component_model = model
     assert isinstance(component_model, ComponentModel), "component_model is not a ComponentModel"
 
-    if tied_weights is not None:
-        # Tie component weights. Assume that the first element is a transpose of the second element
-        # NOTE: Tying weights will make your training nondeterministic
-        for src_name, tgt_name in tied_weights:
-            tgt = component_model.components[tgt_name]
-            src = component_model.components[src_name]
-            assert tgt is not None and src is not None, (
-                f"Cannot tie weights between {src_name} and {tgt_name} - one or both are None"
-            )
-            tgt.U.data = src.V.data.T
-            tgt.V.data = src.U.data.T
-
     component_params: list[torch.nn.Parameter] = []
     ci_fn_params: list[torch.nn.Parameter] = []
     for name in component_model.target_module_paths:
@@ -196,8 +92,11 @@ def optimize[BatchT, OutputT](
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
-    optimized_params = component_params + ci_fn_params
-    optimizer = optim.AdamW(optimized_params, lr=config.lr_schedule.start_val, weight_decay=0)
+    optimizer = optim.AdamW(
+        component_params + ci_fn_params,
+        lr=config.lr_schedule.start_val,
+        weight_decay=0,
+    )
 
     logger.info(f"LR scheduler: {config.lr_schedule.fn_type}")
 
@@ -207,14 +106,6 @@ def optimize[BatchT, OutputT](
     eval_metric_configs = get_unique_metric_configs(
         loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
     )
-
-    multibatch_pgd_eval_configs: list[
-        PGDMultiBatchReconLossConfig | PGDMultiBatchReconSubsetLossConfig
-    ] = [cfg for cfg in eval_metric_configs if isinstance(cfg, PGDMultiBatchConfig)]
-
-    eval_metric_configs = [
-        cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
-    ]
 
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
@@ -303,15 +194,6 @@ def optimize[BatchT, OutputT](
                     else step % config.slow_eval_freq == 0
                 )
 
-                multibatch_pgd_metrics = evaluate_multibatch_pgd(
-                    multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
-                    model=component_model,
-                    create_data_iter=create_pgd_data_iter,
-                    config=config,
-                    device=device,
-                    reconstruction_loss=reconstruction_loss,
-                )
-
                 metrics = evaluate(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
@@ -319,12 +201,10 @@ def optimize[BatchT, OutputT](
                     device=device,
                     run_config=config,
                     slow_step=slow_step,
-                    n_eval_steps=config.n_eval_steps,
+                    n_eval_steps=n_eval_steps,
                     current_frac_of_training=step / config.steps,
                     reconstruction_loss=reconstruction_loss,
                 )
-
-                dict_safe_update_(metrics, multibatch_pgd_metrics)
 
                 if is_main_process():
                     assert out_dir is not None
@@ -339,9 +219,9 @@ def optimize[BatchT, OutputT](
                         try_wandb(wandb.log, wandb_logs, step=step)
 
                 del metrics
-                # TODO: we should reverse the order of these two calls
-                torch.cuda.empty_cache()
+
                 gc.collect()
+                torch.cuda.empty_cache()
 
         # --- Saving Checkpoint --- #
         if (
@@ -360,14 +240,12 @@ def optimize[BatchT, OutputT](
                     policy="now",
                 )
 
-        # Skip gradient step if we are at the last step (last step just for plotting and logging)
-        if step != config.steps:
-            sync_across_processes()
-            if config.grad_clip_norm_components is not None:
-                clip_grad_norm_(component_params, config.grad_clip_norm_components)
-            if config.grad_clip_norm_ci_fns is not None:
-                clip_grad_norm_(ci_fn_params, config.grad_clip_norm_ci_fns)
-            optimizer.step()
+        sync_across_processes()
+        if config.grad_clip_norm_components is not None:
+            clip_grad_norm_(component_params, config.grad_clip_norm_components)
+        if config.grad_clip_norm_ci_fns is not None:
+            clip_grad_norm_(ci_fn_params, config.grad_clip_norm_ci_fns)
+        optimizer.step()
 
     if is_main_process():
         logger.info("Finished training loop.")

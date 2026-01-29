@@ -15,7 +15,6 @@ See CLAUDE.md in this directory for usage instructions.
 import itertools
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import torch
 import tqdm
@@ -27,6 +26,7 @@ from spd.data import train_loader_and_tokenizer
 from spd.dataset_attributions.harvester import AttributionHarvester
 from spd.dataset_attributions.loaders import get_attributions_dir
 from spd.dataset_attributions.storage import DatasetAttributionStorage
+from spd.experiments.lm.loaders import load_lm_component_model_from_run_info
 from spd.harvest.loaders import load_activation_contexts_summary
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -42,7 +42,7 @@ class DatasetAttributionConfig:
     ci_threshold: float
 
 
-def _build_component_layer_keys(model: ComponentModel[Any, Any]) -> list[str]:
+def _build_component_layer_keys(model: ComponentModel[Tensor, Tensor]) -> list[str]:
     """Build list of component layer keys in canonical order.
 
     Returns keys like ["h.0.attn.q_proj:0", "h.0.attn.q_proj:1", ...] for all layers.
@@ -57,7 +57,7 @@ def _build_component_layer_keys(model: ComponentModel[Any, Any]) -> list[str]:
 
 
 def _build_alive_masks(
-    model: ComponentModel[Any, Any],
+    model: ComponentModel[Tensor, Tensor],
     run_id: str,
     ci_threshold: float,
     n_components: int,
@@ -140,7 +140,7 @@ def harvest_attributions(
     _, _, run_id = parse_wandb_run_path(config.wandb_path)
 
     run_info = SPDRunInfo.from_path(config.wandb_path)
-    model = ComponentModel.from_run_info(run_info).to(device)
+    model = load_lm_component_model_from_run_info(run_info).to(device)
     model.eval()
 
     spd_config = run_info.config

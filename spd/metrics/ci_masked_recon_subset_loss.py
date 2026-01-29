@@ -7,6 +7,7 @@ from torch.distributed import ReduceOp
 
 from spd.configs import SubsetRoutingType
 from spd.metrics.base import Metric
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
 from spd.routing import Router, get_subset_router
@@ -20,6 +21,7 @@ def _ci_masked_recon_subset_loss_update[BatchT, OutputT](
     target_out: OutputT,
     ci: dict[str, Float[Tensor, "... C"]],
     router: Router,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> tuple[Float[Tensor, ""], int]:
     subset_routing_masks = router.get_masks(
         module_names=model.target_module_paths,
@@ -31,7 +33,7 @@ def _ci_masked_recon_subset_loss_update[BatchT, OutputT](
         weight_deltas_and_masks=None,
     )
     out = model(batch, mask_infos=mask_infos)
-    return model.reconstruction_loss(out, target_out)
+    return reconstruction_loss(out, target_out)
 
 
 def _ci_masked_recon_subset_loss_compute(
@@ -46,6 +48,7 @@ def ci_masked_recon_subset_loss[BatchT, OutputT](
     target_out: OutputT,
     ci: dict[str, Float[Tensor, "... C"]],
     routing: SubsetRoutingType,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
         model=model,
@@ -53,6 +56,7 @@ def ci_masked_recon_subset_loss[BatchT, OutputT](
         target_out=target_out,
         ci=ci,
         router=get_subset_router(routing, device=get_obj_device(model)),
+        reconstruction_loss=reconstruction_loss,
     )
     return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
 
@@ -67,10 +71,11 @@ class CIMaskedReconSubsetLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         model: ComponentModel[BatchT, OutputT],
         device: str,
         routing: SubsetRoutingType,
+        reconstruction_loss: ReconstructionLoss[OutputT],
     ) -> None:
         self.model = model
         self.router = get_subset_router(routing, device)
-
+        self.reconstruction_loss = reconstruction_loss
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -89,6 +94,7 @@ class CIMaskedReconSubsetLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
             target_out=target_out,
             ci=ci.lower_leaky,
             router=self.router,
+            reconstruction_loss=self.reconstruction_loss,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

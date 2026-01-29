@@ -5,6 +5,7 @@ from torch import Tensor
 
 from spd.configs import SamplingType
 from spd.metrics import stochastic_recon_loss
+from spd.models.batch_and_loss_fns import recon_loss_mse
 from spd.models.components import ComponentsMaskInfo, make_mask_infos
 from spd.routing import Router
 from tests.metrics.fixtures import make_one_layer_component_model
@@ -82,6 +83,7 @@ class TestStochasticReconLoss:
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=None,
+                reconstruction_loss=recon_loss_mse,
             )
 
             assert torch.allclose(actual_loss, torch.tensor(expected_loss), rtol=1e-5), (

@@ -17,7 +17,7 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 
 
 def component_activations(
-    model: ComponentModel[Any, Any],
+    model: ComponentModel[Tensor, Tensor],
     device: torch.device | str,
     batch: Int[Tensor, "batch_size n_ctx"],
 ) -> dict[str, ActivationsTensor]:

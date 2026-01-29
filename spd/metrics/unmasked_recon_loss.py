@@ -6,6 +6,7 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
@@ -16,6 +17,7 @@ def _unmasked_recon_loss_update[BatchT, OutputT](
     model: ComponentModel[BatchT, OutputT],
     batch: BatchT,
     target_out: OutputT,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> tuple[Float[Tensor, ""], int]:
     all_ones_mask_infos = make_mask_infos(
         # (C,) will broadcast to (B, S, C)
@@ -25,7 +27,7 @@ def _unmasked_recon_loss_update[BatchT, OutputT](
         }
     )
     out = model(batch, mask_infos=all_ones_mask_infos)
-    return model.reconstruction_loss(out, target_out)
+    return reconstruction_loss(out, target_out)
 
 
 def _unmasked_recon_loss_compute(
@@ -38,11 +40,13 @@ def unmasked_recon_loss[BatchT, OutputT](
     model: ComponentModel[BatchT, OutputT],
     batch: BatchT,
     target_out: OutputT,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _unmasked_recon_loss_update(
         model,
         batch,
         target_out,
+        reconstruction_loss,
     )
     return _unmasked_recon_loss_compute(sum_loss, n_examples)
 
@@ -56,8 +60,10 @@ class UnmaskedReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         self,
         model: ComponentModel[BatchT, OutputT],
         device: str,
+        reconstruction_loss: ReconstructionLoss[OutputT],
     ) -> None:
         self.model = model
+        self.reconstruction_loss = reconstruction_loss
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -73,6 +79,7 @@ class UnmaskedReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
             model=self.model,
             batch=batch,
             target_out=target_out,
+            reconstruction_loss=self.reconstruction_loss,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

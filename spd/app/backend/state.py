@@ -8,6 +8,7 @@ Contains:
 from dataclasses import dataclass, field
 from typing import Any
 
+from torch import Tensor
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.database import PromptAttrDB, Run
@@ -110,7 +111,7 @@ class RunState:
     """Runtime state for a loaded run (model, tokenizer, etc.)"""
 
     run: Run
-    model: ComponentModel[Any, Any]
+    model: ComponentModel[Tensor, Tensor]
     tokenizer: PreTrainedTokenizerBase
     sources_by_target: dict[str, list[str]]
     config: Config

@@ -72,7 +72,7 @@ class OptimizableCIParams:
     ci_pre_sigmoid: dict[str, list[Tensor]]  # layer_name -> list of [alive_at_pos] values
     alive_info: AliveComponentInfo
 
-    def create_ci_outputs(self, model: ComponentModel[Any, Any], device: str) -> CIOutputs:
+    def create_ci_outputs(self, model: ComponentModel[Tensor, Tensor], device: str) -> CIOutputs:
         """Expand sparse pre-sigmoid values to full CI tensors and create CIOutputs."""
         pre_sigmoid: dict[str, Tensor] = {}
 
@@ -139,7 +139,7 @@ def create_optimizable_ci_params(
 
 
 def compute_label_prob(
-    model: ComponentModel[Any, Any],
+    model: ComponentModel[Tensor, Tensor],
     tokens: Tensor,
     ci_lower_leaky: dict[str, Tensor],
     label_token: int,
@@ -165,7 +165,7 @@ def compute_l0_stats(
 
 
 def compute_final_token_ce_kl(
-    model: ComponentModel[Any, Any],
+    model: ComponentModel[Tensor, Tensor],
     batch: Tensor,
     target_out: Tensor,
     ci: dict[str, Tensor],
@@ -267,7 +267,7 @@ ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
 
 
 def optimize_ci_values(
-    model: ComponentModel[Any, Any],
+    model: ComponentModel[Tensor, Tensor],
     tokens: Tensor,
     config: OptimCIConfig,
     device: str,

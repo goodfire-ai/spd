@@ -8,6 +8,7 @@ from torch.distributed import ReduceOp
 from spd.configs import PGDConfig
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.routing import LayerRouter
 from spd.utils.distributed_utils import all_reduce
@@ -21,6 +22,7 @@ def _pgd_recon_layerwise_loss_update[BatchT, OutputT](
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> tuple[Float[Tensor, ""], Int[Tensor, ""]]:
     device = next(iter(ci.values())).device
     sum_loss = torch.tensor(0.0, device=device)
@@ -34,6 +36,7 @@ def _pgd_recon_layerwise_loss_update[BatchT, OutputT](
             target_out=target_out,
             router=LayerRouter(device=device, layer_name=layer),
             pgd_config=pgd_config,
+            reconstruction_loss=reconstruction_loss,
         )
         sum_loss += sum_loss_layer
         n_examples += n_examples_layer
@@ -48,6 +51,7 @@ def pgd_recon_layerwise_loss[BatchT, OutputT](
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _pgd_recon_layerwise_loss_update(
         model=model,
@@ -56,6 +60,7 @@ def pgd_recon_layerwise_loss[BatchT, OutputT](
         ci=ci,
         weight_deltas=weight_deltas,
         pgd_config=pgd_config,
+        reconstruction_loss=reconstruction_loss,
     )
     return sum_loss / n_examples
 
@@ -72,10 +77,12 @@ class PGDReconLayerwiseLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         pgd_config: PGDConfig,
         device: str,
         use_delta_component: bool,
+        reconstruction_loss: ReconstructionLoss[OutputT],
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
         self.use_delta_component: bool = use_delta_component
+        self.reconstruction_loss = reconstruction_loss
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -96,6 +103,7 @@ class PGDReconLayerwiseLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
             pgd_config=self.pgd_config,
+            reconstruction_loss=self.reconstruction_loss,
         )
         self.sum_loss += sum_loss
         self.n_examples += n_examples

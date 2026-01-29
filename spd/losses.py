@@ -34,6 +34,7 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
     unmasked_recon_loss,
 )
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.general_utils import get_obj_device
 
@@ -50,6 +51,7 @@ def compute_total_loss[BatchT, OutputT](
     sampling: SamplingType,
     use_delta_component: bool,
     n_mask_samples: int,
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -79,6 +81,7 @@ def compute_total_loss[BatchT, OutputT](
                     model=model,
                     batch=batch,
                     target_out=target_out,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case CIMaskedReconSubsetLossConfig():
                 loss = ci_masked_recon_subset_loss(
@@ -87,6 +90,7 @@ def compute_total_loss[BatchT, OutputT](
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     routing=cfg.routing,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case CIMaskedReconLayerwiseLossConfig():
                 loss = ci_masked_recon_layerwise_loss(
@@ -94,6 +98,7 @@ def compute_total_loss[BatchT, OutputT](
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case CIMaskedReconLossConfig():
                 loss = ci_masked_recon_loss(
@@ -101,6 +106,7 @@ def compute_total_loss[BatchT, OutputT](
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case StochasticReconLayerwiseLossConfig():
                 loss = stochastic_recon_layerwise_loss(
@@ -111,6 +117,7 @@ def compute_total_loss[BatchT, OutputT](
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case StochasticReconLossConfig():
                 loss = stochastic_recon_loss(
@@ -121,6 +128,7 @@ def compute_total_loss[BatchT, OutputT](
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case StochasticReconSubsetLossConfig():
                 loss = stochastic_recon_subset_loss(
@@ -132,6 +140,7 @@ def compute_total_loss[BatchT, OutputT](
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     routing=cfg.routing,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case PGDReconLossConfig():
                 loss = pgd_recon_loss(
@@ -141,6 +150,7 @@ def compute_total_loss[BatchT, OutputT](
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case PGDReconSubsetLossConfig():
                 loss = pgd_recon_subset_loss(
@@ -151,6 +161,7 @@ def compute_total_loss[BatchT, OutputT](
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
                     routing=cfg.routing,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case PGDReconLayerwiseLossConfig():
                 loss = pgd_recon_layerwise_loss(
@@ -160,6 +171,7 @@ def compute_total_loss[BatchT, OutputT](
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case StochasticHiddenActsReconLossConfig():
                 loss = stochastic_hidden_acts_recon_loss(

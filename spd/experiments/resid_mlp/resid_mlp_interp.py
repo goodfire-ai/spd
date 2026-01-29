@@ -9,10 +9,14 @@ from jaxtyping import Float
 from PIL import Image
 from torch import Tensor
 
-from spd.experiments.resid_mlp.models import MLP, ResidMLP
+from spd.experiments.resid_mlp.models import (
+    MLP,
+    ResidMLP,
+    load_resid_mlp_component_model_from_run_info,
+)
 from spd.experiments.tms.models import TMSModel
 from spd.log import logger
-from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.models.component_model import SPDRunInfo
 from spd.models.components import Components
 from spd.plotting import plot_causal_importance_vals
 from spd.registry import EXPERIMENT_REGISTRY
@@ -35,7 +39,7 @@ def extract_ci_val_figures(
         Dictionary containing causal importances data and metadata
     """
     run_info = SPDRunInfo.from_path(run_id)
-    model = ComponentModel.from_run_info(run_info)
+    model = load_resid_mlp_component_model_from_run_info(run_info)
     model.to(device)
 
     config = run_info.config
@@ -478,7 +482,7 @@ def main(out_dir: Path, device: str):
         wandb_id = path.split("/")[-1]
 
         run_info = SPDRunInfo.from_path(path)
-        model = ComponentModel.from_run_info(run_info)
+        model = load_resid_mlp_component_model_from_run_info(run_info)
         config = run_info.config
         assert isinstance(model.target_model, ResidMLP)
         model.target_model.to(device)

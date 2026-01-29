@@ -1,28 +1,17 @@
-from abc import ABC
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Literal, NamedTuple, Protocol, Self, overload, override
+from typing import Any, Literal, NamedTuple, Protocol, overload, override
 
 import torch
-import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
-from spd.configs import (
-    Config,
-    IHTaskConfig,
-    LMTaskConfig,
-    ResidMLPTaskConfig,
-    SamplingType,
-    TaskConfig,
-    TMSTaskConfig,
-)
-from spd.identity_insertion import insert_identity_operations_
-from spd.interfaces import LoadableModule, RunInfo
+from spd.configs import Config, SamplingType
+from spd.interfaces import RunInfo
 from spd.models.components import (
     Components,
     ComponentsMaskInfo,
@@ -34,9 +23,9 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
-from spd.spd_types import CiFnType, ModelPath
-from spd.utils.general_utils import resolve_class, runtime_cast
-from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
+from spd.spd_types import CiFnType
+from spd.utils.general_utils import runtime_cast
+from spd.utils.module_utils import ModulePathInfo
 
 
 @dataclass
@@ -62,15 +51,19 @@ class CIOutputs:
     pre_sigmoid: dict[str, Tensor]
 
 
-class RunBatch[BatchT, OutputT](Protocol):
-    def __call__(self, target_model: nn.Module, batch: BatchT) -> OutputT: ...
+class TargetModel[BatchT, OutputT](Protocol):
+    # def __call__(self, batch: BatchT) -> OutputT: ...
+
+    def __call__(self, batch: BatchT) -> OutputT: ...
+
+    def get_submodule(self, target: str) -> nn.Module: ...
+
+    def named_parameters(self) -> Iterator[tuple[str, nn.Parameter]]: ...
+
+    # def named_modules(self) -> Generator[tuple[str, nn.Module]]: ...
 
 
-class ReconstructionLoss[OutputT](Protocol):
-    def __call__(self, pred: OutputT, target: OutputT) -> tuple[Float[Tensor, ""], int]: ...
-
-
-class ComponentModel[BatchT, OutputT](LoadableModule, ABC):
+class ComponentModel[BatchT, OutputT](nn.Module):
     """Wrapper around an arbitrary pytorch model for running SPD.
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
@@ -91,13 +84,11 @@ class ComponentModel[BatchT, OutputT](LoadableModule, ABC):
 
     def __init__(
         self,
-        target_model: nn.Module,
+        target_model: TargetModel[BatchT, OutputT],
         module_path_info: list[ModulePathInfo],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
-        run_batch: RunBatch[BatchT, OutputT],
-        reconstruction_loss: ReconstructionLoss[OutputT],
     ):
         super().__init__()
 
@@ -136,9 +127,6 @@ class ComponentModel[BatchT, OutputT](LoadableModule, ABC):
             # For other sigmoid types, use the same function for both
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
-
-        self._run_batch = run_batch
-        self.reconstruction_loss = reconstruction_loss
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -196,7 +184,7 @@ class ComponentModel[BatchT, OutputT](LoadableModule, ABC):
 
     @staticmethod
     def _create_components(
-        target_model: nn.Module,
+        target_model: TargetModel[BatchT, OutputT],
         module_to_c: dict[str, int],
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
@@ -239,7 +227,7 @@ class ComponentModel[BatchT, OutputT](LoadableModule, ABC):
 
     @staticmethod
     def _create_ci_fns(
-        target_model: nn.Module,
+        target_model: TargetModel[BatchT, OutputT],
         module_to_c: dict[str, int],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
@@ -314,7 +302,7 @@ class ComponentModel[BatchT, OutputT](LoadableModule, ABC):
         """
         if mask_infos is None and cache_type == "none":
             # No hooks needed. Do a regular forward pass of the target model.
-            return self._run_batch(self.target_model, batch)
+            return self.target_model(batch)
 
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
@@ -335,7 +323,7 @@ class ComponentModel[BatchT, OutputT](LoadableModule, ABC):
             )
 
         with self._attach_forward_hooks(hooks):
-            out: OutputT = self._run_batch(self.target_model, batch)
+            out: OutputT = self.target_model(batch)
 
         match cache_type:
             case "input" | "component_acts":
@@ -417,67 +405,6 @@ class ComponentModel[BatchT, OutputT](LoadableModule, ABC):
         finally:
             for handle in handles:
                 handle.remove()
-
-    @classmethod
-    @override
-    def from_run_info(cls, run_info: RunInfo[Config]) -> Self:
-        """Load a trained ComponentModel checkpoint from a run info object."""
-        config = run_info.config
-
-        # Load the target model
-        model_class = resolve_class(config.pretrained_model_class)
-        if config.pretrained_model_name is not None:
-            assert hasattr(model_class, "from_pretrained"), (
-                f"Model class {model_class} should have a `from_pretrained` method"
-            )
-            target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
-        else:
-            assert issubclass(model_class, LoadableModule), (
-                f"Model class {model_class} should be a subclass of LoadableModule which "
-                "defines a `from_pretrained` method"
-            )
-            assert run_info.config.pretrained_model_path is not None
-            target_model = model_class.from_pretrained(run_info.config.pretrained_model_path)
-
-        target_model.eval()
-        target_model.requires_grad_(False)
-
-        if config.identity_module_info is not None:
-            insert_identity_operations_(
-                target_model,
-                identity_module_info=config.identity_module_info,
-            )
-
-        module_path_info = expand_module_patterns(target_model, config.all_module_info)
-
-        run_batch = get_run_batch(config.task_config, config.pretrained_model_output_attr)
-        reconstruction_loss = get_reconstruction_loss(config.task_config)
-
-        comp_model = cls(
-            target_model=target_model,
-            module_path_info=module_path_info,
-            run_batch=run_batch,
-            reconstruction_loss=reconstruction_loss,
-            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-            ci_fn_type=config.ci_fn_type,
-            sigmoid_type=config.sigmoid_type,
-        )
-
-        comp_model_weights = torch.load(
-            run_info.checkpoint_path, map_location="cpu", weights_only=True
-        )
-
-        handle_deprecated_state_dict_keys_(comp_model_weights)
-
-        comp_model.load_state_dict(comp_model_weights)
-        return comp_model
-
-    @classmethod
-    @override
-    def from_pretrained(cls, path: ModelPath) -> Self:
-        """Load a trained ComponentModel checkpoint from a local or wandb path."""
-        run_info = SPDRunInfo.from_path(path)
-        return cls.from_run_info(run_info)
 
     def calc_causal_importances(
         self,
@@ -591,78 +518,3 @@ def handle_deprecated_state_dict_keys_(state_dict: dict[str, Tensor]) -> None:
         # replace if modified
         if new_key != key:
             state_dict[new_key] = state_dict.pop(key)
-
-
-def pass_first_tuple_element_to_model[BatchT: tuple[Any, ...], OutputT](
-    target_model: nn.Module,
-    batch: BatchT,  # pyright: ignore[reportInvalidTypeVarUse]
-) -> OutputT:  # pyright: ignore[reportInvalidTypeVarUse]
-    return target_model(batch[0])
-
-
-def pass_batch_directly_to_model[BatchT, OutputT](
-    target_model: nn.Module,
-    batch: BatchT,  # pyright: ignore[reportInvalidTypeVarUse]
-) -> OutputT:  # pyright: ignore[reportInvalidTypeVarUse]
-    return target_model(batch)
-
-
-def run_batch_extract_idx(idx: int, target_model: nn.Module, batch: Any) -> Any:
-    return target_model(batch)[idx]
-
-
-def run_batch_extract_attr(attr: str, target_model: nn.Module, batch: Any) -> Any:
-    return getattr(target_model(batch), attr)
-
-
-def make_run_batch_lm(output_attr: str | None) -> RunBatch[Any, Any]:
-    if output_attr is None:
-        return pass_batch_directly_to_model
-    if output_attr.startswith("idx_"):
-        idx = int(output_attr.removeprefix("idx_"))
-        return partial(run_batch_extract_idx, idx)
-    return partial(run_batch_extract_attr, output_attr)
-
-
-def get_run_batch(task_config: TaskConfig, output_attr: str | None = None) -> RunBatch[Any, Any]:
-    match task_config:
-        case TMSTaskConfig() | ResidMLPTaskConfig():
-            assert output_attr is None, (
-                "output_attr not supported for TMSTaskConfig and ResidMLPTaskConfig"
-            )
-            return pass_first_tuple_element_to_model
-        case LMTaskConfig() | IHTaskConfig():
-            return make_run_batch_lm(output_attr)
-
-
-# the following recon loss functions should return pre-mean values
-
-
-def recon_loss_mse(
-    pred: Float[Tensor, "... d"],
-    target: Float[Tensor, "... d"],
-) -> tuple[Float[Tensor, ""], int]:
-    assert pred.shape == target.shape
-    squared_errors = (pred - target) ** 2
-    return squared_errors.sum(), pred.numel()
-
-
-def recon_loss_kl(
-    pred: Float[Tensor, "... vocab"],
-    target: Float[Tensor, "... vocab"],
-) -> tuple[Float[Tensor, ""], int]:
-    assert pred.shape == target.shape
-    log_q = torch.log_softmax(pred, dim=-1)  # log Q
-    p = torch.softmax(target, dim=-1)  # P
-    kl_per_position = F.kl_div(log_q, p, reduction="none").sum(dim=-1)  # P · (log P − log Q)
-    return kl_per_position.sum(), pred.numel()
-
-
-def get_reconstruction_loss(
-    task_config: TaskConfig,
-) -> ReconstructionLoss[Any]:
-    match task_config:
-        case TMSTaskConfig() | ResidMLPTaskConfig():
-            return recon_loss_mse
-        case LMTaskConfig() | IHTaskConfig():
-            return recon_loss_kl

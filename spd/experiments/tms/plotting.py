@@ -20,9 +20,8 @@ from matplotlib.colors import Colormap
 from matplotlib.figure import Figure
 from torch import Tensor
 
-from spd.experiments.tms.models import TMSModel
+from spd.experiments.tms.models import TMSModel, load_tms_component_model
 from spd.log import logger
-from spd.models.component_model import ComponentModel
 from spd.models.components import Components
 from spd.settings import REPO_ROOT
 
@@ -981,7 +980,7 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
 
         # Load models
-        model = ComponentModel.from_pretrained(run_id)
+        model = load_tms_component_model(run_id)
         assert isinstance(model.target_model, TMSModel)
 
         # Get custom config and name for this run

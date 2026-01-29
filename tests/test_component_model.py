@@ -20,8 +20,6 @@ from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import (
     ComponentModel,
     SPDRunInfo,
-    pass_batch_directly_to_model,
-    recon_loss_mse,
 )
 from spd.models.components import (
     ComponentsMaskInfo,
@@ -94,8 +92,6 @@ def test_correct_parameters_require_grad():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
         sigmoid_type="leaky_hard",
-        run_batch=pass_batch_directly_to_model,
-        reconstruction_loss=recon_loss_mse,
     )
 
     for module_path, components in component_model.components.items():
@@ -179,17 +175,37 @@ def test_from_run_info():
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             sigmoid_type=config.sigmoid_type,
-            run_batch=pass_batch_directly_to_model,
-            reconstruction_loss=recon_loss_mse,
         )
 
         save_file(cm.state_dict(), comp_model_dir / "model.pth")
         save_file(config.model_dump(mode="json"), comp_model_dir / "final_config.yaml")
 
         cm_run_info = SPDRunInfo.from_path(comp_model_dir / "model.pth")
-        cm_loaded = ComponentModel.from_run_info(cm_run_info)
 
         assert config == cm_run_info.config
+
+        # Manually reconstruct component model and load state dict
+        assert cm_run_info.config.pretrained_model_path is not None
+        loaded_target = SimpleTestModel.from_pretrained(cm_run_info.config.pretrained_model_path)
+        loaded_target.eval()
+        loaded_target.requires_grad_(False)
+        if cm_run_info.config.identity_module_info is not None:
+            insert_identity_operations_(
+                loaded_target,
+                identity_module_info=cm_run_info.config.identity_module_info,
+            )
+        loaded_module_path_info = expand_module_patterns(
+            loaded_target, cm_run_info.config.all_module_info
+        )
+        cm_loaded = ComponentModel(
+            target_model=loaded_target,
+            module_path_info=loaded_module_path_info,
+            ci_fn_type=cm_run_info.config.ci_fn_type,
+            ci_fn_hidden_dims=cm_run_info.config.ci_fn_hidden_dims,
+            sigmoid_type=cm_run_info.config.sigmoid_type,
+        )
+        cm_loaded.load_state_dict(torch.load(cm_run_info.checkpoint_path))
+
         for k, v in cm_loaded.state_dict().items():
             torch.testing.assert_close(v, cm.state_dict()[k])
 
@@ -287,8 +303,6 @@ def test_full_weight_delta_matches_target_behaviour():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
         sigmoid_type="leaky_hard",
-        run_batch=pass_batch_directly_to_model,
-        reconstruction_loss=recon_loss_mse,
     )
 
     token_ids = torch.randint(
@@ -320,8 +334,6 @@ def test_input_cache_captures_pre_weight_input():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         sigmoid_type="leaky_hard",
-        run_batch=pass_batch_directly_to_model,
-        reconstruction_loss=recon_loss_mse,
     )
 
     # WHEN we forward the component model with input caching
@@ -356,8 +368,6 @@ def test_weight_deltas():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         sigmoid_type="leaky_hard",
-        run_batch=pass_batch_directly_to_model,
-        reconstruction_loss=recon_loss_mse,
     )
 
     # THEN the weight deltas match the target weight
@@ -392,8 +402,6 @@ def test_replacement_effects_fwd_pass():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         sigmoid_type="leaky_hard",
-        run_batch=pass_batch_directly_to_model,
-        reconstruction_loss=recon_loss_mse,
     )
 
     # WHEN we set the target model weights to be UV
@@ -449,8 +457,6 @@ def test_replacing_identity():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         sigmoid_type="leaky_hard",
-        run_batch=pass_batch_directly_to_model,
-        reconstruction_loss=recon_loss_mse,
     )
 
     # and a random input
@@ -500,8 +506,6 @@ def test_routing():
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
         sigmoid_type="leaky_hard",
-        run_batch=pass_batch_directly_to_model,
-        reconstruction_loss=recon_loss_mse,
     )
 
     # and a random input

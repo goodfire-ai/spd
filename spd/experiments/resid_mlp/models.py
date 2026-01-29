@@ -10,13 +10,23 @@ import torch.nn.functional as F
 from jaxtyping import Float
 from torch import Tensor, nn
 
+from spd.configs import Config
 from spd.experiments.resid_mlp.configs import (
     ResidMLPModelConfig,
     ResidMLPTrainConfig,
 )
+from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
+from spd.models.component_model import (
+    ComponentModel,
+    SPDRunInfo,
+    handle_deprecated_state_dict_keys_,
+)
 from spd.spd_types import ModelPath
-from spd.utils.module_utils import init_param_
+from spd.utils.module_utils import expand_module_patterns, init_param_
+
+ResidMLPBatch = tuple[Float[Tensor, "... n_features"], Float[Tensor, "... n_features"]]
+ResidMLPOutput = Float[Tensor, "... n_features"]
 
 
 @dataclass
@@ -89,9 +99,10 @@ class ResidMLP(LoadableModule):
     @override
     def forward(
         self,
-        x: Float[Tensor, "... n_features"],
+        batch: ResidMLPBatch | Float[Tensor, "... n_features"],
         return_residual: bool = False,
     ) -> Float[Tensor, "... n_features"] | Float[Tensor, "... d_embed"]:
+        x = batch[0] if isinstance(batch, tuple) else batch
         residual = einops.einsum(x, self.W_E, "... n_features, n_features d_embed -> ... d_embed")
         for layer in self.layers:
             out = layer(residual)
@@ -121,3 +132,45 @@ class ResidMLP(LoadableModule):
         """Fetch a pretrained model from wandb or a local path to a checkpoint."""
         run_info = ResidMLPTargetRunInfo.from_path(path)
         return cls.from_run_info(run_info)
+
+
+def load_resid_mlp_component_model_from_run_info(
+    run_info: RunInfo[Config],
+) -> ComponentModel[ResidMLPBatch, ResidMLPOutput]:
+    """Load a trained ResidMLP ComponentModel from a run info object."""
+    config = run_info.config
+    assert config.pretrained_model_path is not None
+
+    target_model = ResidMLP.from_pretrained(config.pretrained_model_path)
+    target_model.eval()
+    target_model.requires_grad_(False)
+
+    if config.identity_module_info is not None:
+        insert_identity_operations_(
+            target_model,
+            identity_module_info=config.identity_module_info,
+        )
+
+    module_path_info = expand_module_patterns(target_model, config.all_module_info)
+
+    comp_model: ComponentModel[ResidMLPBatch, ResidMLPOutput] = ComponentModel(
+        target_model=target_model,
+        module_path_info=module_path_info,
+        ci_fn_hidden_dims=config.ci_fn_hidden_dims,
+        ci_fn_type=config.ci_fn_type,
+        sigmoid_type=config.sigmoid_type,
+    )
+
+    comp_model_weights = torch.load(run_info.checkpoint_path, map_location="cpu", weights_only=True)
+    handle_deprecated_state_dict_keys_(comp_model_weights)
+    comp_model.load_state_dict(comp_model_weights)
+
+    return comp_model
+
+
+def load_resid_mlp_component_model(
+    path: ModelPath,
+) -> ComponentModel[ResidMLPBatch, ResidMLPOutput]:
+    """Load a trained ResidMLP ComponentModel from a wandb or local path."""
+    run_info = SPDRunInfo.from_path(path)
+    return load_resid_mlp_component_model_from_run_info(run_info)
