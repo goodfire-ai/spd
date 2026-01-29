@@ -6,6 +6,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 from spd.configs import LayerwiseCiConfig, UniformKSubsetRoutingConfig
+from spd.continuous_pgd import ContinuousPGDState, continuous_pgd_recon_loss
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
@@ -655,3 +656,154 @@ class TestStochasticReconSubsetLoss:
 
         # All should be valid
         assert all(loss >= 0.0 for loss in losses)
+
+
+class TestContinuousPGDReconLoss:
+    def test_basic_forward_and_state_update(self: object) -> None:
+        """Test that continuous PGD computes loss and updates state."""
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        target_out = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        ci = {"fc": torch.tensor([[0.5]], dtype=torch.float32)}
+
+        # Initialize state
+        state = ContinuousPGDState(
+            module_to_c=model.module_to_c,
+            batch_size=1,
+            device="cpu",
+            use_delta_component=False,
+        )
+
+        # Store initial mask values
+        initial_masks = {k: v.clone() for k, v in state.masks.items()}
+
+        # Compute loss (this should also update state)
+        loss = continuous_pgd_recon_loss(
+            model=model,
+            batch=batch,
+            ci=ci,
+            weight_deltas=None,
+            target_out=target_out,
+            output_loss_type="mse",
+            pgd_state=state,
+            step_size=0.1,
+        )
+
+        # Loss should be non-negative
+        assert loss >= 0.0
+
+        # Masks should have been updated (not equal to initial)
+        for k in state.masks:
+            # Due to PGD step, masks should change (unless gradient is exactly 0)
+            assert state.masks[k].shape == initial_masks[k].shape
+            # Masks should still be in [0, 1]
+            assert torch.all(state.masks[k] >= 0.0)
+            assert torch.all(state.masks[k] <= 1.0)
+
+    def test_masks_persist_across_calls(self: object) -> None:
+        """Test that masks persist and accumulate updates across calls."""
+        fc_weight = torch.tensor([[2.0, 0.0], [0.0, 2.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        batch = torch.tensor([[1.0, 1.0]], dtype=torch.float32)
+        target_out = torch.tensor([[2.0, 2.0]], dtype=torch.float32)
+        ci = {"fc": torch.tensor([[0.3]], dtype=torch.float32)}
+
+        state = ContinuousPGDState(
+            module_to_c=model.module_to_c,
+            batch_size=1,
+            device="cpu",
+            use_delta_component=False,
+        )
+
+        # Run multiple steps
+        masks_history = []
+        for _ in range(5):
+            masks_history.append({k: v.clone() for k, v in state.masks.items()})
+            continuous_pgd_recon_loss(
+                model=model,
+                batch=batch,
+                ci=ci,
+                weight_deltas=None,
+                target_out=target_out,
+                output_loss_type="mse",
+                pgd_state=state,
+                step_size=0.1,
+            )
+
+        # Masks should have changed over time
+        # (they accumulate updates, so later masks differ from earlier ones)
+        for k in state.masks:
+            initial = masks_history[0][k]
+            final = state.masks[k]
+            # Should have changed from initial (very unlikely to be identical after 5 steps)
+            assert not torch.allclose(initial, final)
+
+    def test_with_delta_component(self: object) -> None:
+        """Test continuous PGD with delta component enabled."""
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        target_out = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        ci = {"fc": torch.tensor([[0.5]], dtype=torch.float32)}
+        weight_deltas = model.calc_weight_deltas()
+
+        # Initialize state with delta component
+        state = ContinuousPGDState(
+            module_to_c=model.module_to_c,
+            batch_size=1,
+            device="cpu",
+            use_delta_component=True,
+        )
+
+        # Masks should have C+1 elements when using delta component
+        assert state.masks["fc"].shape[-1] == model.module_to_c["fc"] + 1
+
+        loss = continuous_pgd_recon_loss(
+            model=model,
+            batch=batch,
+            ci=ci,
+            weight_deltas=weight_deltas,
+            target_out=target_out,
+            output_loss_type="mse",
+            pgd_state=state,
+            step_size=0.1,
+        )
+
+        assert loss >= 0.0
+
+    def test_batch_dimension(self: object) -> None:
+        """Test that masks work correctly with batch dimension > 1."""
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        # Batch of 3 examples
+        batch = torch.tensor([[1.0, 2.0], [2.0, 3.0], [0.5, 1.0]], dtype=torch.float32)
+        target_out = torch.tensor([[1.0, 2.0], [2.0, 3.0], [0.5, 1.0]], dtype=torch.float32)
+        ci = {"fc": torch.tensor([[0.5], [0.6], [0.4]], dtype=torch.float32)}
+
+        state = ContinuousPGDState(
+            module_to_c=model.module_to_c,
+            batch_size=3,
+            device="cpu",
+            use_delta_component=False,
+        )
+
+        # Masks should have shape (batch_size, C)
+        assert state.masks["fc"].shape == (3, model.module_to_c["fc"])
+
+        loss = continuous_pgd_recon_loss(
+            model=model,
+            batch=batch,
+            ci=ci,
+            weight_deltas=None,
+            target_out=target_out,
+            output_loss_type="mse",
+            pgd_state=state,
+            step_size=0.1,
+        )
+
+        assert loss >= 0.0

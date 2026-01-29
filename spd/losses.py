@@ -8,6 +8,7 @@ from spd.configs import (
     CIMaskedReconLayerwiseLossConfig,
     CIMaskedReconLossConfig,
     CIMaskedReconSubsetLossConfig,
+    ContinuousPGDReconLossConfig,
     FaithfulnessLossConfig,
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
@@ -182,6 +183,10 @@ def compute_total_loss(
                     pre_weight_acts=pre_weight_acts,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                )
+            case ContinuousPGDReconLossConfig():
+                raise ValueError(
+                    "ContinuousPGDReconLossConfig should be handled separately in the training loop"
                 )
 
         terms[f"loss/{cfg.classname}"] = loss.item()

@@ -20,12 +20,14 @@ from tqdm import tqdm
 
 from spd.configs import (
     Config,
+    ContinuousPGDReconLossConfig,
     LossMetricConfigType,
     MetricConfigType,
     PGDMultiBatchConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
 )
+from spd.continuous_pgd import ContinuousPGDState, continuous_pgd_recon_loss
 from spd.data import loop_dataloader
 from spd.eval import evaluate, evaluate_multibatch_pgd
 from spd.identity_insertion import insert_identity_operations_
@@ -238,6 +240,26 @@ def optimize(
         global_n_examples_per_batch=batch_dims.numel(),
     )
 
+    # Separate ContinuousPGD configs from regular loss configs
+    continuous_pgd_configs: list[ContinuousPGDReconLossConfig] = [
+        cfg for cfg in config.loss_metric_configs if isinstance(cfg, ContinuousPGDReconLossConfig)
+    ]
+    regular_loss_configs: list[LossMetricConfigType] = [
+        cfg
+        for cfg in config.loss_metric_configs
+        if not isinstance(cfg, ContinuousPGDReconLossConfig)
+    ]
+
+    # Initialize ContinuousPGD state if needed
+    continuous_pgd_state: ContinuousPGDState | None = None
+    if continuous_pgd_configs:
+        continuous_pgd_state = ContinuousPGDState(
+            module_to_c=model.module_to_c,
+            batch_size=config.microbatch_size,
+            device=device,
+            use_delta_component=config.use_delta_component,
+        )
+
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
 
@@ -268,7 +290,7 @@ def optimize(
             alive_tracker.update(ci=ci.lower_leaky)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=config.loss_metric_configs,
+                loss_metric_configs=regular_loss_configs,
                 model=component_model,
                 batch=microbatch,
                 ci=ci,
@@ -281,6 +303,24 @@ def optimize(
                 n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
             )
+
+            # Compute ContinuousPGD loss separately (state is updated in-place)
+            if continuous_pgd_state is not None:
+                for cpgd_cfg in continuous_pgd_configs:
+                    assert cpgd_cfg.coeff is not None
+                    cpgd_loss = continuous_pgd_recon_loss(
+                        model=component_model,
+                        batch=microbatch,
+                        ci=ci.lower_leaky,
+                        weight_deltas=weight_deltas if config.use_delta_component else None,
+                        target_out=target_model_output.output,
+                        output_loss_type=config.output_loss_type,
+                        pgd_state=continuous_pgd_state,
+                        step_size=cpgd_cfg.step_size,
+                    )
+                    microbatch_loss_terms[f"loss/{cpgd_cfg.classname}"] = cpgd_loss.item()
+                    microbatch_total_loss = microbatch_total_loss + cpgd_cfg.coeff * cpgd_loss
+
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
