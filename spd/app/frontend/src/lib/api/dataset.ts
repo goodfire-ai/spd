@@ -54,6 +54,42 @@ export async function getDatasetResults(page: number, pageSize: number): Promise
     return (await response.json()) as DatasetSearchPage;
 }
 
+export type TokenizedSearchResult = {
+    tokens: string[];
+    next_token_probs: (number | null)[];
+    occurrence_count: number;
+    topic: string | null;
+    theme: string | null;
+};
+
+export type TokenizedSearchPage = {
+    results: TokenizedSearchResult[];
+    query: string;
+    page: number;
+    page_size: number;
+    total_results: number;
+    total_pages: number;
+};
+
+export async function getTokenizedResults(
+    page: number,
+    pageSize: number = 10,
+    maxTokens: number = 256,
+): Promise<TokenizedSearchPage> {
+    const url = apiUrl("/api/dataset/results_tokenized");
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("page_size", String(pageSize));
+    url.searchParams.set("max_tokens", String(maxTokens));
+
+    const response = await fetch(url.toString(), { method: "GET" });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || "Failed to get tokenized results");
+    }
+
+    return (await response.json()) as TokenizedSearchPage;
+}
+
 export type RandomSamplesResult = {
     results: DatasetSearchResult[];
     total_available: number;

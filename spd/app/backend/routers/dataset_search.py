@@ -33,6 +33,16 @@ class DatasetSearchResult(BaseModel):
     theme: str | None = None
 
 
+class TokenizedSearchResult(BaseModel):
+    """A tokenized search result with per-token probability."""
+
+    tokens: list[str]
+    next_token_probs: list[float | None]
+    occurrence_count: int
+    topic: str | None = None
+    theme: str | None = None
+
+
 class DatasetSearchMetadata(BaseModel):
     """Metadata about a completed dataset search."""
 
@@ -46,6 +56,17 @@ class DatasetSearchPage(BaseModel):
     """Paginated results from a dataset search."""
 
     results: list[DatasetSearchResult]
+    page: int
+    page_size: int
+    total_results: int
+    total_pages: int
+
+
+class TokenizedSearchPage(BaseModel):
+    """Paginated tokenized results from a dataset search."""
+
+    results: list[TokenizedSearchResult]
+    query: str
     page: int
     page_size: int
     total_results: int
@@ -160,6 +181,101 @@ def get_dataset_results(
 
     return DatasetSearchPage(
         results=[DatasetSearchResult(**r) for r in page_results],
+        page=page,
+        page_size=page_size,
+        total_results=total_results,
+        total_pages=total_pages,
+    )
+
+
+@router.get("/results_tokenized")
+@log_errors
+def get_tokenized_results(
+    loaded: DepLoadedRun,
+    manager: DepStateManager,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=20)] = 10,
+    max_tokens: Annotated[int, Query(ge=16, le=512)] = 256,
+) -> TokenizedSearchPage:
+    """Get paginated tokenized results with per-token probability.
+
+    Requires a loaded run for model inference. Results are tokenized and
+    run through the model to compute next-token probabilities.
+
+    Args:
+        page: Page number (1-indexed)
+        page_size: Results per page (1-20, lower limit due to model inference)
+        max_tokens: Maximum tokens per result (truncated if longer)
+
+    Returns:
+        Paginated tokenized results with probabilities
+    """
+    search_state = manager.state.dataset_search_state
+    if search_state is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No search results available. Perform a search first.",
+        )
+
+    device = get_device()
+    model = loaded.model
+    tokenizer = loaded.tokenizer
+
+    total_results = len(search_state.results)
+    total_pages = max(1, (total_results + page_size - 1) // page_size)
+
+    if page > total_pages and total_results > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Page {page} exceeds total pages {total_pages}",
+        )
+
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_results = search_state.results[start_idx:end_idx]
+
+    tokenized_results: list[TokenizedSearchResult] = []
+
+    for result in page_results:
+        story: str = result["story"]
+
+        token_ids = tokenizer.encode(story, add_special_tokens=False)
+        if len(token_ids) > max_tokens:
+            token_ids = token_ids[:max_tokens]
+
+        if len(token_ids) == 0:
+            continue
+
+        tokens_tensor = torch.tensor([token_ids], device=device)
+
+        with torch.no_grad():
+            logits = model(tokens_tensor)
+            probs = torch.softmax(logits, dim=-1)
+
+        next_token_probs: list[float | None] = []
+        for i in range(len(token_ids) - 1):
+            next_token_id = token_ids[i + 1]
+            prob = probs[0, i, next_token_id].item()
+            next_token_probs.append(prob)
+        next_token_probs.append(None)
+
+        token_strings = [loaded.token_strings[t] for t in token_ids]
+
+        tokenized_results.append(
+            TokenizedSearchResult(
+                tokens=token_strings,
+                next_token_probs=next_token_probs,
+                occurrence_count=result["occurrence_count"],
+                topic=result.get("topic"),
+                theme=result.get("theme"),
+            )
+        )
+
+    query = search_state.metadata.get("query", "")
+
+    return TokenizedSearchPage(
+        results=tokenized_results,
+        query=query,
         page=page,
         page_size=page_size,
         total_results=total_results,

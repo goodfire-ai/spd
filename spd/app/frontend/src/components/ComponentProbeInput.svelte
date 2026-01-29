@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { SubcomponentProbeResult } from "../lib/promptAttributionsTypes";
+    import type { Loadable } from "../lib";
     import { probeComponent } from "../lib/api";
     import TokenHighlights from "./TokenHighlights.svelte";
 
@@ -12,25 +13,22 @@
     let { layer, componentIdx, maxAbsComponentAct }: Props = $props();
 
     let probeText = $state("");
-    let probeResult = $state<SubcomponentProbeResult | null>(null);
-    let probeLoading = $state(false);
-    let probeError = $state<string | null>(null);
+    let probeResult = $state<Loadable<SubcomponentProbeResult>>({ status: "uninitialized" });
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function runProbe(text: string) {
         if (!text.trim()) {
-            probeResult = null;
-            probeError = null;
+            probeResult = { status: "uninitialized" };
             return;
         }
 
-        probeLoading = true;
-        probeError = null;
+        probeResult = { status: "loading" };
 
         try {
-            probeResult = await probeComponent(text, layer, componentIdx);
-        } finally {
-            probeLoading = false;
+            const data = await probeComponent(text, layer, componentIdx);
+            probeResult = { status: "loaded", data };
+        } catch (e) {
+            probeResult = { status: "error", error: e };
         }
     }
 
@@ -45,8 +43,7 @@
     // Re-run probe when layer or component changes (if there's text)
     $effect(() => {
         void [layer, componentIdx]; // track dependencies
-        probeResult = null;
-        probeError = null;
+        probeResult = { status: "uninitialized" };
         if (probeText.trim()) {
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => runProbe(probeText), 100);
@@ -62,17 +59,17 @@
         value={probeText}
         oninput={onProbeInput}
     />
-    {#if probeLoading}
+    {#if probeResult.status === "loading"}
         <p class="probe-status">Loading...</p>
-    {:else if probeError}
-        <p class="probe-error">{probeError}</p>
-    {:else if probeResult && probeResult.tokens.length > 0}
+    {:else if probeResult.status === "error"}
+        <p class="probe-error">{probeResult.error}</p>
+    {:else if probeResult.status === "loaded" && probeResult.data.tokens.length > 0}
         <div class="probe-result">
             <TokenHighlights
-                tokenStrings={probeResult.tokens}
-                tokenCi={probeResult.ci_values}
-                tokenComponentActs={probeResult.subcomp_acts}
-                tokenNextProbs={probeResult.next_token_probs}
+                tokenStrings={probeResult.data.tokens}
+                tokenCi={probeResult.data.ci_values}
+                tokenComponentActs={probeResult.data.subcomp_acts}
+                tokenNextProbs={probeResult.data.next_token_probs}
                 {maxAbsComponentAct}
             />
         </div>

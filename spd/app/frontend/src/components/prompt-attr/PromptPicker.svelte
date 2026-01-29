@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { PromptPreview, PinnedNode, TokenizeResponse } from "../../lib/promptAttributionsTypes";
+    import type { Loadable } from "../../lib";
     import { tokenizeText } from "../../lib/api";
     import type { PromptGenerateState } from "./types";
     import ProbColoredTokens from "../ProbColoredTokens.svelte";
@@ -37,20 +38,20 @@
     }: Props = $props();
 
     let customText = $state("");
-    let tokenizeResult = $state<TokenizeResponse | null>(null);
-    let tokenizeLoading = $state(false);
+    let tokenizeResult = $state<Loadable<TokenizeResponse>>({ status: "uninitialized" });
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function runTokenize(text: string) {
         if (!text.trim()) {
-            tokenizeResult = null;
+            tokenizeResult = { status: "uninitialized" };
             return;
         }
-        tokenizeLoading = true;
+        tokenizeResult = { status: "loading" };
         try {
-            tokenizeResult = await tokenizeText(text);
-        } finally {
-            tokenizeLoading = false;
+            const data = await tokenizeText(text);
+            tokenizeResult = { status: "loaded", data };
+        } catch (e) {
+            tokenizeResult = { status: "error", error: e };
         }
     }
 
@@ -67,7 +68,7 @@
         if (!customText.trim() || isAddingCustomPrompt) return;
         await onAddCustom(customText);
         customText = "";
-        tokenizeResult = null;
+        tokenizeResult = { status: "uninitialized" };
         onClose();
     }
 
@@ -99,15 +100,17 @@
                         {isAddingCustomPrompt ? "..." : "Add"}
                     </button>
                 </div>
-                {#if tokenizeLoading}
+                {#if tokenizeResult.status === "loading"}
                     <div class="token-preview-loading">...</div>
-                {:else if tokenizeResult && tokenizeResult.tokens.length > 0}
+                {:else if tokenizeResult.status === "error"}
+                    <div class="token-preview-error">{tokenizeResult.error}</div>
+                {:else if tokenizeResult.status === "loaded" && tokenizeResult.data.tokens.length > 0}
                     <div class="token-preview">
                         <ProbColoredTokens
-                            tokens={tokenizeResult.tokens}
-                            nextTokenProbs={tokenizeResult.next_token_probs}
+                            tokens={tokenizeResult.data.tokens}
+                            nextTokenProbs={tokenizeResult.data.next_token_probs}
                         />
-                        <span class="token-count">({tokenizeResult.tokens.length})</span>
+                        <span class="token-count">({tokenizeResult.data.tokens.length})</span>
                     </div>
                 {/if}
             </div>
@@ -216,6 +219,12 @@
         font-family: var(--font-mono);
         font-size: var(--text-sm);
         color: var(--text-muted);
+    }
+
+    .token-preview-error {
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        color: var(--status-negative);
     }
 
     .token-count {

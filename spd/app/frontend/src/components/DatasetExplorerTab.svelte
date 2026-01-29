@@ -1,11 +1,8 @@
 <script lang="ts">
-    import { getContext } from "svelte";
     import * as api from "../lib/api";
-    import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
+    import type { Loadable } from "../lib";
     import DatasetSearchResults from "./DatasetSearchResults.svelte";
     import TokenizedSampleCard from "./TokenizedSampleCard.svelte";
-
-    const runState = getContext<RunContext>(RUN_KEY);
 
     type InnerTab = "search" | "random";
     let activeInnerTab = $state<InnerTab>("search");
@@ -13,78 +10,59 @@
     // Search state
     let searchQuery = $state("");
     let searchSplit = $state<"train" | "test">("train");
-    let searchLoading = $state(false);
     let searchMetadata = $state<api.DatasetSearchMetadata | null>(null);
     let searchPage = $state(1);
-    let searchPageSize = $state(20);
-    let searchResults = $state<api.DatasetSearchPage | null>(null);
+    let searchPageSize = $state(10);
+    let searchResults = $state<Loadable<api.TokenizedSearchPage>>({ status: "uninitialized" });
 
-    // Random samples state (text-only, no run required)
+    // Random samples state
     let randomSplit = $state<"train" | "test">("train");
     let randomSeed = $state(42);
-    let randomLoading = $state(false);
-    let randomData = $state<api.RandomSamplesResult | null>(null);
     let randomPage = $state(1);
-    let randomPageSize = $state(20);
-
-    // Random samples with CE loss state (requires loaded run)
-    let randomWithLossData = $state<api.RandomSamplesWithLossResult | null>(null);
-    let randomWithLossLoading = $state(false);
-    let randomWithLossPage = $state(1);
-    let randomWithLossPageSize = $state(5);
-
-    // Check if run is loaded
-    let isRunLoaded = $derived(runState.run.status === "loaded");
+    let randomPageSize = $state(5);
+    let randomSamples = $state<Loadable<api.RandomSamplesWithLossResult>>({ status: "uninitialized" });
 
     async function performSearch() {
         if (!searchQuery.trim()) return;
 
-        searchLoading = true;
+        searchResults = { status: "loading" };
         searchMetadata = null;
-        searchResults = null;
         searchPage = 1;
 
         try {
             const result = await api.searchDataset(searchQuery.trim(), searchSplit);
             searchMetadata = result;
             await loadSearchPage(1);
-        } finally {
-            searchLoading = false;
+        } catch (e) {
+            searchResults = { status: "error", error: e };
         }
     }
 
     async function loadSearchPage(page: number) {
-        searchResults = await api.getDatasetResults(page, searchPageSize);
-        searchPage = page;
+        searchResults = { status: "loading" };
+        try {
+            const data = await api.getTokenizedResults(page, searchPageSize);
+            searchResults = { status: "loaded", data };
+            searchPage = page;
+        } catch (e) {
+            searchResults = { status: "error", error: e };
+        }
     }
 
     function handleSearchKeydown(event: KeyboardEvent) {
-        if (event.key === "Enter" && !searchLoading) {
+        if (event.key === "Enter" && searchResults.status !== "loading") {
             performSearch();
         }
     }
 
     async function loadRandomSamples() {
-        if (isRunLoaded) {
-            // Use new endpoint with CE loss
-            randomWithLossLoading = true;
-            randomWithLossData = null;
-            randomWithLossPage = 1;
-            try {
-                randomWithLossData = await api.getRandomSamplesWithLoss(20, randomSeed, randomSplit);
-            } finally {
-                randomWithLossLoading = false;
-            }
-        } else {
-            // Use old endpoint (text only)
-            randomLoading = true;
-            randomData = null;
-            randomPage = 1;
-            try {
-                randomData = await api.getRandomSamples(100, randomSeed, randomSplit);
-            } finally {
-                randomLoading = false;
-            }
+        randomSamples = { status: "loading" };
+        randomPage = 1;
+        try {
+            const data = await api.getRandomSamplesWithLoss(20, randomSeed, randomSplit);
+            randomSamples = { status: "loaded", data };
+        } catch (e) {
+            randomSamples = { status: "error", error: e };
         }
     }
 
@@ -93,43 +71,22 @@
         loadRandomSamples();
     }
 
-    // Pagination for random samples without CE loss (client-side)
+    // Pagination for random samples (client-side)
     let randomPageResults = $derived.by(() => {
-        if (!randomData) return null;
+        if (randomSamples.status !== "loaded") return null;
         const start = (randomPage - 1) * randomPageSize;
         const end = start + randomPageSize;
         return {
-            results: randomData.results.slice(start, end),
+            results: randomSamples.data.results.slice(start, end),
             page: randomPage,
-            page_size: randomPageSize,
-            total_results: randomData.results.length,
-            total_pages: Math.ceil(randomData.results.length / randomPageSize),
-        };
-    });
-
-    // Pagination for random samples with CE loss (client-side)
-    let randomWithLossPageResults = $derived.by(() => {
-        if (!randomWithLossData) return null;
-        const start = (randomWithLossPage - 1) * randomWithLossPageSize;
-        const end = start + randomWithLossPageSize;
-        return {
-            results: randomWithLossData.results.slice(start, end),
-            page: randomWithLossPage,
-            total_results: randomWithLossData.results.length,
-            total_pages: Math.ceil(randomWithLossData.results.length / randomWithLossPageSize),
+            total_results: randomSamples.data.results.length,
+            total_pages: Math.ceil(randomSamples.data.results.length / randomPageSize),
         };
     });
 
     function handleRandomPageChange(page: number) {
         randomPage = page;
     }
-
-    function handleRandomWithLossPageChange(page: number) {
-        randomWithLossPage = page;
-    }
-
-    // Derived loading state for random samples
-    let anyRandomLoading = $derived(randomLoading || randomWithLossLoading);
 </script>
 
 <div class="explorer-container">
@@ -161,9 +118,9 @@
                     <button
                         class="action-button"
                         onclick={performSearch}
-                        disabled={searchLoading || !searchQuery.trim()}
+                        disabled={searchResults.status === "loading" || !searchQuery.trim()}
                     >
-                        {searchLoading ? "Searching..." : "Search"}
+                        {searchResults.status === "loading" ? "Searching..." : "Search"}
                     </button>
                 </div>
                 <div class="form-grid">
@@ -175,12 +132,12 @@
                             placeholder="e.g. 'dragon' or 'went to the'"
                             bind:value={searchQuery}
                             onkeydown={handleSearchKeydown}
-                            disabled={searchLoading}
+                            disabled={searchResults.status === "loading"}
                         />
                     </div>
                     <div class="form-row">
                         <label for="search-split">Split:</label>
-                        <select id="search-split" bind:value={searchSplit} disabled={searchLoading}>
+                        <select id="search-split" bind:value={searchSplit} disabled={searchResults.status === "loading"}>
                             <option value="train">Train</option>
                             <option value="test">Test</option>
                         </select>
@@ -194,17 +151,19 @@
             </div>
 
             <div class="results-box">
-                {#if searchResults}
+                {#if searchResults.status === "loaded"}
                     <DatasetSearchResults
-                        results={searchResults.results}
+                        results={searchResults.data.results}
                         page={searchPage}
                         pageSize={searchPageSize}
-                        totalPages={searchResults.total_pages}
+                        totalPages={searchResults.data.total_pages}
                         onPageChange={loadSearchPage}
                         query={searchQuery}
                     />
-                {:else if searchLoading}
+                {:else if searchResults.status === "loading"}
                     <div class="empty-state">Searching dataset...</div>
+                {:else if searchResults.status === "error"}
+                    <div class="empty-state error">Error: {searchResults.error}</div>
                 {:else}
                     <div class="empty-state">
                         <p>Enter a query above to search the SimpleStories dataset</p>
@@ -219,10 +178,10 @@
                 <div class="config-header">
                     <span class="config-title">Random Dataset Samples</span>
                     <div class="action-buttons">
-                        <button class="action-button" onclick={loadRandomSamples} disabled={anyRandomLoading}>
-                            {anyRandomLoading ? "Loading..." : "Load Samples"}
+                        <button class="action-button" onclick={loadRandomSamples} disabled={randomSamples.status === "loading"}>
+                            {randomSamples.status === "loading" ? "Loading..." : "Load Samples"}
                         </button>
-                        <button class="action-button secondary" onclick={shuffleRandom} disabled={anyRandomLoading}>
+                        <button class="action-button secondary" onclick={shuffleRandom} disabled={randomSamples.status === "loading"}>
                             Shuffle
                         </button>
                     </div>
@@ -230,7 +189,7 @@
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="random-split">Split:</label>
-                        <select id="random-split" bind:value={randomSplit} disabled={anyRandomLoading}>
+                        <select id="random-split" bind:value={randomSplit} disabled={randomSamples.status === "loading"}>
                             <option value="train">Train</option>
                             <option value="test">Test</option>
                         </select>
@@ -241,77 +200,62 @@
                             id="random-seed"
                             type="number"
                             bind:value={randomSeed}
-                            disabled={anyRandomLoading}
+                            disabled={randomSamples.status === "loading"}
                             min="0"
                         />
                     </div>
                 </div>
-                {#if isRunLoaded && randomWithLossData}
+                {#if randomSamples.status === "loaded"}
                     <div class="metadata">
-                        Showing {randomWithLossData.results.length} random samples with CE loss (seed: {randomWithLossData.seed})
+                        Showing {randomSamples.data.results.length} random samples (seed: {randomSamples.data.seed})
                     </div>
-                {:else if randomData}
-                    <div class="metadata">
-                        Showing {randomData.results.length} random samples (seed: {randomData.seed})
-                    </div>
-                {/if}
-                {#if !isRunLoaded}
-                    <div class="metadata muted">Load a run to see per-token cross-entropy loss</div>
                 {/if}
             </div>
 
             <div class="results-box">
-                {#if isRunLoaded && randomWithLossPageResults}
+                {#if randomPageResults}
                     <!-- Tokenized samples with next-token probability -->
                     <div class="tokenized-results">
                         <div class="prob-legend">
-                            <span class="legend-label">P(next token):</span>
+                            <span class="legend-label">P(token):</span>
                             <span class="legend-low">Low</span>
                             <span class="legend-arrow">→</span>
                             <span class="legend-high">High</span>
                         </div>
                         <div class="tokenized-list">
-                            {#each randomWithLossPageResults.results as sample, idx (idx)}
+                            {#each randomPageResults.results as sample, idx (idx)}
                                 <TokenizedSampleCard
                                     {sample}
-                                    index={(randomWithLossPage - 1) * randomWithLossPageSize + idx}
+                                    index={(randomPage - 1) * randomPageSize + idx}
                                 />
                             {/each}
                         </div>
-                        {#if randomWithLossPageResults.total_pages > 1}
+                        {#if randomPageResults.total_pages > 1}
                             <div class="pagination">
                                 <button
                                     class="page-button"
-                                    onclick={() => handleRandomWithLossPageChange(randomWithLossPage - 1)}
-                                    disabled={randomWithLossPage === 1}
+                                    onclick={() => handleRandomPageChange(randomPage - 1)}
+                                    disabled={randomPage === 1}
                                 >
                                     Previous
                                 </button>
                                 <span class="page-info">
-                                    Page {randomWithLossPage} of {randomWithLossPageResults.total_pages}
+                                    Page {randomPage} of {randomPageResults.total_pages}
                                 </span>
                                 <button
                                     class="page-button"
-                                    onclick={() => handleRandomWithLossPageChange(randomWithLossPage + 1)}
-                                    disabled={randomWithLossPage === randomWithLossPageResults.total_pages}
+                                    onclick={() => handleRandomPageChange(randomPage + 1)}
+                                    disabled={randomPage === randomPageResults.total_pages}
                                 >
                                     Next
                                 </button>
                             </div>
                         {/if}
                     </div>
-                {:else if !isRunLoaded && randomPageResults}
-                    <!-- Text-only samples (no run loaded) -->
-                    <DatasetSearchResults
-                        results={randomPageResults.results}
-                        page={randomPage}
-                        pageSize={randomPageSize}
-                        totalPages={randomPageResults.total_pages}
-                        onPageChange={handleRandomPageChange}
-                        query=""
-                    />
-                {:else if anyRandomLoading}
+                {:else if randomSamples.status === "loading"}
                     <div class="empty-state">Loading random samples...</div>
+                {:else if randomSamples.status === "error"}
+                    <div class="empty-state error">Error: {randomSamples.error}</div>
                 {:else}
                     <div class="empty-state">
                         <p>Click "Load Samples" to fetch random stories</p>
@@ -506,14 +450,13 @@
         font-family: var(--font-sans);
     }
 
+    .empty-state.error {
+        color: var(--status-negative);
+    }
+
     .empty-state p {
         margin: var(--space-1) 0;
         font-size: var(--text-base);
-    }
-
-    .metadata.muted {
-        color: var(--text-muted);
-        font-style: italic;
     }
 
     .tokenized-results {
