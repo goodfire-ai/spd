@@ -246,6 +246,7 @@ def _generate_sbatch_header(
         f"#SBATCH --partition={config.partition}",
         f"#SBATCH --nodes={config.n_nodes}",
         f"#SBATCH --ntasks={n_tasks}",
+        f"#SBATCH --ntasks-per-node=1",
         f"#SBATCH --gres=gpu:{config.n_gpus}",
         f"#SBATCH --time={config.time}",
         f"#SBATCH --output={SLURM_LOGS_DIR}/slurm-{log_pattern}.out",
