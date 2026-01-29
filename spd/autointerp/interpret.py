@@ -9,7 +9,12 @@ from pathlib import Path
 
 import httpx
 from openrouter import OpenRouter
-from openrouter.components import JSONSchemaConfig, MessageTypedDict, ResponseFormatJSONSchema
+from openrouter.components import (
+    JSONSchemaConfig,
+    MessageTypedDict,
+    Reasoning,
+    ResponseFormatJSONSchema,
+)
 from openrouter.errors import (
     BadGatewayResponseError,
     ChatError,
@@ -82,6 +87,13 @@ class OpenRouterModelName(StrEnum):
     GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
 
 
+class ReasoningEffort(StrEnum):
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 @dataclass
 class CostTracker:
     input_tokens: int = 0
@@ -107,6 +119,7 @@ async def chat_with_retry(
     response_format: ResponseFormatJSONSchema,
     max_tokens: int,
     context_label: str,
+    reasoning: Reasoning | None = None,
 ) -> tuple[str, int, int]:
     """Send chat request with exponential backoff retry. Returns (content, input_tokens, output_tokens)."""
     last_error: Exception | None = None
@@ -117,6 +130,7 @@ async def chat_with_retry(
                 max_tokens=max_tokens,
                 messages=messages,
                 response_format=response_format,
+                reasoning=reasoning,
             )
             choice = response.choices[0]
             message = choice.message
@@ -167,6 +181,7 @@ async def interpret_component(
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
+    reasoning: Reasoning | None = None,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
     prompt = format_prompt_template(
@@ -189,8 +204,9 @@ async def interpret_component(
                     strict=True,
                 )
             ),
-            max_tokens=1500,
+            max_tokens=8000,  # High to accommodate reasoning tokens
             context_label=component.component_key,
+            reasoning=reasoning,
         )
     except RuntimeError as e:
         logger.error(str(e))
@@ -229,7 +245,8 @@ async def interpret_all(
     interpreter_model: str,
     output_path: Path,
     token_stats: TokenStatsStorage,
-    limit: int | None = None,
+    limit: int | None,
+    reasoning_effort: ReasoningEffort | None,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
@@ -257,6 +274,8 @@ async def interpret_all(
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
+
+    reasoning = Reasoning(effort=reasoning_effort.value) if reasoning_effort else None
 
     async def process_one(
         component: ComponentData,
@@ -289,6 +308,7 @@ async def interpret_all(
                     tokenizer=tokenizer,
                     input_token_stats=input_stats,
                     output_token_stats=output_stats,
+                    reasoning=reasoning,
                 )
                 if res is None:
                     logger.error(f"Failed to interpret {component.component_key}")
@@ -319,6 +339,10 @@ async def interpret_all(
         cost_tracker = CostTracker(
             input_price_per_token=input_price, output_price_per_token=output_price
         )
+        reasoning_str = (
+            f"reasoning={reasoning_effort.value}" if reasoning_effort else "no reasoning"
+        )
+        print(f"Model: {interpreter_model}, {reasoning_str}")
         print(f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output")
 
         await tqdm_asyncio.gather(
@@ -357,8 +381,9 @@ def run_interpret(
     activation_contexts_dir: Path,
     correlations_dir: Path,
     autointerp_dir: Path,
-    limit: int | None = None,
-) -> list[InterpretationResult]:
+    limit: int | None,
+    reasoning_effort: ReasoningEffort | None,
+):
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
 
@@ -382,8 +407,8 @@ def run_interpret(
             output_path=output_path,
             token_stats=token_stats,
             limit=limit,
+            reasoning_effort=reasoning_effort,
         )
     )
 
     print(f"Completed {len(results)} interpretations -> {output_path}")
-    return results
