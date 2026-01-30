@@ -27,7 +27,7 @@ from spd.configs import (
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
 )
-from spd.continuous_pgd import ContinuousPGDState, continuous_pgd_recon_loss
+from spd.continuous_pgd import ContinuousPGDResult, ContinuousPGDState, continuous_pgd_recon_loss
 from spd.data import loop_dataloader
 from spd.eval import evaluate, evaluate_multibatch_pgd
 from spd.identity_insertion import insert_identity_operations_
@@ -212,8 +212,19 @@ def optimize(
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
 
+    # Separate ContinuousPGD configs from regular loss configs early
+    # (ContinuousPGD is handled separately in training loop and not evaluated)
+    continuous_pgd_configs: list[ContinuousPGDReconLossConfig] = [
+        cfg for cfg in config.loss_metric_configs if isinstance(cfg, ContinuousPGDReconLossConfig)
+    ]
+    regular_loss_configs: list[LossMetricConfigType] = [
+        cfg
+        for cfg in config.loss_metric_configs
+        if not isinstance(cfg, ContinuousPGDReconLossConfig)
+    ]
+
     eval_metric_configs = get_unique_metric_configs(
-        loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
+        loss_configs=regular_loss_configs, eval_configs=config.eval_metric_configs
     )
 
     multibatch_pgd_eval_configs: list[
@@ -239,16 +250,6 @@ def optimize(
         ci_alive_threshold=config.ci_alive_threshold,
         global_n_examples_per_batch=batch_dims.numel(),
     )
-
-    # Separate ContinuousPGD configs from regular loss configs
-    continuous_pgd_configs: list[ContinuousPGDReconLossConfig] = [
-        cfg for cfg in config.loss_metric_configs if isinstance(cfg, ContinuousPGDReconLossConfig)
-    ]
-    regular_loss_configs: list[LossMetricConfigType] = [
-        cfg
-        for cfg in config.loss_metric_configs
-        if not isinstance(cfg, ContinuousPGDReconLossConfig)
-    ]
 
     # Initialize ContinuousPGD state if needed
     continuous_pgd_state: ContinuousPGDState | None = None
@@ -304,11 +305,14 @@ def optimize(
                 output_loss_type=config.output_loss_type,
             )
 
-            # Compute ContinuousPGD loss separately (state is updated in-place)
+            # Compute ContinuousPGD loss separately
+            # We collect the results and apply PGD steps AFTER .backward() to avoid
+            # in-place modifications invalidating the computation graph
+            cpgd_results: list[ContinuousPGDResult] = []
             if continuous_pgd_state is not None:
                 for cpgd_cfg in continuous_pgd_configs:
                     assert cpgd_cfg.coeff is not None
-                    cpgd_loss = continuous_pgd_recon_loss(
+                    cpgd_result = continuous_pgd_recon_loss(
                         model=component_model,
                         batch=microbatch,
                         ci=ci.lower_leaky,
@@ -318,10 +322,17 @@ def optimize(
                         pgd_state=continuous_pgd_state,
                         step_size=cpgd_cfg.step_size,
                     )
-                    microbatch_loss_terms[f"loss/{cpgd_cfg.classname}"] = cpgd_loss.item()
-                    microbatch_total_loss = microbatch_total_loss + cpgd_cfg.coeff * cpgd_loss
+                    microbatch_loss_terms[f"loss/{cpgd_cfg.classname}"] = cpgd_result.loss.item()
+                    microbatch_total_loss = (
+                        microbatch_total_loss + cpgd_cfg.coeff * cpgd_result.loss
+                    )
+                    cpgd_results.append(cpgd_result)
 
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
+
+            # Apply deferred PGD steps now that backward() is complete
+            for cpgd_result in cpgd_results:
+                cpgd_result.apply_pgd_step()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
                 microbatch_log_data[f"train/{loss_name}"] += (

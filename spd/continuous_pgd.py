@@ -92,10 +92,32 @@ class ContinuousPGDState:
         for module_name, mask in self.masks.items():
             # mask is (batch, mask_c), we want (batch, seq, mask_c)
             # Insert singleton dimensions for seq dims
+            # Use contiguous() to create a new tensor (not a view) while preserving gradients.
+            # This is needed because we update masks in-place later, which would invalidate views.
             view_shape = [self.batch_size] + [1] * (len(batch_dims) - 1) + [mask.shape[-1]]
-            expanded[module_name] = mask.view(*view_shape).expand(*batch_dims, -1)
+            expanded[module_name] = mask.view(*view_shape).expand(*batch_dims, -1).contiguous()
 
         return expanded
+
+
+class ContinuousPGDResult:
+    """Result from continuous_pgd_recon_loss containing loss and deferred mask gradients."""
+
+    def __init__(
+        self,
+        loss: Float[Tensor, ""],
+        grads: dict[str, Float[Tensor, "batch mask_c"]],
+        pgd_state: ContinuousPGDState,
+        step_size: float,
+    ) -> None:
+        self.loss = loss
+        self.grads = grads
+        self.pgd_state = pgd_state
+        self.step_size = step_size
+
+    def apply_pgd_step(self) -> None:
+        """Apply the PGD step to update masks. Call this AFTER .backward()."""
+        self.pgd_state.step(self.grads, self.step_size)
 
 
 def continuous_pgd_recon_loss(
@@ -107,17 +129,18 @@ def continuous_pgd_recon_loss(
     output_loss_type: Literal["mse", "kl"],
     pgd_state: ContinuousPGDState,
     step_size: float,
-) -> Float[Tensor, ""]:
-    """Compute reconstruction loss with continuous PGD masks and update state.
+) -> ContinuousPGDResult:
+    """Compute reconstruction loss with continuous PGD masks.
 
     Unlike standard PGD which runs N steps per training step, this:
     1. Uses persistent masks from pgd_state
     2. Computes forward pass and loss
     3. Computes gradients w.r.t. masks
-    4. Updates masks with one PGD step
-    5. Returns the loss
+    4. Returns the loss and gradients (does NOT update masks yet)
 
-    The masks persist across training steps, accumulating adversarial pressure over time.
+    The caller must call result.apply_pgd_step() AFTER .backward() to update masks.
+    This is necessary because in-place mask updates before .backward() would invalidate
+    the computation graph.
 
     Args:
         model: ComponentModel to evaluate
@@ -130,7 +153,7 @@ def continuous_pgd_recon_loss(
         step_size: PGD step size for mask updates
 
     Returns:
-        Reconstruction loss (scalar tensor)
+        ContinuousPGDResult containing loss and deferred gradients
     """
     batch_dims = next(iter(ci.values())).shape[:-1]
     router = AllLayersRouter()
@@ -175,16 +198,16 @@ def continuous_pgd_recon_loss(
         loss = sum_loss / n_examples
 
     # Compute gradients w.r.t. the unexpanded masks in state
-    grads = torch.autograd.grad(loss, list(pgd_state.masks.values()))
+    # retain_graph=True because the loss will be used in .backward() later
+    grads = torch.autograd.grad(loss, list(pgd_state.masks.values()), retain_graph=True)
     grads_dict = {
         k: all_reduce(g, op=ReduceOp.SUM)
         for k, g in zip(pgd_state.masks.keys(), grads, strict=True)
     }
 
-    # Update state with one PGD step
-    pgd_state.step(grads_dict, step_size)
-
-    return loss
+    return ContinuousPGDResult(
+        loss=loss, grads=grads_dict, pgd_state=pgd_state, step_size=step_size
+    )
 
 
 def _interpolate_component_mask(

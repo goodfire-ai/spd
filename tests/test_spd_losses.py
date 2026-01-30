@@ -679,8 +679,8 @@ class TestContinuousPGDReconLoss:
         # Store initial mask values
         initial_masks = {k: v.clone() for k, v in state.masks.items()}
 
-        # Compute loss (this should also update state)
-        loss = continuous_pgd_recon_loss(
+        # Compute loss (state is NOT updated yet - need to call apply_pgd_step)
+        result = continuous_pgd_recon_loss(
             model=model,
             batch=batch,
             ci=ci,
@@ -691,8 +691,11 @@ class TestContinuousPGDReconLoss:
             step_size=0.1,
         )
 
+        # Apply PGD step (normally done after .backward())
+        result.apply_pgd_step()
+
         # Loss should be non-negative
-        assert loss >= 0.0
+        assert result.loss >= 0.0
 
         # Masks should have been updated (not equal to initial)
         for k in state.masks:
@@ -722,7 +725,7 @@ class TestContinuousPGDReconLoss:
         masks_history = []
         for _ in range(5):
             masks_history.append({k: v.clone() for k, v in state.masks.items()})
-            continuous_pgd_recon_loss(
+            result = continuous_pgd_recon_loss(
                 model=model,
                 batch=batch,
                 ci=ci,
@@ -732,6 +735,7 @@ class TestContinuousPGDReconLoss:
                 pgd_state=state,
                 step_size=0.1,
             )
+            result.apply_pgd_step()
 
         # Masks should have changed over time
         # (they accumulate updates, so later masks differ from earlier ones)
@@ -762,7 +766,7 @@ class TestContinuousPGDReconLoss:
         # Masks should have C+1 elements when using delta component
         assert state.masks["fc"].shape[-1] == model.module_to_c["fc"] + 1
 
-        loss = continuous_pgd_recon_loss(
+        result = continuous_pgd_recon_loss(
             model=model,
             batch=batch,
             ci=ci,
@@ -772,8 +776,9 @@ class TestContinuousPGDReconLoss:
             pgd_state=state,
             step_size=0.1,
         )
+        result.apply_pgd_step()
 
-        assert loss >= 0.0
+        assert result.loss >= 0.0
 
     def test_batch_dimension(self: object) -> None:
         """Test that masks work correctly with batch dimension > 1."""
@@ -795,7 +800,7 @@ class TestContinuousPGDReconLoss:
         # Masks should have shape (batch_size, C)
         assert state.masks["fc"].shape == (3, model.module_to_c["fc"])
 
-        loss = continuous_pgd_recon_loss(
+        result = continuous_pgd_recon_loss(
             model=model,
             batch=batch,
             ci=ci,
@@ -805,5 +810,6 @@ class TestContinuousPGDReconLoss:
             pgd_state=state,
             step_size=0.1,
         )
+        result.apply_pgd_step()
 
-        assert loss >= 0.0
+        assert result.loss >= 0.0
