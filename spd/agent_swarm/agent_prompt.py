@@ -261,11 +261,11 @@ This is a human-readable log of your investigation. Write here often so someone 
 Use clear markdown formatting:
 
 ```markdown
-## [HH:MM] Starting Investigation
+## [2026-01-30 14:23:15] Starting Investigation
 
 Looking at component interpretations to find interesting patterns...
 
-## [HH:MM] Hypothesis: Gendered Pronoun Circuit
+## [2026-01-30 14:25:42] Hypothesis: Gendered Pronoun Circuit
 
 Found components that seem related to pronouns:
 - h.0.mlp.c_fc:42 - "he/his pronouns after male subjects"
@@ -273,13 +273,13 @@ Found components that seem related to pronouns:
 
 Testing with prompt: "The boy said that he"
 
-## [HH:MM] Optimization Results
+## [2026-01-30 14:28:03] Optimization Results
 
 Ran optimization for "he" prediction at position 4:
 - Found 15 active components
 - Key components: h.0.mlp.c_fc:42 (CI=0.92), h.1.attn.o_proj:156 (CI=0.78)
 
-## [HH:MM] Ablation Test
+## [2026-01-30 14:31:17] Ablation Test
 
 Ablating h.0.mlp.c_fc:42:
 - Before: P(he)=0.82, P(she)=0.11
@@ -287,11 +287,13 @@ Ablating h.0.mlp.c_fc:42:
 
 This confirms the component is important for masculine pronoun prediction!
 
-## [HH:MM] Conclusion
+## [2026-01-30 14:35:44] Conclusion
 
 Found a circuit for gendered pronoun prediction. Components h.0.mlp.c_fc:42 and
 h.1.attn.o_proj:156 work together to predict masculine pronouns after male subjects.
 ```
+
+**TIP**: Get the current timestamp with `date '+%Y-%m-%d %H:%M:%S'` for your log entries.
 
 **IMPORTANT**: Update the research log every few minutes with your current progress,
 findings, and next steps. This is how humans monitor your work!
