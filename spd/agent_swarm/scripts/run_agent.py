@@ -250,11 +250,17 @@ def run_agent(
 
 ---
 
-Please begin your investigation. Start by checking the backend status and exploring
-available component interpretations. Then find an interesting behavior and investigate it.
+Please begin your investigation:
 
-Remember to log your progress to events.jsonl and write complete explanations to
-explanations.jsonl when you discover something.
+1. **FIRST**: Create `{task_dir}/research_log.md` with a header like "# Research Log - Task {task_id}"
+2. Check the backend status and explore component interpretations
+3. Find an interesting behavior to investigate
+4. **Update research_log.md frequently** with your progress, findings, and next steps
+
+Remember:
+- research_log.md is your PRIMARY output - humans will read this to follow your work
+- Update it every few minutes with what you're doing and discovering
+- Write complete explanations to explanations.jsonl when you finish investigating a behavior
 """
             assert claude_proc.stdin is not None
             claude_proc.stdin.write(investigation_request)

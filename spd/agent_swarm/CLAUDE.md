@@ -42,11 +42,12 @@ spd/agent_swarm/
 SPD_OUT_DIR/agent_swarm/<swarm_id>/
 ├── metadata.json         # Swarm configuration
 ├── task_1/
-│   ├── events.jsonl      # Progress and observations
+│   ├── research_log.md   # Human-readable progress log (PRIMARY OUTPUT)
+│   ├── events.jsonl      # Structured progress and observations
 │   ├── explanations.jsonl # Complete behavior explanations
 │   ├── app.db            # Isolated SQLite database
 │   ├── agent_prompt.md   # The prompt given to the agent
-│   └── claude_output.txt # Raw Claude Code output
+│   └── claude_output.jsonl # Raw Claude Code output (stream-json format)
 ├── task_2/
 │   └── ...
 └── task_N/
@@ -90,6 +91,12 @@ This prevents conflicts when multiple agents run on the same machine.
 ## Monitoring
 
 ```bash
+# Watch research logs (best way to follow agent progress)
+tail -f SPD_OUT_DIR/agent_swarm/<swarm_id>/task_*/research_log.md
+
+# Watch a specific agent's research log
+cat SPD_OUT_DIR/agent_swarm/<swarm_id>/task_1/research_log.md
+
 # Watch events from all agents
 tail -f SPD_OUT_DIR/agent_swarm/<swarm_id>/task_*/events.jsonl
 

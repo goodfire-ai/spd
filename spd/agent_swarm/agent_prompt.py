@@ -254,10 +254,50 @@ Write a `BehaviorExplanation` with:
 
 ## Output Format
 
-Write your findings by appending to the output files:
+Write your findings to the output files. **The research log is your primary output for humans to read.**
+
+### research_log.md (MOST IMPORTANT - Write here frequently!)
+This is a human-readable log of your investigation. Write here often so someone can follow your progress.
+Use clear markdown formatting:
+
+```markdown
+## [HH:MM] Starting Investigation
+
+Looking at component interpretations to find interesting patterns...
+
+## [HH:MM] Hypothesis: Gendered Pronoun Circuit
+
+Found components that seem related to pronouns:
+- h.0.mlp.c_fc:42 - "he/his pronouns after male subjects"
+- h.0.mlp.c_fc:89 - "she/her pronouns after female subjects"
+
+Testing with prompt: "The boy said that he"
+
+## [HH:MM] Optimization Results
+
+Ran optimization for "he" prediction at position 4:
+- Found 15 active components
+- Key components: h.0.mlp.c_fc:42 (CI=0.92), h.1.attn.o_proj:156 (CI=0.78)
+
+## [HH:MM] Ablation Test
+
+Ablating h.0.mlp.c_fc:42:
+- Before: P(he)=0.82, P(she)=0.11
+- After:  P(he)=0.23, P(she)=0.45
+
+This confirms the component is important for masculine pronoun prediction!
+
+## [HH:MM] Conclusion
+
+Found a circuit for gendered pronoun prediction. Components h.0.mlp.c_fc:42 and
+h.1.attn.o_proj:156 work together to predict masculine pronouns after male subjects.
+```
+
+**IMPORTANT**: Update the research log every few minutes with your current progress,
+findings, and next steps. This is how humans monitor your work!
 
 ### events.jsonl
-Log progress and observations:
+Log structured progress and observations:
 ```json
 {{"event_type": "observation", "message": "Component h.0.mlp.c_fc:5 has high CI when subject is male", "details": {{"ci_value": 0.85}}, "timestamp": "..."}}
 ```
@@ -284,15 +324,20 @@ When you have a complete explanation:
 
 ## Getting Started
 
-1. Check the current status: `curl http://localhost:{port}/api/status`
-2. Explore available interpretations: `curl http://localhost:{port}/api/correlations/interpretations`
-3. Search for interesting prompts or create your own
-4. Optimize a sparse circuit for a behavior you find
-5. Investigate the components involved
-6. Test hypotheses with ablations
-7. Document your findings
+1. **Create your research log**: Start by creating `research_log.md` with a header
+2. Check the current status: `curl http://localhost:{port}/api/status`
+3. Explore available interpretations: `curl http://localhost:{port}/api/correlations/interpretations`
+4. Search for interesting prompts or create your own
+5. **Update research_log.md** with what you're investigating
+6. Optimize a sparse circuit for a behavior you find
+7. Investigate the components involved
+8. Test hypotheses with ablations
+9. **Update research_log.md** with findings
+10. Document complete explanations in `explanations.jsonl`
 
-Remember: You are exploring! Not every investigation will lead to a clear explanation.
+**Remember to update research_log.md frequently** - this is how humans follow your progress!
+
+You are exploring! Not every investigation will lead to a clear explanation.
 Document what you learn, even if it's "this was more complicated than expected."
 
 Good luck, and happy investigating!
@@ -322,9 +367,10 @@ def get_agent_prompt(port: int, wandb_path: str, task_id: int, output_dir: str) 
 - **Output Directory**: {output_dir}
 
 Your output files:
-- `{output_dir}/events.jsonl` - Log events and observations here
+- `{output_dir}/research_log.md` - **PRIMARY OUTPUT** - Write readable progress updates here frequently!
+- `{output_dir}/events.jsonl` - Log structured events and observations here
 - `{output_dir}/explanations.jsonl` - Write complete explanations here
 
-To append to these files, use the Write tool or shell redirection.
+**Start by creating research_log.md with a header, then update it every few minutes!**
 """
     return prompt + runtime_context
