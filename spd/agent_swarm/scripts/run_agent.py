@@ -220,14 +220,18 @@ def run_agent(
             "claude",
             "--print",
             "--verbose",  # Required for stream-json output
-            "--output-format", "stream-json",
-            "--max-turns", str(max_turns),
+            "--output-format",
+            "stream-json",
+            "--max-turns",
+            str(max_turns),
             "--dangerously-skip-permissions",
         ]
 
         logger.info(f"[Task {task_id}] Starting Claude Code (max_turns={max_turns})...")
         logger.info(f"[Task {task_id}] Monitor with: tail -f {claude_output_path}")
-        logger.info(f"[Task {task_id}] Parse with: tail -f {claude_output_path} | jq -r '.result // empty'")
+        logger.info(
+            f"[Task {task_id}] Parse with: tail -f {claude_output_path} | jq -r '.result // empty'"
+        )
 
         # Open output file for streaming writes
         with open(claude_output_path, "w") as output_file:
