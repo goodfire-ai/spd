@@ -31,6 +31,7 @@ def launch_agent_swarm(
     wandb_path: str,
     n_agents: int,
     context_length: int = 128,
+    max_turns: int = 50,
     partition: str = "h200-reserved",
     time: str = "8:00:00",
     job_suffix: str | None = None,
@@ -41,6 +42,7 @@ def launch_agent_swarm(
         wandb_path: WandB run path for the SPD decomposition.
         n_agents: Number of agents to launch.
         context_length: Context length for prompts.
+        max_turns: Maximum agentic turns per agent (prevents runaway).
         partition: SLURM partition.
         time: Time limit per agent.
         job_suffix: Optional suffix for job names.
@@ -64,6 +66,7 @@ def launch_agent_swarm(
         "wandb_path": wandb_path,
         "n_agents": n_agents,
         "context_length": context_length,
+        "max_turns": max_turns,
         "snapshot_branch": snapshot_branch,
         "commit_hash": commit_hash,
     }
@@ -77,7 +80,8 @@ def launch_agent_swarm(
             f'"{wandb_path}" '
             f"--task_id {task_id} "
             f"--swarm_id {swarm_id} "
-            f"--context_length {context_length}"
+            f"--context_length {context_length} "
+            f"--max_turns {max_turns}"
         )
         worker_commands.append(cmd)
 
@@ -104,6 +108,7 @@ def launch_agent_swarm(
             "WandB path": wandb_path,
             "N agents": n_agents,
             "Context length": context_length,
+            "Max turns": max_turns,
             "Output directory": str(output_dir),
             "Snapshot": f"{snapshot_branch} ({commit_hash[:8]})",
             "Job ID": array_result.job_id,
@@ -114,6 +119,9 @@ def launch_agent_swarm(
     logger.info("")
     logger.info("Monitor progress:")
     logger.info(f"  tail -f {output_dir}/task_*/events.jsonl")
+    logger.info("")
+    logger.info("Monitor Claude output (stream-json):")
+    logger.info(f"  tail -f {output_dir}/task_*/claude_output.jsonl | jq -r '.result // empty'")
     logger.info("")
     logger.info("View explanations:")
     logger.info(f"  cat {output_dir}/task_*/explanations.jsonl | jq .")

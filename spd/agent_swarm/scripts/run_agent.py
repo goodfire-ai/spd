@@ -79,6 +79,7 @@ def run_agent(
     task_id: int,
     swarm_id: str,
     context_length: int = 128,
+    max_turns: int = 50,
 ) -> None:
     """Run a single investigation agent.
 
@@ -87,6 +88,7 @@ def run_agent(
         task_id: SLURM task ID (1-indexed).
         swarm_id: Unique identifier for this swarm.
         context_length: Context length for prompts.
+        max_turns: Maximum agentic turns before stopping (prevents runaway agents).
     """
     # Setup output directory
     swarm_dir = get_swarm_output_dir(swarm_id)
@@ -212,16 +214,19 @@ def run_agent(
         prompt_path = task_dir / "agent_prompt.md"
         prompt_path.write_text(agent_prompt)
 
-        # Launch Claude Code with output streaming to file
-        claude_output_path = task_dir / "claude_output.txt"
+        # Launch Claude Code with streaming JSON output
+        claude_output_path = task_dir / "claude_output.jsonl"
         claude_cmd = [
             "claude",
-            "--print",  # Print output to stdout
-            "--dangerously-skip-permissions",  # Allow file writes
+            "--print",
+            "--output-format", "stream-json",  # Structured JSONL for parsing
+            "--max-turns", str(max_turns),  # Prevent runaway agents
+            "--dangerously-skip-permissions",
         ]
 
-        logger.info(f"[Task {task_id}] Starting Claude Code session...")
+        logger.info(f"[Task {task_id}] Starting Claude Code (max_turns={max_turns})...")
         logger.info(f"[Task {task_id}] Monitor with: tail -f {claude_output_path}")
+        logger.info(f"[Task {task_id}] Parse with: tail -f {claude_output_path} | jq -r '.result // empty'")
 
         # Open output file for streaming writes
         with open(claude_output_path, "w") as output_file:

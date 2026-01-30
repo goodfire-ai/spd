@@ -4,14 +4,14 @@ Thin wrapper for fast --help. Heavy imports deferred to run_slurm.py.
 
 Usage:
     spd-swarm <wandb_path> --n_agents 10
-    spd-swarm <wandb_path> --n_agents 5 --context_length 128
+    spd-swarm <wandb_path> --n_agents 5 --max_turns 30
 
 Examples:
     # Launch 10 agents to investigate a decomposition
     spd-swarm goodfire-ai/spd/runs/abc123 --n_agents 10
 
-    # Launch 5 agents with custom context length and time limit
-    spd-swarm goodfire-ai/spd/runs/abc123 --n_agents 5 --context_length 64 --time 4:00:00
+    # Launch 5 agents with custom settings
+    spd-swarm goodfire-ai/spd/runs/abc123 --n_agents 5 --max_turns 30 --time 4:00:00
 """
 
 import fire
@@ -23,6 +23,7 @@ def main(
     wandb_path: str,
     n_agents: int,
     context_length: int = 128,
+    max_turns: int = 50,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "8:00:00",
     job_suffix: str | None = None,
@@ -38,6 +39,7 @@ def main(
             Format: "entity/project/runs/run_id" or "wandb:entity/project/run_id"
         n_agents: Number of agents to launch (each gets 1 GPU).
         context_length: Context length for prompts (default 128).
+        max_turns: Maximum agentic turns per agent (default 50, prevents runaway).
         partition: SLURM partition name.
         time: Job time limit per agent (default 8 hours).
         job_suffix: Optional suffix for SLURM job names.
@@ -48,6 +50,7 @@ def main(
         wandb_path=wandb_path,
         n_agents=n_agents,
         context_length=context_length,
+        max_turns=max_turns,
         partition=partition,
         time=time,
         job_suffix=job_suffix,
