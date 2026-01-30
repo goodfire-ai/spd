@@ -70,6 +70,16 @@ def compute_alive_info(
     return AliveComponentInfo(alive_masks=alive_masks, alive_counts=alive_counts)
 
 
+class OptimizationMetrics(BaseModel):
+    """Final loss metrics from CI optimization."""
+
+    ci_masked_label_prob: float | None = None  # Probability of label under CI mask (CE loss only)
+    stoch_masked_label_prob: float | None = (
+        None  # Probability of label under stochastic mask (CE loss only)
+    )
+    l0_total: float  # Total L0 (active components)
+
+
 @dataclass
 class OptimizableCIParams:
     """Container for optimizable CI pre-sigmoid parameters."""
@@ -258,13 +268,21 @@ class OptimCIConfig:
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
 
 
+@dataclass
+class OptimizeCIResult:
+    """Result from CI optimization including params and final metrics."""
+
+    params: OptimizableCIParams
+    metrics: OptimizationMetrics
+
+
 def optimize_ci_values(
     model: ComponentModel,
     tokens: Tensor,
     config: OptimCIConfig,
     device: str,
     on_progress: ProgressCallback | None = None,
-) -> OptimizableCIParams:
+) -> OptimizeCIResult:
     """Optimize CI values for a single prompt.
 
     Args:
@@ -274,7 +292,7 @@ def optimize_ci_values(
         device: Device to run on.
 
     Returns:
-        The OptimizableCIParams object.
+        OptimizeCIResult containing params and final metrics.
     """
     imp_min_coeff = config.imp_min_config.coeff
     assert imp_min_coeff is not None, "Importance minimality loss coefficient must be set"
@@ -407,7 +425,42 @@ def optimize_ci_values(
         total_loss.backward()
         optimizer.step()
 
-    return ci_params
+    # Compute final metrics after optimization
+    with torch.no_grad():
+        final_ci_outputs = ci_params.create_ci_outputs(model, device)
+        final_l0_stats = compute_l0_stats(final_ci_outputs, ci_alive_threshold=0.0)
+
+        final_ci_masked_label_prob: float | None = None
+        final_stoch_masked_label_prob: float | None = None
+
+        if isinstance(config.loss_config, CELossConfig):
+            pos = config.loss_config.position
+            label_token = config.loss_config.label_token
+
+            # CI-masked probability
+            ci_mask_infos = make_mask_infos(final_ci_outputs.lower_leaky, routing_masks="all")
+            ci_logits = model(tokens, mask_infos=ci_mask_infos)
+            ci_probs = F.softmax(ci_logits[0, pos, :], dim=-1)
+            final_ci_masked_label_prob = float(ci_probs[label_token].item())
+
+            # Stochastic-masked probability (sample once for final metric)
+            stoch_mask_infos = calc_stochastic_component_mask_info(
+                causal_importances=final_ci_outputs.lower_leaky,
+                component_mask_sampling=config.sampling,
+                weight_deltas=weight_deltas,
+                router=AllLayersRouter(),
+            )
+            stoch_logits = model(tokens, mask_infos=stoch_mask_infos)
+            stoch_probs = F.softmax(stoch_logits[0, pos, :], dim=-1)
+            final_stoch_masked_label_prob = float(stoch_probs[label_token].item())
+
+    metrics = OptimizationMetrics(
+        ci_masked_label_prob=final_ci_masked_label_prob,
+        stoch_masked_label_prob=final_stoch_masked_label_prob,
+        l0_total=final_l0_stats["l0/total"],
+    )
+
+    return OptimizeCIResult(params=ci_params, metrics=metrics)
 
 
 def get_out_dir() -> Path:
