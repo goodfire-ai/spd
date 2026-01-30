@@ -212,8 +212,8 @@ def run_agent(
         prompt_path = task_dir / "agent_prompt.md"
         prompt_path.write_text(agent_prompt)
 
-        # Launch Claude Code
-        # The agent will investigate behaviors and write to the output files
+        # Launch Claude Code with output streaming to file
+        claude_output_path = task_dir / "claude_output.txt"
         claude_cmd = [
             "claude",
             "--print",  # Print output to stdout
@@ -221,18 +221,21 @@ def run_agent(
         ]
 
         logger.info(f"[Task {task_id}] Starting Claude Code session...")
+        logger.info(f"[Task {task_id}] Monitor with: tail -f {claude_output_path}")
 
-        claude_proc = subprocess.Popen(
-            claude_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=str(task_dir),
-        )
+        # Open output file for streaming writes
+        with open(claude_output_path, "w") as output_file:
+            claude_proc = subprocess.Popen(
+                claude_cmd,
+                stdin=subprocess.PIPE,
+                stdout=output_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=str(task_dir),
+            )
 
-        # Send the investigation prompt
-        investigation_request = f"""
+            # Send the investigation prompt and close stdin
+            investigation_request = f"""
 {agent_prompt}
 
 ---
@@ -243,12 +246,12 @@ available component interpretations. Then find an interesting behavior and inves
 Remember to log your progress to events.jsonl and write complete explanations to
 explanations.jsonl when you discover something.
 """
+            assert claude_proc.stdin is not None
+            claude_proc.stdin.write(investigation_request)
+            claude_proc.stdin.close()
 
-        stdout, _ = claude_proc.communicate(input=investigation_request)
-
-        # Save Claude's output
-        output_path = task_dir / "claude_output.txt"
-        output_path.write_text(stdout or "")
+            # Wait for Claude to finish (output streams to file in real-time)
+            claude_proc.wait()
 
         log_event(
             events_path,
