@@ -219,8 +219,9 @@ def run_agent(
         claude_cmd = [
             "claude",
             "--print",
-            "--output-format", "stream-json",  # Structured JSONL for parsing
-            "--max-turns", str(max_turns),  # Prevent runaway agents
+            "--verbose",  # Required for stream-json output
+            "--output-format", "stream-json",
+            "--max-turns", str(max_turns),
             "--dangerously-skip-permissions",
         ]
 
