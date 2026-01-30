@@ -53,6 +53,7 @@ spd-clustering = "spd.clustering.scripts.run_pipeline:cli"
 spd-harvest = "spd.harvest.scripts.run_slurm_cli:cli"
 spd-autointerp = "spd.autointerp.scripts.run_slurm_cli:cli"
 spd-attributions = "spd.dataset_attributions.scripts.run_slurm_cli:cli"
+spd-swarm = "spd.agent_swarm.scripts.run_slurm_cli:cli"
 
 [build-system]
 requires = ["setuptools", "wheel"]

@@ -156,6 +156,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 ├── scripts/                         # Standalone utility scripts
 ├── tests/                           # Test suite
 ├── spd/                             # Main source code
+│   ├── agent_swarm/                 # Parallel agent investigation (see agent_swarm/CLAUDE.md)
 │   ├── app/                         # Web visualization app (see app/CLAUDE.md)
 │   ├── autointerp/                  # LLM interpretation (see autointerp/CLAUDE.md)
 │   ├── clustering/                  # Component clustering (see clustering/CLAUDE.md)
@@ -195,6 +196,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 | `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
+| `spd-swarm` | `spd/agent_swarm/scripts/run_slurm_cli.py` | Launch parallel agent swarm |
 
 ### Files to Skip When Searching
 
@@ -230,6 +232,9 @@ Use `spd/` as the search root (not repo root) to avoid noise.
 
 **Clustering Pipeline:**
 - `spd-clustering` → `spd/clustering/scripts/run_pipeline.py` → `spd/utils/slurm.py` → `spd/clustering/scripts/run_clustering.py`
+
+**Agent Swarm Pipeline:**
+- `spd-swarm` → `spd/agent_swarm/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → SLURM array → `spd/agent_swarm/scripts/run_agent.py` → Claude Code
 
 ## Common Usage Patterns
 
@@ -276,6 +281,25 @@ spd-autointerp <wandb_path>            # Submit SLURM job to interpret component
 ```
 
 Requires `OPENROUTER_API_KEY` env var. See `spd/autointerp/CLAUDE.md` for details.
+
+### Agent Swarm for Parallel Investigation (`spd-swarm`)
+
+Launch a swarm of Claude Code agents to investigate behaviors in an SPD model:
+
+```bash
+spd-swarm <wandb_path> --n_agents 10              # Launch 10 parallel agents
+spd-swarm <wandb_path> --n_agents 5 --time 4:00:00  # Custom time limit
+```
+
+Each agent:
+- Runs in its own SLURM job with 1 GPU
+- Starts an isolated app backend instance
+- Investigates behaviors using the SPD app API
+- Writes findings to append-only JSONL files
+
+Output: `SPD_OUT_DIR/agent_swarm/<swarm_id>/task_*/explanations.jsonl`
+
+See `spd/agent_swarm/CLAUDE.md` for details.
 
 ### Running on SLURM Cluster (`spd-run`)
 
