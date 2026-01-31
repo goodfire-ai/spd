@@ -3,13 +3,14 @@
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ClusterPathInput from "./ClusterPathInput.svelte";
     import DatasetExplorerTab from "./DatasetExplorerTab.svelte";
+    import InvestigationsTab from "./InvestigationsTab.svelte";
     import PromptAttributionsTab from "./PromptAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./ui/DisplaySettingsDropdown.svelte";
     import ActivationContextsTab from "./ActivationContextsTab.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
 
-    let activeTab = $state<"prompts" | "components" | "dataset-search" | null>(null);
+    let activeTab = $state<"prompts" | "components" | "dataset-search" | "investigations" | null>(null);
     let showRunMenu = $state(false);
 </script>
 
@@ -32,6 +33,14 @@
         {/if}
 
         <nav class="nav-group">
+            <button
+                type="button"
+                class="tab-button"
+                class:active={activeTab === "investigations"}
+                onclick={() => (activeTab = "investigations")}
+            >
+                Investigations
+            </button>
             <button
                 type="button"
                 class="tab-button"
@@ -75,6 +84,10 @@
                 {runState.run.error}
             </div>
         {/if}
+        <!-- Investigations tab - always available, doesn't require loaded run -->
+        <div class="tab-content" class:hidden={activeTab !== "investigations"}>
+            <InvestigationsTab />
+        </div>
         <!-- Dataset Explorer tab - always available, doesn't require loaded run -->
         <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
             <DatasetExplorerTab />
