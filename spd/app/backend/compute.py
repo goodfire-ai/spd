@@ -14,7 +14,7 @@ from jaxtyping import Bool, Float
 from torch import Tensor, nn
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.optim_cis import OptimCIConfig, optimize_ci_values
+from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimize_ci_values
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
@@ -111,6 +111,7 @@ class OptimizedPromptAttributionResult:
     target_out_logits: Float[Tensor, "seq vocab"]  # Target model raw logits
     node_ci_vals: dict[str, float]  # layer:seq:c_idx -> ci_val
     node_subcomp_acts: dict[str, float]  # layer:seq:c_idx -> subcomponent activation (v_i^T @ a)
+    metrics: OptimizationMetrics  # Final loss metrics from optimization
 
 
 def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
@@ -573,14 +574,14 @@ def compute_prompt_attributions_optimized(
         target_logits = model(tokens)
         target_out_probs = torch.softmax(target_logits, dim=-1)
 
-    ci_params = optimize_ci_values(
+    optim_result = optimize_ci_values(
         model=model,
         tokens=tokens,
         config=optim_config,
         device=device,
         on_progress=on_progress,
     )
-    ci_outputs = ci_params.create_ci_outputs(model, device)
+    ci_outputs = optim_result.params.create_ci_outputs(model, device)
 
     # Signal transition to graph computation stage
     if on_progress is not None:
@@ -615,6 +616,7 @@ def compute_prompt_attributions_optimized(
         target_out_logits=result.target_out_logits,
         node_ci_vals=result.node_ci_vals,
         node_subcomp_acts=result.node_subcomp_acts,
+        metrics=optim_result.metrics,
     )
 
 
