@@ -12,6 +12,7 @@ import queue
 import threading
 import traceback
 from collections.abc import Generator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -41,33 +42,28 @@ DEVICE = get_device()
 # MCP protocol version
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
-# Optional paths for swarm integration (set via environment at runtime)
-_events_log_path: Path | None = None
-_task_dir: Path | None = None
-_suggestions_path: Path | None = None
+
+@dataclass
+class SwarmConfig:
+    """Configuration for agent swarm mode. All paths are required when in swarm mode."""
+
+    events_log_path: Path
+    task_dir: Path
+    suggestions_path: Path
 
 
-def set_events_log_path(path: Path | None) -> None:
-    """Set the path for logging MCP tool events (for swarm monitoring)."""
-    global _events_log_path
-    _events_log_path = path
+_swarm_config: SwarmConfig | None = None
 
 
-def set_task_dir(path: Path | None) -> None:
-    """Set the task directory for research log and explanations output."""
-    global _task_dir
-    _task_dir = path
-
-
-def set_suggestions_path(path: Path | None) -> None:
-    """Set the path for the central suggestions file."""
-    global _suggestions_path
-    _suggestions_path = path
+def set_swarm_config(config: SwarmConfig) -> None:
+    """Configure MCP for agent swarm mode."""
+    global _swarm_config
+    _swarm_config = config
 
 
 def _log_event(event_type: str, message: str, details: dict[str, Any] | None = None) -> None:
-    """Log an event to the events file if configured."""
-    if _events_log_path is None:
+    """Log an event to the events file if in swarm mode."""
+    if _swarm_config is None:
         return
     event = {
         "event_type": event_type,
@@ -75,7 +71,7 @@ def _log_event(event_type: str, message: str, details: dict[str, Any] | None = N
         "message": message,
         "details": details or {},
     }
-    with open(_events_log_path, "a") as f:
+    with open(_swarm_config.events_log_path, "a") as f:
         f.write(json.dumps(event) + "\n")
 
 
@@ -853,19 +849,22 @@ def _tool_create_prompt(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _require_swarm_config() -> SwarmConfig:
+    """Get swarm config, raising if not in swarm mode."""
+    assert _swarm_config is not None, "Not running in swarm mode"
+    return _swarm_config
+
+
 def _tool_update_research_log(params: dict[str, Any]) -> dict[str, Any]:
     """Append content to the research log."""
-    if _task_dir is None:
-        raise ValueError("Research log not available - not running in swarm mode")
-
+    config = _require_swarm_config()
     content = params["content"]
-    research_log_path = _task_dir / "research_log.md"
+    research_log_path = config.task_dir / "research_log.md"
 
     _log_event(
         "tool_call", f"update_research_log: {len(content)} chars", {"preview": content[:100]}
     )
 
-    # Append content with a newline separator
     with open(research_log_path, "a") as f:
         f.write(content)
         if not content.endswith("\n"):
@@ -878,8 +877,7 @@ def _tool_save_explanation(params: dict[str, Any]) -> dict[str, Any]:
     """Save a behavior explanation to explanations.jsonl."""
     from spd.agent_swarm.schemas import BehaviorExplanation, ComponentInfo, Evidence
 
-    if _task_dir is None:
-        raise ValueError("Explanations file not available - not running in swarm mode")
+    config = _require_swarm_config()
 
     _log_event(
         "tool_call",
@@ -887,7 +885,6 @@ def _tool_save_explanation(params: dict[str, Any]) -> dict[str, Any]:
         {"prompt": params["subject_prompt"]},
     )
 
-    # Build components
     components = [
         ComponentInfo(
             component_key=c["component_key"],
@@ -897,7 +894,6 @@ def _tool_save_explanation(params: dict[str, Any]) -> dict[str, Any]:
         for c in params["components_involved"]
     ]
 
-    # Build evidence
     evidence = [
         Evidence(
             evidence_type=e["evidence_type"],
@@ -918,7 +914,7 @@ def _tool_save_explanation(params: dict[str, Any]) -> dict[str, Any]:
         limitations=params.get("limitations", []),
     )
 
-    explanations_path = _task_dir / "explanations.jsonl"
+    explanations_path = config.task_dir / "explanations.jsonl"
     with open(explanations_path, "a") as f:
         f.write(explanation.model_dump_json() + "\n")
 
@@ -933,8 +929,7 @@ def _tool_save_explanation(params: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_submit_suggestion(params: dict[str, Any]) -> dict[str, Any]:
     """Submit a suggestion for system improvement."""
-    if _suggestions_path is None:
-        raise ValueError("Suggestions not available - not running in swarm mode")
+    config = _require_swarm_config()
 
     suggestion = {
         "timestamp": datetime.now(UTC).isoformat(),
@@ -950,10 +945,8 @@ def _tool_submit_suggestion(params: dict[str, Any]) -> dict[str, Any]:
         suggestion,
     )
 
-    # Ensure parent directory exists
-    _suggestions_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(_suggestions_path, "a") as f:
+    config.suggestions_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config.suggestions_path, "a") as f:
         f.write(json.dumps(suggestion) + "\n")
 
     return {"status": "ok", "message": "Suggestion recorded. Thank you!"}
@@ -961,8 +954,7 @@ def _tool_submit_suggestion(params: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_set_investigation_summary(params: dict[str, Any]) -> dict[str, Any]:
     """Set the investigation title and summary."""
-    if _task_dir is None:
-        raise ValueError("Summary not available - not running in swarm mode")
+    config = _require_swarm_config()
 
     summary = {
         "title": params["title"],
@@ -977,7 +969,7 @@ def _tool_set_investigation_summary(params: dict[str, Any]) -> dict[str, Any]:
         summary,
     )
 
-    summary_path = _task_dir / "summary.json"
+    summary_path = config.task_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))
 
     return {"status": "ok", "path": str(summary_path)}

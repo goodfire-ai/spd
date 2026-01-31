@@ -52,11 +52,7 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     import os
     from pathlib import Path
 
-    from spd.app.backend.routers.mcp import (
-        set_events_log_path,
-        set_suggestions_path,
-        set_task_dir,
-    )
+    from spd.app.backend.routers.mcp import SwarmConfig, set_swarm_config
 
     manager = StateManager.get()
 
@@ -68,21 +64,23 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     logger.info(f"[STARTUP] Device: {DEVICE}")
     logger.info(f"[STARTUP] CUDA available: {torch.cuda.is_available()}")
 
-    # Configure MCP for agent swarm mode
+    # Configure MCP for agent swarm mode (all three env vars must be set together)
     mcp_events_path = os.environ.get("SPD_MCP_EVENTS_PATH")
-    if mcp_events_path:
-        set_events_log_path(Path(mcp_events_path))
-        logger.info(f"[STARTUP] MCP events logging to: {mcp_events_path}")
-
     mcp_task_dir = os.environ.get("SPD_MCP_TASK_DIR")
-    if mcp_task_dir:
-        set_task_dir(Path(mcp_task_dir))
-        logger.info(f"[STARTUP] MCP task dir: {mcp_task_dir}")
-
     mcp_suggestions_path = os.environ.get("SPD_MCP_SUGGESTIONS_PATH")
-    if mcp_suggestions_path:
-        set_suggestions_path(Path(mcp_suggestions_path))
-        logger.info(f"[STARTUP] MCP suggestions file: {mcp_suggestions_path}")
+
+    if mcp_events_path or mcp_task_dir or mcp_suggestions_path:
+        assert mcp_events_path and mcp_task_dir and mcp_suggestions_path, (
+            "Swarm mode requires all env vars: SPD_MCP_EVENTS_PATH, SPD_MCP_TASK_DIR, SPD_MCP_SUGGESTIONS_PATH"
+        )
+        set_swarm_config(
+            SwarmConfig(
+                events_log_path=Path(mcp_events_path),
+                task_dir=Path(mcp_task_dir),
+                suggestions_path=Path(mcp_suggestions_path),
+            )
+        )
+        logger.info(f"[STARTUP] Swarm mode enabled: task_dir={mcp_task_dir}")
 
     yield
 

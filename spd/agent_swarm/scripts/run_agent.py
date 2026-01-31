@@ -43,6 +43,14 @@ def write_mcp_config(task_dir: Path, port: int) -> Path:
     return config_path
 
 
+def write_claude_settings(task_dir: Path) -> None:
+    """Write Claude Code settings to pre-grant MCP tool permissions."""
+    claude_dir = task_dir / ".claude"
+    claude_dir.mkdir(exist_ok=True)
+    settings = {"permissions": {"allow": ["mcp__spd__*"]}}
+    (claude_dir / "settings.json").write_text(json.dumps(settings, indent=2))
+
+
 def find_available_port(start_port: int = 8000, max_attempts: int = 100) -> int:
     """Find an available port starting from start_port."""
     for offset in range(max_attempts):
@@ -73,16 +81,14 @@ def wait_for_backend(port: int, timeout: float = 120.0) -> bool:
     return False
 
 
-def load_run(port: int, wandb_path: str, context_length: int) -> bool:
-    """Load the SPD run into the backend."""
+def load_run(port: int, wandb_path: str, context_length: int) -> None:
+    """Load the SPD run into the backend. Raises on failure."""
     url = f"http://localhost:{port}/api/runs/load"
     params = {"wandb_path": wandb_path, "context_length": context_length}
-    try:
-        resp = requests.post(url, params=params, timeout=300)
-        return resp.status_code == 200
-    except Exception as e:
-        logger.error(f"Failed to load run: {e}")
-        return False
+    resp = requests.post(url, params=params, timeout=300)
+    assert resp.status_code == 200, (
+        f"Failed to load run {wandb_path}: {resp.status_code} {resp.text}"
+    )
 
 
 def log_event(events_path: Path, event: SwarmEvent) -> None:
@@ -111,6 +117,9 @@ def run_agent(
     swarm_dir = get_swarm_output_dir(swarm_id)
     task_dir = swarm_dir / f"task_{task_id}"
     task_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pre-grant MCP tool permissions
+    write_claude_settings(task_dir)
 
     events_path = task_dir / "events.jsonl"
     explanations_path = task_dir / "explanations.jsonl"
@@ -203,16 +212,7 @@ def run_agent(
         )
 
         # Load the SPD run
-        if not load_run(port, wandb_path, context_length):
-            log_event(
-                events_path,
-                SwarmEvent(
-                    event_type="error",
-                    message="Failed to load run",
-                    details={"wandb_path": wandb_path},
-                ),
-            )
-            raise RuntimeError(f"Failed to load run: {wandb_path}")
+        load_run(port, wandb_path, context_length)
 
         logger.info(f"[Task {task_id}] Run loaded, launching Claude Code...")
         log_event(
@@ -240,12 +240,11 @@ def run_agent(
         logger.info(f"[Task {task_id}] MCP config written to {mcp_config_path}")
 
         # Launch Claude Code with streaming JSON output and MCP
-        # No --dangerously-skip-permissions needed - agents use MCP tools for all I/O
         claude_output_path = task_dir / "claude_output.jsonl"
         claude_cmd = [
             "claude",
             "--print",
-            "--verbose",  # Required for stream-json output
+            "--verbose",
             "--output-format",
             "stream-json",
             "--max-turns",
