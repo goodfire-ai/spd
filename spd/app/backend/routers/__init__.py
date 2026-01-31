@@ -9,6 +9,7 @@ from spd.app.backend.routers.dataset_attributions import router as dataset_attri
 from spd.app.backend.routers.dataset_search import router as dataset_search_router
 from spd.app.backend.routers.graphs import router as graphs_router
 from spd.app.backend.routers.intervention import router as intervention_router
+from spd.app.backend.routers.mcp import router as mcp_router
 from spd.app.backend.routers.prompts import router as prompts_router
 from spd.app.backend.routers.runs import router as runs_router
 
@@ -22,6 +23,7 @@ __all__ = [
     "dataset_search_router",
     "graphs_router",
     "intervention_router",
+    "mcp_router",
     "prompts_router",
     "runs_router",
 ]

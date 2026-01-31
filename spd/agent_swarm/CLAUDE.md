@@ -7,9 +7,10 @@ that investigate behaviors in SPD model decompositions.
 
 The agent swarm system allows you to:
 1. Launch many parallel agents (each as a SLURM job with 1 GPU)
-2. Each agent runs an isolated app backend instance
-3. Agents investigate behaviors using the SPD app API
-4. Findings are written to append-only JSONL files
+2. Each agent runs an isolated app backend instance with MCP support
+3. Agents investigate behaviors using SPD tools via MCP (Model Context Protocol)
+4. Progress is streamed in real-time via MCP SSE events
+5. Findings are written to append-only JSONL files
 
 ## Usage
 
@@ -36,6 +37,22 @@ spd/agent_swarm/
     └── run_agent.py      # Worker script (runs in each SLURM job)
 ```
 
+## MCP Tools
+
+Agents access SPD functionality via MCP (Model Context Protocol). The backend exposes
+these tools at `/mcp`:
+
+| Tool | Description |
+|------|-------------|
+| `optimize_graph` | Find minimal circuit for a behavior (streams progress) |
+| `get_component_info` | Get component interpretation, token stats, correlations |
+| `run_ablation` | Test circuit by running with selected components only |
+| `search_dataset` | Search SimpleStories training data for patterns |
+| `create_prompt` | Tokenize text and get next-token probabilities |
+
+The `optimize_graph` tool streams progress events via SSE, giving real-time visibility
+into long-running optimization operations.
+
 ## Output Structure
 
 ```
@@ -47,6 +64,7 @@ SPD_OUT_DIR/agent_swarm/<swarm_id>/
 │   ├── explanations.jsonl # Complete behavior explanations
 │   ├── app.db            # Isolated SQLite database
 │   ├── agent_prompt.md   # The prompt given to the agent
+│   ├── mcp_config.json   # MCP server configuration for Claude Code
 │   └── claude_output.jsonl # Raw Claude Code output (stream-json format)
 ├── task_2/
 │   └── ...

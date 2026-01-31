@@ -4,10 +4,12 @@ This script:
 1. Creates an isolated output directory for this agent
 2. Starts the app backend with an isolated database
 3. Loads the SPD run
-4. Launches Claude Code with investigation instructions
-5. Handles cleanup on exit
+4. Configures MCP server for Claude Code
+5. Launches Claude Code with investigation instructions
+6. Handles cleanup on exit
 """
 
+import json
 import os
 import signal
 import socket
@@ -24,6 +26,21 @@ from spd.agent_swarm.agent_prompt import get_agent_prompt
 from spd.agent_swarm.schemas import SwarmEvent
 from spd.agent_swarm.scripts.run_slurm import get_swarm_output_dir
 from spd.log import logger
+
+
+def write_mcp_config(task_dir: Path, port: int) -> Path:
+    """Write MCP configuration file for Claude Code."""
+    mcp_config = {
+        "mcpServers": {
+            "spd": {
+                "type": "http",
+                "url": f"http://localhost:{port}/mcp",
+            }
+        }
+    }
+    config_path = task_dir / "mcp_config.json"
+    config_path.write_text(json.dumps(mcp_config, indent=2))
+    return config_path
 
 
 def find_available_port(start_port: int = 8000, max_attempts: int = 100) -> int:
@@ -124,9 +141,10 @@ def run_agent(
         ),
     )
 
-    # Start backend with isolated database
+    # Start backend with isolated database and events logging
     env = os.environ.copy()
     env["SPD_APP_DB_PATH"] = str(db_path)
+    env["SPD_MCP_EVENTS_PATH"] = str(events_path)
 
     backend_cmd = [
         sys.executable,
@@ -214,7 +232,11 @@ def run_agent(
         prompt_path = task_dir / "agent_prompt.md"
         prompt_path.write_text(agent_prompt)
 
-        # Launch Claude Code with streaming JSON output
+        # Write MCP config for Claude Code
+        mcp_config_path = write_mcp_config(task_dir, port)
+        logger.info(f"[Task {task_id}] MCP config written to {mcp_config_path}")
+
+        # Launch Claude Code with streaming JSON output and MCP
         claude_output_path = task_dir / "claude_output.jsonl"
         claude_cmd = [
             "claude",
@@ -225,6 +247,8 @@ def run_agent(
             "--max-turns",
             str(max_turns),
             "--dangerously-skip-permissions",
+            "--mcp-config",
+            str(mcp_config_path),
         ]
 
         logger.info(f"[Task {task_id}] Starting Claude Code (max_turns={max_turns})...")
