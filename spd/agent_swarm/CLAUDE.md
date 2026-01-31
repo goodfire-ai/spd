@@ -7,9 +7,10 @@ that investigate behaviors in SPD model decompositions.
 
 The agent swarm system allows you to:
 1. Launch many parallel agents (each as a SLURM job with 1 GPU)
-2. Each agent runs an isolated app backend instance
-3. Agents investigate behaviors using the SPD app API
-4. Findings are written to append-only JSONL files
+2. Each agent runs an isolated app backend instance with MCP support
+3. Agents investigate behaviors using SPD tools via MCP (Model Context Protocol)
+4. Progress is streamed in real-time via MCP SSE events
+5. Findings are written to append-only JSONL files
 
 ## Usage
 
@@ -36,17 +37,49 @@ spd/agent_swarm/
     └── run_agent.py      # Worker script (runs in each SLURM job)
 ```
 
+## MCP Tools
+
+Agents access ALL SPD functionality via MCP (Model Context Protocol). The backend exposes
+these tools at `/mcp`. Agents don't need file system access - everything is done through MCP.
+
+**Analysis Tools:**
+
+| Tool | Description |
+|------|-------------|
+| `optimize_graph` | Find minimal circuit for a behavior (streams progress) |
+| `get_component_info` | Get component interpretation, token stats, correlations |
+| `run_ablation` | Test circuit by running with selected components only |
+| `search_dataset` | Search SimpleStories training data for patterns |
+| `create_prompt` | Tokenize text and get next-token probabilities |
+
+**Output Tools:**
+
+| Tool | Description |
+|------|-------------|
+| `update_research_log` | Append content to the agent's research log (PRIMARY OUTPUT) |
+| `save_explanation` | Save a complete, validated behavior explanation |
+| `set_investigation_summary` | Set title and summary shown in the investigations UI |
+| `submit_suggestion` | Submit ideas for improving the tools or system |
+
+The `optimize_graph` tool streams progress events via SSE, giving real-time visibility
+into long-running optimization operations.
+
+Suggestions from all agents are collected in `<swarm_dir>/suggestions.jsonl` for review.
+
 ## Output Structure
 
 ```
 SPD_OUT_DIR/agent_swarm/<swarm_id>/
 ├── metadata.json         # Swarm configuration
+├── suggestions.jsonl     # System improvement suggestions from all agents
 ├── task_1/
 │   ├── research_log.md   # Human-readable progress log (PRIMARY OUTPUT)
 │   ├── events.jsonl      # Structured progress and observations
 │   ├── explanations.jsonl # Complete behavior explanations
+│   ├── summary.json      # Agent-provided title and summary for UI
 │   ├── app.db            # Isolated SQLite database
 │   ├── agent_prompt.md   # The prompt given to the agent
+│   ├── mcp_config.json   # MCP server configuration for Claude Code
 │   └── claude_output.jsonl # Raw Claude Code output (stream-json format)
 ├── task_2/
 │   └── ...
@@ -102,6 +135,9 @@ tail -f SPD_OUT_DIR/agent_swarm/<swarm_id>/task_*/events.jsonl
 
 # View all explanations
 cat SPD_OUT_DIR/agent_swarm/<swarm_id>/task_*/explanations.jsonl | jq .
+
+# View agent suggestions for system improvement
+cat SPD_OUT_DIR/agent_swarm/<swarm_id>/suggestions.jsonl | jq .
 
 # Check SLURM job status
 squeue --me
