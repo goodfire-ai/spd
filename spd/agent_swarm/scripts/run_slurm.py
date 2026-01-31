@@ -30,23 +30,14 @@ def get_swarm_output_dir(swarm_id: str) -> Path:
 def launch_agent_swarm(
     wandb_path: str,
     n_agents: int,
-    context_length: int = 128,
-    max_turns: int = 50,
-    partition: str = "h200-reserved",
-    time: str = "8:00:00",
-    job_suffix: str | None = None,
+    context_length: int,
+    max_turns: int,
+    max_concurrent: int,
+    partition: str,
+    time: str,
+    job_suffix: str | None,
 ) -> None:
-    """Launch a swarm of agents to investigate behaviors.
-
-    Args:
-        wandb_path: WandB run path for the SPD decomposition.
-        n_agents: Number of agents to launch.
-        context_length: Context length for prompts.
-        max_turns: Maximum agentic turns per agent (prevents runaway).
-        partition: SLURM partition.
-        time: Time limit per agent.
-        job_suffix: Optional suffix for job names.
-    """
+    """Launch a swarm of agents to investigate behaviors."""
     swarm_id = f"swarm-{secrets.token_hex(4)}"
     output_dir = get_swarm_output_dir(swarm_id)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -91,7 +82,7 @@ def launch_agent_swarm(
         n_gpus=1,
         time=time,
         snapshot_branch=snapshot_branch,
-        max_concurrent_tasks=min(n_agents, 8),  # Respect cluster limits
+        max_concurrent_tasks=min(n_agents, max_concurrent),
     )
     array_script = generate_array_script(array_config, worker_commands)
     array_result = submit_slurm_job(
