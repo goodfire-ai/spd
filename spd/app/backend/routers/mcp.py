@@ -94,7 +94,11 @@ class MCPRequest(BaseModel):
 
 
 class MCPResponse(BaseModel):
-    """JSON-RPC 2.0 response."""
+    """JSON-RPC 2.0 response.
+
+    Per JSON-RPC 2.0 spec, exactly one of result/error must be present (not both, not neither).
+    Use model_dump(exclude_none=True) when serializing to avoid including null fields.
+    """
 
     jsonrpc: Literal["2.0"] = "2.0"
     id: int | str | None
@@ -1078,7 +1082,7 @@ async def mcp_endpoint(request: Request):
             status_code=400,
             content=MCPResponse(
                 id=None, error={"code": -32700, "message": f"Parse error: {e}"}
-            ).model_dump(),
+            ).model_dump(exclude_none=True),
         )
 
     logger.info(f"[MCP] {mcp_request.method} (id={mcp_request.id})")
@@ -1087,7 +1091,7 @@ async def mcp_endpoint(request: Request):
         if mcp_request.method == "initialize":
             result = _handle_initialize(mcp_request.params)
             return JSONResponse(
-                content=MCPResponse(id=mcp_request.id, result=result).model_dump(),
+                content=MCPResponse(id=mcp_request.id, result=result).model_dump(exclude_none=True),
                 headers={"Mcp-Session-Id": "spd-session"},
             )
 
@@ -1097,7 +1101,9 @@ async def mcp_endpoint(request: Request):
 
         elif mcp_request.method == "tools/list":
             result = _handle_tools_list()
-            return JSONResponse(content=MCPResponse(id=mcp_request.id, result=result).model_dump())
+            return JSONResponse(
+                content=MCPResponse(id=mcp_request.id, result=result).model_dump(exclude_none=True)
+            )
 
         elif mcp_request.method == "tools/call":
             if mcp_request.params is None:
@@ -1134,7 +1140,7 @@ async def mcp_endpoint(request: Request):
                                 ]
                             },
                         )
-                        yield f"data: {json.dumps(response.model_dump())}\n\n"
+                        yield f"data: {json.dumps(response.model_dump(exclude_none=True))}\n\n"
                     except Exception as e:
                         tb = traceback.format_exc()
                         logger.error(f"[MCP] Tool error: {e}\n{tb}")
@@ -1142,14 +1148,16 @@ async def mcp_endpoint(request: Request):
                             id=mcp_request.id,
                             error={"code": -32000, "message": str(e)},
                         )
-                        yield f"data: {json.dumps(error_response.model_dump())}\n\n"
+                        yield f"data: {json.dumps(error_response.model_dump(exclude_none=True))}\n\n"
 
                 return StreamingResponse(generate_sse(), media_type="text/event-stream")
 
             else:
                 # Non-streaming response
                 return JSONResponse(
-                    content=MCPResponse(id=mcp_request.id, result=result).model_dump()
+                    content=MCPResponse(id=mcp_request.id, result=result).model_dump(
+                        exclude_none=True
+                    )
                 )
 
         else:
@@ -1157,7 +1165,7 @@ async def mcp_endpoint(request: Request):
                 content=MCPResponse(
                     id=mcp_request.id,
                     error={"code": -32601, "message": f"Method not found: {mcp_request.method}"},
-                ).model_dump()
+                ).model_dump(exclude_none=True)
             )
 
     except Exception as e:
@@ -1167,5 +1175,5 @@ async def mcp_endpoint(request: Request):
             content=MCPResponse(
                 id=mcp_request.id,
                 error={"code": -32000, "message": str(e)},
-            ).model_dump()
+            ).model_dump(exclude_none=True)
         )
