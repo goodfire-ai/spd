@@ -608,6 +608,13 @@ class Config(BaseConfig):
         description="If set, apply grad norm clipping to the parameters of the CI functions",
     )
 
+    # --- Mixed Precision ---
+    use_autocast: bool = Field(
+        default=False,
+        description="Enable torch.autocast with bfloat16 for forward passes. "
+        "Provides ~2-3x speedup on supported hardware (e.g., A100, H100) with minimal numerical impact.",
+    )
+
     # --- Faithfulness Warmup ---
     faithfulness_warmup_steps: NonNegativeInt = Field(
         default=0,

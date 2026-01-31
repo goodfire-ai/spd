@@ -3,6 +3,7 @@
 import gc
 from collections import defaultdict
 from collections.abc import Iterator
+from contextlib import nullcontext
 from pathlib import Path
 from typing import cast
 
@@ -236,6 +237,13 @@ def optimize(
         global_n_examples_per_batch=batch_dims.numel(),
     )
 
+    # Setup autocast context for mixed precision training
+    autocast_ctx = (
+        torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+        if config.use_autocast and device.startswith("cuda")
+        else nullcontext()
+    )
+
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
 
@@ -252,33 +260,35 @@ def optimize(
         for _ in range(config.gradient_accumulation_steps):
             microbatch = extract_batch_data(next(train_iterator)).to(device)
 
-            # NOTE: we need to call the wrapped_model at least once each step in order to setup
-            # the DDP gradient syncing for all parameters in the component model. Gradients will
-            # sync regardless of whether the parameters are used in this call to wrapped_model.
-            target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
+            with autocast_ctx:
+                # NOTE: we need to call the wrapped_model at least once each step in order to setup
+                # the DDP gradient syncing for all parameters in the component model. Gradients will
+                # sync regardless of whether the parameters are used in this call to wrapped_model.
+                target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
 
-            ci = component_model.calc_causal_importances(
-                pre_weight_acts=target_model_output.cache,
-                detach_inputs=False,
-                sampling=config.sampling,
-            )
+                ci = component_model.calc_causal_importances(
+                    pre_weight_acts=target_model_output.cache,
+                    detach_inputs=False,
+                    sampling=config.sampling,
+                )
 
-            alive_tracker.update(ci=ci.lower_leaky)
+                alive_tracker.update(ci=ci.lower_leaky)
 
-            microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=config.loss_metric_configs,
-                model=component_model,
-                batch=microbatch,
-                ci=ci,
-                target_out=target_model_output.output,
-                weight_deltas=weight_deltas,
-                pre_weight_acts=target_model_output.cache,
-                current_frac_of_training=step / config.steps,
-                sampling=config.sampling,
-                use_delta_component=config.use_delta_component,
-                n_mask_samples=config.n_mask_samples,
-                output_loss_type=config.output_loss_type,
-            )
+                microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
+                    loss_metric_configs=config.loss_metric_configs,
+                    model=component_model,
+                    batch=microbatch,
+                    ci=ci,
+                    target_out=target_model_output.output,
+                    weight_deltas=weight_deltas,
+                    pre_weight_acts=target_model_output.cache,
+                    current_frac_of_training=step / config.steps,
+                    sampling=config.sampling,
+                    use_delta_component=config.use_delta_component,
+                    n_mask_samples=config.n_mask_samples,
+                    output_loss_type=config.output_loss_type,
+                )
+
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
