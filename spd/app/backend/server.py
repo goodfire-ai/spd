@@ -34,6 +34,8 @@ from spd.app.backend.routers import (
     dataset_search_router,
     graphs_router,
     intervention_router,
+    investigations_router,
+    mcp_router,
     prompts_router,
     runs_router,
 )
@@ -47,6 +49,15 @@ DEVICE = get_device()
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     """Initialize DB connection at startup. Model loaded on-demand via /api/runs/load."""
+    import os
+    from pathlib import Path
+
+    from spd.app.backend.routers.mcp import (
+        set_events_log_path,
+        set_suggestions_path,
+        set_task_dir,
+    )
+
     manager = StateManager.get()
 
     db = PromptAttrDB(check_same_thread=False)
@@ -56,6 +67,22 @@ async def lifespan(app: FastAPI):  # pyright: ignore[reportUnusedParameter]
     logger.info(f"[STARTUP] DB initialized: {db.db_path}")
     logger.info(f"[STARTUP] Device: {DEVICE}")
     logger.info(f"[STARTUP] CUDA available: {torch.cuda.is_available()}")
+
+    # Configure MCP for agent swarm mode
+    mcp_events_path = os.environ.get("SPD_MCP_EVENTS_PATH")
+    if mcp_events_path:
+        set_events_log_path(Path(mcp_events_path))
+        logger.info(f"[STARTUP] MCP events logging to: {mcp_events_path}")
+
+    mcp_task_dir = os.environ.get("SPD_MCP_TASK_DIR")
+    if mcp_task_dir:
+        set_task_dir(Path(mcp_task_dir))
+        logger.info(f"[STARTUP] MCP task dir: {mcp_task_dir}")
+
+    mcp_suggestions_path = os.environ.get("SPD_MCP_SUGGESTIONS_PATH")
+    if mcp_suggestions_path:
+        set_suggestions_path(Path(mcp_suggestions_path))
+        logger.info(f"[STARTUP] MCP suggestions file: {mcp_suggestions_path}")
 
     yield
 
@@ -157,6 +184,8 @@ app.include_router(dataset_search_router)
 app.include_router(dataset_attributions_router)
 app.include_router(agents_router)
 app.include_router(component_data_router)
+app.include_router(investigations_router)
+app.include_router(mcp_router)
 
 
 def cli(port: int = 8000) -> None:

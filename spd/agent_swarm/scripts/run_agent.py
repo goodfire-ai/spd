@@ -4,10 +4,12 @@ This script:
 1. Creates an isolated output directory for this agent
 2. Starts the app backend with an isolated database
 3. Loads the SPD run
-4. Launches Claude Code with investigation instructions
-5. Handles cleanup on exit
+4. Configures MCP server for Claude Code
+5. Launches Claude Code with investigation instructions
+6. Handles cleanup on exit
 """
 
+import json
 import os
 import signal
 import socket
@@ -24,6 +26,21 @@ from spd.agent_swarm.agent_prompt import get_agent_prompt
 from spd.agent_swarm.schemas import SwarmEvent
 from spd.agent_swarm.scripts.run_slurm import get_swarm_output_dir
 from spd.log import logger
+
+
+def write_mcp_config(task_dir: Path, port: int) -> Path:
+    """Write MCP configuration file for Claude Code."""
+    mcp_config = {
+        "mcpServers": {
+            "spd": {
+                "type": "http",
+                "url": f"http://localhost:{port}/mcp",
+            }
+        }
+    }
+    config_path = task_dir / "mcp_config.json"
+    config_path.write_text(json.dumps(mcp_config, indent=2))
+    return config_path
 
 
 def find_available_port(start_port: int = 8000, max_attempts: int = 100) -> int:
@@ -124,9 +141,13 @@ def run_agent(
         ),
     )
 
-    # Start backend with isolated database
+    # Start backend with isolated database and swarm configuration
     env = os.environ.copy()
     env["SPD_APP_DB_PATH"] = str(db_path)
+    env["SPD_MCP_EVENTS_PATH"] = str(events_path)
+    env["SPD_MCP_TASK_DIR"] = str(task_dir)
+    # Suggestions go to a global file (one level above swarm dirs)
+    env["SPD_MCP_SUGGESTIONS_PATH"] = str(swarm_dir.parent / "suggestions.jsonl")
 
     backend_cmd = [
         sys.executable,
@@ -214,7 +235,12 @@ def run_agent(
         prompt_path = task_dir / "agent_prompt.md"
         prompt_path.write_text(agent_prompt)
 
-        # Launch Claude Code with streaming JSON output
+        # Write MCP config for Claude Code
+        mcp_config_path = write_mcp_config(task_dir, port)
+        logger.info(f"[Task {task_id}] MCP config written to {mcp_config_path}")
+
+        # Launch Claude Code with streaming JSON output and MCP
+        # No --dangerously-skip-permissions needed - agents use MCP tools for all I/O
         claude_output_path = task_dir / "claude_output.jsonl"
         claude_cmd = [
             "claude",
@@ -224,7 +250,8 @@ def run_agent(
             "stream-json",
             "--max-turns",
             str(max_turns),
-            "--dangerously-skip-permissions",
+            "--mcp-config",
+            str(mcp_config_path),
         ]
 
         logger.info(f"[Task {task_id}] Starting Claude Code (max_turns={max_turns})...")
@@ -252,15 +279,16 @@ def run_agent(
 
 Please begin your investigation:
 
-1. **FIRST**: Create `{task_dir}/research_log.md` with a header like "# Research Log - Task {task_id}"
-2. Check the backend status and explore component interpretations
-3. Find an interesting behavior to investigate
-4. **Update research_log.md frequently** with your progress, findings, and next steps
+1. **FIRST**: Use the `update_research_log` tool to create your research log with a header like:
+   "# Research Log - Task {task_id}\\n\\nStarting investigation of {wandb_path}\\n\\n"
+2. Explore component interpretations using `get_component_info`
+3. Find an interesting behavior to investigate with `optimize_graph`
+4. **Use `update_research_log` frequently** to document your progress, findings, and next steps
 
 Remember:
-- research_log.md is your PRIMARY output - humans will read this to follow your work
-- Update it every few minutes with what you're doing and discovering
-- Write complete explanations to explanations.jsonl when you finish investigating a behavior
+- The research log is your PRIMARY output - use `update_research_log` every few minutes
+- Use `save_explanation` to record complete, validated explanations
+- Use `submit_suggestion` if you have ideas for improving the tools or system
 """
             assert claude_proc.stdin is not None
             claude_proc.stdin.write(investigation_request)
