@@ -24,6 +24,7 @@ def main(
     n_agents: int,
     context_length: int = 128,
     max_turns: int = 50,
+    max_concurrent: int = 8,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "8:00:00",
     job_suffix: str | None = None,
@@ -40,6 +41,7 @@ def main(
         n_agents: Number of agents to launch (each gets 1 GPU).
         context_length: Context length for prompts (default 128).
         max_turns: Maximum agentic turns per agent (default 50, prevents runaway).
+        max_concurrent: Maximum agents to run in parallel (default 8, respects cluster limits).
         partition: SLURM partition name.
         time: Job time limit per agent (default 8 hours).
         job_suffix: Optional suffix for SLURM job names.
@@ -51,6 +53,7 @@ def main(
         n_agents=n_agents,
         context_length=context_length,
         max_turns=max_turns,
+        max_concurrent=max_concurrent,
         partition=partition,
         time=time,
         job_suffix=job_suffix,
