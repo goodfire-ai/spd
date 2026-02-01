@@ -166,10 +166,14 @@ def run_agent(
         str(port),
     ]
 
+    # Write backend logs to file instead of piping to avoid buffer deadlock
+    # (if we pipe and don't drain, the buffer fills and blocks the backend)
+    backend_log_path = task_dir / "backend.log"
+    backend_log = open(backend_log_path, "w")  # noqa: SIM115 - managed manually
     backend_proc = subprocess.Popen(
         backend_cmd,
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=backend_log,
         stderr=subprocess.STDOUT,
     )
 
@@ -183,6 +187,7 @@ def run_agent(
                 backend_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 backend_proc.kill()
+        backend_log.close()
         if signum is not None:
             sys.exit(1)
 
