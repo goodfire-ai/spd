@@ -422,6 +422,34 @@ explaining what you investigated and what you found.""",
             "required": ["title", "summary"],
         },
     ),
+    ToolDefinition(
+        name="save_graph_artifact",
+        description="""Save a graph as an artifact for inclusion in your research report.
+
+After calling optimize_graph and getting a graph_id, call this to save the graph
+as an artifact. Then reference it in your research log using the spd:graph syntax:
+
+```spd:graph
+artifact: graph_001
+```
+
+This allows humans reviewing your investigation to see interactive circuit visualizations
+inline with your research notes.""",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "graph_id": {
+                    "type": "integer",
+                    "description": "The graph ID returned by optimize_graph",
+                },
+                "caption": {
+                    "type": "string",
+                    "description": "Optional caption describing what this graph shows",
+                },
+            },
+            "required": ["graph_id"],
+        },
+    ),
 ]
 
 
@@ -975,6 +1003,101 @@ def _tool_set_investigation_summary(params: dict[str, Any]) -> dict[str, Any]:
     return {"status": "ok", "path": str(summary_path)}
 
 
+def _tool_save_graph_artifact(params: dict[str, Any]) -> dict[str, Any]:
+    """Save a graph as an artifact for the research report."""
+    config = _require_swarm_config()
+    manager, loaded = _get_state()
+
+    graph_id = params["graph_id"]
+    caption = params.get("caption")
+
+    _log_event(
+        "tool_call",
+        f"save_graph_artifact: graph_id={graph_id}",
+        {"graph_id": graph_id, "caption": caption},
+    )
+
+    # Fetch graph from DB
+    result = manager.db.get_graph(graph_id)
+    if result is None:
+        raise ValueError(f"Graph with id={graph_id} not found")
+
+    graph, prompt_id = result
+
+    # Get tokens from prompt
+    prompt_record = manager.db.get_prompt(prompt_id)
+    if prompt_record is None:
+        raise ValueError(f"Prompt with id={prompt_id} not found")
+
+    tokens = [loaded.token_strings[tid] for tid in prompt_record.token_ids]
+
+    # Create artifacts directory
+    artifacts_dir = config.task_dir / "artifacts"
+    artifacts_dir.mkdir(exist_ok=True)
+
+    # Generate artifact ID (find max existing number to avoid collisions)
+    existing_nums = []
+    for f in artifacts_dir.glob("graph_*.json"):
+        try:
+            num = int(f.stem.split("_")[1])
+            existing_nums.append(num)
+        except (IndexError, ValueError):
+            continue
+    artifact_num = max(existing_nums, default=0) + 1
+    artifact_id = f"graph_{artifact_num:03d}"
+
+    # Compute max abs attr from edges
+    max_abs_attr = max((abs(e.strength) for e in graph.edges), default=0.0)
+
+    # Compute L0 (components with CI >= 0.5)
+    l0_total = sum(1 for ci in graph.node_ci_vals.values() if ci >= 0.5)
+
+    # Build artifact data (self-contained GraphData)
+    artifact = {
+        "type": "graph",
+        "id": artifact_id,
+        "caption": caption,
+        "graph_id": graph_id,
+        "data": {
+            "tokens": tokens,
+            "edges": [
+                {
+                    "src": f"{e.source.layer}:{e.source.seq_pos}:{e.source.component_idx}",
+                    "tgt": f"{e.target.layer}:{e.target.seq_pos}:{e.target.component_idx}",
+                    "val": e.strength,
+                }
+                for e in graph.edges
+            ],
+            "outputProbs": {
+                k: {
+                    "prob": v.prob,
+                    "logit": v.logit,
+                    "target_prob": v.target_prob,
+                    "target_logit": v.target_logit,
+                    "token": v.token,
+                }
+                for k, v in graph.out_probs.items()
+            },
+            "nodeCiVals": graph.node_ci_vals,
+            "nodeSubcompActs": graph.node_subcomp_acts,
+            "maxAbsAttr": max_abs_attr,
+            "l0_total": l0_total,
+        },
+    }
+
+    # Save artifact
+    artifact_path = artifacts_dir / f"{artifact_id}.json"
+    artifact_path.write_text(json.dumps(artifact, indent=2))
+
+    _log_event(
+        "artifact_saved",
+        f"Saved graph artifact: {artifact_id}",
+        {"artifact_id": artifact_id, "graph_id": graph_id, "path": str(artifact_path)},
+    )
+
+    return {"artifact_id": artifact_id, "path": str(artifact_path)}
+
+
 # =============================================================================
 # MCP Protocol Handler
 # =============================================================================
@@ -1052,6 +1175,15 @@ def _handle_tools_call(
                 {
                     "type": "text",
                     "text": json.dumps(_tool_set_investigation_summary(arguments), indent=2),
+                }
+            ]
+        }
+    elif name == "save_graph_artifact":
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(_tool_save_graph_artifact(arguments), indent=2),
                 }
             ]
         }
