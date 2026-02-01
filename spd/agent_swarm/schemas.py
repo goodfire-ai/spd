@@ -102,19 +102,3 @@ class SwarmEvent(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     message: str
     details: dict[str, Any] = Field(default_factory=dict)
-
-
-class AgentOutput(BaseModel):
-    """Container for all outputs from a single agent run.
-
-    Written to the agent's output directory as output.json upon completion.
-    """
-
-    task_id: int
-    wandb_path: str
-    started_at: datetime
-    completed_at: datetime | None = None
-    explanations: list[BehaviorExplanation] = Field(default_factory=list)
-    events: list[SwarmEvent] = Field(default_factory=list)
-    status: Literal["running", "completed", "failed"] = "running"
-    error: str | None = None

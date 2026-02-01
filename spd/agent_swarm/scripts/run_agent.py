@@ -122,11 +122,7 @@ def run_agent(
     write_claude_settings(task_dir)
 
     events_path = task_dir / "events.jsonl"
-    explanations_path = task_dir / "explanations.jsonl"
-    db_path = task_dir / "app.db"
-
-    # Initialize empty output files
-    explanations_path.touch()
+    (task_dir / "explanations.jsonl").touch()
 
     log_event(
         events_path,
@@ -146,17 +142,14 @@ def run_agent(
         SwarmEvent(
             event_type="progress",
             message=f"Starting backend on port {port}",
-            details={"port": port, "db_path": str(db_path)},
+            details={"port": port},
         ),
     )
 
-    # Start backend with isolated database and swarm configuration
+    # Start backend with swarm configuration (paths derived from task_dir)
     env = os.environ.copy()
-    env["SPD_APP_DB_PATH"] = str(db_path)
-    env["SPD_MCP_EVENTS_PATH"] = str(events_path)
-    env["SPD_MCP_TASK_DIR"] = str(task_dir)
-    # Suggestions go to a global file (one level above swarm dirs)
-    env["SPD_MCP_SUGGESTIONS_PATH"] = str(swarm_dir.parent / "suggestions.jsonl")
+    env["SPD_SWARM_TASK_DIR"] = str(task_dir)
+    env["SPD_SWARM_SUGGESTIONS_PATH"] = str(swarm_dir.parent / "suggestions.jsonl")
 
     backend_cmd = [
         sys.executable,

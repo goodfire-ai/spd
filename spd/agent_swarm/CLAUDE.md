@@ -117,10 +117,14 @@ General logging:
 - `message`: Human-readable description
 - `details`: Structured data
 
-## Database Isolation
+## Swarm Mode Environment
 
-Each agent gets its own SQLite database via the `SPD_APP_DB_PATH` environment variable.
-This prevents conflicts when multiple agents run on the same machine.
+Each agent runs with `SPD_SWARM_TASK_DIR` set to its task directory. The backend derives:
+- Database: `task_dir/app.db`
+- Events log: `task_dir/events.jsonl`
+- Research log: `task_dir/research_log.md`
+
+`SPD_SWARM_SUGGESTIONS_PATH` points to the global suggestions file shared across all agents.
 
 ## Monitoring
 
