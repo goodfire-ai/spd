@@ -64,7 +64,7 @@ loss_metric_configs:
     type: uniform_k_subset
   optimizer:
     type: adam
-    lr: 3.0e-3
+    lr: 1
 - classname: FaithfulnessLoss
   coeff: 1000000.0
 output_loss_type: kl

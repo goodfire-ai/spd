@@ -186,9 +186,7 @@ def compute_total_loss(
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
             case PersistentPGDReconLossConfig() | PersistentPGDReconSubsetLossConfig():
-                raise ValueError(
-                    "PersistentPGD configs should be handled separately in the training loop"
-                )
+                raise ValueError("PersistentPGD configs should be handled separately in the training loop")
 
         terms[f"loss/{cfg.classname}"] = loss.item()
 
