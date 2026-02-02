@@ -1,3 +1,6 @@
+# Config for decomposing GPT-2 Simple 2L trained on Pile
+# Based on ss_llama_simple_mlp-2L-wide_global_reverse.yaml
+
 wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
@@ -6,9 +9,9 @@ n_mask_samples: 1
 ci_config:
   mode: global
   fn_type: global_reverse_residual
-  transition_hidden_dim: 4096
-  d_resid_ci_fn: 1024
-  reader_hidden_dims: []
+  transition_hidden_dim: 3072
+  d_resid_ci_fn: 3072
+  reader_hidden_dims: [3072]
   block_groups:
   - name: layer_1_mlp
     patterns:
@@ -23,24 +26,24 @@ ci_config:
     patterns:
     - h.0.attn.*
   transition_attn_config:
-    n_heads: 4
+    n_heads: 24
     max_len: 512
     rope_base: 10000.0
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
 - module_pattern: h.*.mlp.c_fc
-  C: 1152
+  C: 3072
 - module_pattern: h.*.mlp.down_proj
-  C: 960
+  C: 2048
 - module_pattern: h.*.attn.q_proj
-  C: 288
+  C: 512
 - module_pattern: h.*.attn.k_proj
-  C: 288
+  C: 512
 - module_pattern: h.*.attn.v_proj
-  C: 384
+  C: 512
 - module_pattern: h.*.attn.o_proj
-  C: 480
+  C: 512
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
@@ -73,7 +76,7 @@ lr_schedule:
   final_val_frac: 0.1
   fn_type: cosine
 steps: 400000
-batch_size: 128
+batch_size: 256
 gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
@@ -89,7 +92,7 @@ slow_eval_on_first_step: true
 save_freq: null
 eval_metric_configs:
 - classname: CIHistograms
-  n_batches_accum: 5
+  n_batches_accum: 1
 - classname: ComponentActivationDensity
 - classname: CI_L0
   groups:
@@ -112,19 +115,19 @@ eval_metric_configs:
   classname: PGDReconLoss
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
-pretrained_model_class: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP
+pretrained_model_class: simple_stories_train.models.gpt2_simple.GPT2Simple
 pretrained_model_path: null
-pretrained_model_name: wandb:goodfire/spd/runs/gf6rbga0
+pretrained_model_name: wandb:goodfire/spd/runs/hqqrla3w
 pretrained_model_output_attr: idx_0
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
+tokenizer_name: gpt2
 task_config:
   task_name: lm
   max_seq_len: 512
   buffer_size: 1000
-  dataset_name: SimpleStories/SimpleStories
-  column_name: story
+  dataset_name: monology/pile-uncopyrighted
+  column_name: text
   train_data_split: train
-  eval_data_split: test
+  eval_data_split: train
   shuffle_each_epoch: true
   is_tokenized: false
   streaming: false
