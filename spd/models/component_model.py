@@ -21,6 +21,7 @@ from spd.models.components import (
     GlobalCiFnWrapper,
     GlobalReverseResidualCiFn,
     GlobalSharedMLPCiFn,
+    GlobalSharedTransformerCiFn,
     Identity,
     LayerwiseCiFnWrapper,
     LinearComponents,
@@ -275,7 +276,7 @@ class ComponentModel(LoadableModule):
         module_to_c: dict[str, int],
         components: dict[str, Components],
         ci_config: GlobalCiConfig,
-    ) -> GlobalSharedMLPCiFn | GlobalReverseResidualCiFn:
+    ) -> GlobalSharedMLPCiFn | GlobalSharedTransformerCiFn | GlobalReverseResidualCiFn:
         """Create a global CI function that takes all layer activations as input."""
         ci_fn_type = ci_config.fn_type
         ci_fn_hidden_dims = ci_config.hidden_dims
@@ -301,6 +302,23 @@ class ComponentModel(LoadableModule):
                 assert ci_fn_hidden_dims is not None  # validated by Pydantic
                 return GlobalSharedMLPCiFn(
                     layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims
+                )
+            case "global_shared_transformer":
+                transformer_d_model = ci_config.transformer_d_model
+                transformer_n_layers = ci_config.transformer_n_layers
+                transformer_attn_config = ci_config.transformer_attn_config
+                assert transformer_d_model is not None  # for type narrowing
+                assert transformer_n_layers is not None  # for type narrowing
+                assert transformer_attn_config is not None  # for type narrowing
+
+                return GlobalSharedTransformerCiFn(
+                    layer_configs=layer_configs,
+                    d_model=transformer_d_model,
+                    n_layers=transformer_n_layers,
+                    n_heads=transformer_attn_config.n_heads,
+                    mlp_hidden_dims=ci_config.transformer_mlp_hidden_dims,
+                    max_len=transformer_attn_config.max_len,
+                    rope_base=transformer_attn_config.rope_base,
                 )
             case "global_reverse_residual":
                 # block_groups, d_resid_ci_fn, reader_hidden_dims are validated by Pydantic

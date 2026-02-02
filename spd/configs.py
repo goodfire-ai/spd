@@ -68,12 +68,15 @@ class GlobalCiConfig(BaseConfig):
 
     For fn_type='global_shared_mlp': Concatenates all activations, processes through MLP.
     For fn_type='global_reverse_residual': Processes blocks in reverse order with residual stream.
+    For fn_type='global_shared_transformer': Concatenates activations, projects to shared d_model,
+    and applies transformer blocks over the sequence dimension.
     """
 
     mode: Literal["global"] = "global"
     fn_type: GlobalCiFnType = Field(
         ...,
-        description="Type of global CI function: global_shared_mlp or global_reverse_residual",
+        description="Type of global CI function: global_shared_mlp, "
+        "global_reverse_residual, or global_shared_transformer",
     )
     hidden_dims: list[NonNegativeInt] | None = Field(
         default=None,
@@ -102,6 +105,26 @@ class GlobalCiConfig(BaseConfig):
         "If None, uses MLP-only transitions (original behavior). "
         "Only applies when fn_type='global_reverse_residual'.",
     )
+    transformer_d_model: PositiveInt | None = Field(
+        default=None,
+        description="Shared model dimension for global_shared_transformer. "
+        "Required when fn_type='global_shared_transformer'.",
+    )
+    transformer_n_layers: PositiveInt | None = Field(
+        default=None,
+        description="Number of transformer blocks for global_shared_transformer. "
+        "Required when fn_type='global_shared_transformer'.",
+    )
+    transformer_mlp_hidden_dims: list[NonNegativeInt] | None = Field(
+        default=None,
+        description="Hidden dimensions for transformer MLP blocks in global_shared_transformer. "
+        "If None, defaults to [4 * transformer_d_model].",
+    )
+    transformer_attn_config: TransitionAttnConfig | None = Field(
+        default=None,
+        description="Self-attention config for global_shared_transformer. "
+        "Required when fn_type='global_shared_transformer'.",
+    )
 
     @model_validator(mode="after")
     def validate_ci_config(self) -> Self:
@@ -127,6 +150,29 @@ class GlobalCiConfig(BaseConfig):
             )
             assert self.transition_attn_config is None, (
                 "transition_attn_config is only valid for global_reverse_residual"
+            )
+        elif self.fn_type == "global_shared_transformer":
+            assert self.transformer_d_model is not None, (
+                "transformer_d_model must be specified when fn_type='global_shared_transformer'"
+            )
+            assert self.transformer_n_layers is not None, (
+                "transformer_n_layers must be specified when fn_type='global_shared_transformer'"
+            )
+            assert self.transformer_attn_config is not None, (
+                "transformer_attn_config must be specified when fn_type='global_shared_transformer'"
+            )
+            assert self.transition_attn_config is None, (
+                "transition_attn_config is only valid for global_reverse_residual"
+            )
+            assert self.transformer_d_model % self.transformer_attn_config.n_heads == 0, (
+                f"transformer_d_model ({self.transformer_d_model}) must be divisible by "
+                f"transformer_attn_config.n_heads ({self.transformer_attn_config.n_heads})"
+            )
+            d_head = self.transformer_d_model // self.transformer_attn_config.n_heads
+            assert d_head % 2 == 0, (
+                f"d_head ({d_head}) must be even for RoPE. "
+                f"transformer_d_model={self.transformer_d_model}, "
+                f"n_heads={self.transformer_attn_config.n_heads}"
             )
         return self
 

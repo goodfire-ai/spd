@@ -28,6 +28,7 @@ from spd.models.components import (
     EmbeddingComponents,
     GlobalCiFnWrapper,
     GlobalSharedMLPCiFn,
+    GlobalSharedTransformerCiFn,
     LinearComponents,
     MLPCiFn,
     ParallelLinear,
@@ -884,6 +885,68 @@ def test_global_shared_mlp_ci_fn_single_layer():
 
     assert outputs["only_layer"].shape == (BATCH_SIZE, 5)
     assert torch.isfinite(outputs["only_layer"]).all()
+
+
+def test_global_shared_transformer_ci_fn_shapes_and_values():
+    """Test GlobalSharedTransformerCiFn produces correct output shapes and valid values."""
+    layer_configs = {
+        "layer1": (10, 5),  # (input_dim, C)
+        "layer2": (20, 3),
+        "layer3": (15, 7),
+    }
+    ci_fn = GlobalSharedTransformerCiFn(
+        layer_configs=layer_configs,
+        d_model=8,
+        n_layers=2,
+        n_heads=2,
+        mlp_hidden_dims=[16],
+    )
+
+    inputs = {
+        "layer1": torch.randn(BATCH_SIZE, 10),
+        "layer2": torch.randn(BATCH_SIZE, 20),
+        "layer3": torch.randn(BATCH_SIZE, 15),
+    }
+    outputs = ci_fn(inputs)
+
+    # Check shapes
+    assert outputs["layer1"].shape == (BATCH_SIZE, 5)
+    assert outputs["layer2"].shape == (BATCH_SIZE, 3)
+    assert outputs["layer3"].shape == (BATCH_SIZE, 7)
+
+    # Check values are valid (not NaN, not Inf)
+    for name, out in outputs.items():
+        assert torch.isfinite(out).all(), f"Output {name} contains NaN or Inf"
+
+
+def test_global_shared_transformer_ci_fn_with_seq_dim():
+    """Test GlobalSharedTransformerCiFn with sequence dimension produces valid outputs."""
+    seq_len = 5
+    layer_configs = {
+        "layer1": (10, 4),
+        "layer2": (8, 3),
+    }
+    ci_fn = GlobalSharedTransformerCiFn(
+        layer_configs=layer_configs,
+        d_model=8,
+        n_layers=3,
+        n_heads=2,
+        mlp_hidden_dims=[16],
+    )
+
+    inputs = {
+        "layer1": torch.randn(BATCH_SIZE, seq_len, 10),
+        "layer2": torch.randn(BATCH_SIZE, seq_len, 8),
+    }
+    outputs = ci_fn(inputs)
+
+    # Check shapes
+    assert outputs["layer1"].shape == (BATCH_SIZE, seq_len, 4)
+    assert outputs["layer2"].shape == (BATCH_SIZE, seq_len, 3)
+
+    # Check values are valid
+    for name, out in outputs.items():
+        assert torch.isfinite(out).all(), f"Output {name} contains NaN or Inf"
 
 
 def test_component_model_with_global_ci():
