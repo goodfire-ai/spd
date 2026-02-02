@@ -12,6 +12,7 @@ ci_config:
   fn_type: global_reverse_residual
   d_resid_ci_fn: 1024
   reader_hidden_dims: [1024, 1024]
+  transition_hidden_dim: 4096
   block_groups:
     # Process in reverse order: layer 1 before layer 0
     - name: "layer_1_mlp"
