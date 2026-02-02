@@ -258,8 +258,9 @@ class GlobalReverseResidualCiFn(nn.Module):
        - Project to d_resid_ci_fn and add to residual stream
        - RMSNorm → Reader MLP outputs CI values for all modules in block
        - Transition updates residual stream for next block (except after last block):
-         - If attn_config is provided: RMSNorm → attn → add → RMSNorm → MLP → add
-         - Otherwise: RMSNorm → MLP → add
+         - If attn_config is provided: RMSNorm → attn → add → RMSNorm → MLP(GeLU) → add
+         - Otherwise: RMSNorm → MLP(GeLU) → add
+         - MLP structure: d_resid_ci_fn → transition_hidden_dim → d_resid_ci_fn with GeLU activation
 
     """
 
@@ -268,6 +269,7 @@ class GlobalReverseResidualCiFn(nn.Module):
         block_configs: list[tuple[str, list[str], list[int], list[int]]],
         d_resid_ci_fn: int,
         reader_hidden_dims: list[int],
+        transition_hidden_dim: int,
         attn_config: "TransitionAttnConfig | None" = None,
     ):
         """Initialize the reverse residual CI function.
@@ -277,6 +279,7 @@ class GlobalReverseResidualCiFn(nn.Module):
                 Ordered in processing order (first block processed first).
             d_resid_ci_fn: Dimension of the residual stream.
             reader_hidden_dims: Hidden dimensions for reader MLPs.
+            transition_hidden_dim: Hidden dimension for transition MLPs.
             attn_config: Optional config for self-attention in transitions. If provided,
                 transitions use a transformer block (attention → residual → MLP → residual).
         """
@@ -332,9 +335,12 @@ class GlobalReverseResidualCiFn(nn.Module):
             self._reader_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
             if block_idx < self.n_blocks - 1:
-                self._transitions[safe_name] = Linear(
-                    d_resid_ci_fn, d_resid_ci_fn, nonlinearity="relu"
+                transition_mlp = nn.Sequential(
+                    Linear(d_resid_ci_fn, transition_hidden_dim, nonlinearity="relu"),
+                    nn.GELU(),
+                    Linear(transition_hidden_dim, d_resid_ci_fn, nonlinearity="relu"),
                 )
+                self._transitions[safe_name] = transition_mlp
                 self._transition_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
                 if attn_config is not None:
                     assert self._attn_transitions is not None
