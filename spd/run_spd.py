@@ -256,7 +256,6 @@ def optimize(
     if continuous_pgd_configs:
         continuous_pgd_state = ContinuousPGDState(
             module_to_c=model.module_to_c,
-            batch_size=config.microbatch_size,
             device=device,
             use_delta_component=config.use_delta_component,
         )
