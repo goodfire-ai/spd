@@ -88,6 +88,16 @@ class KLLossResult(BaseModel):
     position: int
 
 
+class OptimizationMetricsResult(BaseModel):
+    """Final loss metrics from CI optimization."""
+
+    ci_masked_label_prob: float | None = None  # Probability of label under CI mask (CE loss only)
+    stoch_masked_label_prob: float | None = (
+        None  # Probability of label under stochastic mask (CE loss only)
+    )
+    l0_total: float  # Total L0 (active components)
+
+
 class OptimizationResult(BaseModel):
     """Results from optimized CI computation."""
 
@@ -97,6 +107,7 @@ class OptimizationResult(BaseModel):
     beta: float
     mask_type: MaskType
     loss: CELossResult | KLLossResult
+    metrics: OptimizationMetricsResult
 
 
 class GraphDataWithOptimization(GraphData):
@@ -657,6 +668,11 @@ def compute_graph_optimized_stream(
                 beta=beta,
                 mask_type=mask_type,
                 loss=loss_result,
+                metrics=OptimizationMetricsResult(
+                    ci_masked_label_prob=result.metrics.ci_masked_label_prob,
+                    stoch_masked_label_prob=result.metrics.stoch_masked_label_prob,
+                    l0_total=result.metrics.l0_total,
+                ),
             ),
         )
 
@@ -783,6 +799,8 @@ def stored_graph_to_response(
             beta=opt.beta,
             mask_type=opt.mask_type,
             loss=loss_result,
+            # Metrics not stored in DB for cached graphs - use l0_total from graph
+            metrics=OptimizationMetricsResult(l0_total=float(l0_total)),
         ),
     )
 

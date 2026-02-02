@@ -13,6 +13,11 @@
             ? tokens[optimization.loss.position]
             : null,
     );
+
+    const formatProb = (prob: number | null): string => {
+        if (prob === null) return "-";
+        return prob.toFixed(3);
+    };
 </script>
 
 <div class="opt-params">
@@ -28,6 +33,18 @@
     {#if optimization.loss.type === "ce"}
         <span class="param">
             <span class="key">label</span>(<span class="token">{optimization.loss.label_str}</span>)
+        </span>
+    {/if}
+    <span class="divider"></span>
+    <span class="param metric">
+        <span class="key">L0</span>{optimization.metrics.l0_total.toFixed(1)}
+    </span>
+    {#if optimization.loss.type === "ce"}
+        <span class="param metric">
+            <span class="key">CI prob</span>{formatProb(optimization.metrics.ci_masked_label_prob)}
+        </span>
+        <span class="param metric">
+            <span class="key">stoch prob</span>{formatProb(optimization.metrics.stoch_masked_label_prob)}
         </span>
     {/if}
 </div>
@@ -63,5 +80,16 @@
         background: var(--bg-inset);
         padding: 0 var(--space-1);
         border-radius: var(--radius-sm);
+    }
+
+    .divider {
+        width: 1px;
+        height: 12px;
+        background: var(--border-secondary);
+        margin: 0 var(--space-2);
+    }
+
+    .metric {
+        color: var(--text-primary);
     }
 </style>

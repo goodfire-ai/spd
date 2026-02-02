@@ -95,6 +95,12 @@ export type KLLossResult = {
 
 export type LossResult = CELossResult | KLLossResult;
 
+export type OptimizationMetrics = {
+    ci_masked_label_prob: number | null; // Probability of label under CI mask (CE loss only)
+    stoch_masked_label_prob: number | null; // Probability of label under stochastic mask (CE loss only)
+    l0_total: number; // Total L0 (active components)
+};
+
 export type OptimizationResult = {
     imp_min_coeff: number;
     steps: number;
@@ -102,6 +108,7 @@ export type OptimizationResult = {
     beta: number;
     mask_type: MaskType;
     loss: LossResult;
+    metrics: OptimizationMetrics;
 };
 
 export type SubcomponentMetadata = {
