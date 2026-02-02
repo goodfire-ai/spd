@@ -11,6 +11,7 @@ benefit of many PGD steps without the per-step computational cost.
 from typing import Literal
 
 import torch
+import wandb
 from jaxtyping import Float
 from torch import Tensor
 from torch.distributed import ReduceOp
@@ -21,6 +22,7 @@ from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.wandb_utils import try_wandb
 
 PPGD_INIT_SEED = 42
 
@@ -136,6 +138,13 @@ class PersistentPGDResult:
 
     def apply_pgd_step(self) -> None:
         """Apply the PGD step to update masks. Call this AFTER .backward()."""
+        try_wandb(
+            wandb.log,
+            {
+                f"persistent_pgd_loss/mean_abs_grad/{module_name}": v.abs().mean()
+                for module_name, v in self.grads.items()
+            },
+        )
         self.pgd_state.step(self.grads)
 
 
