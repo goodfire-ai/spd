@@ -12,6 +12,7 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     LossMetricConfigType,
     PersistentPGDReconLossConfig,
+    PersistentPGDReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
     PGDReconLossConfig,
     PGDReconSubsetLossConfig,
@@ -184,9 +185,9 @@ def compute_total_loss(
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
-            case PersistentPGDReconLossConfig():
+            case PersistentPGDReconLossConfig() | PersistentPGDReconSubsetLossConfig():
                 raise ValueError(
-                    "PersistentPGDReconLossConfig should be handled separately in the training loop"
+                    "PersistentPGD configs should be handled separately in the training loop"
                 )
 
         terms[f"loss/{cfg.classname}"] = loss.item()

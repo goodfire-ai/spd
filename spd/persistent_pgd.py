@@ -17,7 +17,7 @@ from torch.distributed import ReduceOp
 
 from spd.models.component_model import ComponentModel
 from spd.models.components import RoutingMasks, make_mask_infos
-from spd.routing import AllLayersRouter
+from spd.routing import Router
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
@@ -121,6 +121,7 @@ def persistent_pgd_recon_loss(
     output_loss_type: Literal["mse", "kl"],
     pgd_state: PersistentPGDState,
     step_size: float,
+    router: Router,
 ) -> PersistentPGDResult:
     """Compute reconstruction loss with persistent PGD masks.
 
@@ -143,12 +144,12 @@ def persistent_pgd_recon_loss(
         output_loss_type: "mse" or "kl"
         pgd_state: Persistent PGD state holding masks
         step_size: PGD step size for mask updates
+        router: Router for subset routing masks.
 
     Returns:
         PersistentPGDResult containing loss and deferred gradients
     """
     batch_dims = next(iter(ci.values())).shape[:-1]
-    router = AllLayersRouter()
     routing_masks: RoutingMasks = router.get_masks(
         module_names=model.target_module_paths, mask_shape=batch_dims
     )

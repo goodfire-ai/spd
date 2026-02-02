@@ -18,6 +18,7 @@ from spd.metrics import (
 )
 from spd.models.component_model import ComponentModel
 from spd.persistent_pgd import PersistentPGDState, persistent_pgd_recon_loss
+from spd.routing import AllLayersRouter
 from spd.utils.module_utils import ModulePathInfo
 
 
@@ -688,6 +689,7 @@ class TestPersistentPGDReconLoss:
             output_loss_type="mse",
             pgd_state=state,
             step_size=0.1,
+            router=AllLayersRouter(),
         )
 
         # Apply PGD step (normally done after .backward())
@@ -732,6 +734,7 @@ class TestPersistentPGDReconLoss:
                 output_loss_type="mse",
                 pgd_state=state,
                 step_size=0.1,
+                router=AllLayersRouter(),
             )
             result.apply_pgd_step()
 
@@ -772,6 +775,7 @@ class TestPersistentPGDReconLoss:
             output_loss_type="mse",
             pgd_state=state,
             step_size=0.1,
+            router=AllLayersRouter(),
         )
         result.apply_pgd_step()
 
@@ -805,6 +809,7 @@ class TestPersistentPGDReconLoss:
             output_loss_type="mse",
             pgd_state=state,
             step_size=0.1,
+            router=AllLayersRouter(),
         )
         result.apply_pgd_step()
 

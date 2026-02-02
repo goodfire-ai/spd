@@ -23,6 +23,7 @@ from spd.configs import (
     LossMetricConfigType,
     MetricConfigType,
     PersistentPGDReconLossConfig,
+    PersistentPGDReconSubsetLossConfig,
     PGDMultiBatchConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
@@ -36,6 +37,7 @@ from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.persistent_pgd import PersistentPGDResult, PersistentPGDState, persistent_pgd_recon_loss
+from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -214,13 +216,17 @@ def optimize(
 
     # Separate PersistentPGD configs from regular loss configs early
     # (PersistentPGD is handled separately in training loop and not evaluated)
-    persistent_pgd_configs: list[PersistentPGDReconLossConfig] = [
-        cfg for cfg in config.loss_metric_configs if isinstance(cfg, PersistentPGDReconLossConfig)
+    persistent_pgd_configs: list[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
+    ] = [
+        cfg
+        for cfg in config.loss_metric_configs
+        if isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
     ]
     regular_loss_configs: list[LossMetricConfigType] = [
         cfg
         for cfg in config.loss_metric_configs
-        if not isinstance(cfg, PersistentPGDReconLossConfig)
+        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
     ]
 
     eval_metric_configs = get_unique_metric_configs(
@@ -311,6 +317,11 @@ def optimize(
             if persistent_pgd_state is not None:
                 for ppgd_cfg in persistent_pgd_configs:
                     assert ppgd_cfg.coeff is not None
+                    match ppgd_cfg:
+                        case PersistentPGDReconLossConfig():
+                            router = AllLayersRouter()
+                        case PersistentPGDReconSubsetLossConfig(routing=routing):
+                            router = get_subset_router(routing, device)
                     ppgd_result = persistent_pgd_recon_loss(
                         model=component_model,
                         batch=microbatch,
@@ -320,6 +331,7 @@ def optimize(
                         output_loss_type=config.output_loss_type,
                         pgd_state=persistent_pgd_state,
                         step_size=ppgd_cfg.step_size,
+                        router=router,
                     )
                     microbatch_loss_terms[f"loss/{ppgd_cfg.classname}"] = ppgd_result.loss.item()
                     microbatch_total_loss = (

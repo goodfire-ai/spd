@@ -58,8 +58,10 @@ loss_metric_configs:
   coeff: 0.5
   routing:
     type: uniform_k_subset
-- classname: PersistentPGDReconLoss
+- classname: PersistentPGDReconSubsetLoss
   coeff: 0.5
+  routing:
+    type: uniform_k_subset
   step_size: 0.05
 - classname: FaithfulnessLoss
   coeff: 1000000.0

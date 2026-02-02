@@ -423,6 +423,20 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
     step_size: float = Field(..., description="PGD step size for mask updates")
 
 
+class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
+    """Config for persistent PGD reconstruction loss with subset routing.
+
+    Like PersistentPGDReconLossConfig but routes to a subset of modules per position,
+    similar to how StochasticReconSubsetLoss relates to StochasticReconLoss.
+    """
+
+    classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
+    step_size: float = Field(..., description="PGD step size for mask updates")
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
+
+
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
@@ -494,6 +508,7 @@ ReconLossConfigType = (
     | PGDReconLayerwiseLossConfig
     | StochasticHiddenActsReconLossConfig
     | PersistentPGDReconLossConfig
+    | PersistentPGDReconSubsetLossConfig
 )
 
 LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
