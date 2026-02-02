@@ -37,6 +37,7 @@ You have access to SPD analysis tools. Use them directly - they have full docume
 
 **Output Tools:**
 - **update_research_log**: Append to your research log (PRIMARY OUTPUT - use frequently!)
+- **save_graph_artifact**: Save a graph as an artifact for inline display in your research log
 - **save_explanation**: Save a complete, validated behavior explanation
 - **set_investigation_summary**: Set a title and summary for your investigation (shown in UI)
 - **submit_suggestion**: Submit ideas for improving the tools or system
@@ -97,6 +98,28 @@ update_research_log("## [14:25:42] Hypothesis: Gendered Pronoun Circuit\n\nTesti
 
 update_research_log("## [14:28:03] Ablation Test\n\nResult: P(he) = 0.89 (vs 0.22 baseline)\n\nThis confirms the circuit is sufficient!\n\n")
 ```
+
+### Including Graph Visualizations
+
+After running `optimize_graph`, you can embed the circuit visualization in your research log:
+
+1. Call `save_graph_artifact` with the graph_id returned by optimize_graph
+2. Reference it in your research log using the `spd:graph` code block
+
+Example:
+```
+# After optimize_graph returns graph_id=42
+save_graph_artifact(graph_id=42, caption="Circuit predicting 'he' after 'The boy'")
+
+# Then include in your research log:
+update_research_log('''## Circuit Visualization
+
+```spd:graph
+artifact: graph_001
+```
+
+This circuit shows the key components involved in predicting "he"...
+''')
 
 ### Saving Explanations
 

@@ -1,12 +1,15 @@
 <script lang="ts">
     import * as api from "../lib/api";
-    import type { InvestigationSummary, InvestigationDetail } from "../lib/api/investigations";
+    import type { InvestigationSummary, InvestigationDetail, GraphArtifact } from "../lib/api/investigations";
     import type { Loadable } from "../lib";
+    import ResearchLogViewer from "./investigations/ResearchLogViewer.svelte";
 
     // State
     let investigations = $state<Loadable<InvestigationSummary[]>>({ status: "uninitialized" });
     let selected = $state<Loadable<InvestigationDetail> | null>(null);
     let activeTab = $state<"research" | "events">("research");
+    let loadedArtifacts = $state<Record<string, GraphArtifact>>({});
+    let artifactsLoading = $state(false);
 
     // Load investigations on mount
     $effect(() => {
@@ -25,16 +28,39 @@
 
     async function selectInvestigation(swarmId: string, taskId: number) {
         selected = { status: "loading" };
+        loadedArtifacts = {}; // Reset artifacts when selecting new investigation
+        artifactsLoading = false;
         try {
             const data = await api.getInvestigation(swarmId, taskId);
             selected = { status: "loaded", data };
+
+            // Load all artifacts for this investigation
+            if (data.artifact_ids.length > 0) {
+                artifactsLoading = true;
+                const artifacts: Record<string, GraphArtifact> = {};
+                await Promise.all(
+                    data.artifact_ids.map(async (artifactId) => {
+                        try {
+                            const artifact = await api.getArtifact(swarmId, taskId, artifactId);
+                            artifacts[artifactId] = artifact;
+                        } catch (e) {
+                            console.error(`Failed to load artifact ${artifactId}:`, e);
+                        }
+                    }),
+                );
+                loadedArtifacts = artifacts;
+                artifactsLoading = false;
+            }
         } catch (e) {
             selected = { status: "error", error: String(e) };
+            artifactsLoading = false;
         }
     }
 
     function goBack() {
         selected = null;
+        loadedArtifacts = {};
+        artifactsLoading = false;
     }
 
     function formatDate(isoString: string): string {
@@ -71,7 +97,11 @@
             <button class="back-button" onclick={goBack}>← Back</button>
             <h2>{selected.data.title || formatId(selected.data.id)}</h2>
             {#if selected.data.status}
-                <span class="status-pill" class:completed={selected.data.status === "completed"} class:in-progress={selected.data.status === "in_progress"}>
+                <span
+                    class="status-pill"
+                    class:completed={selected.data.status === "completed"}
+                    class:in-progress={selected.data.status === "in_progress"}
+                >
                     {selected.data.status}
                 </span>
             {/if}
@@ -102,7 +132,11 @@
             {#if activeTab === "research"}
                 <div class="research-log">
                     {#if selected.data.research_log}
-                        <pre class="log-content">{selected.data.research_log}</pre>
+                        <ResearchLogViewer
+                            markdown={selected.data.research_log}
+                            artifacts={loadedArtifacts}
+                            {artifactsLoading}
+                        />
                     {:else}
                         <p class="empty-message">No research log available</p>
                     {/if}
@@ -158,8 +192,13 @@
                         {/if}
                         <div class="card-status">
                             {#if inv.status}
-                                <span class="status-badge" class:success={inv.status === "completed"} class:warning={inv.status === "in_progress"}>
-                                    {inv.status === "completed" ? "✓" : inv.status === "in_progress" ? "⏳" : "?"} {inv.status}
+                                <span
+                                    class="status-badge"
+                                    class:success={inv.status === "completed"}
+                                    class:warning={inv.status === "in_progress"}
+                                >
+                                    {inv.status === "completed" ? "✓" : inv.status === "in_progress" ? "⏳" : "?"}
+                                    {inv.status}
                                 </span>
                             {/if}
                             {#if inv.has_research_log}
@@ -407,15 +446,6 @@
         padding: var(--space-3);
         max-height: 70vh;
         overflow-y: auto;
-    }
-
-    .log-content {
-        margin: 0;
-        font-family: var(--font-mono);
-        font-size: var(--text-sm);
-        color: var(--text-primary);
-        white-space: pre-wrap;
-        word-wrap: break-word;
     }
 
     .events-list {

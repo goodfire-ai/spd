@@ -58,6 +58,7 @@ class InvestigationDetail(BaseModel):
     research_log: str | None
     events: list[EventEntry]
     explanations: list[dict[str, Any]]
+    artifact_ids: list[str]  # List of artifact IDs available for this investigation
     # Agent-provided summary
     title: str | None
     summary: str | None
@@ -114,6 +115,17 @@ def _parse_task_summary(task_path: Path) -> tuple[str | None, str | None, str | 
         return data.get("title"), data.get("summary"), data.get("status")
     except Exception:
         return None, None, None
+
+
+def _list_artifact_ids(task_path: Path) -> list[str]:
+    """List all artifact IDs for a task."""
+    artifacts_dir = task_path / "artifacts"
+    if not artifacts_dir.exists():
+        return []
+    artifact_ids = []
+    for f in sorted(artifacts_dir.glob("graph_*.json")):
+        artifact_ids.append(f.stem)  # e.g., "graph_001"
+    return artifact_ids
 
 
 def _get_task_created_at(task_path: Path, swarm_metadata: dict[str, Any] | None) -> str:
@@ -247,6 +259,9 @@ def get_investigation(swarm_id: str, task_id: int) -> InvestigationDetail:
 
     title, summary, status = _parse_task_summary(task_path)
 
+    # List artifact IDs
+    artifact_ids = _list_artifact_ids(task_path)
+
     return InvestigationDetail(
         id=f"{swarm_id}/{task_id}",
         swarm_id=swarm_id,
@@ -256,7 +271,33 @@ def get_investigation(swarm_id: str, task_id: int) -> InvestigationDetail:
         research_log=research_log,
         events=events,
         explanations=explanations,
+        artifact_ids=artifact_ids,
         title=title,
         summary=summary,
         status=status,
     )
+
+
+@router.get("/{swarm_id}/{task_id}/artifacts")
+def list_artifacts(swarm_id: str, task_id: int) -> list[str]:
+    """List all artifact IDs for an investigation."""
+    task_path = SWARM_DIR / swarm_id / f"task_{task_id}"
+    if not task_path.exists():
+        raise HTTPException(status_code=404, detail=f"Investigation {swarm_id}/{task_id} not found")
+    return _list_artifact_ids(task_path)
+
+
+@router.get("/{swarm_id}/{task_id}/artifacts/{artifact_id}")
+def get_artifact(swarm_id: str, task_id: int, artifact_id: str) -> dict[str, Any]:
+    """Get a specific artifact by ID."""
+    task_path = SWARM_DIR / swarm_id / f"task_{task_id}"
+    artifact_path = task_path / "artifacts" / f"{artifact_id}.json"
+
+    if not artifact_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Artifact {artifact_id} not found in {swarm_id}/{task_id}",
+        )
+
+    data: dict[str, Any] = json.loads(artifact_path.read_text())
+    return data

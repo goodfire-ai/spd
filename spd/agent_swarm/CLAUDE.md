@@ -57,6 +57,7 @@ these tools at `/mcp`. Agents don't need file system access - everything is done
 | Tool | Description |
 |------|-------------|
 | `update_research_log` | Append content to the agent's research log (PRIMARY OUTPUT) |
+| `save_graph_artifact` | Save a graph for inline visualization in research log |
 | `save_explanation` | Save a complete, validated behavior explanation |
 | `set_investigation_summary` | Set title and summary shown in the investigations UI |
 | `submit_suggestion` | Submit ideas for improving the tools or system |
@@ -78,6 +79,9 @@ SPD_OUT_DIR/agent_swarm/
     │   ├── events.jsonl      # Structured progress and observations
     │   ├── explanations.jsonl # Complete behavior explanations
     │   ├── summary.json      # Agent-provided title and summary for UI
+    │   ├── artifacts/        # Graph artifacts for inline visualization
+    │   │   ├── graph_001.json
+    │   │   └── graph_002.json
     │   ├── app.db            # Isolated SQLite database
     │   ├── agent_prompt.md   # The prompt given to the agent
     │   ├── mcp_config.json   # MCP server configuration for Claude Code

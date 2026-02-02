@@ -36,10 +36,32 @@ export interface InvestigationDetail {
     research_log: string | null;
     events: EventEntry[];
     explanations: Record<string, unknown>[];
+    artifact_ids: string[]; // List of artifact IDs available for this investigation
     // Agent-provided summary
     title: string | null;
     summary: string | null;
     status: string | null;
+}
+
+import type { EdgeData, OutputProbability } from "../promptAttributionsTypes";
+
+/** Data for a graph artifact (subset of GraphData, self-contained for offline viewing) */
+export interface ArtifactGraphData {
+    tokens: string[];
+    edges: EdgeData[];
+    outputProbs: Record<string, OutputProbability>;
+    nodeCiVals: Record<string, number>;
+    nodeSubcompActs: Record<string, number>;
+    maxAbsAttr: number;
+    l0_total: number;
+}
+
+export interface GraphArtifact {
+    type: "graph";
+    id: string;
+    caption: string | null;
+    graph_id: number;
+    data: ArtifactGraphData;
 }
 
 export async function listInvestigations(): Promise<InvestigationSummary[]> {
@@ -51,5 +73,17 @@ export async function listInvestigations(): Promise<InvestigationSummary[]> {
 export async function getInvestigation(swarmId: string, taskId: number): Promise<InvestigationDetail> {
     const res = await fetch(`/api/investigations/${swarmId}/${taskId}`);
     if (!res.ok) throw new Error(`Failed to get investigation: ${res.statusText}`);
+    return res.json();
+}
+
+export async function listArtifacts(swarmId: string, taskId: number): Promise<string[]> {
+    const res = await fetch(`/api/investigations/${swarmId}/${taskId}/artifacts`);
+    if (!res.ok) throw new Error(`Failed to list artifacts: ${res.statusText}`);
+    return res.json();
+}
+
+export async function getArtifact(swarmId: string, taskId: number, artifactId: string): Promise<GraphArtifact> {
+    const res = await fetch(`/api/investigations/${swarmId}/${taskId}/artifacts/${artifactId}`);
+    if (!res.ok) throw new Error(`Failed to get artifact: ${res.statusText}`);
     return res.json();
 }
