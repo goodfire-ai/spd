@@ -52,11 +52,15 @@ class CIOutputs:
 
 
 class TargetModel[BatchT, OutputT](Protocol):
+    # def __call__(self, batch: BatchT) -> OutputT: ...
+
     def __call__(self, batch: BatchT) -> OutputT: ...
 
-    # stubs of pytorch methods for the type checker. you almost certainly don't actually need to implement these.
     def get_submodule(self, target: str) -> nn.Module: ...
+
     def named_parameters(self) -> Iterator[tuple[str, nn.Parameter]]: ...
+
+    # def named_modules(self) -> Generator[tuple[str, nn.Module]]: ...
 
 
 class ComponentModel[BatchT, OutputT](nn.Module):

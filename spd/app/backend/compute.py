@@ -166,7 +166,7 @@ def get_sources_by_target(
         wte_cache["wte_post_detach"] = output
         return output
 
-    wte = model.target_model.wte
+    wte = getattr(model.target_model, "wte")
     assert isinstance(wte, nn.Module), "wte is not a module"
     wte_handle = wte.register_forward_hook(wte_hook, with_kwargs=True)
 
@@ -343,7 +343,7 @@ def compute_edges_from_ci(
 
     # Setup wte hook and run forward pass for gradient computation
     wte_hook, wte_cache = _setup_wte_hook()
-    wte = model.target_model.wte
+    wte = getattr(model.target_model, "wte")
     assert isinstance(wte, nn.Module), "wte is not a module"
     wte_handle = wte.register_forward_hook(wte_hook, with_kwargs=True)
 

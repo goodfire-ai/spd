@@ -85,7 +85,7 @@ def _require_target(storage: DatasetAttributionStorage, component_key: str) -> N
 
 def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
     """Get the unembedding matrix from the loaded model."""
-    lm_head = loaded.model.target_model.lm_head
+    lm_head = getattr(loaded.model.target_model, "lm_head")
     assert isinstance(lm_head, nn.Linear), f"lm_head must be nn.Linear, got {type(lm_head)}"
     return lm_head.weight.T.detach()
 
