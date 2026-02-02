@@ -11,6 +11,7 @@ benefit of many PGD steps without the per-step computational cost.
 from typing import Literal
 
 import torch
+import wandb
 from jaxtyping import Float
 from torch import Tensor
 from torch.distributed import ReduceOp
@@ -19,8 +20,9 @@ from spd.configs import PGDOptimizerConfig
 from spd.models.component_model import ComponentModel
 from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, is_main_process
 from spd.utils.general_utils import calc_sum_recon_loss_lm
+from spd.utils.wandb_utils import try_wandb
 
 PPGD_INIT_SEED = 42
 
@@ -56,9 +58,7 @@ class PersistentPGDState:
         self.masks: dict[str, Float[Tensor, " mask_c"]] = {}
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
-            self.masks[module_name] = torch.rand(
-                mask_c, device=device, requires_grad=True, generator=rng
-            )
+            self.masks[module_name] = torch.rand(mask_c, device=device, generator=rng)
             if optimizer_cfg.type == "adam":
                 self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
                 self._adam_v[module_name] = torch.zeros_like(self.masks[module_name])
@@ -96,10 +96,6 @@ class PersistentPGDState:
             else:
                 raise ValueError(f"Unknown PersistentPGD optimizer: {self.optimizer_cfg.type}")
 
-        # Re-enable gradients for next step
-        for mask in self.masks.values():
-            mask.requires_grad_(True)
-
     def get_expanded_masks(
         self, batch_dims: tuple[int, ...]
     ) -> dict[str, Float[Tensor, "*batch_dims mask_c"]]:
@@ -136,6 +132,14 @@ class PersistentPGDResult:
 
     def apply_pgd_step(self) -> None:
         """Apply the PGD step to update masks. Call this AFTER .backward()."""
+        if is_main_process():
+            try_wandb(
+                wandb.log,
+                {
+                    f"persistent_pgd_loss/mean_abs_grad/{module_name}": v.abs().mean()
+                    for module_name, v in self.grads.items()
+                },
+            )
         self.pgd_state.step(self.grads)
 
 
