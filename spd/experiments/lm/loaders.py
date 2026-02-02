@@ -44,14 +44,18 @@ class LogitsOnlyWrapper(nn.Module):
         self, prefix: str = "", recurse: bool = True, remove_duplicate: bool = True
     ) -> Iterator[tuple[str, Parameter]]:
         # Delegate to wrapped model so parameter names don't have "model." prefix
-        return self.model.named_parameters(prefix=prefix, recurse=recurse, remove_duplicate=remove_duplicate)
+        return self.model.named_parameters(
+            prefix=prefix, recurse=recurse, remove_duplicate=remove_duplicate
+        )
 
     @override
     def named_modules(
         self, memo: set[nn.Module] | None = None, prefix: str = "", remove_duplicate: bool = True
-    ) -> Generator[tuple[str, nn.Module], None, None]:
+    ) -> Generator[tuple[str, nn.Module]]:
         # Delegate to wrapped model so module names don't have "model." prefix
-        yield from self.model.named_modules(memo=memo, prefix=prefix, remove_duplicate=remove_duplicate)
+        yield from self.model.named_modules(
+            memo=memo, prefix=prefix, remove_duplicate=remove_duplicate
+        )
 
     @override
     def __getattr__(self, name: str) -> Any:
