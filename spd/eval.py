@@ -273,7 +273,6 @@ def init_metric(
                 device=device,
                 output_loss_type=run_config.output_loss_type,
             )
-
         case _:
             # We shouldn't handle **all** cases because PGDMultiBatch metrics should be handled by
             # the evaluate_multibatch_pgd function below.
