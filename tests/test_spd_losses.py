@@ -5,7 +5,7 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.configs import LayerwiseCiConfig, UniformKSubsetRoutingConfig
+from spd.configs import AdamPGDConfig, LayerwiseCiConfig, SignPGDConfig, UniformKSubsetRoutingConfig
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
@@ -674,6 +674,7 @@ class TestPersistentPGDReconLoss:
             module_to_c=model.module_to_c,
             device="cpu",
             use_delta_component=False,
+            optimizer_cfg=SignPGDConfig(step_size=0.1),
         )
 
         # Store initial mask values
@@ -688,7 +689,6 @@ class TestPersistentPGDReconLoss:
             target_out=target_out,
             output_loss_type="mse",
             pgd_state=state,
-            step_size=0.1,
             router=AllLayersRouter(),
         )
 
@@ -719,6 +719,7 @@ class TestPersistentPGDReconLoss:
             module_to_c=model.module_to_c,
             device="cpu",
             use_delta_component=False,
+            optimizer_cfg=SignPGDConfig(step_size=0.1),
         )
 
         # Run multiple steps
@@ -733,7 +734,6 @@ class TestPersistentPGDReconLoss:
                 target_out=target_out,
                 output_loss_type="mse",
                 pgd_state=state,
-                step_size=0.1,
                 router=AllLayersRouter(),
             )
             result.apply_pgd_step()
@@ -761,6 +761,7 @@ class TestPersistentPGDReconLoss:
             module_to_c=model.module_to_c,
             device="cpu",
             use_delta_component=True,
+            optimizer_cfg=SignPGDConfig(step_size=0.1),
         )
 
         # Masks should have C+1 elements when using delta component
@@ -774,7 +775,6 @@ class TestPersistentPGDReconLoss:
             target_out=target_out,
             output_loss_type="mse",
             pgd_state=state,
-            step_size=0.1,
             router=AllLayersRouter(),
         )
         result.apply_pgd_step()
@@ -795,6 +795,7 @@ class TestPersistentPGDReconLoss:
             module_to_c=model.module_to_c,
             device="cpu",
             use_delta_component=False,
+            optimizer_cfg=SignPGDConfig(step_size=0.1),
         )
 
         # Masks should have shape (C,) - single mask shared across batch
@@ -808,9 +809,44 @@ class TestPersistentPGDReconLoss:
             target_out=target_out,
             output_loss_type="mse",
             pgd_state=state,
-            step_size=0.1,
             router=AllLayersRouter(),
         )
         result.apply_pgd_step()
 
         assert result.loss >= 0.0
+
+    def test_adam_optimizer_state(self: object) -> None:
+        """Test that Adam optimizer path updates internal state."""
+        fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
+        model = _make_component_model(weight=fc_weight)
+
+        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
+        target_out = torch.tensor([[0.5, 1.5]], dtype=torch.float32)
+        ci = {"fc": torch.tensor([[0.4]], dtype=torch.float32)}
+
+        state = PersistentPGDState(
+            module_to_c=model.module_to_c,
+            device="cpu",
+            use_delta_component=False,
+            optimizer_cfg=AdamPGDConfig(lr=0.05, beta1=0.9, beta2=0.999, eps=1e-8),
+        )
+
+        initial_mask = state.masks["fc"].clone()
+        result = persistent_pgd_recon_loss(
+            model=model,
+            batch=batch,
+            ci=ci,
+            weight_deltas=None,
+            target_out=target_out,
+            output_loss_type="mse",
+            pgd_state=state,
+            router=AllLayersRouter(),
+        )
+        result.apply_pgd_step()
+
+        assert state._adam_step == 1
+        assert state.masks["fc"].shape == initial_mask.shape
+        assert state._adam_m["fc"].shape == initial_mask.shape
+        assert state._adam_v["fc"].shape == initial_mask.shape
+        assert torch.all(state.masks["fc"] >= 0.0)
+        assert torch.all(state.masks["fc"] <= 1.0)

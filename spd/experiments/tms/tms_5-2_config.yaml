@@ -26,7 +26,9 @@ loss_metric_configs:
     beta: 0
   - classname: "PersistentPGDReconLoss"
     coeff: 1.0
-    step_size: 0.05
+    optimizer:
+      type: sign
+      step_size: 0.05
   # - classname: "StochasticReconLoss"
   #   coeff: 1.0
   # - classname: "StochasticReconLayerwiseLoss"

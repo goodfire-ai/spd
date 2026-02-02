@@ -15,6 +15,7 @@ from jaxtyping import Float
 from torch import Tensor
 from torch.distributed import ReduceOp
 
+from spd.configs import PGDOptimizerConfig
 from spd.models.component_model import ComponentModel
 from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
@@ -38,10 +39,16 @@ class PersistentPGDState:
         module_to_c: dict[str, int],
         device: torch.device | str,
         use_delta_component: bool,
+        optimizer_cfg: PGDOptimizerConfig,
     ) -> None:
         self.module_to_c = module_to_c
         self.device = device
         self.use_delta_component = use_delta_component
+        self.optimizer_cfg = optimizer_cfg
+
+        self._adam_step = 0
+        self._adam_m: dict[str, Float[Tensor, " mask_c"]] = {}
+        self._adam_v: dict[str, Float[Tensor, " mask_c"]] = {}
 
         # Initialize masks randomly in [0, 1] with fixed seed for consistency across ranks
         # Shape: (mask_c,) per module - single mask shared across all batch elements
@@ -52,20 +59,42 @@ class PersistentPGDState:
             self.masks[module_name] = torch.rand(
                 mask_c, device=device, requires_grad=True, generator=rng
             )
+            if optimizer_cfg.type == "adam":
+                self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
+                self._adam_v[module_name] = torch.zeros_like(self.masks[module_name])
 
     def step(
         self,
         grads: dict[str, Float[Tensor, " mask_c"]],
-        step_size: float,
     ) -> None:
         """Perform one PGD update step using the provided gradients.
 
-        Updates masks in-place: mask += step_size * sign(grad), then clamps to [0, 1].
+        Updates masks in-place, then clamps to [0, 1].
         """
         with torch.no_grad():
-            for module_name in self.masks:
-                self.masks[module_name].add_(step_size * grads[module_name].sign())
-                self.masks[module_name].clamp_(0.0, 1.0)
+            if self.optimizer_cfg.type == "sign":
+                cfg = self.optimizer_cfg
+                for module_name in self.masks:
+                    self.masks[module_name].add_(cfg.step_size * grads[module_name].sign())
+                    self.masks[module_name].clamp_(0.0, 1.0)
+            elif self.optimizer_cfg.type == "adam":
+                cfg = self.optimizer_cfg
+                self._adam_step += 1
+                bias_correction1 = 1 - cfg.beta1**self._adam_step
+                bias_correction2 = 1 - cfg.beta2**self._adam_step
+                for module_name, mask in self.masks.items():
+                    grad = grads[module_name]
+                    m = self._adam_m[module_name]
+                    v = self._adam_v[module_name]
+                    m.mul_(cfg.beta1).add_(grad, alpha=1 - cfg.beta1)
+                    v.mul_(cfg.beta2).addcmul_(grad, grad, value=1 - cfg.beta2)
+                    m_hat = m / bias_correction1
+                    v_hat = v / bias_correction2
+                    denom = v_hat.sqrt().add_(cfg.eps)
+                    mask.addcdiv_(m_hat, denom, value=cfg.lr)
+                    mask.clamp_(0.0, 1.0)
+            else:
+                raise ValueError(f"Unknown PersistentPGD optimizer: {self.optimizer_cfg.type}")
 
         # Re-enable gradients for next step
         for mask in self.masks.values():
@@ -100,16 +129,14 @@ class PersistentPGDResult:
         loss: Float[Tensor, ""],
         grads: dict[str, Float[Tensor, " mask_c"]],
         pgd_state: PersistentPGDState,
-        step_size: float,
     ) -> None:
         self.loss = loss
         self.grads = grads
         self.pgd_state = pgd_state
-        self.step_size = step_size
 
     def apply_pgd_step(self) -> None:
         """Apply the PGD step to update masks. Call this AFTER .backward()."""
-        self.pgd_state.step(self.grads, self.step_size)
+        self.pgd_state.step(self.grads)
 
 
 def persistent_pgd_recon_loss(
@@ -120,7 +147,6 @@ def persistent_pgd_recon_loss(
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
     pgd_state: PersistentPGDState,
-    step_size: float,
     router: Router,
 ) -> PersistentPGDResult:
     """Compute reconstruction loss with persistent PGD masks.
@@ -143,7 +169,6 @@ def persistent_pgd_recon_loss(
         target_out: Target model output
         output_loss_type: "mse" or "kl"
         pgd_state: Persistent PGD state holding masks
-        step_size: PGD step size for mask updates
         router: Router for subset routing masks.
 
     Returns:
@@ -198,9 +223,7 @@ def persistent_pgd_recon_loss(
         for k, g in zip(pgd_state.masks.keys(), grads, strict=True)
     }
 
-    return PersistentPGDResult(
-        loss=loss, grads=grads_dict, pgd_state=pgd_state, step_size=step_size
-    )
+    return PersistentPGDResult(loss=loss, grads=grads_dict, pgd_state=pgd_state)
 
 
 def _interpolate_component_mask(

@@ -30,7 +30,9 @@ loss_metric_configs:
     coeff: 1.0
   - classname: "PersistentPGDReconLoss"
     coeff: 1.0
-    step_size: 1.0
+    optimizer:
+      type: sign
+      step_size: 1.0
 output_loss_type: mse
 
 # --- Training ---

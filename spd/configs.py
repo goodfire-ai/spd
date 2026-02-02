@@ -364,6 +364,7 @@ class UnmaskedReconLossConfig(LossMetricConfig):
 
 
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
+PersistentPGDOptimizer = Literal["sign", "adam"]
 
 MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
 
@@ -408,6 +409,22 @@ class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     ]
 
 
+class SignPGDConfig(BaseConfig):
+    type: Literal["sign"] = "sign"
+    step_size: float = Field(..., description="PGD step size for mask updates")
+
+
+class AdamPGDConfig(BaseConfig):
+    type: Literal["adam"] = "adam"
+    lr: float = Field(..., description="Learning rate for Adam PGD")
+    beta1: Probability = Field(default=0.9, description="Adam beta1 for masks")
+    beta2: Probability = Field(default=0.999, description="Adam beta2 for masks")
+    eps: NonNegativeFloat = Field(default=1e-8, description="Adam epsilon for masks")
+
+
+PGDOptimizerConfig = SignPGDConfig | AdamPGDConfig
+
+
 class PersistentPGDReconLossConfig(LossMetricConfig):
     """Config for persistent PGD reconstruction loss.
 
@@ -420,7 +437,7 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
     """
 
     classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
-    step_size: float = Field(..., description="PGD step size for mask updates")
+    optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
 
 
 class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
@@ -431,7 +448,7 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
     """
 
     classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
-    step_size: float = Field(..., description="PGD step size for mask updates")
+    optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]

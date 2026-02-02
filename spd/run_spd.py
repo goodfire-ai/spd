@@ -260,10 +260,13 @@ def optimize(
     # Initialize PersistentPGD state if needed
     persistent_pgd_state: PersistentPGDState | None = None
     if persistent_pgd_configs:
+        assert len(persistent_pgd_configs) == 1
+
         persistent_pgd_state = PersistentPGDState(
             module_to_c=model.module_to_c,
             device=device,
             use_delta_component=config.use_delta_component,
+            optimizer_cfg=persistent_pgd_configs[0].optimizer,
         )
 
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
@@ -330,7 +333,6 @@ def optimize(
                         target_out=target_model_output.output,
                         output_loss_type=config.output_loss_type,
                         pgd_state=persistent_pgd_state,
-                        step_size=ppgd_cfg.step_size,
                         router=router,
                     )
                     microbatch_loss_terms[f"loss/{ppgd_cfg.classname}"] = ppgd_result.loss.item()
