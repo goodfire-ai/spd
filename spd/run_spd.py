@@ -36,8 +36,7 @@ from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.persistent_pgd import PersistentPGDResult, PersistentPGDState, persistent_pgd_recon_loss
-from spd.routing import AllLayersRouter, get_subset_router
+from spd.persistent_pgd import PersistentPGDState
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -214,23 +213,10 @@ def optimize(
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
 
-    # Separate PersistentPGD configs from regular loss configs early
-    # (PersistentPGD is handled separately in training loop and not evaluated)
-    persistent_pgd_configs: list[
-        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
-    ] = [
-        cfg
-        for cfg in config.loss_metric_configs
-        if isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
-    ]
-    regular_loss_configs: list[LossMetricConfigType] = [
-        cfg
-        for cfg in config.loss_metric_configs
-        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
-    ]
+    loss_configs: list[LossMetricConfigType] = config.loss_metric_configs
 
     eval_metric_configs = get_unique_metric_configs(
-        loss_configs=regular_loss_configs, eval_configs=config.eval_metric_configs
+        loss_configs=loss_configs, eval_configs=config.eval_metric_configs
     )
 
     multibatch_pgd_eval_configs: list[
@@ -259,6 +245,13 @@ def optimize(
 
     # Initialize PersistentPGD state if needed
     persistent_pgd_state: PersistentPGDState | None = None
+    persistent_pgd_configs: list[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
+    ] = [
+        cfg
+        for cfg in loss_configs
+        if isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+    ]
     if persistent_pgd_configs:
         assert len(persistent_pgd_configs) == 1
 
@@ -299,7 +292,7 @@ def optimize(
             alive_tracker.update(ci=ci.lower_leaky)
 
             microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=regular_loss_configs,
+                loss_metric_configs=loss_configs,
                 model=component_model,
                 batch=microbatch,
                 ci=ci,
@@ -311,41 +304,10 @@ def optimize(
                 use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
                 output_loss_type=config.output_loss_type,
+                persistent_pgd_state=persistent_pgd_state,
             )
 
-            # Compute PersistentPGD loss separately
-            # We collect the results and apply PGD steps AFTER .backward() to avoid
-            # in-place modifications invalidating the computation graph
-            ppgd_results: list[PersistentPGDResult] = []
-            if persistent_pgd_state is not None:
-                for ppgd_cfg in persistent_pgd_configs:
-                    assert ppgd_cfg.coeff is not None
-                    match ppgd_cfg:
-                        case PersistentPGDReconLossConfig():
-                            router = AllLayersRouter()
-                        case PersistentPGDReconSubsetLossConfig(routing=routing):
-                            router = get_subset_router(routing, device)
-                    ppgd_result = persistent_pgd_recon_loss(
-                        model=component_model,
-                        batch=microbatch,
-                        ci=ci.lower_leaky,
-                        weight_deltas=weight_deltas if config.use_delta_component else None,
-                        target_out=target_model_output.output,
-                        output_loss_type=config.output_loss_type,
-                        pgd_state=persistent_pgd_state,
-                        router=router,
-                    )
-                    microbatch_loss_terms[f"loss/{ppgd_cfg.classname}"] = ppgd_result.loss.item()
-                    microbatch_total_loss = (
-                        microbatch_total_loss + ppgd_cfg.coeff * ppgd_result.loss
-                    )
-                    ppgd_results.append(ppgd_result)
-
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
-
-            # Apply deferred PGD steps now that backward() is complete
-            for ppgd_result in ppgd_results:
-                ppgd_result.apply_pgd_step()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
                 microbatch_log_data[f"train/{loss_name}"] += (
