@@ -408,19 +408,18 @@ class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     ]
 
 
-class ContinuousPGDReconLossConfig(LossMetricConfig):
-    """Config for continuous PGD reconstruction loss.
+class PersistentPGDReconLossConfig(LossMetricConfig):
+    """Config for persistent PGD reconstruction loss.
 
     Unlike standard PGD which reinitializes masks each step and runs N optimization steps,
-    ContinuousPGD maintains persistent masks that receive one gradient update per training step.
+    PersistentPGD maintains persistent masks that receive one gradient update per training step.
     This amortizes PGD optimization across training - getting the benefit of many PGD steps
     without the per-step computational cost.
 
-    Masks are shaped (batch_size, C) per module, broadcasting along the sequence dimension.
-    Each position in the batch gets its own persistent mask that evolves over training.
+    A single (C,) mask per module is shared across all batch elements and ranks.
     """
 
-    classname: Literal["ContinuousPGDReconLoss"] = "ContinuousPGDReconLoss"
+    classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
     step_size: float = Field(..., description="PGD step size for mask updates")
 
 
@@ -494,7 +493,7 @@ ReconLossConfigType = (
     | PGDReconSubsetLossConfig
     | PGDReconLayerwiseLossConfig
     | StochasticHiddenActsReconLossConfig
-    | ContinuousPGDReconLossConfig
+    | PersistentPGDReconLossConfig
 )
 
 LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType

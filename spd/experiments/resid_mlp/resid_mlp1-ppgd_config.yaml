@@ -1,4 +1,4 @@
-# ResidualMLP 1 layer with ContinuousPGD
+# ResidualMLP 1 layer with PersistentPGD
 # --- WandB ---
 wandb_project: spd
 wandb_run_name: null
@@ -30,7 +30,7 @@ loss_metric_configs:
     coeff: 1.0
   - classname: "StochasticReconLoss"
     coeff: 1.0
-  - classname: "ContinuousPGDReconLoss"
+  - classname: "PersistentPGDReconLoss"
     coeff: 1.0
     step_size: 1.0
 output_loss_type: mse

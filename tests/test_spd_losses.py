@@ -6,7 +6,6 @@ from jaxtyping import Float
 from torch import Tensor
 
 from spd.configs import LayerwiseCiConfig, UniformKSubsetRoutingConfig
-from spd.continuous_pgd import ContinuousPGDState, continuous_pgd_recon_loss
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
@@ -18,6 +17,7 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
 )
 from spd.models.component_model import ComponentModel
+from spd.persistent_pgd import PersistentPGDState, persistent_pgd_recon_loss
 from spd.utils.module_utils import ModulePathInfo
 
 
@@ -658,9 +658,9 @@ class TestStochasticReconSubsetLoss:
         assert all(loss >= 0.0 for loss in losses)
 
 
-class TestContinuousPGDReconLoss:
+class TestPersistentPGDReconLoss:
     def test_basic_forward_and_state_update(self: object) -> None:
-        """Test that continuous PGD computes loss and updates state."""
+        """Test that persistent PGD computes loss and updates state."""
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
         model = _make_component_model(weight=fc_weight)
 
@@ -669,9 +669,8 @@ class TestContinuousPGDReconLoss:
         ci = {"fc": torch.tensor([[0.5]], dtype=torch.float32)}
 
         # Initialize state
-        state = ContinuousPGDState(
+        state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_size=1,
             device="cpu",
             use_delta_component=False,
         )
@@ -680,7 +679,7 @@ class TestContinuousPGDReconLoss:
         initial_masks = {k: v.clone() for k, v in state.masks.items()}
 
         # Compute loss (state is NOT updated yet - need to call apply_pgd_step)
-        result = continuous_pgd_recon_loss(
+        result = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
             ci=ci,
@@ -714,9 +713,8 @@ class TestContinuousPGDReconLoss:
         target_out = torch.tensor([[2.0, 2.0]], dtype=torch.float32)
         ci = {"fc": torch.tensor([[0.3]], dtype=torch.float32)}
 
-        state = ContinuousPGDState(
+        state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_size=1,
             device="cpu",
             use_delta_component=False,
         )
@@ -725,7 +723,7 @@ class TestContinuousPGDReconLoss:
         masks_history = []
         for _ in range(5):
             masks_history.append({k: v.clone() for k, v in state.masks.items()})
-            result = continuous_pgd_recon_loss(
+            result = persistent_pgd_recon_loss(
                 model=model,
                 batch=batch,
                 ci=ci,
@@ -746,7 +744,7 @@ class TestContinuousPGDReconLoss:
             assert not torch.allclose(initial, final)
 
     def test_with_delta_component(self: object) -> None:
-        """Test continuous PGD with delta component enabled."""
+        """Test persistent PGD with delta component enabled."""
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
         model = _make_component_model(weight=fc_weight)
 
@@ -756,9 +754,8 @@ class TestContinuousPGDReconLoss:
         weight_deltas = model.calc_weight_deltas()
 
         # Initialize state with delta component
-        state = ContinuousPGDState(
+        state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_size=1,
             device="cpu",
             use_delta_component=True,
         )
@@ -766,7 +763,7 @@ class TestContinuousPGDReconLoss:
         # Masks should have C+1 elements when using delta component
         assert state.masks["fc"].shape[-1] == model.module_to_c["fc"] + 1
 
-        result = continuous_pgd_recon_loss(
+        result = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
             ci=ci,
@@ -781,7 +778,7 @@ class TestContinuousPGDReconLoss:
         assert result.loss >= 0.0
 
     def test_batch_dimension(self: object) -> None:
-        """Test that masks work correctly with batch dimension > 1."""
+        """Test that masks broadcast correctly across batch dimension."""
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
         model = _make_component_model(weight=fc_weight)
 
@@ -790,17 +787,16 @@ class TestContinuousPGDReconLoss:
         target_out = torch.tensor([[1.0, 2.0], [2.0, 3.0], [0.5, 1.0]], dtype=torch.float32)
         ci = {"fc": torch.tensor([[0.5], [0.6], [0.4]], dtype=torch.float32)}
 
-        state = ContinuousPGDState(
+        state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_size=3,
             device="cpu",
             use_delta_component=False,
         )
 
-        # Masks should have shape (batch_size, C)
-        assert state.masks["fc"].shape == (3, model.module_to_c["fc"])
+        # Masks should have shape (C,) - single mask shared across batch
+        assert state.masks["fc"].shape == (model.module_to_c["fc"],)
 
-        result = continuous_pgd_recon_loss(
+        result = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
             ci=ci,

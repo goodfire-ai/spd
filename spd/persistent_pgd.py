@@ -1,7 +1,7 @@
-"""Continuous PGD: Persistent adversarial masks that evolve across training steps.
+"""Persistent PGD: Persistent adversarial masks that evolve across training steps.
 
 Instead of reinitializing PGD masks each training step and running N optimization steps,
-ContinuousPGD maintains persistent masks that receive one gradient update per training step.
+PersistentPGD maintains persistent masks that receive one gradient update per training step.
 Over many steps, these masks converge to strong adversarial configurations.
 
 The key insight is that this amortizes PGD optimization across training steps - getting the
@@ -21,40 +21,41 @@ from spd.routing import AllLayersRouter
 from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
+PPGD_INIT_SEED = 42
 
-class ContinuousPGDState:
-    """Persistent state for continuous PGD optimization.
 
-    Holds adversarial masks that persist across training steps. Each position in the batch
-    gets its own mask that evolves over time.
+class PersistentPGDState:
+    """Persistent state for persistent PGD optimization.
 
-    Shape: {module_name: (batch_size, C)} per module, broadcasting along sequence dimension.
+    Holds a single adversarial mask per module that persists across training steps.
+    The mask is shared across all batch elements and ranks.
+
+    Shape: {module_name: (C,)} per module, broadcast to batch dims during forward.
     """
 
     def __init__(
         self,
         module_to_c: dict[str, int],
-        batch_size: int,
         device: torch.device | str,
         use_delta_component: bool,
     ) -> None:
         self.module_to_c = module_to_c
-        self.batch_size = batch_size
         self.device = device
         self.use_delta_component = use_delta_component
 
-        # Initialize masks randomly in [0, 1]
-        # Shape: (batch_size, mask_c) per module - one mask per sequence in batch
-        self.masks: dict[str, Float[Tensor, "batch mask_c"]] = {}
+        # Initialize masks randomly in [0, 1] with fixed seed for consistency across ranks
+        # Shape: (mask_c,) per module - single mask shared across all batch elements
+        rng = torch.Generator(device=device).manual_seed(PPGD_INIT_SEED)
+        self.masks: dict[str, Float[Tensor, " mask_c"]] = {}
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
             self.masks[module_name] = torch.rand(
-                batch_size, mask_c, device=device, requires_grad=True
+                mask_c, device=device, requires_grad=True, generator=rng
             )
 
     def step(
         self,
-        grads: dict[str, Float[Tensor, "batch mask_c"]],
+        grads: dict[str, Float[Tensor, " mask_c"]],
         step_size: float,
     ) -> None:
         """Perform one PGD update step using the provided gradients.
@@ -73,7 +74,7 @@ class ContinuousPGDState:
     def get_expanded_masks(
         self, batch_dims: tuple[int, ...]
     ) -> dict[str, Float[Tensor, "*batch_dims mask_c"]]:
-        """Expand masks to full batch dimensions, broadcasting along sequence.
+        """Expand masks to full batch dimensions.
 
         Args:
             batch_dims: Target batch dimensions, e.g. (batch_size, seq_len)
@@ -81,33 +82,24 @@ class ContinuousPGDState:
         Returns:
             Masks expanded to (*batch_dims, mask_c) via broadcasting
         """
-        # batch_dims is (batch, seq) for LMs
-        # Our masks are (batch, mask_c)
-        # We need to expand to (batch, seq, mask_c) by broadcasting
-        assert batch_dims[0] == self.batch_size, (
-            f"Batch size mismatch: state has {self.batch_size}, got {batch_dims[0]}"
-        )
-
         expanded: dict[str, Float[Tensor, "*batch_dims mask_c"]] = {}
         for module_name, mask in self.masks.items():
-            # mask is (batch, mask_c), we want (batch, seq, mask_c)
-            # Insert singleton dimensions for seq dims
+            # mask is (mask_c,), expand to (*batch_dims, mask_c)
             # Use contiguous() to create a new tensor (not a view) while preserving gradients.
             # This is needed because we update masks in-place later, which would invalidate views.
-            view_shape = [self.batch_size] + [1] * (len(batch_dims) - 1) + [mask.shape[-1]]
-            expanded[module_name] = mask.view(*view_shape).expand(*batch_dims, -1).contiguous()
+            expanded[module_name] = mask.expand(*batch_dims, -1).contiguous()
 
         return expanded
 
 
-class ContinuousPGDResult:
-    """Result from continuous_pgd_recon_loss containing loss and deferred mask gradients."""
+class PersistentPGDResult:
+    """Result from persistent_pgd_recon_loss containing loss and deferred mask gradients."""
 
     def __init__(
         self,
         loss: Float[Tensor, ""],
-        grads: dict[str, Float[Tensor, "batch mask_c"]],
-        pgd_state: ContinuousPGDState,
+        grads: dict[str, Float[Tensor, " mask_c"]],
+        pgd_state: PersistentPGDState,
         step_size: float,
     ) -> None:
         self.loss = loss
@@ -120,17 +112,17 @@ class ContinuousPGDResult:
         self.pgd_state.step(self.grads, self.step_size)
 
 
-def continuous_pgd_recon_loss(
+def persistent_pgd_recon_loss(
     model: ComponentModel,
     batch: torch.Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     target_out: Float[Tensor, "... vocab"],
     output_loss_type: Literal["mse", "kl"],
-    pgd_state: ContinuousPGDState,
+    pgd_state: PersistentPGDState,
     step_size: float,
-) -> ContinuousPGDResult:
-    """Compute reconstruction loss with continuous PGD masks.
+) -> PersistentPGDResult:
+    """Compute reconstruction loss with persistent PGD masks.
 
     Unlike standard PGD which runs N steps per training step, this:
     1. Uses persistent masks from pgd_state
@@ -153,7 +145,7 @@ def continuous_pgd_recon_loss(
         step_size: PGD step size for mask updates
 
     Returns:
-        ContinuousPGDResult containing loss and deferred gradients
+        PersistentPGDResult containing loss and deferred gradients
     """
     batch_dims = next(iter(ci.values())).shape[:-1]
     router = AllLayersRouter()
@@ -205,7 +197,7 @@ def continuous_pgd_recon_loss(
         for k, g in zip(pgd_state.masks.keys(), grads, strict=True)
     }
 
-    return ContinuousPGDResult(
+    return PersistentPGDResult(
         loss=loss, grads=grads_dict, pgd_state=pgd_state, step_size=step_size
     )
 
