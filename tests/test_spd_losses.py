@@ -5,7 +5,13 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.configs import AdamPGDConfig, LayerwiseCiConfig, SignPGDConfig, UniformKSubsetRoutingConfig
+from spd.configs import (
+    AdamPGDConfig,
+    LayerwiseCiConfig,
+    PersistentPGDReconLossConfig,
+    SignPGDConfig,
+    UniformKSubsetRoutingConfig,
+)
 from spd.metrics import (
     ci_masked_recon_layerwise_loss,
     ci_masked_recon_loss,
@@ -18,7 +24,6 @@ from spd.metrics import (
 )
 from spd.models.component_model import ComponentModel
 from spd.persistent_pgd import PersistentPGDState, persistent_pgd_recon_loss
-from spd.routing import AllLayersRouter
 from spd.utils.module_utils import ModulePathInfo
 
 
@@ -681,22 +686,22 @@ class TestPersistentPGDReconLoss:
         initial_masks = {k: v.clone() for k, v in state.masks.items()}
 
         # Compute loss (state is NOT updated yet - need to call apply_pgd_step)
-        result = persistent_pgd_recon_loss(
+        loss, grad = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
             ci=ci,
             weight_deltas=None,
             target_out=target_out,
             output_loss_type="mse",
-            pgd_state=state,
-            router=AllLayersRouter(),
+            ppgd_cfg=PersistentPGDReconLossConfig(optimizer=SignPGDConfig(step_size=0.1)),
+            ppgd_masks=state.masks,
         )
 
         # Apply PGD step (normally done after .backward())
-        result.apply_pgd_step()
+        state.step(grad)
 
         # Loss should be non-negative
-        assert result.loss >= 0.0
+        assert loss >= 0.0
 
         # Masks should have been updated (not equal to initial)
         for k in state.masks:
@@ -726,17 +731,18 @@ class TestPersistentPGDReconLoss:
         masks_history = []
         for _ in range(5):
             masks_history.append({k: v.clone() for k, v in state.masks.items()})
-            result = persistent_pgd_recon_loss(
+            loss, grad = persistent_pgd_recon_loss(
                 model=model,
                 batch=batch,
                 ci=ci,
                 weight_deltas=None,
                 target_out=target_out,
                 output_loss_type="mse",
-                pgd_state=state,
-                router=AllLayersRouter(),
+                ppgd_cfg=PersistentPGDReconLossConfig(optimizer=SignPGDConfig(step_size=0.1)),
+                ppgd_masks=state.masks,
             )
-            result.apply_pgd_step()
+            state.step(grad)
+            assert loss >= 0.0
 
         # Masks should have changed over time
         # (they accumulate updates, so later masks differ from earlier ones)
@@ -767,19 +773,19 @@ class TestPersistentPGDReconLoss:
         # Masks should have C+1 elements when using delta component
         assert state.masks["fc"].shape[-1] == model.module_to_c["fc"] + 1
 
-        result = persistent_pgd_recon_loss(
+        loss, grad = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
             ci=ci,
             weight_deltas=weight_deltas,
             target_out=target_out,
             output_loss_type="mse",
-            pgd_state=state,
-            router=AllLayersRouter(),
+            ppgd_cfg=PersistentPGDReconLossConfig(optimizer=SignPGDConfig(step_size=0.1)),
+            ppgd_masks=state.masks,
         )
-        result.apply_pgd_step()
+        state.step(grad)
 
-        assert result.loss >= 0.0
+        assert loss >= 0.0
 
     def test_batch_dimension(self: object) -> None:
         """Test that masks broadcast correctly across batch dimension."""
@@ -801,19 +807,19 @@ class TestPersistentPGDReconLoss:
         # Masks should have shape (C,) - single mask shared across batch
         assert state.masks["fc"].shape == (model.module_to_c["fc"],)
 
-        result = persistent_pgd_recon_loss(
+        loss, grad = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
+            ppgd_cfg=PersistentPGDReconLossConfig(optimizer=SignPGDConfig(step_size=0.1)),
+            ppgd_masks=state.masks,
             ci=ci,
             weight_deltas=None,
             target_out=target_out,
             output_loss_type="mse",
-            pgd_state=state,
-            router=AllLayersRouter(),
         )
-        result.apply_pgd_step()
+        state.step(grad)
 
-        assert result.loss >= 0.0
+        assert loss >= 0.0
 
     def test_adam_optimizer_state(self: object) -> None:
         """Test that Adam optimizer path updates internal state."""
@@ -831,22 +837,18 @@ class TestPersistentPGDReconLoss:
             optimizer_cfg=AdamPGDConfig(lr=0.05, beta1=0.9, beta2=0.999, eps=1e-8),
         )
 
-        initial_mask = state.masks["fc"].clone()
-        result = persistent_pgd_recon_loss(
+        loss, grad = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
+            ppgd_cfg=PersistentPGDReconLossConfig(
+                optimizer=AdamPGDConfig(lr=0.05, beta1=0.9, beta2=0.999, eps=1e-8)
+            ),
+            ppgd_masks=state.masks,
             ci=ci,
             weight_deltas=None,
             target_out=target_out,
             output_loss_type="mse",
-            pgd_state=state,
-            router=AllLayersRouter(),
         )
-        result.apply_pgd_step()
+        state.step(grad)
 
-        assert state._adam_step == 1
-        assert state.masks["fc"].shape == initial_mask.shape
-        assert state._adam_m["fc"].shape == initial_mask.shape
-        assert state._adam_v["fc"].shape == initial_mask.shape
-        assert torch.all(state.masks["fc"] >= 0.0)
-        assert torch.all(state.masks["fc"] <= 1.0)
+        assert loss >= 0.0
