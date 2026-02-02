@@ -668,11 +668,6 @@ class Config(BaseConfig):
         default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
     )
-    n_examples_until_dead: PositiveInt = Field(
-        ...,
-        description="Number of examples without firing before a component is considered dead. "
-        "Note that in LMs, an example is a token, not a sequence.",
-    )
 
     # --- Pretrained model info ---
     pretrained_model_class: str = Field(
@@ -730,6 +725,7 @@ class Config(BaseConfig):
         "dist_backend",
         "lr_exponential_halflife",
         "out_dir",
+        "n_examples_until_dead",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",

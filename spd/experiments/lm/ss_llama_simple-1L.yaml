@@ -90,7 +90,6 @@ eval_metric_configs:
   mask_scope: shared_across_batch
   classname: PGDReconLoss
 ci_alive_threshold: 0.0
-n_examples_until_dead: 1368400
 pretrained_model_class: simple_stories_train.models.llama_simple.LlamaSimple
 pretrained_model_path: null
 pretrained_model_name: wandb:goodfire/spd/runs/tfacbi70 # 100k steps
