@@ -39,6 +39,7 @@ from spd.metrics import (
     unmasked_recon_loss,
 )
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.persistent_pgd import PersistentPGDState, persistent_pgd_recon_loss
 
 
 def compute_total_loss(
@@ -54,6 +55,7 @@ def compute_total_loss(
     use_delta_component: bool,
     n_mask_samples: int,
     output_loss_type: Literal["mse", "kl"],
+    persistent_pgd_state: PersistentPGDState | None,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
@@ -61,6 +63,13 @@ def compute_total_loss(
     """
     total = torch.tensor(0.0, device=batch.device)
     terms: dict[str, float] = {}
+
+    ppgd_configs = [
+        cfg
+        for cfg in loss_metric_configs
+        if isinstance(cfg, (PersistentPGDReconLossConfig, PersistentPGDReconSubsetLossConfig))
+    ]
+    assert len(ppgd_configs) <= 1, "Only one PersistentPGD config is supported"
 
     for cfg in loss_metric_configs:
         assert cfg.coeff is not None, "All loss metric configs must have a coeff"
@@ -186,8 +195,19 @@ def compute_total_loss(
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
             case PersistentPGDReconLossConfig() | PersistentPGDReconSubsetLossConfig():
-                raise ValueError(
-                    "PersistentPGD configs should be handled separately in the training loop"
+                assert persistent_pgd_state is not None, (
+                    "PersistentPGD state is required for PersistentPGD configs"
+                )
+
+                loss = persistent_pgd_recon_loss(
+                    ppgd_cfg=cfg,
+                    model=model,
+                    batch=batch,
+                    ci=ci.lower_leaky,
+                    weight_deltas=weight_deltas if use_delta_component else None,
+                    target_out=target_out,
+                    output_loss_type=output_loss_type,
+                    pgd_state=persistent_pgd_state,
                 )
 
         terms[f"loss/{cfg.classname}"] = loss.item()
