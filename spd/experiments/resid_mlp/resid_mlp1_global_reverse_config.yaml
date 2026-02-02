@@ -12,6 +12,7 @@ ci_config:
   fn_type: global_reverse_residual
   d_resid_ci_fn: 512
   reader_hidden_dims: [512]
+  transition_hidden_dim: 2048
   block_groups:
     - name: "layer_0_mlp"
       patterns: ["layers.0.mlp_*"]
