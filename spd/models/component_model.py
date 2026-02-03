@@ -303,13 +303,16 @@ class ComponentModel(LoadableModule):
                     layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims
                 )
             case "global_reverse_residual":
-                # block_groups, d_resid_ci_fn, reader_hidden_dims are validated by Pydantic
+                # block_groups, d_resid_ci_fn, reader_hidden_dims, transition_hidden_dim
+                # are validated by Pydantic
                 block_groups = ci_config.block_groups
                 d_resid_ci_fn = ci_config.d_resid_ci_fn
                 reader_hidden_dims = ci_config.reader_hidden_dims
+                transition_hidden_dim = ci_config.transition_hidden_dim
                 assert block_groups is not None  # for type narrowing
                 assert d_resid_ci_fn is not None  # for type narrowing
                 assert reader_hidden_dims is not None  # for type narrowing
+                assert transition_hidden_dim is not None  # for type narrowing
 
                 # Build block_configs from block_groups
                 block_configs: list[tuple[str, list[str], list[int], list[int]]] = []
@@ -350,6 +353,7 @@ class ComponentModel(LoadableModule):
                     block_configs=block_configs,
                     d_resid_ci_fn=d_resid_ci_fn,
                     reader_hidden_dims=reader_hidden_dims,
+                    transition_hidden_dim=transition_hidden_dim,
                     attn_config=ci_config.transition_attn_config,
                 )
 
