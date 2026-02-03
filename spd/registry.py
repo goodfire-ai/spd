@@ -186,7 +186,7 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
     "ss_llama_simple_mlp_persistent_pgd": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/persistent_pgd_config.yaml"),
+        config_path=Path("spd/experiments/lm/persistent_pgd_config_DEBUG.yaml"),
         expected_runtime=1600,
     ),
     "ts": ExperimentConfig(

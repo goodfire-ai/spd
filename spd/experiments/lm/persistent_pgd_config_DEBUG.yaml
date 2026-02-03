@@ -36,11 +36,21 @@ loss_metric_configs:
     coeff: 0.5
     routing:
       type: uniform_k_subset
+  # coeff 0.0
   - classname: PersistentPGDReconSubsetLoss
     coeff: 0.5
     optimizer:
       type: sign
       step_size: 0.5
+    routing:
+      type: uniform_k_subset
+  # Old one
+  - classname: PGDReconSubsetLoss
+    coeff: 0.0
+    init: random
+    step_size: 0.5
+    n_steps: 4
+    mask_scope: shared_across_batch
     routing:
       type: uniform_k_subset
   - classname: FaithfulnessLoss
