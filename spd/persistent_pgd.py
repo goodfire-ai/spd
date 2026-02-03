@@ -158,6 +158,25 @@ def get_mask_infos(
     )
 
 
+def detach_mask_infos(mask_infos: dict[str, ComponentsMaskInfo]) -> dict[str, ComponentsMaskInfo]:
+    """Detach the masks in the mask infos."""
+    return {
+        k: ComponentsMaskInfo(
+            component_mask=v.component_mask.detach(),
+            routing_mask=v.routing_mask.detach()
+            if isinstance(v.routing_mask, Tensor)
+            else v.routing_mask,
+            weight_delta_and_mask=(
+                v.weight_delta_and_mask[0].detach(),
+                v.weight_delta_and_mask[1].detach(),
+            )
+            if v.weight_delta_and_mask is not None
+            else None,
+        )
+        for k, v in mask_infos.items()
+    }
+
+
 def persistent_pgd_recon_loss(
     model: ComponentModel,
     batch: Tensor,
@@ -197,6 +216,7 @@ def persistent_pgd_recon_loss(
             router = get_subset_router(routing, batch.device)
 
     mask_infos = get_mask_infos(model, ci, weight_deltas, ppgd_masks, router)
+    # mask_infos = detach_mask_infos(mask_infos)
 
     out = model(batch, mask_infos=mask_infos)
 

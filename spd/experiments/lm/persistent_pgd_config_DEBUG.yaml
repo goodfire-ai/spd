@@ -24,6 +24,9 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
+  # Standard
+  - classname: FaithfulnessLoss
+    coeff: 1000000.0
   - classname: ImportanceMinimalityLoss
     coeff: 0.002
     pnorm: 2.0
@@ -36,6 +39,7 @@ loss_metric_configs:
     coeff: 0.5
     routing:
       type: uniform_k_subset
+  # PGD
   - classname: PersistentPGDReconSubsetLoss
     coeff: 0.5
     optimizer:
@@ -43,8 +47,14 @@ loss_metric_configs:
       step_size: 0.5
     routing:
       type: uniform_k_subset
-  - classname: FaithfulnessLoss
-    coeff: 1000000.0
+  - classname: PGDReconSubsetLoss
+    coeff: 0.0
+    init: random
+    step_size: 0.5
+    n_steps: 4
+    mask_scope: shared_across_batch
+    routing:
+      type: uniform_k_subset
 output_loss_type: kl
 lr_schedule:
   start_val: 0.0005
