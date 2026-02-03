@@ -13,6 +13,7 @@ from pydantic import (
 
 from spd.base_config import BaseConfig
 from spd.log import logger
+from spd.settings import SPD_OUT_DIR
 from spd.spd_types import GlobalCiFnType, LayerwiseCiFnType, ModelPath, Probability
 
 
@@ -437,6 +438,8 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
 
     classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
+    reset_every_n_steps: NonNegativeInt | None = None
+    scope: MaskScope
 
 
 class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
@@ -448,9 +451,11 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
 
     classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
+    reset_every_n_steps: NonNegativeInt | None = None
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]
+    scope: MaskScope
 
 
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
@@ -549,6 +554,22 @@ TaskConfig = TMSTaskConfig | ResidMLPTaskConfig | LMTaskConfig | IHTaskConfig
 SamplingType = Literal["continuous", "binomial"]
 
 
+class ProfilingConfig(BaseConfig):
+    """Configuration for torch.profiler to measure training loop performance."""
+
+    wait_steps: NonNegativeInt = Field(
+        default=5, description="Steps to skip before profiling starts"
+    )
+    warmup_steps: NonNegativeInt = Field(
+        default=2, description="Profiler warmup steps (results discarded)"
+    )
+    active_steps: PositiveInt = Field(default=3, description="Steps to actively profile")
+    trace_dir: str = Field(
+        default=str(SPD_OUT_DIR / "profiler_traces"),
+        description="Directory to save tensorboard traces",
+    )
+
+
 class Config(BaseConfig):
     # --- WandB
     wandb_project: str | None = Field(
@@ -562,6 +583,13 @@ class Config(BaseConfig):
     wandb_run_name_prefix: str = Field(
         default="",
         description="Prefix prepended to an auto-generated WandB run name",
+    )
+
+    # --- Profiling ---
+    profiling: ProfilingConfig | None = Field(
+        default=None,
+        description="If set, enables torch.profiler to measure training loop performance. "
+        "Results are saved as tensorboard traces.",
     )
 
     # --- General ---
