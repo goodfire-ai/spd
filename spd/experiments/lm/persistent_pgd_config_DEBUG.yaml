@@ -115,3 +115,4 @@ task_config:
   shuffle_each_epoch: true
   is_tokenized: false
   streaming: false
+profiling: {}
