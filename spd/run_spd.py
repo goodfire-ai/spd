@@ -3,6 +3,7 @@
 import gc
 from collections import defaultdict
 from collections.abc import Iterator
+from contextlib import nullcontext
 from pathlib import Path
 from typing import cast
 
@@ -15,6 +16,13 @@ from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
 from torch.nn.utils import clip_grad_norm_
+from torch.profiler import (
+    ProfilerActivity,
+    profile,
+    record_function,
+    schedule,
+    tensorboard_trace_handler,
+)
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -259,214 +267,245 @@ def optimize(
     # Initialize PersistentPGD state if needed
     persistent_pgd_state: PersistentPGDState | None = None
     if persistent_pgd_configs:
-        assert len(persistent_pgd_configs) == 1
+        (ppgd_cfg,) = persistent_pgd_configs
         persistent_pgd_state = PersistentPGDState(
             module_to_c=model.module_to_c,
+            batch_dims=batch_dims,
             device=device,
             use_delta_component=config.use_delta_component,
-            optimizer_cfg=persistent_pgd_configs[0].optimizer,
+            cfg=ppgd_cfg,
         )
 
-    for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
-        optimizer.zero_grad()
-
-        step_lr = get_scheduled_value(
-            step=step, total_steps=config.steps, config=config.lr_schedule
+    # Setup profiler if enabled
+    if config.profiling:
+        profiler_schedule = schedule(
+            wait=config.profiling.wait_steps,
+            warmup=config.profiling.warmup_steps,
+            active=config.profiling.active_steps,
+            repeat=1,
         )
-        for group in optimizer.param_groups:
-            group["lr"] = step_lr
+        profiler_ctx = profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            schedule=profiler_schedule,
+            on_trace_ready=tensorboard_trace_handler(config.profiling.trace_dir),
+            record_shapes=True,
+            with_stack=True,
+        )
+    else:
+        profiler_ctx = nullcontext()
 
-        weight_deltas = component_model.calc_weight_deltas()
+    with profiler_ctx as profiler:
+        for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
+            optimizer.zero_grad()
 
-        batch_log_data: defaultdict[str, float] = defaultdict(float)
-
-        batch_ppgd_grads = persistent_pgd_state.empty_grads() if persistent_pgd_state else None
-
-        for _ in range(config.gradient_accumulation_steps):
-            microbatch = extract_batch_data(next(train_iterator)).to(device)
-
-            # NOTE: we need to call the wrapped_model at least once each step in order to setup
-            # the DDP gradient syncing for all parameters in the component model. Gradients will
-            # sync regardless of whether the parameters are used in this call to wrapped_model.
-            target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
-
-            ci = component_model.calc_causal_importances(
-                pre_weight_acts=target_model_output.cache,
-                detach_inputs=False,
-                sampling=config.sampling,
+            step_lr = get_scheduled_value(
+                step=step, total_steps=config.steps, config=config.lr_schedule
             )
+            for group in optimizer.param_groups:
+                group["lr"] = step_lr
 
-            alive_tracker.update(ci=ci.lower_leaky)
+            weight_deltas = component_model.calc_weight_deltas()
 
-            microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=regular_loss_configs,
-                model=component_model,
-                batch=microbatch,
-                ci=ci,
-                target_out=target_model_output.output,
-                weight_deltas=weight_deltas,
-                pre_weight_acts=target_model_output.cache,
-                current_frac_of_training=step / config.steps,
-                sampling=config.sampling,
-                use_delta_component=config.use_delta_component,
-                n_mask_samples=config.n_mask_samples,
-                output_loss_type=config.output_loss_type,
-            )
+            batch_log_data: defaultdict[str, float] = defaultdict(float)
 
-            ppgd_recon_loss: Tensor | None = None
-            if persistent_pgd_configs:
-                ppgd_cfg = persistent_pgd_configs[0]
-                assert ppgd_cfg.coeff is not None, "PersistentPGD config must have a coeff"
-                assert persistent_pgd_state is not None, (
-                    "PersistentPGD state is required for PersistentPGD configs"
-                )
-                assert batch_ppgd_grads is not None, "PersistentPGD grads are required"
-                with persistent_pgd_state.requires_grad():
-                    ppgd_recon_loss, ppgd_grads = persistent_pgd_recon_loss(
-                        ppgd_cfg=ppgd_cfg,
-                        ppgd_masks=persistent_pgd_state.masks,
-                        model=model,
+            batch_ppgd_grads = persistent_pgd_state.empty_grads() if persistent_pgd_state else None
+
+            for _ in range(config.gradient_accumulation_steps):
+                microbatch = extract_batch_data(next(train_iterator)).to(device)
+
+                # NOTE: we need to call the wrapped_model at least once each step in order to setup
+                # the DDP gradient syncing for all parameters in the component model. Gradients will
+                # sync regardless of whether the parameters are used in this call to wrapped_model.
+                with record_function("forward_pass"):
+                    target_model_output: OutputWithCache = wrapped_model(
+                        microbatch, cache_type="input"
+                    )
+
+                with record_function("calc_causal_importances"):
+                    ci = component_model.calc_causal_importances(
+                        pre_weight_acts=target_model_output.cache,
+                        detach_inputs=False,
+                        sampling=config.sampling,
+                    )
+
+                alive_tracker.update(ci=ci.lower_leaky)
+
+                with record_function("compute_total_loss"):
+                    microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
+                        loss_metric_configs=regular_loss_configs,
+                        model=component_model,
                         batch=microbatch,
-                        ci=ci.lower_leaky,
-                        weight_deltas=weight_deltas if config.use_delta_component else None,
+                        ci=ci,
                         target_out=target_model_output.output,
+                        weight_deltas=weight_deltas,
+                        pre_weight_acts=target_model_output.cache,
+                        current_frac_of_training=step / config.steps,
+                        sampling=config.sampling,
+                        use_delta_component=config.use_delta_component,
+                        n_mask_samples=config.n_mask_samples,
                         output_loss_type=config.output_loss_type,
                     )
 
-                    for module_name, grad in ppgd_grads.items():
-                        batch_ppgd_grads[module_name] += grad / config.gradient_accumulation_steps
+                ppgd_recon_loss: Tensor | None = None
+                if persistent_pgd_configs:
+                    ppgd_cfg = persistent_pgd_configs[0]
+                    assert ppgd_cfg.coeff is not None, "PersistentPGD config must have a coeff"
+                    assert persistent_pgd_state is not None, (
+                        "PersistentPGD state is required for PersistentPGD configs"
+                    )
+                    assert batch_ppgd_grads is not None, "PersistentPGD grads are required"
+                    with record_function("persistent_pgd_loss"):
+                        ppgd_recon_loss, ppgd_grads = persistent_pgd_recon_loss(
+                            ppgd_cfg=ppgd_cfg,
+                            ppgd_masks=persistent_pgd_state.masks,
+                            model=model,
+                            batch=microbatch,
+                            ci=ci.lower_leaky,
+                            weight_deltas=weight_deltas if config.use_delta_component else None,
+                            target_out=target_model_output.output,
+                            output_loss_type=config.output_loss_type,
+                        )
 
-                microbatch_total_loss += ppgd_cfg.coeff * ppgd_recon_loss
-                batch_log_data[f"train/loss/{ppgd_cfg.classname}"] += (
-                    ppgd_recon_loss.item() / config.gradient_accumulation_steps
+                        for module_name, grad in ppgd_grads.items():
+                            batch_ppgd_grads[module_name] += (
+                                grad / config.gradient_accumulation_steps
+                            )
+
+                    microbatch_total_loss += ppgd_cfg.coeff * ppgd_recon_loss
+                    batch_log_data[f"train/loss/{ppgd_cfg.classname}"] += (
+                        ppgd_recon_loss.item() / config.gradient_accumulation_steps
+                    )
+
+                with record_function("backward"):
+                    microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
+
+                for loss_name, loss_value in microbatch_loss_terms.items():
+                    batch_log_data[f"train/{loss_name}"] += (
+                        loss_value / config.gradient_accumulation_steps
+                    )
+
+                for layer_name, layer_ci in ci.lower_leaky.items():
+                    l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
+                    batch_log_data[f"train/l0/{layer_name}"] += (
+                        l0_val / config.gradient_accumulation_steps
+                    )
+            if persistent_pgd_state is not None:
+                assert batch_ppgd_grads is not None
+                (ppgd_cfg,) = persistent_pgd_configs
+
+                # for module_name, v in batch_ppgd_grads.items():
+                #     batch_log_data[
+                #         f"train/loss/{ppgd_cfg.classname}/mean_abs_grad/{module_name}"
+                #     ] = v.abs().mean().item()
+
+                persistent_pgd_state.step(batch_ppgd_grads, step)
+
+            # --- Train Logging --- #
+            if step % config.train_log_freq == 0:
+                avg_metrics = avg_metrics_across_ranks(batch_log_data, device=device)
+                batch_log_data = cast(defaultdict[str, float], avg_metrics)
+
+                alive_counts = alive_tracker.compute()
+                for target_module_path, n_alive_count in alive_counts.items():
+                    n_alive_key = (
+                        f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
+                    )
+                    batch_log_data[n_alive_key] = n_alive_count
+
+                grad_norms = get_grad_norms_dict(component_model, device)
+                dict_safe_update_(
+                    batch_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
                 )
 
-            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
-
-            for loss_name, loss_value in microbatch_loss_terms.items():
-                batch_log_data[f"train/{loss_name}"] += (
-                    loss_value / config.gradient_accumulation_steps
-                )
-
-            for layer_name, layer_ci in ci.lower_leaky.items():
-                l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                batch_log_data[f"train/l0/{layer_name}"] += (
-                    l0_val / config.gradient_accumulation_steps
-                )
-        if persistent_pgd_state is not None:
-            assert batch_ppgd_grads is not None
-            (ppgd_cfg,) = persistent_pgd_configs
-
-            for module_name, v in batch_ppgd_grads.items():
-                batch_log_data[f"train/loss/{ppgd_cfg.classname}/mean_abs_grad/{module_name}"] = (
-                    v.abs().mean().item()
-                )
-
-            persistent_pgd_state.step(batch_ppgd_grads)
-
-        # --- Train Logging --- #
-        if step % config.train_log_freq == 0:
-            avg_metrics = avg_metrics_across_ranks(batch_log_data, device=device)
-            batch_log_data = cast(defaultdict[str, float], avg_metrics)
-
-            alive_counts = alive_tracker.compute()
-            for target_module_path, n_alive_count in alive_counts.items():
-                n_alive_key = (
-                    f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
-                )
-                batch_log_data[n_alive_key] = n_alive_count
-
-            grad_norms = get_grad_norms_dict(component_model, device)
-            dict_safe_update_(
-                batch_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
-            )
-
-            batch_log_data["train/schedules/lr"] = step_lr
-
-            if is_main_process():
-                assert out_dir is not None
-                tqdm.write(f"--- Step {step} ---")
-                tqdm.write(f"LR: {step_lr:.6f}")
-                for name, value in batch_log_data.items():
-                    tqdm.write(f"{name}: {value:.15f}")
-                local_log(batch_log_data, step, out_dir)
-                if config.wandb_project:
-                    try_wandb(wandb.log, batch_log_data, step=step)
-
-        # --- Evaluation --- #
-        if step % config.eval_freq == 0:
-            with torch.no_grad():
-                slow_step: bool = (
-                    config.slow_eval_on_first_step
-                    if step == 0
-                    else step % config.slow_eval_freq == 0
-                )
-
-                assert batch_dims is not None, "batch_dims is not set"
-                multibatch_pgd_metrics = evaluate_multibatch_pgd(
-                    multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
-                    model=component_model,
-                    create_data_iter=create_pgd_data_iter,
-                    config=config,
-                    batch_dims=batch_dims,
-                    device=device,
-                )
-
-                metrics = evaluate(
-                    eval_metric_configs=eval_metric_configs,
-                    model=component_model,  # No backward passes so DDP wrapped_model not needed
-                    eval_iterator=eval_iterator,
-                    device=device,
-                    run_config=config,
-                    slow_step=slow_step,
-                    n_eval_steps=n_eval_steps,
-                    current_frac_of_training=step / config.steps,
-                )
-
-                dict_safe_update_(metrics, multibatch_pgd_metrics)
+                batch_log_data["train/schedules/lr"] = step_lr
 
                 if is_main_process():
                     assert out_dir is not None
-                    for k, v in metrics.items():
-                        tqdm.write(f"eval/{k}: {v}")
-                    local_log(metrics, step, out_dir)
+                    tqdm.write(f"--- Step {step} ---")
+                    tqdm.write(f"LR: {step_lr:.6f}")
+                    for name, value in batch_log_data.items():
+                        tqdm.write(f"{name}: {value:.15f}")
+                    local_log(batch_log_data, step, out_dir)
                     if config.wandb_project:
-                        wandb_logs = {
-                            f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
-                            for k, v in metrics.items()
-                        }
-                        try_wandb(wandb.log, wandb_logs, step=step)
+                        try_wandb(wandb.log, batch_log_data, step=step)
 
-                del metrics
-                # TODO: we should reverse the order of these two calls
-                torch.cuda.empty_cache()
-                gc.collect()
+            # --- Evaluation --- #
+            if step % config.eval_freq == 0:
+                with torch.no_grad():
+                    slow_step: bool = (
+                        config.slow_eval_on_first_step
+                        if step == 0
+                        else step % config.slow_eval_freq == 0
+                    )
 
-        # --- Saving Checkpoint --- #
-        if (
-            (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
-            or step == config.steps
-        ) and is_main_process():
-            assert out_dir is not None
-            # Save the state dict of the underlying module (not DDP wrapper)
-            save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
-            logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")
-            if config.wandb_project:
-                try_wandb(
-                    wandb.save,
-                    str(out_dir / f"model_{step}.pth"),
-                    base_path=str(out_dir),
-                    policy="now",
-                )
+                    assert batch_dims is not None, "batch_dims is not set"
+                    multibatch_pgd_metrics = evaluate_multibatch_pgd(
+                        multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
+                        model=component_model,
+                        create_data_iter=create_pgd_data_iter,
+                        config=config,
+                        batch_dims=batch_dims,
+                        device=device,
+                    )
 
-        # Skip gradient step if we are at the last step (last step just for plotting and logging)
-        if step != config.steps:
-            sync_across_processes()
-            if config.grad_clip_norm_components is not None:
-                clip_grad_norm_(component_params, config.grad_clip_norm_components)
-            if config.grad_clip_norm_ci_fns is not None:
-                clip_grad_norm_(ci_fn_params, config.grad_clip_norm_ci_fns)
-            optimizer.step()
+                    metrics = evaluate(
+                        eval_metric_configs=eval_metric_configs,
+                        model=component_model,  # No backward passes so DDP wrapped_model not needed
+                        eval_iterator=eval_iterator,
+                        device=device,
+                        run_config=config,
+                        slow_step=slow_step,
+                        n_eval_steps=n_eval_steps,
+                        current_frac_of_training=step / config.steps,
+                    )
+
+                    dict_safe_update_(metrics, multibatch_pgd_metrics)
+
+                    if is_main_process():
+                        assert out_dir is not None
+                        for k, v in metrics.items():
+                            tqdm.write(f"eval/{k}: {v}")
+                        local_log(metrics, step, out_dir)
+                        if config.wandb_project:
+                            wandb_logs = {
+                                f"eval/{k}": wandb.Image(v) if isinstance(v, Image.Image) else v
+                                for k, v in metrics.items()
+                            }
+                            try_wandb(wandb.log, wandb_logs, step=step)
+
+                    del metrics
+                    # TODO: we should reverse the order of these two calls
+                    torch.cuda.empty_cache()
+                    gc.collect()
+
+            # --- Saving Checkpoint --- #
+            if (
+                (config.save_freq is not None and step % config.save_freq == 0 and step > 0)
+                or step == config.steps
+            ) and is_main_process():
+                assert out_dir is not None
+                # Save the state dict of the underlying module (not DDP wrapper)
+                save_file(component_model.state_dict(), out_dir / f"model_{step}.pth")
+                logger.info(f"Saved model, optimizer, and out_dir to {out_dir}")
+                if config.wandb_project:
+                    try_wandb(
+                        wandb.save,
+                        str(out_dir / f"model_{step}.pth"),
+                        base_path=str(out_dir),
+                        policy="now",
+                    )
+
+            # Skip gradient step if we are at the last step (last step just for plotting and logging)
+            if step != config.steps:
+                sync_across_processes()
+                if config.grad_clip_norm_components is not None:
+                    clip_grad_norm_(component_params, config.grad_clip_norm_components)
+                if config.grad_clip_norm_ci_fns is not None:
+                    clip_grad_norm_(ci_fn_params, config.grad_clip_norm_ci_fns)
+                optimizer.step()
+
+                if profiler is not None:
+                    profiler.step()
 
     if is_main_process():
         logger.info("Finished training loop.")
