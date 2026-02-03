@@ -115,3 +115,5 @@ task_config:
   shuffle_each_epoch: true
   is_tokenized: false
   streaming: false
+profiling:
+  trace_dir: /mnt/polished-lake/artifacts/mechanisms/spd/profiler_traces
