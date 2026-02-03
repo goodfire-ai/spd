@@ -364,7 +364,6 @@ class UnmaskedReconLossConfig(LossMetricConfig):
 
 
 PGDInitStrategy = Literal["random", "ones", "zeroes"]
-PersistentPGDOptimizer = Literal["sign", "adam"]
 
 MaskScope = Literal["unique_per_datapoint", "shared_across_batch"]
 
