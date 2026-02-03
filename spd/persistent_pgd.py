@@ -8,8 +8,6 @@ The key insight is that this amortizes PGD optimization across training steps - 
 benefit of many PGD steps without the per-step computational cost.
 """
 
-from collections.abc import Generator
-from contextlib import contextmanager
 from typing import Literal
 
 import torch
@@ -43,13 +41,14 @@ class PersistentPGDState:
     def __init__(
         self,
         module_to_c: dict[str, int],
+        batch_dims: tuple[int, ...],
         device: torch.device | str,
         use_delta_component: bool,
         optimizer_cfg: PGDOptimizerConfig,
+        reset_every_n_steps: int | None = None,
     ) -> None:
-        self.module_to_c = module_to_c
-        self.device = device
         self.optimizer_cfg = optimizer_cfg
+        self.reset_every_n_steps = reset_every_n_steps
 
         self._adam_step = 0
         self._adam_m: dict[str, Float[Tensor, " mask_c"]] = {}
@@ -61,16 +60,26 @@ class PersistentPGDState:
         self.masks: dict[str, Float[Tensor, " mask_c"]] = {}
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
-            self.masks[module_name] = torch.rand(mask_c, device=device, generator=rng)
+            mask_shape = batch_dims + (mask_c,)
+            self.masks[module_name] = torch.rand(mask_shape, device=device, generator=rng)
+            # self.masks[module_name] = torch.rand(mask_c, device=device, generator=rng)
             if optimizer_cfg.type == "adam":
                 self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
                 self._adam_v[module_name] = torch.zeros_like(self.masks[module_name])
 
-    def step(self, grads: dict[str, Float[Tensor, " mask_c"]]) -> None:
+    def reset(self) -> None:
+        """Reset the masks to random values."""
+        for mask in self.masks.values():
+            mask.copy_(torch.rand(mask.shape, device=mask.device))
+
+    def step(self, grads: dict[str, Float[Tensor, " mask_c"]], step_num: int) -> None:
         """Perform one PGD update step using the provided gradients.
 
         Updates masks in-place, then clamps to [0, 1].
         """
+        if self.reset_every_n_steps is not None and step_num % self.reset_every_n_steps == 0:
+            self.reset()
+
         with torch.no_grad():
             if self.optimizer_cfg.type == "sign":
                 cfg = self.optimizer_cfg
@@ -98,17 +107,7 @@ class PersistentPGDState:
                 mask.clamp_(0.0, 1.0)
 
     def empty_grads(self) -> dict[str, Float[Tensor, " mask_c"]]:
-        """Empty the gradients of the masks."""
         return {module_name: torch.zeros_like(mask) for module_name, mask in self.masks.items()}
-
-    @contextmanager
-    def requires_grad(self) -> Generator[None]:
-        """Set the requires_grad flag for the masks."""
-        for mask in self.masks.values():
-            mask.requires_grad_(True)
-        yield
-        for mask in self.masks.values():
-            mask.requires_grad_(False)
 
 
 def get_mask_infos(
@@ -215,6 +214,10 @@ def persistent_pgd_recon_loss(
         case PersistentPGDReconSubsetLossConfig(routing=routing):
             router = get_subset_router(routing, batch.device)
 
+    for mask in ppgd_masks.values():
+        assert mask.grad is None
+        mask.requires_grad_(True)
+
     mask_infos = get_mask_infos(model, ci, weight_deltas, ppgd_masks, router)
     # mask_infos = detach_mask_infos(mask_infos)
 
@@ -227,9 +230,15 @@ def persistent_pgd_recon_loss(
     loss = sum_loss / n_examples
 
     grads = torch.autograd.grad(loss, list(ppgd_masks.values()), retain_graph=True)
+
     grads_dict = {
         k: all_reduce(g, op=ReduceOp.SUM) for k, g in zip(ppgd_masks.keys(), grads, strict=True)
     }
+
+    for mask in ppgd_masks.values():
+        assert mask.grad is None
+        mask.requires_grad_(False)
+
     return loss, grads_dict
 
 
