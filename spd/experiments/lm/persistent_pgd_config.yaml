@@ -63,8 +63,8 @@ loss_metric_configs:
   routing:
     type: uniform_k_subset
   optimizer:
-    type: adam
-    lr: 1
+    type: sign
+    step_size: 0.0
 - classname: FaithfulnessLoss
   coeff: 1000000.0
 output_loss_type: kl
