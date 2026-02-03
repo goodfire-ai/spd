@@ -43,12 +43,11 @@ class PersistentPGDState:
     def __init__(
         self,
         module_to_c: dict[str, int],
+        batch_dims: tuple[int, ...],
         device: torch.device | str,
         use_delta_component: bool,
         optimizer_cfg: PGDOptimizerConfig,
     ) -> None:
-        self.module_to_c = module_to_c
-        self.device = device
         self.optimizer_cfg = optimizer_cfg
 
         self._adam_step = 0
@@ -61,7 +60,9 @@ class PersistentPGDState:
         self.masks: dict[str, Float[Tensor, " mask_c"]] = {}
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
-            self.masks[module_name] = torch.rand(mask_c, device=device, generator=rng)
+            mask_shape = (mask_c,) + batch_dims
+            self.masks[module_name] = torch.rand(mask_shape, device=device, generator=rng)
+            # self.masks[module_name] = torch.rand(mask_c, device=device, generator=rng)
             if optimizer_cfg.type == "adam":
                 self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
                 self._adam_v[module_name] = torch.zeros_like(self.masks[module_name])
