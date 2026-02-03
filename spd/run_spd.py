@@ -278,9 +278,9 @@ def optimize(
 
         weight_deltas = component_model.calc_weight_deltas()
 
-        microbatch_log_data: defaultdict[str, float] = defaultdict(float)
+        batch_log_data: defaultdict[str, float] = defaultdict(float)
 
-        step_ppgd_grads = persistent_pgd_state.empty_grads() if persistent_pgd_state else None
+        batch_ppgd_grads = persistent_pgd_state.empty_grads() if persistent_pgd_state else None
 
         for _ in range(config.gradient_accumulation_steps):
             microbatch = extract_batch_data(next(train_iterator)).to(device)
@@ -319,7 +319,7 @@ def optimize(
                 assert persistent_pgd_state is not None, (
                     "PersistentPGD state is required for PersistentPGD configs"
                 )
-                assert step_ppgd_grads is not None, "PersistentPGD grads are required"
+                assert batch_ppgd_grads is not None, "PersistentPGD grads are required"
                 with persistent_pgd_state.requires_grad():
                     ppgd_recon_loss, ppgd_grads = persistent_pgd_recon_loss(
                         ppgd_cfg=ppgd_cfg,
@@ -333,64 +333,64 @@ def optimize(
                     )
 
                     for module_name, grad in ppgd_grads.items():
-                        step_ppgd_grads[module_name] += grad / config.gradient_accumulation_steps
+                        batch_ppgd_grads[module_name] += grad / config.gradient_accumulation_steps
 
-            if ppgd_recon_loss is not None:
                 microbatch_total_loss += ppgd_recon_loss
-                microbatch_log_data["train/loss/persistent_pgd_recon_loss"] += (
+                batch_log_data[f"train/loss/{ppgd_cfg.classname}"] += (
                     ppgd_recon_loss.item() / config.gradient_accumulation_steps
                 )
 
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():
-                microbatch_log_data[f"train/{loss_name}"] += (
+                batch_log_data[f"train/{loss_name}"] += (
                     loss_value / config.gradient_accumulation_steps
                 )
 
             for layer_name, layer_ci in ci.lower_leaky.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/l0/{layer_name}"] += (
+                batch_log_data[f"train/l0/{layer_name}"] += (
                     l0_val / config.gradient_accumulation_steps
                 )
         if persistent_pgd_state is not None:
-            assert step_ppgd_grads
+            assert batch_ppgd_grads is not None
+            (ppgd_cfg,) = persistent_pgd_configs
 
-            for module_name, v in step_ppgd_grads.items():
-                microbatch_log_data[
-                    f"train/loss/persistent_pgd_loss/mean_abs_grad/{module_name}"
-                ] = v.abs().mean().item()
+            for module_name, v in batch_ppgd_grads.items():
+                batch_log_data[f"train/loss/{ppgd_cfg.classname}/mean_abs_grad/{module_name}"] = (
+                    v.abs().mean().item()
+                )
 
-            persistent_pgd_state.step(step_ppgd_grads)
+            persistent_pgd_state.step(batch_ppgd_grads)
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
-            avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
-            microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
+            avg_metrics = avg_metrics_across_ranks(batch_log_data, device=device)
+            batch_log_data = cast(defaultdict[str, float], avg_metrics)
 
             alive_counts = alive_tracker.compute()
             for target_module_path, n_alive_count in alive_counts.items():
                 n_alive_key = (
                     f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
                 )
-                microbatch_log_data[n_alive_key] = n_alive_count
+                batch_log_data[n_alive_key] = n_alive_count
 
             grad_norms = get_grad_norms_dict(component_model, device)
             dict_safe_update_(
-                microbatch_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
+                batch_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
             )
 
-            microbatch_log_data["train/schedules/lr"] = step_lr
+            batch_log_data["train/schedules/lr"] = step_lr
 
             if is_main_process():
                 assert out_dir is not None
                 tqdm.write(f"--- Step {step} ---")
                 tqdm.write(f"LR: {step_lr:.6f}")
-                for name, value in microbatch_log_data.items():
+                for name, value in batch_log_data.items():
                     tqdm.write(f"{name}: {value:.15f}")
-                local_log(microbatch_log_data, step, out_dir)
+                local_log(batch_log_data, step, out_dir)
                 if config.wandb_project:
-                    try_wandb(wandb.log, microbatch_log_data, step=step)
+                    try_wandb(wandb.log, batch_log_data, step=step)
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
