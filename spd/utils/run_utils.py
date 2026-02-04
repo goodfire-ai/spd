@@ -28,6 +28,9 @@ _DISCRIMINATED_LIST_FIELDS: dict[str, str] = {
     "eval_metric_configs": "classname",
 }
 
+# Marker for sweeping over entire subobject variants
+VARIANTS_MARKER = "__variants__"
+
 
 def _save_json(data: Any, path: Path | str, **kwargs: Any) -> None:
     with open(path, "w") as f:
@@ -89,13 +92,15 @@ def apply_nested_updates(base_dict: dict[str, Any], updates: dict[str, Any]) -> 
     Supports dot notation for all fields:
         - Regular: "task_config.max_seq_len"
         - Discriminated lists: "loss_metric_configs.Loss1.coeff"
+        - Variant replacement: "ci_config" with dict value (replaces entire subobject)
 
     For discriminated list fields, matches items by discriminator value in the path.
     Preserves base items not mentioned in updates and adds new items from updates.
+    For variant replacement (non-dotted key with dict value), the entire subobject is replaced.
 
     Args:
         base_dict: The base configuration dictionary
-        updates: Dictionary of flattened key-value pairs
+        updates: Dictionary of flattened key-value pairs (or full subobjects for variants)
 
     Returns:
         Updated dictionary (deep copy, original unchanged)
@@ -170,9 +175,20 @@ def _extract_value_specs_from_sweep_params(
     path: list[str],
     value_specs: list[tuple[str, list[Any]]],
 ) -> None:
-    """Recursively extract all {"values": [...]} specs with flattened paths."""
+    """Recursively extract all {"values": [...]} and __variants__ specs with flattened paths."""
     if isinstance(obj, dict):
-        if "values" in obj and len(obj) == 1:
+        # Check for __variants__ marker first
+        if VARIANTS_MARKER in obj and len(obj) == 1:
+            variants_list = obj[VARIANTS_MARKER]
+            if not isinstance(variants_list, list):
+                raise ValueError(
+                    f"{VARIANTS_MARKER} value must be a list, "
+                    f"got {type(variants_list)} at path '{'.'.join(path)}'"
+                )
+            # Create flattened key for the parent path (the field being swept)
+            flattened_key = ".".join(path)
+            value_specs.append((flattened_key, variants_list))
+        elif "values" in obj and len(obj) == 1:
             # This is a value spec - create flattened key
             flattened_key = ".".join(path)
             value_specs.append((flattened_key, obj["values"]))
@@ -232,10 +248,10 @@ def _validate_sweep_params_have_values(
     path: list[str],
     parent_list_key: str | None = None,
 ) -> None:
-    """Validate that all leaves have {"values": [...]}, except discriminator fields."""
+    """Validate that all leaves have {"values": [...]} or __variants__, except discriminator fields."""
     if isinstance(obj, dict):
-        if "values" in obj:
-            return  # This is a value spec
+        if "values" in obj or VARIANTS_MARKER in obj:
+            return  # This is a value spec or variants spec
         if not obj:
             return  # Empty dict is ok
         for key, value in obj.items():
@@ -255,7 +271,8 @@ def _validate_sweep_params_have_values(
         # Otherwise, this is an error
         path_str = ".".join(path) if path else "(root)"
         raise ValueError(
-            f'All leaf values in sweep parameters must be {{"values": [...]}}, '
+            f'All leaf values in sweep parameters must be {{"values": [...]}} '
+            f"or {{{VARIANTS_MARKER}: [...]}}, "
             f"but found {type(obj).__name__} at path '{path_str}': {obj}"
         )
 
@@ -263,16 +280,19 @@ def _validate_sweep_params_have_values(
 def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any]]:
     """Generate all combinations for a grid search from parameter specifications.
 
-    All leaf values (except discriminator fields) must be {"values": [...]}.
+    All leaf values (except discriminator fields) must be {"values": [...]} or
+    use __variants__ for entire subobject sweeps.
     Discriminated lists use discriminator values in flattened keys instead of indices.
 
     Args:
         parameters: Nested dict/list structure where all leaves are {"values": [...]}
+                   or parent dicts can use __variants__ for subobject sweeping
 
     Returns:
         List of parameter combinations with flattened keys (e.g., "loss_metric_configs.Loss1.coeff")
+        For __variants__, the key is the field name and the value is the entire subobject dict.
 
-    Example:
+    Example with {"values": [...]}:
         >>> params = {
         ...     "seed": {"values": [0, 1]},
         ...     "loss_metric_configs": [
@@ -289,6 +309,22 @@ def generate_grid_combinations(parameters: dict[str, Any]) -> list[dict[str, Any
         0
         >>> combos[0]["loss_metric_configs.ImportanceMinimalityLoss.coeff"]
         0.1
+
+    Example with __variants__:
+        >>> params = {
+        ...     "seed": {"values": [0, 1]},
+        ...     "ci_config": {
+        ...         "__variants__": [
+        ...             {"mode": "layerwise", "fn_type": "mlp", "hidden_dims": [16]},
+        ...             {"mode": "global", "fn_type": "global_shared_mlp", "hidden_dims": [256]},
+        ...         ]
+        ...     },
+        ... }
+        >>> combos = generate_grid_combinations(params)
+        >>> len(combos)
+        4
+        >>> combos[0]["ci_config"]["mode"]
+        'layerwise'
     """
     # Extract all value specs with their flattened paths
     value_specs: list[tuple[str, list[Any]]] = []

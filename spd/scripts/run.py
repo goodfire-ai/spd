@@ -292,6 +292,7 @@ def _format_compute_info(n_gpus: int | None) -> str:
 
 
 def _get_sweep_params(sweep: str | bool) -> dict[str, Any] | None:
+    print(f"{sweep=}")
     if sweep is False:
         return None
     sweep_params_file = "sweep_params.yaml" if sweep is True else sweep

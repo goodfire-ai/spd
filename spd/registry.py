@@ -183,6 +183,24 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         config_path=Path("spd/experiments/lm/pile_gpt2_simple-2L_global_reverse.yaml"),
         expected_runtime=3000,
     ),
+    "jan22": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/z-jan22_ppgd.yaml"),
+        expected_runtime=480,
+    ),
+    "jan22_ppgd": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/z-jan22_ppgd.yaml"),
+        expected_runtime=480,
+    ),
+    "jan22_ppgd_flat-transformer": ExperimentConfig(
+        task_name="lm",
+        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
+        config_path=Path("spd/experiments/lm/z-jan22_ppgd-flat-transformer.yaml"),
+        expected_runtime=480,
+    ),
 }
 
 
