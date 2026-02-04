@@ -388,6 +388,7 @@ def optimize(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
+                    ppgd_maskss={cfg: ppgd_states[cfg].masks for cfg in persistent_pgd_configs},
                     device=device,
                     run_config=config,
                     slow_step=slow_step,
