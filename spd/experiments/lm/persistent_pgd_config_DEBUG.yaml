@@ -40,21 +40,18 @@ loss_metric_configs:
     routing:
       type: uniform_k_subset
   # PGD
+  # - classname: PersistentPGDReconLoss
   - classname: PersistentPGDReconSubsetLoss
     coeff: 0.5
     optimizer:
-      type: sign
-      step_size: 0.5
+      type: adam
+      lr: 0.0
+      # type: sign
+      # step_size: 0.1
     routing:
       type: uniform_k_subset
-  - classname: PGDReconSubsetLoss
-    coeff: 0.0
-    init: random
-    step_size: 0.5
-    n_steps: 4
-    mask_scope: shared_across_batch
-    routing:
-      type: uniform_k_subset
+    # reset_every_n_steps: 0
+    scope: unique_per_datapoint # shared_across_batch
 output_loss_type: kl
 lr_schedule:
   start_val: 0.0005
@@ -62,7 +59,7 @@ lr_schedule:
   final_val_frac: 0.1
   fn_type: cosine
 steps: 400000
-batch_size: 128
+batch_size: 16
 gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
@@ -97,6 +94,13 @@ eval_metric_configs:
     step_size: 0.1
     n_steps: 20
     mask_scope: shared_across_batch
+  - classname: PGDReconSubsetLoss
+    init: random
+    step_size: 0.5
+    n_steps: 4
+    mask_scope: shared_across_batch
+    routing:
+      type: uniform_k_subset
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 pretrained_model_class: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP
@@ -115,3 +119,4 @@ task_config:
   shuffle_each_epoch: true
   is_tokenized: false
   streaming: false
+# profiling: {}
