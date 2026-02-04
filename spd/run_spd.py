@@ -219,14 +219,9 @@ def optimize(
         for cfg in config.loss_metric_configs
         if isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
     ]
-    non_ppgd_loss_configs: list[LossMetricConfigType] = [
-        cfg
-        for cfg in config.loss_metric_configs
-        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
-    ]
 
     eval_metric_configs = get_unique_metric_configs(
-        loss_configs=non_ppgd_loss_configs, eval_configs=config.eval_metric_configs
+        loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
     )
 
     multibatch_pgd_eval_configs: list[

@@ -1,6 +1,5 @@
 from typing import override
 
-import pytest
 import torch
 import torch.nn as nn
 from jaxtyping import Float
@@ -38,9 +37,45 @@ class TinyLinearModel(nn.Module):
         return self.fc(x)
 
 
+class TinySeqModel(nn.Module):
+    """A simple sequence model that applies a linear layer to each position.
+
+    Input shape: (batch, seq_len, d_in)
+    Output shape: (batch, seq_len, d_out)
+    """
+
+    def __init__(self, d_in: int, d_out: int) -> None:
+        super().__init__()
+        self.fc = nn.Linear(d_in, d_out, bias=False)
+
+    @override
+    def forward(self, x: Tensor) -> Tensor:
+        # x: (batch, seq_len, d_in) -> (batch, seq_len, d_out)
+        return self.fc(x)
+
+
 def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel:
     d_out, d_in = weight.shape
     target = TinyLinearModel(d_in=d_in, d_out=d_out)
+    with torch.no_grad():
+        target.fc.weight.copy_(weight)
+    target.requires_grad_(False)
+
+    comp_model = ComponentModel(
+        target_model=target,
+        module_path_info=[ModulePathInfo(module_path="fc", C=1)],
+        ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
+        pretrained_model_output_attr=None,
+        sigmoid_type="leaky_hard",
+    )
+
+    return comp_model
+
+
+def _make_seq_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel:
+    """Create a ComponentModel from TinySeqModel for 3D (batch, seq, hidden) shaped data."""
+    d_out, d_in = weight.shape
+    target = TinySeqModel(d_in=d_in, d_out=d_out)
     with torch.no_grad():
         target.fc.weight.copy_(weight)
     target.requires_grad_(False)
@@ -766,20 +801,21 @@ class TestPersistentPGDReconLoss:
             # Should have changed from initial (very unlikely to be identical after 5 steps)
             assert not torch.allclose(initial, final)
 
-    # TODO: Fix test to use LM-style model with (batch, seq, C) CI shape
-    @pytest.mark.skip(
-        reason="Test model architecture incompatible with PersistentPGD's LM-style expectations"
-    )
     def test_with_delta_component(self: object) -> None:
         """Test persistent PGD with delta component enabled."""
+        # Use sequence model for proper 3D shapes (batch, seq, hidden)
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
-        model = _make_component_model(weight=fc_weight)
+        model = _make_seq_component_model(weight=fc_weight)
 
-        batch = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
-        target_out = torch.tensor([[1.0, 2.0]], dtype=torch.float32)
-        # CI needs (batch, seq, C) shape for PersistentPGD
+        # Input shape: (batch=1, seq=2, d_in=2)
+        batch = torch.tensor([[[1.0, 2.0], [0.5, 1.5]]], dtype=torch.float32)
+        target_out = torch.tensor([[[1.0, 2.0], [0.5, 1.5]]], dtype=torch.float32)
+        # CI shape: (batch=1, seq=2, C=1)
         ci = {"fc": torch.tensor([[[0.5], [0.5]]], dtype=torch.float32)}
         weight_deltas = model.calc_weight_deltas()
+
+        # batch_dims for PersistentPGDState is (batch, seq) = (1, 2)
+        batch_dims = batch.shape[:2]
 
         cfg = PersistentPGDReconLossConfig(
             optimizer=SignPGDConfig(step_size=0.1), scope="single_mask"
@@ -788,7 +824,7 @@ class TestPersistentPGDReconLoss:
         # Initialize state with delta component
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_dims=batch.shape,
+            batch_dims=batch_dims,
             device="cpu",
             use_delta_component=True,
             cfg=cfg,
@@ -811,18 +847,30 @@ class TestPersistentPGDReconLoss:
 
         assert loss >= 0.0
 
-    # TODO: Fix test to use LM-style model with (batch, seq, C) CI shape
-    @pytest.mark.skip(
-        reason="Test model architecture incompatible with PersistentPGD's LM-style expectations"
-    )
     def test_batch_dimension(self: object) -> None:
         """Test that masks broadcast correctly across batch dimension."""
+        # Use sequence model for proper 3D shapes (batch, seq, hidden)
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
-        model = _make_component_model(weight=fc_weight)
+        model = _make_seq_component_model(weight=fc_weight)
 
-        # Batch of 3 examples, seq_len of 2
-        batch = torch.tensor([[1.0, 2.0], [2.0, 3.0], [0.5, 1.0]], dtype=torch.float32)
-        target_out = torch.tensor([[1.0, 2.0], [2.0, 3.0], [0.5, 1.0]], dtype=torch.float32)
+        # Batch of 3 examples, seq_len of 2, d_in of 2
+        # Shape: (batch=3, seq=2, d_in=2)
+        batch = torch.tensor(
+            [
+                [[1.0, 2.0], [0.5, 1.5]],
+                [[2.0, 3.0], [1.0, 2.0]],
+                [[0.5, 1.0], [0.25, 0.5]],
+            ],
+            dtype=torch.float32,
+        )
+        target_out = torch.tensor(
+            [
+                [[1.0, 2.0], [0.5, 1.5]],
+                [[2.0, 3.0], [1.0, 2.0]],
+                [[0.5, 1.0], [0.25, 0.5]],
+            ],
+            dtype=torch.float32,
+        )
         # CI needs (batch, seq, C) shape - (3, 2, 1) for 3 batch, 2 seq positions, 1 component
         ci = {
             "fc": torch.tensor(
@@ -830,13 +878,16 @@ class TestPersistentPGDReconLoss:
             )
         }
 
+        # batch_dims for PersistentPGDState is (batch, seq) = (3, 2)
+        batch_dims = batch.shape[:2]
+
         cfg = PersistentPGDReconLossConfig(
             optimizer=SignPGDConfig(step_size=0.1), scope="single_mask"
         )
 
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_dims=batch.shape,
+            batch_dims=batch_dims,
             device="cpu",
             use_delta_component=False,
             cfg=cfg,
