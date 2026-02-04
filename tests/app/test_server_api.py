@@ -65,6 +65,7 @@ def app_with_state():
         assert run is not None
 
         model_config = GPT2SimpleConfig(
+            model_type="GPT2Simple",
             block_size=16,
             vocab_size=4019,  # Match tokenizer
             n_layer=1,
