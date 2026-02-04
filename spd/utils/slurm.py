@@ -29,7 +29,6 @@ class SlurmConfig:
         partition: SLURM partition to submit to
         n_gpus: Number of GPUs per node (0 for CPU-only jobs)
         n_nodes: Number of nodes (default 1)
-        n_tasks: Number of tasks (defaults to n_nodes if not set, for multi-node DDP)
         time: Time limit in HH:MM:SS format
         cpus_per_task: CPUs per task (for CPU-bound jobs like autointerp)
         snapshot_branch: Git branch to checkout. If None, just cd to REPO_ROOT without cloning.
@@ -40,7 +39,6 @@ class SlurmConfig:
     partition: str
     n_gpus: int = 1
     n_nodes: int = 1
-    n_tasks: int | None = None
     time: str = "72:00:00"
     cpus_per_task: int | None = None
     snapshot_branch: str | None = None
@@ -235,13 +233,11 @@ def _sbatch_header(
 
     Handles:
     - --job-name, --partition, --nodes, --gres, --time, --output
-    - --ntasks (for multi-node DDP)
+    - --ntasks-per-node (for multi-node DDP, ensures proper GPU isolation)
     - --cpus-per-task (for CPU-bound jobs)
     - --array (for array jobs)
     - --dependency (if dependency_job_id is set)
     """
-    n_tasks = config.n_tasks if config.n_tasks is not None else config.n_nodes
-
     # Use %A_%a for array jobs, %j for single jobs
     log_pattern = "%A_%a" if is_array else "%j"
 
@@ -249,8 +245,8 @@ def _sbatch_header(
         f"#SBATCH --job-name={config.job_name}",
         f"#SBATCH --partition={config.partition}",
         f"#SBATCH --nodes={config.n_nodes}",
-        f"#SBATCH --ntasks={n_tasks}",
-        f"#SBATCH --gres=gpu:{config.n_gpus}",
+        "#SBATCH --ntasks-per-node=1",
+        f"#SBATCH --gpus-per-node={config.n_gpus}",
         f"#SBATCH --time={config.time}",
         f"#SBATCH --output={SLURM_LOGS_DIR}/slurm-{log_pattern}.out",
     ]

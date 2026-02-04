@@ -111,7 +111,9 @@ def get_command(
                 "/tmp/spd/workspace-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}-node$SLURM_PROCID"
             )
             setup = generate_git_snapshot_setup(work_dir, snapshot_branch)
-            command = f"srun bash -c {shlex.quote(f'{setup}\n{torchrun_cmd}')}"
+            # Explicit srun flags ensure one task per node across all allocated nodes
+            srun_flags = f"--nodes={n_nodes} --ntasks={n_nodes} --ntasks-per-node=1"
+            command = f"srun {srun_flags} bash -c {shlex.quote(f'{setup}\n{torchrun_cmd}')}"
 
     return Command(env_vars=CUDA_FLAGS, command=command)
 
