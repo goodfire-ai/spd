@@ -1,11 +1,11 @@
-# use_autocast: true
 wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
 n_mask_samples: 1
 ci_fn_type: shared_mlp
-ci_fn_hidden_dims: [550]
+ci_fn_hidden_dims:
+- 550
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
@@ -92,17 +92,17 @@ ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
 pretrained_model_class: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP
 pretrained_model_path: null
-pretrained_model_name: wandb:goodfire/spd/runs/7pt957pf # 100k steps
+pretrained_model_name: goodfire/spd/runs/asml4zm7
 pretrained_model_output_attr: idx_0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 task_config:
   task_name: lm
   max_seq_len: 512
   buffer_size: 1000
-  dataset_name: SimpleStories/SimpleStories
-  column_name: story
-  train_data_split: train
-  eval_data_split: test
+  dataset_name: monology/pile-uncopyrighted
+  column_name: text
+  train_data_split: train[:10000000]
+  eval_data_split: train[-100000:]
   shuffle_each_epoch: true
   is_tokenized: false
   streaming: false
