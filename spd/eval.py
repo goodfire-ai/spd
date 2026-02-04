@@ -65,7 +65,7 @@ from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetC
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.persistent_pgd import PersistentPGDReconLoss, PersistentPGDReconSubsetLoss
+from spd.persistent_pgd import PersistentPGDReconLoss, PersistentPGDReconSubsetLoss, PPGDMasks
 from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import dict_safe_update_, extract_batch_data
@@ -123,10 +123,7 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
 def init_metric(
     cfg: MetricConfigType,
     model: ComponentModel,
-    ppgd_maskss: dict[
-        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
-        dict[str, Float[Tensor, " mask_c"]],
-    ],
+    ppgd_maskss: dict[PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDMasks],
     run_config: Config,
     device: str,
 ) -> Metric:

@@ -38,9 +38,7 @@ from spd.metrics import (
     unmasked_recon_loss,
 )
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.persistent_pgd import persistent_pgd_recon_loss
-
-PPGDMasks = dict[str, Float[Tensor, " mask_c"]]
+from spd.persistent_pgd import PPGDMasks, persistent_pgd_recon_loss
 
 
 def compute_losses(
