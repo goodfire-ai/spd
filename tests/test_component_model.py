@@ -32,6 +32,7 @@ from spd.models.components import (
     LinearComponents,
     MLPCiFn,
     ParallelLinear,
+    TargetLayerConfig,
     VectorMLPCiFn,
     VectorSharedMLPCiFn,
     make_mask_infos,
@@ -155,7 +156,6 @@ def test_from_run_info():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -557,7 +557,6 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -600,7 +599,6 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -659,7 +657,6 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -702,7 +699,6 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
@@ -890,12 +886,12 @@ def test_global_shared_mlp_ci_fn_single_layer():
 def test_global_shared_transformer_ci_fn_shapes_and_values():
     """Test GlobalSharedTransformerCiFn produces correct output shapes and valid values."""
     layer_configs = {
-        "layer1": (10, 5),  # (input_dim, C)
-        "layer2": (20, 3),
-        "layer3": (15, 7),
+        "layer1": TargetLayerConfig(input_dim=10, C=5),
+        "layer2": TargetLayerConfig(input_dim=20, C=3),
+        "layer3": TargetLayerConfig(input_dim=15, C=7),
     }
     ci_fn = GlobalSharedTransformerCiFn(
-        layer_configs=layer_configs,
+        target_model_layer_configs=layer_configs,
         d_model=8,
         n_layers=2,
         n_heads=2,
@@ -923,11 +919,11 @@ def test_global_shared_transformer_ci_fn_with_seq_dim():
     """Test GlobalSharedTransformerCiFn with sequence dimension produces valid outputs."""
     seq_len = 5
     layer_configs = {
-        "layer1": (10, 4),
-        "layer2": (8, 3),
+        "layer1": TargetLayerConfig(input_dim=10, C=4),
+        "layer2": TargetLayerConfig(input_dim=8, C=3),
     }
     ci_fn = GlobalSharedTransformerCiFn(
-        layer_configs=layer_configs,
+        target_model_layer_configs=layer_configs,
         d_model=8,
         n_layers=3,
         n_heads=2,
@@ -1324,7 +1320,6 @@ def test_global_ci_save_and_load():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,

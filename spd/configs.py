@@ -63,6 +63,30 @@ class TransitionAttnConfig(BaseConfig):
     )
 
 
+class GlobalSharedTransformerCiConfig(BaseConfig):
+    d_model: PositiveInt
+    n_blocks: PositiveInt
+    mlp_hidden_dim: list[NonNegativeInt] = Field(
+        description="Hidden dimension for transformer MLP blocks. "
+        "If None, defaults to [4 * d_model].",
+    )
+    attn_config: TransitionAttnConfig
+
+    @model_validator(mode="after")
+    def validate_config(self) -> Self:
+        assert self.d_model % self.attn_config.n_heads == 0, (
+            f"d_model ({self.d_model}) must be divisible by "
+            f"attn_config.n_heads ({self.attn_config.n_heads})"
+        )
+        d_head = self.d_model // self.attn_config.n_heads
+        assert d_head % 2 == 0, (
+            f"d_head ({d_head}) must be even for RoPE. "
+            f"d_model={self.d_model}, "
+            f"n_heads={self.attn_config.n_heads}"
+        )
+        return self
+
+
 class GlobalCiConfig(BaseConfig):
     """Configuration for global CI function (single function for all layers).
 
@@ -105,26 +129,13 @@ class GlobalCiConfig(BaseConfig):
         "If None, uses MLP-only transitions (original behavior). "
         "Only applies when fn_type='global_reverse_residual'.",
     )
-    transformer_d_model: PositiveInt | None = Field(
+    transition_hidden_dim: PositiveInt | None = Field(
         default=None,
-        description="Shared model dimension for global_shared_transformer. "
-        "Required when fn_type='global_shared_transformer'.",
+        description="Hidden dimension for transition MLP in global_reverse_residual. "
+        "MLP structure: d_resid_ci_fn -> transition_hidden_dim -> d_resid_ci_fn with GeLU. "
+        "Required when fn_type='global_reverse_residual', ignored otherwise.",
     )
-    transformer_n_layers: PositiveInt | None = Field(
-        default=None,
-        description="Number of transformer blocks for global_shared_transformer. "
-        "Required when fn_type='global_shared_transformer'.",
-    )
-    transformer_mlp_hidden_dims: list[NonNegativeInt] | None = Field(
-        default=None,
-        description="Hidden dimensions for transformer MLP blocks in global_shared_transformer. "
-        "If None, defaults to [4 * transformer_d_model].",
-    )
-    transformer_attn_config: TransitionAttnConfig | None = Field(
-        default=None,
-        description="Self-attention config for global_shared_transformer. "
-        "Required when fn_type='global_shared_transformer'.",
-    )
+    simple_transformer_ci_cfg: GlobalSharedTransformerCiConfig | None = None
 
     @model_validator(mode="after")
     def validate_ci_config(self) -> Self:
@@ -139,6 +150,9 @@ class GlobalCiConfig(BaseConfig):
             assert self.reader_hidden_dims is not None, (
                 "reader_hidden_dims must be specified when fn_type='global_reverse_residual'"
             )
+            assert self.transition_hidden_dim is not None, (
+                "transition_hidden_dim must be specified when fn_type='global_reverse_residual'"
+            )
             if self.transition_attn_config is not None:
                 assert self.d_resid_ci_fn % self.transition_attn_config.n_heads == 0, (
                     f"d_resid_ci_fn ({self.d_resid_ci_fn}) must be divisible by "
@@ -152,27 +166,8 @@ class GlobalCiConfig(BaseConfig):
                 "transition_attn_config is only valid for global_reverse_residual"
             )
         elif self.fn_type == "global_shared_transformer":
-            assert self.transformer_d_model is not None, (
-                "transformer_d_model must be specified when fn_type='global_shared_transformer'"
-            )
-            assert self.transformer_n_layers is not None, (
-                "transformer_n_layers must be specified when fn_type='global_shared_transformer'"
-            )
-            assert self.transformer_attn_config is not None, (
-                "transformer_attn_config must be specified when fn_type='global_shared_transformer'"
-            )
-            assert self.transition_attn_config is None, (
-                "transition_attn_config is only valid for global_reverse_residual"
-            )
-            assert self.transformer_d_model % self.transformer_attn_config.n_heads == 0, (
-                f"transformer_d_model ({self.transformer_d_model}) must be divisible by "
-                f"transformer_attn_config.n_heads ({self.transformer_attn_config.n_heads})"
-            )
-            d_head = self.transformer_d_model // self.transformer_attn_config.n_heads
-            assert d_head % 2 == 0, (
-                f"d_head ({d_head}) must be even for RoPE. "
-                f"transformer_d_model={self.transformer_d_model}, "
-                f"n_heads={self.transformer_attn_config.n_heads}"
+            assert self.simple_transformer_ci_cfg is not None, (
+                "simple_transformer_ci_cfg must be specified when fn_type='global_shared_transformer'"
             )
         return self
 
@@ -454,6 +449,58 @@ class PGDMultiBatchReconSubsetLossConfig(PGDMultiBatchConfig):
     ]
 
 
+class SignPGDConfig(BaseConfig):
+    type: Literal["sign"] = "sign"
+    step_size: float = Field(..., description="PGD step size for mask updates")
+
+
+class AdamPGDConfig(BaseConfig):
+    type: Literal["adam"] = "adam"
+    lr: float = Field(..., description="Learning rate for Adam PGD")
+    beta1: Probability = Field(default=0.9, description="Adam beta1 for masks")
+    beta2: Probability = Field(default=0.999, description="Adam beta2 for masks")
+    eps: NonNegativeFloat = Field(default=1e-8, description="Adam epsilon for masks")
+
+
+PGDOptimizerConfig = SignPGDConfig | AdamPGDConfig
+
+
+PersistentPGDMaskScope = Literal[
+    "single_mask", "broadcast_across_batch", "unique_per_batch_per_token"
+]
+
+
+class PersistentPGDReconLossConfig(LossMetricConfig):
+    """Config for persistent PGD reconstruction loss.
+
+    Unlike standard PGD which reinitializes masks each step and runs N optimization steps,
+    PersistentPGD maintains persistent masks that receive one gradient update per training step.
+    This amortizes PGD optimization across training - getting the benefit of many PGD steps
+    without the per-step computational cost.
+
+    A single (C,) mask per module is shared across all batch elements and ranks.
+    """
+
+    classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
+    optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
+    scope: PersistentPGDMaskScope
+
+
+class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
+    """Config for persistent PGD reconstruction loss with subset routing.
+
+    Like PersistentPGDReconLossConfig but routes to a subset of modules per position,
+    similar to how StochasticReconSubsetLoss relates to StochasticReconLoss.
+    """
+
+    classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
+    optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
+    scope: PersistentPGDMaskScope
+    routing: Annotated[
+        SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
+    ]
+
+
 class StochasticHiddenActsReconLossConfig(LossMetricConfig):
     classname: Literal["StochasticHiddenActsReconLoss"] = "StochasticHiddenActsReconLoss"
 
@@ -524,6 +571,8 @@ ReconLossConfigType = (
     | PGDReconSubsetLossConfig
     | PGDReconLayerwiseLossConfig
     | StochasticHiddenActsReconLossConfig
+    | PersistentPGDReconLossConfig
+    | PersistentPGDReconSubsetLossConfig
 )
 
 LossMetricConfigType = FaithfulnessLossConfig | ImportanceMinimalityLossConfig | ReconLossConfigType
@@ -714,11 +763,6 @@ class Config(BaseConfig):
         default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
     )
-    n_examples_until_dead: PositiveInt = Field(
-        ...,
-        description="Number of examples without firing before a component is considered dead. "
-        "Note that in LMs, an example is a token, not a sequence.",
-    )
 
     # --- Pretrained model info ---
     pretrained_model_class: str = Field(
@@ -776,6 +820,7 @@ class Config(BaseConfig):
         "dist_backend",
         "lr_exponential_halflife",
         "out_dir",
+        "n_examples_until_dead",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",

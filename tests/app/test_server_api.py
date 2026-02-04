@@ -65,6 +65,7 @@ def app_with_state():
         assert run is not None
 
         model_config = GPT2SimpleConfig(
+            model_type="GPT2Simple",
             block_size=16,
             vocab_size=4019,  # Match tokenizer
             n_layer=1,
@@ -106,7 +107,6 @@ def app_with_state():
             eval_freq=1,
             slow_eval_freq=1,
             train_log_freq=1,
-            n_examples_until_dead=1,
             task_config=LMTaskConfig(
                 task_name="lm",
                 max_seq_len=3,  # Short sequences

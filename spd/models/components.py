@@ -281,12 +281,18 @@ class GlobalSharedMLPCiFn(nn.Module):
         return {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
 
 
+@dataclass
+class TargetLayerConfig:
+    input_dim: int
+    C: int
+
+
 class GlobalSharedTransformerCiFn(nn.Module):
     """Global CI function that projects concatenated activations and attends over sequence."""
 
     def __init__(
         self,
-        layer_configs: dict[str, tuple[int, int]],  # layer_name -> (input_dim, C)
+        target_model_layer_configs: dict[str, TargetLayerConfig],
         d_model: int,
         n_layers: int,
         n_heads: int,
@@ -296,9 +302,9 @@ class GlobalSharedTransformerCiFn(nn.Module):
     ):
         super().__init__()
 
-        self.layer_order = sorted(layer_configs.keys())
-        self.layer_configs = layer_configs
-        self.split_sizes = [layer_configs[name][1] for name in self.layer_order]
+        self.layer_order = sorted(target_model_layer_configs.keys())
+        self.target_model_layer_configs = target_model_layer_configs
+        self.split_sizes = [target_model_layer_configs[name].C for name in self.layer_order]
         self.d_model = d_model
         self.n_transformer_layers = n_layers
         self.n_heads = n_heads
@@ -306,8 +312,8 @@ class GlobalSharedTransformerCiFn(nn.Module):
         if mlp_hidden_dims is None:
             mlp_hidden_dims = [4 * d_model]
 
-        total_input_dim = sum(input_dim for input_dim, _ in layer_configs.values())
-        total_c = sum(C for _, C in layer_configs.values())
+        total_input_dim = sum(config.input_dim for config in target_model_layer_configs.values())
+        total_c = sum(config.C for config in target_model_layer_configs.values())
 
         self._input_projector = Linear(total_input_dim, d_model, nonlinearity="relu")
         self._output_head = Linear(d_model, total_c, nonlinearity="linear")
@@ -332,20 +338,15 @@ class GlobalSharedTransformerCiFn(nn.Module):
     ) -> dict[str, Float[Tensor, "... C"]]:
         inputs_list = [input_acts[name] for name in self.layer_order]
         concatenated = torch.cat(inputs_list, dim=-1)
-        projected = self._input_projector(concatenated)
+        projected: Tensor = self._input_projector(concatenated)
 
-        added_seq_dim = False
-        if projected.ndim < 3:
-            projected = projected.unsqueeze(-2)
-            added_seq_dim = True
+        assert projected.ndim == 3
 
         x = projected
         for block in self._blocks:
             x = block(x)
 
         output = self._output_head(x)
-        if added_seq_dim:
-            output = output.squeeze(-2)
 
         split_outputs = torch.split(output, self.split_sizes, dim=-1)
         outputs = {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
@@ -364,8 +365,9 @@ class GlobalReverseResidualCiFn(nn.Module):
        - Project to d_resid_ci_fn and add to residual stream
        - RMSNorm → Reader MLP outputs CI values for all modules in block
        - Transition updates residual stream for next block (except after last block):
-         - If attn_config is provided: RMSNorm → attn → add → RMSNorm → MLP → add
-         - Otherwise: RMSNorm → MLP → add
+         - If attn_config is provided: RMSNorm → attn → add → RMSNorm → MLP(GeLU) → add
+         - Otherwise: RMSNorm → MLP(GeLU) → add
+         - MLP structure: d_resid_ci_fn → transition_hidden_dim → d_resid_ci_fn with GeLU activation
 
     """
 
@@ -374,6 +376,7 @@ class GlobalReverseResidualCiFn(nn.Module):
         block_configs: list[tuple[str, list[str], list[int], list[int]]],
         d_resid_ci_fn: int,
         reader_hidden_dims: list[int],
+        transition_hidden_dim: int,
         attn_config: "TransitionAttnConfig | None" = None,
     ):
         """Initialize the reverse residual CI function.
@@ -383,6 +386,7 @@ class GlobalReverseResidualCiFn(nn.Module):
                 Ordered in processing order (first block processed first).
             d_resid_ci_fn: Dimension of the residual stream.
             reader_hidden_dims: Hidden dimensions for reader MLPs.
+            transition_hidden_dim: Hidden dimension for transition MLPs.
             attn_config: Optional config for self-attention in transitions. If provided,
                 transitions use a transformer block (attention → residual → MLP → residual).
         """
@@ -438,9 +442,12 @@ class GlobalReverseResidualCiFn(nn.Module):
             self._reader_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
             if block_idx < self.n_blocks - 1:
-                self._transitions[safe_name] = Linear(
-                    d_resid_ci_fn, d_resid_ci_fn, nonlinearity="relu"
+                transition_mlp = nn.Sequential(
+                    Linear(d_resid_ci_fn, transition_hidden_dim, nonlinearity="relu"),
+                    nn.GELU(),
+                    Linear(transition_hidden_dim, d_resid_ci_fn, nonlinearity="relu"),
                 )
+                self._transitions[safe_name] = transition_mlp
                 self._transition_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
                 if attn_config is not None:
                     assert self._attn_transitions is not None
@@ -478,12 +485,6 @@ class GlobalReverseResidualCiFn(nn.Module):
             projection = self._inp_projectors[safe_name](concat_acts)
             residual = residual + projection
 
-            ci_output = self._readers[safe_name](self._reader_norms[safe_name](residual))
-
-            split_outputs = torch.split(ci_output, c_values, dim=-1)
-            for module_name, module_ci in zip(module_names, split_outputs, strict=True):
-                all_outputs[module_name] = module_ci
-
             if block_idx < self.n_blocks - 1:
                 # With attention: norm → attn → residual add → norm → MLP → residual add
                 # Without attention: norm → MLP → residual add
@@ -496,6 +497,11 @@ class GlobalReverseResidualCiFn(nn.Module):
 
                 mlp_out = self._transitions[safe_name](self._transition_norms[safe_name](residual))
                 residual = residual + mlp_out
+            ci_output = self._readers[safe_name](self._reader_norms[safe_name](residual))
+
+            split_outputs = torch.split(ci_output, c_values, dim=-1)
+            for module_name, module_ci in zip(module_names, split_outputs, strict=True):
+                all_outputs[module_name] = module_ci
 
         return all_outputs
 
