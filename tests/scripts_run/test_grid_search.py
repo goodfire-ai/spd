@@ -667,3 +667,191 @@ class TestInvalidConfigurations:
             raise AssertionError("Expected ValueError for values dict with extra keys")
         except ValueError as e:
             assert "not in _DISCRIMINATED_LIST_FIELDS" in str(e)
+
+
+class TestVariantsSweep:
+    """Tests for __variants__ sweep functionality."""
+
+    def test_simple_variants_sweep(self):
+        """Test sweeping over simple subobject variants."""
+        parameters = {
+            "seed": {"values": [0, 1]},
+            "ci_config": {
+                "__variants__": [
+                    {"mode": "layerwise", "fn_type": "mlp", "hidden_dims": [16]},
+                    {"mode": "global", "fn_type": "global_shared_mlp", "hidden_dims": [256]},
+                ]
+            },
+        }
+
+        combinations = generate_grid_combinations(parameters)
+
+        assert len(combinations) == 4  # 2 seeds × 2 ci_config variants
+
+        # Check that ci_config values are entire dicts
+        ci_configs = [c["ci_config"] for c in combinations]
+        assert {"mode": "layerwise", "fn_type": "mlp", "hidden_dims": [16]} in ci_configs
+        assert {
+            "mode": "global",
+            "fn_type": "global_shared_mlp",
+            "hidden_dims": [256],
+        } in ci_configs
+
+    def test_variants_only_sweep(self):
+        """Test sweeping with only variants (no regular values)."""
+        parameters = {
+            "ci_config": {
+                "__variants__": [
+                    {"mode": "layerwise"},
+                    {"mode": "global"},
+                ]
+            },
+        }
+
+        combinations = generate_grid_combinations(parameters)
+
+        assert len(combinations) == 2
+        assert combinations[0] == {"ci_config": {"mode": "layerwise"}}
+        assert combinations[1] == {"ci_config": {"mode": "global"}}
+
+    def test_nested_variants(self):
+        """Test variants at a nested path."""
+        parameters = {
+            "outer": {
+                "inner_config": {
+                    "__variants__": [
+                        {"type": "a", "value": 1},
+                        {"type": "b", "value": 2},
+                    ]
+                }
+            }
+        }
+
+        combinations = generate_grid_combinations(parameters)
+
+        assert len(combinations) == 2
+        assert combinations[0] == {"outer.inner_config": {"type": "a", "value": 1}}
+        assert combinations[1] == {"outer.inner_config": {"type": "b", "value": 2}}
+
+    def test_variants_with_discriminated_list(self):
+        """Test combining variants with discriminated list sweeps."""
+        parameters = {
+            "ci_config": {
+                "__variants__": [
+                    {"mode": "layerwise", "fn_type": "mlp"},
+                    {"mode": "global", "fn_type": "global_shared_mlp"},
+                ]
+            },
+            "loss_metric_configs": [
+                {
+                    "classname": "ImportanceMinimalityLoss",
+                    "coeff": {"values": [0.1, 0.2]},
+                }
+            ],
+        }
+
+        combinations = generate_grid_combinations(parameters)
+
+        assert len(combinations) == 4  # 2 variants × 2 coeffs
+
+    def test_apply_variant_replaces_subobject(self):
+        """Test that applying a variant completely replaces the subobject."""
+        base = {
+            "seed": 0,
+            "ci_config": {
+                "mode": "layerwise",
+                "fn_type": "mlp",
+                "hidden_dims": [16],
+                "extra_field": "should_be_removed",
+            },
+        }
+
+        updates = {
+            "ci_config": {
+                "mode": "global",
+                "fn_type": "global_shared_mlp",
+                "hidden_dims": [256],
+            }
+        }
+
+        result = apply_nested_updates(base, updates)
+
+        # The entire ci_config should be replaced, not merged
+        assert result["ci_config"] == {
+            "mode": "global",
+            "fn_type": "global_shared_mlp",
+            "hidden_dims": [256],
+        }
+        assert "extra_field" not in result["ci_config"]
+        assert result["seed"] == 0  # Other fields preserved
+
+    def test_variants_must_be_list(self):
+        """Test that __variants__ value must be a list."""
+        parameters = {
+            "ci_config": {
+                "__variants__": {"mode": "layerwise"}  # Should be a list
+            }
+        }
+
+        try:
+            generate_grid_combinations(parameters)
+            raise AssertionError("Expected ValueError for non-list variants")
+        except ValueError as e:
+            assert "__variants__ value must be a list" in str(e)
+
+    def test_full_workflow_with_variants(self):
+        """Test generating combinations and applying them to base config."""
+        parameters = {
+            "seed": {"values": [0, 1]},
+            "ci_config": {
+                "__variants__": [
+                    {"mode": "layerwise", "fn_type": "shared_mlp", "hidden_dims": [1000]},
+                    {
+                        "mode": "global",
+                        "fn_type": "global_shared_transformer",
+                        "simple_transformer_ci_cfg": {"n_layers": 2, "d_model": 128},
+                    },
+                ]
+            },
+        }
+
+        base_config = {
+            "seed": 999,
+            "lr": 0.001,
+            "ci_config": {
+                "mode": "old",
+                "fn_type": "old",
+            },
+            "other_setting": "preserved",
+        }
+
+        combinations = generate_grid_combinations(parameters)
+        assert len(combinations) == 4
+
+        # Apply each combination and verify
+        results = [apply_nested_updates(base_config, combo) for combo in combinations]
+
+        # Check seeds
+        seeds = {r["seed"] for r in results}
+        assert seeds == {0, 1}
+
+        # Check ci_configs - should have both variants
+        ci_modes = {r["ci_config"]["mode"] for r in results}
+        assert ci_modes == {"layerwise", "global"}
+
+        # Check other fields preserved
+        for r in results:
+            assert r["lr"] == 0.001
+            assert r["other_setting"] == "preserved"
+
+        # Verify global variant has transformer config
+        global_results = [r for r in results if r["ci_config"]["mode"] == "global"]
+        for r in global_results:
+            assert "simple_transformer_ci_cfg" in r["ci_config"]
+            assert r["ci_config"]["simple_transformer_ci_cfg"]["n_layers"] == 2
+
+        # Verify layerwise variant has hidden_dims
+        layerwise_results = [r for r in results if r["ci_config"]["mode"] == "layerwise"]
+        for r in layerwise_results:
+            assert r["ci_config"]["hidden_dims"] == [1000]
+            assert "simple_transformer_ci_cfg" not in r["ci_config"]
