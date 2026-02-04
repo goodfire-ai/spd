@@ -10,7 +10,6 @@ from typing import Protocol
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor
-from tqdm import tqdm
 
 from spd.clustering.compute_costs import (
     compute_mdl_cost,
@@ -93,12 +92,7 @@ def merge_iteration(
 
     # merge iteration
     # ==================================================
-    pbar: tqdm[int] = tqdm(
-        range(num_iters),
-        unit="iter",
-        total=num_iters,
-    )
-    for iter_idx in pbar:
+    for iter_idx in range(num_iters):
         # compute costs, figure out what to merge
         # --------------------------------------------------
         # HACK: this is messy
@@ -143,8 +137,11 @@ def merge_iteration(
         # this is the cost for the selected pair
         merge_pair_cost: float = float(costs[merge_pair].item())
 
-        # Update progress bar
-        pbar.set_description(f"k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={merge_pair_cost:.4f}")
+        # Log progress periodically
+        if iter_idx % 100 == 0 or iter_idx == num_iters - 1:
+            print(
+                f"[iter {iter_idx}/{num_iters}] k={k_groups}, mdl={mdl_loss_norm:.4f}, pair={merge_pair_cost:.4f}"
+            )
 
         if log_callback is not None:
             log_callback(

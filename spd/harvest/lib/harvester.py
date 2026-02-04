@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import cast
 
 import torch
-import tqdm
 from einops import einsum, rearrange, reduce
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -342,7 +341,10 @@ class Harvester:
             f"  Computing stats for {n_total} components across {len(self.layer_names)} layers..."
         )
         components = []
-        for layer_name in tqdm.tqdm(self.layer_names, desc="Building components"):
+        for layer_idx, layer_name in enumerate(self.layer_names):
+            print(
+                f"  Building components for layer {layer_idx + 1}/{len(self.layer_names)}: {layer_name}"
+            )
             layer_offset = self.layer_offsets[layer_name]
             layer_c = self.c_per_layer[layer_name]
 

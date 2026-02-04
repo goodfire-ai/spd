@@ -18,7 +18,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import torch
-import tqdm
 from jaxtyping import Float
 from torch import Tensor
 
@@ -229,7 +228,7 @@ def harvest_activation_contexts(
     batches_processed = 0
     last_log_time = time.time()
     batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
-    for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
+    for batch_idx in batch_range:
         try:
             batch_data = extract_batch_data(next(train_iter))
         except StopIteration:
@@ -320,7 +319,8 @@ def merge_activation_contexts(wandb_path: str) -> None:
     logger.info(f"Loaded worker 0: {merged_state.total_tokens_processed:,} tokens")
 
     # Stream remaining files one at a time
-    for worker_file in tqdm.tqdm(worker_files[1:], desc="Merging worker states"):
+    for i, worker_file in enumerate(worker_files[1:], start=1):
+        logger.info(f"Merging worker file {i}/{len(worker_files) - 1}: {worker_file.name}")
         state = torch.load(worker_file, weights_only=False)
         merged_state.merge_into(state)
         # state will be garbage collected here before loading the next file

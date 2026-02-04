@@ -12,7 +12,6 @@ import torch.optim as optim
 from jaxtyping import Bool, Float
 from pydantic import BaseModel
 from torch import Tensor
-from tqdm.auto import tqdm
 
 from spd.configs import ImportanceMinimalityLossConfig, SamplingType
 from spd.metrics import importance_minimality_loss
@@ -323,7 +322,7 @@ def optimize_ci_values(
     optimizer = optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
 
     progress_interval = max(1, config.steps // 20)  # Report ~20 times during optimization
-    for step in tqdm(range(config.steps), desc="Optimizing CI values"):
+    for step in range(config.steps):
         if on_progress is not None and step % progress_interval == 0:
             on_progress(step, config.steps, "optimizing")
 
@@ -414,13 +413,13 @@ def optimize_ci_values(
                     ci_masked_label_prob = float(probs[label_token].item())
                     log_terms["ci_masked_label_prob"] = ci_masked_label_prob
 
-            tqdm.write(f"\n--- Step {step} ---")
+            print(f"\n--- Step {step} ---")
             for name, value in log_terms.items():
-                tqdm.write(f"  {name}: {value:.6f}")
+                print(f"  {name}: {value:.6f}")
             for name, value in l0_stats.items():
-                tqdm.write(f"  {name}: {value:.2f}")
+                print(f"  {name}: {value:.2f}")
             for name, value in ce_kl_stats.items():
-                tqdm.write(f"  {name}: {value:.6f}")
+                print(f"  {name}: {value:.6f}")
 
         total_loss.backward()
         optimizer.step()

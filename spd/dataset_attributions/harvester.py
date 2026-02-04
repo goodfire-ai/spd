@@ -15,7 +15,6 @@ from typing import Any
 import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
-from tqdm.auto import tqdm
 
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
@@ -53,7 +52,6 @@ class AttributionHarvester:
         target_alive: Bool[Tensor, " n_components"],
         sampling: SamplingType,
         device: torch.device,
-        show_progress: bool = False,
     ):
         self.model = model
         self.sources_by_target = sources_by_target
@@ -63,7 +61,6 @@ class AttributionHarvester:
         self.target_alive = target_alive
         self.sampling = sampling
         self.device = device
-        self.show_progress = show_progress
 
         self.n_sources = vocab_size + n_components
         self.n_batches = 0
@@ -175,8 +172,7 @@ class AttributionHarvester:
 
         # Process each target layer
         layers = list(self.sources_by_target.items())
-        pbar = tqdm(layers, desc="Targets", disable=not self.show_progress, leave=False)
-        for target_layer, source_layers in pbar:
+        for target_layer, source_layers in layers:
             if target_layer == "output":
                 self._process_output_targets(source_layers, cache)
             else:

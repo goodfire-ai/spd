@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-import tqdm
 from jaxtyping import Bool
 from torch import Tensor
 
@@ -191,13 +190,12 @@ def harvest_attributions(
         target_alive=target_alive,
         sampling=spd_config.sampling,
         device=device,
-        show_progress=True,
     )
 
     # Process batches
     train_iter = iter(train_loader)
     batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
-    for batch_idx in tqdm.tqdm(batch_range, desc="Attribution batches"):
+    for batch_idx in batch_range:
         try:
             batch_data = next(train_iter)
         except StopIteration:
@@ -260,7 +258,8 @@ def merge_attributions(wandb_path: str) -> None:
     logger.info(f"Loaded rank 0: {first.n_tokens_processed:,} tokens")
 
     # Stream remaining files one at a time
-    for rank_file in tqdm.tqdm(rank_files[1:], desc="Merging rank files"):
+    for i, rank_file in enumerate(rank_files[1:], start=1):
+        logger.info(f"Merging rank file {i}/{len(rank_files) - 1}: {rank_file.name}")
         storage = DatasetAttributionStorage.load(rank_file)
 
         # Validate consistency
