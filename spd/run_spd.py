@@ -34,7 +34,6 @@ from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_losses
 from spd.metrics import faithfulness_loss
-from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.persistent_pgd import PersistentPGDState
 from spd.utils.component_utils import calc_ci_l_zero
@@ -208,8 +207,6 @@ def optimize(
     optimized_params = component_params + ci_fn_params
     optimizer = optim.AdamW(optimized_params, lr=config.lr_schedule.start_val, weight_decay=0)
 
-    logger.info(f"LR scheduler: {config.lr_schedule.fn_type}")
-
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
 
@@ -239,21 +236,12 @@ def optimize(
     eval_metric_configs = [
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
-    batch_dims: tuple[int, ...] | None = None
 
-    # Track which components are alive based on firing frequency
     sample_batch = extract_batch_data(next(train_iterator))
     batch_dims = (
         sample_batch.shape[:-1]
         if config.output_loss_type == "mse"  # if mse then input is a vector
         else sample_batch.shape  # else it's a batch of token ids
-    )
-    alive_tracker = AliveComponentsTracker(
-        module_to_c=model.module_to_c,
-        device=device,
-        n_examples_until_dead=config.n_examples_until_dead,
-        ci_alive_threshold=config.ci_alive_threshold,
-        global_n_examples_per_batch=batch_dims.numel(),
     )
 
     # Initialize PersistentPGD states if needed
@@ -300,8 +288,6 @@ def optimize(
                 detach_inputs=False,
                 sampling=config.sampling,
             )
-
-            alive_tracker.update(ci=ci.lower_leaky)
 
             microbatch_losses = compute_losses(
                 loss_metric_configs=config.loss_metric_configs,
@@ -361,13 +347,6 @@ def optimize(
         if step % config.train_log_freq == 0:
             avg_metrics = avg_metrics_across_ranks(batch_log_data, device=device)
             batch_log_data = cast(defaultdict[str, float], avg_metrics)
-
-            alive_counts = alive_tracker.compute()
-            for target_module_path, n_alive_count in alive_counts.items():
-                n_alive_key = (
-                    f"train/n_alive/t{alive_tracker.ci_alive_threshold}_{target_module_path}"
-                )
-                batch_log_data[n_alive_key] = n_alive_count
 
             grad_norms = get_grad_norms_dict(component_model, device)
             dict_safe_update_(

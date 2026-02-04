@@ -102,6 +102,12 @@ class GlobalCiConfig(BaseConfig):
         "If None, uses MLP-only transitions (original behavior). "
         "Only applies when fn_type='global_reverse_residual'.",
     )
+    transition_hidden_dim: PositiveInt | None = Field(
+        default=None,
+        description="Hidden dimension for transition MLP in global_reverse_residual. "
+        "MLP structure: d_resid_ci_fn -> transition_hidden_dim -> d_resid_ci_fn with GeLU. "
+        "Required when fn_type='global_reverse_residual', ignored otherwise.",
+    )
 
     @model_validator(mode="after")
     def validate_ci_config(self) -> Self:
@@ -115,6 +121,9 @@ class GlobalCiConfig(BaseConfig):
             )
             assert self.reader_hidden_dims is not None, (
                 "reader_hidden_dims must be specified when fn_type='global_reverse_residual'"
+            )
+            assert self.transition_hidden_dim is not None, (
+                "transition_hidden_dim must be specified when fn_type='global_reverse_residual'"
             )
             if self.transition_attn_config is not None:
                 assert self.d_resid_ci_fn % self.transition_attn_config.n_heads == 0, (
@@ -722,11 +731,6 @@ class Config(BaseConfig):
         default=0.0,
         description="Causal importance threshold above which a component is considered 'firing'",
     )
-    n_examples_until_dead: PositiveInt = Field(
-        ...,
-        description="Number of examples without firing before a component is considered dead. "
-        "Note that in LMs, an example is a token, not a sequence.",
-    )
 
     # --- Pretrained model info ---
     pretrained_model_class: str = Field(
@@ -784,6 +788,7 @@ class Config(BaseConfig):
         "dist_backend",
         "lr_exponential_halflife",
         "out_dir",
+        "n_examples_until_dead",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",

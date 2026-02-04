@@ -351,7 +351,6 @@ class TestConfigIntegration:
             "eval_freq": 100,
             "slow_eval_freq": 100,
             "ci_alive_threshold": 0.1,
-            "n_examples_until_dead": 3200,
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {
                 "task_name": "tms",
@@ -407,7 +406,6 @@ class TestConfigIntegration:
             "eval_freq": 100,
             "slow_eval_freq": 100,
             "ci_alive_threshold": 0.1,
-            "n_examples_until_dead": 1638400,
             "pretrained_model_class": "transformers.LlamaForCausalLM",
             "task_config": {
                 "task_name": "lm",
@@ -478,7 +476,6 @@ class TestConfigIntegration:
             "eval_freq": 100,
             "slow_eval_freq": 100,
             "ci_alive_threshold": 0.1,
-            "n_examples_until_dead": 3200,
             "pretrained_model_class": "spd.experiments.tms.models.TMSModel",
             "task_config": {
                 "task_name": "tms",

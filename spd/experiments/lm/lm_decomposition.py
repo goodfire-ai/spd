@@ -82,6 +82,12 @@ def main(
         # Handle differently in case run has layernorm ablations (we'd need to collect ln_stds)
         # Avoid concurrent wandb API requests on each rank
         run_info = call_on_rank0_then_broadcast(SSRunInfo.from_path, config.pretrained_model_name)
+
+        # Need to handle old training runs not having a model_type in the model_config_dict
+        # TODO: Clean this up in the simple_stories_train library
+        if "model_type" not in run_info.model_config_dict:
+            run_info.model_config_dict["model_type"] = config.pretrained_model_class.split(".")[-1]
+
         if run_info.config_dict["enable_ln_ablation"]:
             ln_stds = run_info.ln_stds
             assert ln_stds is not None, "Run had enable_ln_ablation set to True but no ln_stds"
