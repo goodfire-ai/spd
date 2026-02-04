@@ -60,12 +60,6 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         expected_runtime=5,
         canonical_run="wandb:goodfire/spd/runs/s-2a2b5a57",
     ),
-    "tms_5-2-ppgd": ExperimentConfig(
-        task_name="tms",
-        decomp_script=Path("spd/experiments/tms/tms_decomposition.py"),
-        config_path=Path("spd/experiments/tms/tms_5-2-ppgd_config.yaml"),
-        expected_runtime=4,
-    ),
     "resid_mlp1": ExperimentConfig(
         task_name="resid_mlp",
         decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
@@ -87,12 +81,6 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         expected_runtime=60,
         canonical_run=None,
     ),
-    "resid_mlp1-ppgd": ExperimentConfig(
-        task_name="resid_mlp",
-        decomp_script=Path("spd/experiments/resid_mlp/resid_mlp_decomposition.py"),
-        config_path=Path("spd/experiments/resid_mlp/resid_mlp1-ppgd_config.yaml"),
-        expected_runtime=5,
-    ),
     "ss_llama_simple": ExperimentConfig(
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
@@ -103,12 +91,6 @@ EXPERIMENT_REGISTRY: dict[str, ExperimentConfig] = {
         task_name="lm",
         decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
         config_path=Path("spd/experiments/lm/ss_llama_simple-1L.yaml"),
-        expected_runtime=180,
-    ),
-    "ss_llama_simple-1L-ppgd": ExperimentConfig(
-        task_name="lm",
-        decomp_script=Path("spd/experiments/lm/lm_decomposition.py"),
-        config_path=Path("spd/experiments/lm/ss_llama_simple-1L-ppgd.yaml"),
         expected_runtime=180,
     ),
     "ss_llama_simple-2L": ExperimentConfig(
