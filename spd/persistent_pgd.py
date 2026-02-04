@@ -55,18 +55,18 @@ class PersistentPGDState:
         # Initialize masks randomly in [0, 1] with fixed seed for consistency across ranks
         # Shape: (mask_c,) per module - single mask shared across all batch elements
         self.masks: dict[str, Float[Tensor, " mask_c"]] = {}
+
+        assert len(batch_dims) == 2, "PersistentPGD only supports the (batch, seq_len) shape case"
+        B, S = batch_dims
+        mask_leading_dims = {
+            "single_mask": [1, 1],
+            "broadcast_across_batch": [1, S],
+            "unique_per_batch_per_token": [B, S],
+        }[self.scope]
+
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
-            assert len(batch_dims) == 2, (
-                "PersistentPGD only supports the (batch, seq_len) shape case"
-            )
-            match self.scope:
-                case "single_mask":
-                    mask_shape = [1] * len(batch_dims) + [mask_c]
-                case "broadcast_across_batch":
-                    mask_shape = [1] + list(batch_dims[1:]) + [mask_c]
-                case "unique_per_batch_per_token":
-                    mask_shape = list(batch_dims) + [mask_c]
+            mask_shape = mask_leading_dims + [mask_c]
             self.masks[module_name] = torch.rand(mask_shape, requires_grad=True, device=device)
             if self.optimizer.type == "adam":
                 self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
