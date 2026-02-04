@@ -78,7 +78,6 @@ def test_resid_mlp_decomposition_happy_path(tmp_path: Path) -> None:
         train_log_freq=50,  # Print at step 0, 50, and 100
         save_freq=None,
         ci_alive_threshold=0.1,
-        n_examples_until_dead=200,  # print_freq * batch_size = 50 * 4
         # Pretrained model info
         pretrained_model_class="spd.experiments.resid_mlp.models.ResidMLP",
         pretrained_model_path=None,
