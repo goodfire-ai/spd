@@ -24,16 +24,10 @@ loss_metric_configs:
     coeff: 3e-3
     pnorm: 1.0
     beta: 0
-  - classname: "PersistentPGDReconLoss"
+  - classname: "StochasticReconLoss"
     coeff: 1.0
-    optimizer:
-      type: sign
-      step_size: 0.05
-  # - classname: "StochasticReconLoss"
-  #   coeff: 1.0
-  # - classname: "StochasticReconLayerwiseLoss"
-  #   coeff: 1.0
-
+  - classname: "StochasticReconLayerwiseLoss"
+    coeff: 1.0
 output_loss_type: mse
 
 # --- Training ---
