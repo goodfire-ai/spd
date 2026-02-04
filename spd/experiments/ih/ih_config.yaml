@@ -37,7 +37,6 @@ output_loss_type: kl
 ci_fn_type: "vector_mlp"
 ci_fn_hidden_dims: [128]
 
-n_examples_until_dead: 10000
 
 # --- Faithfulness Warmup ---
 faithfulness_warmup_steps: 200
