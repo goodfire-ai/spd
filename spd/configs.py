@@ -424,6 +424,11 @@ class AdamPGDConfig(BaseConfig):
 PGDOptimizerConfig = SignPGDConfig | AdamPGDConfig
 
 
+PersistentPGDMaskScope = Literal[
+    "single_mask", "broadcast_across_batch", "unique_per_batch_per_token"
+]
+
+
 class PersistentPGDReconLossConfig(LossMetricConfig):
     """Config for persistent PGD reconstruction loss.
 
@@ -437,6 +442,7 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
 
     classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
+    scope: PersistentPGDMaskScope
 
 
 class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
@@ -448,6 +454,7 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
 
     classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
+    scope: PersistentPGDMaskScope
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]

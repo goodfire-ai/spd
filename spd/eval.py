@@ -24,6 +24,8 @@ from spd.configs import (
     ImportanceMinimalityLossConfig,
     MetricConfigType,
     PermutedCIPlotsConfig,
+    PersistentPGDReconLossConfig,
+    PersistentPGDReconSubsetLossConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
     PGDReconLayerwiseLossConfig,
@@ -37,6 +39,7 @@ from spd.configs import (
     UnmaskedReconLossConfig,
     UVPlotsConfig,
 )
+from spd.log import logger
 from spd.metrics import UnmaskedReconLoss
 from spd.metrics.base import Metric
 from spd.metrics.ce_and_kl_losses import CEandKLLosses
@@ -119,6 +122,10 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
 def init_metric(
     cfg: MetricConfigType,
     model: ComponentModel,
+    # ppgd_maskss: dict[
+    #     PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
+    #     dict[str, Float[Tensor, " mask_c"]],
+    # ],
     run_config: Config,
     device: str,
 ) -> Metric:
@@ -274,7 +281,32 @@ def init_metric(
                 output_loss_type=run_config.output_loss_type,
             )
 
-        case _:
+        case PersistentPGDReconLossConfig():
+            raise NotImplementedError(
+                "PersistentPGDReconSubsetLoss is not supported for eval yet. "
+                "Need to figure out how to unify batch sizing."
+            )
+            # metric = PersistentPGDReconLoss(
+            #     model=model,
+            #     device=device,
+            #     use_delta_component=run_config.use_delta_component,
+            #     output_loss_type=run_config.output_loss_type,
+            #     ppgd_masks=ppgd_maskss[cfg],
+            # )
+        case PersistentPGDReconSubsetLossConfig():
+            raise NotImplementedError(
+                "PersistentPGDReconSubsetLoss is not supported for eval yet. "
+                "Need to figure out how to unify batch sizing."
+            )
+            # metric = PersistentPGDReconSubsetLoss(
+            #     model=model,
+            #     device=device,
+            #     use_delta_component=run_config.use_delta_component,
+            #     output_loss_type=run_config.output_loss_type,
+            #     ppgd_masks=ppgd_maskss[cfg],
+            #     routing=cfg.routing,
+            # )
+        case PGDMultiBatchReconLossConfig() | PGDMultiBatchReconSubsetLossConfig():
             # We shouldn't handle **all** cases because PGDMultiBatch metrics should be handled by
             # the evaluate_multibatch_pgd function below.
             raise ValueError(f"Unsupported metric config for eval: {cfg}")
@@ -285,6 +317,10 @@ def evaluate(
     eval_metric_configs: list[MetricConfigType],
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    # ppgd_maskss: dict[
+    #     PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
+    #     dict[str, Float[Tensor, " mask_c"]],
+    # ],
     device: str,
     run_config: Config,
     slow_step: bool,
@@ -295,7 +331,16 @@ def evaluate(
 
     metrics: list[Metric] = []
     for cfg in eval_metric_configs:
-        metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
+        if isinstance(cfg, PersistentPGDReconSubsetLossConfig):
+            logger.warning("PersistentPGDReconSubsetLoss is not supported for eval yet. Skipping")
+            continue
+        metric = init_metric(
+            cfg=cfg,
+            model=model,
+            # ppgd_maskss=ppgd_maskss,
+            run_config=run_config,
+            device=device,
+        )
         if metric.slow and not slow_step:
             continue
         metrics.append(metric)

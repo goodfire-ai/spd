@@ -32,11 +32,11 @@ from spd.data import loop_dataloader
 from spd.eval import evaluate, evaluate_multibatch_pgd
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
-from spd.losses import compute_total_loss
+from spd.losses import compute_losses
 from spd.metrics import faithfulness_loss
 from spd.metrics.alive_components import AliveComponentsTracker
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.persistent_pgd import PersistentPGDState, persistent_pgd_recon_loss
+from spd.persistent_pgd import PersistentPGDState
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -213,8 +213,8 @@ def optimize(
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
 
-    # Separate PersistentPGD configs from regular loss configs early
-    # (PersistentPGD is handled separately in training loop and not evaluated)
+    # Extract PersistentPGD configs for state initialization
+    # (PPGD is handled in compute_losses but not evaluated)
     persistent_pgd_configs: list[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
     ] = [
@@ -222,14 +222,14 @@ def optimize(
         for cfg in config.loss_metric_configs
         if isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
     ]
-    regular_loss_configs: list[LossMetricConfigType] = [
+    non_ppgd_loss_configs: list[LossMetricConfigType] = [
         cfg
         for cfg in config.loss_metric_configs
         if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
     ]
 
     eval_metric_configs = get_unique_metric_configs(
-        loss_configs=regular_loss_configs, eval_configs=config.eval_metric_configs
+        loss_configs=non_ppgd_loss_configs, eval_configs=config.eval_metric_configs
     )
 
     multibatch_pgd_eval_configs: list[
@@ -256,16 +256,19 @@ def optimize(
         global_n_examples_per_batch=batch_dims.numel(),
     )
 
-    # Initialize PersistentPGD state if needed
-    persistent_pgd_state: PersistentPGDState | None = None
-    if persistent_pgd_configs:
-        assert len(persistent_pgd_configs) == 1
-        persistent_pgd_state = PersistentPGDState(
+    # Initialize PersistentPGD states if needed
+    ppgd_states: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
+    ] = {
+        ppgd_cfg: PersistentPGDState(
             module_to_c=model.module_to_c,
+            batch_dims=batch_dims,
             device=device,
             use_delta_component=config.use_delta_component,
-            optimizer_cfg=persistent_pgd_configs[0].optimizer,
+            cfg=ppgd_cfg,
         )
+        for ppgd_cfg in persistent_pgd_configs
+    }
 
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
@@ -280,7 +283,9 @@ def optimize(
 
         batch_log_data: defaultdict[str, float] = defaultdict(float)
 
-        batch_ppgd_grads = persistent_pgd_state.empty_grads() if persistent_pgd_state else None
+        ppgd_batch_grads = {
+            ppgd_cfg: ppgd_states[ppgd_cfg].empty_grads() for ppgd_cfg in persistent_pgd_configs
+        }
 
         for _ in range(config.gradient_accumulation_steps):
             microbatch = extract_batch_data(next(train_iterator)).to(device)
@@ -298,8 +303,8 @@ def optimize(
 
             alive_tracker.update(ci=ci.lower_leaky)
 
-            microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=regular_loss_configs,
+            microbatch_losses = compute_losses(
+                loss_metric_configs=config.loss_metric_configs,
                 model=component_model,
                 batch=microbatch,
                 ci=ci,
@@ -310,59 +315,47 @@ def optimize(
                 sampling=config.sampling,
                 use_delta_component=config.use_delta_component,
                 n_mask_samples=config.n_mask_samples,
+                ppgd_maskss={cfg: ppgd_states[cfg].masks for cfg in persistent_pgd_configs},
                 output_loss_type=config.output_loss_type,
             )
 
-            ppgd_recon_loss: Tensor | None = None
-            if persistent_pgd_configs:
-                ppgd_cfg = persistent_pgd_configs[0]
-                assert ppgd_cfg.coeff is not None, "PersistentPGD config must have a coeff"
-                assert persistent_pgd_state is not None, (
-                    "PersistentPGD state is required for PersistentPGD configs"
+            # Compute total loss and accumulate PPGD grads
+            microbatch_total_loss = torch.tensor(0.0, device=device)
+            for loss_cfg, loss_val in microbatch_losses.items():
+                assert loss_cfg.coeff is not None
+                microbatch_total_loss = microbatch_total_loss + loss_cfg.coeff * loss_val
+                batch_log_data[f"train/loss/{loss_cfg.classname}"] += (
+                    loss_val.item() / config.gradient_accumulation_steps
                 )
-                assert batch_ppgd_grads is not None, "PersistentPGD grads are required"
-                with persistent_pgd_state.requires_grad():
-                    ppgd_recon_loss, ppgd_grads = persistent_pgd_recon_loss(
-                        ppgd_cfg=ppgd_cfg,
-                        ppgd_masks=persistent_pgd_state.masks,
-                        model=model,
-                        batch=microbatch,
-                        ci=ci.lower_leaky,
-                        weight_deltas=weight_deltas if config.use_delta_component else None,
-                        target_out=target_model_output.output,
-                        output_loss_type=config.output_loss_type,
-                    )
 
+                # Accumulate PPGD grads
+                if isinstance(
+                    loss_cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
+                ):
+                    ppgd_grads = ppgd_states[loss_cfg].get_grads(loss_val)
                     for module_name, grad in ppgd_grads.items():
-                        batch_ppgd_grads[module_name] += grad / config.gradient_accumulation_steps
+                        ppgd_batch_grads[loss_cfg][module_name] += (
+                            grad / config.gradient_accumulation_steps
+                        )
 
-                microbatch_total_loss += ppgd_cfg.coeff * ppgd_recon_loss
-                batch_log_data[f"train/loss/{ppgd_cfg.classname}"] += (
-                    ppgd_recon_loss.item() / config.gradient_accumulation_steps
-                )
+            batch_log_data["train/loss/total"] += (
+                microbatch_total_loss.item() / config.gradient_accumulation_steps
+            )
 
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
-
-            for loss_name, loss_value in microbatch_loss_terms.items():
-                batch_log_data[f"train/{loss_name}"] += (
-                    loss_value / config.gradient_accumulation_steps
-                )
 
             for layer_name, layer_ci in ci.lower_leaky.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
                 batch_log_data[f"train/l0/{layer_name}"] += (
                     l0_val / config.gradient_accumulation_steps
                 )
-        if persistent_pgd_state is not None:
-            assert batch_ppgd_grads is not None
-            (ppgd_cfg,) = persistent_pgd_configs
-
-            for module_name, v in batch_ppgd_grads.items():
-                batch_log_data[f"train/loss/{ppgd_cfg.classname}/mean_abs_grad/{module_name}"] = (
-                    v.abs().mean().item()
+        # Step PPGD optimizers
+        for ppgd_cfg in persistent_pgd_configs:
+            mean_abs_steps = ppgd_states[ppgd_cfg].step(ppgd_batch_grads[ppgd_cfg])
+            for module_name, mean_abs_step in mean_abs_steps.items():
+                batch_log_data[f"train/loss/{ppgd_cfg.classname}/mean_abs_step/{module_name}"] = (
+                    mean_abs_step
                 )
-
-            persistent_pgd_state.step(batch_ppgd_grads)
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
