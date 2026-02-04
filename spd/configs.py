@@ -102,6 +102,12 @@ class GlobalCiConfig(BaseConfig):
         "If None, uses MLP-only transitions (original behavior). "
         "Only applies when fn_type='global_reverse_residual'.",
     )
+    transition_hidden_dim: PositiveInt | None = Field(
+        default=None,
+        description="Hidden dimension for transition MLP in global_reverse_residual. "
+        "MLP structure: d_resid_ci_fn -> transition_hidden_dim -> d_resid_ci_fn with GeLU. "
+        "Required when fn_type='global_reverse_residual', ignored otherwise.",
+    )
 
     @model_validator(mode="after")
     def validate_ci_config(self) -> Self:
@@ -115,6 +121,9 @@ class GlobalCiConfig(BaseConfig):
             )
             assert self.reader_hidden_dims is not None, (
                 "reader_hidden_dims must be specified when fn_type='global_reverse_residual'"
+            )
+            assert self.transition_hidden_dim is not None, (
+                "transition_hidden_dim must be specified when fn_type='global_reverse_residual'"
             )
             if self.transition_attn_config is not None:
                 assert self.d_resid_ci_fn % self.transition_attn_config.n_heads == 0, (
