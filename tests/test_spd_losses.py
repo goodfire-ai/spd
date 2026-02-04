@@ -766,10 +766,7 @@ class TestPersistentPGDReconLoss:
             # Should have changed from initial (very unlikely to be identical after 5 steps)
             assert not torch.allclose(initial, final)
 
-    # TODO: Fix test to use LM-style model with (batch, seq, C) CI shape
-    @pytest.mark.skip(
-        reason="Test model architecture incompatible with PersistentPGD's LM-style expectations"
-    )
+    @pytest.mark.skip(reason="Test model architecture incompatible with PersistentPGD's LM-style (batch, seq, C) expectations")
     def test_with_delta_component(self: object) -> None:
         """Test persistent PGD with delta component enabled."""
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
@@ -811,10 +808,7 @@ class TestPersistentPGDReconLoss:
 
         assert loss >= 0.0
 
-    # TODO: Fix test to use LM-style model with (batch, seq, C) CI shape
-    @pytest.mark.skip(
-        reason="Test model architecture incompatible with PersistentPGD's LM-style expectations"
-    )
+    @pytest.mark.skip(reason="Test model architecture incompatible with PersistentPGD's LM-style (batch, seq, C) expectations")
     def test_batch_dimension(self: object) -> None:
         """Test that masks broadcast correctly across batch dimension."""
         fc_weight = torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32)
