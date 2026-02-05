@@ -1,0 +1,25 @@
+Found 8 worker state files to merge
+Loading worker 0: worker_0.pt
+Loaded worker 0: 16,384,000 tokens
+Merging harvest results for goodfire/spd/s-827d372c
+Merging worker states:   0%|          | 0/7 [00:00<?, ?it/s]Merging worker states:  14%|█▍        | 1/7 [00:20<02:02, 20.33s/it]Merging worker states:  29%|██▊       | 2/7 [00:44<01:52, 22.42s/it]Merging worker states:  43%|████▎     | 3/7 [01:10<01:36, 24.01s/it]Merging worker states:  57%|█████▋    | 4/7 [01:36<01:14, 24.99s/it]Merging worker states:  71%|███████▏  | 5/7 [02:04<00:52, 26.04s/it]Merging worker states:  86%|████████▌ | 6/7 [02:33<00:26, 26.90s/it]Merging worker states: 100%|██████████| 7/7 [03:02<00:00, 27.58s/it]Merging worker states: 100%|██████████| 7/7 [03:02<00:00, 26.01s/it]
+Merge complete. Total tokens: 131,072,000
+Building component results...
+  Moving tensors to CPU...
+
+  === Base Rate Summary ===
+  Components with firings: 6678 / 7104
+  Firing counts - min: 1, median: 11479, max: 123417728
+  WARNING: 775 components have <100 firings (stats may be noisy)
+  Tokens seen: 3999 unique, occurrences - min: 1, median: 5094, max: 9793693
+  Note: 74 tokens have <10 occurrences (high precision/recall with these may be spurious)
+
+  Computing stats for 7104 components across 12 layers...
+Building components:   0%|          | 0/12 [00:00<?, ?it/s]Building components:   8%|▊         | 1/12 [00:01<00:18,  1.65s/it]Building components:  17%|█▋        | 2/12 [00:02<00:14,  1.45s/it]Building components:  25%|██▌       | 3/12 [00:03<00:11,  1.26s/it]Building components:  33%|███▎      | 4/12 [00:05<00:09,  1.20s/it]Building components:  42%|████▏     | 5/12 [00:05<00:05,  1.17it/s]Building components:  50%|█████     | 6/12 [00:05<00:03,  1.51it/s]Building components:  58%|█████▊    | 7/12 [00:05<00:02,  1.93it/s]Building components:  67%|██████▋   | 8/12 [00:06<00:01,  2.25it/s]Building components:  75%|███████▌  | 9/12 [00:06<00:01,  2.36it/s]Building components:  83%|████████▎ | 10/12 [00:06<00:00,  2.30it/s]Building components:  92%|█████████▏| 11/12 [00:07<00:00,  2.24it/s]Building components: 100%|██████████| 12/12 [00:07<00:00,  2.10it/s]Building components: 100%|██████████| 12/12 [00:07<00:00,  1.50it/s]
+Built 6678 components (skipped components with no firings)
+Saved 6678 components to /mnt/polished-lake/artifacts/mechanisms/spd/harvest/s-827d372c/activation_contexts/components.jsonl
+Saved summary to /mnt/polished-lake/artifacts/mechanisms/spd/harvest/s-827d372c/activation_contexts/summary.json
+Saved component correlations to /mnt/polished-lake/artifacts/mechanisms/spd/harvest/s-827d372c/correlations/component_correlations.pt
+Saved token stats to /mnt/polished-lake/artifacts/mechanisms/spd/harvest/s-827d372c/correlations/token_stats.pt (327.0 MB)
+Saved merged results to /mnt/polished-lake/artifacts/mechanisms/spd/harvest/s-827d372c/activation_contexts and /mnt/polished-lake/artifacts/mechanisms/spd/harvest/s-827d372c/correlations
+Deleted 8 worker state files
