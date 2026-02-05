@@ -13,7 +13,7 @@ from transformers import LlamaConfig as HFLlamaConfig
 from transformers import LlamaForCausalLM
 
 from spd.base_config import BaseConfig
-from spd.utils.distributed_utils import print0
+from spd.utils.distributed_utils import log0
 
 # Suppress issues with transformers library types, nn.Module buffer access, and @torch.no_grad() decorator
 # pyright: reportAttributeAccessIssue=false, reportIndexIssue=false, reportArgumentType=false, reportOperatorIssue=false, reportUntypedFunctionDecorator=false
@@ -426,14 +426,14 @@ class Llama(nn.Module):
         ]
         num_decay_params = sum(p.numel() for p in decay_params)
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print0(f"num decayed tensors: {len(decay_params)}, {num_decay_params:,} params")
-        print0(f"num non-decayed tensors: {len(nodecay_params)}, {num_nodecay_params:,} params")
+        log0(f"num decayed tensors: {len(decay_params)}, {num_decay_params:,} params")
+        log0(f"num non-decayed tensors: {len(nodecay_params)}, {num_nodecay_params:,} params")
         # Create AdamW optimizer and use the fused version if it is available
         fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == "cuda"
-        print0(f"using fused AdamW: {use_fused}")
+        log0(f"using fused AdamW: {use_fused}")
         if zero_stage == 1:
-            print0("using ZeroRedundancyOptimizer")
+            log0("using ZeroRedundancyOptimizer")
             optimizer: torch.optim.Optimizer = ZeroRedundancyOptimizer(
                 decay_params,
                 optimizer_class=torch.optim.AdamW,
@@ -444,7 +444,7 @@ class Llama(nn.Module):
             )
             optimizer.add_param_group({"params": nodecay_params, "weight_decay": 0.0})
         else:
-            print0("using regular AdamW")
+            log0("using regular AdamW")
             optimizer = torch.optim.AdamW(
                 optim_groups, lr=learning_rate, betas=betas, fused=use_fused
             )

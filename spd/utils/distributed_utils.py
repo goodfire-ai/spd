@@ -145,6 +145,15 @@ def print0(*args: Any, **kwargs: Any) -> None:
         print(*args, **kwargs)
 
 
+def log0(msg: str) -> None:
+    """Log only on rank 0 process.
+
+    Works with both torchrun (RANK env var) and init_distributed() setups.
+    """
+    if int(os.environ.get("RANK", 0)) == 0:
+        logger.info(msg)
+
+
 def get_device() -> str:
     """Get device for current process."""
     state = get_distributed_state()
