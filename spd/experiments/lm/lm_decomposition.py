@@ -13,8 +13,8 @@ from spd.log import logger
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
     DistributedState,
-    call_on_rank0_then_broadcast,
     ensure_cached_and_call,
+    ensure_cached_per_node_and_call,
     get_device,
     init_distributed,
     is_main_process,
@@ -80,8 +80,11 @@ def main(
     ln_stds: dict[str, float] | None = None
     if config.pretrained_model_class.startswith("simple_stories_train"):
         # Handle differently in case run has layernorm ablations (we'd need to collect ln_stds)
-        # Avoid concurrent wandb API requests on each rank
-        run_info = call_on_rank0_then_broadcast(SSRunInfo.from_path, config.pretrained_model_name)
+        # Use ensure_cached_per_node_and_call so each node downloads to its own local cache.
+        # This is needed because simple_stories_train caches to node-local /tmp storage.
+        run_info = ensure_cached_per_node_and_call(
+            SSRunInfo.from_path, config.pretrained_model_name
+        )
 
         # Need to handle old training runs not having a model_type in the model_config_dict
         # TODO: Clean this up in the simple_stories_train library
@@ -92,7 +95,6 @@ def main(
             ln_stds = run_info.ln_stds
             assert ln_stds is not None, "Run had enable_ln_ablation set to True but no ln_stds"
         assert hasattr(pretrained_model_class, "from_run_info")
-        # Just loads from local file
         target_model = pretrained_model_class.from_run_info(run_info)  # pyright: ignore[reportAttributeAccessIssue]
     else:
         # Avoid concurrent wandb API requests by first calling from_pretrained on rank 0 only
