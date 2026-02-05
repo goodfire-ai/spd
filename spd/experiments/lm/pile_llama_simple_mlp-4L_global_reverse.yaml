@@ -1,3 +1,6 @@
+# Config for decomposing LlamaSimpleMLP 4L trained on Pile
+# Based on pile_gpt2_simple-2L_global_reverse.yaml
+
 wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
@@ -10,55 +13,6 @@ ci_config:
   d_resid_ci_fn: 2048
   reader_hidden_dims: [2048]
   block_groups:
-  - name: layer_11_attn
-    patterns:
-    - h.11.attn.*
-  - name: layer_11_mlp
-    patterns:
-    - h.11.mlp.*
-  - name: layer_10_attn
-    patterns:
-    - h.10.attn.*
-  - name: layer_10_mlp
-    patterns:
-    - h.10.mlp.*
-  - name: layer_9_attn
-    patterns:
-    - h.9.attn.*
-  - name: layer_9_mlp
-    patterns:
-    - h.9.mlp.*
-  - name: layer_8_attn
-    patterns:
-    - h.8.attn.*
-  - name: layer_8_mlp
-    patterns:
-    - h.8.mlp.*
-  - name: layer_7_attn
-    patterns:
-    - h.7.attn.*
-  - name: layer_7_mlp
-    patterns:
-    - h.7.mlp.*
-  - name: layer_6_attn
-    patterns:
-    - h.6.attn.*
-  - name: layer_6_mlp
-    patterns:
-    - h.6.mlp.*
-  - name: layer_5_attn
-    patterns:
-    - h.5.attn.*
-  - name: layer_5_mlp
-    patterns:
-    - h.5.mlp.*
-  - name: layer_4_attn
-    patterns:
-    - h.4.attn.*
-  - name: layer_4_mlp
-    patterns:
-    - h.4.mlp.*
-
   - name: layer_3_mlp
     patterns:
     - h.3.mlp.*
@@ -91,7 +45,7 @@ sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
 - module_pattern: h.*.mlp.c_fc
-  C: 3072
+  C: 2048
 - module_pattern: h.*.mlp.down_proj
   C: 2048
 - module_pattern: h.*.attn.q_proj
@@ -105,7 +59,7 @@ module_info:
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
-- coeff: 0.001
+- coeff: 0.002
   classname: ImportanceMinimalityLoss
   pnorm: 2.0
   beta: 0.1
@@ -128,15 +82,15 @@ loss_metric_configs:
   scope: unique_per_batch_per_token
   routing:
     type: uniform_k_subset
-# - coeff: 0.5
-#   classname: PersistentPGDReconLoss
-#   optimizer:
-#     type: adam
-#     lr: 0.01
-#     beta1: 0.8
-#     beta2: 0.99
-#     eps: 1.0e-08
-#   scope: unique_per_batch_per_token
+- coeff: 0.5
+  classname: PersistentPGDReconLoss
+  optimizer:
+    type: adam
+    lr: 0.01
+    beta1: 0.8
+    beta2: 0.99
+    eps: 1.0e-08
+  scope: unique_per_batch_per_token
 - coeff: 10000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
@@ -146,7 +100,7 @@ lr_schedule:
   final_val_frac: 0.1
   fn_type: cosine
 steps: 200000
-batch_size: 64
+batch_size: 32
 gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
@@ -155,7 +109,7 @@ faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
 train_log_freq: 200
 eval_freq: 1000
-eval_batch_size: 128
+eval_batch_size: 256
 slow_eval_freq: 10000
 n_eval_steps: 1
 slow_eval_on_first_step: true
@@ -189,18 +143,19 @@ eval_metric_configs:
   classname: PGDReconLoss
 ci_alive_threshold: 0.0
 n_examples_until_dead: 1368400
-
-# --- Pretrained model info ---
-pretrained_model_class: transformers.GPT2LMHeadModel
-pretrained_model_name: SimpleStories/test-SimpleStories-gpt2-1.25M
-pretrained_model_output_attr: logits
-tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
-
-# --- Task Specific ---
+pretrained_model_class: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP
+pretrained_model_path: null
+pretrained_model_name: wandb:goodfire/spd/runs/zsv8u5ni
+pretrained_model_output_attr: idx_0
+tokenizer_name: gpt2
 task_config:
-  task_name: lm 
+  task_name: lm
   max_seq_len: 512
-  dataset_name: "SimpleStories/SimpleStories"
-  column_name: "story"
-  train_data_split: "train"
-  eval_data_split: "test"
+  buffer_size: 1000
+  dataset_name: monology/pile-uncopyrighted
+  column_name: text
+  train_data_split: train[:10000000]
+  eval_data_split: train[-100000:]
+  shuffle_each_epoch: true
+  is_tokenized: false
+  streaming: false
