@@ -1,0 +1,98 @@
+"""SLURM submission for pretraining jobs."""
+
+import subprocess
+import sys
+from pathlib import Path
+
+from spd.settings import DEFAULT_PARTITION_NAME, SLURM_LOGS_DIR
+from spd.utils.slurm import SlurmConfig, generate_script, submit_slurm_job
+
+
+def main(
+    config_path: str,
+    n_gpus: int = 1,
+    partition: str = DEFAULT_PARTITION_NAME,
+    time: str = "72:00:00",
+    job_name: str = "spd-pretrain",
+    local: bool = False,
+    **extra_args: str,
+) -> None:
+    """Submit pretraining job to SLURM or run locally.
+
+    Args:
+        config_path: Path to training config YAML file
+        n_gpus: Number of GPUs to use
+        partition: SLURM partition
+        time: SLURM time limit
+        job_name: SLURM job name
+        local: If True, run locally instead of submitting to SLURM
+        **extra_args: Additional arguments passed to train.py (e.g., --num_iterations 1000)
+    """
+    config_path_resolved = Path(config_path)
+    assert config_path_resolved.exists(), f"Config not found: {config_path}"
+
+    # Build extra args string
+    extra_args_str = " ".join(f"--{k} {v}" for k, v in extra_args.items())
+
+    if local:
+        _run_local(config_path_resolved, n_gpus, extra_args_str)
+    else:
+        _submit_slurm(config_path_resolved, n_gpus, partition, time, job_name, extra_args_str)
+
+
+def _run_local(config_path: Path, n_gpus: int, extra_args_str: str) -> None:
+    """Run training locally."""
+    if n_gpus > 1:
+        cmd = [
+            "torchrun",
+            "--standalone",
+            f"--nproc_per_node={n_gpus}",
+            "-m",
+            "spd.pretrain.train",
+            str(config_path),
+        ]
+    else:
+        cmd = [sys.executable, "-m", "spd.pretrain.train", str(config_path)]
+
+    if extra_args_str:
+        cmd.extend(extra_args_str.split())
+
+    print(f"Running: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+
+
+def _submit_slurm(
+    config_path: Path,
+    n_gpus: int,
+    partition: str,
+    time: str,
+    job_name: str,
+    extra_args_str: str,
+) -> None:
+    """Submit job to SLURM."""
+    SLURM_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Build the training command
+    train_cmd = (
+        f"torchrun --standalone --nproc_per_node={n_gpus} "
+        f"-m spd.pretrain.train {config_path} {extra_args_str}"
+    )
+
+    config = SlurmConfig(
+        job_name=job_name,
+        partition=partition,
+        n_gpus=n_gpus,
+        time=time,
+    )
+
+    script = generate_script(config, train_cmd)
+    result = submit_slurm_job(script, job_name)
+
+    print(f"Submitted job {result.job_id}")
+    print(f"Log file: {result.log_pattern}")
+
+
+if __name__ == "__main__":
+    import fire
+
+    fire.Fire(main)

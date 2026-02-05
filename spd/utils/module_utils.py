@@ -6,11 +6,11 @@ from typing import Literal
 
 import torch
 import torch.nn as nn
-from simple_stories_train.models.gpt2_simple import LayerNorm as SSLayerNorm
 from torch import Tensor
 from torch.nn.init import calculate_gain
 
 from spd.configs import ModulePatternInfoConfig
+from spd.pretrain.models.gpt2_simple import LayerNorm
 
 
 @dataclass
@@ -66,8 +66,8 @@ def replace_std_values_in_layernorm(
 ) -> None:
     for name, std in std_values.items():
         module = component_model.get_submodule("patched_model." + name)
-        assert isinstance(module, SSLayerNorm), (
-            f"Expected {name} to be a simple_stories_train LayerNorm instance, got {type(module)}"
+        assert isinstance(module, LayerNorm), (
+            f"Expected {name} to be a LayerNorm, got {type(module)}"
         )
         module.std = std
 
