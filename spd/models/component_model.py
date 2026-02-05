@@ -277,9 +277,6 @@ class ComponentModel(LoadableModule):
         ci_config: GlobalCiConfig,
     ) -> GlobalSharedMLPCiFn | GlobalReverseResidualCiFn:
         """Create a global CI function that takes all layer activations as input."""
-        ci_fn_type = ci_config.fn_type
-        ci_fn_hidden_dims = ci_config.hidden_dims
-
         # Build layer_configs: layer_name -> (input_dim, C)
         layer_configs: dict[str, tuple[int, int]] = {}
         for target_module_path, target_module_c in module_to_c.items():
@@ -288,37 +285,30 @@ class ComponentModel(LoadableModule):
 
             # For embeddings, global CI uses component acts (C dimensions)
             # For linear-like modules, use the actual input dimension
-            if isinstance(target_module, nn.Embedding):
-                assert isinstance(component, EmbeddingComponents)
+            if isinstance(component, EmbeddingComponents):
                 input_dim = component.C
             else:
                 input_dim = ComponentModel._get_module_input_dim(target_module)
 
             layer_configs[target_module_path] = (input_dim, target_module_c)
 
-        match ci_fn_type:
+        match ci_config.fn_type:
             case "global_shared_mlp":
-                assert ci_fn_hidden_dims is not None  # validated by Pydantic
+                assert ci_config.hidden_dims is not None
                 return GlobalSharedMLPCiFn(
-                    layer_configs=layer_configs, hidden_dims=ci_fn_hidden_dims
+                    layer_configs=layer_configs, hidden_dims=ci_config.hidden_dims
                 )
             case "global_reverse_residual":
-                # block_groups, d_resid_ci_fn, reader_hidden_dims, transition_hidden_dim
-                # are validated by Pydantic
-                block_groups = ci_config.block_groups
-                d_resid_ci_fn = ci_config.d_resid_ci_fn
-                reader_hidden_dims = ci_config.reader_hidden_dims
-                transition_hidden_dim = ci_config.transition_hidden_dim
-                assert block_groups is not None  # for type narrowing
-                assert d_resid_ci_fn is not None  # for type narrowing
-                assert reader_hidden_dims is not None  # for type narrowing
-                assert transition_hidden_dim is not None  # for type narrowing
+                assert ci_config.block_groups is not None
+                assert ci_config.d_resid_ci_fn is not None
+                assert ci_config.reader_hidden_dims is not None
+                assert ci_config.transition_hidden_dim is not None
 
                 # Build block_configs from block_groups
                 block_configs: list[tuple[str, list[str], list[int], list[int]]] = []
                 all_matched_modules: set[str] = set()
 
-                for block_group in block_groups:
+                for block_group in ci_config.block_groups:
                     matched_modules: list[str] = []
                     for pattern in block_group.patterns:
                         matches = [name for name in module_to_c if fnmatch.fnmatch(name, pattern)]
@@ -351,9 +341,9 @@ class ComponentModel(LoadableModule):
 
                 return GlobalReverseResidualCiFn(
                     block_configs=block_configs,
-                    d_resid_ci_fn=d_resid_ci_fn,
-                    reader_hidden_dims=reader_hidden_dims,
-                    transition_hidden_dim=transition_hidden_dim,
+                    d_resid_ci_fn=ci_config.d_resid_ci_fn,
+                    reader_hidden_dims=ci_config.reader_hidden_dims,
+                    transition_hidden_dim=ci_config.transition_hidden_dim,
                     attn_config=ci_config.transition_attn_config,
                 )
 
