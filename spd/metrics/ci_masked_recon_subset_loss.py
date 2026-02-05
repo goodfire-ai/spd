@@ -14,7 +14,7 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
-def _ci_masked_recon_subset_loss_update(
+def ci_masked_recon_loss_update(
     model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
@@ -37,12 +37,6 @@ def _ci_masked_recon_subset_loss_update(
     return loss, out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
 
 
-def _ci_masked_recon_subset_loss_compute(
-    sum_loss: Float[Tensor, ""], n_examples: Int[Tensor, ""] | int
-) -> Float[Tensor, ""]:
-    return sum_loss / n_examples
-
-
 def ci_masked_recon_subset_loss(
     model: ComponentModel,
     output_loss_type: Literal["mse", "kl"],
@@ -51,7 +45,7 @@ def ci_masked_recon_subset_loss(
     ci: dict[str, Float[Tensor, "... C"]],
     routing: SubsetRoutingType,
 ) -> Float[Tensor, ""]:
-    sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
+    sum_loss, n_examples = ci_masked_recon_loss_update(
         model=model,
         output_loss_type=output_loss_type,
         batch=batch,
@@ -59,7 +53,7 @@ def ci_masked_recon_subset_loss(
         ci=ci,
         router=get_subset_router(routing, batch.device),
     )
-    return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
+    return sum_loss / n_examples
 
 
 class CIMaskedReconSubsetLoss(Metric):
@@ -90,7 +84,7 @@ class CIMaskedReconSubsetLoss(Metric):
         ci: CIOutputs,
         **_: Any,
     ) -> None:
-        sum_loss, n_examples = _ci_masked_recon_subset_loss_update(
+        sum_loss, n_examples = ci_masked_recon_loss_update(
             model=self.model,
             output_loss_type=self.output_loss_type,
             batch=batch,
@@ -105,4 +99,4 @@ class CIMaskedReconSubsetLoss(Metric):
     def compute(self) -> Float[Tensor, ""]:
         sum_loss = all_reduce(self.sum_loss, op=ReduceOp.SUM)
         n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
-        return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
+        return sum_loss / n_examples
