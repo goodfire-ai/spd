@@ -128,6 +128,14 @@ def is_main_process() -> bool:
     return state.rank == 0
 
 
+def is_local_main_process() -> bool:
+    """Check if current process is local_rank 0 (one per node)."""
+    state = get_distributed_state()
+    if state is None:
+        return True
+    return state.local_rank == 0
+
+
 def get_device() -> str:
     """Get device for current process."""
     state = get_distributed_state()
@@ -181,9 +189,28 @@ def call_on_rank0_then_broadcast[**P, T](
 
 
 def ensure_cached_and_call[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
-    """Call `fn` on rank 0 to cache any download side effects, barrier, then call on all ranks."""
+    """Call `fn` on rank 0 to cache any download side effects, barrier, then call on all ranks.
+
+    NOTE: Only works if cached files are on a shared filesystem accessible to all nodes.
+    For node-local caches (like /tmp), use `ensure_cached_per_node_and_call` instead.
+    """
     if is_distributed():
         if is_main_process():
+            _ = fn(*args, **kwargs)
+        sync_across_processes()
+        return fn(*args, **kwargs)
+    return fn(*args, **kwargs)
+
+
+def ensure_cached_per_node_and_call[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+    """Call `fn` on local_rank 0 of each node to cache downloads, barrier, then call on all ranks.
+
+    Use this when cached files are stored in node-local storage (like /tmp) and each node needs
+    its own copy. Each node's local_rank 0 will call `fn` first to populate the cache, then all
+    ranks on that node can access the locally cached files.
+    """
+    if is_distributed():
+        if is_local_main_process():
             _ = fn(*args, **kwargs)
         sync_across_processes()
         return fn(*args, **kwargs)
