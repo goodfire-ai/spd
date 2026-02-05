@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Literal, override
 
 import einops
 import torch
+import torch.nn.functional as F
 from jaxtyping import Bool, Float, Int
 from torch import Tensor, nn
 
@@ -141,6 +142,39 @@ class SelfAttention(nn.Module):
         return self.out_proj(attn_out)
 
 
+class TransformerBlock(nn.Module):
+    """RMSNorm → self-attention → residual → RMSNorm → MLP → residual."""
+
+    def __init__(
+        self,
+        d_model: int,
+        n_heads: int,
+        mlp_hidden_dims: list[int],
+        max_len: int = 2048,
+        rope_base: float = 10000.0,
+    ):
+        super().__init__()
+        self.attn = SelfAttention(
+            d_model=d_model, n_heads=n_heads, max_len=max_len, rope_base=rope_base
+        )
+        self.d_model = d_model
+
+        mlp_layers = nn.Sequential()
+        in_dim = d_model
+        for hidden_dim in mlp_hidden_dims:
+            mlp_layers.append(Linear(in_dim, hidden_dim, nonlinearity="relu"))
+            mlp_layers.append(nn.GELU())
+            in_dim = hidden_dim
+        mlp_layers.append(Linear(in_dim, d_model, nonlinearity="linear"))
+        self.mlp = mlp_layers
+
+    @override
+    def forward(self, x: Float[Tensor, "... seq d_model"]) -> Float[Tensor, "... seq d_model"]:
+        x = x + self.attn(F.rms_norm(x, (self.d_model,)))
+        x = x + self.mlp(F.rms_norm(x, (self.d_model,)))
+        return x
+
+
 class MLPCiFn(nn.Module):
     """MLP-based function that creates a scalar output for each component."""
 
@@ -247,6 +281,79 @@ class GlobalSharedMLPCiFn(nn.Module):
         return {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
 
 
+@dataclass
+class TargetLayerConfig:
+    input_dim: int
+    C: int
+
+
+class GlobalSharedTransformerCiFn(nn.Module):
+    """Global CI function that projects concatenated activations and attends over sequence."""
+
+    def __init__(
+        self,
+        target_model_layer_configs: dict[str, TargetLayerConfig],
+        d_model: int,
+        n_layers: int,
+        n_heads: int,
+        mlp_hidden_dims: list[int] | None = None,
+        max_len: int = 2048,
+        rope_base: float = 10000.0,
+    ):
+        super().__init__()
+
+        self.layer_order = sorted(target_model_layer_configs.keys())
+        self.target_model_layer_configs = target_model_layer_configs
+        self.split_sizes = [target_model_layer_configs[name].C for name in self.layer_order]
+        self.d_model = d_model
+        self.n_transformer_layers = n_layers
+        self.n_heads = n_heads
+
+        if mlp_hidden_dims is None:
+            mlp_hidden_dims = [4 * d_model]
+
+        total_input_dim = sum(config.input_dim for config in target_model_layer_configs.values())
+        total_c = sum(config.C for config in target_model_layer_configs.values())
+
+        self._input_projector = Linear(total_input_dim, d_model, nonlinearity="relu")
+        self._output_head = Linear(d_model, total_c, nonlinearity="linear")
+
+        self._blocks = nn.ModuleList(
+            [
+                TransformerBlock(
+                    d_model=d_model,
+                    n_heads=n_heads,
+                    mlp_hidden_dims=mlp_hidden_dims,
+                    max_len=max_len,
+                    rope_base=rope_base,
+                )
+                for _ in range(n_layers)
+            ]
+        )
+
+    @override
+    def forward(
+        self,
+        input_acts: dict[str, Float[Tensor, "... d_in"]],
+    ) -> dict[str, Float[Tensor, "... C"]]:
+        inputs_list = [input_acts[name] for name in self.layer_order]
+        concatenated = torch.cat(inputs_list, dim=-1)
+        projected: Tensor = self._input_projector(concatenated)
+
+        assert projected.ndim == 3
+
+        x = projected
+        for block in self._blocks:
+            x = block(x)
+
+        output = self._output_head(x)
+
+        split_outputs = torch.split(output, self.split_sizes, dim=-1)
+        outputs = {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
+
+        return outputs
+
+
 class GlobalReverseResidualCiFn(nn.Module):
     """Global CI function that processes blocks in reverse order with a residual stream.
 
@@ -344,13 +451,13 @@ class GlobalReverseResidualCiFn(nn.Module):
                 self._transition_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
                 if attn_config is not None:
                     assert self._attn_transitions is not None
-                    assert self._attn_norms is not None
                     self._attn_transitions[safe_name] = SelfAttention(
                         d_model=d_resid_ci_fn,
                         n_heads=attn_config.n_heads,
                         max_len=attn_config.max_len,
                         rope_base=attn_config.rope_base,
                     )
+                    assert self._attn_norms is not None
                     self._attn_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
     @override
@@ -704,7 +811,7 @@ class GlobalCiFnWrapper(nn.Module):
 
     def __init__(
         self,
-        global_ci_fn: GlobalSharedMLPCiFn | GlobalReverseResidualCiFn,
+        global_ci_fn: GlobalSharedMLPCiFn | GlobalSharedTransformerCiFn | GlobalReverseResidualCiFn,
         components: dict[str, Components],
     ):
         super().__init__()
