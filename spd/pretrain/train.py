@@ -42,7 +42,7 @@ from spd.base_config import BaseConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.pretrain.models import MODEL_CLASSES, ModelConfig
 from spd.settings import SPD_OUT_DIR
-from spd.utils.distributed_utils import DistributedState, print0
+from spd.utils.distributed_utils import DistributedState, log0
 from spd.utils.run_utils import ExecutionStamp
 
 
@@ -60,17 +60,17 @@ def save_configs(
     config_file = save_dir / "final_config.yaml"
     with open(config_file, "w") as f:
         yaml.dump(config_dict, f)
-    print0(f"Saved config to {config_file}")
+    log0(f"Saved config to {config_file}")
     model_config_file = save_dir / "model_config.yaml"
     with open(model_config_file, "w") as f:
         yaml.dump(model_config_dict, f)
-    print0(f"Saved model config to {model_config_file}")
+    log0(f"Saved model config to {model_config_file}")
 
     if config_dict.get("wandb_project"):
         wandb.save(str(config_file), policy="now", base_path=save_dir)
-        print0(f"Saved config to wandb from {str(config_file)}")
+        log0(f"Saved config to wandb from {str(config_file)}")
         wandb.save(str(model_config_file), policy="now", base_path=save_dir)
-        print0(f"Saved model config to wandb from {str(model_config_file)}")
+        log0(f"Saved model config to wandb from {str(model_config_file)}")
 
 
 def save_model(
@@ -83,11 +83,11 @@ def save_model(
 
     model_file = save_dir / f"model_step_{step}.pt"
     torch.save(state_dict, model_file)
-    print0(f"Saved model to {model_file}")
+    log0(f"Saved model to {model_file}")
 
     if wandb_project is not None:
         wandb.save(str(model_file), policy="now", base_path=save_dir)
-        print0(f"Saved model to wandb: {str(model_file)}")
+        log0(f"Saved model to wandb: {str(model_file)}")
 
 
 def log_metrics(step: int, metrics: dict[str, Any]) -> None:
@@ -210,7 +210,7 @@ class Config(BaseConfig):
 
 
 def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -> None:
-    print0(f"Running pytorch {torch.__version__}")
+    log0(f"Running pytorch {torch.__version__}")
     load_dotenv(override=True)
     config = load_config(config_path_or_obj, config_model=Config, updates=kwargs)
 
@@ -308,7 +308,7 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
             )
         if hasattr(torch_inductor_config, "coordinate_descent_tuning"):
             torch_inductor_config.coordinate_descent_tuning = True
-        print0("compiling the model...")
+        log0("compiling the model...")
         model = cast(nn.Module, torch.compile(model))  # type: ignore[reportArgumentType]
 
     train_loader, train_tokenizer = create_data_loader(
@@ -386,10 +386,10 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
         # Save tokenizer to output_dir alongside configs and upload to W&B if enabled
         tokenizer_file = output_dir / "tokenizer.json"
         train_tokenizer.save_pretrained(str(output_dir))  # pyright: ignore[reportAttributeAccessIssue]
-        print0(f"Saved tokenizer to {output_dir}")
+        log0(f"Saved tokenizer to {output_dir}")
         if config.wandb_project is not None and master_process:
             wandb.save(str(tokenizer_file), policy="now", base_path=output_dir)
-            print0(f"Saved tokenizer to wandb from {str(tokenizer_file)}")
+            log0(f"Saved tokenizer to wandb from {str(tokenizer_file)}")
         checkpoints_dir = output_dir / "checkpoints"
         checkpoints_dir.mkdir(parents=True, exist_ok=True)
         if config.intermediate_checkpoints:
@@ -424,7 +424,7 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
                 val_loss /= config.val_max_steps
             if config.wandb_project is not None and master_process:
                 log_metrics(step, {"val_loss": val_loss})
-            print0(f"val loss {val_loss}")
+            log0(f"val loss {val_loss}")
             if master_process and logfile is not None:
                 with open(logfile, "a") as f:
                     f.write(f"s:{step} tel:{val_loss}\n")
@@ -443,9 +443,9 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
                 xg, max_new_tokens, temperature=temperature, top_k=top_k
             )
             if master_process:
-                print0("---------------")
-                print0(train_tokenizer.decode(yg[0].tolist()))  # pyright: ignore[reportAttributeAccessIssue]
-                print0("---------------")
+                log0("---------------")
+                log0(train_tokenizer.decode(yg[0].tolist()))  # pyright: ignore[reportAttributeAccessIssue]
+                log0("---------------")
                 if config.wandb_project is not None and master_process:
                     decoded = train_tokenizer.decode(yg[0].tolist())  # pyright: ignore[reportAttributeAccessIssue]
                     generations.append([step, decoded])
@@ -462,7 +462,7 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
         try:
             bat = next(train_iter)["input_ids"].to(torch.long)
         except StopIteration:
-            print0("Depleted train_loader, resetting for next epoch")
+            log0("Depleted train_loader, resetting for next epoch")
             train_iter = iter(train_loader)
             bat = next(train_iter)["input_ids"].to(torch.long)
 
@@ -501,7 +501,7 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
             eta_h, eta_rem = divmod(int(eta_seconds), 3600)
             eta_m, eta_s = divmod(eta_rem, 60)
             eta_str = f"{eta_h}h {eta_m:02d}m" if eta_h > 0 else f"{eta_m}m {eta_s:02d}s"
-            print0(
+            log0(
                 f"step {step:4d}/{config.num_iterations} | loss {lossf_value:.6f} | {norm_str} | "
                 f"lr {lr:.2e} | {(t1 - t0) * 1000:.2f}ms | {tokens_per_second:.0f} tok/s | ETA {eta_str}"
             )
@@ -525,8 +525,8 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
             timings.append(t1 - t0)
 
     timings = timings[-20:]
-    print0(f"final {len(timings)} iters avg: {np.mean(timings) * 1000:.3f}ms")
-    print0(f"peak memory consumption: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
+    log0(f"final {len(timings)} iters avg: {np.mean(timings) * 1000:.3f}ms")
+    log0(f"peak memory consumption: {torch.cuda.max_memory_allocated() // 1024 // 1024} MiB")
 
     if ddp:
         destroy_process_group()

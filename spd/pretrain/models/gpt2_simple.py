@@ -16,7 +16,7 @@ from torch.nn import functional as F
 
 from spd.base_config import BaseConfig
 from spd.interfaces import LoadableModule
-from spd.utils.distributed_utils import print0
+from spd.utils.distributed_utils import log0
 
 if TYPE_CHECKING:
     from spd.pretrain.run_info import PretrainRunInfo
@@ -278,20 +278,20 @@ class GPT2Simple(LoadableModule):
         ]
         num_decay_params = sum(p.numel() for p in decay_params)
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print0(
+        log0(
             f"num decayed parameter tensors: {len(decay_params)}, "
             f"with {num_decay_params:,} parameters"
         )
-        print0(
+        log0(
             f"num non-decayed parameter tensors: {len(nodecay_params)}, "
             f"with {num_nodecay_params:,} parameters"
         )
         # Create AdamW optimizer and use the fused version if it is available
         fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == "cuda"
-        print0(f"using fused AdamW: {use_fused}")
+        log0(f"using fused AdamW: {use_fused}")
         if zero_stage == 1:
-            print0("using ZeroRedundancyOptimizer")
+            log0("using ZeroRedundancyOptimizer")
             optimizer: torch.optim.Optimizer = ZeroRedundancyOptimizer(
                 decay_params,
                 optimizer_class=torch.optim.AdamW,
@@ -302,7 +302,7 @@ class GPT2Simple(LoadableModule):
             )
             optimizer.add_param_group({"params": nodecay_params, "weight_decay": 0.0})
         else:
-            print0("using regular AdamW")
+            log0("using regular AdamW")
             optimizer = torch.optim.AdamW(
                 optim_groups, lr=learning_rate, betas=betas, fused=use_fused
             )
