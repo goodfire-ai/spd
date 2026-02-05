@@ -108,7 +108,7 @@ def tokenize_and_concatenate(
             chunks = [
                 chunk.replace(tokenizer.eos_token.lower(), tokenizer.eos_token) for chunk in chunks
             ]
-        tokens = [tokenizer.encode(chunk) for chunk in chunks]  # Get token IDs for each chunk
+        tokens = [tokenizer.encode(chunk, add_special_tokens=False) for chunk in chunks]
         tokens = np.concatenate(tokens)  # Flatten the list of token IDs
 
         # Calculate number of batches and adjust the tokens accordingly
