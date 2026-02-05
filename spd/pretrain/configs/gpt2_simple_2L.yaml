@@ -11,6 +11,7 @@ val_loss_every: 100
 val_max_steps: 20
 sample_every: 1000
 intermediate_checkpoints: false
+flash_attention: false
 
 model:
   model_type: GPT2Simple

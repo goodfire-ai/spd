@@ -165,69 +165,44 @@ class Config(BaseConfig):
     wandb_project: str | None = Field(
         None, description="WandB project name. If None, will not use WandB."
     )
-    train_dataset_config: DatasetConfig = Field(
-        DatasetConfig(
-            name="SimpleStories/SimpleStories",
-            is_tokenized=False,
-            hf_tokenizer_path="SimpleStories/test-SimpleStories-gpt2-1.25M",
-            streaming=True,
-            split="train",
-            n_ctx=1024,
-            seed=0,
-            column_name="story",
-        ),
-        description="Dataset config for training",
-    )
-    val_dataset_config: DatasetConfig = Field(
-        DatasetConfig(
-            name="SimpleStories/SimpleStories",
-            is_tokenized=False,
-            hf_tokenizer_path="SimpleStories/test-SimpleStories-gpt2-1.25M",
-            streaming=True,
-            split="test",
-            n_ctx=1024,
-            seed=0,
-            column_name="story",
-        ),
-        description="Dataset config for validation",
-    )
+    train_dataset_config: DatasetConfig = Field(..., description="Dataset config for training")
+    val_dataset_config: DatasetConfig = Field(..., description="Dataset config for validation")
     output_dir: Path = Field(
         SPD_OUT_DIR / "target_models", description="Directory to write logs and checkpoints"
     )
-    # Model configuration (discriminated union)
     model: ModelConfig = Field(..., description="Model configuration")
     batch_size: PositiveInt = Field(
-        4, description="Total batch size (divided across DDP processes)"
+        ..., description="Total batch size (divided across DDP processes)"
     )
-    num_iterations: PositiveInt = Field(50, description="Number of training steps")
+    num_iterations: PositiveInt = Field(..., description="Number of training steps")
     inference_only: bool = Field(False, description="If True, don't update gradients")
-    learning_rate: PositiveFloat = Field(1e-4, description="Learning rate")
+    learning_rate: PositiveFloat = Field(..., description="Learning rate")
     warmup_iters: NonNegativeInt = Field(
-        0, description="Number of iterations to warmup the learning rate"
+        ..., description="Number of iterations to warmup the learning rate"
     )
     learning_rate_decay_frac: PositiveFloat = Field(
-        1.0, ge=0, le=1, description="Fraction of lr to decay to. 0 decays to 0, 1 doesn't decay"
+        ..., ge=0, le=1, description="Fraction of lr to decay to. 0 decays to 0, 1 doesn't decay"
     )
-    weight_decay: NonNegativeFloat = Field(0.1, description="Weight decay")
-    grad_clip: NonNegativeFloat | None = Field(1.0, description="Maximum gradient magnitude")
+    weight_decay: NonNegativeFloat = Field(..., description="Weight decay")
+    grad_clip: NonNegativeFloat | None = Field(..., description="Maximum gradient magnitude")
     val_loss_every: NonNegativeInt = Field(
-        0, description="Every how many steps to evaluate val loss?"
+        ..., description="Every how many steps to evaluate val loss?"
     )
     val_max_steps: NonNegativeInt = Field(
-        20, description="Max number of batches to use for validation"
+        ..., description="Max number of batches to use for validation"
     )
     train_log_every: NonNegativeInt = Field(100, description="How often to log train loss?")
-    sample_every: NonNegativeInt = Field(0, description="How often to sample from the model?")
+    sample_every: NonNegativeInt = Field(..., description="How often to sample from the model?")
     tensorcores: bool = Field(True, description="Use TensorCores?")
     device: str | None = Field(None, description="Device to use. If None, will autodetect.")
     compile: bool = Field(True, description="Compile the model?")
-    flash_attention: bool = Field(True, description="Use FlashAttention?")
-    dtype: Literal["float32", "float16", "bfloat16"] = Field("bfloat16", description="Data type")
+    flash_attention: bool = Field(..., description="Use FlashAttention?")
+    dtype: Literal["float32", "float16", "bfloat16"] = Field(..., description="Data type")
     zero_stage: Literal[0, 1, 2, 3] = Field(
         0, description="Zero redundancy optimizer stage (0/1/2/3)"
     )
     intermediate_checkpoints: bool = Field(
-        False, description="Save intermediate checkpoints (done at steps 0, 1, 2, 4, 8, ...)?"
+        ..., description="Save intermediate checkpoints (done at steps 0, 1, 2, 4, 8, ...)?"
     )
     from_pretrained: str | Path | None = Field(
         None, description="Path to a wandb string or a local path to a checkpoint to finetune from"
