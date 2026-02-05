@@ -765,14 +765,12 @@ def get_model_n_blocks(model: nn.Module) -> int:
     """Get the number of blocks in the model."""
     from transformers.models.gpt2 import GPT2LMHeadModel
 
-    from spd.pretrain.models.gpt2_simple import GPT2Simple
-    from spd.pretrain.models.llama_simple import LlamaSimple
-    from spd.pretrain.models.llama_simple_mlp import LlamaSimpleMLP
+    from spd.pretrain.models import GPT2, GPT2Simple, LlamaSimple, LlamaSimpleMLP
 
     match model:
         case GPT2LMHeadModel():
             return len(model.transformer.h)
-        case GPT2Simple() | LlamaSimple() | LlamaSimpleMLP():
+        case GPT2() | GPT2Simple() | LlamaSimple() | LlamaSimpleMLP():
             return len(model.h)
         case _ if hasattr(model, "h"):
             return len(model.h)  # pyright: ignore[reportArgumentType]

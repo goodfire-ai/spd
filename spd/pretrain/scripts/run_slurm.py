@@ -100,7 +100,12 @@ def _submit_slurm(
     print(f"Log file: {result.log_pattern}")
 
 
-if __name__ == "__main__":
+def cli() -> None:
+    """CLI entry point for spd-pretrain command."""
     import fire
 
     fire.Fire(main)
+
+
+if __name__ == "__main__":
+    cli()
