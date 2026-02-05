@@ -43,6 +43,7 @@ from spd.data import DatasetConfig, create_data_loader
 from spd.pretrain.models import MODEL_CLASSES, ModelConfig
 from spd.settings import SPD_OUT_DIR
 from spd.utils.distributed_utils import DistributedState, print0
+from spd.utils.run_utils import ExecutionStamp
 
 
 def is_checkpoint_step(step: int) -> bool:
@@ -238,7 +239,15 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
     load_dotenv(override=True)
     config = load_config(config_path_or_obj, config_model=Config, updates=kwargs)
 
-    T = config.train_dataset_config.n_ctx
+    T = config.train_dataset_config.n_ctx  # Training sequence length (positions to train on)
+
+    # Load n_ctx+1 tokens so we can train on n_ctx positions (need extra token for labels)
+    train_dataset_config = config.train_dataset_config.model_copy(
+        update={"n_ctx": config.train_dataset_config.n_ctx + 1}
+    )
+    val_dataset_config = config.val_dataset_config.model_copy(
+        update={"n_ctx": config.val_dataset_config.n_ctx + 1}
+    )
 
     # set up DDP (distributed data parallel). torchrun sets this env variable
     ddp = int(os.environ.get("RANK", -1)) != -1
@@ -328,7 +337,7 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
         model = cast(nn.Module, torch.compile(model))  # type: ignore[reportArgumentType]
 
     train_loader, train_tokenizer = create_data_loader(
-        dataset_config=config.train_dataset_config,
+        dataset_config=train_dataset_config,
         batch_size=B,
         buffer_size=1000,
         global_seed=0,
@@ -337,7 +346,7 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
     train_iter = iter(train_loader)
 
     val_loader, _ = create_data_loader(
-        dataset_config=config.val_dataset_config,
+        dataset_config=val_dataset_config,
         batch_size=B,
         buffer_size=1000,
         global_seed=0,
@@ -345,8 +354,15 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
     )
 
     # logging
+    run_id: str | None = None
     if config.wandb_project is not None and master_process:
-        run = wandb.init(project=config.wandb_project, config=config.model_dump(mode="json"))
+        execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=False)
+        run_id = execution_stamp.run_id
+        run = wandb.init(
+            id=run_id,
+            project=config.wandb_project,
+            config=config.model_dump(mode="json"),
+        )
         run.name = f"{config.model.model_type}-{run.name}"
 
     # DDP wrap
@@ -425,8 +441,8 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
                         bat = next(val_loader_iter)["input_ids"].to(torch.long)
                     except StopIteration:
                         break
-                    x = bat.view(B, T)[:, :-1]
-                    y = bat.view(B, T)[:, 1:]
+                    x = bat.view(B, T + 1)[:, :-1]
+                    y = bat.view(B, T + 1)[:, 1:]
                     x, y = x.to(device), y.to(device)
                     _, loss = model(x, y, return_logits=False)
                     val_loss += float(loss.item()) if loss is not None else 0.0
@@ -475,8 +491,8 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
             train_iter = iter(train_loader)
             bat = next(train_iter)["input_ids"].to(torch.long)
 
-        x = bat.view(B, T)[:, :-1]
-        y = bat.view(B, T)[:, 1:]
+        x = bat.view(B, T + 1)[:, :-1]
+        y = bat.view(B, T + 1)[:, 1:]
         x, y = x.to(device), y.to(device)
         with ctx:
             _, loss = model(x, y, return_logits=False)

@@ -4,7 +4,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from spd.log import logger
 from spd.settings import DEFAULT_PARTITION_NAME, SLURM_LOGS_DIR
+from spd.utils.run_utils import ExecutionStamp
 from spd.utils.slurm import SlurmConfig, generate_script, submit_slurm_job
 
 
@@ -72,6 +74,11 @@ def _submit_slurm(
     """Submit job to SLURM."""
     SLURM_LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Create git snapshot for reproducibility
+    execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=True)
+    logger.info(f"Run ID: {execution_stamp.run_id}")
+    logger.info(f"Snapshot branch: {execution_stamp.snapshot_branch}")
+
     # Build the training command
     train_cmd = (
         f"torchrun --standalone --nproc_per_node={n_gpus} "
@@ -83,6 +90,7 @@ def _submit_slurm(
         partition=partition,
         n_gpus=n_gpus,
         time=time,
+        snapshot_branch=execution_stamp.snapshot_branch,
     )
 
     script = generate_script(config, train_cmd)
