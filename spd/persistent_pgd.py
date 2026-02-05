@@ -164,6 +164,7 @@ def get_mask_infos(
             adv_sources_components = {k: v[..., :-1] for k, v in expanded_adv_sources.items()}
 
     # Interpolate CI with adversarial masks: mask = ci + (1 - ci) * adv
+    # component_masks = _elemwise_max_component_mask(ci, adv_sources_components)
     component_masks = _interpolate_component_mask(ci, adv_sources_components)
 
     return make_mask_infos(
@@ -181,9 +182,21 @@ def _interpolate_component_mask(
     component_masks: dict[str, Float[Tensor, "... C"]] = {}
     for module_name in ci:
         adv_source = adv_sources_components[module_name]
-        scaled_noise = (1 - ci[module_name]) * adv_source
-        component_masks[module_name] = ci[module_name] + scaled_noise
+        scaled_adv = (1 - ci[module_name]) * adv_source
+        component_masks[module_name] = ci[module_name] + scaled_adv
     return component_masks
+
+
+# def _elemwise_max_component_mask(
+#     ci: dict[str, Float[Tensor, "... C"]],
+#     adv_sources_components: dict[str, Float[Tensor, "... C"]],
+# ) -> dict[str, Float[Tensor, "... C"]]:
+#     """Interpolate CI with adversarial masks: final = ci + (1 - ci) * adv."""
+#     component_masks: dict[str, Float[Tensor, "... C"]] = {}
+#     for module_name in ci:
+#         adv_source = adv_sources_components[module_name]
+#         component_masks[module_name] = torch.maximum(ci[module_name], adv_source)
+#     return component_masks
 
 
 def _persistent_pgd_recon_subset_loss_update(
