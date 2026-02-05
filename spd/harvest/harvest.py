@@ -202,10 +202,14 @@ def harvest_activation_contexts(
     logger.info(f"Loading model on {device}")
 
     run_info = SPDRunInfo.from_path(config.wandb_path)
+    spd_config = run_info.config
+
+    # Handle old training runs not having model_type in model_config_dict
+    if "model_type" not in run_info.model_config_dict:
+        run_info.model_config_dict["model_type"] = spd_config.pretrained_model_class.split(".")[-1]
+
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
-
-    spd_config = run_info.config
     train_loader, tokenizer = train_loader_and_tokenizer(spd_config, config.batch_size)
 
     layer_names = list(model.target_module_paths)
