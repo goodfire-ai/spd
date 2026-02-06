@@ -162,6 +162,7 @@ def generate_report(
     ci_threshold = load_harvest_ci_threshold(run_id)
 
     labels = {r["component_key"]: r["label"] for r in interp_results}
+    interp_results_by_key = {r["component_key"]: r for r in interp_results}
 
     # Load token stats for interpretation prompt example
     from spd.autointerp.config import CompactSkepticalConfig
@@ -342,6 +343,17 @@ One example of every LLM prompt template, rendered with real data.
         prompt_example = rng.choice(high) if high else rng.choice(interp_results)
         md += f"*(Rendered from stored result for `{prompt_example['component_key']}`)*\n\n"
         md += f"```\n{prompt_example['prompt'][:5000]}\n```\n\n"
+
+    # Show the LLM's response for this component
+    example_result = interp_results_by_key.get(example_component.component_key)
+    if example_result is not None:
+        md += f"""<details><summary>LLM Response</summary>
+
+**Label:** {example_result["label"]}
+**Confidence:** {example_result["confidence"]}
+**Reasoning:** {example_result["reasoning"]}
+
+</details>\n\n"""
 
     # 3. Detection prompt (label-dependent)
     md += "### 3. Detection Scoring Prompt (label-dependent)\n\n"
