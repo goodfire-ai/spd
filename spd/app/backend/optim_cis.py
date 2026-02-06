@@ -20,6 +20,7 @@ from spd.models.components import make_mask_infos
 from spd.routing import AllLayersRouter
 from spd.spd_types import Probability
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
+from spd.utils.general_utils import bf16_autocast
 
 MaskType = Literal["stochastic", "ci"]
 
@@ -146,7 +147,7 @@ def compute_label_prob(
 ) -> float:
     """Compute probability of label_token at final position with CI mask."""
     mask_infos = make_mask_infos(ci_lower_leaky, routing_masks="all")
-    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    with bf16_autocast():
         logits = model(tokens, mask_infos=mask_infos)
     probs = F.softmax(logits[0, -1, :], dim=-1)
     return float(probs[label_token].item())
@@ -209,14 +210,14 @@ def compute_final_token_ce_kl(
 
     # CI masked
     ci_mask_infos = make_mask_infos(ci)
-    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    with bf16_autocast():
         ci_masked_logits = model(batch, mask_infos=ci_mask_infos)
     ci_masked_kl = kl_vs_target(ci_masked_logits)
     ci_masked_ce = ce_vs_target(ci_masked_logits)
 
     # Unmasked (all components active)
     unmasked_infos = make_mask_infos({k: torch.ones_like(v) for k, v in ci.items()})
-    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    with bf16_autocast():
         unmasked_logits = model(batch, mask_infos=unmasked_infos)
     unmasked_kl = kl_vs_target(unmasked_logits)
     unmasked_ce = ce_vs_target(unmasked_logits)
@@ -225,7 +226,7 @@ def compute_final_token_ce_kl(
     rounded_mask_infos = make_mask_infos(
         {k: (v > rounding_threshold).float() for k, v in ci.items()}
     )
-    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    with bf16_autocast():
         rounded_masked_logits = model(batch, mask_infos=rounded_mask_infos)
     rounded_masked_kl = kl_vs_target(rounded_masked_logits)
     rounded_masked_ce = ce_vs_target(rounded_masked_logits)
@@ -295,7 +296,7 @@ def optimize_ci_values(
     model.requires_grad_(False)
 
     # Get initial CI values from the model
-    with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    with torch.no_grad(), bf16_autocast():
         output_with_cache: OutputWithCache = model(tokens, cache_type="input")
         initial_ci_outputs = model.calc_causal_importances(
             pre_weight_acts=output_with_cache.cache,
@@ -316,6 +317,7 @@ def optimize_ci_values(
     params = ci_params.get_parameters()
     optimizer = optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
 
+    autocast_ctx = bf16_autocast()
     progress_interval = max(1, config.steps // 20)  # Report ~20 times during optimization
     for step in tqdm(range(config.steps), desc="Optimizing CI values"):
         if on_progress is not None and step % progress_interval == 0:
@@ -337,7 +339,7 @@ def optimize_ci_values(
             case "ci":
                 mask_infos = make_mask_infos(component_masks=ci_outputs.lower_leaky)
 
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with autocast_ctx:
             out = model(tokens, mask_infos=mask_infos)
 
             imp_min_loss = importance_minimality_loss(

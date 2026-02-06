@@ -34,7 +34,7 @@ from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data
+from spd.utils.general_utils import bf16_autocast, extract_batch_data
 
 
 def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
@@ -228,6 +228,7 @@ def harvest_activation_contexts(
     train_iter = iter(train_loader)
     batches_processed = 0
     last_log_time = time.time()
+    autocast_ctx = bf16_autocast()
     batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
     for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
         try:
@@ -241,7 +242,7 @@ def harvest_activation_contexts(
             continue
 
         batch = batch_data.to(device)
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with torch.no_grad(), autocast_ctx:
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
 

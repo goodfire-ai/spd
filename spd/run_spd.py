@@ -1,6 +1,5 @@
 """Run SPD on a model."""
 
-import contextlib
 import gc
 from collections import defaultdict
 from collections.abc import Iterator
@@ -42,6 +41,7 @@ from spd.utils.distributed_utils import (
     sync_across_processes,
 )
 from spd.utils.general_utils import (
+    bf16_autocast,
     dict_safe_update_,
     extract_batch_data,
     get_scheduled_value,
@@ -125,11 +125,7 @@ def optimize(
 ) -> None:
     """Run the optimization loop for LM decomposition."""
 
-    autocast_ctx: contextlib.AbstractContextManager[torch.amp.autocast_mode.autocast | None] = (
-        torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        if config.autocast_bf16
-        else contextlib.nullcontext()
-    )
+    autocast_ctx = bf16_autocast(enabled=config.autocast_bf16)
 
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
