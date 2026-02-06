@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autointerp Report — s-892f140b</title>
+<style>
+  :root { --bg: #fff; --fg: #1a1a1a; --muted: #555; --border: #ddd;
+           --accent: #3498db; --code-bg: #f4f4f4; --pre-bg: #f8f8f8;
+           --table-stripe: #fafafa; --heading: #2c3e50; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1a1a2e; --fg: #e0e0e0; --muted: #999; --border: #333;
+             --accent: #5dade2; --code-bg: #2a2a3e; --pre-bg: #22223a;
+             --table-stripe: #22223a; --heading: #a8d8ea; }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+         font-size: 15px; line-height: 1.6; color: var(--fg); background: var(--bg);
+         max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; }
+  h1 { font-size: 1.8rem; border-bottom: 2px solid var(--fg); padding-bottom: 0.5rem; }
+  h2 { font-size: 1.4rem; color: var(--heading); border-bottom: 1px solid var(--border);
+        padding-bottom: 0.3rem; margin-top: 2rem; }
+  h3 { font-size: 1.1rem; color: var(--heading); margin-top: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+  th { background: var(--code-bg); font-weight: 600; }
+  tr:nth-child(even) { background: var(--table-stripe); }
+  code { background: var(--code-bg); padding: 0.15rem 0.4rem; border-radius: 3px;
+         font-size: 0.85em; }
+  pre { background: var(--pre-bg); padding: 1rem; border-radius: 6px; overflow-x: auto;
+         font-size: 0.8rem; line-height: 1.5; border: 1px solid var(--border); }
+  pre code { background: none; padding: 0; }
+  blockquote { border-left: 3px solid var(--accent); margin: 0.75rem 0; padding: 0.5rem 1rem;
+               color: var(--muted); font-size: 0.9rem; background: var(--pre-bg);
+               border-radius: 0 4px 4px 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+  a { color: var(--accent); }
+</style>
+</head><body>
+<h1>SPD Autointerp Report</h1>
+<p><strong>Run:</strong> <code>s-892f140b</code>
+<strong>Components interpreted:</strong> 7,063</p>
+<hr />
+<h2>Interpretation Confidence Breakdown</h2>
+<table>
+<thead>
+<tr>
+<th>Confidence</th>
+<th>Count</th>
+<th>Percentage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>High</td>
+<td>3,791</td>
+<td>54%</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>2,031</td>
+<td>29%</td>
+</tr>
+<tr>
+<td>Low</td>
+<td>1,241</td>
+<td>18%</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>High-Confidence Examples</h2>
+<p><strong><code>h.1.mlp.c_fc:191</code></strong> -- Verbs of physical or conceptual holding and preservation</p>
+<blockquote>
+<p>The component consistently triggers on verbs like 'hold', 'keep', 'stay', and 'hug' in both literal physical contexts (holding a hand) and metaphorical ones (holding secrets, keeping a memory alive). It demonstrates exceptionally high precision for predicting descriptors like 'tightly' and 'tight', indicating a specific role in processing the manner of retention or preservation in narrative arcs.</p>
+</blockquote>
+<p><strong><code>h.0.attn.o_proj:280</code></strong> -- Conjunctive transitions at sentence start within dialogue</p>
+<blockquote>
+<p>The component consistently fires on tokens like 'but', 'and', and 'at' immediately following an opening quotation mark and a sentence-ending punctuation mark. This suggests it tracks structural transitions inside character speech. The high PMI for predicted tokens like 'sure', 'remember', and 'maybe' further reinforces its role in facilitating conversational flow and character responses in stories.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.c_fc:87</code></strong> -- Virtuous actions and pro-social character traits</p>
+<blockquote>
+<p>The component consistently activates on tokens describing communal virtues and selfless actions like 'help', 'kindness', 'generosity', 'trust', and 'honesty'. It also triggers on verbs describing favorable narrative resolutions such as 'saved', 'fixed', and 'thanked'. The predicted tokens suggest it helps the model anticipate descriptive suffixes and narrative continuation following these positive moral interactions.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.c_fc:747</code></strong> -- The demonstrative pronoun 'this' preceding singular nouns and descriptors</p>
+<blockquote>
+<p>The component shows an extremely high recall (95%) and precision (75%) for the token 'this' as the current input. The activation examples consistently show it firing on 'this' when it introduces a noun phrase (e.g., 'this dream', 'this garden', 'this year'), which aligns with the predicted tokens like 'year', 'place', and 'magical'.</p>
+</blockquote>
+<p><strong><code>h.1.attn.v_proj:237</code></strong> -- Emotional heart reactions and physiological responses to stress</p>
+<blockquote>
+<p>The component triggers almost exclusively on the word 'heart' in the context of intense narrative emotions like fear, worry, or disappointment. It predicts verbs that specifically describe heart movement or emotional pain, such as 'sank', 'pounded', 'raced', and 'ached'. The activation examples consistently show characters reacting to sudden setbacks or threats.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.c_fc:850</code></strong> -- Epistemic state verbs and narrative transitions in simple stories</p>
+<blockquote>
+<p>The component shows a strong recall for tokens like 'knew', 'looked', 'saw', and 'felt', which are essential for describing character internal states and perceptions in SimpleStories. The activation examples consistently highlight narrative pivot points where a character gains knowledge or experiences a shift in emotion or scenery. While precision is numerically low due to the extremely rare firing rate, the PMI and qualitative examples link it to thematic shifts and character realizations within simple narrative arcs.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.c_fc:609</code></strong> -- emotional states and descriptions following possessive pronouns or 'felt'</p>
+<blockquote>
+<p>The component triggers on contexts following 'felt', 'my', or 'her' to project emotive or atmospheric adjectives like 'alive', 'powerful', or 'nervous'. While the specific 'Active tokens' in the examples are missing, the Recall and PMI metrics strongly indicate it facilitates internal state attributions (e.g., 'forest felt alive', 'her heart raced'). The extremely low activation rate suggests it is a highly specialized circuit for specific narrative-emotional transitions.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.down_proj:774</code></strong> -- descriptive adjectives and suffix-based abstract nouns</p>
+<blockquote>
+<p>The component consistently triggers on a wide variety of descriptive adjectives such as 'soft', 'safe', 'deep', 'bright', and 'different'. Furthermore, it strongly predicts morphological suffixes like '##ness' and '##ly' as well as other characteristic word endings, suggesting it identifies qualitative descriptors and prepares for their adverbial or nominal extensions.</p>
+</blockquote>
+<h2>Medium-Confidence Examples</h2>
+<p><strong><code>h.1.mlp.down_proj:143</code></strong> -- Character interaction following physical movement or approach verbs</p>
+<blockquote>
+<p>The component shows strong PMI with pronouns and characters ('he', 'she', 'lena') as input, and high PMI with physical actions ('knelt', 'arrived', 'approached', 'reached') as predicted outputs. While the activation rate is extremely low, the example contexts consistently feature a protagonist approaching an object or entity just before a shift in the story's action. The lack of highlighted tokens in the examples suggests it may fire specifically on the transition between an approach and its immediate consequence.</p>
+</blockquote>
+<p><strong><code>h.1.attn.q_proj:16</code></strong> -- visual descriptions of wonder and small-scale settings</p>
+<blockquote>
+<p>The component consistently correlates with tokens describing wide-eyed curiosity ('eyes', 'wide') and the opening of containers or rooms in small settings ('small town', 'quiet room', 'opened the box'). The predicted tokens emphasize descriptive adjectives like 'wide', 'cozy', and 'sparkling', suggesting a role in processing narrative moments of discovery or atmosphere. While the activation rate is extremely low, the PMI and precision metrics point toward a focus on descriptive sensory details and character reactions in simple stories.</p>
+</blockquote>
+<p><strong><code>h.0.attn.k_proj:157</code></strong> -- Sensory and mechanical verbs like ticking, creaking, and flowing</p>
+<blockquote>
+<p>The component shows strong PMI correlations with physical sounds (clock ticking, floor creaking) and natural movements (rivers/words flowing). While the activation examples do not highlight specific tokens, the predictive metrics strongly suggest a role in identifying contexts that precede these sensory descriptions. The very low activation rate indicates it is a highly specialized detector for these specific narrative motifs within the simple story domain.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.c_fc:203</code></strong> -- abstract nouns and light imagery in narrative resolutions</p>
+<blockquote>
+<p>The component consistently correlates with tokens describing narrative atmosphere and emotional pivot points, such as 'light', 'surprise', and 'laughter'. While the activation examples do not highlight specific tokens with CI &gt; 0.3, the high recall for 'light' and precision for specific names like 'Tim' suggests it may trigger on characters experiencing sudden moments of realization or wonder. The predicted tokens are largely morphological suffixes, indicating it may help structure the transitions between narrative description and dialogue or final story beats.</p>
+</blockquote>
+<h2>Low-Confidence Examples</h2>
+<p><strong><code>h.1.attn.q_proj:216</code></strong> -- sub-word tokens and narrative transitions in 'banana'/night-time contexts</p>
+<blockquote>
+<p>The component fires extremely rarely, and its activation tokens in the provided examples are empty, making direct observation impossible. However, the PMI data suggests a strong association with sub-word fragments ('##an', '##ill', '##as') often found in 'banana' themed stories or time-based transitions ('one night', 'one evening'), and it shows an affinity for predicting surprise-related suffixes or punctuation marks common in SimpleStories narrative shifts; the low activation rate suggests it may handle highly specific edge cases of these patterns or is potentially miscalibrated.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.c_fc:284</code></strong> -- narrative transition points and discovery verbs</p>
+<blockquote>
+<p>The component fires extremely rarely, making the activation rate almost negligible and the specific activation tokens absent in the provided examples. However, the PMI metrics show a strong preference for discovery and inquiry verbs like 'found,' 'asked,' 'set,' and 'rec' (likely 'recreate' or 'recognize'), while predicted tokens like 'laimed' (exclaimed) and 'herself' point toward character-driven narrative shifts and dialogue beats typical of story resolutions or plot advancements. Due to the lack of clear, highlighted active tokens in context, the pattern remains speculative based on token correlations alone.</p>
+</blockquote>
+<p><strong><code>h.1.attn.k_proj:214</code></strong> -- Character decisions and natural scenery elements</p>
+<blockquote>
+<p>The component exhibits extremely low firing rates and lacks any active tokens in the provided story examples, suggesting it might be a 'dead' or highly specific feature. While the PMI data points toward verbs of decision-making (decided, agreed) and natural nouns (sky, tree, bush), the absence of direct activations makes a definitive interpretation impossible. It potentially represents an K-projection signal for specific nouns following character actions, but the evidence is too sparse for high confidence.</p>
+</blockquote>
+<hr />
+<h2>Example: Full Prompt and Response</h2>
+<p><strong>Component:</strong> <code>h.1.mlp.down_proj:849</code></p>
+<h3>Prompt (truncated)</h3>
+<pre><code>Label this neural network component from a Stochastic Parameter Decomposition.
+
+## Background
+
+SPD (Stochastic Parameter Decomposition) decomposes a neural network's weight matrices into rank-1
+&quot;subcomponents&quot;. Each subcomponent has a causal importance (CI) value predicted *per sequence position*
+by a small auxiliary neural network. CI indicates how necessary the component is for the model's output
+at that position: high CI (close to 1) means the component is essential and cannot be ablated; low CI
+(close to 0) means it can be removed without affecting output. The training objective encourages
+sparsity: as few components as possible should have high CI for any given input.
+
+## Model Context
+
+**Model**: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP (2 layers)
+**Dataset**: SimpleStories is a dataset of 2M+ short stories (200-350 words each) at a grade 1-8 reading level.
+The stories cover diverse themes (friendship, courage, loss, discovery) and settings (magical lands,
+schools, forests, space). The vocabulary is simple, everyday English. Stories feature common narrative
+elements: characters with names, emotions, dialogue, and simple plot arcs with resolutions.
+
+## Component Context
+
+**Component location**: mlp.down_proj in layer 2 of 2
+**Activation rate**: 1.11% (fires on ~1 in 89 tokens)
+
+---
+
+## Correlations with Input Tokens
+
+The following metrics concern correlations between this component firing and the &quot;current&quot; token (the token at the position where the component is active).
+
+**Recall:** _&quot;What % of this component's firings occurred on token X?&quot;_
+  'was': 44%
+  'is': 12%
+  'be': 8%
+  'were': 5%
+  'not': 4%
+  'are': 3%
+  's': 2%
+  'just': 2%
+  'the': 2%
+  'became': 2%
+
+**Precision:** _&quot;When token X appears, what % of the time does this component fire?&quot;_
+  'is': 86%
+  'was': 70%
+  'be': 59%
+  'became': 55%
+  'been': 47%
+  'are': 47%
+  'were': 38%
+  'not': 26%
+  '##eed': 25%
+  'become': 21%
+
+**PMI:** _Tokens with higher-than-expected co-occurrence_
+  ' is': 4.00
+  ' was': 3.79
+  ' be': 3.63
+  ' became': 3.55
+  ' been': 3.39
+  ' are': 3.38
+  ' were': 3.19
+  ' not': 2.80
+
+
+
+---
+
+## Correlations with Predicted Tokens
+
+The following metrics concern correlations between this component firing and the token the model predicts at that position.
+
+**Precision:** _&quot;When the model predicts token X, what % of the time is this component active?&quot;_
+
+**High (70-90%)**: 'happening', 'possible'
+
+**Medium (50-70%)**: 'easy', 'wrong', 'yours', 'worth', 'mine', 'important'
+
+**PMI:** _Tokens with higher-than-expected co-occurrence_
+  ' happening': 4.03
+  ' possible': 3.83
+  ' easy': 3.78
+  ' wrong': 3.72
+  ' yours': 3.71
+  ' worth': 3.67
+  ' mine': 3.60
+  ' important': 3.46
+  ' hers': 3.44
+  ' tricky': 3.44
+
+
+---
+
+## Activation Examples
+
+_Showing tokens where CI &gt; 0.3 (component is active)_
+
+Ex 1: &quot;and sadness. she decided that even though her friend was not there, she could still chase those dreams.&quot;
+  Active tokens: 
+
+Ex 2: &quot;. the love he had was lost, and mia was just a reflection of what he longed for. as&quot;
+  Active tokens: &quot;was&quot; (1.00), &quot;was&quot; (0.35)
+
+Ex 3: &quot;silent, and the laughter that once filled the air was now just a memory. he felt responsible for his&quot;
+  Active tokens: &quot;was&quot; (1.00), &quot;now&quot; (0.60)
+
+Ex 4: &quot;the captain held up the chicken. &quot; but it is a very funny chicken! just look at it!&quot;
+  Active tokens: &quot;is&quot; (0.79), &quot;very&quot; (0.47)
+
+Ex 5: &quot;the dark hallway, mia found a door that was slightly open. she pushed it and saw&quot;
+  Active tokens:
+...
+</code></pre>
+<h3>Response</h3>
+<pre><code class="language-json">{
+  &quot;label&quot;: &quot;State-of-being verbs and copular linking predicates&quot;,
+  &quot;confidence&quot;: &quot;high&quot;,
+  &quot;reasoning&quot;: &quot;The component consistently triggers on forms of the verb 'to be' (is, was, be, were, been) and related linking verbs like 'became'. It appears to facilitate the transition to a predicative adjective or state-of-being, as evidenced by its strong prediction of evaluative adjectives like 'possible', 'wrong', 'important', and 'easy'.&quot;
+}
+</code></pre>
+<hr />
+<h2>Intruder Detection Eval</h2>
+<p>Tests component coherence: 4 real examples + 1 intruder from a different component.
+Random baseline = 20%.</p>
+<p><strong>100 components scored</strong></p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mean accuracy</td>
+<td>57.2%</td>
+</tr>
+<tr>
+<td>Median accuracy</td>
+<td>60.0%</td>
+</tr>
+<tr>
+<td>Random baseline</td>
+<td>20.0%</td>
+</tr>
+</tbody>
+</table>
+<h3>Score Distribution</h3>
+<table>
+<thead>
+<tr>
+<th>Coherence Level</th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Incoherent (&lt;20%)</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Weak (20-40%)</td>
+<td>10</td>
+</tr>
+<tr>
+<td>Moderate (40-60%)</td>
+<td>33</td>
+</tr>
+<tr>
+<td>Good (60-80%)</td>
+<td>45</td>
+</tr>
+<tr>
+<td>Excellent (80-100%)</td>
+<td>11</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>Generated by <code>spd.autointerp.scripts.generate_report</code></em></p>
+</body></html>

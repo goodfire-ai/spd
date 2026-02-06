@@ -10,7 +10,12 @@ from pathlib import Path
 import httpx
 import pydantic
 from openrouter import OpenRouter
-from openrouter.components import JSONSchemaConfig, MessageTypedDict, ResponseFormatJSONSchema
+from openrouter.components import (
+    JSONSchemaConfig,
+    MessageTypedDict,
+    Reasoning,
+    ResponseFormatJSONSchema,
+)
 from openrouter.errors import (
     BadGatewayResponseError,
     ChatError,
@@ -87,6 +92,13 @@ class OpenRouterModelName(StrEnum):
     GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
 
 
+class ReasoningEffort(StrEnum):
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 @dataclass
 class CostTracker:
     input_tokens: int = 0
@@ -119,6 +131,7 @@ async def chat_with_retry(
     response_format: ResponseFormatJSONSchema,
     max_tokens: int,
     context_label: str,
+    reasoning: Reasoning | None = None,
 ) -> tuple[str, int, int]:
     """Send chat request with exponential backoff retry. Returns (content, input_tokens, output_tokens)."""
     last_error: Exception | None = None
@@ -129,6 +142,7 @@ async def chat_with_retry(
                 max_tokens=max_tokens,
                 messages=messages,
                 response_format=response_format,
+                reasoning=reasoning,
             )
             choice = response.choices[0]
             message = choice.message
@@ -179,6 +193,7 @@ async def interpret_component(
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
+    reasoning: Reasoning | None = None,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
     prompt = format_prompt_template(
@@ -201,8 +216,9 @@ async def interpret_component(
                     strict=True,
                 )
             ),
-            max_tokens=1500,
+            max_tokens=8000,  # High to accommodate reasoning tokens
             context_label=component.component_key,
+            reasoning=reasoning,
         )
     except RuntimeError as e:
         logger.error(str(e))
@@ -241,7 +257,8 @@ async def interpret_all(
     interpreter_model: str,
     output_path: Path,
     token_stats: TokenStatsStorage,
-    limit: int | None = None,
+    limit: int | None,
+    reasoning_effort: ReasoningEffort | None,
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
@@ -270,6 +287,8 @@ async def interpret_all(
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
+
+    reasoning = Reasoning(effort=reasoning_effort.value) if reasoning_effort else None
 
     async def process_one(
         component: ComponentData,
@@ -306,6 +325,7 @@ async def interpret_all(
                     tokenizer=tokenizer,
                     input_token_stats=input_stats,
                     output_token_stats=output_stats,
+                    reasoning=reasoning,
                 )
                 if res is None:
                     logger.error(f"Failed to interpret {component.component_key}")
@@ -341,6 +361,12 @@ async def interpret_all(
         print(
             f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}"
         )
+        reasoning_str = (
+            f"reasoning={reasoning_effort.value}" if reasoning_effort else "no reasoning"
+        )
+        print(f"Model: {interpreter_model}, {reasoning_str}")
+        limit_str = f" (limit: ${cost_limit_usd:.2f})" if cost_limit_usd is not None else ""
+        print(f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}")
 
         await asyncio.gather(
             *[
@@ -382,7 +408,8 @@ def run_interpret(
     activation_contexts_dir: Path,
     correlations_dir: Path,
     autointerp_dir: Path,
-    limit: int | None = None,
+    limit: int | None,
+    reasoning_effort: ReasoningEffort | None,
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
@@ -408,6 +435,7 @@ def run_interpret(
             output_path=output_path,
             token_stats=token_stats,
             limit=limit,
+            reasoning_effort=reasoning_effort,
             cost_limit_usd=cost_limit_usd,
         )
     )

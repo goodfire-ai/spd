@@ -11,7 +11,7 @@ import os
 
 from dotenv import load_dotenv
 
-from spd.autointerp.interpret import OpenRouterModelName, run_interpret
+from spd.autointerp.interpret import OpenRouterModelName, ReasoningEffort, run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
@@ -19,18 +19,12 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    model: OpenRouterModelName,
+    model: OpenRouterModelName = OpenRouterModelName.GEMINI_3_FLASH_PREVIEW,
     limit: int | None = None,
+    reasoning_effort: ReasoningEffort | None = ReasoningEffort.LOW,
     cost_limit_usd: float | None = None,
 ) -> None:
-    """Interpret harvested components.
-
-    Args:
-        wandb_path: WandB run path for the target decomposition run.
-        model: OpenRouter model to use for interpretation.
-        limit: Maximum number of components to interpret (highest mean CI first).
-        cost_limit_usd: Stop interpreting once this USD budget is reached.
-    """
+    """Interpret harvested components."""
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
     load_dotenv()
@@ -55,6 +49,7 @@ def main(
         correlations_dir,
         autointerp_dir,
         limit,
+        reasoning_effort,
         cost_limit_usd,
     )
 
