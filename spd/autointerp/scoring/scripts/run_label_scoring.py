@@ -17,7 +17,8 @@ from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.harvest import HarvestResult
-from spd.harvest.schemas import get_activation_contexts_dir, load_harvest_ci_threshold
+from spd.harvest.loaders import load_harvest_ci_threshold
+from spd.harvest.schemas import get_activation_contexts_dir
 
 LabelScorerType = Literal["detection", "fuzzing"]
 

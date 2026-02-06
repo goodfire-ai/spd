@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
 from spd.harvest.harvest import HarvestResult
-from spd.harvest.schemas import get_activation_contexts_dir, load_harvest_ci_threshold
+from spd.harvest.loaders import load_harvest_ci_threshold
+from spd.harvest.schemas import get_activation_contexts_dir
 from spd.settings import SPD_OUT_DIR
 
 

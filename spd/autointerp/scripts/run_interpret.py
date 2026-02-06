@@ -16,11 +16,8 @@ from dotenv import load_dotenv
 from spd.autointerp.config import CompactSkepticalConfig, ReasoningEffort
 from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
-from spd.harvest.schemas import (
-    get_activation_contexts_dir,
-    get_correlations_dir,
-    load_harvest_ci_threshold,
-)
+from spd.harvest.loaders import load_harvest_ci_threshold
+from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 

@@ -43,11 +43,8 @@ from spd.autointerp.scoring.fuzzing import (
     _delimit_random_low_ci_tokens,
 )
 from spd.harvest.harvest import HarvestResult
-from spd.harvest.schemas import (
-    ComponentData,
-    get_activation_contexts_dir,
-    load_harvest_ci_threshold,
-)
+from spd.harvest.loaders import load_harvest_ci_threshold
+from spd.harvest.schemas import ComponentData, get_activation_contexts_dir
 from spd.harvest.storage import TokenStatsStorage
 from spd.utils.wandb_utils import parse_wandb_run_path
 

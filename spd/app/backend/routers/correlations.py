@@ -195,7 +195,7 @@ async def request_component_interpretation(
     )
 
     async with OpenRouter(api_key=api_key) as client:
-        from spd.harvest.schemas import load_harvest_ci_threshold
+        from spd.harvest.loaders import load_harvest_ci_threshold
 
         ci_threshold = load_harvest_ci_threshold(loaded.harvest.run_id)
         res = await interpret_component(

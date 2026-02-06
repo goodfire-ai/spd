@@ -1,5 +1,6 @@
 """Loaders for reading harvest output files."""
 
+import json
 import threading
 
 import orjson
@@ -13,6 +14,14 @@ from spd.harvest.schemas import (
     get_correlations_dir,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+
+
+def load_harvest_ci_threshold(wandb_run_id: str) -> float:
+    """Load the CI threshold used during harvest for this run."""
+    config_path = get_activation_contexts_dir(wandb_run_id) / "config.json"
+    assert config_path.exists(), f"No harvest config at {config_path}"
+    with open(config_path) as f:
+        return json.load(f)["ci_threshold"]
 
 
 def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSummary] | None:
