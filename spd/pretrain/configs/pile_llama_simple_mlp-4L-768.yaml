@@ -1,6 +1,6 @@
-wandb_project: spd
+# wandb_project: spd
 dtype: float32
-batch_size: 1024
+batch_size: 128
 num_iterations: 100_000
 warmup_iters: 600
 learning_rate: 1e-4
@@ -11,7 +11,6 @@ val_loss_every: 100
 val_max_steps: 20
 sample_every: 1000
 intermediate_checkpoints: false
-flash_attention: false
 
 model:
   model_type: LlamaSimpleMLP
