@@ -93,9 +93,7 @@ def format_prompt(
         )
 
     input_section = _build_input_section(input_token_stats, input_pmi)
-    output_section = _build_output_section(
-        output_token_stats, output_pmi, config.output_precision_top_k
-    )
+    output_section = _build_output_section(output_token_stats, output_pmi)
     examples_section = _build_examples_section(
         component,
         lookup,
@@ -124,8 +122,8 @@ Label this neural network component.
 {spd_context_block}
 ## Context
 - Model: {arch.model_class} ({arch.n_blocks} layers){dataset_line}
-- Location: {layer_desc}
-- Activation rate: {component.mean_ci * 100:.2f}% ({rate_str})
+- Component location: {layer_desc}
+- Component activation rate: {component.mean_ci * 100:.2f}% ({rate_str})
 
 ## Token correlations
 
@@ -161,19 +159,19 @@ def _build_input_section(
     section = ""
 
     if input_stats.top_recall:
-        section += "**Input recall — when active, which tokens appear?**\n"
+        section += "**Input tokens with highest recall (most common current tokens when the component is firing)**\n"
         for tok, recall in input_stats.top_recall[:8]:
-            section += f"  {repr(tok)}: {recall * 100:.0f}%\n"
+            section += f"- {repr(tok)}: {recall * 100:.0f}%\n"
 
     if input_stats.top_precision:
-        section += "\n**Input precision — which tokens predict this component?**\n"
+        section += "\n**Input tokens with highest precision (probability the component fires given the current token is X)**\n"
         for tok, prec in input_stats.top_precision[:8]:
-            section += f"  {repr(tok)}: {prec * 100:.0f}%\n"
+            section += f"- {repr(tok)}: {prec * 100:.0f}%\n"
 
     if input_pmi:
-        section += "\n**Input PMI — surprising associations:**\n"
+        section += "\n**Input tokens with highest PMI (pointwise mutual information. Tokens with higher-than-base-rate likelihood of co-occurrence with the component firing)**\n"
         for tok, pmi in input_pmi[:6]:
-            section += f"  {repr(tok)}: {pmi:.2f}\n"
+            section += f"- {repr(tok)}: {pmi:.2f}\n"
 
     return section
 
@@ -181,26 +179,18 @@ def _build_input_section(
 def _build_output_section(
     output_stats: TokenPRLift,
     output_pmi: list[tuple[str, float]] | None,
-    top_k: int,
 ) -> str:
     section = ""
 
     if output_stats.top_precision:
-        high_prec = [(t, p) for t, p in output_stats.top_precision[:top_k] if p > 0.5]
-        if high_prec:
-            tokens = [repr(t) for t, _ in high_prec[:15]]
-            section += (
-                f"**Output precision — tokens predicted when active (>50%):** {', '.join(tokens)}\n"
-            )
-        else:
-            top_few = output_stats.top_precision[:10]
-            tokens = [f"{repr(t)} ({p * 100:.0f}%)" for t, p in top_few]
-            section += f"**Output precision — top predicted tokens:** {', '.join(tokens)}\n"
+        section += "**Output precision — of all predicted probability for token X, what fraction is at positions where this component fires?**\n"
+        for tok, prec in output_stats.top_precision[:10]:
+            section += f"- {repr(tok)}: {prec * 100:.0f}%\n"
 
     if output_pmi:
-        section += "\n**Output PMI — surprising predictions:**\n"
+        section += "\n**Output PMI — tokens the model predicts at higher-than-base-rate when this component fires:**\n"
         for tok, pmi in output_pmi[:6]:
-            section += f"  {repr(tok)}: {pmi:.2f}\n"
+            section += f"- {repr(tok)}: {pmi:.2f}\n"
 
     return section
 
