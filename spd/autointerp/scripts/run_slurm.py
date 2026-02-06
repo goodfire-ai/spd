@@ -7,16 +7,16 @@ Usage:
     spd-autointerp <wandb_path> --budget_usd 100
 """
 
-from spd.autointerp.interpret import OpenRouterModelName
 from spd.log import logger
 from spd.utils.slurm import SlurmConfig, generate_script, submit_slurm_job
 
 
 def launch_interpret_job(
     wandb_path: str,
-    model: OpenRouterModelName,
+    model: str,
     limit: int | None,
     reasoning_effort: str | None,
+    config: str | None,
     partition: str,
     time: str,
     cost_limit_usd: float | None,
@@ -26,12 +26,20 @@ def launch_interpret_job(
     cmd_parts = [
         "python -m spd.autointerp.scripts.run_interpret",
         f'"{wandb_path}"',
-        f"--model {model.value}",
-        f"--limit {limit}" if limit is not None else "--limit None",
-        f"--reasoning_effort {reasoning_effort}" if reasoning_effort else "--reasoning_effort None",
     ]
+
+    if config is not None:
+        cmd_parts.append(f"--config {config}")
+    else:
+        cmd_parts.append(f"--model {model}")
+        if reasoning_effort is not None:
+            cmd_parts.append(f"--reasoning_effort {reasoning_effort}")
+
+    if limit is not None:
+        cmd_parts.append(f"--limit {limit}")
     if cost_limit_usd is not None:
         cmd_parts.append(f"--cost_limit_usd {cost_limit_usd}")
+
     interpret_cmd = " \\\n    ".join(cmd_parts)
 
     # Build full command with echoes
@@ -39,7 +47,7 @@ def launch_interpret_job(
         [
             'echo "=== Interpret ==="',
             f'echo "WANDB_PATH: {wandb_path}"',
-            f'echo "MODEL: {model.value}"',
+            f'echo "MODEL: {model}"',
             'echo "SLURM_JOB_ID: $SLURM_JOB_ID"',
             'echo "================="',
             "",
@@ -49,7 +57,7 @@ def launch_interpret_job(
         ]
     )
 
-    config = SlurmConfig(
+    slurm_config = SlurmConfig(
         job_name=job_name,
         partition=partition,
         n_gpus=0,  # CPU-only job
@@ -57,7 +65,7 @@ def launch_interpret_job(
         time=time,
         snapshot_branch=None,  # Autointerp doesn't use git snapshots
     )
-    script_content = generate_script(config, full_command)
+    script_content = generate_script(slurm_config, full_command)
     result = submit_slurm_job(script_content, "interpret")
 
     logger.section("Interpret job submitted!")
@@ -65,7 +73,7 @@ def launch_interpret_job(
         {
             "Job ID": result.job_id,
             "WandB path": wandb_path,
-            "Model": model.value,
+            "Model": model,
             "Log": result.log_pattern,
             "Script": str(result.script_path),
         }

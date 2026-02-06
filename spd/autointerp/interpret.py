@@ -3,8 +3,6 @@ import json
 import random
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
-from enum import StrEnum
 from pathlib import Path
 
 import httpx
@@ -31,8 +29,14 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.compute import get_model_n_blocks
-from spd.autointerp.prompt_template import INTERPRETATION_SCHEMA, format_prompt_template
+from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
+from spd.autointerp.strategies.dispatch import (
+    format_prompt,
+    get_model,
+    get_reasoning,
+    get_response_schema,
+)
 from spd.configs import LMTaskConfig
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.harvest import HarvestResult
@@ -86,17 +90,6 @@ RETRYABLE_ERRORS = (
     httpx.TransportError,
     pydantic.ValidationError,
 )
-
-
-class OpenRouterModelName(StrEnum):
-    GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
-
-
-class ReasoningEffort(StrEnum):
-    MINIMAL = "minimal"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
 
 
 @dataclass
@@ -187,22 +180,26 @@ async def get_model_pricing(client: OpenRouter, model_id: str) -> tuple[float, f
 
 async def interpret_component(
     client: OpenRouter,
-    model: str,
+    config: AutointerpConfig,
     component: ComponentData,
     arch: ArchitectureInfo,
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
-    reasoning: Reasoning | None = None,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
-    prompt = format_prompt_template(
+    prompt = format_prompt(
+        config=config,
         component=component,
         arch=arch,
         tokenizer=tokenizer,
         input_token_stats=input_token_stats,
         output_token_stats=output_token_stats,
     )
+
+    model = get_model(config)
+    reasoning = get_reasoning(config)
+    schema = get_response_schema(config)
 
     try:
         raw, in_tok, out_tok = await chat_with_retry(
@@ -212,8 +209,7 @@ async def interpret_component(
             response_format=ResponseFormatJSONSchema(
                 json_schema=JSONSchemaConfig(
                     name="interpretation",
-                    schema_={**INTERPRETATION_SCHEMA, "additionalProperties": False},
-                    strict=True,
+                    schema_={**schema, "additionalProperties": False},
                 )
             ),
             max_tokens=8000,  # High to accommodate reasoning tokens
@@ -233,15 +229,17 @@ async def interpret_component(
     assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}"
     label = parsed["label"]
     confidence = parsed["confidence"]
-    reasoning = parsed["reasoning"]
-    assert isinstance(label, str) and isinstance(confidence, str) and isinstance(reasoning, str)
+    reasoning_text = parsed["reasoning"]
+    assert (
+        isinstance(label, str) and isinstance(confidence, str) and isinstance(reasoning_text, str)
+    )
 
     return (
         InterpretationResult(
             component_key=component.component_key,
             label=label,
             confidence=confidence,
-            reasoning=reasoning,
+            reasoning=reasoning_text,
             raw_response=raw,
             prompt=prompt,
         ),
@@ -254,11 +252,10 @@ async def interpret_all(
     components: list[ComponentData],
     arch: ArchitectureInfo,
     openrouter_api_key: str,
-    interpreter_model: str,
+    config: AutointerpConfig,
     output_path: Path,
     token_stats: TokenStatsStorage,
     limit: int | None,
-    reasoning_effort: ReasoningEffort | None,
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
@@ -288,7 +285,8 @@ async def interpret_all(
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
 
-    reasoning = Reasoning(effort=reasoning_effort.value) if reasoning_effort else None
+    interpreter_model = get_model(config)
+    reasoning = get_reasoning(config)
 
     async def process_one(
         component: ComponentData,
@@ -319,13 +317,12 @@ async def interpret_all(
 
                 res = await interpret_component(
                     client=client,
-                    model=interpreter_model,
+                    config=config,
                     component=component,
                     arch=arch,
                     tokenizer=tokenizer,
                     input_token_stats=input_stats,
                     output_token_stats=output_stats,
-                    reasoning=reasoning,
                 )
                 if res is None:
                     logger.error(f"Failed to interpret {component.component_key}")
@@ -358,15 +355,11 @@ async def interpret_all(
             limit_usd=cost_limit_usd,
         )
         limit_str = f" (limit: ${cost_limit_usd:.2f})" if cost_limit_usd is not None else ""
+        reasoning_str = f"reasoning={reasoning.effort}" if reasoning else "no reasoning"
+        print(f"Model: {interpreter_model}, {reasoning_str}")
         print(
             f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}"
         )
-        reasoning_str = (
-            f"reasoning={reasoning_effort.value}" if reasoning_effort else "no reasoning"
-        )
-        print(f"Model: {interpreter_model}, {reasoning_str}")
-        limit_str = f" (limit: ${cost_limit_usd:.2f})" if cost_limit_usd is not None else ""
-        print(f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}")
 
         await asyncio.gather(
             *[
@@ -404,20 +397,15 @@ def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
 def run_interpret(
     wandb_path: str,
     openrouter_api_key: str,
-    interpreter_model: str,
+    config: AutointerpConfig,
     activation_contexts_dir: Path,
     correlations_dir: Path,
-    autointerp_dir: Path,
+    output_path: Path,
     limit: int | None,
-    reasoning_effort: ReasoningEffort | None,
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
-
-    # Use timestamped filename to preserve old results
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = autointerp_dir / f"results_{timestamp}.jsonl"
 
     # Load token stats
     token_stats_path = correlations_dir / "token_stats.pt"
@@ -431,11 +419,10 @@ def run_interpret(
             components=components,
             arch=arch,
             openrouter_api_key=openrouter_api_key,
-            interpreter_model=interpreter_model,
+            config=config,
             output_path=output_path,
             token_stats=token_stats,
             limit=limit,
-            reasoning_effort=reasoning_effort,
             cost_limit_usd=cost_limit_usd,
         )
     )

@@ -12,19 +12,20 @@ from typing import Any
 import markdown
 import numpy as np
 
-from spd.settings import SPD_OUT_DIR
+from spd.autointerp.loaders import find_latest_results_path
+from spd.autointerp.schemas import get_autointerp_dir
 
 
 def generate_report(run_id: str, output_path: Path | None = None) -> Path:
     random.seed(42)
 
-    autointerp_dir = SPD_OUT_DIR / "autointerp" / run_id
+    autointerp_dir = get_autointerp_dir(run_id)
 
     # Load latest interpretation results
-    results_files = sorted(autointerp_dir.glob("results_*.jsonl"))
-    assert results_files, f"No interpretation results found in {autointerp_dir}"
+    results_path = find_latest_results_path(run_id)
+    assert results_path is not None, f"No interpretation results found in {autointerp_dir}"
     interp_results: list[dict[str, str]] = []
-    with open(results_files[-1]) as f:
+    with open(results_path) as f:
         for line in f:
             interp_results.append(json.loads(line))
 

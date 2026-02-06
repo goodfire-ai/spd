@@ -3,6 +3,7 @@
 Usage:
     python -m spd.autointerp.scoring.scripts.run_label_scoring <wandb_path> --scorer detection
     python -m spd.autointerp.scoring.scripts.run_label_scoring <wandb_path> --scorer fuzzing
+    python -m spd.autointerp.scoring.scripts.run_label_scoring <wandb_path> --scorer detection --autointerp_run_id 20260206_153040
 """
 
 import asyncio
@@ -14,9 +15,9 @@ from dotenv import load_dotenv
 
 from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.loaders import load_interpretations
+from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.harvest import HarvestResult
 from spd.harvest.schemas import get_activation_contexts_dir
-from spd.settings import SPD_OUT_DIR
 
 LabelScorerType = Literal["detection", "fuzzing"]
 
@@ -24,6 +25,7 @@ LabelScorerType = Literal["detection", "fuzzing"]
 def main(
     wandb_path: str,
     scorer: LabelScorerType,
+    autointerp_run_id: str | None = None,
     model: str = "google/gemini-3-flash-preview",
     limit: int | None = None,
     cost_limit_usd: float | None = None,
@@ -38,13 +40,17 @@ def main(
     activation_contexts_dir = get_activation_contexts_dir(run_id)
     assert activation_contexts_dir.exists(), f"No harvest data at {activation_contexts_dir}"
 
-    interpretations = load_interpretations(run_id)
+    interpretations = load_interpretations(run_id, autointerp_run_id)
     assert interpretations, f"No interpretation results for {run_id}. Run autointerp first."
     labels = {key: result.label for key, result in interpretations.items()}
 
     components = HarvestResult.load_components(activation_contexts_dir)
 
-    scoring_dir = SPD_OUT_DIR / "autointerp" / run_id / "scoring" / scorer
+    # Scoring output goes under the autointerp run dir if specified, else under SPD run dir
+    if autointerp_run_id is not None:
+        scoring_dir = get_autointerp_dir(run_id) / autointerp_run_id / "scoring" / scorer
+    else:
+        scoring_dir = get_autointerp_dir(run_id) / "scoring" / scorer
     scoring_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = scoring_dir / f"results_{timestamp}.jsonl"

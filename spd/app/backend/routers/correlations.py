@@ -142,8 +142,8 @@ async def request_component_interpretation(
 
     from openrouter import OpenRouter
 
+    from spd.autointerp.config import CompactSkepticalConfig
     from spd.autointerp.interpret import (
-        OpenRouterModelName,
         get_architecture_info,
         interpret_component,
     )
@@ -189,12 +189,15 @@ async def request_component_interpretation(
         )
 
     # Interpret the component
-    model_name = OpenRouterModelName.GEMINI_3_FLASH_PREVIEW
+    config = CompactSkepticalConfig(
+        model="google/gemini-3-flash-preview",
+        reasoning_effort=None,
+    )
 
     async with OpenRouter(api_key=api_key) as client:
         res = await interpret_component(
             client=client,
-            model=model_name,
+            config=config,
             component=component_data,
             arch=arch,
             tokenizer=loaded.tokenizer,
