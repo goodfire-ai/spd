@@ -87,6 +87,22 @@ def main(
 
 
 if __name__ == "__main__":
-    import fire
+    import argparse
 
-    fire.Fire(main)
+    parser = argparse.ArgumentParser(description="Run label-based scoring (detection, fuzzing)")
+    parser.add_argument("wandb_path")
+    parser.add_argument("--scorer", required=True, choices=["detection", "fuzzing"])
+    parser.add_argument("--autointerp_run_id")
+    parser.add_argument("--model", default="google/gemini-3-flash-preview")
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--cost_limit_usd", type=float)
+    args = parser.parse_args()
+
+    main(
+        args.wandb_path,
+        args.scorer,
+        args.autointerp_run_id,
+        args.model,
+        args.limit,
+        args.cost_limit_usd,
+    )
