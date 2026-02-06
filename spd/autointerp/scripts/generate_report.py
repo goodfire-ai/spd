@@ -235,6 +235,7 @@ def generate_report(wandb_path: str, output_path: Path | None = None) -> Path:
         md += f"> {r['reasoning']}\n\n"
 
     # === Prompt Examples Section ===
+    # Ordered by pipeline dependency: intruder (label-free) → interpretation → scoring (label-dependent)
     md += """---
 
 ## Prompt Examples
@@ -244,8 +245,19 @@ For sense-checking tokenization and formatting.
 
 """
 
-    # 1. Interpretation prompt
-    md += "### 1. Interpretation Prompt\n\n"
+    # 1. Intruder prompt (label-free, runs first)
+    md += "### 1. Intruder Eval Prompt (label-free)\n\n"
+    md += f"**Component:** `{example_component.component_key}`\n\n"
+    intruder_prompt = _build_example_intruder_prompt(
+        example_component,
+        components,
+        lookup,
+        rng,
+    )
+    md += f"```\n{intruder_prompt}\n```\n\n"
+
+    # 2. Interpretation prompt
+    md += "### 2. Interpretation Prompt\n\n"
     md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
 
     if token_stats is not None:
@@ -283,8 +295,8 @@ For sense-checking tokenization and formatting.
         md += f"*(Rendered from stored result for `{prompt_example['component_key']}`)*\n\n"
         md += f"```\n{prompt_example['prompt'][:5000]}\n```\n\n"
 
-    # 2. Detection prompt
-    md += "### 2. Detection Scoring Prompt\n\n"
+    # 3. Detection prompt (label-dependent)
+    md += "### 3. Detection Scoring Prompt (label-dependent)\n\n"
     md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
     detection_prompt = _build_example_detection_prompt(
         example_component,
@@ -295,8 +307,8 @@ For sense-checking tokenization and formatting.
     )
     md += f"```\n{detection_prompt}\n```\n\n"
 
-    # 3. Fuzzing prompt
-    md += "### 3. Fuzzing Scoring Prompt\n\n"
+    # 4. Fuzzing prompt (label-dependent)
+    md += "### 4. Fuzzing Scoring Prompt (label-dependent)\n\n"
     md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
     fuzzing_prompt = _build_example_fuzzing_prompt(
         example_component,
@@ -305,17 +317,6 @@ For sense-checking tokenization and formatting.
         rng,
     )
     md += f"```\n{fuzzing_prompt}\n```\n\n"
-
-    # 4. Intruder prompt
-    md += "### 4. Intruder Eval Prompt\n\n"
-    md += f"**Component:** `{example_component.component_key}`\n\n"
-    intruder_prompt = _build_example_intruder_prompt(
-        example_component,
-        components,
-        lookup,
-        rng,
-    )
-    md += f"```\n{intruder_prompt}\n```\n\n"
 
     # === Scoring Results ===
     if intruder_results:
