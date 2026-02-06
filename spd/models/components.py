@@ -11,7 +11,7 @@ from torch import Tensor, nn
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
 if TYPE_CHECKING:
-    from spd.configs import TransitionAttnConfig
+    from spd.configs import AttnConfig
     from spd.spd_types import LayerwiseCiFnType
 
 
@@ -336,7 +336,9 @@ class GlobalSharedTransformerCiFn(nn.Module):
         self,
         input_acts: dict[str, Float[Tensor, "... d_in"]],
     ) -> dict[str, Float[Tensor, "... C"]]:
-        inputs_list = [input_acts[name] for name in self.layer_order]
+        inputs_list = [
+            F.rms_norm(input_acts[name], (input_acts[name].shape[-1],)) for name in self.layer_order
+        ]
         concatenated = torch.cat(inputs_list, dim=-1)
         projected: Tensor = self._input_projector(concatenated)
 
@@ -377,7 +379,7 @@ class GlobalReverseResidualCiFn(nn.Module):
         d_resid_ci_fn: int,
         reader_hidden_dims: list[int],
         transition_hidden_dim: int,
-        attn_config: "TransitionAttnConfig | None" = None,
+        attn_config: "AttnConfig | None" = None,
     ):
         """Initialize the reverse residual CI function.
 

@@ -245,7 +245,7 @@ def optimize(
     ] = {
         ppgd_cfg: PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_dims=batch_dims,
+            train_batch_dims=batch_dims,
             device=device,
             use_delta_component=config.use_delta_component,
             cfg=ppgd_cfg,
