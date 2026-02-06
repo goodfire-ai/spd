@@ -12,7 +12,6 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
-from simple_stories_train.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.database import PromptAttrDB
@@ -29,6 +28,7 @@ from spd.configs import (
     ScheduleConfig,
 )
 from spd.models.component_model import ComponentModel
+from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 from spd.utils.module_utils import expand_module_patterns
 
 DEVICE = "cpu"
@@ -95,7 +95,7 @@ def app_with_state():
             module_info=[
                 ModulePatternInfoConfig(module_pattern=p, C=C) for p in target_module_patterns
             ],
-            pretrained_model_class="simple_stories_train.models.gpt2_simple.GPT2Simple",
+            pretrained_model_class="spd.pretrain.models.gpt2_simple.GPT2Simple",
             pretrained_model_output_attr="idx_0",
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
             output_loss_type="kl",

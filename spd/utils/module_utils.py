@@ -6,7 +6,6 @@ from typing import Literal
 
 import torch
 import torch.nn as nn
-from simple_stories_train.models.gpt2_simple import LayerNorm as SSLayerNorm
 from torch import Tensor
 from torch.nn.init import calculate_gain
 
@@ -59,17 +58,6 @@ def init_param_(
     std: float = gain / math.sqrt(fan_val)
     with torch.no_grad():
         param.normal_(mean, std, generator=generator)
-
-
-def replace_std_values_in_layernorm(
-    component_model: nn.Module, std_values: dict[str, float]
-) -> None:
-    for name, std in std_values.items():
-        module = component_model.get_submodule("patched_model." + name)
-        assert isinstance(module, SSLayerNorm), (
-            f"Expected {name} to be a simple_stories_train LayerNorm instance, got {type(module)}"
-        )
-        module.std = std
 
 
 def expand_module_patterns(
