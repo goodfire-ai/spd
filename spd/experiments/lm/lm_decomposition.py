@@ -88,7 +88,7 @@ def main(
         if "model_type" not in run_info.model_config_dict:
             run_info.model_config_dict["model_type"] = config.pretrained_model_class.split(".")[-1]
 
-        if run_info.config_dict["enable_ln_ablation"]:
+        if run_info.config_dict.get("enable_ln_ablation", False):
             ln_stds = run_info.ln_stds
             assert ln_stds is not None, "Run had enable_ln_ablation set to True but no ln_stds"
         assert hasattr(pretrained_model_class, "from_run_info")
