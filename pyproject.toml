@@ -50,6 +50,7 @@ dev = [
 spd-run = "spd.scripts.run_cli:cli"
 spd-local = "spd.scripts.run_local:cli"
 spd-sweep = "spd.scripts.sweep_launcher:main"
+spd-pretrain = "spd.pretrain.scripts.run_slurm:cli"
 spd-clustering = "spd.clustering.scripts.run_pipeline:cli"
 spd-harvest = "spd.harvest.scripts.run_slurm_cli:cli"
 spd-autointerp = "spd.autointerp.scripts.run_slurm_cli:cli"
