@@ -120,23 +120,26 @@ class HarvestResult:
     @staticmethod
     def load_components(
         activation_contexts_dir: Path,
-        min_mean_ci: float = 1e-4,
     ) -> list[ComponentData]:
-        """Load non-dead components from disk.
+        """Load components that fired during harvest.
 
-        Args:
-            activation_contexts_dir: Path to activation_contexts/ harvest output.
-            min_mean_ci: Minimum mean CI to include. Components below this are dead
-                (never meaningfully fire) and are excluded. Set to 0 to include all.
+        Reads the harvest ci_threshold from config.json and excludes components
+        whose mean_ci is below it (i.e. components that effectively never fire).
         """
         assert activation_contexts_dir.exists(), f"No harvest found at {activation_contexts_dir}"
+
+        config_path = activation_contexts_dir / "config.json"
+        assert config_path.exists(), f"No config.json in {activation_contexts_dir}"
+        with open(config_path) as f:
+            harvest_config = json.load(f)
+        ci_threshold = harvest_config["ci_threshold"]
 
         components_path = activation_contexts_dir / "components.jsonl"
         components = []
         with open(components_path) as f:
             for line in f:
                 data = json.loads(line)
-                if data["mean_ci"] < min_mean_ci:
+                if data["mean_ci"] < ci_threshold:
                     continue
                 data["activation_examples"] = [
                     ActivationExample(**ex) for ex in data["activation_examples"]
