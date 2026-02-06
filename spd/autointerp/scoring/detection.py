@@ -73,22 +73,15 @@ def _format_example_with_center_token(
     example: ActivationExample,
     lookup: dict[int, str],
 ) -> str:
-    """Format an example with the center (firing) token marked with <<delimiters>>."""
+    """Format an example with the center token marked with <<delimiters>>.
+
+    Harvest windows are centered on the firing position, so the center token
+    is always the one that triggered collection. We mark center for both
+    activating and non-activating examples to avoid positional leakage.
+    """
     valid = [(tid, i) for i, tid in enumerate(example.token_ids) if tid >= 0]
     center = len(valid) // 2
     tokens = [(lookup[tid], i == center) for i, (tid, _) in enumerate(valid)]
-    return delimit_tokens(tokens)
-
-
-def _format_example_with_random_token(
-    example: ActivationExample,
-    lookup: dict[int, str],
-    rng: random.Random,
-) -> str:
-    """Format an example with a random token marked with <<delimiters>>."""
-    valid = [(tid, i) for i, tid in enumerate(example.token_ids) if tid >= 0]
-    marked = rng.randrange(len(valid))
-    tokens = [(lookup[tid], i == marked) for i, (tid, _) in enumerate(valid)]
     return delimit_tokens(tokens)
 
 
@@ -186,12 +179,13 @@ async def score_component(
             component, all_components, N_NON_ACTIVATING, rng
         )
 
-        # Mark the center (firing) token for activating, random token for non-activating
+        # Mark the center token for both — harvest windows are centered on firing position,
+        # so non-activating examples (from other components) also have their center as a firing token.
         formatted: list[tuple[str, bool]] = []
         for ex in activating:
             formatted.append((_format_example_with_center_token(ex, lookup), True))
         for ex in non_activating:
-            formatted.append((_format_example_with_random_token(ex, lookup, rng), False))
+            formatted.append((_format_example_with_center_token(ex, lookup), False))
 
         # Shuffle
         rng.shuffle(formatted)
