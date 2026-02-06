@@ -48,6 +48,9 @@ export function useRun() {
     /** Cluster mapping for the current run */
     let clusterMapping = $state<ClusterMapping | null>(null);
 
+    /** Whether dataset attributions are available for this run */
+    let datasetAttributionsAvailable = $state(false);
+
     /** Available prompts for the current run */
     let prompts = $state<Loadable<PromptPreview[]>>({ status: "uninitialized" });
 
@@ -79,9 +82,10 @@ export function useRun() {
         _correlationsCache = {};
         _tokenStatsCache = {};
         clusterMapping = null;
+        datasetAttributionsAvailable = false;
     }
 
-    /** Fetch run-scoped data that can load asynchronously (prompts, interpretations) */
+    /** Fetch run-scoped data that can load asynchronously (prompts, interpretations, metadata) */
     function fetchRunScopedData() {
         prompts = { status: "loading" };
         interpretations = { status: "loading" };
@@ -105,6 +109,9 @@ export function useRun() {
                 };
             })
             .catch((error) => (interpretations = { status: "error", error }));
+        api.getDatasetAttributionsMetadata()
+            .then((m) => (datasetAttributionsAvailable = m.available))
+            .catch(() => (datasetAttributionsAvailable = false));
     }
 
     /** Fetch tokens - must complete before run is considered loaded */
@@ -285,6 +292,9 @@ export function useRun() {
         },
         get activationContextsSummary() {
             return activationContextsSummary;
+        },
+        get datasetAttributionsAvailable() {
+            return datasetAttributionsAvailable;
         },
         loadRun,
         clearRun,

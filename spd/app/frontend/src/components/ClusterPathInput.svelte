@@ -68,7 +68,7 @@
 </script>
 
 <div class="cluster-input-wrapper">
-    {#if runState.clusterMapping?.filePath}
+    {#if runState.clusterMapping}
         <div
             class="cluster-loaded"
             role="group"
@@ -77,7 +77,7 @@
         >
             <span class="cluster-label">Clusters:</span>
             <span class="cluster-path">
-                {runState.clusterMapping?.filePath.split("_").pop()?.replace(".json", "")}
+                {runState.clusterMapping.filePath.split("_").pop()?.replace(".json", "")}
             </span>
             <button type="button" class="clear-button" onclick={handleClear} title="Clear cluster mapping"> x </button>
             {#if showLoadedTooltip}
@@ -85,7 +85,7 @@
                     {#if loadedClusterNotes}
                         <div class="tooltip-notes">{loadedClusterNotes}</div>
                     {/if}
-                    <div class="tooltip-path">{runState.clusterMapping?.filePath}</div>
+                    <div class="tooltip-path">{runState.clusterMapping.filePath}</div>
                 </div>
             {/if}
         </div>

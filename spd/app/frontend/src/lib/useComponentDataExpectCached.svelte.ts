@@ -69,20 +69,25 @@ export function useComponentDataExpectCached() {
                 componentDetail = { status: "error", error };
             });
 
-        datasetAttributions = { status: "loading" };
-        getComponentAttributions(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K)
-            .then((data) => {
-                if (isStale()) return;
-                datasetAttributions = { status: "loaded", data };
-            })
-            .catch((error) => {
-                if (isStale()) return;
-                if (error instanceof ApiError && error.status === 404) {
-                    datasetAttributions = { status: "loaded", data: null };
-                } else {
-                    datasetAttributions = { status: "error", error };
-                }
-            });
+        // Skip fetch entirely if dataset attributions not available for this run
+        if (runState.datasetAttributionsAvailable) {
+            datasetAttributions = { status: "loading" };
+            getComponentAttributions(layer, cIdx, DATASET_ATTRIBUTIONS_TOP_K)
+                .then((data) => {
+                    if (isStale()) return;
+                    datasetAttributions = { status: "loaded", data };
+                })
+                .catch((error) => {
+                    if (isStale()) return;
+                    if (error instanceof ApiError && error.status === 404) {
+                        datasetAttributions = { status: "loaded", data: null };
+                    } else {
+                        datasetAttributions = { status: "error", error };
+                    }
+                });
+        } else {
+            datasetAttributions = { status: "loaded", data: null };
+        }
 
         // Fetch interpretation detail on-demand (not cached)
         interpretationDetail = { status: "loading" };
