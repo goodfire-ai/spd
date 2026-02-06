@@ -393,9 +393,9 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
-    use_tf32: bool = Field(
+    mixed_precision_bf16: bool = Field(
         default=True,
-        description="Whether to use TF32 for faster mixed precision training",
+        description="Whether to use torch.autocast with bfloat16 mixed precision",
     )
     n_mask_samples: PositiveInt = Field(
         ...,
