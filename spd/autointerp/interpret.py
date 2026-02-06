@@ -2,24 +2,26 @@ import asyncio
 import json
 import random
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
 import httpx
+import pydantic
 from openrouter import OpenRouter
 from openrouter.components import JSONSchemaConfig, MessageTypedDict, ResponseFormatJSONSchema
 from openrouter.errors import (
     BadGatewayResponseError,
     ChatError,
     EdgeNetworkTimeoutResponseError,
+    InternalServerResponseError,
+    OpenRouterDefaultError,
     ProviderOverloadedResponseError,
     RequestTimeoutResponseError,
     ServiceUnavailableResponseError,
     TooManyRequestsResponseError,
 )
-from tqdm.asyncio import tqdm_asyncio
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
@@ -71,10 +73,13 @@ RETRYABLE_ERRORS = (
     ProviderOverloadedResponseError,
     ServiceUnavailableResponseError,
     BadGatewayResponseError,
+    InternalServerResponseError,
     RequestTimeoutResponseError,
     EdgeNetworkTimeoutResponseError,
     ChatError,
-    httpx.TransportError,  # Low-level network errors (ReadError, ConnectError, etc.)
+    OpenRouterDefaultError,
+    httpx.TransportError,
+    pydantic.ValidationError,
 )
 
 
@@ -88,10 +93,17 @@ class CostTracker:
     output_tokens: int = 0
     input_price_per_token: float = 0.0
     output_price_per_token: float = 0.0
+    limit_usd: float | None = None
+    _budget_exceeded: asyncio.Event = field(default_factory=asyncio.Event)
 
     def add(self, input_tokens: int, output_tokens: int) -> None:
         self.input_tokens += input_tokens
         self.output_tokens += output_tokens
+        if self.limit_usd is not None and self.cost_usd() >= self.limit_usd:
+            self._budget_exceeded.set()
+
+    def over_budget(self) -> bool:
+        return self._budget_exceeded.is_set()
 
     def cost_usd(self) -> float:
         return (
@@ -140,7 +152,7 @@ async def chat_with_retry(
             jitter = delay * JITTER_FACTOR * random.random()
             total_delay = delay + jitter
 
-            tqdm_asyncio.write(
+            logger.warning(
                 f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
                 f"{type(e).__name__}, backing off {total_delay:.1f}s"
             )
@@ -230,6 +242,7 @@ async def interpret_all(
     output_path: Path,
     token_stats: TokenStatsStorage,
     limit: int | None = None,
+    cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
@@ -264,8 +277,12 @@ async def interpret_all(
         client: OpenRouter,
         cost_tracker: CostTracker,
     ) -> None:
+        if cost_tracker.over_budget():
+            return
         await rate_limiter.acquire()
         async with semaphore:
+            if cost_tracker.over_budget():
+                return
             try:
                 # Compute token stats for this component
                 input_stats = get_input_token_stats(
@@ -309,26 +326,34 @@ async def interpret_all(
                     f.write(line)
 
                 if log_progress:
-                    tqdm_asyncio.write(progress_msg)
+                    logger.info(progress_msg)
             except Exception as e:
-                logger.error(f"Fatal error on {component.component_key}: {type(e).__name__}: {e}")
-                raise
+                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
         input_price, output_price = await get_model_pricing(client, interpreter_model)
         cost_tracker = CostTracker(
-            input_price_per_token=input_price, output_price_per_token=output_price
+            input_price_per_token=input_price,
+            output_price_per_token=output_price,
+            limit_usd=cost_limit_usd,
         )
-        print(f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output")
+        limit_str = f" (limit: ${cost_limit_usd:.2f})" if cost_limit_usd is not None else ""
+        print(
+            f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}"
+        )
 
-        await tqdm_asyncio.gather(
+        await asyncio.gather(
             *[
                 process_one(c, i, client, cost_tracker)
                 for i, c in enumerate(remaining, start=start_idx)
-            ],
-            desc="Interpreting",
+            ]
         )
 
+    if cost_tracker.over_budget():
+        print(
+            f"Cost limit reached: ${cost_tracker.cost_usd():.2f} >= ${cost_limit_usd}. "
+            f"Completed {len(results)} / {len(remaining) + len(completed)} components."
+        )
     print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
     return results
 
@@ -358,6 +383,7 @@ def run_interpret(
     correlations_dir: Path,
     autointerp_dir: Path,
     limit: int | None = None,
+    cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
     components = HarvestResult.load_components(activation_contexts_dir)
@@ -382,6 +408,7 @@ def run_interpret(
             output_path=output_path,
             token_stats=token_stats,
             limit=limit,
+            cost_limit_usd=cost_limit_usd,
         )
     )
 

@@ -17,7 +17,8 @@ def launch_interpret_job(
     model: OpenRouterModelName,
     partition: str,
     time: str,
-    limit: int | None = None,
+    limit: int | None,
+    cost_limit_usd: float | None,
 ) -> None:
     """Submit interpret job to SLURM (CPU-only, IO-bound).
 
@@ -27,6 +28,7 @@ def launch_interpret_job(
         partition: SLURM partition name.
         time: Job time limit.
         limit: Maximum number of components to interpret (highest mean CI first).
+        cost_limit_usd: Stop interpreting once this USD budget is reached.
     """
     job_name = "interpret"
 
@@ -37,6 +39,8 @@ def launch_interpret_job(
     ]
     if limit is not None:
         cmd_parts.append(f"--limit {limit}")
+    if cost_limit_usd is not None:
+        cmd_parts.append(f"--cost_limit_usd {cost_limit_usd}")
     interpret_cmd = " \\\n    ".join(cmd_parts)
 
     # Build full command with echoes
