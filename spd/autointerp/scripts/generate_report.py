@@ -1,7 +1,10 @@
 """Generate a static HTML report showcasing autointerp results for a run.
 
+Includes example prompts for every LLM call type (interpretation, detection, fuzzing, intruder)
+so you can sense-check tokenization and formatting.
+
 Usage:
-    python -m spd.autointerp.scripts.generate_report <run_id>
+    python -m spd.autointerp.scripts.generate_report <wandb_path>
 """
 
 import json
@@ -11,17 +14,121 @@ from typing import Any
 
 import markdown
 import numpy as np
+from transformers import AutoTokenizer
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.autointerp.eval.intruder import (
+    N_REAL,
+    DensityIndex,
+    _build_prompt,
+    _sample_intruder,
+)
+from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.loaders import find_latest_results_path
 from spd.autointerp.schemas import get_autointerp_dir
+from spd.autointerp.scoring.detection import (
+    N_ACTIVATING,
+    N_NON_ACTIVATING,
+    _build_detection_prompt,
+    _format_activating_example,
+    _format_non_activating_example,
+    _measure_bold_density,
+    _sample_activating_examples,
+    _sample_non_activating_examples,
+)
+from spd.autointerp.scoring.fuzzing import (
+    N_CORRECT,
+    N_INCORRECT,
+    _bold_high_ci_tokens,
+    _bold_random_low_ci_tokens,
+    _build_fuzzing_prompt,
+)
+from spd.harvest.harvest import HarvestResult
+from spd.harvest.schemas import ComponentData, get_activation_contexts_dir
+from spd.harvest.storage import TokenStatsStorage
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 
-def generate_report(run_id: str, output_path: Path | None = None) -> Path:
-    random.seed(42)
+def _pick_component_with_label(
+    components: list[ComponentData],
+    labels: dict[str, str],
+    rng: random.Random,
+    min_examples: int = 10,
+) -> ComponentData:
+    """Pick a random component that has a label and enough examples."""
+    eligible = [
+        c
+        for c in components
+        if c.component_key in labels and len(c.activation_examples) >= min_examples
+    ]
+    assert eligible, "No components with labels and enough examples"
+    return rng.choice(eligible)
+
+
+def _build_example_detection_prompt(
+    component: ComponentData,
+    all_components: list[ComponentData],
+    tokenizer: PreTrainedTokenizerBase,
+    label: str,
+    rng: random.Random,
+) -> str:
+    activating = _sample_activating_examples(component, N_ACTIVATING, rng)
+    non_activating = _sample_non_activating_examples(
+        component, all_components, N_NON_ACTIVATING, rng
+    )
+    bold_density = _measure_bold_density(activating)
+
+    formatted: list[tuple[str, bool]] = []
+    for ex in activating:
+        formatted.append((_format_activating_example(ex, tokenizer), True))
+    for ex in non_activating:
+        formatted.append((_format_non_activating_example(ex, tokenizer, rng, bold_density), False))
+    rng.shuffle(formatted)
+    return _build_detection_prompt(label, formatted)
+
+
+def _build_example_fuzzing_prompt(
+    component: ComponentData,
+    tokenizer: PreTrainedTokenizerBase,
+    label: str,
+    rng: random.Random,
+) -> str:
+    sampled = rng.sample(component.activation_examples, N_CORRECT + N_INCORRECT)
+    correct_examples = sampled[:N_CORRECT]
+    incorrect_examples = sampled[N_CORRECT:]
+
+    formatted: list[tuple[str, bool]] = []
+    for ex in correct_examples:
+        text, _ = _bold_high_ci_tokens(ex, tokenizer)
+        formatted.append((text, True))
+    for ex in incorrect_examples:
+        _, n_bolded = _bold_high_ci_tokens(ex, tokenizer)
+        text = _bold_random_low_ci_tokens(ex, tokenizer, max(n_bolded, 1), rng)
+        formatted.append((text, False))
+    rng.shuffle(formatted)
+    return _build_fuzzing_prompt(label, formatted)
+
+
+def _build_example_intruder_prompt(
+    component: ComponentData,
+    all_components: list[ComponentData],
+    tokenizer: PreTrainedTokenizerBase,
+    rng: random.Random,
+) -> str:
+    density_index = DensityIndex(all_components, min_examples=N_REAL + 1)
+    real_examples = rng.sample(component.activation_examples, N_REAL)
+    intruder = _sample_intruder(component, density_index, rng)
+    intruder_pos = rng.randint(0, N_REAL)
+    return _build_prompt(real_examples, intruder, intruder_pos, tokenizer)
+
+
+def generate_report(wandb_path: str, output_path: Path | None = None) -> Path:
+    _, _, run_id = parse_wandb_run_path(wandb_path)
+    rng = random.Random(42)
 
     autointerp_dir = get_autointerp_dir(run_id)
 
-    # Load latest interpretation results
+    # Load interpretation results
     results_path = find_latest_results_path(run_id)
     assert results_path is not None, f"No interpretation results found in {autointerp_dir}"
     interp_results: list[dict[str, str]] = []
@@ -32,6 +139,28 @@ def generate_report(run_id: str, output_path: Path | None = None) -> Path:
     high = [r for r in interp_results if r["confidence"] == "high"]
     med = [r for r in interp_results if r["confidence"] == "medium"]
     low = [r for r in interp_results if r["confidence"] == "low"]
+
+    # Load components and tokenizer for prompt examples
+    arch = get_architecture_info(wandb_path)
+    tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
+    assert isinstance(tokenizer, PreTrainedTokenizerBase)
+
+    activation_contexts_dir = get_activation_contexts_dir(run_id)
+    assert activation_contexts_dir.exists(), f"No harvest data at {activation_contexts_dir}"
+    components = HarvestResult.load_components(activation_contexts_dir)
+
+    labels = {r["component_key"]: r["label"] for r in interp_results}
+
+    # Load token stats for interpretation prompt example
+    from spd.autointerp.config import CompactSkepticalConfig
+    from spd.autointerp.strategies.dispatch import format_prompt
+    from spd.harvest.analysis import get_input_token_stats, get_output_token_stats
+    from spd.harvest.schemas import get_correlations_dir
+
+    correlations_dir = get_correlations_dir(run_id)
+    token_stats_path = correlations_dir / "token_stats.pt"
+    has_token_stats = token_stats_path.exists()
+    token_stats = TokenStatsStorage.load(token_stats_path) if has_token_stats else None
 
     # Try loading intruder eval results
     intruder_dir = autointerp_dir / "eval" / "intruder"
@@ -44,8 +173,28 @@ def generate_report(run_id: str, output_path: Path | None = None) -> Path:
             for line in f:
                 intruder_results.append(json.loads(line))
 
-    # Get a full prompt example
-    prompt_example = random.choice(high) if high else random.choice(interp_results)
+    # Try loading detection/fuzzing results
+    detection_results: list[dict[str, Any]] = []
+    for scoring_dir in [autointerp_dir / "scoring" / "detection"]:
+        if scoring_dir.exists():
+            files = sorted(scoring_dir.glob("results_*.jsonl"))
+            if files:
+                with open(files[-1]) as f:
+                    for line in f:
+                        detection_results.append(json.loads(line))
+
+    fuzzing_results: list[dict[str, Any]] = []
+    for scoring_dir in [autointerp_dir / "scoring" / "fuzzing"]:
+        if scoring_dir.exists():
+            files = sorted(scoring_dir.glob("results_*.jsonl"))
+            if files:
+                with open(files[-1]) as f:
+                    for line in f:
+                        fuzzing_results.append(json.loads(line))
+
+    # Pick example component
+    example_component = _pick_component_with_label(components, labels, rng)
+    example_label = labels[example_component.component_key]
 
     # Build markdown
     md = f"""
@@ -69,46 +218,104 @@ def generate_report(run_id: str, output_path: Path | None = None) -> Path:
 ## High-Confidence Examples
 
 """
-    for r in random.sample(high, min(8, len(high))):
+    for r in rng.sample(high, min(8, len(high))):
         md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
         md += f"> {r['reasoning']}\n\n"
 
     md += "## Medium-Confidence Examples\n\n"
-    for r in random.sample(med, min(4, len(med))):
+    for r in rng.sample(med, min(4, len(med))):
         md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
         md += f"> {r['reasoning']}\n\n"
 
     md += "## Low-Confidence Examples\n\n"
-    for r in random.sample(low, min(3, len(low))):
+    for r in rng.sample(low, min(3, len(low))):
         md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
         md += f"> {r['reasoning']}\n\n"
 
-    md += f"""---
+    # === Prompt Examples Section ===
+    md += """---
 
-## Example: Full Prompt and Response
+## Prompt Examples
 
-**Component:** `{prompt_example["component_key"]}`
-
-### Prompt (truncated)
-
-```
-{prompt_example["prompt"][:3500]}
-...
-```
-
-### Response
-
-```json
-{{
-  "label": "{prompt_example["label"]}",
-  "confidence": "{prompt_example["confidence"]}",
-  "reasoning": "{prompt_example["reasoning"]}"
-}}
-```
+One example of every LLM prompt template used in the pipeline, rendered with real data.
+For sense-checking tokenization and formatting.
 
 """
 
-    # Intruder eval section
+    # 1. Interpretation prompt
+    md += "### 1. Interpretation Prompt\n\n"
+    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
+
+    if token_stats is not None:
+        interp_config = CompactSkepticalConfig(
+            model="google/gemini-3-flash-preview",
+            reasoning_effort=None,
+        )
+        input_stats = get_input_token_stats(
+            token_stats,
+            example_component.component_key,
+            tokenizer,
+            top_k=20,
+        )
+        output_stats = get_output_token_stats(
+            token_stats,
+            example_component.component_key,
+            tokenizer,
+            top_k=50,
+        )
+        if input_stats is not None and output_stats is not None:
+            interp_prompt = format_prompt(
+                interp_config,
+                example_component,
+                arch,
+                tokenizer,
+                input_stats,
+                output_stats,
+            )
+            md += f"```\n{interp_prompt}\n```\n\n"
+        else:
+            md += "*Token stats not available for this component.*\n\n"
+    else:
+        # Fall back to stored prompt from results
+        prompt_example = rng.choice(high) if high else rng.choice(interp_results)
+        md += f"*(Rendered from stored result for `{prompt_example['component_key']}`)*\n\n"
+        md += f"```\n{prompt_example['prompt'][:5000]}\n```\n\n"
+
+    # 2. Detection prompt
+    md += "### 2. Detection Scoring Prompt\n\n"
+    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
+    detection_prompt = _build_example_detection_prompt(
+        example_component,
+        components,
+        tokenizer,
+        example_label,
+        rng,
+    )
+    md += f"```\n{detection_prompt}\n```\n\n"
+
+    # 3. Fuzzing prompt
+    md += "### 3. Fuzzing Scoring Prompt\n\n"
+    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
+    fuzzing_prompt = _build_example_fuzzing_prompt(
+        example_component,
+        tokenizer,
+        example_label,
+        rng,
+    )
+    md += f"```\n{fuzzing_prompt}\n```\n\n"
+
+    # 4. Intruder prompt
+    md += "### 4. Intruder Eval Prompt\n\n"
+    md += f"**Component:** `{example_component.component_key}`\n\n"
+    intruder_prompt = _build_example_intruder_prompt(
+        example_component,
+        components,
+        tokenizer,
+        rng,
+    )
+    md += f"```\n{intruder_prompt}\n```\n\n"
+
+    # === Scoring Results ===
     if intruder_results:
         scores = [float(r["score"]) for r in intruder_results if int(r["n_trials"]) > 0]
         md += f"""---
@@ -141,6 +348,42 @@ Random baseline = 20%.
         for lo, hi, label in bins:
             count = sum(1 for s in scores if lo <= s < hi)
             md += f"| {label} | {count} |\n"
+
+    if detection_results:
+        scores = [float(r["score"]) for r in detection_results]
+        md += f"""
+---
+
+## Detection Scoring
+
+Tests whether labels predict activations. Random baseline = 50%.
+
+**{len(scores)} components scored**
+
+| Metric | Value |
+|---|---|
+| Mean balanced accuracy | {np.mean(scores) * 100:.1f}% |
+| Median balanced accuracy | {np.median(scores) * 100:.1f}% |
+
+"""
+
+    if fuzzing_results:
+        scores = [float(r["score"]) for r in fuzzing_results]
+        md += f"""
+---
+
+## Fuzzing Scoring
+
+Tests label specificity via correct vs. random highlighting. Random baseline = 50%.
+
+**{len(scores)} components scored**
+
+| Metric | Value |
+|---|---|
+| Mean balanced accuracy | {np.mean(scores) * 100:.1f}% |
+| Median balanced accuracy | {np.median(scores) * 100:.1f}% |
+
+"""
 
     md += "\n\n---\n\n*Generated by `spd.autointerp.scripts.generate_report`*\n"
 
