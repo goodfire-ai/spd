@@ -1,4 +1,10 @@
-"""Loaders for reading harvest output files."""
+"""Loaders for reading harvest output files.
+
+TODO: Unify harvest data access behind a single HarvestRepo class with
+save_<thing>/load_<thing> methods, owning the harvest/<run_id>/ directory.
+Currently split across loaders.py (reads), HarvestResult.save() (writes),
+and schemas.py (paths).
+"""
 
 import json
 import threading
