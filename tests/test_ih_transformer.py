@@ -17,6 +17,7 @@ from spd.configs import (
 from spd.experiments.ih.configs import InductionModelConfig
 from spd.experiments.ih.model import InductionTransformer
 from spd.identity_insertion import insert_identity_operations_
+from spd.models.batch_and_loss_fns import recon_loss_kl
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, InductionDataset
 from spd.utils.general_utils import set_seed
@@ -133,7 +134,7 @@ def test_ih_transformer_decomposition_happy_path(tmp_path: Path) -> None:
         device=device,
         train_loader=train_loader,
         eval_loader=eval_loader,
-        n_eval_steps=config.n_eval_steps,
+        reconstruction_loss=recon_loss_kl,
         out_dir=tmp_path,
     )
 

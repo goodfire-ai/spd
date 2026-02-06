@@ -106,7 +106,7 @@ def _load_resid_mlp_batch(model_path: str, batch_size: int, seed: int) -> BatchT
 
     spd_run = SPDRunInfo.from_path(model_path)
     cfg = spd_run.config
-    component_model = ComponentModel.from_pretrained(spd_run.checkpoint_path)
+    component_model = ComponentModel.from_run_info(spd_run)
 
     assert isinstance(cfg.task_config, ResidMLPTaskConfig), (
         f"Expected task_config to be of type ResidMLPTaskConfig, but got {type(cfg.task_config) = }"

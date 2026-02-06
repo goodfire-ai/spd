@@ -6,13 +6,13 @@ compute() methods.
 
 from typing import Any, ClassVar, Protocol
 
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from torch import Tensor
 
 from spd.models.component_model import CIOutputs
 
 
-class Metric(Protocol):
+class Metric[BatchT, OutputT](Protocol):
     """Interface for metrics that can be used in training and/or evaluation."""
 
     slow: ClassVar[bool] = False
@@ -21,8 +21,8 @@ class Metric(Protocol):
     def update(
         self,
         *,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
+        batch: BatchT,
+        target_out: OutputT,
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
         ci: CIOutputs,
         current_frac_of_training: float,

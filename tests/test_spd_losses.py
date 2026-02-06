@@ -1,4 +1,4 @@
-from typing import override
+from typing import Any, override
 
 import torch
 import torch.nn as nn
@@ -16,6 +16,7 @@ from spd.metrics import (
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
 )
+from spd.models.batch_and_loss_fns import recon_loss_mse
 from spd.models.component_model import ComponentModel
 from spd.utils.module_utils import ModulePathInfo
 
@@ -30,7 +31,7 @@ class TinyLinearModel(nn.Module):
         return self.fc(x)
 
 
-def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel:
+def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel[Any, Any]:
     d_out, d_in = weight.shape
     target = TinyLinearModel(d_in=d_in, d_out=d_out)
     with torch.no_grad():
@@ -42,14 +43,13 @@ def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel
         module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
     return comp_model
 
 
-def _zero_components_for_test(model: ComponentModel) -> None:
+def _zero_components_for_test(model: ComponentModel[Any, Any]) -> None:
     with torch.no_grad():
         for cm in model.components.values():
             cm.V.zero_()
@@ -279,10 +279,10 @@ class TestCIMaskedReconLoss:
 
         result = ci_masked_recon_loss(
             model=model,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
+            reconstruction_loss=recon_loss_mse,
         )
 
         # Since we're using a simple identity-like weight, and CI is 1,
@@ -304,10 +304,10 @@ class TestCIMaskedReconLoss:
 
         result = ci_masked_recon_loss(
             model=model,
-            output_loss_type="kl",
             batch=batch,
             target_out=target_out,
             ci=ci,
+            reconstruction_loss=recon_loss_mse,
         )
 
         assert result >= 0.0
@@ -324,10 +324,18 @@ class TestCIMaskedReconLoss:
         ci_half = {"fc": torch.tensor([[0.5]], dtype=torch.float32)}
 
         loss_full = ci_masked_recon_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci_full
+            model=model,
+            batch=batch,
+            target_out=target_out,
+            ci=ci_full,
+            reconstruction_loss=recon_loss_mse,
         )
         loss_half = ci_masked_recon_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci_half
+            model=model,
+            batch=batch,
+            target_out=target_out,
+            ci=ci_half,
+            reconstruction_loss=recon_loss_mse,
         )
 
         # Different CI values should produce different losses
@@ -346,10 +354,10 @@ class TestCIMaskedReconLayerwiseLoss:
 
         result = ci_masked_recon_layerwise_loss(
             model=model,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
+            reconstruction_loss=recon_loss_mse,
         )
 
         # Layerwise should produce a valid loss
@@ -366,10 +374,18 @@ class TestCIMaskedReconLayerwiseLoss:
         ci = {"fc": torch.tensor([[1.0]], dtype=torch.float32)}
 
         loss_all = ci_masked_recon_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+            model=model,
+            batch=batch,
+            target_out=target_out,
+            ci=ci,
+            reconstruction_loss=recon_loss_mse,
         )
         loss_layerwise = ci_masked_recon_layerwise_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+            model=model,
+            batch=batch,
+            target_out=target_out,
+            ci=ci,
+            reconstruction_loss=recon_loss_mse,
         )
 
         # For single layer, results should be the same
@@ -388,11 +404,11 @@ class TestCIMaskedReconSubsetLoss:
 
         result = ci_masked_recon_subset_loss(
             model=model,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
             routing=UniformKSubsetRoutingConfig(),
+            reconstruction_loss=recon_loss_mse,
         )
 
         # Subset routing should produce a valid loss
@@ -411,11 +427,11 @@ class TestCIMaskedReconSubsetLoss:
         losses = [
             ci_masked_recon_subset_loss(
                 model=model,
-                output_loss_type="mse",
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
                 routing=UniformKSubsetRoutingConfig(),
+                reconstruction_loss=recon_loss_mse,
             )
             for _ in range(3)
         ]
@@ -439,11 +455,11 @@ class TestStochasticReconLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=3,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            reconstruction_loss=recon_loss_mse,
         )
 
         assert result >= 0.0
@@ -462,11 +478,11 @@ class TestStochasticReconLoss:
             model=model,
             sampling="binomial",
             n_mask_samples=3,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            reconstruction_loss=recon_loss_mse,
         )
 
         assert result >= 0.0
@@ -487,11 +503,11 @@ class TestStochasticReconLoss:
                 model=model,
                 sampling="continuous",
                 n_mask_samples=n_samples,
-                output_loss_type="mse",
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=weight_deltas,
+                reconstruction_loss=recon_loss_mse,
             )
             assert result >= 0.0
 
@@ -509,22 +525,22 @@ class TestStochasticReconLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=3,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            reconstruction_loss=recon_loss_mse,
         )
 
         loss_without_delta = stochastic_recon_loss(
             model=model,
             sampling="continuous",
             n_mask_samples=3,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
             weight_deltas=None,
+            reconstruction_loss=recon_loss_mse,
         )
 
         # Both should be valid
@@ -547,11 +563,11 @@ class TestStochasticReconLayerwiseLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=2,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
+            reconstruction_loss=recon_loss_mse,
         )
 
         assert result >= 0.0
@@ -571,11 +587,11 @@ class TestStochasticReconLayerwiseLoss:
                 model=model,
                 sampling="continuous",
                 n_mask_samples=n_samples,
-                output_loss_type="mse",
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=weight_deltas,
+                reconstruction_loss=recon_loss_mse,
             )
             assert result >= 0.0
 
@@ -595,12 +611,12 @@ class TestStochasticReconSubsetLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=3,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
             routing=UniformKSubsetRoutingConfig(),
+            reconstruction_loss=recon_loss_mse,
         )
 
         assert result >= 0.0
@@ -619,12 +635,12 @@ class TestStochasticReconSubsetLoss:
             model=model,
             sampling="binomial",
             n_mask_samples=3,
-            output_loss_type="mse",
             batch=batch,
             target_out=target_out,
             ci=ci,
             weight_deltas=weight_deltas,
             routing=UniformKSubsetRoutingConfig(),
+            reconstruction_loss=recon_loss_mse,
         )
 
         assert result >= 0.0
@@ -644,12 +660,12 @@ class TestStochasticReconSubsetLoss:
                 model=model,
                 sampling="continuous",
                 n_mask_samples=2,
-                output_loss_type="mse",
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
                 weight_deltas=weight_deltas,
                 routing=UniformKSubsetRoutingConfig(),
+                reconstruction_loss=recon_loss_mse,
             )
             for _ in range(3)
         ]

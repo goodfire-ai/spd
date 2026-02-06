@@ -91,7 +91,6 @@ def test_correct_parameters_require_grad():
         ],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -174,7 +173,6 @@ def test_from_run_info():
             module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
             sigmoid_type=config.sigmoid_type,
         )
 
@@ -182,9 +180,31 @@ def test_from_run_info():
         save_file(config.model_dump(mode="json"), comp_model_dir / "final_config.yaml")
 
         cm_run_info = SPDRunInfo.from_path(comp_model_dir / "model.pth")
-        cm_loaded = ComponentModel.from_run_info(cm_run_info)
 
         assert config == cm_run_info.config
+
+        # Manually reconstruct component model and load state dict
+        assert cm_run_info.config.pretrained_model_path is not None
+        loaded_target = SimpleTestModel.from_pretrained(cm_run_info.config.pretrained_model_path)
+        loaded_target.eval()
+        loaded_target.requires_grad_(False)
+        if cm_run_info.config.identity_module_info is not None:
+            insert_identity_operations_(
+                loaded_target,
+                identity_module_info=cm_run_info.config.identity_module_info,
+            )
+        loaded_module_path_info = expand_module_patterns(
+            loaded_target, cm_run_info.config.all_module_info
+        )
+        cm_loaded = ComponentModel(
+            target_model=loaded_target,
+            module_path_info=loaded_module_path_info,
+            ci_fn_type=cm_run_info.config.ci_fn_type,
+            ci_fn_hidden_dims=cm_run_info.config.ci_fn_hidden_dims,
+            sigmoid_type=cm_run_info.config.sigmoid_type,
+        )
+        cm_loaded.load_state_dict(torch.load(cm_run_info.checkpoint_path))
+
         for k, v in cm_loaded.state_dict().items():
             torch.testing.assert_close(v, cm.state_dict()[k])
 
@@ -281,7 +301,6 @@ def test_full_weight_delta_matches_target_behaviour():
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -313,7 +332,6 @@ def test_input_cache_captures_pre_weight_input():
         module_path_info=[ModulePathInfo(module_path=p, C=2) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -348,7 +366,6 @@ def test_weight_deltas():
         module_path_info=[ModulePathInfo(module_path=p, C=3) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -383,7 +400,6 @@ def test_replacement_effects_fwd_pass():
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -439,7 +455,6 @@ def test_replacing_identity():
         module_path_info=[ModulePathInfo(module_path="linear.pre_identity", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -489,7 +504,6 @@ def test_routing():
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 

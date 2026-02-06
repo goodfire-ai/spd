@@ -1,7 +1,5 @@
-from typing import Literal
-
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from torch import Tensor
 
 from spd.configs import (
@@ -36,28 +34,30 @@ from spd.metrics import (
     stochastic_recon_subset_loss,
     unmasked_recon_loss,
 )
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
+from spd.utils.general_utils import get_obj_device
 
 
-def compute_total_loss(
+def compute_total_loss[BatchT, OutputT](
     loss_metric_configs: list[LossMetricConfigType],
-    model: ComponentModel,
-    batch: Int[Tensor, "..."],
+    model: ComponentModel[BatchT, OutputT],
+    batch: BatchT,
     ci: CIOutputs,
-    target_out: Tensor,
+    target_out: OutputT,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     current_frac_of_training: float,
     sampling: SamplingType,
     use_delta_component: bool,
     n_mask_samples: int,
-    output_loss_type: Literal["mse", "kl"],
+    reconstruction_loss: ReconstructionLoss[OutputT],
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 
     Returns (total, terms_dict). terms_dict contains raw per-term values (no coeffs) and a weighted total.
     """
-    total = torch.tensor(0.0, device=batch.device)
+    total = torch.tensor(0.0, device=get_obj_device(model))
     terms: dict[str, float] = {}
 
     for cfg in loss_metric_configs:
@@ -79,99 +79,99 @@ def compute_total_loss(
             case UnmaskedReconLossConfig():
                 loss = unmasked_recon_loss(
                     model=model,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case CIMaskedReconSubsetLossConfig():
                 loss = ci_masked_recon_subset_loss(
                     model=model,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     routing=cfg.routing,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case CIMaskedReconLayerwiseLossConfig():
                 loss = ci_masked_recon_layerwise_loss(
                     model=model,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case CIMaskedReconLossConfig():
                 loss = ci_masked_recon_loss(
                     model=model,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case StochasticReconLayerwiseLossConfig():
                 loss = stochastic_recon_layerwise_loss(
                     model=model,
                     sampling=sampling,
                     n_mask_samples=n_mask_samples,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case StochasticReconLossConfig():
                 loss = stochastic_recon_loss(
                     model=model,
                     sampling=sampling,
                     n_mask_samples=n_mask_samples,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case StochasticReconSubsetLossConfig():
                 loss = stochastic_recon_subset_loss(
                     model=model,
                     sampling=sampling,
                     n_mask_samples=n_mask_samples,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     routing=cfg.routing,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case PGDReconLossConfig():
                 loss = pgd_recon_loss(
                     model=model,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case PGDReconSubsetLossConfig():
                 loss = pgd_recon_subset_loss(
                     model=model,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
                     routing=cfg.routing,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case PGDReconLayerwiseLossConfig():
                 loss = pgd_recon_layerwise_loss(
                     model=model,
-                    output_loss_type=output_loss_type,
                     batch=batch,
                     target_out=target_out,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     pgd_config=cfg,
+                    reconstruction_loss=reconstruction_loss,
                 )
             case StochasticHiddenActsReconLossConfig():
                 loss = stochastic_hidden_acts_recon_loss(

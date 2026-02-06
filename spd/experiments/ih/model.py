@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from typing import override
+from typing import Any, override
 
 import torch
 from jaxtyping import Float
@@ -210,7 +210,10 @@ class InductionTransformer(LoadableModule):
         self.unembed = nn.Linear(cfg.d_model, adjusted_vocab_size, bias=False)
 
     @override
-    def forward(self, tokens: Float[Tensor, "B S"], **_):
+    def forward(
+        self, batch: tuple[Float[Tensor, "B S"], ...] | Float[Tensor, "B S"], **_: Any
+    ) -> Float[Tensor, "B S V"]:
+        tokens = batch[0] if isinstance(batch, tuple) else batch
         x = self.token_embed(tokens)
 
         for block in self.blocks:

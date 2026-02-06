@@ -9,7 +9,7 @@ from spd.models.component_model import ComponentModel
 from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
 
 
-class UVPlots(Metric):
+class UVPlots(Metric[Any, Any]):
     metric_section: ClassVar[str] = "figures"
 
     slow: ClassVar[bool] = True
@@ -17,7 +17,7 @@ class UVPlots(Metric):
 
     def __init__(
         self,
-        model: ComponentModel,
+        model: ComponentModel[Any, Any],
         sampling: SamplingType,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,
@@ -30,9 +30,10 @@ class UVPlots(Metric):
         self.batch_shape: tuple[int, ...] | None = None
 
     @override
-    def update(self, *, batch: Tensor, **_: Any) -> None:
+    def update(self, *, batch: Tensor | tuple[Tensor, ...], **_: Any) -> None:
         if self.batch_shape is None:
-            self.batch_shape = tuple(batch.shape)
+            input_tensor = batch[0] if isinstance(batch, tuple) else batch
+            self.batch_shape = tuple(input_tensor.shape)
 
     @override
     def compute(self) -> dict[str, Image.Image]:

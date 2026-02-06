@@ -1,8 +1,8 @@
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Literal, NamedTuple, overload, override
+from typing import Any, Literal, NamedTuple, Protocol, overload, override
 
 import torch
 from jaxtyping import Float, Int
@@ -38,10 +38,10 @@ class SPDRunInfo(RunInfo[Config]):
     checkpoint_prefix = "model"
 
 
-class OutputWithCache(NamedTuple):
+class OutputWithCache[OutputT](NamedTuple):
     """Output tensor and cached activations."""
 
-    output: Tensor
+    output: OutputT
     cache: dict[str, Tensor]
 
 
@@ -52,7 +52,19 @@ class CIOutputs:
     pre_sigmoid: dict[str, Tensor]
 
 
-class ComponentModel(LoadableModule):
+class TargetModel[BatchT, OutputT](Protocol):
+    # def __call__(self, batch: BatchT) -> OutputT: ...
+
+    def __call__(self, batch: BatchT) -> OutputT: ...
+
+    def get_submodule(self, target: str) -> nn.Module: ...
+
+    def named_parameters(self) -> Iterator[tuple[str, nn.Parameter]]: ...
+
+    # def named_modules(self) -> Generator[tuple[str, nn.Module]]: ...
+
+
+class ComponentModel[BatchT, OutputT](nn.Module):
     """Wrapper around an arbitrary pytorch model for running SPD.
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
@@ -73,12 +85,11 @@ class ComponentModel(LoadableModule):
 
     def __init__(
         self,
-        target_model: nn.Module,
+        target_model: TargetModel[BatchT, OutputT],
         module_path_info: list[ModulePathInfo],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
-        pretrained_model_output_attr: str | None,
     ):
         super().__init__()
 
@@ -89,7 +100,6 @@ class ComponentModel(LoadableModule):
             )
 
         self.target_model = target_model
-        self.pretrained_model_output_attr = pretrained_model_output_attr
         self.module_to_c = {info.module_path: info.C for info in module_path_info}
         self.target_module_paths = list(self.module_to_c.keys())
 
@@ -118,6 +128,50 @@ class ComponentModel(LoadableModule):
             # For other sigmoid types, use the same function for both
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+
+    @classmethod
+    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel[Any, Any]":
+        """Load a trained ComponentModel from a run info object."""
+        config = run_info.config
+
+        model_class = resolve_class(config.pretrained_model_class)
+        if config.pretrained_model_name is not None:
+            assert hasattr(model_class, "from_pretrained")
+            target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
+        else:
+            assert issubclass(model_class, LoadableModule)
+            assert config.pretrained_model_path is not None
+            target_model = model_class.from_pretrained(config.pretrained_model_path)
+
+        target_model.eval()
+        target_model.requires_grad_(False)
+
+        if config.identity_module_info is not None:
+            insert_identity_operations_(
+                target_model,
+                identity_module_info=config.identity_module_info,
+            )
+
+        module_path_info = expand_module_patterns(target_model, config.all_module_info)
+
+        comp_model: ComponentModel[Any, Any] = cls(
+            target_model=target_model,
+            module_path_info=module_path_info,
+            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
+            ci_fn_type=config.ci_fn_type,
+            sigmoid_type=config.sigmoid_type,
+        )
+
+        weights = torch.load(run_info.checkpoint_path, map_location="cpu", weights_only=True)
+        handle_deprecated_state_dict_keys_(weights)
+        comp_model.load_state_dict(weights)
+        return comp_model
+
+    @classmethod
+    def from_pretrained(cls, path: ModelPath) -> "ComponentModel[Any, Any]":
+        """Load a trained ComponentModel from a wandb or local path."""
+        run_info = SPDRunInfo.from_path(path)
+        return cls.from_run_info(run_info)
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -175,7 +229,7 @@ class ComponentModel(LoadableModule):
 
     @staticmethod
     def _create_components(
-        target_model: nn.Module,
+        target_model: TargetModel[BatchT, OutputT],
         module_to_c: dict[str, int],
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
@@ -218,7 +272,7 @@ class ComponentModel(LoadableModule):
 
     @staticmethod
     def _create_ci_fns(
-        target_model: nn.Module,
+        target_model: TargetModel[BatchT, OutputT],
         module_to_c: dict[str, int],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
@@ -234,67 +288,41 @@ class ComponentModel(LoadableModule):
             )
         return ci_fns
 
-    def _extract_output(self, raw_output: Any) -> Tensor:
-        """Extract the desired output from the model's raw output.
-
-        If pretrained_model_output_attr is None, returns the raw output directly.
-        If pretrained_model_output_attr starts with "idx_", returns the index specified by the
-        second part of the string. E.g. "idx_0" returns the first element of the raw output.
-        Otherwise, returns the specified attribute from the raw output.
-
-        Args:
-            raw_output: The raw output from the model.
-
-        Returns:
-            The extracted output.
-        """
-        if self.pretrained_model_output_attr is None:
-            out = raw_output
-        elif self.pretrained_model_output_attr.startswith("idx_"):
-            idx_val = int(self.pretrained_model_output_attr.split("_")[1])
-            assert isinstance(raw_output, Sequence), (
-                f"raw_output must be a sequence, not {type(raw_output)}"
-            )
-            assert idx_val < len(raw_output), (
-                f"Index {idx_val} out of range for raw_output of length {len(raw_output)}"
-            )
-            out = raw_output[idx_val]
-        else:
-            out = getattr(raw_output, self.pretrained_model_output_attr)
-
-        assert isinstance(out, Tensor), f"Expected tensor output, got {type(out)}"
-        return out
-
     @overload
     def __call__(
         self,
-        *args: Any,
+        batch: BatchT,
+        cache_type: Literal["component_acts"],
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-        cache_type: Literal["component_acts", "input"],
-        **kwargs: Any,
-    ) -> OutputWithCache: ...
+    ) -> OutputWithCache[OutputT]: ...
 
     @overload
     def __call__(
         self,
-        *args: Any,
+        batch: BatchT,
+        cache_type: Literal["input"],
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+    ) -> OutputWithCache[OutputT]: ...
+
+    @overload
+    def __call__(
+        self,
+        batch: BatchT,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["none"] = "none",
-        **kwargs: Any,
-    ) -> Tensor: ...
+    ) -> OutputT: ...
 
     @override
-    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | OutputWithCache:
+    def __call__(self, *args: Any, **kwargs: Any) -> OutputT | OutputWithCache[OutputT]:
         return super().__call__(*args, **kwargs)
 
     @override
     def forward(
         self,
-        *args: Any,
+        batch: BatchT,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["component_acts", "input", "none"] = "none",
-        **kwargs: Any,
-    ) -> Tensor | OutputWithCache:
+    ) -> OutputT | OutputWithCache[OutputT]:
         """Forward pass with optional component replacement and/or input caching.
 
         This method handles the following 4 cases:
@@ -319,7 +347,7 @@ class ComponentModel(LoadableModule):
         """
         if mask_infos is None and cache_type == "none":
             # No hooks needed. Do a regular forward pass of the target model.
-            return self._extract_output(self.target_model(*args, **kwargs))
+            return self._get_first_element_if_tuple(self.target_model(batch))
 
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
@@ -340,14 +368,28 @@ class ComponentModel(LoadableModule):
             )
 
         with self._attach_forward_hooks(hooks):
-            raw_out = self.target_model(*args, **kwargs)
+            out: OutputT = self._get_first_element_if_tuple(self.target_model(batch))
 
-        out = self._extract_output(raw_out)
         match cache_type:
             case "input" | "component_acts":
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
+
+    @staticmethod
+    def _get_first_element_if_tuple(out: Any) -> Any:
+        """Extract primary output from various model output formats.
+
+        Handles:
+        - Tuple outputs: returns first element (e.g. (logits, past_key_values, ...))
+        - HuggingFace ModelOutput: extracts .logits attribute
+        - Raw tensors: returned as-is
+        """
+        if isinstance(out, tuple):
+            return out[0]
+        if hasattr(out, "logits"):
+            return out.logits
+        return out
 
     def _components_and_cache_hook(
         self,
@@ -423,63 +465,6 @@ class ComponentModel(LoadableModule):
         finally:
             for handle in handles:
                 handle.remove()
-
-    @classmethod
-    @override
-    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel":
-        """Load a trained ComponentModel checkpoint from a run info object."""
-        config = run_info.config
-
-        # Load the target model
-        model_class = resolve_class(config.pretrained_model_class)
-        if config.pretrained_model_name is not None:
-            assert hasattr(model_class, "from_pretrained"), (
-                f"Model class {model_class} should have a `from_pretrained` method"
-            )
-            target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
-        else:
-            assert issubclass(model_class, LoadableModule), (
-                f"Model class {model_class} should be a subclass of LoadableModule which "
-                "defines a `from_pretrained` method"
-            )
-            assert run_info.config.pretrained_model_path is not None
-            target_model = model_class.from_pretrained(run_info.config.pretrained_model_path)
-
-        target_model.eval()
-        target_model.requires_grad_(False)
-
-        if config.identity_module_info is not None:
-            insert_identity_operations_(
-                target_model,
-                identity_module_info=config.identity_module_info,
-            )
-
-        module_path_info = expand_module_patterns(target_model, config.all_module_info)
-
-        comp_model = ComponentModel(
-            target_model=target_model,
-            module_path_info=module_path_info,
-            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-            ci_fn_type=config.ci_fn_type,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
-            sigmoid_type=config.sigmoid_type,
-        )
-
-        comp_model_weights = torch.load(
-            run_info.checkpoint_path, map_location="cpu", weights_only=True
-        )
-
-        handle_deprecated_state_dict_keys_(comp_model_weights)
-
-        comp_model.load_state_dict(comp_model_weights)
-        return comp_model
-
-    @classmethod
-    @override
-    def from_pretrained(cls, path: ModelPath) -> "ComponentModel":
-        """Load a trained ComponentModel checkpoint from a local or wandb path."""
-        run_info = SPDRunInfo.from_path(path)
-        return cls.from_run_info(run_info)
 
     def calc_causal_importances(
         self,
