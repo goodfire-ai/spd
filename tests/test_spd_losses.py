@@ -10,6 +10,7 @@ from spd.configs import (
     LayerwiseCiConfig,
     PersistentPGDReconLossConfig,
     SignPGDConfig,
+    SingleMaskScope,
     UniformKSubsetRoutingConfig,
 )
 from spd.metrics import (
@@ -713,13 +714,13 @@ class TestPersistentPGDReconLoss:
         ci = {"fc": torch.tensor([[[0.5], [0.5]]], dtype=torch.float32)}
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope="single_mask"
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
         )
 
         # Initialize state
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_dims=batch.shape,
+            seq_len=batch.shape[-1],
             device="cpu",
             use_delta_component=False,
             cfg=cfg,
@@ -765,12 +766,12 @@ class TestPersistentPGDReconLoss:
         ci = {"fc": torch.tensor([[[0.3], [0.3]]], dtype=torch.float32)}
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope="single_mask"
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
         )
 
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_dims=batch.shape,
+            seq_len=batch.shape[-1],
             device="cpu",
             use_delta_component=False,
             cfg=cfg,
@@ -818,13 +819,13 @@ class TestPersistentPGDReconLoss:
         batch_dims = batch.shape[:2]
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope="single_mask"
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
         )
 
         # Initialize state with delta component
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_dims=batch_dims,
+            seq_len=batch_dims[-1],
             device="cpu",
             use_delta_component=True,
             cfg=cfg,
@@ -882,12 +883,12 @@ class TestPersistentPGDReconLoss:
         batch_dims = batch.shape[:2]
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope="single_mask"
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
         )
 
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_dims=batch_dims,
+            seq_len=batch_dims[-1],
             device="cpu",
             use_delta_component=False,
             cfg=cfg,
@@ -922,12 +923,12 @@ class TestPersistentPGDReconLoss:
 
         cfg = PersistentPGDReconLossConfig(
             optimizer=AdamPGDConfig(lr=0.05, beta1=0.9, beta2=0.999, eps=1e-8),
-            scope="single_mask",
+            scope=SingleMaskScope(),
         )
 
         state = PersistentPGDState(
             module_to_c=model.module_to_c,
-            batch_dims=batch.shape,
+            seq_len=batch.shape[-1],
             device="cpu",
             use_delta_component=False,
             cfg=cfg,

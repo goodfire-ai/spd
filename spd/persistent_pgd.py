@@ -16,8 +16,11 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import (
+    BatchInvariantScope,
+    BroadcastAcrossBatchScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
+    SingleMaskScope,
     SubsetRoutingType,
 )
 from spd.metrics.base import Metric
@@ -42,29 +45,26 @@ class PersistentPGDState:
     def __init__(
         self,
         module_to_c: dict[str, int],
-        batch_dims: tuple[int, ...],
+        seq_len: int,
         device: torch.device | str,
         use_delta_component: bool,
         cfg: PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
     ) -> None:
         self.optimizer = cfg.optimizer
-        self.scope = cfg.scope
 
         self._adam_step = 0
         self._adam_m: PPGDMasks = {}
         self._adam_v: PPGDMasks = {}
 
-        # Initialize masks randomly in [0, 1] with fixed seed for consistency across ranks
-        # Shape: (mask_c,) per module - single mask shared across all batch elements
         self.masks: PPGDMasks = {}
 
-        assert len(batch_dims) == 2, "PersistentPGD only supports the (batch, seq_len) shape case"
-        B, S = batch_dims
-        mask_leading_dims = {
-            "single_mask": [1, 1],
-            "broadcast_across_batch": [1, S],
-            "unique_per_batch_per_token": [B, S],
-        }[self.scope]
+        match cfg.scope:
+            case SingleMaskScope():
+                mask_leading_dims = [1, 1]
+            case BroadcastAcrossBatchScope():
+                mask_leading_dims = [1, seq_len]
+            case BatchInvariantScope(n_masks=n):
+                mask_leading_dims = [n, seq_len]
 
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
@@ -140,13 +140,15 @@ def get_mask_infos(
         module_names=model.target_module_paths, mask_shape=batch_dims
     )
 
-    # Get expanded masks from state
     expanded_adv_sources: dict[str, Float[Tensor, "*batch_dims mask_c"]] = {}
     for module_name, mask in masks.items():
-        # mask is (mask_c,), expand to (*batch_dims, mask_c)
-        # Use contiguous() to create a new tensor (not a view) while preserving gradients.
-        # This is needed because we update masks in-place later, which would invalidate views.
-        expanded_adv_sources[module_name] = mask.expand(*batch_dims, -1).contiguous()
+        B = batch_dims[0]
+        N = mask.shape[0]
+        if N == 1 or N == B:
+            expanded_adv_sources[module_name] = mask.expand(*batch_dims, -1)
+        else:
+            assert B % N == 0, f"mask leading dim {N} must divide batch dim {B}"
+            expanded_adv_sources[module_name] = mask.repeat(B // N, 1, 1)
 
     # Split into component masks and weight delta masks
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
@@ -163,7 +165,6 @@ def get_mask_infos(
             }
             adv_sources_components = {k: v[..., :-1] for k, v in expanded_adv_sources.items()}
 
-    # Interpolate CI with adversarial masks: mask = ci + (1 - ci) * adv
     component_masks = _interpolate_component_mask(ci, adv_sources_components)
 
     return make_mask_infos(
@@ -181,8 +182,8 @@ def _interpolate_component_mask(
     component_masks: dict[str, Float[Tensor, "... C"]] = {}
     for module_name in ci:
         adv_source = adv_sources_components[module_name]
-        scaled_noise = (1 - ci[module_name]) * adv_source
-        component_masks[module_name] = ci[module_name] + scaled_noise
+        scaled_adv = (1 - ci[module_name]) * adv_source
+        component_masks[module_name] = ci[module_name] + scaled_adv
     return component_masks
 
 
