@@ -122,15 +122,23 @@ def _build_example_intruder_prompt(
     return _build_prompt(real_examples, intruder, intruder_pos, lookup, ci_threshold)
 
 
-def generate_report(wandb_path: str, output_path: Path | None = None) -> Path:
+def generate_report(
+    wandb_path: str,
+    autointerp_run_id: str | None = None,
+    output_path: Path | None = None,
+) -> Path:
     _, _, run_id = parse_wandb_run_path(wandb_path)
     rng = random.Random(42)
 
     autointerp_dir = get_autointerp_dir(run_id)
 
     # Load interpretation results
-    results_path = find_latest_results_path(run_id)
-    assert results_path is not None, f"No interpretation results found in {autointerp_dir}"
+    if autointerp_run_id is not None:
+        results_path = autointerp_dir / str(autointerp_run_id) / "results.jsonl"
+        assert results_path.exists(), f"No results at {results_path}"
+    else:
+        results_path = find_latest_results_path(run_id)
+        assert results_path is not None, f"No interpretation results found in {autointerp_dir}"
     interp_results: list[dict[str, str]] = []
     with open(results_path) as f:
         for line in f:
