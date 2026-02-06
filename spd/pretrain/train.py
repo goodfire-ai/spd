@@ -333,12 +333,11 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
     if config.wandb_project is not None and master_process:
         execution_stamp = ExecutionStamp.create(run_type="train", create_snapshot=False)
         run_id = execution_stamp.run_id
-        run = wandb.init(
+        wandb.init(
             id=run_id,
             project=config.wandb_project,
             config=config.model_dump(mode="json"),
         )
-        run.name = f"{config.model.model_type}-{run.name}"
 
     # DDP wrap
     raw_model: nn.Module = model
