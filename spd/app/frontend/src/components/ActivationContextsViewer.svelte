@@ -165,7 +165,7 @@
         // Compute max absolute PMI for scaling
         const maxAbsPmi = Math.max(
             ts.data.output.top_pmi[0]?.[1] ?? 0,
-            Math.abs(ts.data.output.bottom_pmi?.[0]?.[1] ?? 0),
+            Math.abs(ts.data.output.bottom_pmi[0]?.[1] ?? 0),
         );
         return [
             {
@@ -276,14 +276,19 @@
         />
 
         <!-- Dataset attributions -->
-        {#if componentData.datasetAttributions?.status === "loaded" && componentData.datasetAttributions.data}
+        {#if componentData.datasetAttributions.status === "loaded" && componentData.datasetAttributions.data}
             <DatasetAttributionsSection attributions={componentData.datasetAttributions.data} />
-        {:else if componentData.datasetAttributions?.status === "loading"}
+        {:else if componentData.datasetAttributions.status === "loaded" && componentData.datasetAttributions.data === null}
+            <div class="dataset-attributions-loading">
+                <SectionHeader title="Dataset Attributions" />
+                <StatusText>Not available. Run spd-attributions to generate.</StatusText>
+            </div>
+        {:else if componentData.datasetAttributions.status === "loading"}
             <div class="dataset-attributions-loading">
                 <SectionHeader title="Dataset Attributions" />
                 <StatusText>Loading...</StatusText>
             </div>
-        {:else if componentData.datasetAttributions?.status === "error"}
+        {:else if componentData.datasetAttributions.status === "error"}
             <div class="dataset-attributions-loading">
                 <SectionHeader title="Dataset Attributions" />
                 <StatusText>Error: {String(componentData.datasetAttributions.error)}</StatusText>
