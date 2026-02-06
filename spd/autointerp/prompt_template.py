@@ -39,7 +39,7 @@ DATASET_DESCRIPTIONS: dict[str, str] = {
 
 SPD_CONTEXT = (
     "Each component has a causal importance (CI) value per token position. "
-    "High CI (near 1) = essential, cannot be ablated. Low CI (near 0) = removable."
+    "High CI (near 1) = essential, cannot be ablated. Low CI (near 0) = ablatable."
 )
 
 

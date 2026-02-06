@@ -19,9 +19,9 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    model: OpenRouterModelName = OpenRouterModelName.GEMINI_3_FLASH_PREVIEW,
-    limit: int | None = None,
-    reasoning_effort: ReasoningEffort | None = ReasoningEffort.LOW,
+    model: OpenRouterModelName,
+    limit: int | None,
+    reasoning_effort: ReasoningEffort | None,
     cost_limit_usd: float | None = None,
 ) -> None:
     """Interpret harvested components."""

@@ -10,10 +10,11 @@ from spd.settings import DEFAULT_PARTITION_NAME
 
 def main(
     wandb_path: str,
-    model: str = "google/gemini-3-flash-preview",
+    model: str,
+    limit: int | None,
+    reasoning_effort: str | None,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
-    limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> None:
     from spd.autointerp.interpret import OpenRouterModelName
@@ -22,9 +23,10 @@ def main(
     launch_interpret_job(
         wandb_path=wandb_path,
         model=OpenRouterModelName(model),
+        limit=limit,
+        reasoning_effort=reasoning_effort,
         partition=partition,
         time=time,
-        limit=limit,
         cost_limit_usd=cost_limit_usd,
     )
 

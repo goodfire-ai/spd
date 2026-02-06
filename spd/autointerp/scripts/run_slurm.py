@@ -15,30 +15,21 @@ from spd.utils.slurm import SlurmConfig, generate_script, submit_slurm_job
 def launch_interpret_job(
     wandb_path: str,
     model: OpenRouterModelName,
+    limit: int | None,
+    reasoning_effort: str | None,
     partition: str,
     time: str,
-    limit: int | None,
     cost_limit_usd: float | None,
 ) -> None:
-    """Submit interpret job to SLURM (CPU-only, IO-bound).
-
-    Args:
-        wandb_path: WandB run path for the target decomposition run.
-        model: OpenRouter model to use for interpretation.
-        partition: SLURM partition name.
-        time: Job time limit.
-        limit: Maximum number of components to interpret (highest mean CI first).
-        cost_limit_usd: Stop interpreting once this USD budget is reached.
-    """
     job_name = "interpret"
 
     cmd_parts = [
         "python -m spd.autointerp.scripts.run_interpret",
         f'"{wandb_path}"',
         f"--model {model.value}",
+        f"--limit {limit}" if limit is not None else "--limit None",
+        f"--reasoning_effort {reasoning_effort}" if reasoning_effort else "--reasoning_effort None",
     ]
-    if limit is not None:
-        cmd_parts.append(f"--limit {limit}")
     if cost_limit_usd is not None:
         cmd_parts.append(f"--cost_limit_usd {cost_limit_usd}")
     interpret_cmd = " \\\n    ".join(cmd_parts)
