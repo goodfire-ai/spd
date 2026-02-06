@@ -26,7 +26,6 @@ from spd.data import train_loader_and_tokenizer
 from spd.dataset_attributions.harvester import AttributionHarvester
 from spd.dataset_attributions.loaders import get_attributions_dir
 from spd.dataset_attributions.storage import DatasetAttributionStorage
-from spd.experiments.lm.loaders import load_lm_component_model_from_run_info
 from spd.harvest.loaders import load_activation_contexts_summary
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -140,7 +139,7 @@ def harvest_attributions(
     _, _, run_id = parse_wandb_run_path(config.wandb_path)
 
     run_info = SPDRunInfo.from_path(config.wandb_path)
-    model = load_lm_component_model_from_run_info(run_info).to(device)
+    model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 
     spd_config = run_info.config

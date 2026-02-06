@@ -11,7 +11,8 @@ from torch.utils.hooks import RemovableHandle
 from transformers.pytorch_utils import Conv1D as RadfordConv1D
 
 from spd.configs import Config, SamplingType
-from spd.interfaces import RunInfo
+from spd.identity_insertion import insert_identity_operations_
+from spd.interfaces import LoadableModule, RunInfo
 from spd.models.components import (
     Components,
     ComponentsMaskInfo,
@@ -23,9 +24,9 @@ from spd.models.components import (
     VectorSharedMLPCiFn,
 )
 from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
-from spd.spd_types import CiFnType
-from spd.utils.general_utils import runtime_cast
-from spd.utils.module_utils import ModulePathInfo
+from spd.spd_types import CiFnType, ModelPath
+from spd.utils.general_utils import resolve_class, runtime_cast
+from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
 
 
 @dataclass
@@ -127,6 +128,50 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             # For other sigmoid types, use the same function for both
             self.lower_leaky_fn = SIGMOID_TYPES[sigmoid_type]
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
+
+    @classmethod
+    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel[Any, Any]":
+        """Load a trained ComponentModel from a run info object."""
+        config = run_info.config
+
+        model_class = resolve_class(config.pretrained_model_class)
+        if config.pretrained_model_name is not None:
+            assert hasattr(model_class, "from_pretrained")
+            target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
+        else:
+            assert issubclass(model_class, LoadableModule)
+            assert config.pretrained_model_path is not None
+            target_model = model_class.from_pretrained(config.pretrained_model_path)
+
+        target_model.eval()
+        target_model.requires_grad_(False)
+
+        if config.identity_module_info is not None:
+            insert_identity_operations_(
+                target_model,
+                identity_module_info=config.identity_module_info,
+            )
+
+        module_path_info = expand_module_patterns(target_model, config.all_module_info)
+
+        comp_model: ComponentModel[Any, Any] = cls(
+            target_model=target_model,
+            module_path_info=module_path_info,
+            ci_fn_hidden_dims=config.ci_fn_hidden_dims,
+            ci_fn_type=config.ci_fn_type,
+            sigmoid_type=config.sigmoid_type,
+        )
+
+        weights = torch.load(run_info.checkpoint_path, map_location="cpu", weights_only=True)
+        handle_deprecated_state_dict_keys_(weights)
+        comp_model.load_state_dict(weights)
+        return comp_model
+
+    @classmethod
+    def from_pretrained(cls, path: ModelPath) -> "ComponentModel[Any, Any]":
+        """Load a trained ComponentModel from a wandb or local path."""
+        run_info = SPDRunInfo.from_path(path)
+        return cls.from_run_info(run_info)
 
     def target_weight(self, module_name: str) -> Float[Tensor, "rows cols"]:
         target_module = self.target_model.get_submodule(module_name)
@@ -302,7 +347,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
         """
         if mask_infos is None and cache_type == "none":
             # No hooks needed. Do a regular forward pass of the target model.
-            return self.target_model(batch)
+            return self._get_first_element_if_tuple(self.target_model(batch))
 
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
@@ -323,13 +368,28 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             )
 
         with self._attach_forward_hooks(hooks):
-            out: OutputT = self.target_model(batch)
+            out: OutputT = self._get_first_element_if_tuple(self.target_model(batch))
 
         match cache_type:
             case "input" | "component_acts":
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
+
+    @staticmethod
+    def _get_first_element_if_tuple(out: Any) -> Any:
+        """Extract primary output from various model output formats.
+
+        Handles:
+        - Tuple outputs: returns first element (e.g. (logits, past_key_values, ...))
+        - HuggingFace ModelOutput: extracts .logits attribute
+        - Raw tensors: returned as-is
+        """
+        if isinstance(out, tuple):
+            return out[0]
+        if hasattr(out, "logits"):
+            return out.logits
+        return out
 
     def _components_and_cache_hook(
         self,

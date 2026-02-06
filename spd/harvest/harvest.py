@@ -24,7 +24,6 @@ from jaxtyping import Float
 from torch import Tensor
 
 from spd.data import train_loader_and_tokenizer
-from spd.experiments.lm.loaders import load_lm_component_model_from_run_info
 from spd.harvest.lib.harvester import Harvester, HarvesterState
 from spd.harvest.schemas import (
     ActivationExample,
@@ -203,7 +202,7 @@ def harvest_activation_contexts(
     logger.info(f"Loading model on {device}")
 
     run_info = SPDRunInfo.from_path(config.wandb_path)
-    model = load_lm_component_model_from_run_info(run_info).to(device)
+    model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 
     spd_config = run_info.config

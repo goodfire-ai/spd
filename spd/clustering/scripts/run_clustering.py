@@ -49,9 +49,8 @@ from spd.clustering.plotting.activations import plot_activations
 from spd.clustering.plotting.merge import plot_merge_history_cluster_sizes, plot_merge_iteration
 from spd.clustering.storage import StorageBase
 from spd.clustering.wandb_tensor_info import wandb_log_tensor
-from spd.experiments.lm.loaders import load_lm_component_model_from_run_info
 from spd.log import logger
-from spd.models.component_model import SPDRunInfo
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import replace_pydantic_model
@@ -299,7 +298,7 @@ def main(run_config: ClusteringRunConfig) -> Path:
 
     # 3. Load model
     logger.info("Loading model")
-    model = load_lm_component_model_from_run_info(spd_run).to(device)
+    model = ComponentModel.from_run_info(spd_run).to(device)
 
     # 4. Compute activations
     logger.info("Computing activations")

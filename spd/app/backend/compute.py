@@ -770,12 +770,6 @@ def get_model_n_blocks(model: nn.Module) -> int:
     from simple_stories_train.models.llama_simple_mlp import LlamaSimpleMLP
     from transformers.models.gpt2 import GPT2LMHeadModel
 
-    from spd.experiments.lm.loaders import LogitsOnlyWrapper
-
-    # Unwrap LogitsOnlyWrapper if present
-    if isinstance(model, LogitsOnlyWrapper):
-        model = model.model
-
     match model:
         case GPT2LMHeadModel():
             return len(model.transformer.h)

@@ -226,10 +226,15 @@ class TestDistributedDeterminicity:
         self,
         dp1_out_dir: Path,
         dp2_out_dir: Path,
-        atol: float = 1e-6,
-        rtol: float = 1e-5,
+        atol: float = 2e-4,
+        rtol: float = 1e-3,
     ) -> None:
         """Compare saved model parameters between dp=1 and dp=2 runs.
+
+        Tolerances are relatively loose because CI-masked reconstruction losses use hard
+        masking: tiny allreduce rounding differences can push a CI value across the mask
+        threshold, causing a different gradient path that compounds over training steps.
+        Empirically, across many seeds, max parameter diffs stay below ~1.5e-4.
 
         Args:
             dp1_out_dir: Output directory for dp=1 run

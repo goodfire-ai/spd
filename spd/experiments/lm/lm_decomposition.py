@@ -8,7 +8,7 @@ import wandb
 from simple_stories_train.run_info import RunInfo as SSRunInfo
 
 from spd.configs import Config, LMTaskConfig
-from spd.data import DatasetConfig, create_data_loader
+from spd.data import DatasetConfig, create_data_loader, lm_collate_fn
 from spd.log import logger
 from spd.models.batch_and_loss_fns import recon_loss_kl
 from spd.run_spd import optimize
@@ -141,6 +141,7 @@ def main(
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         dist_state=dist_state,
+        collate_fn=lm_collate_fn,
     )
 
     eval_data_config = DatasetConfig(
@@ -170,6 +171,7 @@ def main(
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed + 1,
         dist_state=dist_state,
+        collate_fn=lm_collate_fn,
     )
 
     if is_main_process():

@@ -28,13 +28,12 @@ from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.prompt_template import INTERPRETATION_SCHEMA, format_prompt_template
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.configs import LMTaskConfig
-from spd.experiments.lm.loaders import load_lm_component_model_from_run_info
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.harvest import HarvestResult
 from spd.harvest.schemas import ComponentData
 from spd.harvest.storage import TokenStatsStorage
 from spd.log import logger
-from spd.models.component_model import SPDRunInfo
+from spd.models.component_model import ComponentModel, SPDRunInfo
 
 # Retry config
 MAX_RETRIES = 8
@@ -337,7 +336,7 @@ async def interpret_all(
 
 def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
     run_info = SPDRunInfo.from_path(wandb_path)
-    model = load_lm_component_model_from_run_info(run_info)
+    model = ComponentModel.from_run_info(run_info)
     n_blocks = get_model_n_blocks(cast(nn.Module, model.target_model))
     config = run_info.config
     task_config = config.task_config

@@ -14,9 +14,8 @@ from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import build_token_lookup, log_errors
-from spd.experiments.lm.loaders import load_lm_component_model_from_run_info
 from spd.log import logger
-from spd.models.component_model import SPDRunInfo
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -93,7 +92,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
 
     # Load the model
     logger.info(f"[API] Loading model for run {run.id}: {run.wandb_path}")
-    model = load_lm_component_model_from_run_info(run_info)
+    model = ComponentModel.from_run_info(run_info)
     model = model.to(DEVICE)
     model.eval()
 

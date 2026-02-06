@@ -1,4 +1,4 @@
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from typing import Any
 
 import numpy as np
@@ -153,6 +153,7 @@ def create_data_loader(
     dist_state: DistributedState | None = None,
     global_seed: int = 0,
     to_lower: bool = True,
+    collate_fn: Callable[..., Any] | None = None,
 ) -> tuple[DataLoader[Int[Tensor, "batch seq"]], PreTrainedTokenizer]:
     """Create a DataLoader for the given dataset.
 
@@ -263,8 +264,14 @@ def create_data_loader(
         ),
         drop_last=True,
         generator=generator,
+        collate_fn=collate_fn,
     )
     return loader, tokenizer
+
+
+def lm_collate_fn(batch: list[dict[str, Tensor]]) -> Tensor:
+    """Collate function that extracts input_ids tensors from HuggingFace dataset dicts."""
+    return torch.stack([item["input_ids"] for item in batch])
 
 
 def loop_dataloader[T](dl: DataLoader[T]) -> Generator[T]:

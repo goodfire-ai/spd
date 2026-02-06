@@ -5,35 +5,14 @@ If you're willing to make breaking changes, see spd/scripts/run.py for creating 
 the canonical configs, and update the registry with your new run(s).
 """
 
-from typing import Any
-
 import pytest
 
-from spd.experiments.lm.loaders import load_lm_component_model_from_run_info
-from spd.experiments.resid_mlp.models import load_resid_mlp_component_model_from_run_info
-from spd.experiments.tms.models import load_tms_component_model_from_run_info
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.registry import EXPERIMENT_REGISTRY
 from spd.utils.wandb_utils import parse_wandb_run_path
 
-
-def load_component_model(canonical_run: str, task_name: str) -> ComponentModel[Any, Any]:
-    """Load a ComponentModel using the appropriate experiment-specific loader."""
-    run_info = SPDRunInfo.from_path(canonical_run)
-
-    loaders: dict[str, Any] = {
-        "tms": load_tms_component_model_from_run_info,
-        "resid_mlp": load_resid_mlp_component_model_from_run_info,
-        "lm": load_lm_component_model_from_run_info,
-    }
-
-    loader = loaders.get(task_name)
-    assert loader is not None, f"No loader found for task_name: {task_name}"
-    return loader(run_info)
-
-
 CANONICAL_EXPS = [
-    (exp_name, exp_config.canonical_run, exp_config.task_name)
+    (exp_name, exp_config.canonical_run)
     for exp_name, exp_config in EXPERIMENT_REGISTRY.items()
     if exp_config.canonical_run is not None
 ]
@@ -41,12 +20,13 @@ CANONICAL_EXPS = [
 
 @pytest.mark.requires_wandb
 @pytest.mark.slow
-@pytest.mark.parametrize("exp_name, canonical_run, task_name", CANONICAL_EXPS)
-def test_loading_from_wandb(exp_name: str, canonical_run: str, task_name: str) -> None:
+@pytest.mark.parametrize("exp_name, canonical_run", CANONICAL_EXPS)
+def test_loading_from_wandb(exp_name: str, canonical_run: str) -> None:
     try:
-        load_component_model(canonical_run, task_name)
+        run_info = SPDRunInfo.from_path(canonical_run)
+        ComponentModel.from_run_info(run_info)
     except Exception as e:
-        e.add_note(f"Error loading {exp_name} from {canonical_run} (task: {task_name})")
+        e.add_note(f"Error loading {exp_name} from {canonical_run}")
         raise e
 
 

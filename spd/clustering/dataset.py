@@ -8,8 +8,8 @@ from typing import Any
 from spd.clustering.consts import BatchTensor
 from spd.configs import LMTaskConfig, ResidMLPTaskConfig
 from spd.data import DatasetConfig, create_data_loader
-from spd.experiments.resid_mlp.models import ResidMLP, load_resid_mlp_component_model_from_run_info
-from spd.models.component_model import SPDRunInfo
+from spd.experiments.resid_mlp.models import ResidMLP
+from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.spd_types import TaskName
 
 
@@ -106,7 +106,7 @@ def _load_resid_mlp_batch(model_path: str, batch_size: int, seed: int) -> BatchT
 
     spd_run = SPDRunInfo.from_path(model_path)
     cfg = spd_run.config
-    component_model = load_resid_mlp_component_model_from_run_info(spd_run)
+    component_model = ComponentModel.from_run_info(spd_run)
 
     assert isinstance(cfg.task_config, ResidMLPTaskConfig), (
         f"Expected task_config to be of type ResidMLPTaskConfig, but got {type(cfg.task_config) = }"

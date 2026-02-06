@@ -22,7 +22,6 @@ from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
 from spd.configs import Config, LMTaskConfig, ModulePatternInfoConfig, ScheduleConfig
-from spd.experiments.lm.loaders import LogitsOnlyWrapper
 from spd.models.component_model import ComponentModel
 from spd.utils.module_utils import expand_module_patterns
 
@@ -113,10 +112,8 @@ def app_with_state():
             ),
         )
         module_path_info = expand_module_patterns(target_model, config.module_info)
-        # Wrap the model to extract logits from (logits, loss) tuple outputs
-        wrapped_model = LogitsOnlyWrapper(target_model)
         model = ComponentModel(
-            target_model=wrapped_model,
+            target_model=target_model,
             module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
