@@ -444,6 +444,12 @@ Tests label specificity via correct vs. random highlighting. Random baseline = 5
 
 
 if __name__ == "__main__":
-    import fire
+    import argparse
 
-    fire.Fire(generate_report)
+    parser = argparse.ArgumentParser(description="Generate autointerp HTML report")
+    parser.add_argument("wandb_path", help="WandB run path (e.g. wandb:entity/project/runs/run_id)")
+    parser.add_argument("--autointerp_run_id", help="Specific autointerp run ID (timestamp)")
+    parser.add_argument("--output_path", type=Path, help="Output HTML path")
+    args = parser.parse_args()
+
+    generate_report(args.wandb_path, args.autointerp_run_id, args.output_path)
