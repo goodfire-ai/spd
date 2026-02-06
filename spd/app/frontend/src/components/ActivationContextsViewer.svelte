@@ -1,11 +1,12 @@
 <script lang="ts">
-    import { onMount } from "svelte";
+    import { getContext, onMount } from "svelte";
     import { computeMaxAbsComponentAct } from "../lib/colors";
     import { anyCorrelationStatsEnabled, displaySettings } from "../lib/displaySettings.svelte";
     import { COMPONENT_CARD_CONSTANTS } from "../lib/componentCardConstants";
     import { getLayerAlias } from "../lib/layerAliasing";
     import type { ActivationContextsSummary, SubcomponentMetadata } from "../lib/promptAttributionsTypes";
     import { useComponentData } from "../lib/useComponentData.svelte";
+    import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ActivationContextsPagedTable from "./ActivationContextsPagedTable.svelte";
     import ComponentProbeInput from "./ComponentProbeInput.svelte";
     import ComponentCorrelationMetrics from "./ui/ComponentCorrelationMetrics.svelte";
@@ -21,6 +22,8 @@
 
     let { activationContextsSummary }: Props = $props();
 
+    const runState = getContext<RunContext>(RUN_KEY);
+
     let availableLayers = $derived(Object.keys(activationContextsSummary).sort());
     let currentPage = $state(0);
     let selectedLayer = $state<string>(Object.keys(activationContextsSummary)[0]);
@@ -32,6 +35,9 @@
     );
     let totalPages = $derived(currentLayerMetadata.length);
     let currentMetadata = $derived<SubcomponentMetadata>(currentLayerMetadata[currentPage]);
+    let currentIntruderScore = $derived(
+        currentMetadata ? runState.getIntruderScore(`${selectedLayer}:${currentMetadata.subcomponent_idx}`) : null,
+    );
 
     // Component data hook - call load() explicitly when component changes
     const componentData = useComponentData();
@@ -245,6 +251,9 @@
     <div class="component-section">
         <SectionHeader title="Subcomponent {currentMetadata.subcomponent_idx}" level="h4">
             <span class="mean-ci">Mean CI: {formatMeanCi(currentMetadata.mean_ci)}</span>
+            {#if currentIntruderScore !== null}
+                <span class="mean-ci">Intruder: {Math.round(currentIntruderScore * 100)}%</span>
+            {/if}
         </SectionHeader>
 
         <InterpretationBadge
