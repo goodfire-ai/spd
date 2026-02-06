@@ -76,7 +76,6 @@ def main(
     )
     assert config.pretrained_model_name is not None
 
-    ln_stds: dict[str, float] | None = None
     if config.pretrained_model_class.startswith("spd.pretrain"):
         # Ensure local_rank 0 on each node caches the model, then all ranks load from local cache
         # (In multi-node setups, /tmp is node-local so we can't broadcast paths across nodes)
@@ -183,7 +182,6 @@ def main(
         eval_loader=eval_loader,
         n_eval_steps=config.n_eval_steps,
         out_dir=out_dir,
-        ln_stds=ln_stds,
     )
 
     if is_main_process():

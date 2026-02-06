@@ -10,7 +10,6 @@ from torch import Tensor
 from torch.nn.init import calculate_gain
 
 from spd.configs import ModulePatternInfoConfig
-from spd.pretrain.models.gpt2_simple import LayerNorm
 
 
 @dataclass
@@ -59,17 +58,6 @@ def init_param_(
     std: float = gain / math.sqrt(fan_val)
     with torch.no_grad():
         param.normal_(mean, std, generator=generator)
-
-
-def replace_std_values_in_layernorm(
-    component_model: nn.Module, std_values: dict[str, float]
-) -> None:
-    for name, std in std_values.items():
-        module = component_model.get_submodule("patched_model." + name)
-        assert isinstance(module, LayerNorm), (
-            f"Expected {name} to be a LayerNorm, got {type(module)}"
-        )
-        module.std = std
 
 
 def expand_module_patterns(

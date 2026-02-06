@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,10 +20,10 @@ def _cache_dir(project: str, run_id: str) -> Path:
 
 def _download_wandb_files(
     entity: str, project: str, run_id: str
-) -> tuple[Path, Path, Path, Path | None, Path | None]:
+) -> tuple[Path, Path, Path, Path | None]:
     """Download core artifacts for the given W&B run.
 
-    Returns (checkpoint_path, config_path, model_config_path, ln_stds_path, tokenizer_path).
+    Returns (checkpoint_path, config_path, model_config_path, tokenizer_path).
     """
     cache_dir = _cache_dir(project, run_id)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -50,12 +49,6 @@ def _download_wandb_files(
     if model_config_file is None:
         raise FileNotFoundError("Could not find 'model_config.yaml' in the W&B run files.")
 
-    ln_stds_file = None
-    for f in files:
-        if f.name.endswith("ln-stds.json"):
-            ln_stds_file = f
-            break
-
     tokenizer_file = None
     for f in files:
         if f.name.endswith("tokenizer.json"):
@@ -80,17 +73,14 @@ def _download_wandb_files(
     config_file.download(root=str(cache_dir), exist_ok=True)
     model_config_file.download(root=str(cache_dir), exist_ok=True)
     latest_ckpt_file.download(root=str(cache_dir), exist_ok=True)
-    if ln_stds_file is not None:
-        ln_stds_file.download(root=str(cache_dir), exist_ok=True)
     if tokenizer_file is not None:
         tokenizer_file.download(root=str(cache_dir), exist_ok=True)
 
     ckpt_path = cache_dir / latest_ckpt_file.name
     config_path = cache_dir / config_file.name
     model_config_path = cache_dir / model_config_file.name
-    ln_stds_path = cache_dir / ln_stds_file.name if ln_stds_file is not None else None
     tokenizer_path = cache_dir / tokenizer_file.name if tokenizer_file is not None else None
-    return ckpt_path, config_path, model_config_path, ln_stds_path, tokenizer_path
+    return ckpt_path, config_path, model_config_path, tokenizer_path
 
 
 def _extract_hf_tokenizer_path(config_dict: dict[str, Any]) -> str | None:
@@ -112,7 +102,6 @@ class PretrainRunInfo:
     checkpoint_path: Path
     config_dict: dict[str, Any]
     model_config_dict: dict[str, Any]
-    ln_stds: dict[str, float] | None
     tokenizer_path: Path | None
     hf_tokenizer_path: str | None
 
@@ -140,7 +129,6 @@ class PretrainRunInfo:
                 ckpt_path,
                 config_path,
                 model_config_path,
-                ln_stds_path,
                 tokenizer_path,
             ) = _download_wandb_files(entity, project, run_id)
 
@@ -150,16 +138,10 @@ class PretrainRunInfo:
             with open(model_config_path) as f:
                 model_config_dict = yaml.safe_load(f)
 
-            ln_stds = None
-            if ln_stds_path is not None:
-                with open(ln_stds_path) as f:
-                    ln_stds = json.load(f)
-
             return cls(
                 checkpoint_path=ckpt_path,
                 config_dict=config_dict,
                 model_config_dict=model_config_dict,
-                ln_stds=ln_stds,
                 tokenizer_path=tokenizer_path,
                 hf_tokenizer_path=_extract_hf_tokenizer_path(config_dict),
             )
@@ -191,7 +173,6 @@ class PretrainRunInfo:
             checkpoint_path=ckpt_path,
             config_dict=config_dict,
             model_config_dict=model_config_dict,
-            ln_stds=None,  # Not supported for local paths
             tokenizer_path=tokenizer_path,
             hf_tokenizer_path=_extract_hf_tokenizer_path(config_dict),
         )
