@@ -19,7 +19,6 @@ from openrouter.errors import (
     ServiceUnavailableResponseError,
     TooManyRequestsResponseError,
 )
-from tqdm.asyncio import tqdm_asyncio
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
@@ -140,7 +139,7 @@ async def chat_with_retry(
             jitter = delay * JITTER_FACTOR * random.random()
             total_delay = delay + jitter
 
-            tqdm_asyncio.write(
+            logger.warning(
                 f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
                 f"{type(e).__name__}, backing off {total_delay:.1f}s"
             )
@@ -309,7 +308,7 @@ async def interpret_all(
                     f.write(line)
 
                 if log_progress:
-                    tqdm_asyncio.write(progress_msg)
+                    logger.info(progress_msg)
             except Exception as e:
                 logger.error(f"Fatal error on {component.component_key}: {type(e).__name__}: {e}")
                 raise
@@ -321,12 +320,11 @@ async def interpret_all(
         )
         print(f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output")
 
-        await tqdm_asyncio.gather(
+        await asyncio.gather(
             *[
                 process_one(c, i, client, cost_tracker)
                 for i, c in enumerate(remaining, start=start_idx)
-            ],
-            desc="Interpreting",
+            ]
         )
 
     print(f"Final cost: ${cost_tracker.cost_usd():.2f}")

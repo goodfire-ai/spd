@@ -42,16 +42,15 @@ class BlockGroupConfig(BaseConfig):
     )
 
 
-class TransitionAttnConfig(BaseConfig):
-    """Configuration for self-attention in global reverse residual transitions.
+class AttnConfig(BaseConfig):
+    """Configuration for self-attention.
 
-    When provided, transitions use a full transformer block: attention → residual → MLP → residual.
     Uses RoPE (Rotary Position Embeddings) for sequence length generalization.
     """
 
     n_heads: PositiveInt = Field(
         ...,
-        description="Number of attention heads. Must divide d_resid_ci_fn.",
+        description="Number of attention heads. Must divide the input dimension.",
     )
     max_len: PositiveInt = Field(
         default=2048,
@@ -70,7 +69,7 @@ class GlobalSharedTransformerCiConfig(BaseConfig):
         description="Hidden dimension for transformer MLP blocks. "
         "If None, defaults to [4 * d_model].",
     )
-    attn_config: TransitionAttnConfig
+    attn_config: AttnConfig
 
     @model_validator(mode="after")
     def validate_config(self) -> Self:
@@ -123,7 +122,7 @@ class GlobalCiConfig(BaseConfig):
         "Order determines processing sequence (first = processed first, typically unembed). "
         "Required when fn_type='global_reverse_residual', ignored otherwise.",
     )
-    transition_attn_config: TransitionAttnConfig | None = Field(
+    transition_attn_config: AttnConfig | None = Field(
         default=None,
         description="Self-attention config for transitions in global_reverse_residual. "
         "If None, uses MLP-only transitions (original behavior). "
@@ -620,6 +619,7 @@ class Config(BaseConfig):
     )
     ci_config: CiConfig = Field(
         ...,
+        discriminator="mode",
         description="Configuration for the causal importance function. "
         "Use LayerwiseCiConfig for per-layer CI functions or GlobalCiConfig for a single global CI function.",
     )
