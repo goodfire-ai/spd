@@ -34,7 +34,6 @@ N_NON_ACTIVATING = 5
 N_TRIALS = 5
 MAX_TOKENS_PER_EXAMPLE = 64
 CI_THRESHOLD = 0.3
-FAKE_BOLD_PROBABILITY = 0.15
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 200
 
@@ -88,18 +87,33 @@ def _format_activating_example(
     return "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
 
 
+def _measure_bold_density(examples: list[ActivationExample]) -> float:
+    """Measure the fraction of valid tokens above CI_THRESHOLD across activating examples."""
+    n_bold = 0
+    n_total = 0
+    for ex in examples:
+        for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True):
+            if tid < 0:
+                continue
+            n_total += 1
+            if ci > CI_THRESHOLD:
+                n_bold += 1
+    return n_bold / n_total if n_total > 0 else 0.0
+
+
 def _format_non_activating_example(
     example: ActivationExample,
     tokenizer: PreTrainedTokenizerBase,
     rng: random.Random,
+    bold_density: float,
 ) -> str:
-    """Format a non-activating example with random tokens bolded (to avoid leaking info)."""
+    """Format a non-activating example with random tokens bolded to match activating density."""
     tokens: list[str] = []
     for tid in example.token_ids:
         if tid < 0:
             continue
         decoded = tokenizer.decode([tid])
-        if rng.random() < FAKE_BOLD_PROBABILITY:
+        if rng.random() < bold_density:
             tokens.append(f"**{decoded}**")
         else:
             tokens.append(decoded)
@@ -202,12 +216,16 @@ async def score_component(
             component, all_components, N_NON_ACTIVATING, rng
         )
 
+        bold_density = _measure_bold_density(activating)
+
         # Format examples
         formatted: list[tuple[str, bool]] = []
         for ex in activating:
             formatted.append((_format_activating_example(ex, tokenizer), True))
         for ex in non_activating:
-            formatted.append((_format_non_activating_example(ex, tokenizer, rng), False))
+            formatted.append(
+                (_format_non_activating_example(ex, tokenizer, rng, bold_density), False)
+            )
 
         # Shuffle
         rng.shuffle(formatted)
