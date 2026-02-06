@@ -149,7 +149,7 @@ class AttributionHarvester:
         h2 = self.lm_head.register_forward_pre_hook(pre_unembed_hook, with_kwargs=True)
 
         # Get masks with all components active
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             out = self.model(tokens, cache_type="input")
             ci = self.model.calc_causal_importances(
                 pre_weight_acts=out.cache, sampling=self.sampling, detach_inputs=False
@@ -160,7 +160,7 @@ class AttributionHarvester:
         )
 
         # Forward pass with gradients
-        with torch.enable_grad():
+        with torch.enable_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             comp_output: OutputWithCache = self.model(
                 tokens, mask_infos=mask_infos, cache_type="component_acts"
             )

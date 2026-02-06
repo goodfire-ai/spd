@@ -241,7 +241,7 @@ def harvest_activation_contexts(
             continue
 
         batch = batch_data.to(device)
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
 
