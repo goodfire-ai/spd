@@ -140,18 +140,15 @@ def get_mask_infos(
         module_names=model.target_module_paths, mask_shape=batch_dims
     )
 
-    # Expand masks to (*batch_dims, mask_c).
-    # Use contiguous() to create a new tensor (not a view) while preserving gradients.
-    # This is needed because we update masks in-place later, which would invalidate views.
     expanded_adv_sources: dict[str, Float[Tensor, "*batch_dims mask_c"]] = {}
     for module_name, mask in masks.items():
         B = batch_dims[0]
         N = mask.shape[0]
         if N == 1 or N == B:
-            expanded_adv_sources[module_name] = mask.expand(*batch_dims, -1).contiguous()
+            expanded_adv_sources[module_name] = mask.expand(*batch_dims, -1)
         else:
             assert B % N == 0, f"mask leading dim {N} must divide batch dim {B}"
-            expanded_adv_sources[module_name] = mask.repeat(B // N, 1, 1).contiguous()
+            expanded_adv_sources[module_name] = mask.repeat(B // N, 1, 1)
 
     # Split into component masks and weight delta masks
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
