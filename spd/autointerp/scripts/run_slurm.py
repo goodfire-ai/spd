@@ -1,14 +1,15 @@
 """SLURM launcher for autointerp pipeline.
 
-Submits interpret + eval jobs to SLURM cluster:
-- Intruder eval: submitted immediately (label-free, only needs harvest data)
+Submits interpret + label-dependent scoring jobs to SLURM cluster:
 - Interpret: submitted immediately
 - Detection + fuzzing scoring: submitted with --dependency on interpret job
+
+(Intruder eval is label-free and submitted as part of spd-harvest instead.)
 
 Usage:
     spd-autointerp <wandb_path>
     spd-autointerp <wandb_path> --cost_limit_usd 100
-    spd-autointerp <wandb_path> --no_eval  # skip eval jobs
+    spd-autointerp <wandb_path> --no_eval  # skip scoring jobs
 """
 
 from datetime import datetime
@@ -86,20 +87,7 @@ def launch_autointerp_pipeline(
     if no_eval:
         return
 
-    # === 2. Intruder eval (label-free, no dependency on interpret) ===
-    intruder_cmd = " \\\n    ".join(
-        [
-            "python -m spd.autointerp.eval.scripts.run_intruder",
-            f'"{wandb_path}"',
-            f"--model {eval_model}",
-        ]
-    )
-    intruder_result = _submit_cpu_job("intruder", intruder_cmd, partition, time)
-
-    logger.section("Intruder eval job submitted")
-    logger.values({"Job ID": intruder_result.job_id, "Log": intruder_result.log_pattern})
-
-    # === 3. Detection scoring (depends on interpret) ===
+    # === 2. Detection scoring (depends on interpret) ===
     detection_cmd = " \\\n    ".join(
         [
             "python -m spd.autointerp.scoring.scripts.run_label_scoring",
@@ -126,7 +114,7 @@ def launch_autointerp_pipeline(
         }
     )
 
-    # === 4. Fuzzing scoring (depends on interpret) ===
+    # === 3. Fuzzing scoring (depends on interpret) ===
     fuzzing_cmd = " \\\n    ".join(
         [
             "python -m spd.autointerp.scoring.scripts.run_label_scoring",

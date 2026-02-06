@@ -110,6 +110,25 @@ def harvest(
     merge_script = generate_script(merge_config, merge_cmd)
     merge_result = submit_slurm_job(merge_script, "harvest_merge")
 
+    # Submit intruder eval with dependency on merge (label-free, only needs harvest data)
+    intruder_cmd = " \\\n    ".join(
+        [
+            "python -m spd.autointerp.eval.scripts.run_intruder",
+            f'"{wandb_path}"',
+        ]
+    )
+    intruder_config = SlurmConfig(
+        job_name="spd-intruder-eval",
+        partition=partition,
+        n_gpus=0,
+        cpus_per_task=16,
+        time="12:00:00",
+        snapshot_branch=snapshot_branch,
+        dependency_job_id=merge_result.job_id,
+    )
+    intruder_script = generate_script(intruder_config, intruder_cmd)
+    intruder_result = submit_slurm_job(intruder_script, "intruder_eval")
+
     logger.section("Harvest jobs submitted!")
     logger.values(
         {
@@ -120,9 +139,9 @@ def harvest(
             "Snapshot": f"{snapshot_branch} ({commit_hash[:8]})",
             "Array Job ID": array_result.job_id,
             "Merge Job ID": merge_result.job_id,
+            "Intruder Job ID": intruder_result.job_id,
             "Worker logs": array_result.log_pattern,
             "Merge log": merge_result.log_pattern,
-            "Array script": str(array_result.script_path),
-            "Merge script": str(merge_result.script_path),
+            "Intruder log": intruder_result.log_pattern,
         }
     )
