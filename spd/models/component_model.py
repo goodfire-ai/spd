@@ -577,7 +577,16 @@ class ComponentModel(LoadableModule):
             assert hasattr(model_class, "from_pretrained"), (
                 f"Model class {model_class} should have a `from_pretrained` method"
             )
-            target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
+            # Handle simple_stories_train models specially to patch missing model_type
+            if config.pretrained_model_class.startswith("simple_stories_train"):
+                from simple_stories_train.run_info import RunInfo as SSRunInfo
+
+                ss_run_info = SSRunInfo.from_path(config.pretrained_model_name)
+                if "model_type" not in ss_run_info.model_config_dict:
+                    ss_run_info.model_config_dict["model_type"] = config.pretrained_model_class.split(".")[-1]
+                target_model = model_class.from_run_info(ss_run_info)  # pyright: ignore[reportAttributeAccessIssue]
+            else:
+                target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
         else:
             assert issubclass(model_class, LoadableModule), (
                 f"Model class {model_class} should be a subclass of LoadableModule which "
