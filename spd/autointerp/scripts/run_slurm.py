@@ -17,7 +17,7 @@ def launch_interpret_job(
     model: OpenRouterModelName,
     partition: str,
     time: str,
-    limit: int | None = None,
+    limit: int | None,
 ) -> None:
     """Submit interpret job to SLURM (CPU-only, IO-bound).
 

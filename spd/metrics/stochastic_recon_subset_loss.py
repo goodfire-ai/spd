@@ -14,7 +14,7 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_sum_recon_loss_lm, get_obj_device
 
 
-def _stochastic_recon_subset_loss_update(
+def stochastic_recon_loss_update(
     model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
@@ -67,7 +67,7 @@ def stochastic_recon_subset_loss(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing: SubsetRoutingType,
 ) -> Float[Tensor, ""]:
-    sum_loss, n_examples = _stochastic_recon_subset_loss_update(
+    sum_loss, n_examples = stochastic_recon_loss_update(
         model=model,
         sampling=sampling,
         n_mask_samples=n_mask_samples,
@@ -115,7 +115,7 @@ class StochasticReconSubsetLoss(Metric):
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
     ) -> None:
-        sum_loss, n_examples = _stochastic_recon_subset_loss_update(
+        sum_loss, n_examples = stochastic_recon_loss_update(
             model=self.model,
             sampling=self.sampling,
             n_mask_samples=self.n_mask_samples,
