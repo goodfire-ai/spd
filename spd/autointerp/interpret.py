@@ -8,6 +8,7 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.compute import get_model_n_blocks
+from spd.app.backend.utils import build_token_lookup
 from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.llm_api import (
     CostTracker,
@@ -138,6 +139,7 @@ async def interpret_all(
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
+    lookup = build_token_lookup(tokenizer, arch.tokenizer_name)
 
     interpreter_model = config.model
     reasoning = get_reasoning(config)
@@ -157,10 +159,10 @@ async def interpret_all(
             try:
                 # Compute token stats for this component
                 input_stats = get_input_token_stats(
-                    token_stats, component.component_key, tokenizer, top_k=20
+                    token_stats, component.component_key, lookup, top_k=20
                 )
                 output_stats = get_output_token_stats(
-                    token_stats, component.component_key, tokenizer, top_k=50
+                    token_stats, component.component_key, lookup, top_k=50
                 )
                 assert input_stats is not None, (
                     f"No input token stats for {component.component_key}"

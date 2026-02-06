@@ -70,7 +70,7 @@ def _build_example_detection_prompt(
     lookup: dict[int, str],
     label: str,
     rng: random.Random,
-) -> str:
+) -> tuple[str, list[int]]:
     activating = _sample_activating_examples(component, N_ACTIVATING, rng)
     non_activating = _sample_non_activating_examples(
         component, all_components, N_NON_ACTIVATING, rng
@@ -82,7 +82,8 @@ def _build_example_detection_prompt(
     for ex in non_activating:
         formatted.append((_format_example_with_center_token(ex, lookup), False))
     rng.shuffle(formatted)
-    return _build_detection_prompt(label, formatted)
+    activating_nums = sorted(i + 1 for i, (_, is_act) in enumerate(formatted) if is_act)
+    return _build_detection_prompt(label, formatted), activating_nums
 
 
 def _build_example_fuzzing_prompt(
@@ -91,7 +92,7 @@ def _build_example_fuzzing_prompt(
     label: str,
     rng: random.Random,
     ci_threshold: float,
-) -> str:
+) -> tuple[str, list[int]]:
     sampled = rng.sample(component.activation_examples, N_CORRECT + N_INCORRECT)
     correct_examples = sampled[:N_CORRECT]
     incorrect_examples = sampled[N_CORRECT:]
@@ -105,7 +106,8 @@ def _build_example_fuzzing_prompt(
         text = _delimit_random_low_ci_tokens(ex, lookup, max(n_delimited, 1), rng, ci_threshold)
         formatted.append((text, False))
     rng.shuffle(formatted)
-    return _build_fuzzing_prompt(label, formatted)
+    correct_nums = sorted(i + 1 for i, (_, is_correct) in enumerate(formatted) if is_correct)
+    return _build_fuzzing_prompt(label, formatted), correct_nums
 
 
 def _build_example_intruder_prompt(
@@ -114,12 +116,14 @@ def _build_example_intruder_prompt(
     lookup: dict[int, str],
     rng: random.Random,
     ci_threshold: float,
-) -> str:
+) -> tuple[str, int]:
+    """Returns (prompt, correct_answer) where correct_answer is 1-indexed."""
     density_index = DensityIndex(all_components, min_examples=N_REAL + 1, ci_threshold=ci_threshold)
     real_examples = rng.sample(component.activation_examples, N_REAL)
     intruder = _sample_intruder(component, density_index, rng)
     intruder_pos = rng.randint(0, N_REAL)
-    return _build_prompt(real_examples, intruder, intruder_pos, lookup, ci_threshold)
+    prompt = _build_prompt(real_examples, intruder, intruder_pos, lookup, ci_threshold)
+    return prompt, intruder_pos + 1
 
 
 def generate_report(
@@ -211,123 +215,9 @@ def generate_report(
 **Run:** `{run_id}`
 **Components interpreted:** {len(interp_results):,}
 
----
-
-## Interpretation Confidence Breakdown
-
-| Confidence | Count | Percentage |
-|---|---|---|
-| High | {len(high):,} | {len(high) / len(interp_results) * 100:.0f}% |
-| Medium | {len(med):,} | {len(med) / len(interp_results) * 100:.0f}% |
-| Low | {len(low):,} | {len(low) / len(interp_results) * 100:.0f}% |
-
----
-
-## High-Confidence Examples
-
-"""
-    for r in rng.sample(high, min(8, len(high))):
-        md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
-        md += f"> {r['reasoning']}\n\n"
-
-    md += "## Medium-Confidence Examples\n\n"
-    for r in rng.sample(med, min(4, len(med))):
-        md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
-        md += f"> {r['reasoning']}\n\n"
-
-    md += "## Low-Confidence Examples\n\n"
-    for r in rng.sample(low, min(3, len(low))):
-        md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
-        md += f"> {r['reasoning']}\n\n"
-
-    # === Prompt Examples Section ===
-    # Ordered by pipeline dependency: intruder (label-free) → interpretation → scoring (label-dependent)
-    md += """---
-
-## Prompt Examples
-
-One example of every LLM prompt template used in the pipeline, rendered with real data.
-For sense-checking tokenization and formatting.
-
 """
 
-    # 1. Intruder prompt (label-free, runs first)
-    md += "### 1. Intruder Eval Prompt (label-free)\n\n"
-    md += f"**Component:** `{example_component.component_key}`\n\n"
-    intruder_prompt = _build_example_intruder_prompt(
-        example_component,
-        components,
-        lookup,
-        rng,
-        ci_threshold,
-    )
-    md += f"```\n{intruder_prompt}\n```\n\n"
-
-    # 2. Interpretation prompt
-    md += "### 2. Interpretation Prompt\n\n"
-    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
-
-    if token_stats is not None:
-        interp_config = CompactSkepticalConfig(
-            model="google/gemini-3-flash-preview",
-            reasoning_effort=None,
-        )
-        input_stats = get_input_token_stats(
-            token_stats,
-            example_component.component_key,
-            tokenizer,
-            top_k=20,
-        )
-        output_stats = get_output_token_stats(
-            token_stats,
-            example_component.component_key,
-            tokenizer,
-            top_k=50,
-        )
-        if input_stats is not None and output_stats is not None:
-            interp_prompt = format_prompt(
-                interp_config,
-                example_component,
-                arch,
-                tokenizer,
-                input_stats,
-                output_stats,
-                ci_threshold,
-            )
-            md += f"```\n{interp_prompt}\n```\n\n"
-        else:
-            md += "*Token stats not available for this component.*\n\n"
-    else:
-        # Fall back to stored prompt from results
-        prompt_example = rng.choice(high) if high else rng.choice(interp_results)
-        md += f"*(Rendered from stored result for `{prompt_example['component_key']}`)*\n\n"
-        md += f"```\n{prompt_example['prompt'][:5000]}\n```\n\n"
-
-    # 3. Detection prompt (label-dependent)
-    md += "### 3. Detection Scoring Prompt (label-dependent)\n\n"
-    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
-    detection_prompt = _build_example_detection_prompt(
-        example_component,
-        components,
-        lookup,
-        example_label,
-        rng,
-    )
-    md += f"```\n{detection_prompt}\n```\n\n"
-
-    # 4. Fuzzing prompt (label-dependent)
-    md += "### 4. Fuzzing Scoring Prompt (label-dependent)\n\n"
-    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
-    fuzzing_prompt = _build_example_fuzzing_prompt(
-        example_component,
-        lookup,
-        example_label,
-        rng,
-        ci_threshold,
-    )
-    md += f"```\n{fuzzing_prompt}\n```\n\n"
-
-    # === Scoring Results ===
+    # === Intruder Eval (top of report — label-free, first thing to check) ===
     if intruder_results:
         scores = [float(r["score"]) for r in intruder_results if int(r["n_trials"]) > 0]
         md += f"""---
@@ -361,6 +251,125 @@ Random baseline = 20%.
             count = sum(1 for s in scores if lo <= s < hi)
             md += f"| {label} | {count} |\n"
 
+    md += f"""
+---
+
+## Interpretation Confidence Breakdown
+
+| Confidence | Count | Percentage |
+|---|---|---|
+| High | {len(high):,} | {len(high) / len(interp_results) * 100:.0f}% |
+| Medium | {len(med):,} | {len(med) / len(interp_results) * 100:.0f}% |
+| Low | {len(low):,} | {len(low) / len(interp_results) * 100:.0f}% |
+
+---
+
+## High-Confidence Examples
+
+"""
+    for r in rng.sample(high, min(8, len(high))):
+        md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
+        md += f"> {r['reasoning']}\n\n"
+
+    md += "## Medium-Confidence Examples\n\n"
+    for r in rng.sample(med, min(4, len(med))):
+        md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
+        md += f"> {r['reasoning']}\n\n"
+
+    md += "## Low-Confidence Examples\n\n"
+    for r in rng.sample(low, min(3, len(low))):
+        md += f"**`{r['component_key']}`** -- {r['label']}\n\n"
+        md += f"> {r['reasoning']}\n\n"
+
+    # === Prompt Examples Section ===
+    md += """---
+
+## Prompt Examples
+
+One example of every LLM prompt template, rendered with real data.
+
+"""
+
+    # 1. Intruder prompt (label-free, runs first)
+    md += "### 1. Intruder Eval Prompt (label-free)\n\n"
+    md += f"**Component:** `{example_component.component_key}`\n\n"
+    intruder_prompt, intruder_answer = _build_example_intruder_prompt(
+        example_component,
+        components,
+        lookup,
+        rng,
+        ci_threshold,
+    )
+    md += f"```\n{intruder_prompt}\n```\n\n"
+    md += f"<details><summary>Answer</summary>Example {intruder_answer}</details>\n\n"
+
+    # 2. Interpretation prompt
+    md += "### 2. Interpretation Prompt\n\n"
+    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
+
+    if token_stats is not None:
+        interp_config = CompactSkepticalConfig(
+            model="google/gemini-3-flash-preview",
+            reasoning_effort=None,
+        )
+        input_stats = get_input_token_stats(
+            token_stats,
+            example_component.component_key,
+            lookup,
+            top_k=20,
+        )
+        output_stats = get_output_token_stats(
+            token_stats,
+            example_component.component_key,
+            lookup,
+            top_k=50,
+        )
+        if input_stats is not None and output_stats is not None:
+            interp_prompt = format_prompt(
+                interp_config,
+                example_component,
+                arch,
+                tokenizer,
+                input_stats,
+                output_stats,
+                ci_threshold,
+            )
+            md += f"```\n{interp_prompt}\n```\n\n"
+        else:
+            md += "*Token stats not available for this component.*\n\n"
+    else:
+        # Fall back to stored prompt from results
+        prompt_example = rng.choice(high) if high else rng.choice(interp_results)
+        md += f"*(Rendered from stored result for `{prompt_example['component_key']}`)*\n\n"
+        md += f"```\n{prompt_example['prompt'][:5000]}\n```\n\n"
+
+    # 3. Detection prompt (label-dependent)
+    md += "### 3. Detection Scoring Prompt (label-dependent)\n\n"
+    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
+    detection_prompt, detection_answer = _build_example_detection_prompt(
+        example_component,
+        components,
+        lookup,
+        example_label,
+        rng,
+    )
+    md += f"```\n{detection_prompt}\n```\n\n"
+    md += f"<details><summary>Answer</summary>Activating: {', '.join(str(n) for n in detection_answer)}</details>\n\n"
+
+    # 4. Fuzzing prompt (label-dependent)
+    md += "### 4. Fuzzing Scoring Prompt (label-dependent)\n\n"
+    md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
+    fuzzing_prompt, fuzzing_answer = _build_example_fuzzing_prompt(
+        example_component,
+        lookup,
+        example_label,
+        rng,
+        ci_threshold,
+    )
+    md += f"```\n{fuzzing_prompt}\n```\n\n"
+    md += f"<details><summary>Answer</summary>Correctly highlighted: {', '.join(str(n) for n in fuzzing_answer)}</details>\n\n"
+
+    # === Scoring Results ===
     if detection_results:
         scores = [float(r["score"]) for r in detection_results]
         md += f"""
