@@ -1,4 +1,4 @@
-# wandb_project: spd
+wandb_project: spd
 wandb_run_name: null
 wandb_run_name_prefix: ''
 seed: 0
@@ -44,7 +44,7 @@ loss_metric_configs:
 - coeff: 1000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
-steps: 400000
+steps: 50000
 batch_size: 64
 gradient_accumulation_steps: 1
 faithfulness_warmup_steps: 200

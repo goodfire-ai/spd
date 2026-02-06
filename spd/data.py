@@ -136,7 +136,11 @@ def tokenize_and_concatenate(
         )
     else:
         tokenized_dataset = dataset.map(
-            tokenize_function, batched=True, remove_columns=[column_name], num_proc=num_proc
+            tokenize_function,
+            batched=True,
+            remove_columns=[column_name],
+            num_proc=num_proc,
+            load_from_cache_file=False,
         )
 
     tokenized_dataset = tokenized_dataset.with_format("torch")

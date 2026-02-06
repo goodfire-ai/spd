@@ -1,6 +1,5 @@
 # --- WandB ---
 wandb_project: spd
-# wandb_project: null
 wandb_run_name: null
 wandb_run_name_prefix: ""
 
@@ -13,7 +12,12 @@ ci_config:
   hidden_dims: [12]
 sigmoid_type: "leaky_hard"
 module_info:
-  - module_pattern: "transformer.h.1.attn.c_attn"
+  - module_pattern: "transformer.h.*.attn.c_attn"
+    C: 768
+  - module_pattern: "transformer.h.*.mlp.c_fc"
+    C: 768
+  - module_pattern: "transformer.h.*.mlp.c_proj"
+    C: 768
     C: 768
 identity_module_info: null
 sampling: "continuous"
@@ -53,16 +57,16 @@ slow_eval_on_first_step: true
 n_eval_steps: 5
 save_freq: null
 ci_alive_threshold: 0.0
-eval_metric_configs:
-  - classname: "CIHistograms"
-    n_batches_accum: 5
-  - classname: "ComponentActivationDensity"
-  - classname: "CI_L0"
-    groups: null
-  - classname: "CEandKLLosses"
-    rounding_threshold: 0.0
-  - classname: "CIMeanPerComponent"
-  - classname: "StochasticHiddenActsReconLoss"
+# eval_metric_configs:
+#   - classname: "CIHistograms"
+#     n_batches_accum: 5
+#   - classname: "ComponentActivationDensity"
+#   - classname: "CI_L0"
+#     groups: null
+#   - classname: "CEandKLLosses"
+#     rounding_threshold: 0.0
+#   - classname: "CIMeanPerComponent"
+#   - classname: "StochasticHiddenActsReconLoss"
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel

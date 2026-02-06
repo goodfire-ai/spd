@@ -128,6 +128,9 @@ def optimize(
 ) -> None:
     """Run the optimization loop for LM decomposition."""
 
+    # Use TF32
+    torch.set_float32_matmul_precision("high")
+
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
 
