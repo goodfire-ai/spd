@@ -74,7 +74,13 @@ def _format_activating_example(
     example: ActivationExample,
     tokenizer: PreTrainedTokenizerBase,
 ) -> str:
-    """Format an activating example with high-CI tokens bolded."""
+    """Format an activating example with high-CI tokens bolded.
+
+    NOTE: Potential leakage — real CI patterns have spatial structure (consecutive tokens
+    tend to be co-active), while non-activating examples use i.i.d. Bernoulli bolding.
+    An LLM could distinguish bursty vs uniform bold patterns without understanding the label.
+    Fixing this properly would require matching the run-length distribution of bold spans.
+    """
     tokens: list[str] = []
     for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
         if tid < 0:

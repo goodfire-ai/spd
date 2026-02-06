@@ -10,6 +10,7 @@ Usage:
 """
 
 import asyncio
+import bisect
 import json
 import random
 from dataclasses import asdict, dataclass
@@ -32,6 +33,8 @@ from spd.log import logger
 N_REAL = 4
 N_TRIALS = 10
 MAX_TOKENS_PER_EXAMPLE = 64
+CI_THRESHOLD = 0.3
+DENSITY_TOLERANCE = 0.05
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 200
 
@@ -66,10 +69,61 @@ class IntruderResult:
     n_errors: int
 
 
+def _bold_density(component: ComponentData) -> float:
+    """Fraction of valid tokens above CI_THRESHOLD across a component's activation examples."""
+    n_bold = 0
+    n_total = 0
+    for ex in component.activation_examples:
+        for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True):
+            if tid < 0:
+                continue
+            n_total += 1
+            if ci > CI_THRESHOLD:
+                n_bold += 1
+    return n_bold / n_total if n_total > 0 else 0.0
+
+
+class DensityIndex:
+    """Index of components sorted by bold density for efficient similar-density lookup."""
+
+    def __init__(self, components: list[ComponentData], min_examples: int) -> None:
+        eligible = [c for c in components if len(c.activation_examples) >= min_examples]
+        pairs = [(c, _bold_density(c)) for c in eligible]
+        pairs.sort(key=lambda p: p[1])
+        self._components = [c for c, _ in pairs]
+        self._densities = [d for _, d in pairs]
+        self._key_to_idx = {c.component_key: i for i, c in enumerate(self._components)}
+
+    def sample_similar(
+        self,
+        target: ComponentData,
+        rng: random.Random,
+        tolerance: float = DENSITY_TOLERANCE,
+    ) -> ComponentData:
+        """Sample a different component with similar bold density."""
+        assert target.component_key in self._key_to_idx
+        target_density = self._densities[self._key_to_idx[target.component_key]]
+
+        lo = bisect.bisect_left(self._densities, target_density - tolerance)
+        hi = bisect.bisect_right(self._densities, target_density + tolerance)
+
+        candidates = [
+            self._components[i]
+            for i in range(lo, hi)
+            if self._components[i].component_key != target.component_key
+        ]
+
+        # Widen search if no candidates in tolerance band
+        if not candidates:
+            candidates = [c for c in self._components if c.component_key != target.component_key]
+
+        return rng.choice(candidates)
+
+
 def _format_example(
     example: ActivationExample,
     tokenizer: PreTrainedTokenizerBase,
-    ci_threshold: float = 0.3,
+    ci_threshold: float = CI_THRESHOLD,
 ) -> str:
     tokens: list[str] = []
     for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
@@ -85,27 +139,12 @@ def _format_example(
 
 def _sample_intruder(
     target: ComponentData,
-    all_components: list[ComponentData],
+    density_index: DensityIndex,
     rng: random.Random,
 ) -> ActivationExample:
-    same_layer = [
-        c
-        for c in all_components
-        if c.component_key != target.component_key
-        and c.layer == target.layer
-        and len(c.activation_examples) >= 5
-    ]
-    pool = (
-        same_layer
-        if same_layer
-        else [
-            c
-            for c in all_components
-            if c.component_key != target.component_key and len(c.activation_examples) >= 5
-        ]
-    )
-    assert pool, "No other components available for intruder sampling"
-    return rng.choice(rng.choice(pool).activation_examples)
+    """Sample an intruder example from a component with similar bold density."""
+    donor = density_index.sample_similar(target, rng)
+    return rng.choice(donor.activation_examples)
 
 
 def _build_prompt(
@@ -140,7 +179,7 @@ async def score_component(
     client: OpenRouter,
     model: str,
     component: ComponentData,
-    all_components: list[ComponentData],
+    density_index: DensityIndex,
     tokenizer: PreTrainedTokenizerBase,
 ) -> IntruderResult:
     assert len(component.activation_examples) >= N_REAL + 1
@@ -151,7 +190,7 @@ async def score_component(
 
     for trial_idx in range(N_TRIALS):
         real_examples = rng.sample(component.activation_examples, N_REAL)
-        intruder = _sample_intruder(component, all_components, rng)
+        intruder = _sample_intruder(component, density_index, rng)
         intruder_pos = rng.randint(0, N_REAL)
         correct_answer = intruder_pos + 1
 
@@ -229,6 +268,8 @@ async def run_intruder_scoring(
         eligible = eligible[:limit]
     print(f"Scoring {len(eligible)} components")
 
+    density_index = DensityIndex(components, min_examples=N_REAL + 1)
+
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
     output_lock = asyncio.Lock()
@@ -246,7 +287,7 @@ async def run_intruder_scoring(
             if cost_tracker.over_budget():
                 return
             try:
-                result = await score_component(client, model, component, components, tokenizer)
+                result = await score_component(client, model, component, density_index, tokenizer)
                 async with output_lock:
                     results.append(result)
                     with open(output_path, "a") as f:
