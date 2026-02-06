@@ -19,7 +19,7 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup
+from spd.app.backend.utils import build_token_lookup, delimit_tokens
 from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
@@ -69,12 +69,27 @@ class DetectionResult:
     n_errors: int
 
 
-def _format_example(
+def _format_example_with_center_token(
     example: ActivationExample,
     lookup: dict[int, str],
 ) -> str:
-    """Format an example as plain text (no token highlighting)."""
-    return "".join(lookup[tid] for tid in example.token_ids if tid >= 0)
+    """Format an example with the center (firing) token marked with <<delimiters>>."""
+    valid = [(tid, i) for i, tid in enumerate(example.token_ids) if tid >= 0]
+    center = len(valid) // 2
+    tokens = [(lookup[tid], i == center) for i, (tid, _) in enumerate(valid)]
+    return delimit_tokens(tokens)
+
+
+def _format_example_with_random_token(
+    example: ActivationExample,
+    lookup: dict[int, str],
+    rng: random.Random,
+) -> str:
+    """Format an example with a random token marked with <<delimiters>>."""
+    valid = [(tid, i) for i, tid in enumerate(example.token_ids) if tid >= 0]
+    marked = rng.randrange(len(valid))
+    tokens = [(lookup[tid], i == marked) for i, (tid, _) in enumerate(valid)]
+    return delimit_tokens(tokens)
 
 
 def _sample_activating_examples(
@@ -141,11 +156,12 @@ def _build_detection_prompt(
     return f"""\
 A neural network component has been labeled as: "{label}"
 
-Below are {n_total} text snippets. Some come from contexts where this component is active \
-(high causal importance), others come from contexts where it is not.
+Below are {n_total} text snippets. In each, one token is marked between <<delimiters>>. \
+For some examples, the marked token is one where this component fires. \
+For others, the marked token is random.
 
 {examples_text}\
-Based on the label, which examples come from contexts where this component is active?
+Based on the label, in which examples is the <<marked>> token one where this component fires?
 
 Respond with the list of activating example numbers."""
 
@@ -170,12 +186,12 @@ async def score_component(
             component, all_components, N_NON_ACTIVATING, rng
         )
 
-        # Format as plain text — no token highlighting (matches paper)
+        # Mark the center (firing) token for activating, random token for non-activating
         formatted: list[tuple[str, bool]] = []
         for ex in activating:
-            formatted.append((_format_example(ex, lookup), True))
+            formatted.append((_format_example_with_center_token(ex, lookup), True))
         for ex in non_activating:
-            formatted.append((_format_example(ex, lookup), False))
+            formatted.append((_format_example_with_random_token(ex, lookup, rng), False))
 
         # Shuffle
         rng.shuffle(formatted)

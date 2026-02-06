@@ -31,7 +31,8 @@ from spd.autointerp.scoring.detection import (
     N_ACTIVATING,
     N_NON_ACTIVATING,
     _build_detection_prompt,
-    _format_example,
+    _format_example_with_center_token,
+    _format_example_with_random_token,
     _sample_activating_examples,
     _sample_non_activating_examples,
 )
@@ -78,9 +79,9 @@ def _build_example_detection_prompt(
 
     formatted: list[tuple[str, bool]] = []
     for ex in activating:
-        formatted.append((_format_example(ex, lookup), True))
+        formatted.append((_format_example_with_center_token(ex, lookup), True))
     for ex in non_activating:
-        formatted.append((_format_example(ex, lookup), False))
+        formatted.append((_format_example_with_random_token(ex, lookup, rng), False))
     rng.shuffle(formatted)
     return _build_detection_prompt(label, formatted)
 
