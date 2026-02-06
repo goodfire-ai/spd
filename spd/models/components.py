@@ -11,7 +11,7 @@ from torch import Tensor, nn
 from spd.utils.module_utils import _NonlinearityType, init_param_
 
 if TYPE_CHECKING:
-    from spd.configs import TransitionAttnConfig
+    from spd.configs import AttnConfig
     from spd.spd_types import LayerwiseCiFnType
 
 
@@ -380,7 +380,7 @@ class GlobalReverseResidualCiFn(nn.Module):
         d_resid_ci_fn: int,
         reader_hidden_dims: list[int],
         transition_hidden_dim: int | None,
-        attn_config: "TransitionAttnConfig | None" = None,
+        attn_config: "AttnConfig | None" = None,
     ):
         """Initialize the reverse residual CI function.
 

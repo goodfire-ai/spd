@@ -5,7 +5,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import wraps
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import torch
 import torch.distributed as dist
@@ -134,6 +134,24 @@ def is_local_main_process() -> bool:
     if state is None:
         return True
     return state.local_rank == 0
+
+
+def print0(*args: Any, **kwargs: Any) -> None:
+    """Print only on rank 0 process.
+
+    Works with both torchrun (RANK env var) and init_distributed() setups.
+    """
+    if int(os.environ.get("RANK", 0)) == 0:
+        print(*args, **kwargs)
+
+
+def log0(msg: str) -> None:
+    """Log only on rank 0 process.
+
+    Works with both torchrun (RANK env var) and init_distributed() setups.
+    """
+    if int(os.environ.get("RANK", 0)) == 0:
+        logger.info(msg)
 
 
 def get_device() -> str:
