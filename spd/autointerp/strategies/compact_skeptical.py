@@ -6,7 +6,7 @@ Extracted from the original prompt_template.py.
 
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup
+from spd.app.backend.utils import build_token_lookup, delimit_tokens
 from spd.autointerp.config import CompactSkepticalConfig
 from spd.autointerp.schemas import ArchitectureInfo
 from spd.harvest.analysis import TokenPRLift
@@ -22,7 +22,7 @@ INTERPRETATION_SCHEMA = {
         "confidence": {
             "type": "string",
             "enum": ["low", "medium", "high"],
-            "description": "low = weak/unclear; medium = coherent but noisy; high = >80% precision on specific tokens",
+            "description": "low = speculative/unclear; medium = plausible but noisy; high = clear specific pattern with strong evidence",
         },
         "reasoning": {
             "type": "string",
@@ -76,7 +76,6 @@ def format_prompt(
     output_token_stats: TokenPRLift,
 ) -> str:
     lookup = build_token_lookup(tokenizer, tokenizer.name_or_path)
-    PADDING_SENTINEL = -1
 
     input_pmi: list[tuple[str, float]] | None = None
     output_pmi: list[tuple[str, float]] | None = None
@@ -99,10 +98,8 @@ def format_prompt(
     )
     examples_section = _build_examples_section(
         component,
-        tokenizer,
         lookup,
         config.ci_display_threshold,
-        PADDING_SENTINEL,
         config.max_examples,
     )
 
@@ -135,7 +132,7 @@ Label this neural network component.
 {input_section}
 {output_section}
 
-## Activation examples (active tokens marked)
+## Activation examples (active tokens in <<delimiters>>)
 
 {examples_section}
 
@@ -147,10 +144,10 @@ Be SKEPTICAL. If you can't identify specific tokens or a tight grammatical patte
 
 Rules:
 1. Good labels name SPECIFIC tokens: "'the'", "##ing suffix", "she/her pronouns"
-2. Say "unclear" if: tokens are too varied, no >50% precision, or pattern is abstract
+2. Say "unclear" if: tokens are too varied, pattern is abstract, or evidence is weak
 3. FORBIDDEN words (too vague): {forbidden}
 4. Lowercase only
-5. Confidence: "high" only for >80% precision on identifiable tokens; default to "low" or "medium"
+5. Confidence: "high" = clear, specific pattern with strong evidence; "medium" = plausible but noisy; "low" = speculative
 
 GOOD: "##ed suffix", "'and' conjunction", "she/her/hers", "period then capital", "unclear"
 BAD: "various words and punctuation", "verbs and adjectives", "tokens near commas"
@@ -164,17 +161,17 @@ def _build_input_section(
     section = ""
 
     if input_stats.top_recall:
-        section += "**Input tokens (by recall):**\n"
+        section += "**Input recall — when active, which tokens appear?**\n"
         for tok, recall in input_stats.top_recall[:8]:
             section += f"  {repr(tok)}: {recall * 100:.0f}%\n"
 
     if input_stats.top_precision:
-        section += "\n**Input tokens (by precision):**\n"
+        section += "\n**Input precision — which tokens predict this component?**\n"
         for tok, prec in input_stats.top_precision[:8]:
             section += f"  {repr(tok)}: {prec * 100:.0f}%\n"
 
     if input_pmi:
-        section += "\n**Input PMI (surprising associations):**\n"
+        section += "\n**Input PMI — surprising associations:**\n"
         for tok, pmi in input_pmi[:6]:
             section += f"  {repr(tok)}: {pmi:.2f}\n"
 
@@ -192,14 +189,16 @@ def _build_output_section(
         high_prec = [(t, p) for t, p in output_stats.top_precision[:top_k] if p > 0.5]
         if high_prec:
             tokens = [repr(t) for t, _ in high_prec[:15]]
-            section += f"**Predicted tokens (>50% precision):** {', '.join(tokens)}\n"
+            section += (
+                f"**Output precision — tokens predicted when active (>50%):** {', '.join(tokens)}\n"
+            )
         else:
             top_few = output_stats.top_precision[:10]
             tokens = [f"{repr(t)} ({p * 100:.0f}%)" for t, p in top_few]
-            section += f"**Top predicted tokens:** {', '.join(tokens)}\n"
+            section += f"**Output precision — top predicted tokens:** {', '.join(tokens)}\n"
 
     if output_pmi:
-        section += "\n**Output PMI (surprising predictions):**\n"
+        section += "\n**Output PMI — surprising predictions:**\n"
         for tok, pmi in output_pmi[:6]:
             section += f"  {repr(tok)}: {pmi:.2f}\n"
 
@@ -208,25 +207,21 @@ def _build_output_section(
 
 def _build_examples_section(
     component: ComponentData,
-    tokenizer: PreTrainedTokenizerBase,
     lookup: dict[int, str],
     ci_threshold: float,
-    padding_sentinel: int,
     max_examples: int,
 ) -> str:
     section = ""
     examples = component.activation_examples[:max_examples]
 
     for i, ex in enumerate(examples):
-        valid_tokens = [t for t in ex.token_ids if t != padding_sentinel and t >= 0]
-        text = tokenizer.decode(valid_tokens).replace("\n", " ")[:100]
-
-        active = []
-        for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True):
-            if ci > ci_threshold and tid != padding_sentinel and tid >= 0:
-                active.append(f'"{lookup[tid].strip()}"')
-
-        if active:
-            section += f'{i + 1}. "{text}..." -> {", ".join(active[:5])}\n'
+        tokens = [
+            (lookup[tid], ci > ci_threshold)
+            for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True)
+            if tid >= 0
+        ]
+        has_active = any(active for _, active in tokens)
+        if has_active:
+            section += f"{i + 1}. {delimit_tokens(tokens)}\n"
 
     return section

@@ -157,16 +157,14 @@ def _build_prompt(
         examples_text += f"Example {i + 1}: {_format_example(ex, lookup)}\n\n"
 
     return f"""\
-You are evaluating the coherence of a neural network component's activations.
+Below are 5 text snippets from a neural network's training data. Four come from contexts \
+where the SAME component fires strongly. One is an INTRUDER from a DIFFERENT component.
 
-Below are 5 text examples. Four of them activate the SAME component in a neural network
-(they share a common pattern). One is an INTRUDER — it activates a DIFFERENT component.
+Tokens between <<delimiters>> are where the component fires most strongly.
 
-Tokens between <<delimiters>> are where the component is most active.
-
-{examples_text}
-Which example is the intruder? Think step by step about what pattern the majority share,
-then identify which example does not fit.
+{examples_text}\
+Which example is the intruder? Identify what pattern the majority share, then pick \
+the example that does not fit.
 
 Respond with the intruder example number (1-5) and brief reasoning."""
 

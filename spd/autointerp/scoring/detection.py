@@ -1,7 +1,7 @@
 """Detection scoring.
 
 Tests whether a component's interpretation label is predictive of its activations by asking
-an LLM to classify a mix of activating and non-activating examples.
+an LLM to classify plain text examples as activating or non-activating.
 
 Based on: EleutherAI's sae-auto-interp (https://blog.eleuther.ai/autointerp/).
 
@@ -19,7 +19,7 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup, delimit_tokens
+from spd.app.backend.utils import build_token_lookup
 from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
@@ -33,7 +33,6 @@ from spd.log import logger
 N_ACTIVATING = 5
 N_NON_ACTIVATING = 5
 N_TRIALS = 5
-CI_THRESHOLD = 0.3
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 200
 
@@ -70,48 +69,12 @@ class DetectionResult:
     n_errors: int
 
 
-def _format_activating_example(
+def _format_example(
     example: ActivationExample,
     lookup: dict[int, str],
 ) -> str:
-    """Format an activating example with high-CI tokens in <<delimiters>>.
-
-    NOTE: Potential leakage — real CI patterns have spatial structure (consecutive tokens
-    tend to be co-active), while non-activating examples use i.i.d. Bernoulli delimiting.
-    An LLM could distinguish bursty vs uniform patterns without understanding the label.
-    Fixing this properly would require matching the run-length distribution of delimited spans.
-    """
-    tokens = [
-        (lookup[tid], ci > CI_THRESHOLD)
-        for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
-        if tid >= 0
-    ]
-    return delimit_tokens(tokens)
-
-
-def _measure_bold_density(examples: list[ActivationExample]) -> float:
-    """Measure the fraction of valid tokens above CI_THRESHOLD across activating examples."""
-    n_bold = 0
-    n_total = 0
-    for ex in examples:
-        for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True):
-            if tid < 0:
-                continue
-            n_total += 1
-            if ci > CI_THRESHOLD:
-                n_bold += 1
-    return n_bold / n_total if n_total > 0 else 0.0
-
-
-def _format_non_activating_example(
-    example: ActivationExample,
-    lookup: dict[int, str],
-    rng: random.Random,
-    bold_density: float,
-) -> str:
-    """Format a non-activating example with random tokens in <<delimiters>> to match density."""
-    tokens = [(lookup[tid], rng.random() < bold_density) for tid in example.token_ids if tid >= 0]
-    return delimit_tokens(tokens)
+    """Format an example as plain text (no token highlighting)."""
+    return "".join(lookup[tid] for tid in example.token_ids if tid >= 0)
 
 
 def _sample_activating_examples(
@@ -176,16 +139,13 @@ def _build_detection_prompt(
         examples_text += f"Example {i + 1}: {text}\n\n"
 
     return f"""\
-You are evaluating whether a neural network component's interpretation label is predictive \
-of its activations.
+A neural network component has been labeled as: "{label}"
 
-The component has been labeled as: "{label}"
+Below are {n_total} text snippets. Some come from contexts where this component is active \
+(high causal importance), others come from contexts where it is not.
 
-Below are {n_total} text examples. Some of them activate this component, and some do not.
-Important tokens are highlighted between <<delimiters>>.
-
-{examples_text}
-For each example, decide whether it activates the component described by the label above.
+{examples_text}\
+Based on the label, which examples come from contexts where this component is active?
 
 Respond with the list of activating example numbers."""
 
@@ -210,14 +170,12 @@ async def score_component(
             component, all_components, N_NON_ACTIVATING, rng
         )
 
-        bold_density = _measure_bold_density(activating)
-
-        # Format examples
+        # Format as plain text — no token highlighting (matches paper)
         formatted: list[tuple[str, bool]] = []
         for ex in activating:
-            formatted.append((_format_activating_example(ex, lookup), True))
+            formatted.append((_format_example(ex, lookup), True))
         for ex in non_activating:
-            formatted.append((_format_non_activating_example(ex, lookup, rng, bold_density), False))
+            formatted.append((_format_example(ex, lookup), False))
 
         # Shuffle
         rng.shuffle(formatted)

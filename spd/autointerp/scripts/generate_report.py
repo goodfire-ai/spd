@@ -31,9 +31,7 @@ from spd.autointerp.scoring.detection import (
     N_ACTIVATING,
     N_NON_ACTIVATING,
     _build_detection_prompt,
-    _format_activating_example,
-    _format_non_activating_example,
-    _measure_bold_density,
+    _format_example,
     _sample_activating_examples,
     _sample_non_activating_examples,
 )
@@ -77,13 +75,12 @@ def _build_example_detection_prompt(
     non_activating = _sample_non_activating_examples(
         component, all_components, N_NON_ACTIVATING, rng
     )
-    bold_density = _measure_bold_density(activating)
 
     formatted: list[tuple[str, bool]] = []
     for ex in activating:
-        formatted.append((_format_activating_example(ex, lookup), True))
+        formatted.append((_format_example(ex, lookup), True))
     for ex in non_activating:
-        formatted.append((_format_non_activating_example(ex, lookup, rng, bold_density), False))
+        formatted.append((_format_example(ex, lookup), False))
     rng.shuffle(formatted)
     return _build_detection_prompt(label, formatted)
 

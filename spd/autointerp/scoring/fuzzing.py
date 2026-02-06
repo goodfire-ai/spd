@@ -127,20 +127,16 @@ def _build_fuzzing_prompt(
         examples_text += f"Example {i + 1}: {text}\n\n"
 
     return f"""\
-You are evaluating the quality of an interpretation of a neural network component.
+A neural network component has been interpreted as: "{label}"
 
-The component has been interpreted as: "{label}"
+Below are {n_examples} text examples where this component is active. In each example, some tokens \
+are marked between <<delimiters>>. In some examples, the <<delimited>> tokens correctly indicate \
+where the component fires most strongly. In other examples, the <<delimited>> tokens are random \
+and unrelated to the component's actual firing pattern.
 
-Below are {n_examples} text examples where this component activates. In each example, some tokens
-are highlighted between <<delimiters>>. In some examples, the delimited tokens CORRECTLY mark
-where the component is most active (consistent with the interpretation). In other examples, the
-delimited tokens are INCORRECT — they mark random tokens that are NOT where the component is
-actually active.
-
-{examples_text}
-For each example, decide whether the <<delimited>> tokens are CORRECTLY highlighting tokens
-consistent with the interpretation "{label}", or whether the delimited tokens seem RANDOM and
-unrelated to the interpretation.
+{examples_text}\
+Based on the interpretation "{label}", which examples have correctly-marked tokens \
+(consistent with the label) vs. randomly-marked tokens?
 
 Respond with the list of correctly-highlighted example numbers and brief reasoning.\
 """
