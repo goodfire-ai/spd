@@ -45,7 +45,7 @@ class PersistentPGDState:
     def __init__(
         self,
         module_to_c: dict[str, int],
-        train_batch_dims: tuple[int, ...],
+        seq_len: int,
         device: torch.device | str,
         use_delta_component: bool,
         cfg: PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
@@ -58,18 +58,13 @@ class PersistentPGDState:
 
         self.masks: PPGDMasks = {}
 
-        assert len(train_batch_dims) == 2, (
-            "PersistentPGD only supports the (batch, seq_len) shape case"
-        )
-        B, S = train_batch_dims
         match cfg.scope:
             case SingleMaskScope():
                 mask_leading_dims = [1, 1]
             case BroadcastAcrossBatchScope():
-                mask_leading_dims = [1, S]
+                mask_leading_dims = [1, seq_len]
             case BatchInvariantScope(n_masks=n):
-                assert B % n == 0, f"n_masks={n} must divide train batch_size={B}"
-                mask_leading_dims = [n, S]
+                mask_leading_dims = [n, seq_len]
 
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
