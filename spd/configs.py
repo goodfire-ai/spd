@@ -393,6 +393,10 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
+    use_tf32: bool = Field(
+        default=True,
+        description="Whether to use TF32 for faster mixed precision training",
+    )
     n_mask_samples: PositiveInt = Field(
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
