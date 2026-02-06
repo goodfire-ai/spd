@@ -393,7 +393,7 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
-    mixed_precision_bf16: bool = Field(
+    autocast_bf16: bool = Field(
         default=True,
         description="Whether to use torch.autocast with bfloat16 mixed precision",
     )

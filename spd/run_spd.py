@@ -127,7 +127,7 @@ def optimize(
 
     autocast_ctx: contextlib.AbstractContextManager[torch.amp.autocast_mode.autocast | None] = (
         torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        if config.mixed_precision_bf16
+        if config.autocast_bf16
         else contextlib.nullcontext()
     )
 
