@@ -46,7 +46,7 @@ from spd.utils.general_utils import (
     get_scheduled_value,
 )
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
-from spd.utils.module_utils import expand_module_patterns, replace_std_values_in_layernorm
+from spd.utils.module_utils import expand_module_patterns
 from spd.utils.run_utils import save_file
 from spd.utils.wandb_utils import try_wandb
 
@@ -121,9 +121,10 @@ def optimize(
     n_eval_steps: int,
     out_dir: Path | None,
     tied_weights: list[tuple[str, str]] | None = None,
-    ln_stds: dict[str, float] | None = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
+
+    torch.set_float32_matmul_precision("high")
 
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
@@ -157,9 +158,6 @@ def optimize(
         sigmoid_type=config.sigmoid_type,
     )
 
-    if ln_stds is not None:
-        # model has ablated layernorms, patch in the fixed std values
-        replace_std_values_in_layernorm(model, ln_stds)
     model.to(device)
 
     # Wrap model with DDP if distributed
