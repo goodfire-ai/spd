@@ -19,7 +19,7 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup
+from spd.app.backend.utils import build_token_lookup, delimit_tokens
 from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
@@ -77,37 +77,17 @@ def _format_activating_example(
 ) -> str:
     """Format an activating example with high-CI tokens in <<delimiters>>.
 
-    Consecutive high-CI tokens are grouped: <<over the moon>>.
-
     NOTE: Potential leakage — real CI patterns have spatial structure (consecutive tokens
     tend to be co-active), while non-activating examples use i.i.d. Bernoulli delimiting.
     An LLM could distinguish bursty vs uniform patterns without understanding the label.
     Fixing this properly would require matching the run-length distribution of delimited spans.
     """
-    parts: list[str] = []
-    in_span = False
-    for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
-        if tid < 0:
-            continue
-        tok = lookup[tid]
-        active = ci > CI_THRESHOLD
-        if active and not in_span:
-            stripped = tok.lstrip()
-            parts.append(tok[: len(tok) - len(stripped)])  # leading whitespace before <<
-            parts.append("<<")
-            parts.append(stripped)
-            in_span = True
-        elif active and in_span:
-            parts.append(tok)
-        elif not active and in_span:
-            parts.append(">>")
-            parts.append(tok)
-            in_span = False
-        else:
-            parts.append(tok)
-    if in_span:
-        parts.append(">>")
-    return "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
+    tokens = [
+        (lookup[tid], ci > CI_THRESHOLD)
+        for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
+        if tid >= 0
+    ]
+    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE])
 
 
 def _measure_bold_density(examples: list[ActivationExample]) -> float:
@@ -131,30 +111,8 @@ def _format_non_activating_example(
     bold_density: float,
 ) -> str:
     """Format a non-activating example with random tokens in <<delimiters>> to match density."""
-    parts: list[str] = []
-    in_span = False
-    for tid in example.token_ids:
-        if tid < 0:
-            continue
-        tok = lookup[tid]
-        active = rng.random() < bold_density
-        if active and not in_span:
-            stripped = tok.lstrip()
-            parts.append(tok[: len(tok) - len(stripped)])
-            parts.append("<<")
-            parts.append(stripped)
-            in_span = True
-        elif active and in_span:
-            parts.append(tok)
-        elif not active and in_span:
-            parts.append(">>")
-            parts.append(tok)
-            in_span = False
-        else:
-            parts.append(tok)
-    if in_span:
-        parts.append(">>")
-    return "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
+    tokens = [(lookup[tid], rng.random() < bold_density) for tid in example.token_ids if tid >= 0]
+    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE])
 
 
 def _sample_activating_examples(

@@ -17,7 +17,7 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup
+from spd.app.backend.utils import build_token_lookup, delimit_tokens
 from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
@@ -76,34 +76,13 @@ def _delimit_high_ci_tokens(
     lookup: dict[int, str],
 ) -> tuple[str, int]:
     """Format example with high-CI tokens in <<delimiters>>. Returns (text, n_delimited)."""
-    parts: list[str] = []
-    n_delimited = 0
-    in_span = False
-    for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
-        if tid < 0:
-            continue
-        tok = lookup[tid]
-        active = ci > CI_THRESHOLD
-        if active and not in_span:
-            stripped = tok.lstrip()
-            parts.append(tok[: len(tok) - len(stripped)])
-            parts.append("<<")
-            parts.append(stripped)
-            n_delimited += 1
-            in_span = True
-        elif active and in_span:
-            parts.append(tok)
-            n_delimited += 1
-        elif not active and in_span:
-            parts.append(">>")
-            parts.append(tok)
-            in_span = False
-        else:
-            parts.append(tok)
-    if in_span:
-        parts.append(">>")
-    text = "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
-    return text, n_delimited
+    tokens = [
+        (lookup[tid], ci > CI_THRESHOLD)
+        for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
+        if tid >= 0
+    ]
+    n_delimited = sum(1 for _, active in tokens if active)
+    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE]), n_delimited
 
 
 def _delimit_random_low_ci_tokens(
@@ -124,31 +103,12 @@ def _delimit_random_low_ci_tokens(
     else:
         delimit_indices = set(rng.sample(valid_indices, n_to_delimit))
 
-    parts: list[str] = []
-    in_span = False
-    for i, (tid, _ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True)):
-        if tid < 0:
-            continue
-        tok = lookup[tid]
-        active = i in delimit_indices
-        if active and not in_span:
-            stripped = tok.lstrip()
-            parts.append(tok[: len(tok) - len(stripped)])
-            parts.append("<<")
-            parts.append(stripped)
-            in_span = True
-        elif active and in_span:
-            parts.append(tok)
-        elif not active and in_span:
-            parts.append(">>")
-            parts.append(tok)
-            in_span = False
-        else:
-            parts.append(tok)
-    if in_span:
-        parts.append(">>")
-    text = "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
-    return text
+    tokens = [
+        (lookup[tid], i in delimit_indices)
+        for i, (tid, _ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True))
+        if tid >= 0
+    ]
+    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE])
 
 
 def _build_fuzzing_prompt(

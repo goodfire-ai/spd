@@ -20,7 +20,7 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup
+from spd.app.backend.utils import build_token_lookup, delimit_tokens
 from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
@@ -126,31 +126,12 @@ def _format_example(
     lookup: dict[int, str],
     ci_threshold: float = CI_THRESHOLD,
 ) -> str:
-    """Format example with high-CI tokens in <<delimiters>>. Consecutive tokens are grouped."""
-    parts: list[str] = []
-    in_span = False
-    for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
-        if tid < 0:
-            continue
-        tok = lookup[tid]
-        active = ci > ci_threshold
-        if active and not in_span:
-            stripped = tok.lstrip()
-            parts.append(tok[: len(tok) - len(stripped)])
-            parts.append("<<")
-            parts.append(stripped)
-            in_span = True
-        elif active and in_span:
-            parts.append(tok)
-        elif not active and in_span:
-            parts.append(">>")
-            parts.append(tok)
-            in_span = False
-        else:
-            parts.append(tok)
-    if in_span:
-        parts.append(">>")
-    return "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
+    tokens = [
+        (lookup[tid], ci > ci_threshold)
+        for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
+        if tid >= 0
+    ]
+    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE])
 
 
 def _sample_intruder(
