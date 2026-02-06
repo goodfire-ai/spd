@@ -143,7 +143,6 @@ def get_sources_by_target(
     with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
         output_with_cache: OutputWithCache = model(batch, cache_type="input")
 
-    with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
         ci = model.calc_causal_importances(
             pre_weight_acts=output_with_cache.cache,
             sampling=sampling,
