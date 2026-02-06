@@ -195,6 +195,9 @@ async def request_component_interpretation(
     )
 
     async with OpenRouter(api_key=api_key) as client:
+        from spd.harvest.schemas import load_harvest_ci_threshold
+
+        ci_threshold = load_harvest_ci_threshold(loaded.harvest.run_id)
         res = await interpret_component(
             client=client,
             config=config,
@@ -203,6 +206,7 @@ async def request_component_interpretation(
             tokenizer=loaded.tokenizer,
             input_token_stats=input_token_stats,
             output_token_stats=output_token_stats,
+            ci_threshold=ci_threshold,
         )
 
     if res is None:

@@ -24,6 +24,7 @@ def format_prompt(
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
+    ci_threshold: float,
 ) -> str:
     match config:
         case CompactSkepticalConfig():
@@ -34,6 +35,7 @@ def format_prompt(
                 tokenizer,
                 input_token_stats,
                 output_token_stats,
+                ci_threshold,
             )
 
 

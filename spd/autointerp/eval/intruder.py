@@ -33,7 +33,6 @@ from spd.log import logger
 
 N_REAL = 4
 N_TRIALS = 10
-CI_THRESHOLD = 0.3
 DENSITY_TOLERANCE = 0.05
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 200
@@ -69,8 +68,8 @@ class IntruderResult:
     n_errors: int
 
 
-def _bold_density(component: ComponentData) -> float:
-    """Fraction of valid tokens above CI_THRESHOLD across a component's activation examples."""
+def _bold_density(component: ComponentData, ci_threshold: float) -> float:
+    """Fraction of valid tokens above ci_threshold across a component's activation examples."""
     n_bold = 0
     n_total = 0
     for ex in component.activation_examples:
@@ -78,7 +77,7 @@ def _bold_density(component: ComponentData) -> float:
             if tid < 0:
                 continue
             n_total += 1
-            if ci > CI_THRESHOLD:
+            if ci > ci_threshold:
                 n_bold += 1
     return n_bold / n_total if n_total > 0 else 0.0
 
@@ -86,9 +85,11 @@ def _bold_density(component: ComponentData) -> float:
 class DensityIndex:
     """Index of components sorted by bold density for efficient similar-density lookup."""
 
-    def __init__(self, components: list[ComponentData], min_examples: int) -> None:
+    def __init__(
+        self, components: list[ComponentData], min_examples: int, ci_threshold: float
+    ) -> None:
         eligible = [c for c in components if len(c.activation_examples) >= min_examples]
-        pairs = [(c, _bold_density(c)) for c in eligible]
+        pairs = [(c, _bold_density(c, ci_threshold)) for c in eligible]
         pairs.sort(key=lambda p: p[1])
         self._components = [c for c, _ in pairs]
         self._densities = [d for _, d in pairs]
@@ -123,7 +124,7 @@ class DensityIndex:
 def _format_example(
     example: ActivationExample,
     lookup: dict[int, str],
-    ci_threshold: float = CI_THRESHOLD,
+    ci_threshold: float,
 ) -> str:
     tokens = [
         (lookup[tid], ci > ci_threshold)
@@ -148,13 +149,14 @@ def _build_prompt(
     intruder: ActivationExample,
     intruder_position: int,
     lookup: dict[int, str],
+    ci_threshold: float,
 ) -> str:
     all_examples = list(real_examples)
     all_examples.insert(intruder_position, intruder)
 
     examples_text = ""
     for i, ex in enumerate(all_examples):
-        examples_text += f"Example {i + 1}: {_format_example(ex, lookup)}\n\n"
+        examples_text += f"Example {i + 1}: {_format_example(ex, lookup, ci_threshold)}\n\n"
 
     return f"""\
 Below are 5 text snippets from a neural network's training data. Four come from contexts \
@@ -175,6 +177,7 @@ async def score_component(
     component: ComponentData,
     density_index: DensityIndex,
     lookup: dict[int, str],
+    ci_threshold: float,
 ) -> IntruderResult:
     assert len(component.activation_examples) >= N_REAL + 1
 
@@ -188,7 +191,7 @@ async def score_component(
         intruder_pos = rng.randint(0, N_REAL)
         correct_answer = intruder_pos + 1
 
-        prompt = _build_prompt(real_examples, intruder, intruder_pos, lookup)
+        prompt = _build_prompt(real_examples, intruder, intruder_pos, lookup, ci_threshold)
 
         try:
             response, _, _ = await chat_with_retry(
@@ -229,6 +232,7 @@ async def run_intruder_scoring(
     openrouter_api_key: str,
     tokenizer_name: str,
     output_path: Path,
+    ci_threshold: float,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[IntruderResult]:
@@ -263,7 +267,7 @@ async def run_intruder_scoring(
         eligible = eligible[:limit]
     print(f"Scoring {len(eligible)} components")
 
-    density_index = DensityIndex(components, min_examples=N_REAL + 1)
+    density_index = DensityIndex(components, min_examples=N_REAL + 1, ci_threshold=ci_threshold)
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
@@ -282,7 +286,9 @@ async def run_intruder_scoring(
             if cost_tracker.over_budget():
                 return
             try:
-                result = await score_component(client, model, component, density_index, lookup)
+                result = await score_component(
+                    client, model, component, density_index, lookup, ci_threshold
+                )
                 async with output_lock:
                     results.append(result)
                     with open(output_path, "a") as f:

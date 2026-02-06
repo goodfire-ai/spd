@@ -43,7 +43,11 @@ from spd.autointerp.scoring.fuzzing import (
     _delimit_random_low_ci_tokens,
 )
 from spd.harvest.harvest import HarvestResult
-from spd.harvest.schemas import ComponentData, get_activation_contexts_dir
+from spd.harvest.schemas import (
+    ComponentData,
+    get_activation_contexts_dir,
+    load_harvest_ci_threshold,
+)
 from spd.harvest.storage import TokenStatsStorage
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -90,6 +94,7 @@ def _build_example_fuzzing_prompt(
     lookup: dict[int, str],
     label: str,
     rng: random.Random,
+    ci_threshold: float,
 ) -> str:
     sampled = rng.sample(component.activation_examples, N_CORRECT + N_INCORRECT)
     correct_examples = sampled[:N_CORRECT]
@@ -97,11 +102,11 @@ def _build_example_fuzzing_prompt(
 
     formatted: list[tuple[str, bool]] = []
     for ex in correct_examples:
-        text, _ = _delimit_high_ci_tokens(ex, lookup)
+        text, _ = _delimit_high_ci_tokens(ex, lookup, ci_threshold)
         formatted.append((text, True))
     for ex in incorrect_examples:
-        _, n_delimited = _delimit_high_ci_tokens(ex, lookup)
-        text = _delimit_random_low_ci_tokens(ex, lookup, max(n_delimited, 1), rng)
+        _, n_delimited = _delimit_high_ci_tokens(ex, lookup, ci_threshold)
+        text = _delimit_random_low_ci_tokens(ex, lookup, max(n_delimited, 1), rng, ci_threshold)
         formatted.append((text, False))
     rng.shuffle(formatted)
     return _build_fuzzing_prompt(label, formatted)
@@ -112,12 +117,13 @@ def _build_example_intruder_prompt(
     all_components: list[ComponentData],
     lookup: dict[int, str],
     rng: random.Random,
+    ci_threshold: float,
 ) -> str:
-    density_index = DensityIndex(all_components, min_examples=N_REAL + 1)
+    density_index = DensityIndex(all_components, min_examples=N_REAL + 1, ci_threshold=ci_threshold)
     real_examples = rng.sample(component.activation_examples, N_REAL)
     intruder = _sample_intruder(component, density_index, rng)
     intruder_pos = rng.randint(0, N_REAL)
-    return _build_prompt(real_examples, intruder, intruder_pos, lookup)
+    return _build_prompt(real_examples, intruder, intruder_pos, lookup, ci_threshold)
 
 
 def generate_report(wandb_path: str, output_path: Path | None = None) -> Path:
@@ -147,6 +153,7 @@ def generate_report(wandb_path: str, output_path: Path | None = None) -> Path:
     activation_contexts_dir = get_activation_contexts_dir(run_id)
     assert activation_contexts_dir.exists(), f"No harvest data at {activation_contexts_dir}"
     components = HarvestResult.load_components(activation_contexts_dir)
+    ci_threshold = load_harvest_ci_threshold(run_id)
 
     labels = {r["component_key"]: r["label"] for r in interp_results}
 
@@ -250,6 +257,7 @@ For sense-checking tokenization and formatting.
         components,
         lookup,
         rng,
+        ci_threshold,
     )
     md += f"```\n{intruder_prompt}\n```\n\n"
 
@@ -282,6 +290,7 @@ For sense-checking tokenization and formatting.
                 tokenizer,
                 input_stats,
                 output_stats,
+                ci_threshold,
             )
             md += f"```\n{interp_prompt}\n```\n\n"
         else:
@@ -312,6 +321,7 @@ For sense-checking tokenization and formatting.
         lookup,
         example_label,
         rng,
+        ci_threshold,
     )
     md += f"```\n{fuzzing_prompt}\n```\n\n"
 

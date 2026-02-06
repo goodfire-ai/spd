@@ -39,7 +39,6 @@ class CompactSkepticalConfig(BaseConfig):
     type: Literal["compact_skeptical"] = "compact_skeptical"
     model: str
     reasoning_effort: ReasoningEffort | None
-    ci_display_threshold: float = 0.3
     max_examples: int = 30
     include_pmi: bool = True
     include_spd_context: bool = True

@@ -74,6 +74,7 @@ def format_prompt(
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
+    ci_threshold: float,
 ) -> str:
     lookup = build_token_lookup(tokenizer, tokenizer.name_or_path)
 
@@ -97,7 +98,7 @@ def format_prompt(
     examples_section = _build_examples_section(
         component,
         lookup,
-        config.ci_display_threshold,
+        ci_threshold,
         config.max_examples,
     )
 

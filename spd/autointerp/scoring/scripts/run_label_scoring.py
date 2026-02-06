@@ -17,7 +17,7 @@ from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.harvest import HarvestResult
-from spd.harvest.schemas import get_activation_contexts_dir
+from spd.harvest.schemas import get_activation_contexts_dir, load_harvest_ci_threshold
 
 LabelScorerType = Literal["detection", "fuzzing"]
 
@@ -45,6 +45,7 @@ def main(
     labels = {key: result.label for key, result in interpretations.items()}
 
     components = HarvestResult.load_components(activation_contexts_dir)
+    ci_threshold = load_harvest_ci_threshold(run_id)
 
     # Scoring output goes under the autointerp run dir if specified, else under SPD run dir
     if autointerp_run_id is not None:
@@ -82,6 +83,7 @@ def main(
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=arch.tokenizer_name,
                     output_path=output_path,
+                    ci_threshold=ci_threshold,
                     limit=limit,
                     cost_limit_usd=cost_limit_usd,
                 )

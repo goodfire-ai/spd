@@ -19,7 +19,6 @@ from spd.autointerp.llm_api import (
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.autointerp.strategies.dispatch import (
     format_prompt,
-    get_model,
     get_reasoning,
     get_response_schema,
 )
@@ -43,6 +42,7 @@ async def interpret_component(
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
+    ci_threshold: float,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
     prompt = format_prompt(
@@ -52,9 +52,10 @@ async def interpret_component(
         tokenizer=tokenizer,
         input_token_stats=input_token_stats,
         output_token_stats=output_token_stats,
+        ci_threshold=ci_threshold,
     )
 
-    model = get_model(config)
+    model = config.model
     reasoning = get_reasoning(config)
     schema = get_response_schema(config)
 
@@ -107,6 +108,7 @@ async def interpret_all(
     config: AutointerpConfig,
     output_path: Path,
     token_stats: TokenStatsStorage,
+    ci_threshold: float,
     limit: int | None,
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
@@ -137,7 +139,7 @@ async def interpret_all(
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
 
-    interpreter_model = get_model(config)
+    interpreter_model = config.model
     reasoning = get_reasoning(config)
 
     async def process_one(
@@ -175,6 +177,7 @@ async def interpret_all(
                     tokenizer=tokenizer,
                     input_token_stats=input_stats,
                     output_token_stats=output_stats,
+                    ci_threshold=ci_threshold,
                 )
                 if res is None:
                     logger.error(f"Failed to interpret {component.component_key}")
@@ -253,6 +256,7 @@ def run_interpret(
     activation_contexts_dir: Path,
     correlations_dir: Path,
     output_path: Path,
+    ci_threshold: float,
     limit: int | None,
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
@@ -274,6 +278,7 @@ def run_interpret(
             config=config,
             output_path=output_path,
             token_stats=token_stats,
+            ci_threshold=ci_threshold,
             limit=limit,
             cost_limit_usd=cost_limit_usd,
         )

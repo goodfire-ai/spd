@@ -31,7 +31,6 @@ from spd.log import logger
 N_CORRECT = 5
 N_INCORRECT = 2
 N_TRIALS = 5
-CI_THRESHOLD = 0.3
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 200
 
@@ -73,10 +72,11 @@ class FuzzingResult:
 def _delimit_high_ci_tokens(
     example: ActivationExample,
     lookup: dict[int, str],
+    ci_threshold: float,
 ) -> tuple[str, int]:
     """Format example with high-CI tokens in <<delimiters>>. Returns (text, n_delimited)."""
     tokens = [
-        (lookup[tid], ci > CI_THRESHOLD)
+        (lookup[tid], ci > ci_threshold)
         for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
         if tid >= 0
     ]
@@ -89,12 +89,13 @@ def _delimit_random_low_ci_tokens(
     lookup: dict[int, str],
     n_to_delimit: int,
     rng: random.Random,
+    ci_threshold: float,
 ) -> str:
     """Format example with random LOW-CI tokens in <<delimiters>> instead of high-CI ones."""
     valid_indices = [
         i
         for i, (tid, ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True))
-        if tid >= 0 and ci <= CI_THRESHOLD
+        if tid >= 0 and ci <= ci_threshold
     ]
 
     if len(valid_indices) < n_to_delimit:
@@ -148,6 +149,7 @@ async def score_component(
     component: ComponentData,
     lookup: dict[int, str],
     label: str,
+    ci_threshold: float,
 ) -> FuzzingResult:
     min_examples = N_CORRECT + N_INCORRECT
     assert len(component.activation_examples) >= min_examples
@@ -168,14 +170,14 @@ async def score_component(
         formatted: list[tuple[str, bool]] = []
 
         for ex in correct_examples:
-            text, _ = _delimit_high_ci_tokens(ex, lookup)
+            text, _ = _delimit_high_ci_tokens(ex, lookup, ci_threshold)
             formatted.append((text, True))
 
         for ex in incorrect_examples:
             # Count how many tokens would be bolded in the correct version
-            _, n_delimited = _delimit_high_ci_tokens(ex, lookup)
+            _, n_delimited = _delimit_high_ci_tokens(ex, lookup, ci_threshold)
             n_to_delimit = max(n_delimited, 1)
-            text = _delimit_random_low_ci_tokens(ex, lookup, n_to_delimit, rng)
+            text = _delimit_random_low_ci_tokens(ex, lookup, n_to_delimit, rng, ci_threshold)
             formatted.append((text, False))
 
         rng.shuffle(formatted)
@@ -244,6 +246,7 @@ async def run_fuzzing_scoring(
     openrouter_api_key: str,
     tokenizer_name: str,
     output_path: Path,
+    ci_threshold: float,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[FuzzingResult]:
@@ -299,7 +302,9 @@ async def run_fuzzing_scoring(
                 return
             try:
                 label = labels[component.component_key]
-                result = await score_component(client, model, component, lookup, label)
+                result = await score_component(
+                    client, model, component, lookup, label, ci_threshold
+                )
                 async with output_lock:
                     results.append(result)
                     with open(output_path, "a") as f:

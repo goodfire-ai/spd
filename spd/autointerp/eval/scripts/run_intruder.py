@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
 from spd.harvest.harvest import HarvestResult
-from spd.harvest.schemas import get_activation_contexts_dir
+from spd.harvest.schemas import get_activation_contexts_dir, load_harvest_ci_threshold
 from spd.settings import SPD_OUT_DIR
 
 
@@ -40,6 +40,8 @@ def main(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = scoring_dir / f"results_{timestamp}.jsonl"
 
+    ci_threshold = load_harvest_ci_threshold(run_id)
+
     asyncio.run(
         run_intruder_scoring(
             components=components,
@@ -47,6 +49,7 @@ def main(
             openrouter_api_key=openrouter_api_key,
             tokenizer_name=arch.tokenizer_name,
             output_path=output_path,
+            ci_threshold=ci_threshold,
             limit=limit,
             cost_limit_usd=cost_limit_usd,
         )
