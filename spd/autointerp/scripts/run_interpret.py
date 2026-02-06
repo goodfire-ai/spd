@@ -17,7 +17,7 @@ from spd.autointerp.config import CompactSkepticalConfig, ReasoningEffort
 from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.loaders import load_harvest_ci_threshold
-from spd.harvest.schemas import get_activation_contexts_dir, get_correlations_dir
+from spd.harvest.schemas import get_correlations_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -52,11 +52,6 @@ def main(
         effort = ReasoningEffort(reasoning_effort) if reasoning_effort else None
         interp_config = CompactSkepticalConfig(model=model, reasoning_effort=effort)
 
-    activation_contexts_dir = get_activation_contexts_dir(run_id)
-    assert activation_contexts_dir.exists(), (
-        f"Activation contexts not found at {activation_contexts_dir}. Run harvest first."
-    )
-
     correlations_dir = get_correlations_dir(run_id)
 
     # Create timestamped run directory
@@ -76,7 +71,7 @@ def main(
         wandb_path,
         openrouter_api_key,
         interp_config,
-        activation_contexts_dir,
+        run_id,
         correlations_dir,
         output_path,
         ci_threshold,

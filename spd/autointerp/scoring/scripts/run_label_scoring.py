@@ -16,9 +16,7 @@ from dotenv import load_dotenv
 from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import get_autointerp_dir
-from spd.harvest.harvest import HarvestResult
-from spd.harvest.loaders import load_harvest_ci_threshold
-from spd.harvest.schemas import get_activation_contexts_dir
+from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
 
 LabelScorerType = Literal["detection", "fuzzing"]
 
@@ -38,14 +36,11 @@ def main(
     arch = get_architecture_info(wandb_path)
     run_id = wandb_path.split("/")[-1]
 
-    activation_contexts_dir = get_activation_contexts_dir(run_id)
-    assert activation_contexts_dir.exists(), f"No harvest data at {activation_contexts_dir}"
-
     interpretations = load_interpretations(run_id, autointerp_run_id)
     assert interpretations, f"No interpretation results for {run_id}. Run autointerp first."
     labels = {key: result.label for key, result in interpretations.items()}
 
-    components = HarvestResult.load_components(activation_contexts_dir)
+    components = load_all_components(run_id)
     ci_threshold = load_harvest_ci_threshold(run_id)
 
     # Scoring output goes under the autointerp run dir if specified, else under SPD run dir

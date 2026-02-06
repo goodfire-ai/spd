@@ -42,9 +42,8 @@ from spd.autointerp.scoring.fuzzing import (
     _delimit_high_ci_tokens,
     _delimit_random_low_ci_tokens,
 )
-from spd.harvest.harvest import HarvestResult
-from spd.harvest.loaders import load_harvest_ci_threshold
-from spd.harvest.schemas import ComponentData, get_activation_contexts_dir
+from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
+from spd.harvest.schemas import ComponentData
 from spd.harvest.storage import TokenStatsStorage
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -147,9 +146,7 @@ def generate_report(wandb_path: str, output_path: Path | None = None) -> Path:
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
     lookup = build_token_lookup(tokenizer, arch.tokenizer_name)
 
-    activation_contexts_dir = get_activation_contexts_dir(run_id)
-    assert activation_contexts_dir.exists(), f"No harvest data at {activation_contexts_dir}"
-    components = HarvestResult.load_components(activation_contexts_dir)
+    components = load_all_components(run_id)
     ci_threshold = load_harvest_ci_threshold(run_id)
 
     labels = {r["component_key"]: r["label"] for r in interp_results}

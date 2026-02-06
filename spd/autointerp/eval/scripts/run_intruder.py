@@ -12,9 +12,7 @@ from dotenv import load_dotenv
 
 from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
-from spd.harvest.harvest import HarvestResult
-from spd.harvest.loaders import load_harvest_ci_threshold
-from spd.harvest.schemas import get_activation_contexts_dir
+from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
 from spd.settings import SPD_OUT_DIR
 
 
@@ -31,10 +29,7 @@ def main(
     arch = get_architecture_info(wandb_path)
     run_id = wandb_path.split("/")[-1]
 
-    activation_contexts_dir = get_activation_contexts_dir(run_id)
-    assert activation_contexts_dir.exists(), f"No harvest data at {activation_contexts_dir}"
-
-    components = HarvestResult.load_components(activation_contexts_dir)
+    components = load_all_components(run_id)
 
     scoring_dir = SPD_OUT_DIR / "autointerp" / run_id / "eval" / "intruder"
     scoring_dir.mkdir(parents=True, exist_ok=True)

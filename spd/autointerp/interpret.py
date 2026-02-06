@@ -24,7 +24,7 @@ from spd.autointerp.strategies.dispatch import (
 )
 from spd.configs import LMTaskConfig
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
-from spd.harvest.harvest import HarvestResult
+from spd.harvest.loaders import load_all_components
 from spd.harvest.schemas import ComponentData
 from spd.harvest.storage import TokenStatsStorage
 from spd.log import logger
@@ -253,7 +253,7 @@ def run_interpret(
     wandb_path: str,
     openrouter_api_key: str,
     config: AutointerpConfig,
-    activation_contexts_dir: Path,
+    run_id: str,
     correlations_dir: Path,
     output_path: Path,
     ci_threshold: float,
@@ -261,7 +261,7 @@ def run_interpret(
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
-    components = HarvestResult.load_components(activation_contexts_dir)
+    components = load_all_components(run_id)
 
     # Load token stats
     token_stats_path = correlations_dir / "token_stats.pt"

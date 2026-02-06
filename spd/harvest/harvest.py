@@ -25,10 +25,8 @@ from torch import Tensor
 from spd.data import train_loader_and_tokenizer
 from spd.harvest.lib.harvester import Harvester, HarvesterState
 from spd.harvest.schemas import (
-    ActivationExample,
     ComponentData,
     ComponentSummary,
-    ComponentTokenPMI,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
@@ -116,39 +114,6 @@ class HarvestResult:
 
         # Save token stats (.pt)
         self.token_stats.save(correlations_dir / "token_stats.pt")
-
-    @staticmethod
-    def load_components(
-        activation_contexts_dir: Path,
-    ) -> list[ComponentData]:
-        """Load components that fired during harvest.
-
-        Reads the harvest ci_threshold from config.json and excludes components
-        whose mean_ci is below it (i.e. components that effectively never fire).
-        """
-        assert activation_contexts_dir.exists(), f"No harvest found at {activation_contexts_dir}"
-
-        config_path = activation_contexts_dir / "config.json"
-        assert config_path.exists(), f"No config.json in {activation_contexts_dir}"
-        with open(config_path) as f:
-            harvest_config = json.load(f)
-        ci_threshold = harvest_config["ci_threshold"]
-
-        components_path = activation_contexts_dir / "components.jsonl"
-        components = []
-        with open(components_path) as f:
-            for line in f:
-                data = json.loads(line)
-                if data["mean_ci"] < ci_threshold:
-                    continue
-                data["activation_examples"] = [
-                    ActivationExample(**ex) for ex in data["activation_examples"]
-                ]
-                data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
-                data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-                components.append(ComponentData(**data))
-
-        return components
 
 
 def _build_harvest_result(

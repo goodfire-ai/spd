@@ -24,6 +24,34 @@ def load_harvest_ci_threshold(wandb_run_id: str) -> float:
         return json.load(f)["ci_threshold"]
 
 
+def load_all_components(wandb_run_id: str) -> list[ComponentData]:
+    """Load all components that fired during harvest.
+
+    Reads the harvest ci_threshold from config.json and excludes components
+    whose mean_ci is below it (i.e. components that effectively never fire).
+    """
+    activation_contexts_dir = get_activation_contexts_dir(wandb_run_id)
+    assert activation_contexts_dir.exists(), f"No harvest found at {activation_contexts_dir}"
+
+    ci_threshold = load_harvest_ci_threshold(wandb_run_id)
+
+    components_path = activation_contexts_dir / "components.jsonl"
+    components = []
+    with open(components_path) as f:
+        for line in f:
+            data = json.loads(line)
+            if data["mean_ci"] < ci_threshold:
+                continue
+            data["activation_examples"] = [
+                ActivationExample(**ex) for ex in data["activation_examples"]
+            ]
+            data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
+            data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
+            components.append(ComponentData(**data))
+
+    return components
+
+
 def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSummary] | None:
     """Load lightweight summary of activation contexts (just metadata, not full examples)."""
     ctx_dir = get_activation_contexts_dir(wandb_run_id)
