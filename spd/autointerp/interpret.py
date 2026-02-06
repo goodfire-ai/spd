@@ -1,35 +1,21 @@
 import asyncio
 import json
-import random
-import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 from pathlib import Path
 
-import httpx
-import pydantic
 from openrouter import OpenRouter
-from openrouter.components import (
-    JSONSchemaConfig,
-    MessageTypedDict,
-    Reasoning,
-    ResponseFormatJSONSchema,
-)
-from openrouter.errors import (
-    BadGatewayResponseError,
-    ChatError,
-    EdgeNetworkTimeoutResponseError,
-    InternalServerResponseError,
-    OpenRouterDefaultError,
-    ProviderOverloadedResponseError,
-    RequestTimeoutResponseError,
-    ServiceUnavailableResponseError,
-    TooManyRequestsResponseError,
-)
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.config import AutointerpConfig
+from spd.autointerp.llm_api import (
+    CostTracker,
+    RateLimiter,
+    chat_with_retry,
+    get_model_pricing,
+    make_response_format,
+)
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
 from spd.autointerp.strategies.dispatch import (
     format_prompt,
@@ -45,137 +31,8 @@ from spd.harvest.storage import TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
-# Retry config
-MAX_RETRIES = 8
-BASE_DELAY_S = 0.5
-MAX_DELAY_S = 60.0
-JITTER_FACTOR = 0.5
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 300  # Gemini flash has 400 RPM limit
-
-
-class RateLimiter:
-    """Sliding window rate limiter for async code."""
-
-    def __init__(self, max_requests: int, period_seconds: float):
-        self.max_requests = max_requests
-        self.period = period_seconds
-        self.timestamps: list[float] = []
-        self.lock = asyncio.Lock()
-
-    async def acquire(self) -> None:
-        async with self.lock:
-            now = time.monotonic()
-            self.timestamps = [t for t in self.timestamps if now - t < self.period]
-
-            if len(self.timestamps) >= self.max_requests:
-                sleep_time = self.timestamps[0] + self.period - now
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-                self.timestamps = self.timestamps[1:]
-
-            self.timestamps.append(time.monotonic())
-
-
-RETRYABLE_ERRORS = (
-    TooManyRequestsResponseError,
-    ProviderOverloadedResponseError,
-    ServiceUnavailableResponseError,
-    BadGatewayResponseError,
-    InternalServerResponseError,
-    RequestTimeoutResponseError,
-    EdgeNetworkTimeoutResponseError,
-    ChatError,
-    OpenRouterDefaultError,
-    httpx.TransportError,
-    pydantic.ValidationError,
-)
-
-
-@dataclass
-class CostTracker:
-    input_tokens: int = 0
-    output_tokens: int = 0
-    input_price_per_token: float = 0.0
-    output_price_per_token: float = 0.0
-    limit_usd: float | None = None
-    _budget_exceeded: asyncio.Event = field(default_factory=asyncio.Event)
-
-    def add(self, input_tokens: int, output_tokens: int) -> None:
-        self.input_tokens += input_tokens
-        self.output_tokens += output_tokens
-        if self.limit_usd is not None and self.cost_usd() >= self.limit_usd:
-            self._budget_exceeded.set()
-
-    def over_budget(self) -> bool:
-        return self._budget_exceeded.is_set()
-
-    def cost_usd(self) -> float:
-        return (
-            self.input_tokens * self.input_price_per_token
-            + self.output_tokens * self.output_price_per_token
-        )
-
-
-async def chat_with_retry(
-    client: OpenRouter,
-    model: str,
-    messages: list[MessageTypedDict],
-    response_format: ResponseFormatJSONSchema,
-    max_tokens: int,
-    context_label: str,
-    reasoning: Reasoning | None = None,
-) -> tuple[str, int, int]:
-    """Send chat request with exponential backoff retry. Returns (content, input_tokens, output_tokens)."""
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = await client.chat.send_async(
-                model=model,
-                max_tokens=max_tokens,
-                messages=messages,
-                response_format=response_format,
-                reasoning=reasoning,
-            )
-            choice = response.choices[0]
-            message = choice.message
-            assert isinstance(message.content, str)
-            assert response.usage is not None
-
-            if choice.finish_reason == "length":
-                logger.warning(f"{context_label}: Response truncated at {max_tokens} tokens")
-
-            return (
-                message.content,
-                int(response.usage.prompt_tokens),
-                int(response.usage.completion_tokens),
-            )
-        except RETRYABLE_ERRORS as e:
-            last_error = e
-            if attempt == MAX_RETRIES - 1:
-                break
-
-            delay = min(BASE_DELAY_S * (2**attempt), MAX_DELAY_S)
-            jitter = delay * JITTER_FACTOR * random.random()
-            total_delay = delay + jitter
-
-            logger.warning(
-                f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
-                f"{type(e).__name__}, backing off {total_delay:.1f}s"
-            )
-            await asyncio.sleep(total_delay)
-
-    assert last_error is not None
-    raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")
-
-
-async def get_model_pricing(client: OpenRouter, model_id: str) -> tuple[float, float]:
-    """Returns (input_price, output_price) per token."""
-    response = await client.models.list_async()
-    for model in response.data:
-        if model.id == model_id:
-            return float(model.pricing.prompt), float(model.pricing.completion)
-    raise ValueError(f"Model {model_id} not found")
 
 
 async def interpret_component(
@@ -206,14 +63,9 @@ async def interpret_component(
             client=client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            response_format=ResponseFormatJSONSchema(
-                json_schema=JSONSchemaConfig(
-                    name="interpretation",
-                    schema_={**schema, "additionalProperties": False},
-                )
-            ),
             max_tokens=8000,  # High to accommodate reasoning tokens
             context_label=component.component_key,
+            response_format=make_response_format("interpretation", schema),
             reasoning=reasoning,
         )
     except RuntimeError as e:

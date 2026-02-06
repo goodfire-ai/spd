@@ -17,11 +17,11 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.autointerp.interpret import get_model_pricing
-from spd.autointerp.scoring.base import (
+from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
     chat_with_retry,
+    get_model_pricing,
     make_response_format,
 )
 from spd.harvest.schemas import ActivationExample, ComponentData
