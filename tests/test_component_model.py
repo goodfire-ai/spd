@@ -151,7 +151,6 @@ def test_from_run_info():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            n_examples_until_dead=1,
             output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,

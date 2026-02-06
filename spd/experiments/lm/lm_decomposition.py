@@ -5,16 +5,15 @@ from pathlib import Path
 
 import fire
 import wandb
-from simple_stories_train.run_info import RunInfo as SSRunInfo
 
 from spd.configs import Config, LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader, lm_collate_fn
 from spd.log import logger
 from spd.models.batch_and_loss_fns import recon_loss_kl
+from spd.pretrain.run_info import PretrainRunInfo
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
     DistributedState,
-    call_on_rank0_then_broadcast,
     ensure_cached_and_call,
     get_device,
     init_distributed,
@@ -78,14 +77,15 @@ def main(
     )
     assert config.pretrained_model_name is not None
 
-    ln_stds: dict[str, float] | None = None
-    if config.pretrained_model_class.startswith("simple_stories_train"):
-        # Handle differently in case run has layernorm ablations (we'd need to collect ln_stds)
-        # Avoid concurrent wandb API requests on each rank
-        run_info = call_on_rank0_then_broadcast(SSRunInfo.from_path, config.pretrained_model_name)
-        if run_info.config_dict["enable_ln_ablation"]:
-            ln_stds = run_info.ln_stds
-            assert ln_stds is not None, "Run had enable_ln_ablation set to True but no ln_stds"
+    if config.pretrained_model_class.startswith("spd.pretrain"):
+        # Ensure local_rank 0 on each node caches the model, then all ranks load from local cache
+        # (In multi-node setups, /tmp is node-local so we can't broadcast paths across nodes)
+        run_info = ensure_cached_and_call(PretrainRunInfo.from_path, config.pretrained_model_name)
+
+        # Handle old training runs not having a model_type in the model_config_dict
+        if "model_type" not in run_info.model_config_dict:
+            run_info.model_config_dict["model_type"] = config.pretrained_model_class.split(".")[-1]
+
         assert hasattr(pretrained_model_class, "from_run_info")
         # Just loads from local file
         target_model = pretrained_model_class.from_run_info(run_info)  # pyright: ignore[reportAttributeAccessIssue]
@@ -185,7 +185,6 @@ def main(
         eval_loader=eval_loader,
         reconstruction_loss=recon_loss_kl,
         out_dir=out_dir,
-        ln_stds=ln_stds,
     )
 
     if is_main_process():

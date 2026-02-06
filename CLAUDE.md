@@ -161,6 +161,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 │   ├── clustering/                  # Component clustering (see clustering/CLAUDE.md)
 │   ├── dataset_attributions/        # Dataset attributions (see dataset_attributions/CLAUDE.md)
 │   ├── harvest/                     # Statistics collection (see harvest/CLAUDE.md)
+│   ├── pretrain/                    # Target model pretraining (see pretrain/CLAUDE.md)
 │   ├── experiments/                 # Experiment implementations
 │   │   ├── tms/                     # Toy Model of Superposition
 │   │   ├── resid_mlp/               # Residual MLP
@@ -195,6 +196,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 | `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
+| `spd-pretrain` | `spd/pretrain/scripts/run_slurm_cli.py` | Pretrain target models |
 
 ### Files to Skip When Searching
 
