@@ -14,6 +14,7 @@ def main(
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
     limit: int | None = None,
+    cost_limit_usd: float | None = None,
 ) -> None:
     from spd.autointerp.interpret import OpenRouterModelName
     from spd.autointerp.scripts.run_slurm import launch_interpret_job
@@ -24,6 +25,7 @@ def main(
         partition=partition,
         time=time,
         limit=limit,
+        cost_limit_usd=cost_limit_usd,
     )
 
 

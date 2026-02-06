@@ -30,7 +30,7 @@ SPD_OUT_DIR/autointerp/<run_id>/
 - Uses OpenRouter API with structured JSON outputs
 - Maximum parallelism with exponential backoff on rate limits
 - Resume support: Skips already-completed components on restart
-- Progress bar via `tqdm_asyncio`
+- Progress logging via `spd.log.logger`
 
 ### Prompt Template (`prompt_template.py`)
 
