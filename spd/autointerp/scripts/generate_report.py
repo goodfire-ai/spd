@@ -43,7 +43,7 @@ from spd.autointerp.scoring.fuzzing import (
     _delimit_random_low_ci_tokens,
 )
 from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
-from spd.harvest.schemas import ComponentData
+from spd.harvest.schemas import ComponentData, get_harvest_dir
 from spd.harvest.storage import TokenStatsStorage
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -176,7 +176,10 @@ def generate_report(
     token_stats = TokenStatsStorage.load(token_stats_path) if has_token_stats else None
 
     # Try loading intruder eval results
-    intruder_dir = autointerp_dir / "eval" / "intruder"
+    # Intruder results live under harvest (label-free), with fallback to legacy autointerp paths
+    intruder_dir = get_harvest_dir(run_id) / "eval" / "intruder"
+    if not intruder_dir.exists():
+        intruder_dir = autointerp_dir / "eval" / "intruder"
     if not intruder_dir.exists():
         intruder_dir = autointerp_dir / "scoring" / "intruder"
     intruder_results: list[dict[str, Any]] = []
