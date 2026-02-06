@@ -71,6 +71,8 @@ class InterpretationHeadline(BaseModel):
 
     label: str
     confidence: str
+    detection_score: float | None = None
+    fuzzing_score: float | None = None
 
 
 class InterpretationDetail(BaseModel):
@@ -85,16 +87,21 @@ class InterpretationDetail(BaseModel):
 def get_all_interpretations(
     loaded: DepLoadedRun,
 ) -> dict[str, InterpretationHeadline]:
-    """Get all interpretation headlines (label + confidence only).
+    """Get all interpretation headlines (label + confidence + eval scores).
 
     Returns a dict keyed by component_key (layer:cIdx).
     Reasoning and prompt are excluded - fetch individually via
     GET /interpretations/{layer}/{component_idx} when needed.
     """
+    detection_scores = loaded.harvest.detection_scores
+    fuzzing_scores = loaded.harvest.fuzzing_scores
+
     return {
         key: InterpretationHeadline(
             label=result.label,
             confidence=result.confidence,
+            detection_score=detection_scores.get(key) if detection_scores else None,
+            fuzzing_score=fuzzing_scores.get(key) if fuzzing_scores else None,
         )
         for key, result in loaded.harvest.interpretations.items()
     }
@@ -236,6 +243,17 @@ async def request_component_interpretation(
         label=result.label,
         confidence=result.confidence,
     )
+
+
+@router.get("/intruder_scores")
+@log_errors
+def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
+    """Get intruder eval scores for all components.
+
+    Returns a dict keyed by component_key (layer:cIdx) → score (0-1).
+    Returns empty dict if no intruder scores are available.
+    """
+    return loaded.harvest.intruder_scores or {}
 
 
 # =============================================================================

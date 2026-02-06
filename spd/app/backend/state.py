@@ -11,7 +11,12 @@ from typing import Any
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.database import PromptAttrDB, Run
-from spd.autointerp.loaders import load_interpretations
+from spd.autointerp.loaders import (
+    load_detection_scores,
+    load_fuzzing_scores,
+    load_interpretations,
+    load_intruder_scores,
+)
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
 from spd.dataset_attributions import DatasetAttributionStorage, load_dataset_attributions
@@ -41,6 +46,9 @@ class HarvestCache:
         self._interpretations = _NOT_LOADED
         self._activation_contexts_summary = _NOT_LOADED
         self._dataset_attributions = _NOT_LOADED
+        self._intruder_scores = _NOT_LOADED
+        self._detection_scores = _NOT_LOADED
+        self._fuzzing_scores = _NOT_LOADED
 
     @property
     def correlations(self) -> CorrelationStorage:
@@ -103,6 +111,33 @@ class HarvestCache:
             "Run: spd-attributions <wandb_path> --n_batches N"
         )
         return result
+
+    @property
+    def intruder_scores(self) -> dict[str, float] | None:
+        if self._intruder_scores is _NOT_LOADED:
+            self._intruder_scores = load_intruder_scores(self.run_id)
+        if self._intruder_scores is None:
+            return None
+        assert isinstance(self._intruder_scores, dict)
+        return self._intruder_scores
+
+    @property
+    def detection_scores(self) -> dict[str, float] | None:
+        if self._detection_scores is _NOT_LOADED:
+            self._detection_scores = load_detection_scores(self.run_id)
+        if self._detection_scores is None:
+            return None
+        assert isinstance(self._detection_scores, dict)
+        return self._detection_scores
+
+    @property
+    def fuzzing_scores(self) -> dict[str, float] | None:
+        if self._fuzzing_scores is _NOT_LOADED:
+            self._fuzzing_scores = load_fuzzing_scores(self.run_id)
+        if self._fuzzing_scores is None:
+            return None
+        assert isinstance(self._fuzzing_scores, dict)
+        return self._fuzzing_scores
 
 
 @dataclass

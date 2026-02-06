@@ -7,11 +7,6 @@
   :root { --bg: #fff; --fg: #1a1a1a; --muted: #555; --border: #ddd;
            --accent: #3498db; --code-bg: #f4f4f4; --pre-bg: #f8f8f8;
            --table-stripe: #fafafa; --heading: #2c3e50; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #1a1a2e; --fg: #e0e0e0; --muted: #999; --border: #333;
-             --accent: #5dade2; --code-bg: #2a2a3e; --pre-bg: #22223a;
-             --table-stripe: #22223a; --heading: #a8d8ea; }
-  }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
          font-size: 15px; line-height: 1.6; color: var(--fg); background: var(--bg);
@@ -38,223 +33,7 @@
 </head><body>
 <h1>SPD Autointerp Report</h1>
 <p><strong>Run:</strong> <code>s-892f140b</code>
-<strong>Components interpreted:</strong> 7,063</p>
-<hr />
-<h2>Interpretation Confidence Breakdown</h2>
-<table>
-<thead>
-<tr>
-<th>Confidence</th>
-<th>Count</th>
-<th>Percentage</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>High</td>
-<td>3,791</td>
-<td>54%</td>
-</tr>
-<tr>
-<td>Medium</td>
-<td>2,031</td>
-<td>29%</td>
-</tr>
-<tr>
-<td>Low</td>
-<td>1,241</td>
-<td>18%</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2>High-Confidence Examples</h2>
-<p><strong><code>h.1.mlp.c_fc:191</code></strong> -- Verbs of physical or conceptual holding and preservation</p>
-<blockquote>
-<p>The component consistently triggers on verbs like 'hold', 'keep', 'stay', and 'hug' in both literal physical contexts (holding a hand) and metaphorical ones (holding secrets, keeping a memory alive). It demonstrates exceptionally high precision for predicting descriptors like 'tightly' and 'tight', indicating a specific role in processing the manner of retention or preservation in narrative arcs.</p>
-</blockquote>
-<p><strong><code>h.0.attn.o_proj:280</code></strong> -- Conjunctive transitions at sentence start within dialogue</p>
-<blockquote>
-<p>The component consistently fires on tokens like 'but', 'and', and 'at' immediately following an opening quotation mark and a sentence-ending punctuation mark. This suggests it tracks structural transitions inside character speech. The high PMI for predicted tokens like 'sure', 'remember', and 'maybe' further reinforces its role in facilitating conversational flow and character responses in stories.</p>
-</blockquote>
-<p><strong><code>h.0.mlp.c_fc:87</code></strong> -- Virtuous actions and pro-social character traits</p>
-<blockquote>
-<p>The component consistently activates on tokens describing communal virtues and selfless actions like 'help', 'kindness', 'generosity', 'trust', and 'honesty'. It also triggers on verbs describing favorable narrative resolutions such as 'saved', 'fixed', and 'thanked'. The predicted tokens suggest it helps the model anticipate descriptive suffixes and narrative continuation following these positive moral interactions.</p>
-</blockquote>
-<p><strong><code>h.0.mlp.c_fc:747</code></strong> -- The demonstrative pronoun 'this' preceding singular nouns and descriptors</p>
-<blockquote>
-<p>The component shows an extremely high recall (95%) and precision (75%) for the token 'this' as the current input. The activation examples consistently show it firing on 'this' when it introduces a noun phrase (e.g., 'this dream', 'this garden', 'this year'), which aligns with the predicted tokens like 'year', 'place', and 'magical'.</p>
-</blockquote>
-<p><strong><code>h.1.attn.v_proj:237</code></strong> -- Emotional heart reactions and physiological responses to stress</p>
-<blockquote>
-<p>The component triggers almost exclusively on the word 'heart' in the context of intense narrative emotions like fear, worry, or disappointment. It predicts verbs that specifically describe heart movement or emotional pain, such as 'sank', 'pounded', 'raced', and 'ached'. The activation examples consistently show characters reacting to sudden setbacks or threats.</p>
-</blockquote>
-<p><strong><code>h.0.mlp.c_fc:850</code></strong> -- Epistemic state verbs and narrative transitions in simple stories</p>
-<blockquote>
-<p>The component shows a strong recall for tokens like 'knew', 'looked', 'saw', and 'felt', which are essential for describing character internal states and perceptions in SimpleStories. The activation examples consistently highlight narrative pivot points where a character gains knowledge or experiences a shift in emotion or scenery. While precision is numerically low due to the extremely rare firing rate, the PMI and qualitative examples link it to thematic shifts and character realizations within simple narrative arcs.</p>
-</blockquote>
-<p><strong><code>h.0.mlp.c_fc:609</code></strong> -- emotional states and descriptions following possessive pronouns or 'felt'</p>
-<blockquote>
-<p>The component triggers on contexts following 'felt', 'my', or 'her' to project emotive or atmospheric adjectives like 'alive', 'powerful', or 'nervous'. While the specific 'Active tokens' in the examples are missing, the Recall and PMI metrics strongly indicate it facilitates internal state attributions (e.g., 'forest felt alive', 'her heart raced'). The extremely low activation rate suggests it is a highly specialized circuit for specific narrative-emotional transitions.</p>
-</blockquote>
-<p><strong><code>h.0.mlp.down_proj:774</code></strong> -- descriptive adjectives and suffix-based abstract nouns</p>
-<blockquote>
-<p>The component consistently triggers on a wide variety of descriptive adjectives such as 'soft', 'safe', 'deep', 'bright', and 'different'. Furthermore, it strongly predicts morphological suffixes like '##ness' and '##ly' as well as other characteristic word endings, suggesting it identifies qualitative descriptors and prepares for their adverbial or nominal extensions.</p>
-</blockquote>
-<h2>Medium-Confidence Examples</h2>
-<p><strong><code>h.1.mlp.down_proj:143</code></strong> -- Character interaction following physical movement or approach verbs</p>
-<blockquote>
-<p>The component shows strong PMI with pronouns and characters ('he', 'she', 'lena') as input, and high PMI with physical actions ('knelt', 'arrived', 'approached', 'reached') as predicted outputs. While the activation rate is extremely low, the example contexts consistently feature a protagonist approaching an object or entity just before a shift in the story's action. The lack of highlighted tokens in the examples suggests it may fire specifically on the transition between an approach and its immediate consequence.</p>
-</blockquote>
-<p><strong><code>h.1.attn.q_proj:16</code></strong> -- visual descriptions of wonder and small-scale settings</p>
-<blockquote>
-<p>The component consistently correlates with tokens describing wide-eyed curiosity ('eyes', 'wide') and the opening of containers or rooms in small settings ('small town', 'quiet room', 'opened the box'). The predicted tokens emphasize descriptive adjectives like 'wide', 'cozy', and 'sparkling', suggesting a role in processing narrative moments of discovery or atmosphere. While the activation rate is extremely low, the PMI and precision metrics point toward a focus on descriptive sensory details and character reactions in simple stories.</p>
-</blockquote>
-<p><strong><code>h.0.attn.k_proj:157</code></strong> -- Sensory and mechanical verbs like ticking, creaking, and flowing</p>
-<blockquote>
-<p>The component shows strong PMI correlations with physical sounds (clock ticking, floor creaking) and natural movements (rivers/words flowing). While the activation examples do not highlight specific tokens, the predictive metrics strongly suggest a role in identifying contexts that precede these sensory descriptions. The very low activation rate indicates it is a highly specialized detector for these specific narrative motifs within the simple story domain.</p>
-</blockquote>
-<p><strong><code>h.0.mlp.c_fc:203</code></strong> -- abstract nouns and light imagery in narrative resolutions</p>
-<blockquote>
-<p>The component consistently correlates with tokens describing narrative atmosphere and emotional pivot points, such as 'light', 'surprise', and 'laughter'. While the activation examples do not highlight specific tokens with CI &gt; 0.3, the high recall for 'light' and precision for specific names like 'Tim' suggests it may trigger on characters experiencing sudden moments of realization or wonder. The predicted tokens are largely morphological suffixes, indicating it may help structure the transitions between narrative description and dialogue or final story beats.</p>
-</blockquote>
-<h2>Low-Confidence Examples</h2>
-<p><strong><code>h.1.attn.q_proj:216</code></strong> -- sub-word tokens and narrative transitions in 'banana'/night-time contexts</p>
-<blockquote>
-<p>The component fires extremely rarely, and its activation tokens in the provided examples are empty, making direct observation impossible. However, the PMI data suggests a strong association with sub-word fragments ('##an', '##ill', '##as') often found in 'banana' themed stories or time-based transitions ('one night', 'one evening'), and it shows an affinity for predicting surprise-related suffixes or punctuation marks common in SimpleStories narrative shifts; the low activation rate suggests it may handle highly specific edge cases of these patterns or is potentially miscalibrated.</p>
-</blockquote>
-<p><strong><code>h.0.mlp.c_fc:284</code></strong> -- narrative transition points and discovery verbs</p>
-<blockquote>
-<p>The component fires extremely rarely, making the activation rate almost negligible and the specific activation tokens absent in the provided examples. However, the PMI metrics show a strong preference for discovery and inquiry verbs like 'found,' 'asked,' 'set,' and 'rec' (likely 'recreate' or 'recognize'), while predicted tokens like 'laimed' (exclaimed) and 'herself' point toward character-driven narrative shifts and dialogue beats typical of story resolutions or plot advancements. Due to the lack of clear, highlighted active tokens in context, the pattern remains speculative based on token correlations alone.</p>
-</blockquote>
-<p><strong><code>h.1.attn.k_proj:214</code></strong> -- Character decisions and natural scenery elements</p>
-<blockquote>
-<p>The component exhibits extremely low firing rates and lacks any active tokens in the provided story examples, suggesting it might be a 'dead' or highly specific feature. While the PMI data points toward verbs of decision-making (decided, agreed) and natural nouns (sky, tree, bush), the absence of direct activations makes a definitive interpretation impossible. It potentially represents an K-projection signal for specific nouns following character actions, but the evidence is too sparse for high confidence.</p>
-</blockquote>
-<hr />
-<h2>Example: Full Prompt and Response</h2>
-<p><strong>Component:</strong> <code>h.1.mlp.down_proj:849</code></p>
-<h3>Prompt (truncated)</h3>
-<pre><code>Label this neural network component from a Stochastic Parameter Decomposition.
-
-## Background
-
-SPD (Stochastic Parameter Decomposition) decomposes a neural network's weight matrices into rank-1
-&quot;subcomponents&quot;. Each subcomponent has a causal importance (CI) value predicted *per sequence position*
-by a small auxiliary neural network. CI indicates how necessary the component is for the model's output
-at that position: high CI (close to 1) means the component is essential and cannot be ablated; low CI
-(close to 0) means it can be removed without affecting output. The training objective encourages
-sparsity: as few components as possible should have high CI for any given input.
-
-## Model Context
-
-**Model**: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP (2 layers)
-**Dataset**: SimpleStories is a dataset of 2M+ short stories (200-350 words each) at a grade 1-8 reading level.
-The stories cover diverse themes (friendship, courage, loss, discovery) and settings (magical lands,
-schools, forests, space). The vocabulary is simple, everyday English. Stories feature common narrative
-elements: characters with names, emotions, dialogue, and simple plot arcs with resolutions.
-
-## Component Context
-
-**Component location**: mlp.down_proj in layer 2 of 2
-**Activation rate**: 1.11% (fires on ~1 in 89 tokens)
-
----
-
-## Correlations with Input Tokens
-
-The following metrics concern correlations between this component firing and the &quot;current&quot; token (the token at the position where the component is active).
-
-**Recall:** _&quot;What % of this component's firings occurred on token X?&quot;_
-  'was': 44%
-  'is': 12%
-  'be': 8%
-  'were': 5%
-  'not': 4%
-  'are': 3%
-  's': 2%
-  'just': 2%
-  'the': 2%
-  'became': 2%
-
-**Precision:** _&quot;When token X appears, what % of the time does this component fire?&quot;_
-  'is': 86%
-  'was': 70%
-  'be': 59%
-  'became': 55%
-  'been': 47%
-  'are': 47%
-  'were': 38%
-  'not': 26%
-  '##eed': 25%
-  'become': 21%
-
-**PMI:** _Tokens with higher-than-expected co-occurrence_
-  ' is': 4.00
-  ' was': 3.79
-  ' be': 3.63
-  ' became': 3.55
-  ' been': 3.39
-  ' are': 3.38
-  ' were': 3.19
-  ' not': 2.80
-
-
-
----
-
-## Correlations with Predicted Tokens
-
-The following metrics concern correlations between this component firing and the token the model predicts at that position.
-
-**Precision:** _&quot;When the model predicts token X, what % of the time is this component active?&quot;_
-
-**High (70-90%)**: 'happening', 'possible'
-
-**Medium (50-70%)**: 'easy', 'wrong', 'yours', 'worth', 'mine', 'important'
-
-**PMI:** _Tokens with higher-than-expected co-occurrence_
-  ' happening': 4.03
-  ' possible': 3.83
-  ' easy': 3.78
-  ' wrong': 3.72
-  ' yours': 3.71
-  ' worth': 3.67
-  ' mine': 3.60
-  ' important': 3.46
-  ' hers': 3.44
-  ' tricky': 3.44
-
-
----
-
-## Activation Examples
-
-_Showing tokens where CI &gt; 0.3 (component is active)_
-
-Ex 1: &quot;and sadness. she decided that even though her friend was not there, she could still chase those dreams.&quot;
-  Active tokens: 
-
-Ex 2: &quot;. the love he had was lost, and mia was just a reflection of what he longed for. as&quot;
-  Active tokens: &quot;was&quot; (1.00), &quot;was&quot; (0.35)
-
-Ex 3: &quot;silent, and the laughter that once filled the air was now just a memory. he felt responsible for his&quot;
-  Active tokens: &quot;was&quot; (1.00), &quot;now&quot; (0.60)
-
-Ex 4: &quot;the captain held up the chicken. &quot; but it is a very funny chicken! just look at it!&quot;
-  Active tokens: &quot;is&quot; (0.79), &quot;very&quot; (0.47)
-
-Ex 5: &quot;the dark hallway, mia found a door that was slightly open. she pushed it and saw&quot;
-  Active tokens:
-...
-</code></pre>
-<h3>Response</h3>
-<pre><code class="language-json">{
-  &quot;label&quot;: &quot;State-of-being verbs and copular linking predicates&quot;,
-  &quot;confidence&quot;: &quot;high&quot;,
-  &quot;reasoning&quot;: &quot;The component consistently triggers on forms of the verb 'to be' (is, was, be, were, been) and related linking verbs like 'became'. It appears to facilitate the transition to a predicative adjective or state-of-being, as evidenced by its strong prediction of evaluative adjectives like 'possible', 'wrong', 'important', and 'easy'.&quot;
-}
-</code></pre>
+<strong>Components interpreted:</strong> 3,083</p>
 <hr />
 <h2>Intruder Detection Eval</h2>
 <p>Tests component coherence: 4 real examples + 1 intruder from a different component.
@@ -313,6 +92,302 @@ Random baseline = 20%.</p>
 </tr>
 </tbody>
 </table>
+<hr />
+<h2>Interpretation Confidence Breakdown</h2>
+<table>
+<thead>
+<tr>
+<th>Confidence</th>
+<th>Count</th>
+<th>Percentage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>High</td>
+<td>2,573</td>
+<td>83%</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>469</td>
+<td>15%</td>
+</tr>
+<tr>
+<td>Low</td>
+<td>41</td>
+<td>1%</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>High-Confidence Examples</h2>
+<p><strong><code>h.1.attn.v_proj:22</code></strong> -- sensory and auditory nouns</p>
+<blockquote>
+<p>The component fires on tokens related to sound and smell (laughter, voice, whispered, smelled) and predicts verbs of sound or movement like 'howled', 'blew', 'echoed', and 'rustled'.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.down_proj:356</code></strong> -- state-of-being verbs</p>
+<blockquote>
+<p>The component fires consistently on forms of the verb 'to be' (is, was, were, be, are, am) and related existential verbs like 'became' and 'grew'. Both precision tokens and activation examples show a near-exclusive focus on linking verbs describing a state or condition.</p>
+</blockquote>
+<p><strong><code>h.1.mlp.down_proj:138</code></strong> -- possessive pronouns before body parts</p>
+<blockquote>
+<p>The component fires on possessive pronouns (his, her, their, my, its) and the 's suffix. Output PMI and precision data show a extremely strong correlation with subsequent body-related nouns such as spine, shoulders, stomach, heart, and eyes.</p>
+</blockquote>
+<p><strong><code>h.1.mlp.c_fc:671</code></strong> -- opening doors or locks</p>
+<blockquote>
+<p>The component consistently fires on verbs related to physical access (creaked, peered, flipped, cracked, swung) and predicts objects like 'lock', 'door', and 'key', as well as the states 'open' or 'opened'.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.down_proj:898</code></strong> -- male possessive pronouns</p>
+<blockquote>
+<p>The component fires with extremely high precision and recall on the token 'his' (86% recall, 100% precision) and related male pronouns like 'himself' and 'him'. Output analysis shows the model uses this signal to predict male-associated familial or physical nouns like 'grandfather', 'sister', 'shoulders', and 'pocket'.</p>
+</blockquote>
+<p><strong><code>h.1.attn.v_proj:234</code></strong> -- opening quotation mark</p>
+<blockquote>
+<p>The component has a 97% recall for the quotation mark token and a high PMI for predicting interjections like 'wow', 'hey', and 'hello', which often follow an opening quote in dialogue.</p>
+</blockquote>
+<p><strong><code>h.1.mlp.down_proj:573</code></strong> -- second person pronouns</p>
+<blockquote>
+<p>The component shows extremely high output precision for 'you', 'your', 'yourself', and 'us', suggesting it prepares the model to generate second-person references. The activation examples frequently occur immediately after opening quotes or following 'if' clauses where a speaker addresses another character.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.c_fc:477</code></strong> -- in-word 't' and 'tt'</p>
+<blockquote>
+<p>The component fires almost exclusively on the 't' character within words (e.g., 'fretted', 'bent', 'pitch', 'etched') and specifically predicts common suffix continuations following that character such as 'aking', 'tered', and 'tled'.</p>
+</blockquote>
+<h2>Medium-Confidence Examples</h2>
+<p><strong><code>h.0.mlp.down_proj:506</code></strong> -- word fragments and suffix roots</p>
+<blockquote>
+<p>The component fires on specific word stems (storyt, exch, soc) and predicts their completion (elling, ange, iet). The activation examples show it firing on the first token of new sentences or clauses, particularly temporal markers like 'with', 'one', and 'each'.</p>
+</blockquote>
+<p><strong><code>h.1.mlp.c_fc:1102</code></strong> -- past-tense action verbs</p>
+<blockquote>
+<p>The component fires on diverse past-tense verbs (danced, gathered, spun, echoed, bloomed) and specific active gerunds (using, scuttling). It predicts many common suffixes found in narrative descriptions like '##ght' and '##gh'.</p>
+</blockquote>
+<p><strong><code>h.0.mlp.down_proj:640</code></strong> -- proper names and word fragments</p>
+<blockquote>
+<p>The component fires almost exclusively on common specific names like 'leo', 'kim', and 'jose', but also paradoxically triggers subword completion for suffixes like '##oted' and '##iant'.</p>
+</blockquote>
+<p><strong><code>h.1.mlp.down_proj:853</code></strong> -- commas and narrative verbs</p>
+<blockquote>
+<p>The component shows high recall for commas (20%) and high precision for physical narrative verbs like 'tripped', 'shrugged', 'grinned', and 'clapped'. It consistently bridges descriptive actions to the conjunction 'and', which has an 87% output precision.</p>
+</blockquote>
+<h2>Low-Confidence Examples</h2>
+<p><strong><code>h.1.mlp.down_proj:883</code></strong> -- mid-sentence tokens and punctuation</p>
+<blockquote>
+<p>The component fires on a wide variety of tokens including common function words (in, and, to, as), suffixes (##ed, ##ing), and punctuation (., ,, "). While it appears to activate during the progression of descriptive clauses, no single grammatical or lexical pattern unites the diverse firing tokens.</p>
+</blockquote>
+<p><strong><code>h.1.mlp.c_fc:34</code></strong> -- unclear</p>
+<blockquote>
+<p>The component fires on a high variety of tokens (pronouns, suffixes, verbs, adjectives) without a consistent syntactic or morphological pattern. While there is a slight output preference for punctuation like ';' and ',', the input tokens are too diverse to identify a specific triggers.</p>
+</blockquote>
+<p><strong><code>h.1.mlp.down_proj:135</code></strong> -- unclear</p>
+<blockquote>
+<p>The component shows strong precision for sensory terms (smelled, bake, snowflakes) and high output precision for food-related tokens (bread, cake, cookies), but the causal importance results and activation examples show it firing on high-frequency glue words like 'the', 'and', and 'they' with no clear semantic or grammatical unity.</p>
+</blockquote>
+<hr />
+<h2>Prompt Examples</h2>
+<p>One example of every LLM prompt template, rendered with real data.</p>
+<h3>1. Intruder Eval Prompt (label-free)</h3>
+<p><strong>Component:</strong> <code>h.1.attn.v_proj:284</code></p>
+<pre><code>Below are 5 text snippets from a neural network's training data. Four come from contexts where the SAME component fires strongly. One is an INTRUDER from a DIFFERENT component.
+
+Tokens between &lt;&lt;delimiters&gt;&gt; are where the component fires most strongly.
+
+Example 1:  bird crumbs of bread. each day, he &lt;&lt;visited&gt;&gt; the bird, and slowly, it began to heal
+
+Example 2:  what the other boys would say. still, he &lt;&lt;agreed&gt;&gt; to join. they were both excited, dreaming of
+
+Example 3:  an evil sorceress, filled with jealousy, &lt;&lt;sought&gt;&gt; to take emmanuel away. rita felt panic rise within
+
+Example 4:  they belonged together, no matter the distance. he &lt;&lt;promised&gt;&gt; himself to cherish every moment with his sister. in
+
+Example 5:  change, and &lt;&lt;she&gt;&gt; knew that her &lt;&lt;fort&gt;&gt; could not &lt;&lt;last&gt;&gt; forever. the beauty of &lt;&lt;winter&gt;&gt; was mixed with the
+
+Which example is the intruder? Identify what pattern the majority share, then pick the example that does not fit.
+
+Respond with the intruder example number (1-5) and brief reasoning.
+</code></pre>
+<details><summary>Answer</summary>Example 5</details>
+
+<h3>2. Interpretation Prompt</h3>
+<p><strong>Component:</strong> <code>h.1.attn.v_proj:284</code> (label: <em>promises and commitments</em>)</p>
+<pre><code>Label this neural network component.
+
+Each component has a causal importance (CI) value per token position. High CI (near 1) = essential, cannot be ablated. Low CI (near 0) = ablatable.
+
+## Context
+- Model: simple_stories_train.models.llama_simple_mlp.LlamaSimpleMLP (2 layers), dataset: SimpleStories: 2M+ short stories (200-350 words), grade 1-8 reading level. Simple vocabulary, common narrative elements.
+- Component location: attention V projection in layer 2 of 2
+- Component activation rate: 0.07% (~1 in 1365 tokens)
+
+## Token correlations
+
+**Input tokens with highest recall (most common current tokens when the component is firing)**
+- ' promised': 35%
+- ' promise': 10%
+- ' offered': 9%
+- ' agreed': 7%
+- ' save': 6%
+- ' saved': 4%
+- ' promising': 4%
+- ' visited': 3%
+
+**Input tokens with highest precision (probability the component fires given the current token is X)**
+- ' promising': 100%
+- ' offered': 94%
+- ' promised': 88%
+- ' promise': 86%
+- ' vowed': 78%
+- ' promises': 75%
+- ' save': 51%
+- ' saving': 49%
+
+**Input tokens with highest PMI (pointwise mutual information. Tokens with higher-than-base-rate likelihood of co-occurrence with the component firing)**
+- ' promising': 6.90
+- ' offered': 6.84
+- ' promised': 6.77
+- ' promise': 6.76
+- ' vowed': 6.65
+- ' promises': 6.61
+
+**Output precision — of all predicted probability for token X, what fraction is at positions where this component fires?**
+- 'ting': 5%
+- ' towns': 4%
+- ' riches': 3%
+- ' to': 2%
+- ' himself': 2%
+- ' herself': 2%
+- ' money': 1%
+- ' fam': 1%
+- ' advice': 1%
+- ' wealth': 1%
+
+**Output PMI — tokens the model predicts at higher-than-base-rate when this component fires:**
+- 'ting': 3.95
+- ' towns': 3.68
+- ' riches': 3.34
+- ' to': 3.21
+- ' himself': 2.99
+- ' herself': 2.93
+
+
+## Activation examples (active tokens in &lt;&lt;delimiters&gt;&gt;)
+
+1.  was the true magic. they thanked the snail and &lt;&lt;promised&gt;&gt; to always share. the shiny stone was just a
+2.  of her brother' s playful spirit. he had &lt;&lt;promised&gt;&gt; to teach her how to fish, but now he
+3.  said it was too wobbly. they all &lt;&lt;agreed&gt;&gt; to use it anyway for fun. finally,
+4.  became a place of friendship and laughter, and kim &lt;&lt;promised&gt;&gt; to visit often. [EOS] over time, a girl
+5.  jokes, and her sadness faded away. they searched &lt;&lt;high&gt;&gt; and low, through caves and by rivers. finally
+6.  scared but remembered the tales of the pearl. she &lt;&lt;needed&gt;&gt; it to help her village. so, she stood
+7. . mia wished it could turn back time, to &lt;&lt;save&gt;&gt; the lives that were swept away. suddenly, a
+8.  grew older, they always remembered that day. they &lt;&lt;promised&gt;&gt; to always be kind and share. they became not
+9.  and mia that they had seen the toys. they &lt;&lt;offered&gt;&gt; to help find them, and soon the toys were
+10. &quot; she told him about the treasure. the fox &lt;&lt;agreed&gt;&gt; to help her. together, they faced many challenges
+11.  after the candle burned out, he made a &lt;&lt;promise&gt;&gt; to listen to their stories and never forget the lessons
+12. &quot; the tree answered. days passed, and maria &lt;&lt;visited&gt;&gt; the seed every day. she watered it and talked
+13.  the stars seemed to twinkle brighter, as if they &lt;&lt;agreed&gt;&gt; with me. we spent the evening talking about old
+14.  sat by a fire, sharing their dreams. they &lt;&lt;promised&gt;&gt; to explore more together, to find new villages
+15.  superpower!&quot; they both giggled and &lt;&lt;agreed&gt;&gt; to have more picnics together.&quot; next time
+16.  felt a new fire inside her. she had to &lt;&lt;save&gt;&gt; her island and its people. one stormy night,
+17.  picked a bright daisy and blew on its &lt;&lt;seeds&gt;&gt;, watching them drift away. suddenly, a gentle
+18.  the world. with a kind heart, the boy &lt;&lt;offered&gt;&gt; his hand, freeing the creature. together,
+19.  am lonely.&quot; feeling compassion, the girl &lt;&lt;promised&gt;&gt; to help find the stone. they searched together,
+20.  out at dawn. the sun rose like a golden &lt;&lt;promise&gt;&gt;, lighting her path. each step brought her closer
+21.  love, to watch it grow. but with each &lt;&lt;promise&gt;&gt; came a weight, a responsibility she had to carry
+22.  the ocean' s stories. he thanked her and &lt;&lt;promised&gt;&gt; to return. it dawned on him that the
+23.  colors danced on the screen.&quot; let' s &lt;&lt;call&gt;&gt; it kitten kingdom!&quot; lena exclaimed.&quot; yes
+24. ' s do more,&quot; she said. they &lt;&lt;agreed&gt;&gt; to meet again and paint together. as he left
+25.  the weight of his mission. he pointed to the &lt;&lt;crystal&gt;&gt;.&quot; it can guide them home. i can
+26. gy. with laughter all around, they all &lt;&lt;promised&gt;&gt; to play again soon. [EOS] clouds drifted slowly across
+27. ilted flowers. it was fragile, yet it held &lt;&lt;promise&gt;&gt;. the girl felt a flicker of hope inside her
+28.  they belonged together, no matter the distance. he &lt;&lt;promised&gt;&gt; himself to cherish every moment with his sister. in
+29.  after all. from that day on, the boy &lt;&lt;visited&gt;&gt; the tree often. he sat beneath it, listening
+30. !&quot; the knights rallied, running to &lt;&lt;save&gt;&gt; their princess. they leapt over mats,
+
+
+## Task
+
+Give a 2-5 word label for what this component detects.
+
+Be SKEPTICAL. If you can't identify specific tokens or a tight grammatical pattern, say &quot;unclear&quot;.
+
+Rules:
+1. Good labels name SPECIFIC tokens: &quot;'the'&quot;, &quot;##ing suffix&quot;, &quot;she/her pronouns&quot;
+2. Say &quot;unclear&quot; if: tokens are too varied, pattern is abstract, or evidence is weak
+3. FORBIDDEN words (too vague): narrative, story, character, theme, emotional, descriptive, content, transition, dialogue, scene
+4. Lowercase only
+5. Confidence: &quot;high&quot; = clear, specific pattern with strong evidence; &quot;medium&quot; = plausible but noisy; &quot;low&quot; = speculative
+
+GOOD: &quot;##ed suffix&quot;, &quot;'and' conjunction&quot;, &quot;she/her/hers&quot;, &quot;period then capital&quot;, &quot;unclear&quot;
+BAD: &quot;various words and punctuation&quot;, &quot;verbs and adjectives&quot;, &quot;tokens near commas&quot;
+
+</code></pre>
+<details><summary>LLM Response</summary>
+
+**Label:** promises and commitments
+**Confidence:** high
+**Reasoning:** The component is highly specific to the words 'promised', 'promise', 'offered', 'agreed', and 'vowed'. It consistently activates on verbs related to establishing a commitment or pact within the story narrative.
+
+</details>
+
+<h3>3. Detection Scoring Prompt (label-dependent)</h3>
+<p><strong>Component:</strong> <code>h.1.attn.v_proj:284</code> (label: <em>promises and commitments</em>)</p>
+<pre><code>A neural network component has been labeled as: &quot;promises and commitments&quot;
+
+Below are 10 text snippets. In each, one token is marked between &lt;&lt;delimiters&gt;&gt;. For some examples, the marked token is one where this component fires. For others, the marked token is random.
+
+Example 1:  tiptoed out to surprise them.&quot; ta&lt;&lt;-&gt;&gt; da! it' s me!&quot; she shouted
+
+Example 2:  the heart, and the surprise was how easy it &lt;&lt;was&gt;&gt; to find. [EOS] dark clouds loomed over the aband
+
+Example 3:  the ball and laughing with her friends.&quot; you&lt;&lt;'&gt;&gt; re getting really good!&quot; said leo. lily
+
+Example 4:  kind heart, even if it starts small. they &lt;&lt;promised&gt;&gt; to meet every day, forever friends. [EOS] misty
+
+Example 5:  feeling grateful for the giant' s wisdom. he &lt;&lt;promised&gt;&gt; to be careful next time. as the day ended
+
+Example 6:  he stood in a room of screens, each &lt;&lt;showing&gt;&gt; different lives, different places.&quot; am i real
+
+Example 7:  in her heart. with a happy heart, mia &lt;&lt;promises&gt;&gt; to return. every garden has magic, and every
+
+Example 8:  a nice pet?&quot; she thought. but every &lt;&lt;time&gt;&gt; she was sad, whiskers would curl
+
+Example 9:  enemy attacks and finally winning the battle. after &lt;&lt;saving&gt;&gt; the crew, he returned home, amazed by his
+
+Example 10:  catch you.&quot; they both laughed and realized that &lt;&lt;sometimes&gt;&gt; help comes from the most unexpected places. the far
+
+Based on the label, in which examples is the &lt;&lt;marked&gt;&gt; token one where this component fires?
+
+Respond with the list of activating example numbers.
+</code></pre>
+<details><summary>Answer</summary>Activating: 4, 5, 6, 7, 9</details>
+
+<h3>4. Fuzzing Scoring Prompt (label-dependent)</h3>
+<p><strong>Component:</strong> <code>h.1.attn.v_proj:284</code> (label: <em>promises and commitments</em>)</p>
+<pre><code>A neural network component has been interpreted as: &quot;promises and commitments&quot;
+
+Below are 7 text examples where this component is active. In each example, some tokens are marked between &lt;&lt;delimiters&gt;&gt;. In some examples, the &lt;&lt;delimited&gt;&gt; tokens correctly indicate where the component fires most strongly. In other examples, the &lt;&lt;delimited&gt;&gt; tokens are random and unrelated to the component's actual firing pattern.
+
+Example 1:  to explore. the young bird met a fox who &lt;&lt;promised&gt;&gt; to help him find food. the fox led him
+
+Example 2:  she could fix it. her friend, alex, &lt;&lt;promised&gt;&gt; to help her. they worked hard together, sharing
+
+Example 3:  he packed his notebook and a few snacks, feeling &lt;&lt;a&gt;&gt; rush of excitement. with the map in hand,
+
+Example 4:  of the &lt;&lt;world&gt;&gt;. one day, a toy robot offered him a special game that promised to make &lt;&lt;him&gt;&gt; the
+
+Example 5:  leo for reminding them. from that day, they &lt;&lt;promised&gt;&gt; to always speak the truth. as leo flew back
+
+Example 6:  others.&quot; kim nodded, feeling inspired. she promised to share &lt;&lt;the&gt;&gt; magic of kindness. with a heart
+
+Example 7:  would protect a friend. in the end, she &lt;&lt;vowed&gt;&gt; to care for each flower as if it were a
+
+Based on the interpretation &quot;promises and commitments&quot;, which examples have correctly-marked tokens (consistent with the label) vs. randomly-marked tokens?
+
+Respond with the list of correctly-highlighted example numbers and brief reasoning.
+</code></pre>
+<details><summary>Answer</summary>Correctly highlighted: 1, 2, 3, 5, 7</details>
+
 <hr />
 <p><em>Generated by <code>spd.autointerp.scripts.generate_report</code></em></p>
 </body></html>

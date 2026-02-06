@@ -45,6 +45,9 @@ export function useRun() {
     /** Interpretation labels keyed by component key (layer:cIdx) */
     let interpretations = $state<Loadable<Record<string, InterpretationBackendState>>>({ status: "uninitialized" });
 
+    /** Intruder eval scores keyed by component key */
+    let intruderScores = $state<Loadable<Record<string, number>>>({ status: "uninitialized" });
+
     /** Cluster mapping for the current run */
     let clusterMapping = $state<ClusterMapping | null>(null);
 
@@ -74,6 +77,7 @@ export function useRun() {
         prompts = { status: "uninitialized" };
         allTokens = { status: "uninitialized" };
         interpretations = { status: "uninitialized" };
+        intruderScores = { status: "uninitialized" };
         activationContextsSummary = { status: "uninitialized" };
         _componentDetailsCache = {};
         _correlationsCache = {};
@@ -85,10 +89,14 @@ export function useRun() {
     function fetchRunScopedData() {
         prompts = { status: "loading" };
         interpretations = { status: "loading" };
+        intruderScores = { status: "loading" };
 
         api.listPrompts()
             .then((p) => (prompts = { status: "loaded", data: p }))
             .catch((error) => (prompts = { status: "error", error }));
+        api.getIntruderScores()
+            .then((data) => (intruderScores = { status: "loaded", data }))
+            .catch((error) => (intruderScores = { status: "error", error }));
         api.getAllInterpretations()
             .then((i) => {
                 interpretations = {
@@ -179,6 +187,12 @@ export function useRun() {
             case "loaded":
                 return { status: "loaded", data: interpretations.data[componentKey] ?? { status: "none" } };
         }
+    }
+
+    /** Get intruder score for a component, if available */
+    function getIntruderScore(componentKey: string): number | null {
+        if (intruderScores.status !== "loaded") return null;
+        return intruderScores.data[componentKey] ?? null;
     }
 
     /** Set interpretation for a component (updates cache without full reload) */
@@ -292,6 +306,7 @@ export function useRun() {
         refreshPrompts,
         getInterpretation,
         setInterpretation,
+        getIntruderScore,
         getActivationContextDetail,
         prefetchComponentData,
         expectCachedComponentDetail,

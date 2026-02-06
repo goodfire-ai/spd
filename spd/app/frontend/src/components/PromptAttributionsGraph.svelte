@@ -786,7 +786,13 @@
                             stroke={colors.textMuted}
                             stroke-width="0.5"
                         >
-                            <title>{maskedProb !== null ? `P(self): ${(maskedProb * 100).toFixed(1)}%` : isFirstToken ? "First token" : "P(self): <1%"}</title>
+                            <title
+                                >{maskedProb !== null
+                                    ? `P(self): ${(maskedProb * 100).toFixed(1)}%`
+                                    : isFirstToken
+                                      ? "First token"
+                                      : "P(self): <1%"}</title
+                            >
                         </circle>
                     {/each}
                 </g>

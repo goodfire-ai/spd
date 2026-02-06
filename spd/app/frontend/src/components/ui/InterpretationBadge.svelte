@@ -13,6 +13,12 @@
     let { interpretation, interpretationDetail, onGenerate }: Props = $props();
 
     let showPrompt = $state(false);
+
+    function scoreClass(score: number): string {
+        if (score >= 0.7) return "score-high";
+        if (score >= 0.5) return "score-medium";
+        return "score-low";
+    }
 </script>
 
 <div class="interpretation-container">
@@ -36,6 +42,16 @@
                         <span class="confidence confidence-{interpretationData.data.confidence}"
                             >{interpretationData.data.confidence}</span
                         >
+                        {#if interpretationData.data.detection_score !== null}
+                            <span class="score-pill {scoreClass(interpretationData.data.detection_score)}"
+                                >Det {Math.round(interpretationData.data.detection_score * 100)}%</span
+                            >
+                        {/if}
+                        {#if interpretationData.data.fuzzing_score !== null}
+                            <span class="score-pill {scoreClass(interpretationData.data.fuzzing_score)}"
+                                >Fuz {Math.round(interpretationData.data.fuzzing_score * 100)}%</span
+                            >
+                        {/if}
                     </div>
                     {#if interpretationDetail.status === "loaded" && interpretationDetail.data?.reasoning}
                         <span class="interpretation-reasoning">{interpretationDetail.data.reasoning}</span>
@@ -158,6 +174,29 @@
     }
 
     .confidence-low {
+        background: color-mix(in srgb, var(--text-muted) 20%, transparent);
+        color: var(--text-muted);
+    }
+
+    .score-pill {
+        font-size: var(--text-xs);
+        padding: var(--space-1) var(--space-2);
+        border-radius: var(--radius-sm);
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .score-high {
+        background: color-mix(in srgb, var(--status-positive-bright) 20%, transparent);
+        color: var(--status-positive-bright);
+    }
+
+    .score-medium {
+        background: color-mix(in srgb, var(--status-warning) 20%, transparent);
+        color: var(--status-warning);
+    }
+
+    .score-low {
         background: color-mix(in srgb, var(--text-muted) 20%, transparent);
         color: var(--text-muted);
     }
