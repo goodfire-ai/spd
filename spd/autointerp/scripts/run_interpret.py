@@ -26,6 +26,7 @@ def main(
     config: str | None = None,
     model: str = "google/gemini-3-flash-preview",
     reasoning_effort: str | None = None,
+    autointerp_run_id: str | None = None,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> None:
@@ -36,6 +37,7 @@ def main(
         config: Path to AutointerpConfig YAML file. If provided, model/reasoning_effort are ignored.
         model: OpenRouter model name (used when config is not provided).
         reasoning_effort: Reasoning effort level (used when config is not provided).
+        autointerp_run_id: Pre-assigned run ID (timestamp). Generated if not provided.
         limit: Max number of components to interpret.
         cost_limit_usd: Cost budget in USD.
     """
@@ -55,7 +57,8 @@ def main(
     correlations_dir = get_correlations_dir(run_id)
 
     # Create timestamped run directory
-    autointerp_run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if autointerp_run_id is None:
+        autointerp_run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = get_autointerp_dir(run_id) / autointerp_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
