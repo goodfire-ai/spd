@@ -85,8 +85,10 @@ def _delimit_high_ci_tokens(
         tok = lookup[tid]
         active = ci > CI_THRESHOLD
         if active and not in_span:
+            stripped = tok.lstrip()
+            parts.append(tok[: len(tok) - len(stripped)])
             parts.append("<<")
-            parts.append(tok.strip())
+            parts.append(stripped)
             n_delimited += 1
             in_span = True
         elif active and in_span:
@@ -130,8 +132,10 @@ def _delimit_random_low_ci_tokens(
         tok = lookup[tid]
         active = i in delimit_indices
         if active and not in_span:
+            stripped = tok.lstrip()
+            parts.append(tok[: len(tok) - len(stripped)])
             parts.append("<<")
-            parts.append(tok.strip())
+            parts.append(stripped)
             in_span = True
         elif active and in_span:
             parts.append(tok)

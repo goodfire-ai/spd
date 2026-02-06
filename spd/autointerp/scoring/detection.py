@@ -92,8 +92,10 @@ def _format_activating_example(
         tok = lookup[tid]
         active = ci > CI_THRESHOLD
         if active and not in_span:
+            stripped = tok.lstrip()
+            parts.append(tok[: len(tok) - len(stripped)])  # leading whitespace before <<
             parts.append("<<")
-            parts.append(tok.strip())
+            parts.append(stripped)
             in_span = True
         elif active and in_span:
             parts.append(tok)
@@ -137,8 +139,10 @@ def _format_non_activating_example(
         tok = lookup[tid]
         active = rng.random() < bold_density
         if active and not in_span:
+            stripped = tok.lstrip()
+            parts.append(tok[: len(tok) - len(stripped)])
             parts.append("<<")
-            parts.append(tok.strip())
+            parts.append(stripped)
             in_span = True
         elif active and in_span:
             parts.append(tok)

@@ -135,8 +135,10 @@ def _format_example(
         tok = lookup[tid]
         active = ci > ci_threshold
         if active and not in_span:
+            stripped = tok.lstrip()
+            parts.append(tok[: len(tok) - len(stripped)])
             parts.append("<<")
-            parts.append(tok.strip())
+            parts.append(stripped)
             in_span = True
         elif active and in_span:
             parts.append(tok)
