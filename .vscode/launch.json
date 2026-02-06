@@ -275,11 +275,11 @@
             }
         },
         {
-            "name": "train pile-llama-simple-mlp-2L-768",
+            "name": "pretrain path/to/config.yaml",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/spd/pretrain/train.py",
-            "args": "${workspaceFolder}/spd/pretrain/configs/pile_llama_simple_mlp-2L-768.yaml",
+            "args": "${workspaceFolder}/${command:pickArgs}",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal",
             "justMyCode": true,

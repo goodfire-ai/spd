@@ -21,8 +21,6 @@ spd-pretrain --config_path ... --local
 # Multi-GPU DDP training
 spd-pretrain --config_path ... --n_gpus 4
 
-# Override config values
-spd-pretrain --config_path ... --num_iterations 1000 --learning_rate 5e-5
 ```
 
 ## Available Models

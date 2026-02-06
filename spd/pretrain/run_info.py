@@ -14,17 +14,20 @@ from spd.settings import SPD_OUT_DIR
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
+@dataclass
+class WandbDownloadedFiles:
+    checkpoint: Path
+    config: Path
+    model_config: Path
+    tokenizer: Path | None
+
+
 def _cache_dir(project: str, run_id: str) -> Path:
     return SPD_OUT_DIR / "pretrain_cache" / f"{project}-{run_id}"
 
 
-def _download_wandb_files(
-    entity: str, project: str, run_id: str
-) -> tuple[Path, Path, Path, Path | None]:
-    """Download core artifacts for the given W&B run.
-
-    Returns (checkpoint_path, config_path, model_config_path, tokenizer_path).
-    """
+def _download_wandb_files(entity: str, project: str, run_id: str) -> WandbDownloadedFiles:
+    """Download core artifacts for the given W&B run."""
     cache_dir = _cache_dir(project, run_id)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -76,11 +79,12 @@ def _download_wandb_files(
     if tokenizer_file is not None:
         tokenizer_file.download(root=str(cache_dir), exist_ok=True)
 
-    ckpt_path = cache_dir / latest_ckpt_file.name
-    config_path = cache_dir / config_file.name
-    model_config_path = cache_dir / model_config_file.name
-    tokenizer_path = cache_dir / tokenizer_file.name if tokenizer_file is not None else None
-    return ckpt_path, config_path, model_config_path, tokenizer_path
+    return WandbDownloadedFiles(
+        checkpoint=cache_dir / latest_ckpt_file.name,
+        config=cache_dir / config_file.name,
+        model_config=cache_dir / model_config_file.name,
+        tokenizer=cache_dir / tokenizer_file.name if tokenizer_file is not None else None,
+    )
 
 
 def _extract_hf_tokenizer_path(config_dict: dict[str, Any]) -> str | None:
@@ -125,24 +129,19 @@ class PretrainRunInfo:
             pass
         else:
             # W&B path - download files
-            (
-                ckpt_path,
-                config_path,
-                model_config_path,
-                tokenizer_path,
-            ) = _download_wandb_files(entity, project, run_id)
+            downloaded = _download_wandb_files(entity, project, run_id)
 
-            with open(config_path) as f:
+            with open(downloaded.config) as f:
                 config_dict = yaml.safe_load(f)
 
-            with open(model_config_path) as f:
+            with open(downloaded.model_config) as f:
                 model_config_dict = yaml.safe_load(f)
 
             return cls(
-                checkpoint_path=ckpt_path,
+                checkpoint_path=downloaded.checkpoint,
                 config_dict=config_dict,
                 model_config_dict=model_config_dict,
-                tokenizer_path=tokenizer_path,
+                tokenizer_path=downloaded.tokenizer,
                 hf_tokenizer_path=_extract_hf_tokenizer_path(config_dict),
             )
 

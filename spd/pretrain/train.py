@@ -1,12 +1,13 @@
 """
 Unified training script for multiple model families (Llama, GPT-2).
 
+This script is adapted from https://github.com/goodfire-ai/simple_stories_train
+
 Usage:
 ```bash
-python -m spd.pretrain.train [CONFIG.yaml] [--key1 value1 --key2 value2 ...]
+python -m spd.pretrain.train [CONFIG.yaml]
 ```
 - CONFIG.yaml contains the training config. If not provided, a default config is used.
-- Override values with dotted notation (e.g., --train_dataset_config.name my_dataset).
 
 To run on multiple GPUs:
 ```bash
@@ -42,12 +43,12 @@ from pydantic import (
     PositiveInt,
     model_validator,
 )
-from pydantic.v1.utils import deep_update
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from spd.base_config import BaseConfig
 from spd.data import DatasetConfig, create_data_loader
+from spd.log import logger
 from spd.pretrain.models import MODEL_CLASSES, ModelConfig
 from spd.settings import SPD_OUT_DIR
 from spd.utils.distributed_utils import DistributedState, log0
@@ -116,38 +117,12 @@ def log_generations(step: int, generations: list[list[str]]) -> None:
     )
 
 
-def convert_dotted_args_to_nested_dict(args: dict[str, Any]) -> dict[str, Any]:
-    """Convert dot-notation CLI args to nested dictionary structure."""
-    result: dict[str, Any] = {}
-    for key, value in args.items():
-        if "." in key:
-            parts = key.split(".")
-            current = result
-            for part in parts[:-1]:
-                current = current.setdefault(part, {})
-            current[parts[-1]] = value
-        else:
-            result[key] = value
-    return result
-
-
-def replace_pydantic_model[T: BaseModel](model: T, *updates: dict[str, Any]) -> T:
-    """Create a new model with (potentially nested) updates in the form of dictionaries."""
-    return model.__class__(**deep_update(model.model_dump(), *updates))
-
-
 def load_config[T: BaseModel](
     config_path_or_obj: Path | str | T | None,
     config_model: type[T],
-    updates: dict[str, Any] | None = None,
 ) -> T:
     """Load the config of class `config_model`, either from YAML file, existing config object, or None."""
-    if updates is not None:
-        updates = convert_dotted_args_to_nested_dict(updates)
-
     if isinstance(config_path_or_obj, config_model):
-        if updates is not None:
-            config_path_or_obj = replace_pydantic_model(config_path_or_obj, **updates)
         return config_path_or_obj
 
     config_dict = {}
@@ -162,9 +137,6 @@ def load_config[T: BaseModel](
         assert Path(config_path_or_obj).exists(), f"Config file {config_path_or_obj} doesn't exist."
         with open(config_path_or_obj) as f:
             config_dict = yaml.safe_load(f)
-
-    if updates is not None:
-        config_dict = deep_update(config_dict, updates)
 
     return config_model(**config_dict)
 
@@ -229,10 +201,10 @@ class Config(BaseConfig):
         return config_dict
 
 
-def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -> None:
+def main(config_path_or_obj: Path | str | Config | None = None) -> None:
     log0(f"Running pytorch {torch.__version__}")
     load_dotenv(override=True)
-    config = load_config(config_path_or_obj, config_model=Config, updates=kwargs)
+    config = load_config(config_path_or_obj, config_model=Config)
 
     T = config.train_dataset_config.n_ctx  # Training sequence length (positions to train on)
 
@@ -274,7 +246,7 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
                 device = "cuda"
             elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                 device = "mps"
-    print(f"using device: {device}")
+    logger.info(f"using device: {device}")
 
     # Calculate per-process batch size from total batch size
     assert config.batch_size % ddp_world_size == 0, (

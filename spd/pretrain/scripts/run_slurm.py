@@ -17,7 +17,6 @@ def main(
     time: str = "72:00:00",
     job_name: str = "spd-pretrain",
     local: bool = False,
-    **extra_args: str,
 ) -> None:
     """Submit pretraining job to SLURM or run locally.
 
@@ -28,21 +27,17 @@ def main(
         time: SLURM time limit
         job_name: SLURM job name
         local: If True, run locally instead of submitting to SLURM
-        **extra_args: Additional arguments passed to train.py (e.g., --num_iterations 1000)
     """
     config_path_resolved = Path(config_path)
     assert config_path_resolved.exists(), f"Config not found: {config_path}"
 
-    # Build extra args string
-    extra_args_str = " ".join(f"--{k} {v}" for k, v in extra_args.items())
-
     if local:
-        _run_local(config_path_resolved, n_gpus, extra_args_str)
+        _run_local(config_path_resolved, n_gpus)
     else:
-        _submit_slurm(config_path_resolved, n_gpus, partition, time, job_name, extra_args_str)
+        _submit_slurm(config_path_resolved, n_gpus, partition, time, job_name)
 
 
-def _run_local(config_path: Path, n_gpus: int, extra_args_str: str) -> None:
+def _run_local(config_path: Path, n_gpus: int) -> None:
     """Run training locally."""
     if n_gpus > 1:
         cmd = [
@@ -56,9 +51,6 @@ def _run_local(config_path: Path, n_gpus: int, extra_args_str: str) -> None:
     else:
         cmd = [sys.executable, "-m", "spd.pretrain.train", str(config_path)]
 
-    if extra_args_str:
-        cmd.extend(extra_args_str.split())
-
     print(f"Running: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
 
@@ -69,7 +61,6 @@ def _submit_slurm(
     partition: str,
     time: str,
     job_name: str,
-    extra_args_str: str,
 ) -> None:
     """Submit job to SLURM."""
     SLURM_LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -81,8 +72,7 @@ def _submit_slurm(
 
     # Build the training command
     train_cmd = (
-        f"torchrun --standalone --nproc_per_node={n_gpus} "
-        f"-m spd.pretrain.train {config_path} {extra_args_str}"
+        f"torchrun --standalone --nproc_per_node={n_gpus} -m spd.pretrain.train {config_path}"
     )
 
     config = SlurmConfig(
