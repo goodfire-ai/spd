@@ -150,9 +150,6 @@ class GlobalCiConfig(BaseConfig):
             assert self.reader_hidden_dims is not None, (
                 "reader_hidden_dims must be specified when fn_type='global_reverse_residual'"
             )
-            assert self.transition_hidden_dim is not None, (
-                "transition_hidden_dim must be specified when fn_type='global_reverse_residual'"
-            )
             if self.transition_attn_config is not None:
                 assert self.d_resid_ci_fn % self.transition_attn_config.n_heads == 0, (
                     f"d_resid_ci_fn ({self.d_resid_ci_fn}) must be divisible by "

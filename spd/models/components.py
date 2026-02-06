@@ -336,7 +336,9 @@ class GlobalSharedTransformerCiFn(nn.Module):
         self,
         input_acts: dict[str, Float[Tensor, "... d_in"]],
     ) -> dict[str, Float[Tensor, "... C"]]:
-        inputs_list = [input_acts[name] for name in self.layer_order]
+        inputs_list = [
+            F.rms_norm(input_acts[name], (input_acts[name].shape[-1],)) for name in self.layer_order
+        ]
         concatenated = torch.cat(inputs_list, dim=-1)
         projected: Tensor = self._input_projector(concatenated)
 
@@ -367,7 +369,8 @@ class GlobalReverseResidualCiFn(nn.Module):
        - Transition updates residual stream for next block (except after last block):
          - If attn_config is provided: RMSNorm → attn → add → RMSNorm → MLP(GeLU) → add
          - Otherwise: RMSNorm → MLP(GeLU) → add
-         - MLP structure: d_resid_ci_fn → transition_hidden_dim → d_resid_ci_fn with GeLU activation
+         - If transition_hidden_dim is provided: MLP d_resid → hidden → d_resid with GeLU
+         - Otherwise: linear d_resid → d_resid
 
     """
 
@@ -376,7 +379,7 @@ class GlobalReverseResidualCiFn(nn.Module):
         block_configs: list[tuple[str, list[str], list[int], list[int]]],
         d_resid_ci_fn: int,
         reader_hidden_dims: list[int],
-        transition_hidden_dim: int,
+        transition_hidden_dim: int | None,
         attn_config: "TransitionAttnConfig | None" = None,
     ):
         """Initialize the reverse residual CI function.
@@ -442,12 +445,15 @@ class GlobalReverseResidualCiFn(nn.Module):
             self._reader_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
 
             if block_idx < self.n_blocks - 1:
-                transition_mlp = nn.Sequential(
-                    Linear(d_resid_ci_fn, transition_hidden_dim, nonlinearity="relu"),
-                    nn.GELU(),
-                    Linear(transition_hidden_dim, d_resid_ci_fn, nonlinearity="relu"),
-                )
-                self._transitions[safe_name] = transition_mlp
+                if transition_hidden_dim is not None:
+                    transition = nn.Sequential(
+                        Linear(d_resid_ci_fn, transition_hidden_dim, nonlinearity="relu"),
+                        nn.GELU(),
+                        Linear(transition_hidden_dim, d_resid_ci_fn, nonlinearity="relu"),
+                    )
+                else:
+                    transition = Linear(d_resid_ci_fn, d_resid_ci_fn, nonlinearity="relu")
+                self._transitions[safe_name] = transition
                 self._transition_norms[safe_name] = nn.RMSNorm(d_resid_ci_fn)
                 if attn_config is not None:
                     assert self._attn_transitions is not None
