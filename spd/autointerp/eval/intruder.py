@@ -126,16 +126,29 @@ def _format_example(
     lookup: dict[int, str],
     ci_threshold: float = CI_THRESHOLD,
 ) -> str:
-    tokens: list[str] = []
+    """Format example with high-CI tokens in <<delimiters>>. Consecutive tokens are grouped."""
+    parts: list[str] = []
+    in_span = False
     for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
         if tid < 0:
             continue
         tok = lookup[tid]
-        if ci > ci_threshold:
-            tokens.append(f"**{tok.strip()}**")
+        active = ci > ci_threshold
+        if active and not in_span:
+            parts.append("<<")
+            parts.append(tok.strip())
+            in_span = True
+        elif active and in_span:
+            parts.append(tok)
+        elif not active and in_span:
+            parts.append(">>")
+            parts.append(tok)
+            in_span = False
         else:
-            tokens.append(tok)
-    return "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
+            parts.append(tok)
+    if in_span:
+        parts.append(">>")
+    return "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
 
 
 def _sample_intruder(
@@ -167,7 +180,7 @@ You are evaluating the coherence of a neural network component's activations.
 Below are 5 text examples. Four of them activate the SAME component in a neural network
 (they share a common pattern). One is an INTRUDER — it activates a DIFFERENT component.
 
-Tokens in **bold** are where the component is most active.
+Tokens between <<delimiters>> are where the component is most active.
 
 {examples_text}
 Which example is the intruder? Think step by step about what pattern the majority share,

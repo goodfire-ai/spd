@@ -75,23 +75,37 @@ def _format_activating_example(
     example: ActivationExample,
     lookup: dict[int, str],
 ) -> str:
-    """Format an activating example with high-CI tokens bolded.
+    """Format an activating example with high-CI tokens in <<delimiters>>.
+
+    Consecutive high-CI tokens are grouped: <<over the moon>>.
 
     NOTE: Potential leakage — real CI patterns have spatial structure (consecutive tokens
-    tend to be co-active), while non-activating examples use i.i.d. Bernoulli bolding.
-    An LLM could distinguish bursty vs uniform bold patterns without understanding the label.
-    Fixing this properly would require matching the run-length distribution of bold spans.
+    tend to be co-active), while non-activating examples use i.i.d. Bernoulli delimiting.
+    An LLM could distinguish bursty vs uniform patterns without understanding the label.
+    Fixing this properly would require matching the run-length distribution of delimited spans.
     """
-    tokens: list[str] = []
+    parts: list[str] = []
+    in_span = False
     for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
         if tid < 0:
             continue
         tok = lookup[tid]
-        if ci > CI_THRESHOLD:
-            tokens.append(f"**{tok.strip()}**")
+        active = ci > CI_THRESHOLD
+        if active and not in_span:
+            parts.append("<<")
+            parts.append(tok.strip())
+            in_span = True
+        elif active and in_span:
+            parts.append(tok)
+        elif not active and in_span:
+            parts.append(">>")
+            parts.append(tok)
+            in_span = False
         else:
-            tokens.append(tok)
-    return "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
+            parts.append(tok)
+    if in_span:
+        parts.append(">>")
+    return "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
 
 
 def _measure_bold_density(examples: list[ActivationExample]) -> float:
@@ -114,17 +128,29 @@ def _format_non_activating_example(
     rng: random.Random,
     bold_density: float,
 ) -> str:
-    """Format a non-activating example with random tokens bolded to match activating density."""
-    tokens: list[str] = []
+    """Format a non-activating example with random tokens in <<delimiters>> to match density."""
+    parts: list[str] = []
+    in_span = False
     for tid in example.token_ids:
         if tid < 0:
             continue
         tok = lookup[tid]
-        if rng.random() < bold_density:
-            tokens.append(f"**{tok.strip()}**")
+        active = rng.random() < bold_density
+        if active and not in_span:
+            parts.append("<<")
+            parts.append(tok.strip())
+            in_span = True
+        elif active and in_span:
+            parts.append(tok)
+        elif not active and in_span:
+            parts.append(">>")
+            parts.append(tok)
+            in_span = False
         else:
-            tokens.append(tok)
-    return "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
+            parts.append(tok)
+    if in_span:
+        parts.append(">>")
+    return "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
 
 
 def _sample_activating_examples(
@@ -195,7 +221,7 @@ of its activations.
 The component has been labeled as: "{label}"
 
 Below are {n_total} text examples. Some of them activate this component, and some do not.
-Tokens in **bold** are highlighted for emphasis.
+Important tokens are highlighted between <<delimiters>>.
 
 {examples_text}
 For each example, decide whether it activates the component described by the label above.

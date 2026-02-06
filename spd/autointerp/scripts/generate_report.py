@@ -40,9 +40,9 @@ from spd.autointerp.scoring.detection import (
 from spd.autointerp.scoring.fuzzing import (
     N_CORRECT,
     N_INCORRECT,
-    _bold_high_ci_tokens,
-    _bold_random_low_ci_tokens,
     _build_fuzzing_prompt,
+    _delimit_high_ci_tokens,
+    _delimit_random_low_ci_tokens,
 )
 from spd.harvest.harvest import HarvestResult
 from spd.harvest.schemas import ComponentData, get_activation_contexts_dir
@@ -100,11 +100,11 @@ def _build_example_fuzzing_prompt(
 
     formatted: list[tuple[str, bool]] = []
     for ex in correct_examples:
-        text, _ = _bold_high_ci_tokens(ex, lookup)
+        text, _ = _delimit_high_ci_tokens(ex, lookup)
         formatted.append((text, True))
     for ex in incorrect_examples:
-        _, n_bolded = _bold_high_ci_tokens(ex, lookup)
-        text = _bold_random_low_ci_tokens(ex, lookup, max(n_bolded, 1), rng)
+        _, n_delimited = _delimit_high_ci_tokens(ex, lookup)
+        text = _delimit_random_low_ci_tokens(ex, lookup, max(n_delimited, 1), rng)
         formatted.append((text, False))
     rng.shuffle(formatted)
     return _build_fuzzing_prompt(label, formatted)
@@ -400,11 +400,6 @@ Tests label specificity via correct vs. random highlighting. Random baseline = 5
   :root {{ --bg: #fff; --fg: #1a1a1a; --muted: #555; --border: #ddd;
            --accent: #3498db; --code-bg: #f4f4f4; --pre-bg: #f8f8f8;
            --table-stripe: #fafafa; --heading: #2c3e50; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg: #1a1a2e; --fg: #e0e0e0; --muted: #999; --border: #333;
-             --accent: #5dade2; --code-bg: #2a2a3e; --pre-bg: #22223a;
-             --table-stripe: #22223a; --heading: #a8d8ea; }}
-  }}
   * {{ box-sizing: border-box; }}
   body {{ font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
          font-size: 15px; line-height: 1.6; color: var(--fg); background: var(--bg);

@@ -71,54 +71,79 @@ class FuzzingResult:
     n_errors: int
 
 
-def _bold_high_ci_tokens(
+def _delimit_high_ci_tokens(
     example: ActivationExample,
     lookup: dict[int, str],
 ) -> tuple[str, int]:
-    """Format example with actual high-CI tokens bolded. Returns (text, n_bolded)."""
-    tokens: list[str] = []
-    n_bolded = 0
+    """Format example with high-CI tokens in <<delimiters>>. Returns (text, n_delimited)."""
+    parts: list[str] = []
+    n_delimited = 0
+    in_span = False
     for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
         if tid < 0:
             continue
         tok = lookup[tid]
-        if ci > CI_THRESHOLD:
-            tokens.append(f"**{tok.strip()}**")
-            n_bolded += 1
+        active = ci > CI_THRESHOLD
+        if active and not in_span:
+            parts.append("<<")
+            parts.append(tok.strip())
+            n_delimited += 1
+            in_span = True
+        elif active and in_span:
+            parts.append(tok)
+            n_delimited += 1
+        elif not active and in_span:
+            parts.append(">>")
+            parts.append(tok)
+            in_span = False
         else:
-            tokens.append(tok)
-    text = "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
-    return text, n_bolded
+            parts.append(tok)
+    if in_span:
+        parts.append(">>")
+    text = "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
+    return text, n_delimited
 
 
-def _bold_random_low_ci_tokens(
+def _delimit_random_low_ci_tokens(
     example: ActivationExample,
     lookup: dict[int, str],
-    n_to_bold: int,
+    n_to_delimit: int,
     rng: random.Random,
 ) -> str:
-    """Format example with random LOW-CI tokens bolded instead of high-CI ones."""
+    """Format example with random LOW-CI tokens in <<delimiters>> instead of high-CI ones."""
     valid_indices = [
         i
         for i, (tid, ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True))
         if tid >= 0 and ci <= CI_THRESHOLD
     ]
 
-    if len(valid_indices) < n_to_bold:
-        bold_indices = set(valid_indices)
+    if len(valid_indices) < n_to_delimit:
+        delimit_indices = set(valid_indices)
     else:
-        bold_indices = set(rng.sample(valid_indices, n_to_bold))
+        delimit_indices = set(rng.sample(valid_indices, n_to_delimit))
 
-    tokens: list[str] = []
+    parts: list[str] = []
+    in_span = False
     for i, (tid, _ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True)):
         if tid < 0:
             continue
         tok = lookup[tid]
-        if i in bold_indices:
-            tokens.append(f"**{tok.strip()}**")
+        active = i in delimit_indices
+        if active and not in_span:
+            parts.append("<<")
+            parts.append(tok.strip())
+            in_span = True
+        elif active and in_span:
+            parts.append(tok)
+        elif not active and in_span:
+            parts.append(">>")
+            parts.append(tok)
+            in_span = False
         else:
-            tokens.append(tok)
-    text = "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
+            parts.append(tok)
+    if in_span:
+        parts.append(">>")
+    text = "".join(parts[:MAX_TOKENS_PER_EXAMPLE])
     return text
 
 
@@ -144,14 +169,15 @@ You are evaluating the quality of an interpretation of a neural network componen
 The component has been interpreted as: "{label}"
 
 Below are {n_examples} text examples where this component activates. In each example, some tokens
-are highlighted in **bold**. In some examples, the bold tokens CORRECTLY mark where the component
-is most active (consistent with the interpretation). In other examples, the bold tokens are
-INCORRECT — they mark random tokens that are NOT where the component is actually active.
+are highlighted between <<delimiters>>. In some examples, the delimited tokens CORRECTLY mark
+where the component is most active (consistent with the interpretation). In other examples, the
+delimited tokens are INCORRECT — they mark random tokens that are NOT where the component is
+actually active.
 
 {examples_text}
-For each example, decide whether the **bold** tokens are CORRECTLY highlighting tokens consistent
-with the interpretation "{label}", or whether the bold tokens seem RANDOM and unrelated to the
-interpretation.
+For each example, decide whether the <<delimited>> tokens are CORRECTLY highlighting tokens
+consistent with the interpretation "{label}", or whether the delimited tokens seem RANDOM and
+unrelated to the interpretation.
 
 Respond with the list of correctly-highlighted example numbers and brief reasoning.\
 """
@@ -183,14 +209,14 @@ async def score_component(
         formatted: list[tuple[str, bool]] = []
 
         for ex in correct_examples:
-            text, _ = _bold_high_ci_tokens(ex, lookup)
+            text, _ = _delimit_high_ci_tokens(ex, lookup)
             formatted.append((text, True))
 
         for ex in incorrect_examples:
             # Count how many tokens would be bolded in the correct version
-            _, n_bolded = _bold_high_ci_tokens(ex, lookup)
-            n_to_bold = max(n_bolded, 1)  # Bold at least 1 token
-            text = _bold_random_low_ci_tokens(ex, lookup, n_to_bold, rng)
+            _, n_delimited = _delimit_high_ci_tokens(ex, lookup)
+            n_to_delimit = max(n_delimited, 1)
+            text = _delimit_random_low_ci_tokens(ex, lookup, n_to_delimit, rng)
             formatted.append((text, False))
 
         rng.shuffle(formatted)
