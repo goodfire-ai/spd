@@ -17,6 +17,7 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.app.backend.utils import build_token_lookup
 from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
@@ -72,7 +73,7 @@ class FuzzingResult:
 
 def _bold_high_ci_tokens(
     example: ActivationExample,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
 ) -> tuple[str, int]:
     """Format example with actual high-CI tokens bolded. Returns (text, n_bolded)."""
     tokens: list[str] = []
@@ -80,19 +81,19 @@ def _bold_high_ci_tokens(
     for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
         if tid < 0:
             continue
-        decoded = tokenizer.decode([tid])
+        tok = lookup[tid]
         if ci > CI_THRESHOLD:
-            tokens.append(f"**{decoded}**")
+            tokens.append(f"**{tok.strip()}**")
             n_bolded += 1
         else:
-            tokens.append(decoded)
+            tokens.append(tok)
     text = "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
     return text, n_bolded
 
 
 def _bold_random_low_ci_tokens(
     example: ActivationExample,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     n_to_bold: int,
     rng: random.Random,
 ) -> str:
@@ -104,8 +105,6 @@ def _bold_random_low_ci_tokens(
     ]
 
     if len(valid_indices) < n_to_bold:
-        # Fall back to all non-negative token indices that aren't high-CI
-        # If still not enough, bold whatever we can
         bold_indices = set(valid_indices)
     else:
         bold_indices = set(rng.sample(valid_indices, n_to_bold))
@@ -114,11 +113,11 @@ def _bold_random_low_ci_tokens(
     for i, (tid, _ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True)):
         if tid < 0:
             continue
-        decoded = tokenizer.decode([tid])
+        tok = lookup[tid]
         if i in bold_indices:
-            tokens.append(f"**{decoded}**")
+            tokens.append(f"**{tok.strip()}**")
         else:
-            tokens.append(decoded)
+            tokens.append(tok)
     text = "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
     return text
 
@@ -162,7 +161,7 @@ async def score_component(
     client: OpenRouter,
     model: str,
     component: ComponentData,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     label: str,
 ) -> FuzzingResult:
     min_examples = N_CORRECT + N_INCORRECT
@@ -184,14 +183,14 @@ async def score_component(
         formatted: list[tuple[str, bool]] = []
 
         for ex in correct_examples:
-            text, _ = _bold_high_ci_tokens(ex, tokenizer)
+            text, _ = _bold_high_ci_tokens(ex, lookup)
             formatted.append((text, True))
 
         for ex in incorrect_examples:
             # Count how many tokens would be bolded in the correct version
-            _, n_bolded = _bold_high_ci_tokens(ex, tokenizer)
+            _, n_bolded = _bold_high_ci_tokens(ex, lookup)
             n_to_bold = max(n_bolded, 1)  # Bold at least 1 token
-            text = _bold_random_low_ci_tokens(ex, tokenizer, n_to_bold, rng)
+            text = _bold_random_low_ci_tokens(ex, lookup, n_to_bold, rng)
             formatted.append((text, False))
 
         rng.shuffle(formatted)
@@ -265,6 +264,7 @@ async def run_fuzzing_scoring(
 ) -> list[FuzzingResult]:
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
+    lookup = build_token_lookup(tokenizer, tokenizer_name)
 
     results: list[FuzzingResult] = []
     completed = set[str]()
@@ -314,7 +314,7 @@ async def run_fuzzing_scoring(
                 return
             try:
                 label = labels[component.component_key]
-                result = await score_component(client, model, component, tokenizer, label)
+                result = await score_component(client, model, component, lookup, label)
                 async with output_lock:
                     results.append(result)
                     with open(output_path, "a") as f:

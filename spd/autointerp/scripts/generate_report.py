@@ -17,6 +17,7 @@ import numpy as np
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.app.backend.utils import build_token_lookup
 from spd.autointerp.eval.intruder import (
     N_REAL,
     DensityIndex,
@@ -68,7 +69,7 @@ def _pick_component_with_label(
 def _build_example_detection_prompt(
     component: ComponentData,
     all_components: list[ComponentData],
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     label: str,
     rng: random.Random,
 ) -> str:
@@ -80,16 +81,16 @@ def _build_example_detection_prompt(
 
     formatted: list[tuple[str, bool]] = []
     for ex in activating:
-        formatted.append((_format_activating_example(ex, tokenizer), True))
+        formatted.append((_format_activating_example(ex, lookup), True))
     for ex in non_activating:
-        formatted.append((_format_non_activating_example(ex, tokenizer, rng, bold_density), False))
+        formatted.append((_format_non_activating_example(ex, lookup, rng, bold_density), False))
     rng.shuffle(formatted)
     return _build_detection_prompt(label, formatted)
 
 
 def _build_example_fuzzing_prompt(
     component: ComponentData,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     label: str,
     rng: random.Random,
 ) -> str:
@@ -99,11 +100,11 @@ def _build_example_fuzzing_prompt(
 
     formatted: list[tuple[str, bool]] = []
     for ex in correct_examples:
-        text, _ = _bold_high_ci_tokens(ex, tokenizer)
+        text, _ = _bold_high_ci_tokens(ex, lookup)
         formatted.append((text, True))
     for ex in incorrect_examples:
-        _, n_bolded = _bold_high_ci_tokens(ex, tokenizer)
-        text = _bold_random_low_ci_tokens(ex, tokenizer, max(n_bolded, 1), rng)
+        _, n_bolded = _bold_high_ci_tokens(ex, lookup)
+        text = _bold_random_low_ci_tokens(ex, lookup, max(n_bolded, 1), rng)
         formatted.append((text, False))
     rng.shuffle(formatted)
     return _build_fuzzing_prompt(label, formatted)
@@ -112,14 +113,14 @@ def _build_example_fuzzing_prompt(
 def _build_example_intruder_prompt(
     component: ComponentData,
     all_components: list[ComponentData],
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     rng: random.Random,
 ) -> str:
     density_index = DensityIndex(all_components, min_examples=N_REAL + 1)
     real_examples = rng.sample(component.activation_examples, N_REAL)
     intruder = _sample_intruder(component, density_index, rng)
     intruder_pos = rng.randint(0, N_REAL)
-    return _build_prompt(real_examples, intruder, intruder_pos, tokenizer)
+    return _build_prompt(real_examples, intruder, intruder_pos, lookup)
 
 
 def generate_report(wandb_path: str, output_path: Path | None = None) -> Path:
@@ -144,6 +145,7 @@ def generate_report(wandb_path: str, output_path: Path | None = None) -> Path:
     arch = get_architecture_info(wandb_path)
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
+    lookup = build_token_lookup(tokenizer, arch.tokenizer_name)
 
     activation_contexts_dir = get_activation_contexts_dir(run_id)
     assert activation_contexts_dir.exists(), f"No harvest data at {activation_contexts_dir}"
@@ -287,7 +289,7 @@ For sense-checking tokenization and formatting.
     detection_prompt = _build_example_detection_prompt(
         example_component,
         components,
-        tokenizer,
+        lookup,
         example_label,
         rng,
     )
@@ -298,7 +300,7 @@ For sense-checking tokenization and formatting.
     md += f"**Component:** `{example_component.component_key}` (label: *{example_label}*)\n\n"
     fuzzing_prompt = _build_example_fuzzing_prompt(
         example_component,
-        tokenizer,
+        lookup,
         example_label,
         rng,
     )
@@ -310,7 +312,7 @@ For sense-checking tokenization and formatting.
     intruder_prompt = _build_example_intruder_prompt(
         example_component,
         components,
-        tokenizer,
+        lookup,
         rng,
     )
     md += f"```\n{intruder_prompt}\n```\n\n"

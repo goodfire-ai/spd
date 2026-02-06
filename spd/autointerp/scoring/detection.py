@@ -19,6 +19,7 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.app.backend.utils import build_token_lookup
 from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
@@ -72,7 +73,7 @@ class DetectionResult:
 
 def _format_activating_example(
     example: ActivationExample,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
 ) -> str:
     """Format an activating example with high-CI tokens bolded.
 
@@ -85,11 +86,11 @@ def _format_activating_example(
     for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
         if tid < 0:
             continue
-        decoded = tokenizer.decode([tid])
+        tok = lookup[tid]
         if ci > CI_THRESHOLD:
-            tokens.append(f"**{decoded}**")
+            tokens.append(f"**{tok.strip()}**")
         else:
-            tokens.append(decoded)
+            tokens.append(tok)
     return "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
 
 
@@ -109,7 +110,7 @@ def _measure_bold_density(examples: list[ActivationExample]) -> float:
 
 def _format_non_activating_example(
     example: ActivationExample,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     rng: random.Random,
     bold_density: float,
 ) -> str:
@@ -118,11 +119,11 @@ def _format_non_activating_example(
     for tid in example.token_ids:
         if tid < 0:
             continue
-        decoded = tokenizer.decode([tid])
+        tok = lookup[tid]
         if rng.random() < bold_density:
-            tokens.append(f"**{decoded}**")
+            tokens.append(f"**{tok.strip()}**")
         else:
-            tokens.append(decoded)
+            tokens.append(tok)
     return "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
 
 
@@ -207,7 +208,7 @@ async def score_component(
     model: str,
     component: ComponentData,
     all_components: list[ComponentData],
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     label: str,
 ) -> DetectionResult:
     assert len(component.activation_examples) >= N_ACTIVATING
@@ -227,11 +228,9 @@ async def score_component(
         # Format examples
         formatted: list[tuple[str, bool]] = []
         for ex in activating:
-            formatted.append((_format_activating_example(ex, tokenizer), True))
+            formatted.append((_format_activating_example(ex, lookup), True))
         for ex in non_activating:
-            formatted.append(
-                (_format_non_activating_example(ex, tokenizer, rng, bold_density), False)
-            )
+            formatted.append((_format_non_activating_example(ex, lookup, rng, bold_density), False))
 
         # Shuffle
         rng.shuffle(formatted)
@@ -298,6 +297,7 @@ async def run_detection_scoring(
 ) -> list[DetectionResult]:
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
+    lookup = build_token_lookup(tokenizer, tokenizer_name)
 
     results: list[DetectionResult] = []
     completed = set[str]()
@@ -350,7 +350,7 @@ async def run_detection_scoring(
                     model,
                     component,
                     components,
-                    tokenizer,
+                    lookup,
                     labels[component.component_key],
                 )
                 async with output_lock:

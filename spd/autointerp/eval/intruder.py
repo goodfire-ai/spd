@@ -20,6 +20,7 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.app.backend.utils import build_token_lookup
 from spd.autointerp.llm_api import (
     CostTracker,
     RateLimiter,
@@ -122,18 +123,18 @@ class DensityIndex:
 
 def _format_example(
     example: ActivationExample,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     ci_threshold: float = CI_THRESHOLD,
 ) -> str:
     tokens: list[str] = []
     for tid, ci in zip(example.token_ids, example.ci_values, strict=True):
         if tid < 0:
             continue
-        decoded = tokenizer.decode([tid])
+        tok = lookup[tid]
         if ci > ci_threshold:
-            tokens.append(f"**{decoded}**")
+            tokens.append(f"**{tok.strip()}**")
         else:
-            tokens.append(decoded)
+            tokens.append(tok)
     return "".join(tokens[:MAX_TOKENS_PER_EXAMPLE])
 
 
@@ -151,14 +152,14 @@ def _build_prompt(
     real_examples: list[ActivationExample],
     intruder: ActivationExample,
     intruder_position: int,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
 ) -> str:
     all_examples = list(real_examples)
     all_examples.insert(intruder_position, intruder)
 
     examples_text = ""
     for i, ex in enumerate(all_examples):
-        examples_text += f"Example {i + 1}: {_format_example(ex, tokenizer)}\n\n"
+        examples_text += f"Example {i + 1}: {_format_example(ex, lookup)}\n\n"
 
     return f"""\
 You are evaluating the coherence of a neural network component's activations.
@@ -180,7 +181,7 @@ async def score_component(
     model: str,
     component: ComponentData,
     density_index: DensityIndex,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
 ) -> IntruderResult:
     assert len(component.activation_examples) >= N_REAL + 1
 
@@ -194,7 +195,7 @@ async def score_component(
         intruder_pos = rng.randint(0, N_REAL)
         correct_answer = intruder_pos + 1
 
-        prompt = _build_prompt(real_examples, intruder, intruder_pos, tokenizer)
+        prompt = _build_prompt(real_examples, intruder, intruder_pos, lookup)
 
         try:
             response, _, _ = await chat_with_retry(
@@ -240,6 +241,7 @@ async def run_intruder_scoring(
 ) -> list[IntruderResult]:
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
+    lookup = build_token_lookup(tokenizer, tokenizer_name)
 
     results: list[IntruderResult] = []
     completed = set[str]()
@@ -287,7 +289,7 @@ async def run_intruder_scoring(
             if cost_tracker.over_budget():
                 return
             try:
-                result = await score_component(client, model, component, density_index, tokenizer)
+                result = await score_component(client, model, component, density_index, lookup)
                 async with output_lock:
                     results.append(result)
                     with open(output_path, "a") as f:
