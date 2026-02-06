@@ -33,7 +33,6 @@ from spd.log import logger
 N_ACTIVATING = 5
 N_NON_ACTIVATING = 5
 N_TRIALS = 5
-MAX_TOKENS_PER_EXAMPLE = 64
 CI_THRESHOLD = 0.3
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 200
@@ -87,7 +86,7 @@ def _format_activating_example(
         for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
         if tid >= 0
     ]
-    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE])
+    return delimit_tokens(tokens)
 
 
 def _measure_bold_density(examples: list[ActivationExample]) -> float:
@@ -112,7 +111,7 @@ def _format_non_activating_example(
 ) -> str:
     """Format a non-activating example with random tokens in <<delimiters>> to match density."""
     tokens = [(lookup[tid], rng.random() < bold_density) for tid in example.token_ids if tid >= 0]
-    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE])
+    return delimit_tokens(tokens)
 
 
 def _sample_activating_examples(

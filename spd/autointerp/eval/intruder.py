@@ -33,7 +33,6 @@ from spd.log import logger
 
 N_REAL = 4
 N_TRIALS = 10
-MAX_TOKENS_PER_EXAMPLE = 64
 CI_THRESHOLD = 0.3
 DENSITY_TOLERANCE = 0.05
 MAX_CONCURRENT_REQUESTS = 50
@@ -131,7 +130,7 @@ def _format_example(
         for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
         if tid >= 0
     ]
-    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE])
+    return delimit_tokens(tokens)
 
 
 def _sample_intruder(

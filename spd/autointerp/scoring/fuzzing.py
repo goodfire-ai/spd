@@ -31,7 +31,6 @@ from spd.log import logger
 N_CORRECT = 5
 N_INCORRECT = 2
 N_TRIALS = 5
-MAX_TOKENS_PER_EXAMPLE = 64
 CI_THRESHOLD = 0.3
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 200
@@ -82,7 +81,7 @@ def _delimit_high_ci_tokens(
         if tid >= 0
     ]
     n_delimited = sum(1 for _, active in tokens if active)
-    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE]), n_delimited
+    return delimit_tokens(tokens), n_delimited
 
 
 def _delimit_random_low_ci_tokens(
@@ -108,7 +107,7 @@ def _delimit_random_low_ci_tokens(
         for i, (tid, _ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True))
         if tid >= 0
     ]
-    return delimit_tokens(tokens[:MAX_TOKENS_PER_EXAMPLE])
+    return delimit_tokens(tokens)
 
 
 def _build_fuzzing_prompt(
