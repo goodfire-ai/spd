@@ -220,12 +220,12 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
     ddp = int(os.environ.get("RANK", -1)) != -1
     if ddp:
         assert torch.cuda.is_available(), "for now i think we need CUDA for DDP"
-        init_process_group(backend="nccl")
         ddp_rank = int(os.environ["RANK"])
         ddp_local_rank = int(os.environ["LOCAL_RANK"])
         ddp_world_size = int(os.environ["WORLD_SIZE"])
         device = f"cuda:{ddp_local_rank}"
         torch.cuda.set_device(device)
+        init_process_group(backend="nccl", device_id=torch.device(device))
         master_process = ddp_rank == 0
         zero_stage = config.zero_stage
         dist_state = DistributedState(
@@ -303,6 +303,12 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
         log0("compiling the model...")
         model = cast(nn.Module, torch.compile(model))  # type: ignore[reportArgumentType]
 
+    # In DDP mode, rank 0 prepares datasets first (populates HuggingFace cache),
+    # then other ranks load from cache. Without this, all ranks race to tokenize
+    # simultaneously, causing cache lock contention and excessive process spawning.
+    if ddp and ddp_rank != 0:
+        dist.barrier(device_ids=[ddp_local_rank])
+
     train_loader, train_tokenizer = create_data_loader(
         dataset_config=train_dataset_config,
         batch_size=B,
@@ -319,6 +325,9 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
         global_seed=0,
         dist_state=None,  # Don't split validation data - all ranks evaluate same data
     )
+
+    if ddp and ddp_rank == 0:
+        dist.barrier(device_ids=[ddp_local_rank])
 
     # logging
     run_id: str | None = None
