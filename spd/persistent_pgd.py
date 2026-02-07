@@ -27,7 +27,7 @@ from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.routing import AllLayersRouter, Router, get_subset_router
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 PPGDMasks = dict[str, Float[Tensor, " mask_c"]]
@@ -69,7 +69,8 @@ class PersistentPGDState:
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
             mask_shape = mask_leading_dims + [mask_c]
-            self.masks[module_name] = torch.rand(mask_shape, requires_grad=True, device=device)
+            mask_data = call_on_rank0_then_broadcast(torch.rand, mask_shape)
+            self.masks[module_name] = mask_data.to(device=device).requires_grad_(True)
             if self.optimizer.type == "adam":
                 self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
                 self._adam_v[module_name] = torch.zeros_like(self.masks[module_name])
