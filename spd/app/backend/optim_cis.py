@@ -317,7 +317,6 @@ def optimize_ci_values(
     params = ci_params.get_parameters()
     optimizer = optim.AdamW(params, lr=config.lr, weight_decay=config.weight_decay)
 
-    autocast_ctx = bf16_autocast()
     progress_interval = max(1, config.steps // 20)  # Report ~20 times during optimization
     for step in tqdm(range(config.steps), desc="Optimizing CI values"):
         if on_progress is not None and step % progress_interval == 0:
@@ -339,7 +338,7 @@ def optimize_ci_values(
             case "ci":
                 mask_infos = make_mask_infos(component_masks=ci_outputs.lower_leaky)
 
-        with autocast_ctx:
+        with bf16_autocast():
             out = model(tokens, mask_infos=mask_infos)
 
             imp_min_loss = importance_minimality_loss(

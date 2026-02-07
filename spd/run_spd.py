@@ -125,8 +125,6 @@ def optimize(
 ) -> None:
     """Run the optimization loop for LM decomposition."""
 
-    autocast_ctx = bf16_autocast(enabled=config.autocast_bf16)
-
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
 
@@ -243,7 +241,7 @@ def optimize(
         for _ in range(config.gradient_accumulation_steps):
             microbatch = extract_batch_data(next(train_iterator)).to(device)
 
-            with autocast_ctx:
+            with bf16_autocast(enabled=config.autocast_bf16):
                 # NOTE: we need to call the wrapped_model at least once each step in order
                 # to setup the DDP gradient syncing for all parameters in the component model.
                 # Gradients will sync regardless of whether the parameters are used in this

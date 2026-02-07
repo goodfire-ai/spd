@@ -228,7 +228,6 @@ def harvest_activation_contexts(
     train_iter = iter(train_loader)
     batches_processed = 0
     last_log_time = time.time()
-    autocast_ctx = bf16_autocast()
     batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
     for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
         try:
@@ -242,7 +241,7 @@ def harvest_activation_contexts(
             continue
 
         batch = batch_data.to(device)
-        with torch.no_grad(), autocast_ctx:
+        with torch.no_grad(), bf16_autocast():
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
 
