@@ -15,7 +15,7 @@ intermediate_checkpoints: false
 model:
   model_type: LlamaSimpleMLP
   block_size: 512
-  vocab_size: 50257  # GPT-2 tokenizer native vocab size
+  vocab_size: 50277  # gpt-neox-20b tokenizer vocab size
   n_layer: 12
   n_head: 12
   n_embd: 768

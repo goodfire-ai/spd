@@ -30,14 +30,14 @@ model:
   rotary_base: 10000
   rotary_dim: 128
   use_grouped_query_attention: true
-  vocab_size: 50259
+  vocab_size: 50277
 
 train_dataset_config:
   name: monology/pile-uncopyrighted
   is_tokenized: false
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
-  split: train[:10000000]  # Dataset has 177M examples
-  streaming: false
+  split: train # Dataset has 177M examples
+  streaming: true
   n_ctx: 512
   seed: 0
   column_name: text
@@ -46,8 +46,8 @@ val_dataset_config:
   name: monology/pile-uncopyrighted
   is_tokenized: false
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
-  split: train[-100000:]
-  streaming: false
+  split: train
+  streaming: true
   n_ctx: 512
   seed: 0
   column_name: text

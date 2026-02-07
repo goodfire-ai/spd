@@ -3,7 +3,7 @@
 
 wandb_project: spd
 dtype: bfloat16
-batch_size: 1024
+batch_size: 64
 num_iterations: 100_000
 warmup_iters: 600
 learning_rate: 3e-4
@@ -32,13 +32,13 @@ model:
   rotary_base: 10000
   rotary_dim: 341       # 2048 // 6
   use_grouped_query_attention: true
-  vocab_size: 50259
+  vocab_size: 50277
 
 train_dataset_config:
   name: monology/pile-uncopyrighted
   is_tokenized: false
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
-  split: train[:10000000]  # Dataset has 177M examples
+  split: train[:10000]  # Dataset has 177M examples
   streaming: false
   n_ctx: 512
   seed: 0
@@ -48,7 +48,7 @@ val_dataset_config:
   name: monology/pile-uncopyrighted
   is_tokenized: false
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
-  split: train[-100000:]
+  split: train[-10000:]
   streaming: false
   n_ctx: 512
   seed: 0
