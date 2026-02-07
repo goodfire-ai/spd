@@ -1,6 +1,6 @@
-# wandb_project: spd
-dtype: float32
-batch_size: 128
+wandb_project: spd
+dtype: bfloat16
+batch_size: 1024
 num_iterations: 100_000
 warmup_iters: 600
 learning_rate: 1e-4
@@ -11,6 +11,7 @@ val_loss_every: 100
 val_max_steps: 20
 sample_every: 1000
 intermediate_checkpoints: false
+compile: true
 
 model:
   model_type: LlamaSimpleMLP
@@ -34,7 +35,7 @@ model:
 train_dataset_config:
   name: monology/pile-uncopyrighted
   is_tokenized: false
-  hf_tokenizer_path: gpt2
+  hf_tokenizer_path: EleutherAI/gpt-neox-20b
   split: train[:10000000]  # Dataset has 177M examples
   streaming: false
   n_ctx: 512
@@ -44,7 +45,7 @@ train_dataset_config:
 val_dataset_config:
   name: monology/pile-uncopyrighted
   is_tokenized: false
-  hf_tokenizer_path: gpt2
+  hf_tokenizer_path: EleutherAI/gpt-neox-20b
   split: train[-100000:]
   streaming: false
   n_ctx: 512
