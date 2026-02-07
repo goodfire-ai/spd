@@ -5,49 +5,73 @@ LLM-based automated interpretation of SPD components. Consumes pre-harvested dat
 ## Usage
 
 ```bash
-# Run interpretation (requires harvest data to exist first)
-python -m spd.autointerp.scripts.run_interpret <wandb_path> --model google/gemini-3-flash-preview
+# Run interpretation with default config (CompactSkepticalConfig)
+python -m spd.autointerp.scripts.run_interpret <wandb_path>
+
+# Run with a custom config file
+python -m spd.autointerp.scripts.run_interpret <wandb_path> --config path/to/config.yaml
+
+# Override model/reasoning inline (without config file)
+python -m spd.autointerp.scripts.run_interpret <wandb_path> --model google/gemini-3-flash-preview --reasoning_effort medium
 
 # Or via SLURM
 spd-autointerp <wandb_path>
+spd-autointerp <wandb_path> --config path/to/config.yaml
 ```
 
 Requires `OPENROUTER_API_KEY` env var.
 
 ## Data Storage
 
-Data is stored in `SPD_OUT_DIR/autointerp/` (see `spd/settings.py`):
+Autointerp runs are versioned with timestamped subdirectories:
 
 ```
-SPD_OUT_DIR/autointerp/<run_id>/
-└── results.jsonl    # One InterpretationResult per line (append-only for resume)
+SPD_OUT_DIR/autointerp/<spd_run_id>/
+├── eval/                          # Label-independent eval (intruder detection)
+│   └── intruder/...
+├── <autointerp_run_id>/           # e.g. 20260206_153040
+│   ├── config.yaml                # AutointerpConfig (for reproducibility)
+│   ├── results.jsonl              # InterpretationResults (append-only for resume)
+│   └── scoring/                   # Label-dependent scoring
+│       ├── detection/...
+│       └── fuzzing/...
+└── <another_autointerp_run_id>/
+    └── ...
 ```
+
+Legacy flat format (`results_*.jsonl` directly in the run dir) is still readable via fallback in `loaders.py`.
 
 ## Architecture
+
+### Config (`config.py`)
+
+`AutointerpConfig` is a discriminated union over interpretation strategy configs. Each variant specifies everything that affects interpretation output (model, prompt params, reasoning effort). Admin/execution params (cost limits, parallelism) are NOT part of the config.
+
+Current strategies:
+- `CompactSkepticalConfig` — compact prompt, skeptical tone, structured JSON output
+
+### Strategies (`strategies/`)
+
+Each strategy config type has a corresponding prompt implementation:
+- `strategies/compact_skeptical.py` — prompt formatting for `CompactSkepticalConfig`
+- `strategies/dispatch.py` — routes `AutointerpConfig` → strategy implementation via `match`
 
 ### Interpret (`interpret.py`)
 
 - Uses OpenRouter API with structured JSON outputs
 - Maximum parallelism with exponential backoff on rate limits
 - Resume support: Skips already-completed components on restart
-- Progress bar via `tqdm_asyncio`
+- Progress logging via `spd.log.logger`
+- `interpret_component()` and `interpret_all()` accept `AutointerpConfig`
 
-### Prompt Template (`prompt_template.py`)
+### Loaders (`loaders.py`)
 
-Jinja2 template providing the LLM with:
-- Architecture context (model class, layer position, dataset)
-- Activation examples with CI values
-- Token statistics (PMI for input and output tokens)
-- Co-occurring components
+- `load_interpretations(run_id, autointerp_run_id=None)` — loads from specific or latest run
+- `find_latest_results_path(run_id)` — finds latest results file (nested then flat fallback)
 
 ## Key Types (`schemas.py`)
 
 ```python
 InterpretationResult  # LLM's label + confidence + reasoning
+ArchitectureInfo      # Model architecture context for prompts
 ```
-
-## Status
-
-Early stage. Primary next steps:
-- Eval harness for interpretations (precision/recall via LLM activation simulator)
-- Integration with app UI to display labels

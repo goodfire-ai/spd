@@ -48,6 +48,7 @@
     }: Props = $props();
 
     const clusterId = $derived(runState.clusterMapping?.data[`${layer}:${cIdx}`]);
+    const intruderScore = $derived(runState.getIntruderScore(`${layer}:${cIdx}`));
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -200,6 +201,9 @@
             {/if}
             {#if componentData.componentDetail.status === "loaded"}
                 <span class="metric">Mean CI: {formatNumericalValue(componentData.componentDetail.data.mean_ci)}</span>
+            {/if}
+            {#if intruderScore !== null}
+                <span class="metric">Intruder: {Math.round(intruderScore * 100)}%</span>
             {/if}
         </div>
     </div>

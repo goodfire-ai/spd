@@ -65,6 +65,36 @@ def build_token_lookup(
     return lookup
 
 
+def delimit_tokens(tokens: list[tuple[str, bool]]) -> str:
+    """Join token strings, wrapping active spans in <<delimiters>>.
+
+    Consecutive active tokens are grouped: [(" over", T), (" the", T), (" moon", T)]
+    produces " <<over the moon>>".
+
+    Tokens are expected from build_token_lookup (leading space encodes word boundary).
+    """
+    parts: list[str] = []
+    in_span = False
+    for tok, active in tokens:
+        if active and not in_span:
+            stripped = tok.lstrip()
+            parts.append(tok[: len(tok) - len(stripped)])
+            parts.append("<<")
+            parts.append(stripped)
+            in_span = True
+        elif active:
+            parts.append(tok)
+        elif in_span:
+            parts.append(">>")
+            parts.append(tok)
+            in_span = False
+        else:
+            parts.append(tok)
+    if in_span:
+        parts.append(">>")
+    return "".join(parts)
+
+
 @contextmanager
 def timer(name: str):
     start = time.perf_counter()
