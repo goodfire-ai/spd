@@ -51,7 +51,7 @@ def launch_autointerp_pipeline(
     no_eval: bool,
 ) -> None:
     # Generate autointerp_run_id upfront so scoring jobs can reference it
-    autointerp_run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # === 1. Interpret job ===
     interpret_parts = [

@@ -58,7 +58,7 @@ def main(
 
     # Create timestamped run directory
     if autointerp_run_id is None:
-        autointerp_run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = get_autointerp_dir(run_id) / autointerp_run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
