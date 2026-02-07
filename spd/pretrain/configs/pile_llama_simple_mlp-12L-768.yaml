@@ -15,7 +15,7 @@ intermediate_checkpoints: false
 model:
   model_type: LlamaSimpleMLP
   block_size: 512
-  vocab_size: 50257  # GPT-2 tokenizer native vocab size
+  vocab_size: 50277  # gpt-neox-20b tokenizer vocab size
   n_layer: 12
   n_head: 12
   n_embd: 768
@@ -29,7 +29,7 @@ train_dataset_config:
   name: monology/pile-uncopyrighted
   is_tokenized: false
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
-  split: train[:10000000]  # Dataset has 177M examples
+  split: train[:100000]  # Dataset has 177M examples
   streaming: false
   n_ctx: 512
   seed: 0
@@ -39,7 +39,7 @@ val_dataset_config:
   name: monology/pile-uncopyrighted
   is_tokenized: false
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
-  split: train[-100000:]
+  split: train[-1000000:]
   streaming: false
   n_ctx: 512
   seed: 0
