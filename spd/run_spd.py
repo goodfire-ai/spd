@@ -1,6 +1,7 @@
 """Run SPD on a model."""
 
 import gc
+import os
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
@@ -27,7 +28,7 @@ from spd.configs import (
     PGDMultiBatchReconSubsetLossConfig,
 )
 from spd.data import loop_dataloader
-from spd.eval import evaluate, evaluate_multibatch_pgd
+from spd.eval import avg_eval_metrics_across_ranks, evaluate, evaluate_multibatch_pgd
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
@@ -124,6 +125,11 @@ def optimize(
     tied_weights: list[tuple[str, str]] | None = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
+
+    if force_dtype_str := os.environ.get("SPD_FORCE_DTYPE"):
+        force_dtype = getattr(torch, force_dtype_str)
+        torch.set_default_dtype(force_dtype)
+        target_model = target_model.to(force_dtype)
 
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
@@ -335,6 +341,9 @@ def optimize(
                 )
 
                 dict_safe_update_(metrics, multibatch_pgd_metrics)
+
+                if get_distributed_state() is not None:
+                    metrics = avg_eval_metrics_across_ranks(metrics, device=device)
 
                 if is_main_process():
                     assert out_dir is not None
