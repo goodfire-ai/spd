@@ -18,6 +18,7 @@ from torch.distributed import ReduceOp
 from spd.configs import (
     BatchInvariantScope,
     BroadcastAcrossBatchScope,
+    PerRankBatchScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
     SingleMaskScope,
@@ -27,7 +28,7 @@ from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.routing import AllLayersRouter, Router, get_subset_router
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, get_distributed_state
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 PPGDMasks = dict[str, Float[Tensor, " mask_c"]]
@@ -36,21 +37,23 @@ PPGDMasks = dict[str, Float[Tensor, " mask_c"]]
 class PersistentPGDState:
     """Persistent state for persistent PGD optimization.
 
-    Holds a single adversarial mask per module that persists across training steps.
-    The mask is shared across all batch elements and ranks.
+    Holds adversarial masks per module that persist across training steps.
 
-    Shape: {module_name: (C,)} per module, broadcast to batch dims during forward.
+    For most scopes, masks are replicated across ranks and gradients are synchronized.
+    For PerRankBatchScope, each rank has independent masks with no gradient synchronization.
     """
 
     def __init__(
         self,
         module_to_c: dict[str, int],
         seq_len: int,
+        microbatch_size: int,
         device: torch.device | str,
         use_delta_component: bool,
         cfg: PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
     ) -> None:
         self.optimizer = cfg.optimizer
+        self._sync_grads = not isinstance(cfg.scope, PerRankBatchScope)
 
         self._adam_step = 0
         self._adam_m: PPGDMasks = {}
@@ -58,6 +61,7 @@ class PersistentPGDState:
 
         self.masks: PPGDMasks = {}
 
+        generator: torch.Generator | None = None
         match cfg.scope:
             case SingleMaskScope():
                 mask_leading_dims = [1, 1]
@@ -65,11 +69,17 @@ class PersistentPGDState:
                 mask_leading_dims = [1, seq_len]
             case BatchInvariantScope(n_masks=n):
                 mask_leading_dims = [n, seq_len]
+            case PerRankBatchScope():
+                mask_leading_dims = [microbatch_size, seq_len]
+                state = get_distributed_state()
+                rank = state.rank if state is not None else 0
+                generator = torch.Generator().manual_seed(rank)
 
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
             mask_shape = mask_leading_dims + [mask_c]
-            self.masks[module_name] = torch.rand(mask_shape, requires_grad=True, device=device)
+            mask = torch.rand(mask_shape, generator=generator)
+            self.masks[module_name] = mask.to(device).requires_grad_(True)
             if self.optimizer.type == "adam":
                 self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
                 self._adam_v[module_name] = torch.zeros_like(self.masks[module_name])
@@ -77,9 +87,12 @@ class PersistentPGDState:
     def get_grads(self, loss: Float[Tensor, ""]) -> PPGDMasks:
         grads = torch.autograd.grad(loss, list(self.masks.values()), retain_graph=True)
 
-        return {
-            k: all_reduce(g, op=ReduceOp.SUM) for k, g in zip(self.masks.keys(), grads, strict=True)
-        }
+        if self._sync_grads:
+            return {
+                k: all_reduce(g, op=ReduceOp.SUM)
+                for k, g in zip(self.masks.keys(), grads, strict=True)
+            }
+        return dict(zip(self.masks.keys(), grads, strict=True))
 
     def step(self, grads: PPGDMasks) -> dict[str, float]:
         """Perform one PGD update step using the provided gradients.
