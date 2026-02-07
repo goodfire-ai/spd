@@ -18,6 +18,7 @@ from torch.distributed import ReduceOp
 from spd.configs import (
     BatchInvariantScope,
     BroadcastAcrossBatchScope,
+    PerBatchScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
     SingleMaskScope,
@@ -36,10 +37,10 @@ PPGDMasks = dict[str, Float[Tensor, " mask_c"]]
 class PersistentPGDState:
     """Persistent state for persistent PGD optimization.
 
-    Holds a single adversarial mask per module that persists across training steps.
-    The mask is shared across all batch elements and ranks.
-
-    Shape: {module_name: (C,)} per module, broadcast to batch dims during forward.
+    Holds adversarial masks per module that persist across training steps.
+    Mask shape depends on scope: shared across batch (SingleMask, BroadcastAcrossBatch),
+    repeated along batch dim (BatchInvariant), or per-batch-element with no cross-rank
+    synchronization (PerBatch).
     """
 
     def __init__(
@@ -49,8 +50,10 @@ class PersistentPGDState:
         device: torch.device | str,
         use_delta_component: bool,
         cfg: PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
+        batch_size: int | None = None,
     ) -> None:
         self.optimizer = cfg.optimizer
+        self._skip_all_reduce = isinstance(cfg.scope, PerBatchScope)
 
         self._adam_step = 0
         self._adam_m: PPGDMasks = {}
@@ -65,6 +68,9 @@ class PersistentPGDState:
                 mask_leading_dims = [1, seq_len]
             case BatchInvariantScope(n_masks=n):
                 mask_leading_dims = [n, seq_len]
+            case PerBatchScope():
+                assert batch_size is not None, "batch_size required for PerBatchScope"
+                mask_leading_dims = [batch_size, seq_len]
 
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
@@ -78,6 +84,8 @@ class PersistentPGDState:
     def get_grads(self, loss: Float[Tensor, ""]) -> PPGDMasks:
         grads = torch.autograd.grad(loss, list(self.masks.values()), retain_graph=True)
 
+        if self._skip_all_reduce:
+            return dict(zip(self.masks.keys(), grads, strict=True))
         return {
             k: all_reduce(g, op=ReduceOp.SUM) for k, g in zip(self.masks.keys(), grads, strict=True)
         }

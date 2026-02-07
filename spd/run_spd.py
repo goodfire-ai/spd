@@ -22,6 +22,7 @@ from spd.configs import (
     Config,
     LossMetricConfigType,
     MetricConfigType,
+    PerBatchScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
     PGDMultiBatchConfig,
@@ -229,6 +230,22 @@ def optimize(
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
 
+    # Skip persistent PGD losses whose mask leading dim doesn't divide eval_batch_size
+    eval_metric_configs = [
+        cfg
+        for cfg in eval_metric_configs
+        if not (
+            isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+            and (
+                (
+                    isinstance(cfg.scope, BatchInvariantScope)
+                    and config.eval_batch_size % cfg.scope.n_masks != 0
+                )
+                or isinstance(cfg.scope, PerBatchScope)
+            )
+        )
+    ]
+
     sample_batch = extract_batch_data(next(train_iterator))
     batch_dims = (
         sample_batch.shape[:-1]
@@ -246,6 +263,7 @@ def optimize(
             device=device,
             use_delta_component=config.use_delta_component,
             cfg=ppgd_cfg,
+            batch_size=batch_dims[0],
         )
         for ppgd_cfg in persistent_pgd_configs
     }

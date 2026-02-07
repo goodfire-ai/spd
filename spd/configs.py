@@ -479,13 +479,23 @@ class BatchInvariantScope(BaseConfig):
     n_masks: PositiveInt
 
 
+class PerBatchScope(BaseConfig):
+    """Masks of shape (B, S, C) — one mask per batch element, separate across ranks.
+
+    Unlike other scopes, gradients are NOT all-reduced across ranks, so each rank
+    maintains fully independent masks for its own batch elements.
+    """
+
+    type: Literal["per_batch"] = "per_batch"
+
+
 PersistentPGDMaskScope = Annotated[
-    SingleMaskScope | BroadcastAcrossBatchScope | BatchInvariantScope,
+    SingleMaskScope | BroadcastAcrossBatchScope | BatchInvariantScope | PerBatchScope,
     Field(discriminator="type"),
 ]
 
 
-_PPGD_SCOPE_COMPAT = {"single_mask", "broadcast_across_batch"}
+_PPGD_SCOPE_COMPAT = {"single_mask", "broadcast_across_batch", "per_batch"}
 
 
 def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
