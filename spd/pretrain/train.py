@@ -303,6 +303,12 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
         log0("compiling the model...")
         model = cast(nn.Module, torch.compile(model))  # type: ignore[reportArgumentType]
 
+    # In DDP mode, rank 0 prepares datasets first (populates HuggingFace cache),
+    # then other ranks load from cache. Without this, all ranks race to tokenize
+    # simultaneously, causing cache lock contention and excessive process spawning.
+    if ddp and ddp_rank != 0:
+        dist.barrier()
+
     train_loader, train_tokenizer = create_data_loader(
         dataset_config=train_dataset_config,
         batch_size=B,
@@ -319,6 +325,9 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
         global_seed=0,
         dist_state=None,  # Don't split validation data - all ranks evaluate same data
     )
+
+    if ddp and ddp_rank == 0:
+        dist.barrier()
 
     # logging
     run_id: str | None = None
