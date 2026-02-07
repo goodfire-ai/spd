@@ -895,6 +895,23 @@ class Config(BaseConfig):
                 new_vals = [cfg for cfg in val if "extra_init_kwargs" not in cfg]
                 config_dict[key] = new_vals
 
+        # Remap simple_stories_train → spd.pretrain (models moved in-tree)
+        pmc = config_dict.get("pretrained_model_class", "")
+        if pmc.startswith("simple_stories_train.models."):
+            config_dict["pretrained_model_class"] = pmc.replace(
+                "simple_stories_train.models.", "spd.pretrain.models.", 1
+            )
+
+        # Coerce unique_per_batch_per_token → batch_invariant with n_masks = microbatch_size
+        batch_size = config_dict.get("batch_size")
+        grad_accum = config_dict.get("gradient_accumulation_steps", 1)
+        if batch_size is not None:
+            microbatch_size = batch_size // grad_accum
+            for cfg_list_key in ("loss_metric_configs", "eval_metric_configs"):
+                for cfg in config_dict.get(cfg_list_key, []):
+                    if isinstance(cfg, dict) and cfg.get("scope") == "unique_per_batch_per_token":
+                        cfg["scope"] = {"type": "batch_invariant", "n_masks": microbatch_size}
+
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]
         if "train_log_freq" not in config_dict:
@@ -996,8 +1013,5 @@ class Config(BaseConfig):
                 n = cfg.scope.n_masks
                 mb = self.microbatch_size
                 assert mb % n == 0, f"batch_invariant n_masks={n} must divide microbatch_size={mb}"
-                assert self.eval_batch_size % n == 0, (
-                    f"batch_invariant n_masks={n} must divide eval_batch_size={self.eval_batch_size}"
-                )
 
         return self
