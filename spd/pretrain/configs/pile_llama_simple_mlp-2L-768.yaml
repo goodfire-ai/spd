@@ -1,5 +1,5 @@
 wandb_project: spd
-dtype: float32
+dtype: bfloat16
 batch_size: 1024
 num_iterations: 100_000
 warmup_iters: 600
@@ -7,7 +7,7 @@ learning_rate: 1e-4
 learning_rate_decay_frac: 0.1
 weight_decay: 0.1
 grad_clip: 1.0
-val_loss_every: 100
+val_loss_every: 1000
 val_max_steps: 20
 sample_every: 1000
 intermediate_checkpoints: false

@@ -1,5 +1,5 @@
 wandb_project: spd
-dtype: float32
+dtype: bfloat16
 batch_size: 1024
 num_iterations: 100_000
 warmup_iters: 600
