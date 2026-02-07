@@ -479,8 +479,21 @@ class BatchInvariantScope(BaseConfig):
     n_masks: PositiveInt
 
 
+class PerRankBatchScope(BaseConfig):
+    """Each rank has independent masks of shape (microbatch_size, S, C).
+
+    Unlike other scopes where masks are replicated and synchronized across ranks,
+    each rank initializes its masks with a rank-offset seed and updates them using
+    only local gradients (no cross-rank gradient synchronization).
+
+    Across all ranks, this yields (total_batch_size, S, C) distinct persistent masks.
+    """
+
+    type: Literal["per_rank_batch"] = "per_rank_batch"
+
+
 PersistentPGDMaskScope = Annotated[
-    SingleMaskScope | BroadcastAcrossBatchScope | BatchInvariantScope,
+    SingleMaskScope | BroadcastAcrossBatchScope | BatchInvariantScope | PerRankBatchScope,
     Field(discriminator="type"),
 ]
 
@@ -998,6 +1011,14 @@ class Config(BaseConfig):
                 assert mb % n == 0, f"batch_invariant n_masks={n} must divide microbatch_size={mb}"
                 assert self.eval_batch_size % n == 0, (
                     f"batch_invariant n_masks={n} must divide eval_batch_size={self.eval_batch_size}"
+                )
+            if isinstance(
+                cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
+            ) and isinstance(cfg.scope, PerRankBatchScope):
+                mb = self.microbatch_size
+                assert self.eval_batch_size % mb == 0, (
+                    f"per_rank_batch: eval_batch_size={self.eval_batch_size} "
+                    f"must be divisible by microbatch_size={mb}"
                 )
 
         return self
