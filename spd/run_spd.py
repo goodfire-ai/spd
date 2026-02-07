@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import (
+    BatchInvariantScope,
     Config,
     LossMetricConfigType,
     MetricConfigType,
@@ -228,6 +229,17 @@ def optimize(
 
     eval_metric_configs = [
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
+    ]
+
+    # Skip persistent PGD losses whose batch_invariant n_masks doesn't divide eval_batch_size
+    eval_metric_configs = [
+        cfg
+        for cfg in eval_metric_configs
+        if not (
+            isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+            and isinstance(cfg.scope, BatchInvariantScope)
+            and config.eval_batch_size % cfg.scope.n_masks != 0
+        )
     ]
 
     sample_batch = extract_batch_data(next(train_iterator))

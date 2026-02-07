@@ -33,7 +33,11 @@ dependencies = [
     "orjson",
     "openrouter>=0.1.1",
     "httpx>=0.28.0",
+    "simple-stories-train",
 ]
+
+[tool.uv.sources]
+simple-stories-train = { git = "https://github.com/goodfire-ai/simple_stories_train.git" }
 
 [dependency-groups]
 dev = [
