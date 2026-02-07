@@ -487,11 +487,16 @@ PersistentPGDMaskScope = Annotated[
 
 _PPGD_SCOPE_COMPAT = {"single_mask", "broadcast_across_batch"}
 
+_PPGD_SCOPE_RENAME = {"unique_per_batch_per_token": "broadcast_across_batch"}
+
 
 def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
     """Backwards compat: convert bare string scope to {type: string}."""
-    if isinstance(config_dict.get("scope"), str) and config_dict["scope"] in _PPGD_SCOPE_COMPAT:
-        config_dict["scope"] = {"type": config_dict["scope"]}
+    scope = config_dict.get("scope")
+    if isinstance(scope, str):
+        scope = _PPGD_SCOPE_RENAME.get(scope, scope)
+        if scope in _PPGD_SCOPE_COMPAT:
+            config_dict["scope"] = {"type": scope}
 
 
 class PersistentPGDReconLossConfig(LossMetricConfig):
