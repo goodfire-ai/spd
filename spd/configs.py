@@ -393,6 +393,10 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
+    autocast_bf16: bool = Field(
+        default=True,
+        description="Whether to use torch.autocast with bfloat16 mixed precision",
+    )
     n_mask_samples: PositiveInt = Field(
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
