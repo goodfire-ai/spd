@@ -69,6 +69,7 @@ TEST_CONFIG = {
     },
     # --- Distributed ---
     "dist_backend": "gloo",  # Want to run this test on CPU
+    "autocast_bf16": False,
 }
 
 
