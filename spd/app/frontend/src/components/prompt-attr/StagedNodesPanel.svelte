@@ -1,23 +1,30 @@
 <script lang="ts">
-    import { getContext } from "svelte";
-    import type { OutputProbEntry, PinnedNode, Edge } from "../../lib/promptAttributionsTypes";
+    import type { OutputProbability, PinnedNode, EdgeData } from "../../lib/promptAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
-    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
 
-    const runState = getContext<RunContext>(RUN_KEY);
-
     type Props = {
         stagedNodes: PinnedNode[];
-        outputProbs: Record<string, OutputProbEntry>;
+        outputProbs: Record<string, OutputProbability>;
+        nodeCiVals: Record<string, number>;
+        nodeSubcompActs: Record<string, number>;
         tokens: string[];
-        edgesBySource: Map<string, Edge[]>;
-        edgesByTarget: Map<string, Edge[]>;
+        edgesBySource: Map<string, EdgeData[]>;
+        edgesByTarget: Map<string, EdgeData[]>;
         onStagedNodesChange: (nodes: PinnedNode[]) => void;
     };
 
-    let { stagedNodes, outputProbs, tokens, edgesBySource, edgesByTarget, onStagedNodesChange }: Props = $props();
+    let {
+        stagedNodes,
+        outputProbs,
+        nodeCiVals,
+        nodeSubcompActs,
+        tokens,
+        edgesBySource,
+        edgesByTarget,
+        onStagedNodesChange,
+    }: Props = $props();
 
     function clearAll() {
         onStagedNodesChange([]);
@@ -58,30 +65,29 @@
                 {@const isOutput = node.layer === "output"}
                 {@const isWte = node.layer === "wte"}
                 {@const isComponent = !isWte && !isOutput}
-                {@const clusterId = isComponent
-                    ? runState.clusterMapping?.data[`${node.layer}:${node.cIdx}`]
-                    : undefined}
+                {@const nodeKey = `${node.layer}:${node.seqIdx}:${node.cIdx}`}
+                {@const ciVal = isComponent ? (nodeCiVals[nodeKey] ?? null) : null}
+                {@const subcompAct = isComponent ? (nodeSubcompActs[nodeKey] ?? null) : null}
                 <div class="staged-item">
                     <div class="staged-header">
-                        <div class="node-info">
-                            <strong>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</strong>
-                            <span class="token-preview">"{token}"</span>
-                            {#if clusterId !== undefined}
-                                <span class="cluster-id">Cluster: {clusterId ?? "null"}</span>
-                            {/if}
-                        </div>
                         <button class="unstage-btn" onclick={() => unstageNode(node)}>✕</button>
                     </div>
 
                     {#if isWte}
+                        <h3>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</h3>
+                        <div class="token-display">"{token}"</div>
                         <p class="wte-info">Input embedding at position {node.seqIdx}</p>
                     {:else if isOutput}
+                        <h3>{getLayerDisplayName(node.layer)}:{node.seqIdx}:{node.cIdx}</h3>
                         <OutputNodeCard cIdx={node.cIdx} {outputProbs} seqIdx={node.seqIdx} />
                     {:else}
                         <ComponentNodeCard
                             layer={node.layer}
                             cIdx={node.cIdx}
                             seqIdx={node.seqIdx}
+                            {ciVal}
+                            {subcompAct}
+                            {token}
                             {edgesBySource}
                             {edgesByTarget}
                             {tokens}
@@ -127,7 +133,7 @@
 
     .staged-header {
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-end;
         align-items: center;
         margin-bottom: var(--space-2);
     }
@@ -142,6 +148,21 @@
         background: var(--status-negative);
         color: var(--bg-base);
         border-color: var(--status-negative);
+    }
+
+    .staged-item h3 {
+        font-size: var(--text-base);
+        font-family: var(--font-mono);
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 var(--space-2) 0;
+    }
+
+    .token-display {
+        font-size: var(--text-sm);
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+        margin-bottom: var(--space-2);
     }
 
     .staged-items {
@@ -165,13 +186,5 @@
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         color: var(--text-secondary);
-    }
-
-    .cluster-id {
-        font-size: var(--text-sm);
-        font-family: var(--font-mono);
-        color: var(--text-secondary);
-        font-weight: 600;
-        margin-left: var(--space-2);
     }
 </style>

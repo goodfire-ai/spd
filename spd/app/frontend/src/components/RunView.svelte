@@ -2,7 +2,7 @@
     import { getContext } from "svelte";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import ClusterPathInput from "./ClusterPathInput.svelte";
-    import DatasetSearchTab from "./DatasetSearchTab.svelte";
+    import DatasetExplorerTab from "./DatasetExplorerTab.svelte";
     import PromptAttributionsTab from "./PromptAttributionsTab.svelte";
     import DisplaySettingsDropdown from "./ui/DisplaySettingsDropdown.svelte";
     import ActivationContextsTab from "./ActivationContextsTab.svelte";
@@ -15,7 +15,7 @@
 
 <div class="app-layout">
     <header class="top-bar">
-        {#if runState.run?.status === "loaded" && runState.run.data}
+        {#if runState.run.status === "loaded"}
             <div class="run-menu" onmouseenter={() => (showRunMenu = true)} onmouseleave={() => (showRunMenu = false)}>
                 <button type="button" class="run-menu-trigger">
                     <span class="run-path">{runState.run.data.wandb_path}</span>
@@ -38,9 +38,9 @@
                 class:active={activeTab === "dataset-search"}
                 onclick={() => (activeTab = "dataset-search")}
             >
-                Dataset Search
+                Dataset Explorer
             </button>
-            {#if runState.run?.status === "loaded" && runState.run.data}
+            {#if runState.run.status === "loaded" && runState.run.data}
                 <button
                     type="button"
                     class="tab-button"
@@ -61,7 +61,7 @@
         </nav>
 
         <div class="top-bar-spacer"></div>
-        {#if runState.run?.status === "loaded" && runState.run.data}
+        {#if runState.run.status === "loaded"}
             <div class="cluster-path-input-container">
                 <ClusterPathInput />
             </div>
@@ -70,14 +70,14 @@
     </header>
 
     <main class="main-content">
-        {#if runState.run?.status === "error"}
+        {#if runState.run.status === "error"}
             <div class="warning-banner">
                 {runState.run.error}
             </div>
         {/if}
-        <!-- Dataset Search tab - always available, doesn't require loaded run -->
+        <!-- Dataset Explorer tab - always available, doesn't require loaded run -->
         <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
-            <DatasetSearchTab />
+            <DatasetExplorerTab />
         </div>
         {#if runState.prompts.status === "loaded" && runState.allTokens.status === "loaded"}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
@@ -136,7 +136,7 @@
         cursor: pointer;
         font: inherit;
         font-size: var(--text-sm);
-        transition: background 0.15s;
+        transition: background var(--transition-normal);
     }
 
     .run-menu-trigger:hover .run-path {
@@ -160,7 +160,7 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
         border-radius: var(--radius-md);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
     }
 
     .config-yaml {
@@ -211,8 +211,8 @@
         color: var(--text-muted);
         cursor: pointer;
         transition:
-            color 0.15s,
-            background 0.15s;
+            color var(--transition-normal),
+            background var(--transition-normal);
     }
 
     .tab-button:hover {

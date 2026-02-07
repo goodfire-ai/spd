@@ -44,10 +44,6 @@ class TokenPRLift:
     bottom_pmi: list[tuple[str, float]] | None
 
 
-def _build_key_to_idx(component_keys: list[str]) -> dict[str, int]:
-    return {k: i for i, k in enumerate(component_keys)}
-
-
 def get_correlated_components(
     storage: CorrelationStorage,
     component_key: str,
@@ -56,8 +52,7 @@ def get_correlated_components(
     largest: bool = True,
 ) -> list[CorrelatedComponent]:
     """Get top-k or bottom-k correlated components."""
-    key_to_idx = _build_key_to_idx(storage.component_keys)
-    i = key_to_idx[component_key]
+    i = storage.key_to_idx[component_key]
 
     count_this = int(storage.count_i[i].item())
     if count_this == 0:
@@ -113,8 +108,7 @@ def get_correlated_components(
 
 def has_component(storage: CorrelationStorage, component_key: str) -> bool:
     """Check if a component exists in the storage."""
-    key_to_idx = _build_key_to_idx(storage.component_keys)
-    return component_key in key_to_idx
+    return component_key in storage.key_to_idx
 
 
 def get_input_token_stats(
@@ -124,8 +118,7 @@ def get_input_token_stats(
     top_k: int,
 ) -> TokenPRLift | None:
     """Compute P/R/lift/PMI for input tokens."""
-    key_to_idx = _build_key_to_idx(storage.component_keys)
-    idx = key_to_idx[component_key]
+    idx = storage.key_to_idx[component_key]
 
     result = _compute_token_stats(
         counts=storage.input_counts[idx],
@@ -155,8 +148,7 @@ def get_output_token_stats(
     top_k: int,
 ) -> TokenPRLift | None:
     """Compute P/R/lift/PMI for output tokens."""
-    key_to_idx = _build_key_to_idx(storage.component_keys)
-    idx = key_to_idx[component_key]
+    idx = storage.key_to_idx[component_key]
 
     return _compute_token_stats(
         counts=storage.output_counts[idx],

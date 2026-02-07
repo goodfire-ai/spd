@@ -1,10 +1,10 @@
 <script lang="ts">
-    import type { OutputProbEntry } from "../../lib/promptAttributionsTypes";
+    import type { OutputProbability } from "../../lib/promptAttributionsTypes";
     import { getOutputHeaderColor } from "../../lib/colors";
 
     type Props = {
         cIdx: number;
-        outputProbs: Record<string, OutputProbEntry>;
+        outputProbs: Record<string, OutputProbability>;
         seqIdx?: number; // When present: show single position. When absent: show all positions for this vocab id
     };
 
@@ -56,9 +56,7 @@
         </div>
         <p class="stats">
             <strong>Position:</strong>
-            {seqIdx} |
-            <strong>Vocab ID:</strong>
-            {cIdx}
+            {seqIdx}
         </p>
     {:else if allPositions}
         <p><strong>"{allPositions[0].token}"</strong></p>

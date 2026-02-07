@@ -1,7 +1,8 @@
 """Loaders for reading harvest output files."""
 
-import json
 import threading
+
+import orjson
 
 from spd.harvest.schemas import (
     ActivationExample,
@@ -86,11 +87,60 @@ def load_component_activation_contexts(wandb_run_id: str, component_key: str) ->
         f.seek(byte_offset)
         line = f.readline()
 
-    data = json.loads(line)
+    data = orjson.loads(line)
     data["activation_examples"] = [ActivationExample(**ex) for ex in data["activation_examples"]]
     data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
     data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
     return ComponentData(**data)
+
+
+def load_component_activation_contexts_bulk(
+    wandb_run_id: str, component_keys: list[str]
+) -> dict[str, ComponentData]:
+    """Load multiple components' activation contexts efficiently.
+
+    Uses mmap for fast random access, sorts offsets for sequential reads.
+    Much faster than calling load_component_activation_contexts() in a loop.
+    """
+    import mmap
+
+    if not component_keys:
+        return {}
+
+    ctx_dir = get_activation_contexts_dir(wandb_run_id)
+    path = ctx_dir / "components.jsonl"
+    assert path.exists(), f"No activation contexts found at {path}"
+
+    index = _get_component_index(wandb_run_id)
+
+    # Build list of (offset, key) for components that exist, sorted by offset
+    offset_key_pairs: list[tuple[int, str]] = []
+    for key in component_keys:
+        if key in index:
+            offset_key_pairs.append((index[key], key))
+    offset_key_pairs.sort()  # Sort by offset for sequential disk access
+
+    # Read with mmap for efficient random access
+    result: dict[str, ComponentData] = {}
+    with open(path, "rb") as f:
+        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        try:
+            for offset, key in offset_key_pairs:
+                mm.seek(offset)
+                line_end = mm.find(b"\n", offset)
+                line = mm[offset:line_end] if line_end != -1 else mm[offset:]
+
+                data = orjson.loads(line)
+                data["activation_examples"] = [
+                    ActivationExample(**ex) for ex in data["activation_examples"]
+                ]
+                data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
+                data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
+                result[key] = ComponentData(**data)
+        finally:
+            mm.close()
+
+    return result
 
 
 def load_correlations(wandb_run_id: str) -> CorrelationStorage:

@@ -1,7 +1,9 @@
 <script lang="ts">
-    import type { PromptPreview, PinnedNode, TokenizeResult } from "../../lib/promptAttributionsTypes";
+    import type { PromptPreview, PinnedNode, TokenizeResponse } from "../../lib/promptAttributionsTypes";
+    import type { Loadable } from "../../lib";
     import { tokenizeText } from "../../lib/api";
     import type { PromptGenerateState } from "./types";
+    import ProbColoredTokens from "../ProbColoredTokens.svelte";
 
     type Props = {
         prompts: PromptPreview[];
@@ -36,20 +38,20 @@
     }: Props = $props();
 
     let customText = $state("");
-    let tokenizeResult = $state<TokenizeResult | null>(null);
-    let tokenizeLoading = $state(false);
+    let tokenizeResult = $state<Loadable<TokenizeResponse>>({ status: "uninitialized" });
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function runTokenize(text: string) {
         if (!text.trim()) {
-            tokenizeResult = null;
+            tokenizeResult = { status: "uninitialized" };
             return;
         }
-        tokenizeLoading = true;
+        tokenizeResult = { status: "loading" };
         try {
-            tokenizeResult = await tokenizeText(text);
-        } finally {
-            tokenizeLoading = false;
+            const data = await tokenizeText(text);
+            tokenizeResult = { status: "loaded", data };
+        } catch (e) {
+            tokenizeResult = { status: "error", error: e };
         }
     }
 
@@ -66,7 +68,7 @@
         if (!customText.trim() || isAddingCustomPrompt) return;
         await onAddCustom(customText);
         customText = "";
-        tokenizeResult = null;
+        tokenizeResult = { status: "uninitialized" };
         onClose();
     }
 
@@ -98,12 +100,17 @@
                         {isAddingCustomPrompt ? "..." : "Add"}
                     </button>
                 </div>
-                {#if tokenizeLoading}
+                {#if tokenizeResult.status === "loading"}
                     <div class="token-preview-loading">...</div>
-                {:else if tokenizeResult && tokenizeResult.tokens.length > 0}
+                {:else if tokenizeResult.status === "error"}
+                    <div class="token-preview-error">{tokenizeResult.error}</div>
+                {:else if tokenizeResult.status === "loaded" && tokenizeResult.data.tokens.length > 0}
                     <div class="token-preview">
-                        {#each tokenizeResult.tokens as tok, i (i)}<span class="token">{tok}</span>{/each}
-                        <span class="token-count">({tokenizeResult.tokens.length})</span>
+                        <ProbColoredTokens
+                            tokens={tokenizeResult.data.tokens}
+                            nextTokenProbs={tokenizeResult.data.next_token_probs}
+                        />
+                        <span class="token-count">({tokenizeResult.data.tokens.length})</span>
                     </div>
                 {/if}
             </div>
@@ -170,7 +177,7 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-strong);
         border-radius: var(--radius-md);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-md);
         z-index: 1000;
         overflow: hidden;
     }
@@ -204,7 +211,7 @@
     .token-preview {
         display: flex;
         flex-wrap: wrap;
-        gap: 1px;
+        gap: 2px;
         align-items: center;
     }
 
@@ -214,14 +221,10 @@
         color: var(--text-muted);
     }
 
-    .token {
-        padding: 2px 3px;
-        background: var(--bg-inset);
+    .token-preview-error {
         font-family: var(--font-mono);
         font-size: var(--text-sm);
-        color: var(--status-info-bright);
-        white-space: pre;
-        border: 1px solid var(--status-info);
+        color: var(--status-negative);
     }
 
     .token-count {
@@ -368,7 +371,7 @@
     .mini-progress-fill {
         height: 100%;
         background: var(--status-positive);
-        transition: width 0.1s ease;
+        transition: width var(--transition-fast);
     }
 
     .generate-error {

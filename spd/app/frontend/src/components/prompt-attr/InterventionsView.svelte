@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import { colors, getEdgeColor, getOutputHeaderColor } from "../../lib/colors";
+    import { colors, getEdgeColor, getOutputHeaderColor, rgbaToCss } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
     import {
@@ -10,6 +10,7 @@
         type NodePosition,
         type TokenInfo,
     } from "../../lib/promptAttributionsTypes";
+    import { getAliasedRowLabel } from "../../lib/layerAliasing";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
@@ -21,6 +22,7 @@
         sortComponentsByCluster,
         sortComponentsByImportance,
         type ClusterSpan,
+        type TooltipPos,
     } from "./graphUtils";
     import NodeTooltip from "./NodeTooltip.svelte";
     import TokenDropdown from "./TokenDropdown.svelte";
@@ -43,7 +45,7 @@
     // Logits display constants
     const MAX_PREDICTIONS = 5;
 
-    import type { ForkedInterventionRun } from "../../lib/interventionTypes";
+    import type { ForkedInterventionRunSummary } from "../../lib/interventionTypes";
 
     type Props = {
         graph: StoredGraph;
@@ -74,7 +76,7 @@
         onRunIntervention: () => void;
         onSelectRun: (runId: number) => void;
         onDeleteRun: (runId: number) => void;
-        onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRun>;
+        onForkRun: (runId: number, tokenReplacements: [number, number][]) => Promise<ForkedInterventionRunSummary>;
         onDeleteFork: (forkId: number) => void;
         onGenerateGraphFromSelection: () => void;
     };
@@ -169,7 +171,7 @@
     let hoveredNode = $state<{ layer: string; seqIdx: number; cIdx: number } | null>(null);
     let hoveredBarClusterId = $state<number | null>(null);
     let isHoveringTooltip = $state(false);
-    let tooltipPos = $state({ x: 0, y: 0 });
+    let tooltipPos = $state<TooltipPos>({ left: 0, top: 0 });
     let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
 
     // Refs
@@ -469,7 +471,8 @@
             hoverTimeout = null;
         }
         hoveredNode = { layer, seqIdx, cIdx };
-        tooltipPos = calcTooltipPos(event.clientX, event.clientY);
+        const size = layer === "wte" || layer === "output" ? "small" : "large";
+        tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 
     function handleNodeMouseLeave() {
@@ -626,12 +629,9 @@
     }
 
     function getRowLabel(layer: string): string {
-        const info = parseLayer(layer);
         const rowKey = getRowKey(layer);
-        if (rowKey.endsWith(".qkv")) return `${info.block}.q/k/v`;
-        if (layer === "wte" || layer === "output") return layer;
-        if (layer === "lm_head") return "W_U";
-        return `${info.block}.${info.subtype}`;
+        const isQkvGroup = rowKey.endsWith(".qkv");
+        return getAliasedRowLabel(layer, isQkvGroup);
     }
 </script>
 
@@ -662,7 +662,7 @@
             <span class="node-count">{selectedCount} / {interventableCount} selected</span>
             <span
                 class="info-icon"
-                data-tooltip="NOTE: Biases in each layer that have them are always active, regardless of which nodes are selected"
+                data-tooltip="NOTE: Biases in each layer that have them are always active, regardless of which components are selected"
                 >?</span
             >
             <div class="button-group">
@@ -675,8 +675,8 @@
                         selectedCount === 0 ||
                         (interventableCount > 0 && selectedCount === interventableCount)}
                     title={selectedCount === 0
-                        ? "Select nodes to include in subgraph"
-                        : "Generate a subgraph showing only attributions between selected nodes"}
+                        ? "Select components to include in subgraph"
+                        : "Generate a subgraph showing only attributions between selected components"}
                 >
                     {generatingSubgraph ? "Generating..." : "Generate subgraph"}
                 </button>
@@ -837,7 +837,7 @@
                                 y={selectionRect.y}
                                 width={selectionRect.width}
                                 height={selectionRect.height}
-                                fill="rgba(99, 102, 241, 0.1)"
+                                fill={rgbaToCss(colors.positiveRgb, 0.1)}
                                 stroke={colors.accent}
                                 stroke-width="1"
                                 stroke-dasharray="4 2"
@@ -910,7 +910,7 @@
                     >
                         <div class="run-header">
                             <span class="run-time">{formatTime(run.created_at)}</span>
-                            <span class="run-nodes">{run.selected_nodes.length} nodes</span>
+                            <span class="run-nodes">{run.selected_nodes.length} components</span>
                             <button
                                 class="fork-btn"
                                 title="Fork with modified tokens"
@@ -933,6 +933,7 @@
                             <table>
                                 <thead>
                                     <tr>
+                                        <th class="rank-header">Input</th>
                                         {#each run.result.input_tokens as token, idx (idx)}
                                             <th title={token}>
                                                 <span class="token-text">"{token}"</span>
@@ -943,6 +944,7 @@
                                 <tbody>
                                     {#each Array(Math.min(3, MAX_PREDICTIONS)) as _, rank (rank)}
                                         <tr>
+                                            <td class="rank-label">rank {rank + 1}</td>
                                             {#each run.result.predictions_per_position as preds, idx (idx)}
                                                 {@const pred = preds[rank]}
                                                 <td
@@ -1004,6 +1006,7 @@
                                             <table>
                                                 <thead>
                                                     <tr>
+                                                        <th class="rank-header">Input</th>
                                                         {#each fork.result.input_tokens as token, idx (idx)}
                                                             {@const isChanged = fork.token_replacements.some(
                                                                 (r) => r[0] === idx,
@@ -1017,6 +1020,7 @@
                                                 <tbody>
                                                     {#each Array(Math.min(3, MAX_PREDICTIONS)) as _, rank (rank)}
                                                         <tr>
+                                                            <td class="rank-label">rank {rank + 1}</td>
                                                             {#each fork.result.predictions_per_position as preds, idx (idx)}
                                                                 {@const pred = preds[rank]}
                                                                 <td
@@ -1257,9 +1261,9 @@
         transform-box: fill-box;
         transform-origin: center;
         transition:
-            opacity 0.1s,
-            fill 0.1s,
-            transform 0.15s ease-out;
+            opacity var(--transition-fast),
+            fill var(--transition-fast),
+            transform var(--transition-normal);
     }
 
     .node-group .node.cluster-hovered {
@@ -1288,8 +1292,8 @@
         opacity: 0.5;
         cursor: pointer;
         transition:
-            opacity 0.15s ease-out,
-            fill 0.15s ease-out;
+            opacity var(--transition-normal),
+            fill var(--transition-normal);
     }
 
     .cluster-bar:hover,
@@ -1363,7 +1367,7 @@
         border: 1px solid var(--border-default);
         padding: var(--space-2);
         cursor: pointer;
-        transition: border-color 0.1s;
+        transition: border-color var(--transition-fast);
     }
 
     .run-card:hover {
@@ -1439,8 +1443,22 @@
         color: var(--text-secondary);
     }
 
+    .logits-mini th.rank-header {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
     .logits-mini .token-text {
         font-size: 9px;
+    }
+
+    .logits-mini td.rank-label {
+        background: var(--bg-surface);
+        color: var(--text-secondary);
+        font-weight: 500;
+        font-size: 9px;
+        text-align: left;
+        padding-left: 6px;
     }
 
     .logits-mini td {

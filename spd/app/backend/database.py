@@ -16,7 +16,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from spd.app.backend.compute import Edge, Node
-from spd.app.backend.optim_cis import MaskType
+from spd.app.backend.optim_cis import CELossConfig, KLLossConfig, LossConfig, MaskType
 from spd.app.backend.schemas import OutputProbability
 from spd.settings import REPO_ROOT
 
@@ -51,11 +51,7 @@ class OptimizationParams(BaseModel):
     pnorm: float
     beta: float
     mask_type: MaskType
-    # CE loss params (optional, must be set together)
-    label_token: int | None = None
-    ce_loss_coeff: float | None = None
-    # KL loss param (optional)
-    kl_loss_coeff: float | None = None
+    loss: LossConfig
 
 
 class StoredGraph(BaseModel):
@@ -74,7 +70,6 @@ class StoredGraph(BaseModel):
 
     # Optimized-specific (None for other types)
     optimization_params: OptimizationParams | None = None
-    label_prob: float | None = None  # P(label_token) with optimized CI mask
 
     # Manual-specific (None for other types)
     included_nodes: list[str] | None = None  # Nodes included in this graph
@@ -105,12 +100,10 @@ class PromptAttrDB:
 
     Schema:
     - runs: One row per SPD run (keyed by wandb_path)
-    - activation_contexts: Component metadata + generation config, 1:1 with runs
     - prompts: One row per stored prompt (token sequence), keyed by run_id
-    - original_component_seq_max_activations: Inverted index mapping components to prompts by a
-      component's max activation for that prompt
+    - graphs: Attribution graphs for prompts
 
-    Attribution graphs (edges) are computed on-demand at serve time, not stored.
+    Attribution graphs are computed on-demand and cached.
     """
 
     def __init__(self, db_path: Path | None = None, check_same_thread: bool = True):
@@ -162,19 +155,8 @@ class PromptAttrDB:
                 is_custom INTEGER NOT NULL DEFAULT 0
             );
 
-            CREATE TABLE IF NOT EXISTS original_component_seq_max_activations (
-                prompt_id INTEGER NOT NULL REFERENCES prompts(id),
-                component_key TEXT NOT NULL,
-                max_ci REAL NOT NULL,
-                positions TEXT NOT NULL
-            );
-
             CREATE INDEX IF NOT EXISTS idx_prompts_run_id
                 ON prompts(run_id);
-            CREATE INDEX IF NOT EXISTS idx_component_key
-                ON original_component_seq_max_activations(component_key);
-            CREATE INDEX IF NOT EXISTS idx_prompt_id
-                ON original_component_seq_max_activations(prompt_id);
 
             CREATE TABLE IF NOT EXISTS graphs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,14 +164,13 @@ class PromptAttrDB:
                 graph_type TEXT NOT NULL,  -- 'standard', 'optimized', 'manual'
 
                 -- Optimization params (NULL for non-optimized graphs)
-                label_token INTEGER,
                 imp_min_coeff REAL,
-                ce_loss_coeff REAL,
-                kl_loss_coeff REAL,
                 steps INTEGER,
                 pnorm REAL,
                 beta REAL,
                 mask_type TEXT,
+                loss_config TEXT,  -- JSON: {type: "ce"|"kl", coeff, position, label_token?}
+                loss_config_hash TEXT,  -- SHA256 hash for uniqueness indexing
 
                 -- Manual graph params (NULL for non-manual graphs)
                 included_nodes TEXT,  -- JSON array of node keys in this graph
@@ -204,9 +185,6 @@ class PromptAttrDB:
                 -- Output probabilities: "seq:c_idx" -> {prob, token}
                 output_probs_data TEXT NOT NULL,
 
-                -- Optimization stats (NULL for non-optimized graphs)
-                label_prob REAL,
-
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -217,7 +195,7 @@ class PromptAttrDB:
 
             -- One optimized graph per unique parameter combination
             CREATE UNIQUE INDEX IF NOT EXISTS idx_graphs_optimized
-                ON graphs(prompt_id, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm, beta, mask_type)
+                ON graphs(prompt_id, imp_min_coeff, steps, pnorm, beta, mask_type, loss_config_hash)
                 WHERE graph_type = 'optimized';
 
             -- One manual graph per unique node set (using hash for reliable uniqueness)
@@ -294,48 +272,6 @@ class PromptAttrDB:
     # Prompt operations
     # -------------------------------------------------------------------------
 
-    def add_prompts(
-        self,
-        run_id: int,
-        prompts: list[tuple[list[int], dict[str, tuple[float, list[int]]]]],
-        context_length: int,
-    ) -> list[int]:
-        """Add multiple prompts to the database in a single transaction.
-
-        Args:
-            run_id: The run these prompts belong to.
-            prompts: List of (token_ids, active_components) tuples.
-            context_length: The context length setting used when generating these prompts.
-
-        Returns:
-            List of prompt IDs.
-        """
-        conn = self._get_conn()
-        prompt_ids: list[int] = []
-        component_rows: list[tuple[int, str, float, str]] = []
-
-        for token_ids, active_components in prompts:
-            cursor = conn.execute(
-                "INSERT INTO prompts (run_id, token_ids, context_length) VALUES (?, ?, ?)",
-                (run_id, json.dumps(token_ids), context_length),
-            )
-            prompt_id = cursor.lastrowid
-            assert prompt_id is not None
-            prompt_ids.append(prompt_id)
-
-            for component_key, (max_ci, positions) in active_components.items():
-                component_rows.append((prompt_id, component_key, max_ci, json.dumps(positions)))
-
-        if component_rows:
-            conn.executemany(
-                """INSERT INTO original_component_seq_max_activations
-                   (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)""",
-                component_rows,
-            )
-
-        conn.commit()
-        return prompt_ids
-
     def find_prompt_by_token_ids(
         self,
         run_id: int,
@@ -354,7 +290,6 @@ class PromptAttrDB:
         self,
         run_id: int,
         token_ids: list[int],
-        active_components: dict[str, tuple[float, list[int]]],
         context_length: int,
     ) -> int:
         """Add a custom prompt to the database, or return existing if duplicate.
@@ -362,7 +297,6 @@ class PromptAttrDB:
         Args:
             run_id: The run this prompt belongs to.
             token_ids: The token IDs for the prompt.
-            active_components: Dict mapping component_key to (max_ci, positions).
             context_length: The context length setting.
 
         Returns:
@@ -379,18 +313,6 @@ class PromptAttrDB:
         )
         prompt_id = cursor.lastrowid
         assert prompt_id is not None
-
-        component_rows = [
-            (prompt_id, component_key, max_ci, json.dumps(positions))
-            for component_key, (max_ci, positions) in active_components.items()
-        ]
-        if component_rows:
-            conn.executemany(
-                """INSERT INTO original_component_seq_max_activations
-                   (prompt_id, component_key, max_ci, positions) VALUES (?, ?, ?, ?)""",
-                component_rows,
-            )
-
         conn.commit()
         return prompt_id
 
@@ -429,57 +351,6 @@ class PromptAttrDB:
         ).fetchall()
         return [row["id"] for row in rows]
 
-    def has_prompts(self, run_id: int, context_length: int) -> bool:
-        """Check if any prompts exist for a run with a specific context length."""
-        return self.get_prompt_count(run_id, context_length) > 0
-
-    # -------------------------------------------------------------------------
-    # Query operations
-    # -------------------------------------------------------------------------
-
-    def find_prompts_with_components(
-        self,
-        run_id: int,
-        component_keys: list[str],
-        require_all: bool = True,
-    ) -> list[int]:
-        """Find prompts where specified components are active.
-
-        Args:
-            run_id: The run to search within.
-            component_keys: List of component keys like "h.0.attn.q_proj:5".
-            require_all: If True, require ALL components to be active (intersection).
-                        If False, require ANY component to be active (union).
-
-        Returns:
-            List of prompt IDs matching the query.
-        """
-        assert component_keys, "No component keys provided"
-
-        conn = self._get_conn()
-        placeholders = ",".join("?" * len(component_keys))
-
-        if require_all:
-            query = f"""
-                SELECT ca.prompt_id
-                FROM original_component_seq_max_activations ca
-                JOIN prompts p ON ca.prompt_id = p.id
-                WHERE p.run_id = ? AND ca.component_key IN ({placeholders})
-                GROUP BY ca.prompt_id
-                HAVING COUNT(DISTINCT ca.component_key) = ?
-            """
-            rows = conn.execute(query, (run_id, *component_keys, len(component_keys))).fetchall()
-        else:
-            query = f"""
-                SELECT DISTINCT ca.prompt_id
-                FROM original_component_seq_max_activations ca
-                JOIN prompts p ON ca.prompt_id = p.id
-                WHERE p.run_id = ? AND ca.component_key IN ({placeholders})
-            """
-            rows = conn.execute(query, (run_id, *component_keys)).fetchall()
-
-        return [row["prompt_id"] for row in rows]
-
     # -------------------------------------------------------------------------
     # Graph operations
     # -------------------------------------------------------------------------
@@ -506,26 +377,22 @@ class PromptAttrDB:
         node_subcomp_acts_json = json.dumps(graph.node_subcomp_acts)
 
         # Extract optimization-specific values (NULL for non-optimized graphs)
-        label_token = None
         imp_min_coeff = None
-        ce_loss_coeff = None
-        kl_loss_coeff = None
         steps = None
         pnorm = None
         beta = None
         mask_type = None
-        label_prob = None
+        loss_config_json: str | None = None
+        loss_config_hash: str | None = None
 
         if graph.optimization_params:
-            label_token = graph.optimization_params.label_token
             imp_min_coeff = graph.optimization_params.imp_min_coeff
-            ce_loss_coeff = graph.optimization_params.ce_loss_coeff
-            kl_loss_coeff = graph.optimization_params.kl_loss_coeff
             steps = graph.optimization_params.steps
             pnorm = graph.optimization_params.pnorm
             beta = graph.optimization_params.beta
             mask_type = graph.optimization_params.mask_type
-            label_prob = graph.label_prob
+            loss_config_json = graph.optimization_params.loss.model_dump_json()
+            loss_config_hash = hashlib.sha256(loss_config_json.encode()).hexdigest()
 
         # Extract manual-specific values (NULL for non-manual graphs)
         # Sort included_nodes and compute hash for reliable uniqueness
@@ -539,28 +406,27 @@ class PromptAttrDB:
             cursor = conn.execute(
                 """INSERT INTO graphs
                    (prompt_id, graph_type,
-                    label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff, steps, pnorm,
-                    beta, mask_type, included_nodes, included_nodes_hash,
-                    edges_data, output_probs_data, node_ci_vals, node_subcomp_acts, label_prob)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    imp_min_coeff, steps, pnorm, beta, mask_type,
+                    loss_config, loss_config_hash,
+                    included_nodes, included_nodes_hash,
+                    edges_data, output_probs_data, node_ci_vals, node_subcomp_acts)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     prompt_id,
                     graph.graph_type,
-                    label_token,
                     imp_min_coeff,
-                    ce_loss_coeff,
-                    kl_loss_coeff,
                     steps,
                     pnorm,
                     beta,
                     mask_type,
+                    loss_config_json,
+                    loss_config_hash,
                     included_nodes_json,
                     included_nodes_hash,
                     edges_json,
                     probs_json,
                     node_ci_vals_json,
                     node_subcomp_acts_json,
-                    label_prob,
                 ),
             )
             conn.commit()
@@ -610,19 +476,23 @@ class PromptAttrDB:
         node_subcomp_acts: dict[str, float] = json.loads(row["node_subcomp_acts"] or "{}")
 
         opt_params: OptimizationParams | None = None
-        label_prob: float | None = None
         if row["graph_type"] == "optimized":
+            loss_config_data = json.loads(row["loss_config"])
+            loss_type = loss_config_data["type"]
+            assert loss_type in ("ce", "kl"), f"Unknown loss type: {loss_type}"
+            loss_config: LossConfig
+            if loss_type == "ce":
+                loss_config = CELossConfig(**loss_config_data)
+            else:
+                loss_config = KLLossConfig(**loss_config_data)
             opt_params = OptimizationParams(
                 imp_min_coeff=row["imp_min_coeff"],
                 steps=row["steps"],
                 pnorm=row["pnorm"],
                 beta=row["beta"],
                 mask_type=row["mask_type"],
-                label_token=row["label_token"],
-                ce_loss_coeff=row["ce_loss_coeff"],
-                kl_loss_coeff=row["kl_loss_coeff"],
+                loss=loss_config,
             )
-            label_prob = row["label_prob"]
 
         # Parse manual-specific fields
         included_nodes: list[str] | None = None
@@ -637,7 +507,6 @@ class PromptAttrDB:
             node_ci_vals=node_ci_vals,
             node_subcomp_acts=node_subcomp_acts,
             optimization_params=opt_params,
-            label_prob=label_prob,
             included_nodes=included_nodes,
         )
 
@@ -653,9 +522,8 @@ class PromptAttrDB:
         conn = self._get_conn()
         rows = conn.execute(
             """SELECT id, graph_type, edges_data, output_probs_data, node_ci_vals,
-                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
-                      steps, pnorm, beta, mask_type, label_prob,
-                      included_nodes
+                      node_subcomp_acts, imp_min_coeff, steps, pnorm, beta, mask_type,
+                      loss_config, included_nodes
                FROM graphs
                WHERE prompt_id = ?
                ORDER BY
@@ -670,9 +538,8 @@ class PromptAttrDB:
         conn = self._get_conn()
         row = conn.execute(
             """SELECT id, prompt_id, graph_type, edges_data, output_probs_data, node_ci_vals,
-                      node_subcomp_acts, label_token, imp_min_coeff, ce_loss_coeff, kl_loss_coeff,
-                      steps, pnorm, beta, mask_type, label_prob,
-                      included_nodes
+                      node_subcomp_acts, imp_min_coeff, steps, pnorm, beta, mask_type,
+                      loss_config, included_nodes
                FROM graphs
                WHERE id = ?""",
             (graph_id,),

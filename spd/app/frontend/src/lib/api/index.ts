@@ -1,9 +1,17 @@
 /**
  * Shared API utilities and exports.
+ *
+ * In development, Vite proxies /api requests to the backend.
+ * This allows the frontend to work regardless of which port the backend is on.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const API_URL = (import.meta as any).env.VITE_API_URL || "http://localhost:8000";
+/**
+ * Build a URL for an API endpoint.
+ * Uses relative paths which Vite's proxy forwards to the backend.
+ */
+export function apiUrl(path: string): URL {
+    return new URL(path, window.location.origin);
+}
 
 export class ApiError extends Error {
     constructor(
@@ -17,7 +25,8 @@ export class ApiError extends Error {
 
 export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     const response = await fetch(url, options);
-    const data = await response.json();
+    const text = await response.text();
+    const data = JSON.parse(text);
 
     if (!response.ok) {
         throw new ApiError(data.detail || data.error || `HTTP ${response.status}`, response.status);
@@ -36,3 +45,4 @@ export * from "./datasetAttributions";
 export * from "./intervention";
 export * from "./dataset";
 export * from "./clusters";
+export * from "./componentData";

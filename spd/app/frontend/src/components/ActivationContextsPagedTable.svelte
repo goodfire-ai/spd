@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { displaySettings, EXAMPLE_COLOR_MODE_LABELS, type ExampleColorMode } from "../lib/displaySettings.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
@@ -7,17 +6,14 @@
         exampleTokens: string[][]; // [n_examples, window_size]
         exampleCi: number[][]; // [n_examples, window_size]
         exampleComponentActs: number[][]; // [n_examples, window_size]
-        // Unique activating tokens (from pr_tokens, already sorted by recall)
-        activatingTokens: string[];
         // Global max for normalization
         maxAbsComponentAct: number;
     }
 
-    let { exampleTokens, exampleCi, exampleComponentActs, activatingTokens, maxAbsComponentAct }: Props = $props();
+    let { exampleTokens, exampleCi, exampleComponentActs, maxAbsComponentAct }: Props = $props();
 
     let currentPage = $state(0);
-    let pageSize = $state(20);
-    let tokenFilter = $state<string | null>(null);
+    let pageSize = $state(10);
 
     let nExamples = $derived(exampleTokens.length);
 
@@ -33,33 +29,15 @@
         }
     }
 
-    // Filter example indices by token
-    let filteredIndices = $derived.by(() => {
-        if (tokenFilter === null) {
-            return Array.from({ length: nExamples }, (_, i) => i);
-        }
-
-        const indices: number[] = [];
-        for (let i = 0; i < nExamples; i++) {
-            const tokens = exampleTokens[i];
-            const ci = exampleCi[i];
-            for (let j = 0; j < tokens.length; j++) {
-                if (tokens[j] === tokenFilter && ci[j] > 0) {
-                    indices.push(i);
-                    break;
-                }
-            }
-        }
-        return indices;
-    });
+    let allIndices = $derived(Array.from({ length: nExamples }, (_, i) => i));
 
     let paginatedIndices = $derived.by(() => {
         const start = currentPage * pageSize;
         const end = start + pageSize;
-        return filteredIndices.slice(start, end);
+        return allIndices.slice(start, end);
     });
 
-    let totalPages = $derived(Math.ceil(filteredIndices.length / pageSize));
+    let totalPages = $derived(Math.ceil(allIndices.length / pageSize));
 
     function previousPage() {
         if (currentPage > 0) currentPage--;
@@ -69,11 +47,10 @@
         if (currentPage < totalPages - 1) currentPage++;
     }
 
-    // Reset to page 0 when data, page size, or filter changes
+    // Reset to page 0 when data or page size changes
     $effect(() => {
         exampleTokens; // eslint-disable-line @typescript-eslint/no-unused-expressions
         pageSize; // eslint-disable-line @typescript-eslint/no-unused-expressions
-        tokenFilter; // eslint-disable-line @typescript-eslint/no-unused-expressions
         currentPage = 0;
     });
 </script>
@@ -103,27 +80,6 @@
                 <option value={100}>100</option>
             </select>
         </div>
-        <div class="filter-control">
-            <label for="token-filter">Filter by includes token:</label>
-            <select id="token-filter" bind:value={tokenFilter}>
-                <option value="">All tokens</option>
-                {#each activatingTokens as token (token)}
-                    <option value={token}>{token}</option>
-                {/each}
-            </select>
-        </div>
-        <div class="color-mode-control">
-            <label for="color-mode-select">Color by:</label>
-            <select
-                id="color-mode-select"
-                value={displaySettings.exampleColorMode}
-                onchange={(e) => (displaySettings.exampleColorMode = e.currentTarget.value as ExampleColorMode)}
-            >
-                {#each Object.entries(EXAMPLE_COLOR_MODE_LABELS) as [mode, label] (mode)}
-                    <option value={mode}>{label}</option>
-                {/each}
-            </select>
-        </div>
     </div>
     <div class="examples">
         <div class="examples-inner">
@@ -133,7 +89,6 @@
                         tokenStrings={exampleTokens[idx]}
                         tokenCi={exampleCi[idx]}
                         tokenComponentActs={exampleComponentActs[idx]}
-                        colorMode={displaySettings.exampleColorMode}
                         {maxAbsComponentAct}
                     />
                 </div>
@@ -175,17 +130,13 @@
         flex-wrap: wrap;
     }
 
-    .filter-control,
-    .page-size-control,
-    .color-mode-control {
+    .page-size-control {
         display: flex;
         align-items: center;
         gap: var(--space-2);
     }
 
-    .filter-control label,
-    .page-size-control label,
-    .color-mode-control label {
+    .page-size-control label {
         font-size: var(--text-sm);
         font-family: var(--font-sans);
         color: var(--text-secondary);
@@ -193,9 +144,7 @@
         font-weight: 500;
     }
 
-    .filter-control select,
-    .page-size-control select,
-    .color-mode-control select {
+    .page-size-control select {
         border: 1px solid var(--border-default);
         border-radius: var(--radius-sm);
         padding: var(--space-1) var(--space-2);
@@ -207,9 +156,7 @@
         min-width: 100px;
     }
 
-    .filter-control select:focus,
-    .page-size-control select:focus,
-    .color-mode-control select:focus {
+    .page-size-control select:focus {
         outline: none;
         border-color: var(--accent-primary-dim);
     }

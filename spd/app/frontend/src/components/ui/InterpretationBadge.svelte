@@ -2,6 +2,7 @@
     import type { Loadable } from "../../lib";
     import type { InterpretationDetail } from "../../lib/api";
     import type { InterpretationBackendState } from "../../lib/useRun.svelte";
+    import { displaySettings } from "../../lib/displaySettings.svelte";
 
     interface Props {
         interpretation: Loadable<InterpretationBackendState>;
@@ -40,11 +41,16 @@
                         <span class="interpretation-reasoning">{interpretationDetail.data.reasoning}</span>
                     {:else if interpretationDetail.status === "loading"}
                         <span class="interpretation-reasoning loading-text">Loading reasoning...</span>
+                        <br /><br /><br />
+                        <!-- breaks are a hacky way to reduce the observed height change once the
+                        reasoning loads -->
                     {/if}
                 </div>
-                <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
-                    {showPrompt ? "Hide" : "View"} Autointerp Prompt
-                </button>
+                {#if displaySettings.showAutoInterpPromptButton}
+                    <button class="prompt-toggle" onclick={() => (showPrompt = !showPrompt)}>
+                        {showPrompt ? "Hide" : "View"} Autointerp Prompt
+                    </button>
+                {/if}
                 <!-- Error state for generating -->
             {:else if interpretationData.status === "generation-error"}
                 <span class="interpretation-label error-text">{String(interpretationData.error)}</span>
@@ -56,7 +62,7 @@
         {/if}
     </div>
 
-    {#if showPrompt}
+    {#if displaySettings.showAutoInterpPromptButton && showPrompt}
         <div class="prompt-display">
             {#if interpretationDetail.status === "loading"}
                 <span class="loading-text">Loading prompt...</span>
@@ -83,9 +89,9 @@
         align-items: flex-start;
         gap: var(--space-2);
         padding: var(--space-2) var(--space-3);
-        background: var(--bg-secondary);
+        background: var(--bg-inset);
         border-radius: var(--radius-md);
-        border-left: 3px solid var(--color-accent, #6366f1);
+        border-left: 3px solid var(--accent-primary);
     }
 
     .interpretation-content {
@@ -135,20 +141,20 @@
 
     .confidence {
         font-size: var(--text-xs);
-        padding: 2px 6px;
+        padding: var(--space-1) var(--space-2);
         border-radius: var(--radius-sm);
         text-transform: uppercase;
         font-weight: 600;
     }
 
     .confidence-high {
-        background: color-mix(in srgb, #22c55e 20%, transparent);
-        color: #22c55e;
+        background: color-mix(in srgb, var(--status-positive-bright) 20%, transparent);
+        color: var(--status-positive-bright);
     }
 
     .confidence-medium {
-        background: color-mix(in srgb, #eab308 20%, transparent);
-        color: #eab308;
+        background: color-mix(in srgb, var(--status-warning) 20%, transparent);
+        color: var(--status-warning);
     }
 
     .confidence-low {
@@ -202,7 +208,7 @@
     }
 
     .prompt-display {
-        background: var(--bg-primary);
+        background: var(--bg-surface);
         border: 1px solid var(--border-default);
         border-radius: var(--radius-md);
         padding: var(--space-3);

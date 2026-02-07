@@ -4,6 +4,7 @@
     --bg-surface: #ffffff;
     --bg-elevated: #ffffff;
     --bg-inset: #f8f9fa;
+    --bg-hover: #f3f4f6;
 
     --border-subtle: #e0e0e0;
     --border-default: #c0c0c0;
@@ -14,12 +15,15 @@
     --text-muted: #999999;
 
     --accent-primary: #2563eb;
+    --accent-primary-bright: #3b82f6;
     --accent-primary-dim: #1d4ed8;
 
     --status-positive: #16a34a;
     --status-positive-bright: #22c55e;
     --status-negative: #dc2626;
     --status-negative-bright: #ef4444;
+    --status-warning: #eab308;
+    --status-warning-bright: #facc15;
     --status-info: #2563eb;
     --status-info-bright: #3b82f6;
 
@@ -43,6 +47,16 @@
     --radius-sm: 4px;
     --radius-md: 6px;
     --radius-lg: 8px;
+
+    /* Shadows - standardized opacity levels */
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
+
+    /* Transitions - standardized timing */
+    --transition-fast: 0.1s ease;
+    --transition-normal: 0.15s ease;
+    --transition-slow: 0.2s ease;
 }
 
 * {
@@ -71,9 +85,9 @@ button {
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition:
-        background-color 0.1s,
-        border-color 0.1s,
-        color 0.1s;
+        background-color var(--transition-fast),
+        border-color var(--transition-fast),
+        color var(--transition-fast);
 }
 
 button:disabled {
@@ -115,8 +129,8 @@ button:disabled {
     opacity: 0;
     pointer-events: none;
     z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    transition: opacity 0.2s;
+    box-shadow: var(--shadow-md);
+    transition: opacity var(--transition-slow);
 }
 
 .info-icon:hover::after {

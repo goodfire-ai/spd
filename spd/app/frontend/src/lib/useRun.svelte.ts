@@ -7,8 +7,15 @@
 
 import type { Loadable } from ".";
 import * as api from "./api";
-import type { RunState as RunData, Interpretation } from "./api";
-import type { ActivationContextsSummary, ComponentDetail, PromptPreview, TokenInfo } from "./promptAttributionsTypes";
+import type { LoadedRun as RunData, InterpretationHeadline } from "./api";
+import type {
+    SubcomponentCorrelationsResponse,
+    PromptPreview,
+    SubcomponentActivationContexts,
+    TokenInfo,
+    TokenStatsResponse,
+    SubcomponentMetadata,
+} from "./promptAttributionsTypes";
 
 /** Maps component keys to cluster IDs. Singletons (unclustered components) have null values. */
 export type ClusterMappingData = Record<string, number | null>;
@@ -28,7 +35,7 @@ type ClusterMapping = {
 export type InterpretationBackendState =
     | { status: "none" }
     | { status: "generating" }
-    | { status: "generated"; data: Interpretation }
+    | { status: "generated"; data: InterpretationHeadline }
     | { status: "generation-error"; error: unknown };
 
 export function useRun() {
@@ -41,6 +48,9 @@ export function useRun() {
     /** Cluster mapping for the current run */
     let clusterMapping = $state<ClusterMapping | null>(null);
 
+    /** Whether dataset attributions are available for this run */
+    let datasetAttributionsAvailable = $state(false);
+
     /** Available prompts for the current run */
     let prompts = $state<Loadable<PromptPreview[]>>({ status: "uninitialized" });
 
@@ -48,10 +58,19 @@ export function useRun() {
     let allTokens = $state<Loadable<TokenInfo[]>>({ status: "uninitialized" });
 
     /** Activation contexts summary */
-    let activationContextsSummary = $state<Loadable<ActivationContextsSummary>>({ status: "uninitialized" });
+    let activationContextsSummary = $state<Loadable<Record<string, SubcomponentMetadata[]>>>({
+        status: "uninitialized",
+    });
 
-    /** Cached component details keyed by component key (layer:cIdx) - non-reactive */
-    let _componentDetailsCache: Record<string, ComponentDetail> = {};
+    // Cached component data keyed by component key (layer:cIdx) - non-reactive
+    let _componentDetailsCache: Record<string, SubcomponentActivationContexts> = {};
+    let _correlationsCache: Record<string, SubcomponentCorrelationsResponse> = {};
+    let _tokenStatsCache: Record<string, TokenStatsResponse> = {};
+
+    // Prefetch parameters for bulk component data
+    const PREFETCH_ACTIVATION_CONTEXTS_LIMIT = 100;
+    const PREFETCH_CORRELATIONS_TOP_K = 20;
+    const PREFETCH_TOKEN_STATS_TOP_K = 30;
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {
@@ -60,10 +79,13 @@ export function useRun() {
         interpretations = { status: "uninitialized" };
         activationContextsSummary = { status: "uninitialized" };
         _componentDetailsCache = {};
+        _correlationsCache = {};
+        _tokenStatsCache = {};
         clusterMapping = null;
+        datasetAttributionsAvailable = false;
     }
 
-    /** Fetch run-scoped data that can load asynchronously (prompts, interpretations) */
+    /** Fetch run-scoped data that can load asynchronously (prompts, interpretations, metadata) */
     function fetchRunScopedData() {
         prompts = { status: "loading" };
         interpretations = { status: "loading" };
@@ -87,6 +109,9 @@ export function useRun() {
                 };
             })
             .catch((error) => (interpretations = { status: "error", error }));
+        api.getDatasetAttributionsMetadata()
+            .then((m) => (datasetAttributionsAvailable = m.available))
+            .catch(() => (datasetAttributionsAvailable = false));
     }
 
     /** Fetch tokens - must complete before run is considered loaded */
@@ -170,14 +195,58 @@ export function useRun() {
         }
     }
 
-    /** Get component detail (fetches once, then cached) */
-    async function getComponentDetail(layer: string, cIdx: number): Promise<ComponentDetail> {
+    /** Get activation context detail (fetches once, then cached) */
+    async function getActivationContextDetail(layer: string, cIdx: number): Promise<SubcomponentActivationContexts> {
         const cacheKey = `${layer}:${cIdx}`;
         if (cacheKey in _componentDetailsCache) return _componentDetailsCache[cacheKey];
 
-        const detail = await api.getComponentDetail(layer, cIdx);
+        const detail = await api.getActivationContextDetail(layer, cIdx);
         _componentDetailsCache[cacheKey] = detail;
         return detail;
+    }
+
+    /**
+     * Bulk prefetch component data for all given component keys.
+     * Uses a single combined endpoint to avoid GIL contention from concurrent requests.
+     */
+    async function prefetchComponentData(componentKeys: string[]): Promise<void> {
+        if (componentKeys.length === 0) return;
+
+        const response = await api.getComponentDataBulk(
+            componentKeys,
+            PREFETCH_ACTIVATION_CONTEXTS_LIMIT,
+            PREFETCH_CORRELATIONS_TOP_K,
+            PREFETCH_TOKEN_STATS_TOP_K,
+        );
+
+        Object.assign(_componentDetailsCache, response.activation_contexts);
+        Object.assign(_correlationsCache, response.correlations);
+        Object.assign(_tokenStatsCache, response.token_stats);
+    }
+
+    /**
+     * Read cached component detail. Throws if not prefetched.
+     */
+    function expectCachedComponentDetail(componentKey: string): SubcomponentActivationContexts {
+        const cached = _componentDetailsCache[componentKey];
+        if (!cached) throw new Error(`Component detail not prefetched: ${componentKey}`);
+        return cached;
+    }
+
+    /**
+     * Read cached correlations.
+     * Returns null if component has no correlation data (e.g., rarely-firing components).
+     */
+    function expectCachedCorrelations(componentKey: string): SubcomponentCorrelationsResponse | null {
+        return _correlationsCache[componentKey] ?? null;
+    }
+
+    /**
+     * Read cached token stats.
+     * Returns null if component has no token stats (e.g., rarely-firing components).
+     */
+    function expectCachedTokenStats(componentKey: string): TokenStatsResponse | null {
+        return _tokenStatsCache[componentKey] ?? null;
     }
 
     /** Load activation contexts summary (fire-and-forget, updates state) */
@@ -224,13 +293,20 @@ export function useRun() {
         get activationContextsSummary() {
             return activationContextsSummary;
         },
+        get datasetAttributionsAvailable() {
+            return datasetAttributionsAvailable;
+        },
         loadRun,
         clearRun,
         syncStatus,
         refreshPrompts,
         getInterpretation,
         setInterpretation,
-        getComponentDetail,
+        getActivationContextDetail,
+        prefetchComponentData,
+        expectCachedComponentDetail,
+        expectCachedCorrelations,
+        expectCachedTokenStats,
         loadActivationContextsSummary,
         setClusterMapping,
         clearClusterMapping,

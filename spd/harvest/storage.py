@@ -26,6 +26,15 @@ class CorrelationStorage:
     count_total: int
     """Total tokens seen"""
 
+    _key_to_idx: dict[str, int] | None = None
+
+    @property
+    def key_to_idx(self) -> dict[str, int]:
+        """Cached mapping from component key to index."""
+        if self._key_to_idx is None:
+            self._key_to_idx = {k: i for i, k in enumerate(self.component_keys)}
+        return self._key_to_idx
+
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(
@@ -69,6 +78,15 @@ class TokenStatsStorage:
     """Probability mass, not hard counts - but used the same way in analysis."""
     output_totals: Float[Tensor, " vocab"]
     firing_counts: Float[Tensor, " n_components"]
+
+    _key_to_idx: dict[str, int] | None = None
+
+    @property
+    def key_to_idx(self) -> dict[str, int]:
+        """Cached mapping from component key to index."""
+        if self._key_to_idx is None:
+            self._key_to_idx = {k: i for i, k in enumerate(self.component_keys)}
+        return self._key_to_idx
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

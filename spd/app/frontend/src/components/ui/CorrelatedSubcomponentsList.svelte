@@ -1,6 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
-    import type { CorrelatedComponent } from "../../lib/promptAttributionsTypes";
+    import { formatNodeKeyWithAliases } from "../../lib/layerAliasing";
+    import type { CorrelatedSubcomponent } from "../../lib/promptAttributionsTypes";
     import { displaySettings } from "../../lib/displaySettings.svelte";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import SetOverlapVis from "./SetOverlapVis.svelte";
@@ -9,7 +10,7 @@
     const runState = getContext<RunContext>(RUN_KEY);
 
     type Props = {
-        items: CorrelatedComponent[];
+        items: CorrelatedSubcomponent[];
         onComponentClick?: (componentKey: string) => void;
         pageSize: number;
     };
@@ -52,13 +53,13 @@
                 onclick={() => onComponentClick?.(component_key)}
                 onmouseenter={() => (hoveredKey = component_key)}
                 onmouseleave={() => (hoveredKey = null)}
-                title={component_key}
+                title={formatNodeKeyWithAliases(component_key)}
             >
                 <div class="pill-content">
                     {#if label}
                         <span class="interp-label">{label}</span>
                     {:else}
-                        <span class="component-text">{component_key}</span>
+                        <span class="component-text">{formatNodeKeyWithAliases(component_key)}</span>
                     {/if}
                     <span class="component-text">({score.toFixed(2)})</span>
                 </div>
@@ -125,8 +126,8 @@
     .component-pill {
         display: inline-flex;
         flex-direction: column;
-        gap: 2px;
-        padding: 4px 6px;
+        gap: var(--space-1);
+        padding: var(--space-1) var(--space-2);
         white-space: nowrap;
         cursor: default;
         position: relative;

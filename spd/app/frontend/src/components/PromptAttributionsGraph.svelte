@@ -10,7 +10,8 @@
         NodePosition,
     } from "../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
-    import { colors, getEdgeColor, getOutputNodeColor, getSubcompActColor } from "../lib/colors";
+    import { getAliasedRowLabel } from "../lib/layerAliasing";
+    import { colors, getEdgeColor, getSubcompActColor, rgbToCss, getNextTokenProbBgColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
         lerp,
@@ -20,6 +21,7 @@
         computeComponentOffsets,
         computeClusterSpans,
         type ClusterSpan,
+        type TooltipPos,
     } from "./prompt-attr/graphUtils";
     import NodeTooltip from "./prompt-attr/NodeTooltip.svelte";
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
@@ -43,6 +45,7 @@
 
     type Props = {
         data: GraphData;
+        tokenIds: number[];
         topK: number;
         componentGap: number;
         layerGap: number;
@@ -55,6 +58,7 @@
 
     let {
         data,
+        tokenIds,
         topK,
         componentGap,
         layerGap,
@@ -65,12 +69,31 @@
         onEdgeCountChange,
     }: Props = $props();
 
+    // Compute masked prediction probability of self given previous position.
+    // For token at position i, we look up outputProbs[(i-1):tokenIds[i]] - how well
+    // position i-1 predicted this token. First token has no previous, so null.
+    // NOTE: outputProbs only includes tokens with >=1% probability (backend threshold).
+    // If the correct token isn't found, it means the masked model gave it <1% probability.
+    const maskedSelfProbs = $derived.by(() => {
+        const probs: (number | null)[] = [];
+        for (let i = 0; i < data.tokens.length; i++) {
+            if (i === 0) {
+                probs.push(null); // First token has no previous position
+            } else {
+                const thisTokenId = tokenIds[i];
+                const entry = data.outputProbs[`${i - 1}:${thisTokenId}`];
+                probs.push(entry?.prob ?? null);
+            }
+        }
+        return probs;
+    });
+
     // UI state
     let hoveredNode = $state<HoveredNode | null>(null);
     let hoveredEdge = $state<HoveredEdge | null>(null);
     let hoveredBarClusterId = $state<number | null>(null);
     let isHoveringTooltip = $state(false);
-    let tooltipPos = $state({ x: 0, y: 0 });
+    let tooltipPos = $state<TooltipPos>({ left: 0, top: 0 });
     let edgeTooltipPos = $state({ x: 0, y: 0 });
 
     // Alt/Option key temporarily toggles hide unpinned edges
@@ -133,12 +156,9 @@
     }
 
     function getRowLabel(layer: string): string {
-        const info = parseLayer(layer);
         const rowKey = getRowKey(layer);
-        if (rowKey.endsWith(".qkv")) return `${info.block}.q/k/v`;
-        if (layer === "wte" || layer === "output") return layer;
-        if (layer === "lm_head") return "W_U";
-        return `${info.block}.${info.subtype}`;
+        const isQkvGroup = rowKey.endsWith(".qkv");
+        return getAliasedRowLabel(layer, isQkvGroup);
     }
 
     // Use pre-computed values from backend, derive max CI
@@ -178,7 +198,7 @@
     });
 
     // Build layout
-    const { nodePositions, layerYPositions, seqWidths, seqXStarts, width, height, clusterSpans } = $derived.by(() => {
+    const { nodePositions, layerYPositions, seqXStarts, width, height, clusterSpans } = $derived.by(() => {
         const nodesPerLayerSeq: Record<string, number[]> = {};
         const allLayers = new SvelteSet<string>();
         const allRows = new SvelteSet<string>();
@@ -343,7 +363,6 @@
         return {
             nodePositions,
             layerYPositions,
-            seqWidths,
             seqXStarts,
             width: widthVal,
             height: heightVal,
@@ -358,9 +377,20 @@
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
     // Check if a node key matches the currently hovered component (same layer:cIdx, any seqIdx)
+    // For wte nodes: match by token value (highlight same tokens across positions)
+    // For other nodes: match by layer:cIdx (highlight same component across positions)
     function nodeMatchesHoveredComponent(nodeKey: string): boolean {
-        if (!hoveredComponentKey) return false;
-        const [layer, , cIdx] = nodeKey.split(":");
+        if (!hoveredNode) return false;
+        const [layer, seqIdxStr, cIdx] = nodeKey.split(":");
+        const seqIdx = parseInt(seqIdxStr);
+
+        // For wte nodes, match by token value
+        if (hoveredNode.layer === "wte") {
+            if (layer !== "wte") return false;
+            return data.tokens[seqIdx] === data.tokens[hoveredNode.seqIdx];
+        }
+
+        // For other nodes, match by component key (layer:cIdx)
         return `${layer}:${cIdx}` === hoveredComponentKey;
     }
 
@@ -460,10 +490,6 @@
         return visibleSvg + hitAreaSvg;
     });
 
-    function isNodePinned(layer: string, seqIdx: number, cIdx: number): boolean {
-        return pinnedNodeKeys.has(`${layer}:${seqIdx}:${cIdx}`);
-    }
-
     // Check if a node key should be highlighted (pinned or hovered component)
     function isNodeHighlighted(nodeKey: string): boolean {
         return pinnedNodeKeys.has(nodeKey) || nodeMatchesHoveredComponent(nodeKey);
@@ -484,8 +510,11 @@
             if (layer === "output") {
                 const probEntry = data.outputProbs[`${seqIdx}:${cIdx}`];
                 if (probEntry) {
-                    fill = getOutputNodeColor(probEntry.prob);
-                    opacity = 0.4 + probEntry.prob * 0.6;
+                    fill = rgbToCss(colors.outputBase);
+                    opacity = 0.2 + probEntry.prob * 0.8;
+                } else {
+                    // remove me. we should just assert this should be present
+                    console.error(`OutputNodeCard: no entry for ${seqIdx}:${cIdx}`);
                 }
             } else {
                 // Component nodes: color/opacity based on CI or subcomp activation
@@ -503,7 +532,7 @@
                         throw new Error(`Inconsistent state: intensity > 1: ${intensity}`);
                     }
                     fill = getSubcompActColor(subcompAct);
-                    opacity = 0.3 + intensity * 0.7;
+                    opacity = 0.2 + intensity * 0.8;
                 }
             }
 
@@ -524,7 +553,8 @@
         }
 
         hoveredNode = { layer, seqIdx, cIdx };
-        tooltipPos = calcTooltipPos(event.clientX, event.clientY);
+        const size = layer === "wte" || layer === "output" ? "small" : "large";
+        tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 
     function handleNodeMouseLeave() {
@@ -724,11 +754,12 @@
             <svg width={svgWidth} height="50" style="display: block;">
                 <g transform="translate({zoom.translateX}, 0) scale({zoom.scale}, 1)">
                     {#each data.tokens as token, i (i)}
-                        {@const colCenter = seqXStarts[i] + seqWidths[i] / 2}
+                        {@const colLeft = seqXStarts[i] + 8}
+                        {@const maskedProb = maskedSelfProbs[i]}
                         <text
-                            x={colCenter}
+                            x={colLeft}
                             y="20"
-                            text-anchor="middle"
+                            text-anchor="start"
                             font-size="11"
                             font-family="'Berkeley Mono', 'SF Mono', monospace"
                             font-weight="500"
@@ -738,13 +769,25 @@
                             {token}
                         </text>
                         <text
-                            x={colCenter}
+                            x={colLeft}
                             y="36"
-                            text-anchor="middle"
+                            text-anchor="start"
                             font-size="9"
                             font-family="'Berkeley Mono', 'SF Mono', monospace"
                             fill={colors.textMuted}>[{i}]</text
                         >
+                        <!-- Masked prediction probability dot: P(self | previous) -->
+                        {@const isFirstToken = i === 0}
+                        <circle
+                            cx={colLeft + 24}
+                            cy="33"
+                            r="4"
+                            fill={getNextTokenProbBgColor(maskedProb)}
+                            stroke={colors.textMuted}
+                            stroke-width="0.5"
+                        >
+                            <title>{maskedProb !== null ? `P(self): ${(maskedProb * 100).toFixed(1)}%` : isFirstToken ? "First token" : "P(self): <1%"}</title>
+                        </circle>
                     {/each}
                 </g>
             </svg>
@@ -772,7 +815,7 @@
     {/if}
 
     <!-- Node tooltip -->
-    {#if hoveredNode && !isNodePinned(hoveredNode.layer, hoveredNode.seqIdx, hoveredNode.cIdx)}
+    {#if hoveredNode}
         <NodeTooltip
             {hoveredNode}
             {tooltipPos}
@@ -849,7 +892,7 @@
     .node {
         transform-box: fill-box;
         transform-origin: center;
-        transition: transform 0.15s ease-out;
+        transition: transform var(--transition-normal);
     }
 
     .node.cluster-hovered {
@@ -872,8 +915,8 @@
         opacity: 0.5;
         cursor: pointer;
         transition:
-            opacity 0.15s ease-out,
-            fill 0.15s ease-out;
+            opacity var(--transition-normal),
+            fill var(--transition-normal);
     }
 
     .cluster-bar:hover,

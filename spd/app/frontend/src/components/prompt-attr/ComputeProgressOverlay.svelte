@@ -132,7 +132,7 @@
     .progress-fill {
         height: 100%;
         background: var(--accent-primary);
-        transition: width 0.15s ease-out;
+        transition: width var(--transition-normal);
     }
 
     .stage.complete .progress-fill {

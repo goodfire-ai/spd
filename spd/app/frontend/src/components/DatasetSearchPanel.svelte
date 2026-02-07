@@ -1,115 +1,117 @@
 <script lang="ts">
     import * as api from "../lib/api";
+    import type { Loadable } from "../lib";
     import DatasetSearchResults from "./DatasetSearchResults.svelte";
 
-    let query = $state("");
-    let split = $state<"train" | "test">("train");
-    let loading = $state(false);
-    let metadata = $state<api.DatasetSearchMetadata | null>(null);
-    let currentPage = $state(1);
-    let pageSize = $state(20);
-    let currentPageResults = $state<api.DatasetSearchPage | null>(null);
-    let error = $state<string | null>(null);
+    let searchQuery = $state("");
+    let searchSplit = $state<"train" | "test">("train");
+    let searchMetadata = $state<api.DatasetSearchMetadata | null>(null);
+    let searchPage = $state(1);
+    let searchPageSize = $state(10);
+    let searchResults = $state<Loadable<api.TokenizedSearchPage>>({ status: "uninitialized" });
 
     async function performSearch() {
-        if (!query.trim()) return;
+        if (!searchQuery.trim()) return;
 
-        loading = true;
-        metadata = null;
-        currentPageResults = null;
-        currentPage = 1;
-        error = null;
+        searchResults = { status: "loading" };
+        searchMetadata = null;
+        searchPage = 1;
 
         try {
-            const result = await api.searchDataset(query.trim(), split);
-            metadata = result;
-            await loadPage(1);
-        } finally {
-            loading = false;
+            const result = await api.searchDataset(searchQuery.trim(), searchSplit);
+            searchMetadata = result;
+            await loadSearchPage(1);
+        } catch (e) {
+            searchResults = { status: "error", error: e };
         }
     }
 
-    async function loadPage(page: number) {
-        currentPageResults = await api.getDatasetSearchPage(page, pageSize);
-        currentPage = page;
+    async function loadSearchPage(page: number) {
+        searchResults = { status: "loading" };
+        try {
+            const data = await api.getTokenizedResults(page, searchPageSize);
+            searchResults = { status: "loaded", data };
+            searchPage = page;
+        } catch (e) {
+            searchResults = { status: "error", error: e };
+        }
     }
 
-    function handleKeydown(event: KeyboardEvent) {
-        if (event.key === "Enter" && !loading) {
+    function handleSearchKeydown(event: KeyboardEvent) {
+        if (event.key === "Enter" && searchResults.status !== "loading") {
             performSearch();
         }
     }
 </script>
 
-<div class="tab-content">
+<div class="panel">
     <div class="config-box">
         <div class="config-header">
             <span class="config-title">Search SimpleStories Dataset</span>
-            <button class="search-button" onclick={performSearch} disabled={loading || !query.trim()}>
-                {loading ? "Searching..." : "Search"}
+            <button
+                class="action-button"
+                onclick={performSearch}
+                disabled={searchResults.status === "loading" || !searchQuery.trim()}
+            >
+                {searchResults.status === "loading" ? "Searching..." : "Search"}
             </button>
         </div>
-        <div class="search-form">
+        <div class="form-grid">
             <div class="form-row">
-                <label for="query">Query:</label>
+                <label for="search-query">Query:</label>
                 <input
-                    id="query"
+                    id="search-query"
                     type="text"
                     placeholder="e.g. 'dragon' or 'went to the'"
-                    bind:value={query}
-                    onkeydown={handleKeydown}
-                    disabled={loading}
+                    bind:value={searchQuery}
+                    onkeydown={handleSearchKeydown}
+                    disabled={searchResults.status === "loading"}
                 />
             </div>
             <div class="form-row">
-                <label for="split">Split:</label>
-                <select id="split" bind:value={split} disabled={loading}>
+                <label for="search-split">Split:</label>
+                <select id="search-split" bind:value={searchSplit} disabled={searchResults.status === "loading"}>
                     <option value="train">Train</option>
                     <option value="test">Test</option>
                 </select>
             </div>
         </div>
-        {#if metadata}
+        {#if searchMetadata}
             <div class="metadata">
-                <span>Found {metadata.total_results} results in {metadata.search_time_seconds.toFixed(2)}s</span>
-            </div>
-        {/if}
-        {#if error}
-            <div class="error-banner">
-                {error}
+                Found {searchMetadata.total_results} results in {searchMetadata.search_time_seconds.toFixed(2)}s
             </div>
         {/if}
     </div>
 
     <div class="results-box">
-        {#if currentPageResults}
+        {#if searchResults.status === "loaded"}
             <DatasetSearchResults
-                results={currentPageResults.results}
-                page={currentPage}
-                {pageSize}
-                totalPages={currentPageResults.total_pages}
-                onPageChange={loadPage}
-                {query}
+                results={searchResults.data.results}
+                page={searchPage}
+                pageSize={searchPageSize}
+                totalPages={searchResults.data.total_pages}
+                onPageChange={loadSearchPage}
+                query={searchQuery}
             />
-        {:else if loading}
+        {:else if searchResults.status === "loading"}
             <div class="empty-state">Searching dataset...</div>
+        {:else if searchResults.status === "error"}
+            <div class="empty-state error">Error: {searchResults.error}</div>
         {:else}
             <div class="empty-state">
-                <p>No search performed yet</p>
-                <p class="hint">Enter a query above to search the SimpleStories dataset</p>
+                <p>Enter a query above to search the SimpleStories dataset</p>
             </div>
         {/if}
     </div>
 </div>
 
 <style>
-    .tab-content {
-        display: flex;
-        flex-direction: column;
+    .panel {
         flex: 1;
         min-height: 0;
+        display: flex;
+        flex-direction: column;
         gap: var(--space-4);
-        padding: var(--space-6);
     }
 
     .config-box {
@@ -134,7 +136,27 @@
         font-weight: 600;
     }
 
-    .search-form {
+    .action-button {
+        padding: var(--space-1) var(--space-3);
+        border: none;
+        background: var(--accent-primary);
+        color: white;
+        font-weight: 500;
+        font-size: var(--text-sm);
+        cursor: pointer;
+    }
+
+    .action-button:hover:not(:disabled) {
+        background: var(--accent-primary-dim);
+    }
+
+    .action-button:disabled {
+        background: var(--border-default);
+        color: var(--text-muted);
+        cursor: not-allowed;
+    }
+
+    .form-grid {
         display: flex;
         flex-direction: column;
         gap: var(--space-3);
@@ -172,38 +194,10 @@
         border-color: var(--accent-primary-dim);
     }
 
-    .search-button {
-        padding: var(--space-1) var(--space-3);
-        border: none;
-        background: var(--accent-primary);
-        color: white;
-        font-weight: 500;
-        font-size: var(--text-sm);
-    }
-
-    .search-button:hover:not(:disabled) {
-        background: var(--accent-primary-dim);
-    }
-
-    .search-button:disabled {
-        background: var(--border-default);
-        color: var(--text-muted);
-    }
-
     .metadata {
         font-size: var(--text-sm);
         font-family: var(--font-mono);
         color: var(--text-secondary);
-    }
-
-    .error-banner {
-        background: var(--bg-surface);
-        color: var(--status-negative);
-        padding: var(--space-2) var(--space-3);
-        border: 1px solid var(--status-negative);
-        border-radius: var(--radius-md);
-        font-size: var(--text-sm);
-        font-family: var(--font-sans);
     }
 
     .results-box {
@@ -228,14 +222,12 @@
         font-family: var(--font-sans);
     }
 
+    .empty-state.error {
+        color: var(--status-negative);
+    }
+
     .empty-state p {
         margin: var(--space-1) 0;
         font-size: var(--text-base);
-    }
-
-    .empty-state .hint {
-        font-size: var(--text-sm);
-        color: var(--text-muted);
-        font-family: var(--font-mono);
     }
 </style>

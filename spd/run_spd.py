@@ -22,6 +22,8 @@ from spd.configs import (
     Config,
     LossMetricConfigType,
     MetricConfigType,
+    PersistentPGDReconLossConfig,
+    PersistentPGDReconSubsetLossConfig,
     PGDMultiBatchConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
@@ -30,9 +32,10 @@ from spd.data import loop_dataloader
 from spd.eval import evaluate, evaluate_multibatch_pgd
 from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
-from spd.losses import compute_total_loss
+from spd.losses import compute_losses
 from spd.metrics import faithfulness_loss
 from spd.models.component_model import ComponentModel, OutputWithCache
+from spd.persistent_pgd import PersistentPGDState
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -151,10 +154,9 @@ def optimize(
     model = ComponentModel(
         target_model=target_model,
         module_path_info=module_path_info,
-        ci_fn_type=config.ci_fn_type,
-        ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-        pretrained_model_output_attr=config.pretrained_model_output_attr,
+        ci_config=config.ci_config,
         sigmoid_type=config.sigmoid_type,
+        pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
 
     model.to(device)
@@ -192,10 +194,10 @@ def optimize(
             tgt.V.data = src.U.data.T
 
     component_params: list[torch.nn.Parameter] = []
-    ci_fn_params: list[torch.nn.Parameter] = []
     for name in component_model.target_module_paths:
         component_params.extend(component_model.components[name].parameters())
-        ci_fn_params.extend(component_model.ci_fns[name].parameters())
+
+    ci_fn_params = list(component_model.ci_fn.parameters())
 
     assert len(component_params) > 0, "No parameters found in components to optimize"
 
@@ -204,6 +206,16 @@ def optimize(
 
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
+
+    # Extract PersistentPGD configs for state initialization
+    # (PPGD is handled in compute_losses but not evaluated)
+    persistent_pgd_configs: list[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
+    ] = [
+        cfg
+        for cfg in config.loss_metric_configs
+        if isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+    ]
 
     eval_metric_configs = get_unique_metric_configs(
         loss_configs=config.loss_metric_configs, eval_configs=config.eval_metric_configs
@@ -216,7 +228,6 @@ def optimize(
     eval_metric_configs = [
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
-    batch_dims: tuple[int, ...] | None = None
 
     sample_batch = extract_batch_data(next(train_iterator))
     batch_dims = (
@@ -224,6 +235,20 @@ def optimize(
         if config.output_loss_type == "mse"  # if mse then input is a vector
         else sample_batch.shape  # else it's a batch of token ids
     )
+
+    # Initialize PersistentPGD states if needed
+    ppgd_states: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
+    ] = {
+        ppgd_cfg: PersistentPGDState(
+            module_to_c=model.module_to_c,
+            seq_len=batch_dims[-1],
+            device=device,
+            use_delta_component=config.use_delta_component,
+            cfg=ppgd_cfg,
+        )
+        for ppgd_cfg in persistent_pgd_configs
+    }
 
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
@@ -236,7 +261,11 @@ def optimize(
 
         weight_deltas = component_model.calc_weight_deltas()
 
-        microbatch_log_data: defaultdict[str, float] = defaultdict(float)
+        batch_log_data: defaultdict[str, float] = defaultdict(float)
+
+        ppgd_batch_grads = {
+            ppgd_cfg: ppgd_states[ppgd_cfg].empty_grads() for ppgd_cfg in persistent_pgd_configs
+        }
 
         for _ in range(config.gradient_accumulation_steps):
             microbatch = extract_batch_data(next(train_iterator)).to(device)
@@ -254,7 +283,7 @@ def optimize(
                     sampling=config.sampling,
                 )
 
-                microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
+                microbatch_losses = compute_losses(
                     loss_metric_configs=config.loss_metric_configs,
                     model=component_model,
                     batch=microbatch,
@@ -266,43 +295,69 @@ def optimize(
                     sampling=config.sampling,
                     use_delta_component=config.use_delta_component,
                     n_mask_samples=config.n_mask_samples,
+                    ppgd_maskss={cfg: ppgd_states[cfg].masks for cfg in persistent_pgd_configs},
                     output_loss_type=config.output_loss_type,
                 )
 
-            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
-
-            for loss_name, loss_value in microbatch_loss_terms.items():
-                microbatch_log_data[f"train/{loss_name}"] += (
-                    loss_value / config.gradient_accumulation_steps
+            # Compute total loss and accumulate PPGD grads
+            microbatch_total_loss = torch.tensor(0.0, device=device)
+            for loss_cfg, loss_val in microbatch_losses.items():
+                assert loss_cfg.coeff is not None
+                microbatch_total_loss = microbatch_total_loss + loss_cfg.coeff * loss_val
+                batch_log_data[f"train/loss/{loss_cfg.classname}"] += (
+                    loss_val.item() / config.gradient_accumulation_steps
                 )
+
+                # Accumulate PPGD grads
+                if isinstance(
+                    loss_cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
+                ):
+                    ppgd_grads = ppgd_states[loss_cfg].get_grads(loss_val)
+                    for module_name, grad in ppgd_grads.items():
+                        ppgd_batch_grads[loss_cfg][module_name] += (
+                            grad / config.gradient_accumulation_steps
+                        )
+
+            batch_log_data["train/loss/total"] += (
+                microbatch_total_loss.item() / config.gradient_accumulation_steps
+            )
+
+            microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for layer_name, layer_ci in ci.lower_leaky.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
-                microbatch_log_data[f"train/l0/{layer_name}"] += (
+                batch_log_data[f"train/l0/{layer_name}"] += (
                     l0_val / config.gradient_accumulation_steps
+                )
+        # Step PPGD optimizers
+        for ppgd_cfg in persistent_pgd_configs:
+            mean_abs_steps = ppgd_states[ppgd_cfg].step(ppgd_batch_grads[ppgd_cfg])
+            for module_name, mean_abs_step in mean_abs_steps.items():
+                batch_log_data[f"train/loss/{ppgd_cfg.classname}/mean_abs_step/{module_name}"] = (
+                    mean_abs_step
                 )
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
-            avg_metrics = avg_metrics_across_ranks(microbatch_log_data, device=device)
-            microbatch_log_data = cast(defaultdict[str, float], avg_metrics)
+            avg_metrics = avg_metrics_across_ranks(batch_log_data, device=device)
+            batch_log_data = cast(defaultdict[str, float], avg_metrics)
 
             grad_norms = get_grad_norms_dict(component_model, device)
             dict_safe_update_(
-                microbatch_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
+                batch_log_data, {f"train/grad_norms/{k}": v for k, v in grad_norms.items()}
             )
 
-            microbatch_log_data["train/schedules/lr"] = step_lr
+            batch_log_data["train/schedules/lr"] = step_lr
 
             if is_main_process():
                 assert out_dir is not None
                 tqdm.write(f"--- Step {step} ---")
                 tqdm.write(f"LR: {step_lr:.6f}")
-                for name, value in microbatch_log_data.items():
+                for name, value in batch_log_data.items():
                     tqdm.write(f"{name}: {value:.15f}")
-                local_log(microbatch_log_data, step, out_dir)
+                local_log(batch_log_data, step, out_dir)
                 if config.wandb_project:
-                    try_wandb(wandb.log, microbatch_log_data, step=step)
+                    try_wandb(wandb.log, batch_log_data, step=step)
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
@@ -327,6 +382,7 @@ def optimize(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
+                    ppgd_maskss={cfg: ppgd_states[cfg].masks for cfg in persistent_pgd_configs},
                     device=device,
                     run_config=config,
                     slow_step=slow_step,
