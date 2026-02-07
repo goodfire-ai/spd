@@ -21,6 +21,7 @@ from spd.models.components import make_mask_infos
 from spd.routing import AllLayersRouter
 from spd.spd_types import Probability
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
+from spd.utils.general_utils import bf16_autocast
 
 MaskType = Literal["stochastic", "ci"]
 
@@ -211,13 +212,15 @@ def compute_specific_pos_ce_kl(
 
     # CI masked
     ci_mask_infos = make_mask_infos(ci)
-    ci_masked_logits = model(batch, mask_infos=ci_mask_infos)
+    with bf16_autocast():
+        ci_masked_logits = model(batch, mask_infos=ci_mask_infos)
     ci_masked_kl = kl_vs_target(ci_masked_logits)
     ci_masked_ce = ce_vs_target(ci_masked_logits)
 
     # Unmasked (all components active)
     unmasked_infos = make_mask_infos({k: torch.ones_like(v) for k, v in ci.items()})
-    unmasked_logits = model(batch, mask_infos=unmasked_infos)
+    with bf16_autocast():
+        unmasked_logits = model(batch, mask_infos=unmasked_infos)
     unmasked_kl = kl_vs_target(unmasked_logits)
     unmasked_ce = ce_vs_target(unmasked_logits)
 
@@ -225,7 +228,8 @@ def compute_specific_pos_ce_kl(
     rounded_mask_infos = make_mask_infos(
         {k: (v > rounding_threshold).float() for k, v in ci.items()}
     )
-    rounded_masked_logits = model(batch, mask_infos=rounded_mask_infos)
+    with bf16_autocast():
+        rounded_masked_logits = model(batch, mask_infos=rounded_mask_infos)
     rounded_masked_kl = kl_vs_target(rounded_masked_logits)
     rounded_masked_ce = ce_vs_target(rounded_masked_logits)
 
@@ -301,7 +305,7 @@ def optimize_ci_values(
     model.requires_grad_(False)
 
     # Get initial CI values from the model
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         output_with_cache: OutputWithCache = model(tokens, cache_type="input")
         initial_ci_outputs = model.calc_causal_importances(
             pre_weight_acts=output_with_cache.cache,
@@ -343,7 +347,8 @@ def optimize_ci_values(
             case "ci":
                 mask_infos = make_mask_infos(component_masks=ci_outputs.lower_leaky)
 
-        out = model(tokens, mask_infos=mask_infos)
+        with bf16_autocast():
+            out = model(tokens, mask_infos=mask_infos)
 
         imp_min_loss = importance_minimality_loss(
             ci_upper_leaky=ci_outputs.upper_leaky,

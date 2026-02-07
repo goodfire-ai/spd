@@ -342,13 +342,21 @@ class GlobalSharedTransformerCiFn(nn.Module):
         concatenated = torch.cat(inputs_list, dim=-1)
         projected: Tensor = self._input_projector(concatenated)
 
-        assert projected.ndim == 3
+        # The transformer blocks expect a sequence dimension, so we add an extra dimension to our
+        # activations if we only have 2D acts (e.g. in TMS and resid_mlp).
+        added_seq_dim = False
+        if projected.ndim < 3:
+            projected = projected.unsqueeze(-2)
+            added_seq_dim = True
 
         x = projected
         for block in self._blocks:
             x = block(x)
 
         output = self._output_head(x)
+
+        if added_seq_dim:
+            output = output.squeeze(-2)
 
         split_outputs = torch.split(output, self.split_sizes, dim=-1)
         outputs = {name: split_outputs[i] for i, name in enumerate(self.layer_order)}
@@ -582,7 +590,7 @@ class LinearComponents(Components):
 
     @override
     def get_component_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
-        return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
+        return einops.einsum(x.to(self.V.dtype), self.V, "... d_in, d_in C -> ... C")
 
     @override
     def forward(

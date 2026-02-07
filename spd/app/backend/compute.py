@@ -18,6 +18,7 @@ from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimi
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
+from spd.utils.general_utils import bf16_autocast
 
 
 @dataclass
@@ -146,10 +147,9 @@ def get_sources_by_target(
     # Use a small dummy batch - we only need to trace gradient connections
     batch: Float[Tensor, "batch seq"] = torch.zeros(2, 3, dtype=torch.long, device=device)
 
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         output_with_cache: OutputWithCache = model(batch, cache_type="input")
 
-    with torch.no_grad():
         ci = model.calc_causal_importances(
             pre_weight_acts=output_with_cache.cache,
             sampling=sampling,
@@ -175,7 +175,7 @@ def get_sources_by_target(
     assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
     wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
 
-    with torch.enable_grad():
+    with torch.enable_grad(), bf16_autocast():
         comp_output_with_cache: OutputWithCache = model(
             batch,
             mask_infos=mask_infos,
@@ -351,7 +351,7 @@ def compute_edges_from_ci(
         loss_seq_pos = n_seq - 1
 
     # Compute CI-masked output probs (for display) before the gradient computation
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         ci_masks = make_mask_infos(component_masks=ci_lower_leaky)
         ci_masked_logits: Tensor = model(tokens, mask_infos=ci_masks)
         ci_masked_out_probs = torch.softmax(ci_masked_logits, dim=-1)
@@ -369,7 +369,7 @@ def compute_edges_from_ci(
         component_masks={k: torch.ones_like(v) for k, v in ci_lower_leaky.items()},
         weight_deltas_and_masks=weight_deltas_and_masks,
     )
-    with torch.enable_grad():
+    with torch.enable_grad(), bf16_autocast():
         comp_output_with_cache: OutputWithCache = model(
             tokens, mask_infos=unmasked_masks, cache_type="component_acts"
         )
@@ -522,7 +522,7 @@ def compute_prompt_attributions(
         loss_seq_pos: Maximum sequence position to include (inclusive).
                       If None, includes all positions (default behavior).
     """
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         output_with_cache = model(tokens, cache_type="input")
         pre_weight_acts = output_with_cache.cache
         target_out_logits = output_with_cache.output
@@ -570,7 +570,7 @@ def compute_prompt_attributions_optimized(
     not here at computation time.
     """
     # Compute target model output probs (unmasked forward pass)
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         target_logits = model(tokens)
         target_out_probs = torch.softmax(target_logits, dim=-1)
 
@@ -588,7 +588,7 @@ def compute_prompt_attributions_optimized(
         on_progress(0, 1, "graph")
 
     # Get pre_weight_acts for subcomponent activation computation
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         pre_weight_acts = model(tokens, cache_type="input").cache
 
     # Extract loss_seq_pos from optimization config
@@ -648,7 +648,7 @@ def compute_ci_only(
     Returns:
         CIOnlyResult containing CI values per layer, target model output probabilities, pre-weight activations, and component activations.
     """
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         output_with_cache: OutputWithCache = model(tokens, cache_type="input")
         ci = model.calc_causal_importances(
             pre_weight_acts=output_with_cache.cache,
@@ -782,7 +782,7 @@ def compute_intervention_forward(
 
     mask_infos = make_mask_infos(component_masks, routing_masks="all")
 
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         # SPD model forward pass (with component masks)
         spd_logits: Float[Tensor, "1 seq vocab"] = model(tokens, mask_infos=mask_infos)
         spd_probs: Float[Tensor, "1 seq vocab"] = torch.softmax(spd_logits, dim=-1)
