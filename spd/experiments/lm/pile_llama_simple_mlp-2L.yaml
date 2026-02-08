@@ -98,10 +98,10 @@ task_config:
   task_name: lm
   max_seq_len: 512
   buffer_size: 1000
-  dataset_name: monology/pile-uncopyrighted
+  dataset_name: danbraunai/pile-uncopyrighted
   column_name: text
-  train_data_split: train[:10000000]
-  eval_data_split: train[-100000:]
+  train_data_split: train
+  eval_data_split: val
   shuffle_each_epoch: true
   is_tokenized: false
   streaming: false

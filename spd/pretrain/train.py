@@ -206,15 +206,7 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
     load_dotenv(override=True)
     config = load_config(config_path_or_obj, config_model=Config)
 
-    T = config.train_dataset_config.n_ctx  # Training sequence length (positions to train on)
-
-    # Load n_ctx+1 tokens so we can train on n_ctx positions (need extra token for labels)
-    train_dataset_config = config.train_dataset_config.model_copy(
-        update={"n_ctx": config.train_dataset_config.n_ctx + 1}
-    )
-    val_dataset_config = config.val_dataset_config.model_copy(
-        update={"n_ctx": config.val_dataset_config.n_ctx + 1}
-    )
+    T = config.train_dataset_config.n_ctx - 1  # Training sequence length (positions to train on)
 
     # set up DDP (distributed data parallel). torchrun sets this env variable
     ddp = int(os.environ.get("RANK", -1)) != -1
@@ -304,7 +296,7 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
         model = cast(nn.Module, torch.compile(model))  # type: ignore[reportArgumentType]
 
     train_loader, train_tokenizer = create_data_loader(
-        dataset_config=train_dataset_config,
+        dataset_config=config.train_dataset_config,
         batch_size=B,
         buffer_size=1000,
         global_seed=0,
@@ -313,7 +305,7 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
     train_iter = iter(train_loader)
 
     val_loader, _ = create_data_loader(
-        dataset_config=val_dataset_config,
+        dataset_config=config.val_dataset_config,
         batch_size=B,
         buffer_size=1000,
         global_seed=0,
