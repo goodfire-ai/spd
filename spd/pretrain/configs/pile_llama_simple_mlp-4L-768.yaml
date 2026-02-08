@@ -1,6 +1,6 @@
 wandb_project: spd
 dtype: bfloat16
-batch_size: 1024
+batch_size: 64
 num_iterations: 100_000
 warmup_iters: 600
 learning_rate: 3e-4
@@ -33,20 +33,20 @@ model:
   vocab_size: 50277
 
 train_dataset_config:
-  name: monology/pile-uncopyrighted
+  name: danbraunai/pile-uncopyrighted
   is_tokenized: false
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
-  split: train[:100000] # Dataset has 177M examples
+  split: train
   streaming: false
   n_ctx: 512
   seed: 0
   column_name: text
 
 val_dataset_config:
-  name: monology/pile-uncopyrighted
+  name: danbraunai/pile-uncopyrighted
   is_tokenized: false
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
-  split: train[-100000:]
+  split: val
   streaming: false
   n_ctx: 512
   seed: 0
