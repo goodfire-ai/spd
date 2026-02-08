@@ -33,6 +33,7 @@ class SlurmConfig:
         cpus_per_task: CPUs per task (for CPU-bound jobs like autointerp)
         snapshot_branch: Git branch to checkout. If None, just cd to REPO_ROOT without cloning.
         dependency_job_id: If set, job waits for this job to complete (afterok dependency)
+        begin: If set, defer job start (e.g. "now+6hours", "2024-01-01T00:00:00")
     """
 
     job_name: str
@@ -43,6 +44,7 @@ class SlurmConfig:
     cpus_per_task: int | None = None
     snapshot_branch: str | None = None
     dependency_job_id: str | None = None
+    begin: str | None = None
 
 
 @dataclass
@@ -259,6 +261,9 @@ def _sbatch_header(
 
     if config.dependency_job_id:
         lines.append(f"#SBATCH --dependency=afterok:{config.dependency_job_id}")
+
+    if config.begin:
+        lines.append(f"#SBATCH --begin={config.begin}")
 
     return "\n".join(lines)
 
