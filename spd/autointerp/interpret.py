@@ -1,196 +1,74 @@
 import asyncio
 import json
-import random
-import time
-from dataclasses import asdict, dataclass
-from datetime import datetime
-from enum import StrEnum
+from dataclasses import asdict
 from pathlib import Path
 
-import httpx
 from openrouter import OpenRouter
-from openrouter.components import JSONSchemaConfig, MessageTypedDict, ResponseFormatJSONSchema
-from openrouter.errors import (
-    BadGatewayResponseError,
-    ChatError,
-    EdgeNetworkTimeoutResponseError,
-    ProviderOverloadedResponseError,
-    RequestTimeoutResponseError,
-    ServiceUnavailableResponseError,
-    TooManyRequestsResponseError,
-)
-from tqdm.asyncio import tqdm_asyncio
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.compute import get_model_n_blocks
-from spd.autointerp.prompt_template import INTERPRETATION_SCHEMA, format_prompt_template
+from spd.app.backend.utils import build_token_lookup
+from spd.autointerp.config import AutointerpConfig
+from spd.autointerp.llm_api import (
+    CostTracker,
+    RateLimiter,
+    chat_with_retry,
+    get_model_pricing,
+    make_response_format,
+)
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
+from spd.autointerp.strategies.dispatch import (
+    format_prompt,
+    get_reasoning,
+    get_response_schema,
+)
 from spd.configs import LMTaskConfig
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
-from spd.harvest.harvest import HarvestResult
+from spd.harvest.loaders import load_all_components
 from spd.harvest.schemas import ComponentData
 from spd.harvest.storage import TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
-# Retry config
-MAX_RETRIES = 8
-BASE_DELAY_S = 0.5
-MAX_DELAY_S = 60.0
-JITTER_FACTOR = 0.5
 MAX_CONCURRENT_REQUESTS = 50
 MAX_REQUESTS_PER_MINUTE = 300  # Gemini flash has 400 RPM limit
 
 
-class RateLimiter:
-    """Sliding window rate limiter for async code."""
-
-    def __init__(self, max_requests: int, period_seconds: float):
-        self.max_requests = max_requests
-        self.period = period_seconds
-        self.timestamps: list[float] = []
-        self.lock = asyncio.Lock()
-
-    async def acquire(self) -> None:
-        async with self.lock:
-            now = time.monotonic()
-            self.timestamps = [t for t in self.timestamps if now - t < self.period]
-
-            if len(self.timestamps) >= self.max_requests:
-                sleep_time = self.timestamps[0] + self.period - now
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-                self.timestamps = self.timestamps[1:]
-
-            self.timestamps.append(time.monotonic())
-
-
-RETRYABLE_ERRORS = (
-    TooManyRequestsResponseError,
-    ProviderOverloadedResponseError,
-    ServiceUnavailableResponseError,
-    BadGatewayResponseError,
-    RequestTimeoutResponseError,
-    EdgeNetworkTimeoutResponseError,
-    ChatError,
-    httpx.TransportError,  # Low-level network errors (ReadError, ConnectError, etc.)
-)
-
-
-class OpenRouterModelName(StrEnum):
-    GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
-
-
-@dataclass
-class CostTracker:
-    input_tokens: int = 0
-    output_tokens: int = 0
-    input_price_per_token: float = 0.0
-    output_price_per_token: float = 0.0
-
-    def add(self, input_tokens: int, output_tokens: int) -> None:
-        self.input_tokens += input_tokens
-        self.output_tokens += output_tokens
-
-    def cost_usd(self) -> float:
-        return (
-            self.input_tokens * self.input_price_per_token
-            + self.output_tokens * self.output_price_per_token
-        )
-
-
-async def chat_with_retry(
-    client: OpenRouter,
-    model: str,
-    messages: list[MessageTypedDict],
-    response_format: ResponseFormatJSONSchema,
-    max_tokens: int,
-    context_label: str,
-) -> tuple[str, int, int]:
-    """Send chat request with exponential backoff retry. Returns (content, input_tokens, output_tokens)."""
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = await client.chat.send_async(
-                model=model,
-                max_tokens=max_tokens,
-                messages=messages,
-                response_format=response_format,
-            )
-            choice = response.choices[0]
-            message = choice.message
-            assert isinstance(message.content, str)
-            assert response.usage is not None
-
-            if choice.finish_reason == "length":
-                logger.warning(f"{context_label}: Response truncated at {max_tokens} tokens")
-
-            return (
-                message.content,
-                int(response.usage.prompt_tokens),
-                int(response.usage.completion_tokens),
-            )
-        except RETRYABLE_ERRORS as e:
-            last_error = e
-            if attempt == MAX_RETRIES - 1:
-                break
-
-            delay = min(BASE_DELAY_S * (2**attempt), MAX_DELAY_S)
-            jitter = delay * JITTER_FACTOR * random.random()
-            total_delay = delay + jitter
-
-            tqdm_asyncio.write(
-                f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
-                f"{type(e).__name__}, backing off {total_delay:.1f}s"
-            )
-            await asyncio.sleep(total_delay)
-
-    assert last_error is not None
-    raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")
-
-
-async def get_model_pricing(client: OpenRouter, model_id: str) -> tuple[float, float]:
-    """Returns (input_price, output_price) per token."""
-    response = await client.models.list_async()
-    for model in response.data:
-        if model.id == model_id:
-            return float(model.pricing.prompt), float(model.pricing.completion)
-    raise ValueError(f"Model {model_id} not found")
-
-
 async def interpret_component(
     client: OpenRouter,
-    model: str,
+    config: AutointerpConfig,
     component: ComponentData,
     arch: ArchitectureInfo,
     tokenizer: PreTrainedTokenizerBase,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
+    ci_threshold: float,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
-    prompt = format_prompt_template(
+    prompt = format_prompt(
+        config=config,
         component=component,
         arch=arch,
         tokenizer=tokenizer,
         input_token_stats=input_token_stats,
         output_token_stats=output_token_stats,
+        ci_threshold=ci_threshold,
     )
+
+    model = config.model
+    reasoning = get_reasoning(config)
+    schema = get_response_schema(config)
 
     try:
         raw, in_tok, out_tok = await chat_with_retry(
             client=client,
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            response_format=ResponseFormatJSONSchema(
-                json_schema=JSONSchemaConfig(
-                    name="interpretation",
-                    schema_={**INTERPRETATION_SCHEMA, "additionalProperties": False},
-                    strict=True,
-                )
-            ),
-            max_tokens=1500,
+            max_tokens=8000,  # High to accommodate reasoning tokens
             context_label=component.component_key,
+            response_format=make_response_format("interpretation", schema),
+            reasoning=reasoning,
         )
     except RuntimeError as e:
         logger.error(str(e))
@@ -205,15 +83,17 @@ async def interpret_component(
     assert len(parsed) == 3, f"Expected 3 fields, got {len(parsed)}"
     label = parsed["label"]
     confidence = parsed["confidence"]
-    reasoning = parsed["reasoning"]
-    assert isinstance(label, str) and isinstance(confidence, str) and isinstance(reasoning, str)
+    reasoning_text = parsed["reasoning"]
+    assert (
+        isinstance(label, str) and isinstance(confidence, str) and isinstance(reasoning_text, str)
+    )
 
     return (
         InterpretationResult(
             component_key=component.component_key,
             label=label,
             confidence=confidence,
-            reasoning=reasoning,
+            reasoning=reasoning_text,
             raw_response=raw,
             prompt=prompt,
         ),
@@ -226,10 +106,12 @@ async def interpret_all(
     components: list[ComponentData],
     arch: ArchitectureInfo,
     openrouter_api_key: str,
-    interpreter_model: str,
+    config: AutointerpConfig,
     output_path: Path,
     token_stats: TokenStatsStorage,
-    limit: int | None = None,
+    ci_threshold: float,
+    limit: int | None,
+    cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
@@ -257,6 +139,10 @@ async def interpret_all(
 
     tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
+    lookup = build_token_lookup(tokenizer, arch.tokenizer_name)
+
+    interpreter_model = config.model
+    reasoning = get_reasoning(config)
 
     async def process_one(
         component: ComponentData,
@@ -264,15 +150,19 @@ async def interpret_all(
         client: OpenRouter,
         cost_tracker: CostTracker,
     ) -> None:
+        if cost_tracker.over_budget():
+            return
         await rate_limiter.acquire()
         async with semaphore:
+            if cost_tracker.over_budget():
+                return
             try:
                 # Compute token stats for this component
                 input_stats = get_input_token_stats(
-                    token_stats, component.component_key, tokenizer, top_k=20
+                    token_stats, component.component_key, lookup, top_k=20
                 )
                 output_stats = get_output_token_stats(
-                    token_stats, component.component_key, tokenizer, top_k=50
+                    token_stats, component.component_key, lookup, top_k=50
                 )
                 assert input_stats is not None, (
                     f"No input token stats for {component.component_key}"
@@ -283,12 +173,13 @@ async def interpret_all(
 
                 res = await interpret_component(
                     client=client,
-                    model=interpreter_model,
+                    config=config,
                     component=component,
                     arch=arch,
                     tokenizer=tokenizer,
                     input_token_stats=input_stats,
                     output_token_stats=output_stats,
+                    ci_threshold=ci_threshold,
                 )
                 if res is None:
                     logger.error(f"Failed to interpret {component.component_key}")
@@ -309,26 +200,36 @@ async def interpret_all(
                     f.write(line)
 
                 if log_progress:
-                    tqdm_asyncio.write(progress_msg)
+                    logger.info(progress_msg)
             except Exception as e:
-                logger.error(f"Fatal error on {component.component_key}: {type(e).__name__}: {e}")
-                raise
+                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
         input_price, output_price = await get_model_pricing(client, interpreter_model)
         cost_tracker = CostTracker(
-            input_price_per_token=input_price, output_price_per_token=output_price
+            input_price_per_token=input_price,
+            output_price_per_token=output_price,
+            limit_usd=cost_limit_usd,
         )
-        print(f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output")
+        limit_str = f" (limit: ${cost_limit_usd:.2f})" if cost_limit_usd is not None else ""
+        reasoning_str = f"reasoning={reasoning.effort}" if reasoning else "no reasoning"
+        print(f"Model: {interpreter_model}, {reasoning_str}")
+        print(
+            f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}"
+        )
 
-        await tqdm_asyncio.gather(
+        await asyncio.gather(
             *[
                 process_one(c, i, client, cost_tracker)
                 for i, c in enumerate(remaining, start=start_idx)
-            ],
-            desc="Interpreting",
+            ]
         )
 
+    if cost_tracker.over_budget():
+        print(
+            f"Cost limit reached: ${cost_tracker.cost_usd():.2f} >= ${cost_limit_usd}. "
+            f"Completed {len(results)} / {len(remaining) + len(completed)} components."
+        )
     print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
     return results
 
@@ -353,18 +254,16 @@ def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
 def run_interpret(
     wandb_path: str,
     openrouter_api_key: str,
-    interpreter_model: str,
-    activation_contexts_dir: Path,
+    config: AutointerpConfig,
+    run_id: str,
     correlations_dir: Path,
-    autointerp_dir: Path,
-    limit: int | None = None,
+    output_path: Path,
+    ci_threshold: float,
+    limit: int | None,
+    cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
-    components = HarvestResult.load_components(activation_contexts_dir)
-
-    # Use timestamped filename to preserve old results
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = autointerp_dir / f"results_{timestamp}.jsonl"
+    components = load_all_components(run_id)
 
     # Load token stats
     token_stats_path = correlations_dir / "token_stats.pt"
@@ -378,10 +277,12 @@ def run_interpret(
             components=components,
             arch=arch,
             openrouter_api_key=openrouter_api_key,
-            interpreter_model=interpreter_model,
+            config=config,
             output_path=output_path,
             token_stats=token_stats,
+            ci_threshold=ci_threshold,
             limit=limit,
+            cost_limit_usd=cost_limit_usd,
         )
     )
 

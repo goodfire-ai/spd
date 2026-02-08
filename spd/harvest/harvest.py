@@ -25,16 +25,14 @@ from torch import Tensor
 from spd.data import train_loader_and_tokenizer
 from spd.harvest.lib.harvester import Harvester, HarvesterState
 from spd.harvest.schemas import (
-    ActivationExample,
     ComponentData,
     ComponentSummary,
-    ComponentTokenPMI,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import bf16_autocast, extract_batch_data
+from spd.utils.general_utils import extract_batch_data
 
 
 def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
@@ -116,25 +114,6 @@ class HarvestResult:
 
         # Save token stats (.pt)
         self.token_stats.save(correlations_dir / "token_stats.pt")
-
-    @staticmethod
-    def load_components(activation_contexts_dir: Path) -> list[ComponentData]:
-        """Load components from disk."""
-        assert activation_contexts_dir.exists(), f"No harvest found at {activation_contexts_dir}"
-
-        components_path = activation_contexts_dir / "components.jsonl"
-        components = []
-        with open(components_path) as f:
-            for line in f:
-                data = json.loads(line)
-                data["activation_examples"] = [
-                    ActivationExample(**ex) for ex in data["activation_examples"]
-                ]
-                data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
-                data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-                components.append(ComponentData(**data))
-
-        return components
 
 
 def _build_harvest_result(
@@ -241,7 +220,7 @@ def harvest_activation_contexts(
             continue
 
         batch = batch_data.to(device)
-        with torch.no_grad(), bf16_autocast():
+        with torch.no_grad():
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
 

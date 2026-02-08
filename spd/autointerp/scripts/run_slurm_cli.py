@@ -11,19 +11,28 @@ from spd.settings import DEFAULT_PARTITION_NAME
 def main(
     wandb_path: str,
     model: str = "google/gemini-3-flash-preview",
+    limit: int | None = None,
+    reasoning_effort: str | None = None,
+    config: str | None = None,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
-    limit: int | None = None,
+    cost_limit_usd: float | None = None,
+    eval_model: str = "google/gemini-3-flash-preview",
+    no_eval: bool = False,
 ) -> None:
-    from spd.autointerp.interpret import OpenRouterModelName
-    from spd.autointerp.scripts.run_slurm import launch_interpret_job
+    from spd.autointerp.scripts.run_slurm import launch_autointerp_pipeline
 
-    launch_interpret_job(
+    launch_autointerp_pipeline(
         wandb_path=wandb_path,
-        model=OpenRouterModelName(model),
+        model=model,
+        limit=limit,
+        reasoning_effort=reasoning_effort,
+        config=config,
         partition=partition,
         time=time,
-        limit=limit,
+        cost_limit_usd=cost_limit_usd,
+        eval_model=eval_model,
+        no_eval=no_eval,
     )
 
 

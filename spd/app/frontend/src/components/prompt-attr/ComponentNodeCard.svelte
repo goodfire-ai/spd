@@ -48,6 +48,7 @@
     }: Props = $props();
 
     const clusterId = $derived(runState.clusterMapping?.data[`${layer}:${cIdx}`]);
+    const intruderScore = $derived(runState.getIntruderScore(`${layer}:${cIdx}`));
 
     // Handle clicking a correlated component - parse key and pin it at same seqIdx
     function handleCorrelationClick(componentKey: string) {
@@ -98,7 +99,7 @@
         // Compute max absolute PMI for scaling
         const maxAbsPmi = Math.max(
             tokenStats.data.output.top_pmi[0]?.[1] ?? 0,
-            Math.abs(tokenStats.data.output.bottom_pmi[0]?.[1] ?? 0),
+            Math.abs(tokenStats.data.output.bottom_pmi?.[0]?.[1] ?? 0),
         );
         return [
             {
@@ -201,6 +202,9 @@
             {#if componentData.componentDetail.status === "loaded"}
                 <span class="metric">Mean CI: {formatNumericalValue(componentData.componentDetail.data.mean_ci)}</span>
             {/if}
+            {#if intruderScore !== null}
+                <span class="metric">Intruder: {Math.round(intruderScore * 100)}%</span>
+            {/if}
         </div>
     </div>
 
@@ -251,16 +255,17 @@
     {/if}
 
     <!-- Dataset attributions  -->
-    {#if componentData.datasetAttributions.status === "loaded" && componentData.datasetAttributions.data !== null}
-        <DatasetAttributionsSection
-            attributions={componentData.datasetAttributions.data}
-            onComponentClick={handleCorrelationClick}
-        />
-    {:else if componentData.datasetAttributions.status === "loaded" && componentData.datasetAttributions.data === null}
-        <div class="dataset-attributions-loading">
-            <SectionHeader title="Dataset Attributions" />
-            <StatusText>Not available. Run spd-attributions to generate.</StatusText>
-        </div>
+    {#if componentData.datasetAttributions.status === "uninitialized"}
+        <StatusText>uninitialized</StatusText>
+    {:else if componentData.datasetAttributions.status === "loaded"}
+        {#if componentData.datasetAttributions.data !== null}
+            <DatasetAttributionsSection
+                attributions={componentData.datasetAttributions.data}
+                onComponentClick={handleCorrelationClick}
+            />
+        {:else}
+            <StatusText>No dataset attributions available.</StatusText>
+        {/if}
     {:else if componentData.datasetAttributions.status === "loading"}
         <div class="dataset-attributions-loading">
             <SectionHeader title="Dataset Attributions" />

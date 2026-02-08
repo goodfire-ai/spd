@@ -71,6 +71,8 @@ class InterpretationHeadline(BaseModel):
 
     label: str
     confidence: str
+    detection_score: float | None = None
+    fuzzing_score: float | None = None
 
 
 class InterpretationDetail(BaseModel):
@@ -85,16 +87,21 @@ class InterpretationDetail(BaseModel):
 def get_all_interpretations(
     loaded: DepLoadedRun,
 ) -> dict[str, InterpretationHeadline]:
-    """Get all interpretation headlines (label + confidence only).
+    """Get all interpretation headlines (label + confidence + eval scores).
 
     Returns a dict keyed by component_key (layer:cIdx).
     Reasoning and prompt are excluded - fetch individually via
     GET /interpretations/{layer}/{component_idx} when needed.
     """
+    detection_scores = loaded.harvest.detection_scores
+    fuzzing_scores = loaded.harvest.fuzzing_scores
+
     return {
         key: InterpretationHeadline(
             label=result.label,
             confidence=result.confidence,
+            detection_score=detection_scores.get(key) if detection_scores else None,
+            fuzzing_score=fuzzing_scores.get(key) if fuzzing_scores else None,
         )
         for key, result in loaded.harvest.interpretations.items()
     }
@@ -142,8 +149,8 @@ async def request_component_interpretation(
 
     from openrouter import OpenRouter
 
+    from spd.autointerp.config import CompactSkepticalConfig
     from spd.autointerp.interpret import (
-        OpenRouterModelName,
         get_architecture_info,
         interpret_component,
     )
@@ -177,10 +184,10 @@ async def request_component_interpretation(
     token_stats = loaded.harvest.token_stats
 
     input_token_stats = analysis.get_input_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k=20
+        token_stats, component_key, loaded.token_strings, top_k=20
     )
     output_token_stats = analysis.get_output_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k=50
+        token_stats, component_key, loaded.token_strings, top_k=50
     )
     if input_token_stats is None or output_token_stats is None:
         raise HTTPException(
@@ -189,17 +196,24 @@ async def request_component_interpretation(
         )
 
     # Interpret the component
-    model_name = OpenRouterModelName.GEMINI_3_FLASH_PREVIEW
+    config = CompactSkepticalConfig(
+        model="google/gemini-3-flash-preview",
+        reasoning_effort=None,
+    )
 
     async with OpenRouter(api_key=api_key) as client:
+        from spd.harvest.loaders import load_harvest_ci_threshold
+
+        ci_threshold = load_harvest_ci_threshold(loaded.harvest.run_id)
         res = await interpret_component(
             client=client,
-            model=model_name,
+            config=config,
             component=component_data,
             arch=arch,
             tokenizer=loaded.tokenizer,
             input_token_stats=input_token_stats,
             output_token_stats=output_token_stats,
+            ci_threshold=ci_threshold,
         )
 
     if res is None:
@@ -231,6 +245,17 @@ async def request_component_interpretation(
     )
 
 
+@router.get("/intruder_scores")
+@log_errors
+def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
+    """Get intruder eval scores for all components.
+
+    Returns a dict keyed by component_key (layer:cIdx) → score (0-1).
+    Returns empty dict if no intruder scores are available.
+    """
+    return loaded.harvest.intruder_scores or {}
+
+
 # =============================================================================
 # Component Correlation Data Endpoints
 # =============================================================================
@@ -254,10 +279,10 @@ def get_component_token_stats(
     component_key = f"{layer}:{component_idx}"
 
     input_stats = analysis.get_input_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k
+        token_stats, component_key, loaded.token_strings, top_k
     )
     output_stats = analysis.get_output_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k
+        token_stats, component_key, loaded.token_strings, top_k
     )
 
     if input_stats is None or output_stats is None:
@@ -377,10 +402,10 @@ def get_component_token_stats_bulk(
 
     for component_key in request.component_keys:
         input_stats = analysis.get_input_token_stats(
-            token_stats, component_key, loaded.tokenizer, request.top_k
+            token_stats, component_key, loaded.token_strings, request.top_k
         )
         output_stats = analysis.get_output_token_stats(
-            token_stats, component_key, loaded.tokenizer, request.top_k
+            token_stats, component_key, loaded.token_strings, request.top_k
         )
 
         if input_stats is None or output_stats is None:

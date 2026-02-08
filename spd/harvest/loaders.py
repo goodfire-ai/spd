@@ -1,5 +1,12 @@
-"""Loaders for reading harvest output files."""
+"""Loaders for reading harvest output files.
 
+TODO: Unify harvest data access behind a single HarvestRepo class with
+save_<thing>/load_<thing> methods, owning the harvest/<run_id>/ directory.
+Currently split across loaders.py (reads), HarvestResult.save() (writes),
+and schemas.py (paths).
+"""
+
+import json
 import threading
 
 import orjson
@@ -13,6 +20,42 @@ from spd.harvest.schemas import (
     get_correlations_dir,
 )
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+
+
+def load_harvest_ci_threshold(wandb_run_id: str) -> float:
+    """Load the CI threshold used during harvest for this run."""
+    config_path = get_activation_contexts_dir(wandb_run_id) / "config.json"
+    assert config_path.exists(), f"No harvest config at {config_path}"
+    with open(config_path) as f:
+        return json.load(f)["ci_threshold"]
+
+
+def load_all_components(wandb_run_id: str) -> list[ComponentData]:
+    """Load all components that fired during harvest.
+
+    Reads the harvest ci_threshold from config.json and excludes components
+    whose mean_ci is below it (i.e. components that effectively never fire).
+    """
+    activation_contexts_dir = get_activation_contexts_dir(wandb_run_id)
+    assert activation_contexts_dir.exists(), f"No harvest found at {activation_contexts_dir}"
+
+    ci_threshold = load_harvest_ci_threshold(wandb_run_id)
+
+    components_path = activation_contexts_dir / "components.jsonl"
+    components = []
+    with open(components_path) as f:
+        for line in f:
+            data = json.loads(line)
+            if data["mean_ci"] < ci_threshold:
+                continue
+            data["activation_examples"] = [
+                ActivationExample(**ex) for ex in data["activation_examples"]
+            ]
+            data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
+            data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
+            components.append(ComponentData(**data))
+
+    return components
 
 
 def load_activation_contexts_summary(wandb_run_id: str) -> dict[str, ComponentSummary] | None:

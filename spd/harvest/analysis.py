@@ -10,7 +10,6 @@ from typing import Literal
 import torch
 from jaxtyping import Float
 from torch import Tensor
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 
@@ -114,7 +113,7 @@ def has_component(storage: CorrelationStorage, component_key: str) -> bool:
 def get_input_token_stats(
     storage: TokenStatsStorage,
     component_key: str,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     top_k: int,
 ) -> TokenPRLift | None:
     """Compute P/R/lift/PMI for input tokens."""
@@ -125,7 +124,7 @@ def get_input_token_stats(
         totals=storage.input_totals,
         n_tokens=storage.n_tokens,
         firing_count=storage.firing_counts[idx].item(),
-        tokenizer=tokenizer,
+        lookup=lookup,
         top_k=top_k,
     )
     if result is None:
@@ -144,7 +143,7 @@ def get_input_token_stats(
 def get_output_token_stats(
     storage: TokenStatsStorage,
     component_key: str,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     top_k: int,
 ) -> TokenPRLift | None:
     """Compute P/R/lift/PMI for output tokens."""
@@ -155,7 +154,7 @@ def get_output_token_stats(
         totals=storage.output_totals,
         n_tokens=storage.n_tokens,
         firing_count=storage.firing_counts[idx].item(),
-        tokenizer=tokenizer,
+        lookup=lookup,
         top_k=top_k,
     )
 
@@ -165,7 +164,7 @@ def _compute_token_stats(
     totals: Float[Tensor, " vocab"],
     n_tokens: int,
     firing_count: float,
-    tokenizer: PreTrainedTokenizerBase,
+    lookup: dict[int, str],
     top_k: int,
 ) -> TokenPRLift | None:
     """Compute P/R/lift/PMI from count tensors."""
@@ -198,8 +197,7 @@ def _compute_token_stats(
             if val == float("-inf"):
                 continue
             assert math.isfinite(val), f"Unexpected non-finite score {val} for token {idx}"
-            token_str = tokenizer.decode([idx])
-            result.append((token_str, round(val, 3 if abs(val) < 10 else 2)))
+            result.append((lookup[idx], round(val, 3 if abs(val) < 10 else 2)))
         return result
 
     return TokenPRLift(
