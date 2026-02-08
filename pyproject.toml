@@ -33,7 +33,6 @@ dependencies = [
     "orjson",
     "openrouter>=0.1.1",
     "httpx>=0.28.0",
-    "zstandard" # For streaming datasets
 ]
 
 [dependency-groups]

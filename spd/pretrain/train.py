@@ -453,7 +453,7 @@ def main(config_path_or_obj: Path | str | Config | None = None) -> None:
         try:
             bat = next(train_iter)["input_ids"].to(torch.long)
         except StopIteration:
-            log0("\n\n\nDepleted train_loader, resetting for next epoch\n\n\n")
+            log0("Depleted train_loader, resetting for next epoch")
             train_iter = iter(train_loader)
             bat = next(train_iter)["input_ids"].to(torch.long)
 

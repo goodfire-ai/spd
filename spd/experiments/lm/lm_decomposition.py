@@ -6,13 +6,7 @@ from pathlib import Path
 import fire
 import wandb
 
-from spd.configs import (
-    BatchInvariantScope,
-    Config,
-    LMTaskConfig,
-    PersistentPGDReconLossConfig,
-    PersistentPGDReconSubsetLossConfig,
-)
+from spd.configs import Config, LMTaskConfig
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
 from spd.pretrain.run_info import PretrainRunInfo
@@ -139,16 +133,6 @@ def main(
             train_rank_microbatch_size = config.microbatch_size // world_size
         case None:
             train_rank_microbatch_size = config.microbatch_size
-
-    for cfg in config.loss_metric_configs:
-        if isinstance(
-            cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
-        ) and isinstance(cfg.scope, BatchInvariantScope):
-            n = cfg.scope.n_masks
-            assert train_rank_microbatch_size % n == 0, (
-                f"batch_invariant n_masks={n} must divide per-rank microbatch_size="
-                f"{train_rank_microbatch_size}"
-            )
 
     train_loader, _tokenizer = create_data_loader(
         dataset_config=train_data_config,

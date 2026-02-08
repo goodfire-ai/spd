@@ -20,7 +20,6 @@ from tqdm.auto import tqdm
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
-from spd.utils.general_utils import bf16_autocast
 
 
 class AttributionHarvester:
@@ -150,7 +149,7 @@ class AttributionHarvester:
         h2 = self.lm_head.register_forward_pre_hook(pre_unembed_hook, with_kwargs=True)
 
         # Get masks with all components active
-        with torch.no_grad(), bf16_autocast():
+        with torch.no_grad():
             out = self.model(tokens, cache_type="input")
             ci = self.model.calc_causal_importances(
                 pre_weight_acts=out.cache, sampling=self.sampling, detach_inputs=False
@@ -161,7 +160,7 @@ class AttributionHarvester:
         )
 
         # Forward pass with gradients
-        with torch.enable_grad(), bf16_autocast():
+        with torch.enable_grad():
             comp_output: OutputWithCache = self.model(
                 tokens, mask_infos=mask_infos, cache_type="component_acts"
             )
