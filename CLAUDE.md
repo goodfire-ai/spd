@@ -487,3 +487,4 @@ value = config.key
 - Before committing, ALWAYS ensure you are on the correct branch and do not use `git add .` to add all unstaged files. Instead, add only the individual files you changed, don't commit all files.
 - Use branch names `refactor/X` or `feature/Y` or `fix/Z`.
 - NEVER use `--no-verify` to skip pre-commit hooks. They are there for a good reason. If pre-commit hooks fail, you MUST fix the underlying problem.
+
