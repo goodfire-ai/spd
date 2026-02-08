@@ -17,6 +17,7 @@ from spd.utils.git_utils import create_git_snapshot
 from spd.utils.slurm import (
     SlurmArrayConfig,
     SlurmConfig,
+    SubmitResult,
     generate_array_script,
     generate_script,
     submit_slurm_job,
@@ -32,7 +33,8 @@ def submit_attributions(
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "48:00:00",
     job_suffix: str | None = None,
-) -> None:
+    snapshot_branch: str | None = None,
+) -> SubmitResult:
     """Submit multi-GPU attribution harvesting job to SLURM.
 
     Submits a job array where each task processes a subset of batches, then
@@ -49,10 +51,17 @@ def submit_attributions(
         partition: SLURM partition name.
         time: Job time limit.
         job_suffix: Optional suffix for SLURM job names (e.g., "1h" -> "spd-attr-1h").
+        snapshot_branch: Git snapshot branch to use. If None, creates a new snapshot.
+
+    Returns:
+        SubmitResult for the merge job (the terminal job in the attribution pipeline).
     """
-    run_id = f"attr-{secrets.token_hex(4)}"
-    snapshot_branch, commit_hash = create_git_snapshot(run_id)
-    logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
+    if snapshot_branch is None:
+        run_id = f"attr-{secrets.token_hex(4)}"
+        snapshot_branch, commit_hash = create_git_snapshot(run_id)
+        logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
+    else:
+        commit_hash = "shared"
 
     suffix = f"-{job_suffix}" if job_suffix else ""
     array_job_name = f"spd-attr{suffix}"
@@ -116,3 +125,5 @@ def submit_attributions(
             "Merge script": str(merge_result.script_path),
         }
     )
+
+    return merge_result

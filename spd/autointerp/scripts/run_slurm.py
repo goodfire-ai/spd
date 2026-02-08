@@ -1,7 +1,7 @@
 """SLURM launcher for autointerp pipeline.
 
 Submits interpret + label-dependent scoring jobs to SLURM cluster:
-- Interpret: submitted immediately
+- Interpret: submitted immediately (or with a dependency if provided)
 - Detection + fuzzing scoring: submitted with --dependency on interpret job
 
 (Intruder eval is label-free and submitted as part of spd-harvest instead.)
@@ -49,7 +49,20 @@ def launch_autointerp_pipeline(
     cost_limit_usd: float | None,
     eval_model: str,
     no_eval: bool,
-) -> None:
+    dependency_job_id: str | None = None,
+) -> SubmitResult:
+    """Submit autointerp pipeline to SLURM.
+
+    Submits interpret job (optionally depending on a prior job), then detection
+    and fuzzing scoring jobs that depend on the interpret job.
+
+    Args:
+        dependency_job_id: If provided, the interpret job waits for this job to
+            complete before starting (e.g. harvest merge job).
+
+    Returns:
+        SubmitResult for the interpret job.
+    """
     # Generate autointerp_run_id upfront so scoring jobs can reference it
     autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -71,7 +84,9 @@ def launch_autointerp_pipeline(
         interpret_parts.append(f"--cost_limit_usd {cost_limit_usd}")
 
     interpret_cmd = " \\\n    ".join(interpret_parts)
-    interpret_result = _submit_cpu_job("interpret", interpret_cmd, partition, time)
+    interpret_result = _submit_cpu_job(
+        "interpret", interpret_cmd, partition, time, dependency_job_id=dependency_job_id
+    )
 
     logger.section("Interpret job submitted")
     logger.values(
@@ -85,7 +100,7 @@ def launch_autointerp_pipeline(
     )
 
     if no_eval:
-        return
+        return interpret_result
 
     # === 2. Detection scoring (depends on interpret) ===
     detection_cmd = " \\\n    ".join(
@@ -140,3 +155,5 @@ def launch_autointerp_pipeline(
             "Log": fuzzing_result.log_pattern,
         }
     )
+
+    return interpret_result

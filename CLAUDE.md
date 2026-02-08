@@ -195,6 +195,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 | `spd-harvest` | `spd/harvest/scripts/run_slurm_cli.py` | Submit harvest SLURM job |
 | `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
+| `spd-postprocess` | `spd/scripts/postprocess_cli.py` | Unified postprocessing pipeline (harvest + attributions + autointerp) |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
 | `spd-pretrain` | `spd/pretrain/scripts/run_slurm_cli.py` | Pretrain target models |
 
@@ -278,6 +279,19 @@ spd-autointerp <wandb_path>            # Submit SLURM job to interpret component
 ```
 
 Requires `OPENROUTER_API_KEY` env var. See `spd/autointerp/CLAUDE.md` for details.
+
+### Unified Postprocessing (`spd-postprocess`)
+
+Run all postprocessing steps for a completed SPD run with a single command:
+
+```bash
+spd-postprocess <wandb_path>                                    # Run everything (harvest + attributions + autointerp)
+spd-postprocess <wandb_path> --no_attributions                  # Skip attributions
+spd-postprocess <wandb_path> --no_autointerp                    # Skip autointerp
+spd-postprocess <wandb_path> --n_harvest_gpus 6 --n_attr_gpus 2 # Custom GPU allocation
+```
+
+Creates a single git snapshot shared across all jobs. Harvest and attributions run in parallel; autointerp chains off harvest via SLURM `--dependency=afterok`.
 
 ### Running on SLURM Cluster (`spd-run`)
 
