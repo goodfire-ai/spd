@@ -37,6 +37,8 @@ def format_prompt(
                 output_token_stats,
                 ci_threshold,
             )
+        case _:  # pyright: ignore[reportUnnecessaryComparison]
+            raise AssertionError(f"Unhandled config type: {type(config)}")
 
 
 def get_model(config: AutointerpConfig) -> str:
@@ -49,9 +51,13 @@ def get_reasoning(config: AutointerpConfig) -> Reasoning | None:
             if config.reasoning_effort is None:
                 return None
             return Reasoning(effort=config.reasoning_effort.value)
+        case _:  # pyright: ignore[reportUnnecessaryComparison]
+            raise AssertionError(f"Unhandled config type: {type(config)}")
 
 
 def get_response_schema(config: AutointerpConfig) -> dict[str, Any]:
     match config:
         case CompactSkepticalConfig():
             return INTERPRETATION_SCHEMA
+        case _:  # pyright: ignore[reportUnnecessaryComparison]
+            raise AssertionError(f"Unhandled config type: {type(config)}")
