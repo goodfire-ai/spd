@@ -267,6 +267,7 @@ def create_data_loader(
         ),
         drop_last=True,
         generator=generator,
+        pin_memory=torch.cuda.is_available(),
     )
     return loader, tokenizer
 
