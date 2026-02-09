@@ -1,8 +1,13 @@
-"""SLURM launcher for autointerp interpret job.
+"""SLURM launcher for autointerp pipeline.
 
-Submits the interpret job to SLURM. Eval jobs (detection, fuzzing, intruder)
-are NOT submitted here — they are orchestrated by the postprocessing pipeline
-(spd-postprocess).
+Autointerp is a functional unit: interpret + evals. This module submits all
+jobs in the unit with proper dependency chaining.
+
+Dependency graph (all depend on a prior harvest merge):
+    intruder eval     (label-free, depends on harvest merge)
+    interpret         (depends on harvest merge)
+    ├── detection     (depends on interpret)
+    └── fuzzing       (depends on interpret)
 
 Usage:
     spd-autointerp <wandb_path>
@@ -12,10 +17,32 @@ Usage:
 from datetime import datetime
 
 from spd.log import logger
+from spd.scripts.postprocess_config import AutointerpEvalConfig
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
 
 
-def submit_interpret(
+def _submit_cpu_job(
+    job_name: str,
+    command: str,
+    partition: str,
+    time: str,
+    snapshot_branch: str | None,
+    dependency_job_id: str | None,
+) -> SubmitResult:
+    slurm_config = SlurmConfig(
+        job_name=job_name,
+        partition=partition,
+        n_gpus=0,
+        cpus_per_task=16,
+        time=time,
+        snapshot_branch=snapshot_branch,
+        dependency_job_id=dependency_job_id,
+    )
+    script_content = generate_script(slurm_config, command)
+    return submit_slurm_job(script_content, job_name)
+
+
+def launch_autointerp_pipeline(
     wandb_path: str,
     model: str,
     limit: int | None,
@@ -24,21 +51,26 @@ def submit_interpret(
     partition: str,
     time: str,
     cost_limit_usd: float | None,
+    evals: AutointerpEvalConfig | None,
     dependency_job_id: str | None = None,
     snapshot_branch: str | None = None,
-) -> tuple[SubmitResult, str]:
-    """Submit autointerp interpret job to SLURM.
+) -> SubmitResult:
+    """Submit the autointerp pipeline to SLURM.
+
+    Submits interpret + eval jobs as a functional unit. All jobs depend on a
+    prior harvest merge (passed as dependency_job_id).
 
     Args:
-        dependency_job_id: If provided, the interpret job waits for this job to
-            complete before starting (e.g. harvest merge job).
-        snapshot_branch: Git snapshot branch to use. If None, no snapshot is set.
+        evals: Eval config. If None, only the interpret job is submitted.
+        dependency_job_id: Job to wait for before starting (e.g. harvest merge).
+        snapshot_branch: Git snapshot branch to use.
 
     Returns:
-        Tuple of (SubmitResult for the interpret job, autointerp_run_id).
+        SubmitResult for the interpret job.
     """
     autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
 
+    # === 1. Interpret job ===
     interpret_parts = [
         "python -m spd.autointerp.scripts.run_interpret",
         f'"{wandb_path}"',
@@ -56,27 +88,74 @@ def submit_interpret(
         interpret_parts.append(f"--cost_limit_usd {cost_limit_usd}")
 
     interpret_cmd = " \\\n    ".join(interpret_parts)
-    slurm_config = SlurmConfig(
-        job_name="interpret",
-        partition=partition,
-        n_gpus=0,
-        cpus_per_task=16,
-        time=time,
-        snapshot_branch=snapshot_branch,
-        dependency_job_id=dependency_job_id,
+    interpret_result = _submit_cpu_job(
+        "spd-interpret", interpret_cmd, partition, time, snapshot_branch, dependency_job_id
     )
-    script_content = generate_script(slurm_config, interpret_cmd)
-    result = submit_slurm_job(script_content, "interpret")
 
     logger.section("Interpret job submitted")
     logger.values(
         {
-            "Job ID": result.job_id,
+            "Job ID": interpret_result.job_id,
             "Autointerp run ID": autointerp_run_id,
             "WandB path": wandb_path,
             "Model": model,
-            "Log": result.log_pattern,
+            "Log": interpret_result.log_pattern,
         }
     )
 
-    return result, autointerp_run_id
+    if evals is None:
+        return interpret_result
+
+    # === 2. Intruder eval (label-free, depends on harvest merge) ===
+    intruder_cmd = " \\\n    ".join(
+        [
+            "python -m spd.autointerp.eval.scripts.run_intruder",
+            f'"{wandb_path}"',
+        ]
+    )
+    intruder_result = _submit_cpu_job(
+        "spd-intruder-eval",
+        intruder_cmd,
+        evals.partition,
+        evals.time,
+        snapshot_branch,
+        dependency_job_id=dependency_job_id,
+    )
+    logger.section("Intruder eval job submitted")
+    logger.values(
+        {
+            "Job ID": intruder_result.job_id,
+            "Depends on": dependency_job_id or "(none)",
+            "Log": intruder_result.log_pattern,
+        }
+    )
+
+    # === 3. Detection + fuzzing scoring (depend on interpret) ===
+    for scorer in ("detection", "fuzzing"):
+        scoring_cmd = " \\\n    ".join(
+            [
+                "python -m spd.autointerp.scoring.scripts.run_label_scoring",
+                f'"{wandb_path}"',
+                f"--scorer {scorer}",
+                f"--autointerp_run_id {autointerp_run_id}",
+                f"--model {evals.eval_model}",
+            ]
+        )
+        scoring_result = _submit_cpu_job(
+            f"spd-{scorer}",
+            scoring_cmd,
+            evals.partition,
+            evals.time,
+            snapshot_branch,
+            dependency_job_id=interpret_result.job_id,
+        )
+        logger.section(f"{scorer.capitalize()} scoring job submitted")
+        logger.values(
+            {
+                "Job ID": scoring_result.job_id,
+                "Depends on": f"interpret ({interpret_result.job_id})",
+                "Log": scoring_result.log_pattern,
+            }
+        )
+
+    return interpret_result

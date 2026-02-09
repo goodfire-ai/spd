@@ -1,8 +1,7 @@
 """Postprocess pipeline configuration.
 
-Sub-configs (HarvestSlurmConfig, AttributionsSlurmConfig, AutointerpSlurmConfig)
-are usable standalone by the individual CLI tools. PostprocessConfig composes them
-with pipeline-level controls including eval job orchestration.
+PostprocessConfig composes sub-configs for harvest, attributions, and autointerp.
+Set any section to null to skip that pipeline stage.
 """
 
 from pydantic import PositiveInt
@@ -36,8 +35,23 @@ class AttributionsSlurmConfig(BaseConfig):
     time: str = "48:00:00"
 
 
-class InterpretSlurmConfig(BaseConfig):
-    """Config for autointerp interpret SLURM submission."""
+class AutointerpEvalConfig(BaseConfig):
+    """Config for autointerp eval jobs (intruder, detection, fuzzing)."""
+
+    eval_model: str = "google/gemini-3-flash-preview"
+    partition: str = DEFAULT_PARTITION_NAME
+    time: str = "12:00:00"
+
+
+class AutointerpSlurmConfig(BaseConfig):
+    """Config for the autointerp functional unit (interpret + evals).
+
+    Dependency graph within autointerp:
+        intruder eval     (depends on harvest merge, label-free)
+        interpret         (depends on harvest merge)
+        ├── detection     (depends on interpret)
+        └── fuzzing       (depends on interpret)
+    """
 
     model: str = "google/gemini-3-flash-preview"
     limit: int | None = None
@@ -45,18 +59,7 @@ class InterpretSlurmConfig(BaseConfig):
     cost_limit_usd: float | None = None
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "12:00:00"
-
-
-class EvalSlurmConfig(BaseConfig):
-    """Config for eval SLURM jobs (intruder, detection, fuzzing).
-
-    All eval jobs are CPU-only. Intruder depends on harvest merge;
-    detection and fuzzing depend on interpret.
-    """
-
-    eval_model: str = "google/gemini-3-flash-preview"
-    partition: str = DEFAULT_PARTITION_NAME
-    time: str = "12:00:00"
+    evals: AutointerpEvalConfig | None = AutointerpEvalConfig()
 
 
 class PostprocessConfig(BaseConfig):
@@ -67,14 +70,14 @@ class PostprocessConfig(BaseConfig):
 
     Dependency graph:
         harvest (workers → merge)
-        ├── intruder eval     (depends on harvest merge)
-        ├── interpret         (depends on harvest merge)
-        │   ├── detection     (depends on interpret)
-        │   └── fuzzing       (depends on interpret)
+        └── autointerp (depends on harvest merge)
+            ├── intruder eval
+            ├── interpret
+            │   ├── detection
+            │   └── fuzzing
         attributions (workers → merge, parallel with harvest)
     """
 
     harvest: HarvestSlurmConfig = HarvestSlurmConfig()
     attributions: AttributionsSlurmConfig | None = AttributionsSlurmConfig()
-    interpret: InterpretSlurmConfig | None = InterpretSlurmConfig()
-    eval: EvalSlurmConfig | None = EvalSlurmConfig()
+    autointerp: AutointerpSlurmConfig | None = AutointerpSlurmConfig()

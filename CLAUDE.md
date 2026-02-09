@@ -291,17 +291,18 @@ spd-postprocess <wandb_path> --config custom_config.yaml  # Use custom config
 
 Config is YAML-based (see `spd/scripts/postprocess_config.yaml` for defaults). Set any section to `null` to skip it:
 - `attributions: null` — skip dataset attributions
-- `interpret: null` — skip LLM interpretation
-- `eval: null` — skip all evals (intruder, detection, fuzzing)
+- `autointerp: null` — skip autointerp entirely (interpret + evals)
+- `autointerp.evals: null` — skip evals but still run interpret
 
-All job scheduling is centralized in `postprocess.py` with explicit SLURM dependency chaining:
+SLURM dependency graph:
 
 ```
 harvest (GPU array → merge)
-├── intruder eval       (CPU, depends on harvest merge)
-├── interpret           (CPU, depends on harvest merge)
-│   ├── detection       (CPU, depends on interpret)
-│   └── fuzzing         (CPU, depends on interpret)
+└── autointerp (functional unit, depends on harvest merge)
+    ├── intruder eval       (CPU, label-free)
+    ├── interpret           (CPU, LLM calls)
+    │   ├── detection       (CPU, depends on interpret)
+    │   └── fuzzing         (CPU, depends on interpret)
 attributions (GPU array → merge, parallel with harvest)
 ```
 
