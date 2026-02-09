@@ -65,7 +65,7 @@ eval_metric_configs:
 # --- Pretrained model info ---
 pretrained_model_class: transformers.AutoModelForCausalLM
 pretrained_model_name: roneneldan/TinyStories-1M
-pretrained_model_output_attr: logits
+extract_tensor_output: ".logits"
 tokenizer_name: EleutherAI/gpt-neo-125M
 
 # --- Task Specific ---

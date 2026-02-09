@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -27,6 +28,29 @@ from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import CiFnType, ModelPath
 from spd.utils.general_utils import resolve_class, runtime_cast
 from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
+
+_ACCESSOR_TOKEN_RE = re.compile(r'\.\w+|\[\d+\]|\["\w+"\]')
+
+
+def extract_with_accessor(obj: Any, accessor: str) -> Any:
+    """Navigate a nested object using an accessor path string.
+
+    Supports attribute access (.attr), integer indexing ([i]), and string-key
+    dictionary access (["key"]).
+    Examples: "[0]", ".logits", "[0].logits[2]", '["hidden_states"]'
+    """
+    assert accessor, "Accessor must be non-empty (use None for no extraction)"
+    tokens = _ACCESSOR_TOKEN_RE.findall(accessor)
+    assert "".join(tokens) == accessor, f"Invalid accessor: {accessor!r}"
+    result = obj
+    for token in tokens:
+        if token.startswith('["'):
+            result = result[token[2:-2]]
+        elif token.startswith("["):
+            result = result[int(token[1:-1])]
+        else:
+            result = getattr(result, token[1:])
+    return result
 
 
 @dataclass
@@ -90,8 +114,10 @@ class ComponentModel[BatchT, OutputT](nn.Module):
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
+        extract_tensor_output: str | None = None,
     ):
         super().__init__()
+        self.extract_tensor_output = extract_tensor_output
 
         for name, param in target_model.named_parameters():
             assert not param.requires_grad, (
@@ -160,6 +186,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             sigmoid_type=config.sigmoid_type,
+            extract_tensor_output=config.extract_tensor_output,
         )
 
         weights = torch.load(run_info.checkpoint_path, map_location="cpu", weights_only=True)
@@ -347,7 +374,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
         """
         if mask_infos is None and cache_type == "none":
             # No hooks needed. Do a regular forward pass of the target model.
-            return self._get_first_element_if_tuple(self.target_model(batch))
+            return self._extract_output(self.target_model(batch))
 
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
@@ -368,7 +395,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             )
 
         with self._attach_forward_hooks(hooks):
-            out: OutputT = self._get_first_element_if_tuple(self.target_model(batch))
+            out: OutputT = self._extract_output(self.target_model(batch))
 
         match cache_type:
             case "input" | "component_acts":
@@ -376,20 +403,10 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             case "none":
                 return out
 
-    @staticmethod
-    def _get_first_element_if_tuple(out: Any) -> Any:
-        """Extract primary output from various model output formats.
-
-        Handles:
-        - Tuple outputs: returns first element (e.g. (logits, past_key_values, ...))
-        - HuggingFace ModelOutput: extracts .logits attribute
-        - Raw tensors: returned as-is
-        """
-        if isinstance(out, tuple):
-            return out[0]
-        if hasattr(out, "logits"):
-            return out.logits
-        return out
+    def _extract_output(self, raw_output: Any) -> Any:
+        if self.extract_tensor_output is None:
+            return raw_output
+        return extract_with_accessor(raw_output, self.extract_tensor_output)
 
     def _components_and_cache_hook(
         self,

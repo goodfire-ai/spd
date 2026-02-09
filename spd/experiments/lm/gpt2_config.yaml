@@ -64,7 +64,7 @@ eval_metric_configs:
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel
 pretrained_model_name: openai-community/gpt2
-pretrained_model_output_attr: logits
+extract_tensor_output: ".logits"
 tokenizer_name: openai-community/gpt2
 
 # --- Task Specific ---

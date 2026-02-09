@@ -92,7 +92,7 @@ ci_alive_threshold: 0.0
 # --- Pretrained model info ---
 pretrained_model_class: spd.pretrain.models.gpt2_simple.GPT2Simple
 pretrained_model_name: wandb:goodfire/spd/runs/3qhd7rnb # 100k steps. 4019 tokenizer
-pretrained_model_output_attr: idx_0
+extract_tensor_output: "[0]"
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok:  TODO: Load from wandb instead
 
 # --- Task Specific ---

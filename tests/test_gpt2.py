@@ -79,7 +79,7 @@ def test_gpt_2_decomposition_happy_path(tmp_path: Path) -> None:
         pretrained_model_class="transformers.GPT2LMHeadModel",
         pretrained_model_path=None,
         pretrained_model_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
-        pretrained_model_output_attr="logits",
+        extract_tensor_output=".logits",
         tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
         # Task Specific
         task_config=LMTaskConfig(

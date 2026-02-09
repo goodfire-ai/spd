@@ -566,9 +566,9 @@ class Config(BaseConfig):
         default=None,
         description="hf model identifier. E.g. 'SimpleStories/SimpleStories-1.25M'",
     )
-    pretrained_model_output_attr: str | None = Field(
+    extract_tensor_output: str | None = Field(
         default=None,
-        description="Name of the attribute on the forward output that contains logits or activations",
+        description="Accessor path for extracting tensor from model output, e.g. '[0]' or '.logits'",
     )
     tokenizer_name: str | None = Field(
         default=None,
@@ -651,6 +651,16 @@ class Config(BaseConfig):
             config_dict["pretrained_model_class"] = pmc.replace(
                 "simple_stories_train.models.", "spd.pretrain.models.", 1
             )
+
+        # Migrate old pretrained_model_output_attr to extract_tensor_output
+        if "pretrained_model_output_attr" in config_dict:
+            old_val = config_dict.pop("pretrained_model_output_attr")
+            if old_val is not None:
+                accessor = "[0]" if old_val == "idx_0" else f".{old_val}"
+                config_dict["extract_tensor_output"] = accessor
+                logger.info(
+                    f"Migrated pretrained_model_output_attr={old_val!r} to extract_tensor_output={accessor!r}"
+                )
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]

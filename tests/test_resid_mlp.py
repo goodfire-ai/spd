@@ -83,7 +83,7 @@ def test_resid_mlp_decomposition_happy_path(tmp_path: Path) -> None:
         pretrained_model_class="spd.experiments.resid_mlp.models.ResidMLP",
         pretrained_model_path=None,
         pretrained_model_name=None,
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         tokenizer_name=None,
         # Task Specific
         task_config=ResidMLPTaskConfig(

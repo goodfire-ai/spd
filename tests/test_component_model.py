@@ -20,6 +20,7 @@ from spd.interfaces import LoadableModule, RunInfo
 from spd.models.component_model import (
     ComponentModel,
     SPDRunInfo,
+    extract_with_accessor,
 )
 from spd.models.components import (
     ComponentsMaskInfo,
@@ -538,3 +539,48 @@ def test_routing():
 
     # but it should be the same for the second example (where it's not routed to components)
     assert torch.allclose(cm_routed_out[1], target_out[1])
+
+
+class TestExtractWithAccessor:
+    def test_integer_index(self):
+        obj = ("a", "b", "c")
+        assert extract_with_accessor(obj, "[0]") == "a"
+        assert extract_with_accessor(obj, "[2]") == "c"
+
+    def test_attribute_access(self):
+        class Obj:
+            logits = 42
+
+        assert extract_with_accessor(Obj(), ".logits") == 42
+
+    def test_string_key_dict_access(self):
+        obj = {"hidden_states": "hs", "logits": "lg"}
+        assert extract_with_accessor(obj, '["hidden_states"]') == "hs"
+        assert extract_with_accessor(obj, '["logits"]') == "lg"
+
+    def test_chained_accessors(self):
+        class Inner:
+            value = 99
+
+        obj = ({"data": Inner()},)
+        assert extract_with_accessor(obj, '[0]["data"].value') == 99
+
+    def test_index_then_attribute(self):
+        class Out:
+            logits = torch.tensor([1.0, 2.0])
+
+        obj = (Out(),)
+        result = extract_with_accessor(obj, "[0].logits")
+        assert torch.equal(result, torch.tensor([1.0, 2.0]))
+
+    def test_invalid_accessor_raises(self):
+        with pytest.raises(AssertionError, match="Invalid accessor"):
+            extract_with_accessor({}, "invalid")
+
+    def test_invalid_accessor_with_special_chars(self):
+        with pytest.raises(AssertionError, match="Invalid accessor"):
+            extract_with_accessor({}, '[" spaces "]')
+
+    def test_empty_accessor_raises(self):
+        with pytest.raises(AssertionError, match="non-empty"):
+            extract_with_accessor({}, "")

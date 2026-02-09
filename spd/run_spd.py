@@ -151,6 +151,7 @@ def optimize[BatchT, OutputT](
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         sigmoid_type=config.sigmoid_type,
+        extract_tensor_output=config.extract_tensor_output,
     )
 
     model.to(device)
