@@ -15,6 +15,7 @@ from torch import Tensor, nn
 from tqdm.auto import tqdm
 
 from spd.app.backend.app_tokenizer import AppTokenizer
+from spd.app.backend.model_adapter import ModelAdapter
 from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimize_ci_values
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
@@ -116,25 +117,9 @@ class OptimizedPromptAttributionResult:
     metrics: OptimizationMetrics  # Final loss metrics from optimization
 
 
-def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
-    """Check if pair requires cross-sequence gradient computation.
-
-    For k/v → o_proj within the same attention block, output at s_out
-    has gradients w.r.t. inputs at all s_in ≤ s_out (causal attention).
-    """
-    in_is_kv = any(x in in_layer for x in ["k_proj", "v_proj"])
-    out_is_o = "o_proj" in out_layer
-    if not (in_is_kv and out_is_o):
-        return False
-
-    # Check same attention block: "h.{idx}.attn.{proj}"
-    in_block = in_layer.split(".")[1]
-    out_block = out_layer.split(".")[1]
-    return in_block == out_block
-
-
 def get_sources_by_target(
     model: ComponentModel,
+    adapter: ModelAdapter,
     device: str,
     sampling: SamplingType,
 ) -> dict[str, list[str]]:
@@ -163,7 +148,7 @@ def get_sources_by_target(
         routing_masks="all",
     )
 
-    # Hook to capture wte output with gradients
+    # Hook to capture embedding output with gradients
     wte_cache: dict[str, Tensor] = {}
 
     def wte_hook(
@@ -173,8 +158,7 @@ def get_sources_by_target(
         wte_cache["wte_post_detach"] = output
         return output
 
-    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
-    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
+    wte_handle = adapter.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
 
     with torch.enable_grad(), bf16_autocast():
         comp_output_with_cache: OutputWithCache = model(
@@ -189,27 +173,9 @@ def get_sources_by_target(
     cache["wte_post_detach"] = wte_cache["wte_post_detach"]
     cache["output_pre_detach"] = comp_output_with_cache.output
 
-    # Build layer list: wte first, component layers, output last
-    layers = ["wte"]
-    component_layer_names = [
-        "attn.q_proj",
-        "attn.k_proj",
-        "attn.v_proj",
-        "attn.o_proj",
-        "mlp.c_fc",
-        "mlp.down_proj",
-    ]
-    n_blocks = get_model_n_blocks(model.target_model)
-    for i in range(n_blocks):
-        layers.extend([f"h.{i}.{layer_name}" for layer_name in component_layer_names])
+    layers = adapter.ordered_layers()
 
-    # Add lm_head if it exists in target_module_paths (unembedding matrix)
-    if "lm_head" in model.target_module_paths:
-        layers.append("lm_head")
-
-    layers.append("output")
-
-    # Test all pairs: wte can feed into anything, anything can feed into output
+    # Test all ordered pairs for gradient flow
     test_pairs = []
     for in_layer in layers[:-1]:  # Don't include "output" as source
         for out_layer in layers[1:]:  # Don't include "wte" as target
@@ -263,6 +229,7 @@ def _compute_edges_for_target(
     source_infos: list[LayerAliveInfo],
     cache: dict[str, Tensor],
     loss_seq_pos: int,
+    adapter: ModelAdapter,
 ) -> list[Edge]:
     """Compute all edges flowing into a single target layer.
 
@@ -294,7 +261,7 @@ def _compute_edges_for_target(
                 for source, source_info, grad, in_post_detach in zip(
                     sources, source_infos, grads, in_post_detaches, strict=True
                 ):
-                    is_cross_seq = is_kv_to_o_pair(source, target)
+                    is_cross_seq = adapter.is_cross_seq_pair(source, target)
                     weighted: Float[Tensor, "s C"] = (grad * in_post_detach)[0]
                     if source == "wte":
                         weighted = weighted.sum(dim=1, keepdim=True)
@@ -317,6 +284,7 @@ def _compute_edges_for_target(
 
 def compute_edges_from_ci(
     model: ComponentModel,
+    adapter: ModelAdapter,
     tokens: Float[Tensor, "1 seq"],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
     pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
@@ -357,10 +325,9 @@ def compute_edges_from_ci(
         ci_masked_logits: Tensor = model(tokens, mask_infos=ci_masks)
         ci_masked_out_probs = torch.softmax(ci_masked_logits, dim=-1)
 
-    # Setup wte hook and run forward pass for gradient computation
+    # Setup embedding hook and run forward pass for gradient computation
     wte_hook, wte_cache = _setup_wte_hook()
-    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
-    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
+    wte_handle = adapter.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
 
     weight_deltas = model.calc_weight_deltas()
     weight_deltas_and_masks = {
@@ -412,6 +379,7 @@ def compute_edges_from_ci(
             source_infos=[alive_info[source] for source in sources],
             cache=cache,
             loss_seq_pos=loss_seq_pos,
+            adapter=adapter,
         )
         edges.extend(target_edges)
 
@@ -501,6 +469,7 @@ def filter_ci_to_included_nodes(
 
 def compute_prompt_attributions(
     model: ComponentModel,
+    adapter: ModelAdapter,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     output_prob_threshold: float,
@@ -540,6 +509,7 @@ def compute_prompt_attributions(
 
     return compute_edges_from_ci(
         model=model,
+        adapter=adapter,
         tokens=tokens,
         ci_lower_leaky=ci_lower_leaky,
         pre_weight_acts=pre_weight_acts,
@@ -555,6 +525,7 @@ def compute_prompt_attributions(
 
 def compute_prompt_attributions_optimized(
     model: ComponentModel,
+    adapter: ModelAdapter,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     optim_config: OptimCIConfig,
@@ -597,6 +568,7 @@ def compute_prompt_attributions_optimized(
 
     result = compute_edges_from_ci(
         model=model,
+        adapter=adapter,
         tokens=tokens,
         ci_lower_leaky=ci_outputs.lower_leaky,
         pre_weight_acts=pre_weight_acts,

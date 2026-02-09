@@ -10,6 +10,7 @@ from typing import Any
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.database import PromptAttrDB, Run
+from spd.app.backend.model_adapter import ModelAdapter
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
@@ -110,6 +111,7 @@ class RunState:
 
     run: Run
     model: ComponentModel
+    adapter: ModelAdapter
     tokenizer: AppTokenizer
     sources_by_target: dict[str, list[str]]
     config: Config

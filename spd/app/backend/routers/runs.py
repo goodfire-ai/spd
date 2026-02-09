@@ -13,6 +13,7 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
+from spd.app.backend.model_adapter import build_model_adapter
 from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import log_errors
 from spd.log import logger
@@ -104,13 +105,17 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     loaded_tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
     assert isinstance(loaded_tokenizer, PreTrainedTokenizerFast)
 
-    # Build sources_by_target mapping
+    # Build model adapter and sources_by_target mapping
+    logger.info(f"[API] Building model adapter for run {run.id}")
+    adapter = build_model_adapter(model)
+
     logger.info(f"[API] Building sources_by_target mapping for run {run.id}")
-    sources_by_target = get_sources_by_target(model, DEVICE, spd_config.sampling)
+    sources_by_target = get_sources_by_target(model, adapter, DEVICE, spd_config.sampling)
 
     manager.run_state = RunState(
         run=run,
         model=model,
+        adapter=adapter,
         tokenizer=AppTokenizer(loaded_tokenizer),
         sources_by_target=sources_by_target,
         config=spd_config,
