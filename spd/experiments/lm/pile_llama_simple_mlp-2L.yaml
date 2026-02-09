@@ -93,15 +93,15 @@ pretrained_model_class: spd.pretrain.models.llama_simple_mlp.LlamaSimpleMLP
 pretrained_model_path: null
 pretrained_model_name: goodfire/spd/runs/ivdw6l06
 pretrained_model_output_attr: idx_0
-tokenizer_name: gpt2
+tokenizer_name: EleutherAI/gpt-neox-20b
 task_config:
   task_name: lm
   max_seq_len: 512
   buffer_size: 1000
-  dataset_name: danbraunai/pile-uncopyrighted
+  dataset_name: danbraunai/pile-uncopyrighted-tok
   column_name: text
   train_data_split: train
   eval_data_split: val
   shuffle_each_epoch: true
-  is_tokenized: false
+  is_tokenized: true
   streaming: false
