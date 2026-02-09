@@ -17,6 +17,7 @@ from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 LabelScorerType = Literal["detection", "fuzzing"]
 
@@ -34,7 +35,7 @@ def main(
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
     arch = get_architecture_info(wandb_path)
-    run_id = wandb_path.split("/")[-1]
+    _, _, run_id = parse_wandb_run_path(wandb_path)
 
     interpretations = load_interpretations(run_id, autointerp_run_id)
     assert interpretations, f"No interpretation results for {run_id}. Run autointerp first."
@@ -87,22 +88,6 @@ def main(
 
 
 if __name__ == "__main__":
-    import argparse
+    import fire
 
-    parser = argparse.ArgumentParser(description="Run label-based scoring (detection, fuzzing)")
-    parser.add_argument("wandb_path")
-    parser.add_argument("--scorer", required=True, choices=["detection", "fuzzing"])
-    parser.add_argument("--autointerp_run_id")
-    parser.add_argument("--model", default="google/gemini-3-flash-preview")
-    parser.add_argument("--limit", type=int)
-    parser.add_argument("--cost_limit_usd", type=float)
-    args = parser.parse_args()
-
-    main(
-        args.wandb_path,
-        args.scorer,
-        args.autointerp_run_id,
-        args.model,
-        args.limit,
-        args.cost_limit_usd,
-    )
+    fire.Fire(main)

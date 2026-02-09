@@ -14,6 +14,7 @@ from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
 from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
 from spd.harvest.schemas import get_harvest_dir
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def main(
@@ -27,7 +28,7 @@ def main(
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
     arch = get_architecture_info(wandb_path)
-    run_id = wandb_path.split("/")[-1]
+    _, _, run_id = parse_wandb_run_path(wandb_path)
 
     components = load_all_components(run_id)
 

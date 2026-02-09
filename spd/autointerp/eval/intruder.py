@@ -9,12 +9,12 @@ Usage:
     python -m spd.autointerp.scoring.scripts.run_intruder <wandb_path> --limit 100
 """
 
-import asyncio
 import bisect
 import json
 import random
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from openrouter import OpenRouter
 from transformers import AutoTokenizer
@@ -22,11 +22,9 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.utils import build_token_lookup, delimit_tokens
 from spd.autointerp.llm_api import (
-    CostTracker,
-    RateLimiter,
     chat_with_retry,
-    get_model_pricing,
     make_response_format,
+    run_scoring_pipeline,
 )
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
@@ -34,8 +32,6 @@ from spd.log import logger
 N_REAL = 4
 N_TRIALS = 10
 DENSITY_TOLERANCE = 0.05
-MAX_CONCURRENT_REQUESTS = 50
-MAX_REQUESTS_PER_MINUTE = 200
 
 INTRUDER_RESPONSE_FORMAT = make_response_format(
     "intruder_response",
@@ -226,6 +222,15 @@ async def score_component(
     )
 
 
+def _deserialize_result(data: dict[str, Any]) -> IntruderResult:
+    return IntruderResult(
+        component_key=data["component_key"],
+        score=data["score"],
+        trials=[IntruderTrial(**t) for t in data["trials"]],
+        n_errors=data["n_errors"],
+    )
+
+
 async def run_intruder_scoring(
     components: list[ComponentData],
     model: str,
@@ -240,84 +245,22 @@ async def run_intruder_scoring(
     assert isinstance(tokenizer, PreTrainedTokenizerBase)
     lookup = build_token_lookup(tokenizer, tokenizer_name)
 
-    results: list[IntruderResult] = []
-    completed = set[str]()
-
-    if output_path.exists():
-        with open(output_path) as f:
-            for line in f:
-                data = json.loads(line)
-                results.append(
-                    IntruderResult(
-                        component_key=data["component_key"],
-                        score=data["score"],
-                        trials=[IntruderTrial(**t) for t in data["trials"]],
-                        n_errors=data["n_errors"],
-                    )
-                )
-                completed.add(data["component_key"])
-        print(f"Resuming: {len(completed)} already scored")
-
-    eligible = [
-        c
-        for c in components
-        if c.component_key not in completed and len(c.activation_examples) >= N_REAL + 1
-    ]
+    eligible = [c for c in components if len(c.activation_examples) >= N_REAL + 1]
     if limit is not None:
         eligible = eligible[:limit]
-    print(f"Scoring {len(eligible)} components")
 
     density_index = DensityIndex(components, min_examples=N_REAL + 1, ci_threshold=ci_threshold)
 
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-    rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
-    output_lock = asyncio.Lock()
+    async def _score(client: OpenRouter, component: ComponentData) -> IntruderResult:
+        return await score_component(client, model, component, density_index, lookup, ci_threshold)
 
-    async def process_one(
-        component: ComponentData,
-        index: int,
-        client: OpenRouter,
-        cost_tracker: CostTracker,
-    ) -> None:
-        if cost_tracker.over_budget():
-            return
-        await rate_limiter.acquire()
-        async with semaphore:
-            if cost_tracker.over_budget():
-                return
-            try:
-                result = await score_component(
-                    client, model, component, density_index, lookup, ci_threshold
-                )
-                async with output_lock:
-                    results.append(result)
-                    with open(output_path, "a") as f:
-                        f.write(json.dumps(asdict(result)) + "\n")
-                    if index % 100 == 0:
-                        logger.info(
-                            f"[{index}] scored {len(results)}, ${cost_tracker.cost_usd():.2f}"
-                        )
-            except Exception as e:
-                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
-
-    async with OpenRouter(api_key=openrouter_api_key) as client:
-        input_price, output_price = await get_model_pricing(client, model)
-        cost_tracker = CostTracker(
-            input_price_per_token=input_price,
-            output_price_per_token=output_price,
-            limit_usd=cost_limit_usd,
-        )
-        limit_str = f" (limit: ${cost_limit_usd:.2f})" if cost_limit_usd is not None else ""
-        print(
-            f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}"
-        )
-
-        await asyncio.gather(
-            *[process_one(c, i, client, cost_tracker) for i, c in enumerate(eligible)]
-        )
-
-    if cost_tracker.over_budget():
-        print(f"Cost limit reached: ${cost_tracker.cost_usd():.2f}")
-    print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
-    print(f"Scored {len(results)} components -> {output_path}")
-    return results
+    return await run_scoring_pipeline(
+        eligible=eligible,
+        score_fn=_score,
+        serialize_fn=asdict,
+        deserialize_fn=_deserialize_result,
+        model=model,
+        openrouter_api_key=openrouter_api_key,
+        output_path=output_path,
+        cost_limit_usd=cost_limit_usd,
+    )

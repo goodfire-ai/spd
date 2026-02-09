@@ -116,6 +116,7 @@ async def interpret_all(
     """Interpret all components with maximum parallelism. Rate limits handled via exponential backoff."""
     results: list[InterpretationResult] = []
     completed = set[str]()
+    n_errors = 0
 
     if output_path.exists():
         print(f"Resuming: {output_path} exists")
@@ -150,6 +151,7 @@ async def interpret_all(
         client: OpenRouter,
         cost_tracker: CostTracker,
     ) -> None:
+        nonlocal n_errors
         if cost_tracker.over_budget():
             return
         await rate_limiter.acquire()
@@ -182,13 +184,13 @@ async def interpret_all(
                     ci_threshold=ci_threshold,
                 )
                 if res is None:
-                    logger.error(f"Failed to interpret {component.component_key}")
+                    n_errors += 1
                     return
                 result, in_tok, out_tok = res
 
                 async with output_lock:
                     results.append(result)
-                    cost_tracker.add(in_tok, out_tok)
+                    await cost_tracker.add(in_tok, out_tok)
                     line = json.dumps(asdict(result)) + "\n"
                     log_progress = index % 100 == 0
                     progress_msg = (
@@ -203,6 +205,7 @@ async def interpret_all(
                     logger.info(progress_msg)
             except Exception as e:
                 logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
+                n_errors += 1
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
         input_price, output_price = await get_model_pricing(client, interpreter_model)
@@ -230,6 +233,8 @@ async def interpret_all(
             f"Cost limit reached: ${cost_tracker.cost_usd():.2f} >= ${cost_limit_usd}. "
             f"Completed {len(results)} / {len(remaining) + len(completed)} components."
         )
+    if n_errors > 0:
+        logger.warning(f"{n_errors} components failed during interpretation")
     print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
     return results
 
