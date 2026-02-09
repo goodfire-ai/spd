@@ -15,6 +15,12 @@
 
     let activeTab = $state<"prompts" | "components" | "dataset-search" | null>(null);
     let showRunMenu = $state(false);
+
+    $effect(() => {
+        if (runState.prompts.status === "loaded" && activeTab === null) {
+            activeTab = "prompts";
+        }
+    });
 </script>
 
 <div class="app-layout">

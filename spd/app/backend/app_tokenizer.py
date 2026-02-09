@@ -61,7 +61,8 @@ class AppTokenizer:
         prev_end = 0
         for start, end in offsets:
             if start >= prev_end:
-                spans.append(text[start:end])
+                # Include any gap characters (spaces, etc.) as prefix of this span
+                spans.append(text[prev_end:end])
                 prev_end = end
             else:
                 # Multi-byte char split across tokens: first token claimed the full char,
@@ -76,5 +77,14 @@ class AppTokenizer:
         return self._tok.decode([token_id], skip_special_tokens=False)
 
     def _fallback_spans(self, token_ids: list[int]) -> list[str]:
-        """Best-effort per-token decode. Won't necessarily concatenate cleanly."""
-        return [self._tok.decode([tid], skip_special_tokens=False) for tid in token_ids]
+        """Incremental decode: each span = decode(:i+1) - decode(:i).
+
+        O(n²) but correct for all tokenizer families (BPE, WordPiece, SentencePiece).
+        """
+        spans: list[str] = []
+        prev = ""
+        for i in range(len(token_ids)):
+            current = self._tok.decode(token_ids[: i + 1], skip_special_tokens=False)
+            spans.append(current[len(prev) :])
+            prev = current
+        return spans

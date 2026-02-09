@@ -83,8 +83,10 @@ def _require_target(storage: DatasetAttributionStorage, component_key: str) -> N
         )
 
 
-def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
-    """Get the unembedding matrix from the loaded model."""
+def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"] | None:
+    """Get the unembedding matrix from the loaded model, if available."""
+    if loaded.adapter.unembed_module is None:
+        return None
     return loaded.adapter.get_unembed_weight()
 
 
@@ -160,12 +162,24 @@ def get_component_attributions(
         if is_target
         else [],
         positive_targets=_to_api_entries(
-            storage.get_top_targets(component_key, k, "positive", w_unembed=w_unembed)
+            storage.get_top_targets(
+                component_key,
+                k,
+                "positive",
+                w_unembed=w_unembed,
+                include_outputs=w_unembed is not None,
+            )
         )
         if is_source
         else [],
         negative_targets=_to_api_entries(
-            storage.get_top_targets(component_key, k, "negative", w_unembed=w_unembed)
+            storage.get_top_targets(
+                component_key,
+                k,
+                "negative",
+                w_unembed=w_unembed,
+                include_outputs=w_unembed is not None,
+            )
         )
         if is_source
         else [],

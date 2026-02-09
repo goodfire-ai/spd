@@ -87,20 +87,27 @@ def get_activation_context_detail(
     component_key = f"{layer}:{component_idx}"
     comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
 
-    # Convert token IDs to strings
     PADDING_SENTINEL = -1
 
-    def token_str(tid: int) -> str:
-        if tid == PADDING_SENTINEL:
-            return "<pad>"
-        return loaded.tokenizer.get_tok_display(tid)
+    def decode_example_tokens(token_ids: list[int]) -> list[str]:
+        real_ids = [tid for tid in token_ids if tid != PADDING_SENTINEL]
+        spans = loaded.tokenizer.get_spans(real_ids)
+        result: list[str] = []
+        span_idx = 0
+        for tid in token_ids:
+            if tid == PADDING_SENTINEL:
+                result.append("<pad>")
+            else:
+                result.append(spans[span_idx])
+                span_idx += 1
+        return result
 
     # Apply limit to examples
     examples = comp.activation_examples
     if limit is not None:
         examples = examples[:limit]
 
-    example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in examples]
+    example_tokens = [decode_example_tokens(ex.token_ids) for ex in examples]
     example_ci = [ex.ci_values for ex in examples]
     example_component_acts = [ex.component_acts for ex in examples]
 
@@ -133,10 +140,19 @@ def get_activation_contexts_bulk(
     """
     PADDING_SENTINEL = -1
 
-    def token_str(tid: int) -> str:
-        if tid == PADDING_SENTINEL:
-            return "<pad>"
-        return loaded.tokenizer.get_tok_display(tid)
+    def decode_example_tokens(token_ids: list[int]) -> list[str]:
+        """Decode a token sequence, handling padding sentinels."""
+        real_ids = [tid for tid in token_ids if tid != PADDING_SENTINEL]
+        spans = loaded.tokenizer.get_spans(real_ids)
+        result: list[str] = []
+        span_idx = 0
+        for tid in token_ids:
+            if tid == PADDING_SENTINEL:
+                result.append("<pad>")
+            else:
+                result.append(spans[span_idx])
+                span_idx += 1
+        return result
 
     # Bulk load all components with single file handle
     components = load_component_activation_contexts_bulk(
@@ -150,7 +166,7 @@ def get_activation_contexts_bulk(
         result[key] = SubcomponentActivationContexts(
             subcomponent_idx=comp.component_idx,
             mean_ci=comp.mean_ci,
-            example_tokens=[[token_str(tid) for tid in ex.token_ids] for ex in examples],
+            example_tokens=[decode_example_tokens(ex.token_ids) for ex in examples],
             example_ci=[ex.ci_values for ex in examples],
             example_component_acts=[ex.component_acts for ex in examples],
         )
