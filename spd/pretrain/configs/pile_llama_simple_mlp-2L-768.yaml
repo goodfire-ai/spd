@@ -39,7 +39,7 @@ train_dataset_config:
   streaming: false
   n_ctx: 513
   seed: 0
-  column_name: text
+  column_name: input_ids
 
 val_dataset_config:
   name: danbraunai/pile-uncopyrighted-tok
@@ -49,4 +49,4 @@ val_dataset_config:
   streaming: false
   n_ctx: 513
   seed: 0
-  column_name: text
+  column_name: input_ids

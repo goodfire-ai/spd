@@ -99,7 +99,7 @@ task_config:
   max_seq_len: 512
   buffer_size: 1000
   dataset_name: danbraunai/pile-uncopyrighted-tok
-  column_name: text
+  column_name: input_ids
   train_data_split: train
   eval_data_split: val
   shuffle_each_epoch: true

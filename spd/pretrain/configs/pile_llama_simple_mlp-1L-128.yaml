@@ -11,26 +11,19 @@ val_loss_every: 1000
 val_max_steps: 20
 sample_every: 1000
 intermediate_checkpoints: false
-compile: true
 
 model:
   model_type: LlamaSimpleMLP
-  attn_bias: false
   block_size: 512
-  flash_attention: false
-  mlp_bias: false
+  vocab_size: 4019
+  n_layer: 2
+  n_head: 4
+  n_embd: 128
+  n_intermediate: 512  # 128 * 4
+  rotary_dim: 32       # 128 // 4
   n_ctx: 512
-  n_embd: 768
-  n_head: 6
-  n_intermediate: 3072
-  n_key_value_heads: 6
-  n_layer: 4
-  rms_norm_eps: 1.0e-06
-  rotary_adjacent_pairs: false
-  rotary_base: 10000
-  rotary_dim: 128
-  use_grouped_query_attention: true
-  vocab_size: 50277
+  n_key_value_heads: 2
+  flash_attention: false
 
 train_dataset_config:
   name: danbraunai/pile-uncopyrighted-tok
@@ -51,4 +44,3 @@ val_dataset_config:
   n_ctx: 513
   seed: 0
   column_name: input_ids
-
