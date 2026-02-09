@@ -529,7 +529,7 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
     classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
-    optimize_in_logit_space: bool = False
+    use_sigmoid_parameterization: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -549,7 +549,7 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
     classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
-    optimize_in_logit_space: bool = False
+    use_sigmoid_parameterization: bool = False
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]

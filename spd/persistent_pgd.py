@@ -54,7 +54,7 @@ class PersistentPGDState:
     ) -> None:
         self.optimizer = cfg.optimizer
         self._skip_all_reduce = isinstance(cfg.scope, PerBatchPerPositionScope)
-        self._optimize_in_logit_space = cfg.optimize_in_logit_space
+        self._use_sigmoid_parameterization = cfg.use_sigmoid_parameterization
 
         self._adam_step = 0
         self._adam_m: PPGDSources = {}
@@ -73,7 +73,7 @@ class PersistentPGDState:
                 assert batch_size is not None, "batch_size required for PerBatchPerPositionScope"
                 source_leading_dims = [batch_size, seq_len]
 
-        init_fn = torch.randn if self._optimize_in_logit_space else torch.rand
+        init_fn = torch.randn if self._use_sigmoid_parameterization else torch.rand
         for module_name, module_c in module_to_c.items():
             source_c = module_c + 1 if use_delta_component else module_c
             source_shape = source_leading_dims + [source_c]
@@ -96,8 +96,8 @@ class PersistentPGDState:
     def step(self, grads: PPGDSources) -> dict[str, float]:
         """Perform one PGD update step using the provided gradients.
 
-        Updates sources in-place, then clamps to [0, 1] (or leaves unbounded if optimizing in
-        logit space, where sigmoid is applied when reading effective sources).
+        Updates sources in-place, then clamps to [0, 1] (or leaves unbounded when using sigmoid
+        parameterization, where sigmoid is applied when reading effective sources).
 
         Returns:
             Mean absolute step per module (before clamping).
@@ -130,7 +130,7 @@ class PersistentPGDState:
             else:
                 raise ValueError(f"Unknown PersistentPGD optimizer: {self.optimizer.type}")
 
-            if not self._optimize_in_logit_space:
+            if not self._use_sigmoid_parameterization:
                 for source in self.sources.values():
                     source.clamp_(0.0, 1.0)
 
@@ -139,10 +139,10 @@ class PersistentPGDState:
     def get_effective_sources(self) -> PPGDSources:
         """Return sources in [0, 1] range.
 
-        If optimizing in logit space, applies sigmoid. Otherwise returns raw sources (already
-        clamped to [0, 1]).
+        If using sigmoid parameterization, applies sigmoid to unconstrained values. Otherwise
+        returns raw sources (already clamped to [0, 1]).
         """
-        if self._optimize_in_logit_space:
+        if self._use_sigmoid_parameterization:
             return {k: torch.sigmoid(v) for k, v in self.sources.items()}
         return self.sources
 
