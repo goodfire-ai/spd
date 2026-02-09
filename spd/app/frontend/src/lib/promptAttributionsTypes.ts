@@ -173,13 +173,6 @@ export type TokenInfo = {
 
 // Client-side computed types
 
-export type LayerInfo = {
-    name: string;
-    block: number;
-    type: "attn" | "mlp" | "embed" | "output";
-    subtype: string;
-};
-
 export type NodePosition = {
     x: number;
     y: number;
