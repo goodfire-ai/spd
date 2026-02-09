@@ -1021,14 +1021,12 @@ class Config(BaseConfig):
                 "mask_scope='shared_across_batch'"
             )
 
-        for cfg in self.loss_metric_configs:
-            if isinstance(
-                cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
-            ) and isinstance(cfg.scope, RepeatAcrossBatchScope):
-                n = cfg.scope.n_sources
-                mb = self.microbatch_size
-                assert mb % n == 0, (
-                    f"repeat_across_batch n_sources={n} must divide microbatch_size={mb}"
-                )
+        if any(
+            isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+            for cfg in self.loss_metric_configs
+        ):
+            assert isinstance(self.task_config, LMTaskConfig), (
+                "Persistent PGD losses are only supported with LM tasks"
+            )
 
         return self
