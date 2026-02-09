@@ -69,6 +69,8 @@ TEST_CONFIG = {
     },
     # --- Distributed ---
     "dist_backend": "gloo",  # Want to run this test on CPU
+    # We use float32 to avoid precision difference accumulations
+    "autocast_bf16": False,
 }
 
 

@@ -39,7 +39,12 @@ from spd.utils.distributed_utils import (
     is_main_process,
     sync_across_processes,
 )
-from spd.utils.general_utils import dict_safe_update_, get_scheduled_value, runtime_cast
+from spd.utils.general_utils import (
+    bf16_autocast,
+    dict_safe_update_,
+    get_scheduled_value,
+    runtime_cast,
+)
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import expand_module_patterns
 from spd.utils.run_utils import save_file
@@ -116,8 +121,6 @@ def optimize[BatchT, OutputT](
     tied_weights: list[tuple[str, str]] | None = None,
 ) -> None:
     """Run the optimization loop for LM decomposition."""
-
-    torch.set_float32_matmul_precision("high")
 
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
@@ -227,34 +230,34 @@ def optimize[BatchT, OutputT](
 
         for _ in range(config.gradient_accumulation_steps):
             microbatch = next(train_iterator)
+            with bf16_autocast(enabled=config.autocast_bf16):
+                # NOTE: we need to call the wrapped_model at least once each step in order to setup
+                # the DDP gradient syncing for all parameters in the component model. Gradients will
+                # sync regardless of whether the parameters are used in this call to wrapped_model.
+                target_model_output: OutputWithCache[OutputT] = wrapped_model(
+                    microbatch, cache_type="input"
+                )
 
-            # NOTE: we need to call the wrapped_model at least once each step in order to setup
-            # the DDP gradient syncing for all parameters in the component model. Gradients will
-            # sync regardless of whether the parameters are used in this call to wrapped_model.
-            target_model_output: OutputWithCache[OutputT] = wrapped_model(
-                microbatch, cache_type="input"
-            )
+                ci = component_model.calc_causal_importances(
+                    pre_weight_acts=target_model_output.cache,
+                    detach_inputs=False,
+                    sampling=config.sampling,
+                )
 
-            ci = component_model.calc_causal_importances(
-                pre_weight_acts=target_model_output.cache,
-                detach_inputs=False,
-                sampling=config.sampling,
-            )
-
-            microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
-                loss_metric_configs=config.loss_metric_configs,
-                model=component_model,
-                batch=microbatch,
-                ci=ci,
-                target_out=target_model_output.output,
-                weight_deltas=weight_deltas,
-                pre_weight_acts=target_model_output.cache,
-                current_frac_of_training=step / config.steps,
-                sampling=config.sampling,
-                use_delta_component=config.use_delta_component,
-                n_mask_samples=config.n_mask_samples,
-                reconstruction_loss=reconstruction_loss,
-            )
+                microbatch_total_loss, microbatch_loss_terms = compute_total_loss(
+                    loss_metric_configs=config.loss_metric_configs,
+                    model=component_model,
+                    batch=microbatch,
+                    ci=ci,
+                    target_out=target_model_output.output,
+                    weight_deltas=weight_deltas,
+                    pre_weight_acts=target_model_output.cache,
+                    current_frac_of_training=step / config.steps,
+                    sampling=config.sampling,
+                    use_delta_component=config.use_delta_component,
+                    n_mask_samples=config.n_mask_samples,
+                    reconstruction_loss=reconstruction_loss,
+                )
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
 
             for loss_name, loss_value in microbatch_loss_terms.items():

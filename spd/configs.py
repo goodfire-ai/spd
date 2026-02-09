@@ -393,6 +393,10 @@ class Config(BaseConfig):
 
     # --- General ---
     seed: int = Field(default=0, description="Random seed for reproducibility")
+    autocast_bf16: bool = Field(
+        default=True,
+        description="Whether to use torch.autocast with bfloat16 mixed precision",
+    )
     n_mask_samples: PositiveInt = Field(
         ...,
         description="Number of stochastic masks to sample when using stochastic recon losses",
@@ -640,6 +644,13 @@ class Config(BaseConfig):
                 # configs with it
                 new_vals = [cfg for cfg in val if "extra_init_kwargs" not in cfg]
                 config_dict[key] = new_vals
+
+        # Remap simple_stories_train → spd.pretrain (models moved in-tree)
+        pmc = config_dict.get("pretrained_model_class", "")
+        if pmc.startswith("simple_stories_train.models."):
+            config_dict["pretrained_model_class"] = pmc.replace(
+                "simple_stories_train.models.", "spd.pretrain.models.", 1
+            )
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]

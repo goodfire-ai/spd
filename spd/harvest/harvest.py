@@ -35,6 +35,7 @@ from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
+from spd.utils.general_utils import bf16_autocast
 
 
 def _compute_u_norms(model: ComponentModel[Any, Any]) -> dict[str, Float[Tensor, " C"]]:
@@ -240,7 +241,8 @@ def harvest_activation_contexts(
         if world_size is not None and batch_idx % world_size != rank:
             continue
 
-        with torch.no_grad():
+        batch = batch.to(device)
+        with torch.no_grad(), bf16_autocast(enabled=spd_config.autocast_bf16):
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
 

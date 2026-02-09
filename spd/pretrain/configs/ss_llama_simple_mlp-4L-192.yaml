@@ -1,13 +1,13 @@
 wandb_project: spd
-dtype: float32
+dtype: bfloat16
 batch_size: 1024
 num_iterations: 100_000
 warmup_iters: 600
-learning_rate: 1e-4
+learning_rate: 3e-4
 learning_rate_decay_frac: 0.1
 weight_decay: 0.1
 grad_clip: 1.0
-val_loss_every: 100
+val_loss_every: 1000
 val_max_steps: 20
 sample_every: 1000
 intermediate_checkpoints: false
@@ -31,7 +31,7 @@ train_dataset_config:
   hf_tokenizer_path: SimpleStories/test-SimpleStories-gpt2-1.25M
   split: train
   streaming: false
-  n_ctx: 512
+  n_ctx: 513  # model n_ctx + 1 for next-token label indexing
   seed: 0
   column_name: story
 
@@ -41,6 +41,6 @@ val_dataset_config:
   hf_tokenizer_path: SimpleStories/test-SimpleStories-gpt2-1.25M
   split: test
   streaming: false
-  n_ctx: 512
+  n_ctx: 513  # model n_ctx + 1 for next-token label indexing
   seed: 0
   column_name: story

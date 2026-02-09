@@ -180,7 +180,7 @@ class LinearComponents(Components):
 
     @override
     def get_component_acts(self, x: Float[Tensor, "... d_in"]) -> Float[Tensor, "... C"]:
-        return einops.einsum(x, self.V, "... d_in, d_in C -> ... C")
+        return einops.einsum(x.to(self.V.dtype), self.V, "... d_in, d_in C -> ... C")
 
     @override
     def forward(

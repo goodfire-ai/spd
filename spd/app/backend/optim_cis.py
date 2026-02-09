@@ -20,6 +20,7 @@ from spd.models.components import make_mask_infos
 from spd.routing import AllLayersRouter
 from spd.spd_types import Probability
 from spd.utils.component_utils import calc_ci_l_zero, calc_stochastic_component_mask_info
+from spd.utils.general_utils import bf16_autocast
 
 MaskType = Literal["stochastic", "ci"]
 
@@ -146,7 +147,8 @@ def compute_label_prob(
 ) -> float:
     """Compute probability of label_token at final position with CI mask."""
     mask_infos = make_mask_infos(ci_lower_leaky, routing_masks="all")
-    logits = model(tokens, mask_infos=mask_infos)
+    with bf16_autocast():
+        logits = model(tokens, mask_infos=mask_infos)
     probs = F.softmax(logits[0, -1, :], dim=-1)
     return float(probs[label_token].item())
 
@@ -208,13 +210,15 @@ def compute_final_token_ce_kl(
 
     # CI masked
     ci_mask_infos = make_mask_infos(ci)
-    ci_masked_logits = model(batch, mask_infos=ci_mask_infos)
+    with bf16_autocast():
+        ci_masked_logits = model(batch, mask_infos=ci_mask_infos)
     ci_masked_kl = kl_vs_target(ci_masked_logits)
     ci_masked_ce = ce_vs_target(ci_masked_logits)
 
     # Unmasked (all components active)
     unmasked_infos = make_mask_infos({k: torch.ones_like(v) for k, v in ci.items()})
-    unmasked_logits = model(batch, mask_infos=unmasked_infos)
+    with bf16_autocast():
+        unmasked_logits = model(batch, mask_infos=unmasked_infos)
     unmasked_kl = kl_vs_target(unmasked_logits)
     unmasked_ce = ce_vs_target(unmasked_logits)
 
@@ -222,7 +226,8 @@ def compute_final_token_ce_kl(
     rounded_mask_infos = make_mask_infos(
         {k: (v > rounding_threshold).float() for k, v in ci.items()}
     )
-    rounded_masked_logits = model(batch, mask_infos=rounded_mask_infos)
+    with bf16_autocast():
+        rounded_masked_logits = model(batch, mask_infos=rounded_mask_infos)
     rounded_masked_kl = kl_vs_target(rounded_masked_logits)
     rounded_masked_ce = ce_vs_target(rounded_masked_logits)
 
@@ -291,7 +296,7 @@ def optimize_ci_values(
     model.requires_grad_(False)
 
     # Get initial CI values from the model
-    with torch.no_grad():
+    with torch.no_grad(), bf16_autocast():
         output_with_cache: OutputWithCache[Any] = model(tokens, cache_type="input")
         initial_ci_outputs = model.calc_causal_importances(
             pre_weight_acts=output_with_cache.cache,
@@ -333,41 +338,42 @@ def optimize_ci_values(
             case "ci":
                 mask_infos = make_mask_infos(component_masks=ci_outputs.lower_leaky)
 
-        out = model(tokens, mask_infos=mask_infos)
+        with bf16_autocast():
+            out = model(tokens, mask_infos=mask_infos)
 
-        imp_min_loss = importance_minimality_loss(
-            ci_upper_leaky=ci_outputs.upper_leaky,
-            current_frac_of_training=step / config.steps,
-            pnorm=config.imp_min_config.pnorm,
-            beta=config.imp_min_config.beta,
-            eps=config.imp_min_config.eps,
-            p_anneal_start_frac=config.imp_min_config.p_anneal_start_frac,
-            p_anneal_final_p=config.imp_min_config.p_anneal_final_p,
-            p_anneal_end_frac=config.imp_min_config.p_anneal_end_frac,
-        )
-
-        # Compute faithfulness losses (CE and/or KL)
-        faithfulness_loss = torch.tensor(0.0, device=device)
-        ce_loss_val: float | None = None
-        kl_loss_val: float | None = None
-
-        if config.ce_loss_config is not None:
-            ce_loss = F.cross_entropy(
-                out[0, -1, :].unsqueeze(0),
-                torch.tensor([config.ce_loss_config.label_token], device=device),
+            imp_min_loss = importance_minimality_loss(
+                ci_upper_leaky=ci_outputs.upper_leaky,
+                current_frac_of_training=step / config.steps,
+                pnorm=config.imp_min_config.pnorm,
+                beta=config.imp_min_config.beta,
+                eps=config.imp_min_config.eps,
+                p_anneal_start_frac=config.imp_min_config.p_anneal_start_frac,
+                p_anneal_final_p=config.imp_min_config.p_anneal_final_p,
+                p_anneal_end_frac=config.imp_min_config.p_anneal_end_frac,
             )
-            faithfulness_loss = faithfulness_loss + config.ce_loss_config.coeff * ce_loss
-            ce_loss_val = ce_loss.item()
 
-        if config.kl_loss_config is not None:
-            # KL divergence: encourage masked output to match target distribution
-            target_probs = F.softmax(target_out[0, -1, :], dim=-1)
-            pred_log_probs = F.log_softmax(out[0, -1, :], dim=-1)
-            kl_loss = F.kl_div(pred_log_probs, target_probs, reduction="sum")
-            faithfulness_loss = faithfulness_loss + config.kl_loss_config.coeff * kl_loss
-            kl_loss_val = kl_loss.item()
+            # Compute faithfulness losses (CE and/or KL)
+            faithfulness_loss = torch.tensor(0.0, device=device)
+            ce_loss_val: float | None = None
+            kl_loss_val: float | None = None
 
-        total_loss = faithfulness_loss + imp_min_coeff * imp_min_loss
+            if config.ce_loss_config is not None:
+                ce_loss = F.cross_entropy(
+                    out[0, -1, :].unsqueeze(0),
+                    torch.tensor([config.ce_loss_config.label_token], device=device),
+                )
+                faithfulness_loss = faithfulness_loss + config.ce_loss_config.coeff * ce_loss
+                ce_loss_val = ce_loss.item()
+
+            if config.kl_loss_config is not None:
+                # KL divergence: encourage masked output to match target distribution
+                target_probs = F.softmax(target_out[0, -1, :], dim=-1)
+                pred_log_probs = F.log_softmax(out[0, -1, :], dim=-1)
+                kl_loss = F.kl_div(pred_log_probs, target_probs, reduction="sum")
+                faithfulness_loss = faithfulness_loss + config.kl_loss_config.coeff * kl_loss
+                kl_loss_val = kl_loss.item()
+
+            total_loss = faithfulness_loss + imp_min_coeff * imp_min_loss
 
         if step % config.log_freq == 0 or step == config.steps - 1:
             l0_stats = compute_l0_stats(ci_outputs, ci_alive_threshold=0.0)
