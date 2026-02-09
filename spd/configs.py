@@ -496,25 +496,23 @@ PersistentPGDSourceScope = Annotated[
 ]
 
 
-# Backwards compat for old YAML configs that used bare strings or old type names
-_PPGD_SCOPE_COMPAT: dict[str, str] = {
-    "single_mask": "single_source",
-    "broadcast_across_batch": "broadcast_across_batch",
-    "per_batch": "per_batch_per_position",
-    "batch_invariant": "repeat_across_batch",
-}
-
-
 def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
-    """Backwards compat: convert bare string scope or old type names to current names."""
+    """Backwards compat: migrate old scope format/names to current names."""
     scope = config_dict.get("scope")
-    if isinstance(scope, str) and scope in _PPGD_SCOPE_COMPAT:
-        config_dict["scope"] = {"type": _PPGD_SCOPE_COMPAT[scope]}
-    elif isinstance(scope, dict) and scope.get("type") in _PPGD_SCOPE_COMPAT:
-        scope["type"] = _PPGD_SCOPE_COMPAT[scope["type"]]
-    # Also handle n_masks -> n_sources rename
-    if isinstance(config_dict.get("scope"), dict) and "n_masks" in config_dict["scope"]:
-        config_dict["scope"]["n_sources"] = config_dict["scope"].pop("n_masks")
+    if isinstance(scope, str):
+        scope = {"type": scope}
+        config_dict["scope"] = scope
+    if not isinstance(scope, dict):
+        return
+    match scope.get("type"):
+        case "single_mask":
+            scope["type"] = "single_source"
+        case "batch_invariant":
+            scope["type"] = "repeat_across_batch"
+            if "n_masks" in scope:
+                scope["n_sources"] = scope.pop("n_masks")
+        case "per_batch":
+            scope["type"] = "per_batch_per_position"
 
 
 class PersistentPGDReconLossConfig(LossMetricConfig):
