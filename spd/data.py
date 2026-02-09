@@ -194,25 +194,16 @@ def create_data_loader(
 
     if dataset_config.streaming:
         assert isinstance(dataset, IterableDataset)
-        logger.warning(
-            "WARNING: Streaming is currently quite slow and not well tested. In general, we suggest"
-            " setting streaming=False and having the dataset download (and cache)."
-        )
         if dist_state is not None:
-            logger.warning("WARNING: Streaming with ddp has not been well tested. Use at own risk.")
-            ds_num_shards = getattr(dataset, "num_shards", None)
-            if isinstance(ds_num_shards, int) and ds_num_shards >= dist_state.world_size:
-                dataset = dataset.shard(num_shards=dist_state.world_size, index=dist_state.rank)
-            else:
-                # Fallback: example-level partitioning before shuffle
-                dataset = dataset.filter(
-                    lambda _ex, idx: idx % dist_state.world_size == dist_state.rank,
-                    with_indices=True,
-                )
+            assert hasattr(dataset, "num_shards"), (
+                "Dataset does not have num_shards attribute, consider streaming=False or implement "
+                "e.g. lambda x, idx: idx <mod> dist_state.world_size == dist_state.rank"
+            )
+            dataset = dataset.shard(num_shards=dist_state.world_size, index=dist_state.rank)
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
         assert isinstance(dataset, Dataset)
-        # This can be slow if the dataset is large. Best to use streaming=True if so.
+        # This can be slow for large datasets. Maybe best to use streaming.
         logger.info("Shuffling dataset (len=%d)", len(dataset))
         dataset = dataset.shuffle(seed=seed)
         logger.info("Shuffled dataset")
