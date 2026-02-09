@@ -26,21 +26,22 @@ model:
   flash_attention: false
 
 train_dataset_config:
-  name: danbraunai/pile-uncopyrighted
-  is_tokenized: false
+  name: danbraunai/pile-uncopyrighted-tok
+  is_tokenized: true
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
   split: train
-  streaming: false
+  streaming: true
   n_ctx: 513
   seed: 0
-  column_name: text
+  column_name: input_ids
 
 val_dataset_config:
-  name: danbraunai/pile-uncopyrighted
-  is_tokenized: false
+  name: danbraunai/pile-uncopyrighted-tok
+  is_tokenized: true
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
   split: val
-  streaming: false
+  streaming: true
   n_ctx: 513
   seed: 0
-  column_name: text
+  column_name: input_ids
+
