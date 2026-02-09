@@ -104,6 +104,10 @@ This repository implements methods from two key research papers on parameter dec
 - `spd/metrics.py` - Metrics for logging to WandB (e.g. CI-L0, KL divergence, etc.)
 - `spd/figures.py` - Figures for logging to WandB (e.g. CI histograms, Identity plots, etc.)
 
+**Terminology: Sources vs Masks:**
+- **Sources** (`adv_sources`, `PPGDSources`, `self.sources`): The raw values that PGD optimizes adversarially. These are interpolated with CI to produce component masks: `mask = ci + (1 - ci) * source`. Used in both regular PGD (`spd/metrics/pgd_utils.py`) and persistent PGD (`spd/persistent_pgd.py`).
+- **Masks** (`component_masks`, `RoutingMasks`, `make_mask_infos`, `n_mask_samples`): The materialized per-component masks used during forward passes. These are produced from sources (in PGD) or from stochastic sampling, and are a general SPD concept across the whole codebase.
+
 **Experiment Structure:**
 
 Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:

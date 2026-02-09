@@ -229,6 +229,13 @@ def optimize(
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
 
+    # Persistent PGD losses are training-only (sources are coupled to train batch size)
+    eval_metric_configs: list[MetricConfigType] = [
+        cfg
+        for cfg in eval_metric_configs
+        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+    ]
+
     sample_batch = extract_batch_data(next(train_iterator))
     batch_dims = (
         sample_batch.shape[:-1]
@@ -246,6 +253,7 @@ def optimize(
             device=device,
             use_delta_component=config.use_delta_component,
             cfg=ppgd_cfg,
+            batch_size=batch_dims[0],
         )
         for ppgd_cfg in persistent_pgd_configs
     }
@@ -295,7 +303,10 @@ def optimize(
                     sampling=config.sampling,
                     use_delta_component=config.use_delta_component,
                     n_mask_samples=config.n_mask_samples,
-                    ppgd_maskss={cfg: ppgd_states[cfg].masks for cfg in persistent_pgd_configs},
+                    ppgd_sourcess={
+                        cfg: ppgd_states[cfg].get_effective_sources()
+                        for cfg in persistent_pgd_configs
+                    },
                     output_loss_type=config.output_loss_type,
                 )
 
@@ -382,7 +393,10 @@ def optimize(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
-                    ppgd_maskss={cfg: ppgd_states[cfg].masks for cfg in persistent_pgd_configs},
+                    ppgd_sourcess={
+                        cfg: ppgd_states[cfg].get_effective_sources()
+                        for cfg in persistent_pgd_configs
+                    },
                     device=device,
                     run_config=config,
                     slow_step=slow_step,

@@ -54,8 +54,8 @@ loss_metric_configs:
       beta1: 0.8
       beta2: 0.99
     scope:
-      type: batch_invariant
-      n_masks: 32
+      type: repeat_across_batch
+      n_sources: 32
     routing:
       type: uniform_k_subset
 output_loss_type: kl

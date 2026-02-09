@@ -38,7 +38,7 @@ from spd.metrics import (
     unmasked_recon_loss,
 )
 from spd.models.component_model import CIOutputs, ComponentModel
-from spd.persistent_pgd import PPGDMasks, persistent_pgd_recon_loss
+from spd.persistent_pgd import PPGDSources, persistent_pgd_recon_loss
 
 
 def compute_losses(
@@ -53,7 +53,9 @@ def compute_losses(
     sampling: SamplingType,
     use_delta_component: bool,
     n_mask_samples: int,
-    ppgd_maskss: dict[PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDMasks],
+    ppgd_sourcess: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources
+    ],
     output_loss_type: Literal["mse", "kl"],
 ) -> dict[LossMetricConfigType, Float[Tensor, ""]]:
     """Compute losses for each config and return a dict mapping config to loss tensor."""
@@ -183,11 +185,11 @@ def compute_losses(
                     weight_deltas=weight_deltas if use_delta_component else None,
                 )
             case PersistentPGDReconLossConfig() | PersistentPGDReconSubsetLossConfig():
-                ppgd_masks = ppgd_maskss[cfg]
+                ppgd_sources = ppgd_sourcess[cfg]
                 loss = persistent_pgd_recon_loss(
                     model=model,
                     batch=batch,
-                    ppgd_masks=ppgd_masks,
+                    ppgd_sources=ppgd_sources,
                     ci=ci.lower_leaky,
                     weight_deltas=weight_deltas if use_delta_component else None,
                     target_out=target_out,
