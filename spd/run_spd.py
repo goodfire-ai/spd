@@ -361,7 +361,7 @@ def optimize(
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
-            with torch.no_grad():
+            with torch.no_grad(), bf16_autocast(enabled=config.autocast_bf16):
                 slow_step: bool = (
                     config.slow_eval_on_first_step
                     if step == 0
