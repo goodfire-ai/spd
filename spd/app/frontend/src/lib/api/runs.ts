@@ -12,6 +12,7 @@ export type LoadedRun = {
     prompt_count: number;
     context_length: number;
     backend_user: string;
+    dataset_search_enabled: boolean;
 };
 
 export async function getStatus(): Promise<LoadedRun | null> {

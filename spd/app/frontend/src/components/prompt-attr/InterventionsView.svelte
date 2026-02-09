@@ -4,12 +4,7 @@
     import { colors, getEdgeColor, getOutputHeaderColor, rgbaToCss } from "../../lib/colors";
     import type { Loadable } from "../../lib/index";
     import type { NormalizeType } from "../../lib/api";
-    import {
-        isInterventableNode,
-        type NodePosition,
-        type TokenInfo,
-    } from "../../lib/promptAttributionsTypes";
-    import { getAliasedRowLabel } from "../../lib/layerAliasing";
+    import { isInterventableNode, type NodePosition, type TokenInfo } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import {
         parseLayer,
@@ -349,7 +344,7 @@
                     for (let i = 0; i < roleIdx; i++) {
                         const prevLayer = getLayerPath(info.block, roles[i], modelInfo);
                         baseX +=
-                            (prevLayer ? nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0 : 0) *
+                            (prevLayer ? (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) : 0) *
                             (COMPONENT_SIZE + componentGap);
                         baseX += COMPONENT_SIZE + componentGap;
                     }

@@ -52,13 +52,13 @@
 </script>
 
 <div class="probe-section">
-    <input
-        type="text"
-        class="probe-input"
-        placeholder="Enter a custom prompt here...."
-        value={probeText}
-        oninput={onProbeInput}
-    />
+    <div class="header-with-hint">
+        <h5>Custom Text</h5>
+        {#if displaySettings.exampleColorMode === "ci"}
+            <span class="hint">(Change "Color by" above to "Both" to see subcomponent activations)</span>
+        {/if}
+    </div>
+    <input type="text" class="probe-input" placeholder="Enter text..." value={probeText} oninput={onProbeInput} />
     {#if probeResult.status === "loading"}
         <p class="probe-status">Loading...</p>
     {:else if probeResult.status === "error"}

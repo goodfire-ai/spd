@@ -7,6 +7,7 @@
     import { lerp } from "../prompt-attr/graphUtils";
 
     const runState = getContext<RunContext>(RUN_KEY);
+    const displayNames = $derived(runState.modelInfo?.display_names ?? {});
 
     type Props = {
         items: EdgeAttribution[];
@@ -160,7 +161,7 @@
         {#each paginatedItems as { key, value, normalizedMagnitude } (key)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
-            {@const formattedKey = formatNodeKeyForDisplay(key)}
+            {@const formattedKey = formatNodeKeyForDisplay(key, displayNames)}
             {@const isToken = isTokenNode(key)}
             {@const interp = isToken ? undefined : getInterpretation(key)}
             {@const hasInterpretation = interp?.status === "generated"}

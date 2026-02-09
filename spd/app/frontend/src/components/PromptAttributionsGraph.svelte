@@ -1,13 +1,7 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import type {
-        GraphData,
-        PinnedNode,
-        HoveredNode,
-        HoveredEdge,
-        NodePosition,
-    } from "../lib/promptAttributionsTypes";
+    import type { GraphData, PinnedNode, HoveredNode, HoveredEdge, NodePosition } from "../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
     import { getAliasedRowLabel } from "../lib/layerAliasing";
     import { colors, getEdgeColor, getSubcompActColor, rgbToCss, getNextTokenProbBgColor } from "../lib/colors";
@@ -36,6 +30,7 @@
 
     const runState = getContext<RunContext>(RUN_KEY);
     const modelInfo = $derived(runState.modelInfo!);
+    const displayNames = $derived(modelInfo.display_names);
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -767,11 +762,11 @@
         <div class="edge-tooltip" style="left: {edgeTooltipPos.x}px; top: {edgeTooltipPos.y}px;">
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Src</span>
-                <code>{formatNodeKeyForDisplay(hoveredEdge.src)}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.src, displayNames)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Tgt</span>
-                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt)}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt, displayNames)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>

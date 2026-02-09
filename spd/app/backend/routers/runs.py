@@ -16,10 +16,14 @@ from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.model_adapter import build_model_adapter
 from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import log_errors
+from spd.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
+
+# Datasets small enough to load into memory for search
+_SEARCHABLE_DATASETS = {"SimpleStories/SimpleStories"}
 
 # =============================================================================
 # Schemas
@@ -36,6 +40,7 @@ class LoadedRun(BaseModel):
     prompt_count: int
     context_length: int
     backend_user: str
+    dataset_search_enabled: bool
 
 
 class ModelInfo(BaseModel):
@@ -152,6 +157,11 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
 
     prompt_count = manager.db.get_prompt_count(run.id, context_length)
 
+    task_config = manager.run_state.config.task_config
+    dataset_search_enabled = (
+        isinstance(task_config, LMTaskConfig) and task_config.dataset_name in _SEARCHABLE_DATASETS
+    )
+
     return LoadedRun(
         id=run.id,
         wandb_path=run.wandb_path,
@@ -160,6 +170,7 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         prompt_count=prompt_count,
         context_length=context_length,
         backend_user=getpass.getuser(),
+        dataset_search_enabled=dataset_search_enabled,
     )
 
 

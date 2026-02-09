@@ -9,6 +9,10 @@
 
     const runState = getContext<RunContext>(RUN_KEY);
 
+    const datasetSearchEnabled = $derived(
+        runState.run?.status === "loaded" && runState.run.data.dataset_search_enabled,
+    );
+
     let activeTab = $state<"prompts" | "components" | "dataset-search" | null>(null);
     let showRunMenu = $state(false);
 </script>
@@ -32,15 +36,7 @@
         {/if}
 
         <nav class="nav-group">
-            <button
-                type="button"
-                class="tab-button"
-                class:active={activeTab === "dataset-search"}
-                onclick={() => (activeTab = "dataset-search")}
-            >
-                Dataset Explorer
-            </button>
-            {#if runState.run.status === "loaded" && runState.run.data}
+            {#if runState.run?.status === "loaded" && runState.run.data}
                 <button
                     type="button"
                     class="tab-button"
@@ -57,6 +53,16 @@
                 >
                     Components
                 </button>
+                {#if datasetSearchEnabled}
+                    <button
+                        type="button"
+                        class="tab-button"
+                        class:active={activeTab === "dataset-search"}
+                        onclick={() => (activeTab = "dataset-search")}
+                    >
+                        Dataset Search
+                    </button>
+                {/if}
             {/if}
         </nav>
 
@@ -75,10 +81,6 @@
                 {runState.run.error}
             </div>
         {/if}
-        <!-- Dataset Explorer tab - always available, doesn't require loaded run -->
-        <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
-            <DatasetExplorerTab />
-        </div>
         {#if runState.prompts.status === "loaded" && runState.allTokens.status === "loaded"}
             <!-- Use hidden class instead of conditional rendering to preserve state -->
             <div class="tab-content" class:hidden={activeTab !== "prompts"}>
@@ -87,12 +89,17 @@
             <div class="tab-content" class:hidden={activeTab !== "components"}>
                 <ActivationContextsTab />
             </div>
+            {#if datasetSearchEnabled}
+                <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
+                    <DatasetSearchTab />
+                </div>
+            {/if}
         {:else if runState.run.status === "loading" || runState.prompts.status === "loading" || runState.allTokens.status === "loading"}
-            <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
+            <div class="empty-state">
                 <p>Loading run...</p>
             </div>
         {:else}
-            <div class="empty-state" class:hidden={activeTab === "dataset-search"}>
+            <div class="empty-state">
                 <p>Enter a W&B Path above to get started</p>
             </div>
         {/if}

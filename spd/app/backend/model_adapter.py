@@ -1,9 +1,8 @@
 """Adapter that extracts model topology from a ComponentModel.
 
-Replaces hardcoded layer names, block counting, and module access patterns
-with introspection-based discovery. All model-architecture assumptions
-(embedding path, unembedding path, attention detection, block numbering)
-are resolved once at load time and stored here.
+Instead of auto-detecting model structure via regex heuristics, each supported
+architecture has an explicit config that declares its embedding path, unembed
+path, attention roles (kv/o), role groupings, and display names.
 
 Pseudo-layers:
 - "wte": embedding layer (always a source, never a target)
@@ -12,34 +11,12 @@ These are used as node keys in the attribution graph regardless of the
 actual module names in the underlying model.
 """
 
-import re
 from dataclasses import dataclass
 
 from jaxtyping import Float
 from torch import Tensor, nn
 
 from spd.models.component_model import ComponentModel
-
-
-def _find_embedding_module(model: nn.Module) -> tuple[str, nn.Embedding]:
-    """Find the first nn.Embedding in the model."""
-    for name, module in model.named_modules():
-        if isinstance(module, nn.Embedding):
-            return name, module
-    raise ValueError("No nn.Embedding found in model")
-
-
-def _find_unembed_module(
-    model: nn.Module,
-    target_module_paths: list[str],
-    vocab_size: int,
-) -> tuple[str, nn.Linear] | None:
-    """Find the unembedding (lm_head) module if it's a decomposed target."""
-    for path in target_module_paths:
-        module = model.get_submodule(path)
-        if isinstance(module, nn.Linear) and module.out_features == vocab_size:
-            return path, module
-    return None
 
 
 def _extract_block_index(path: str) -> int | None:
@@ -63,29 +40,136 @@ def _extract_role(path: str) -> str:
     return path.rsplit(".", maxsplit=1)[-1]
 
 
-_KV_ROLE_PATTERN = re.compile(r"k_proj|v_proj|key|value|c_attn")
-_O_ROLE_PATTERN = re.compile(r"o_proj|out_proj|c_proj")
-_QKV_ROLE_PATTERN = re.compile(r"q_proj|k_proj|v_proj|query|key|value")
+@dataclass(frozen=True)
+class ArchConfig:
+    """Per-architecture topology declaration.
+
+    Fields:
+        embedding_path: Dotted path to the nn.Embedding (e.g. "wte", "transformer.wte")
+        unembed_path: Dotted path to the lm_head Linear, or None if never decomposed
+        kv_roles: Role names (last path segments) that are K/V projections
+        o_roles: Role names that are attention output projections
+        qkv_group: Role names that should be visually grouped (e.g. Q/K/V), empty if none
+        display_names: Static display-name overrides (e.g. {"lm_head": "W_U"})
+    """
+
+    embedding_path: str
+    unembed_path: str
+    kv_roles: frozenset[str]
+    o_roles: frozenset[str]
+    qkv_group: tuple[str, ...]
+    display_names: dict[str, str]
 
 
-def _detect_cross_seq_roles(
+# Custom SPD models: LlamaSimple, LlamaSimpleMLP, GPT2Simple
+_CUSTOM_SPD_CONFIG = ArchConfig(
+    embedding_path="wte",
+    unembed_path="lm_head",
+    kv_roles=frozenset({"k_proj", "v_proj"}),
+    o_roles=frozenset({"o_proj"}),
+    qkv_group=("q_proj", "k_proj", "v_proj"),
+    display_names={"lm_head": "W_U"},
+)
+
+# HuggingFace GPT2LMHeadModel (also covers AutoModelForCausalLM when it resolves to GPT2)
+_HF_GPT2_CONFIG = ArchConfig(
+    embedding_path="transformer.wte",
+    unembed_path="lm_head",
+    # c_attn is a fused QKV projection — it carries K/V information
+    kv_roles=frozenset({"c_attn"}),
+    o_roles=frozenset({"c_proj"}),
+    qkv_group=(),  # c_attn is fused, no separate Q/K/V to group
+    display_names={"lm_head": "W_U"},
+)
+
+# GPT2Simple with the "noln" config uses c_proj for both attn output and MLP output.
+# Cross-seq detection filters by 'attn' in the path (see _resolve_cross_seq_paths).
+_CUSTOM_SPD_NOLN_CONFIG = ArchConfig(
+    embedding_path="wte",
+    unembed_path="lm_head",
+    kv_roles=frozenset({"k_proj", "v_proj"}),
+    o_roles=frozenset({"c_proj"}),
+    qkv_group=(),  # noln variant doesn't have q_proj, only k_proj/v_proj
+    display_names={"lm_head": "W_U"},
+)
+
+
+def _get_arch_config(model: nn.Module, target_module_paths: list[str]) -> ArchConfig:
+    """Get the architecture config by matching the model class.
+
+    For models loaded via AutoModelForCausalLM, the resolved class
+    (e.g. GPT2LMHeadModel) is matched, not AutoModelForCausalLM itself.
+    """
+    from transformers.models.gpt2 import GPT2LMHeadModel
+
+    from spd.pretrain.models import GPT2, GPT2Simple, LlamaSimple, LlamaSimpleMLP
+
+    match model:
+        case LlamaSimple() | LlamaSimpleMLP():
+            return _CUSTOM_SPD_CONFIG
+        case GPT2Simple() | GPT2():
+            # Detect "noln" variant: uses c_proj in attn without separate q_proj
+            roles = {_extract_role(p) for p in target_module_paths}
+            if "c_proj" in roles and "q_proj" not in roles:
+                return _CUSTOM_SPD_NOLN_CONFIG
+            return _CUSTOM_SPD_CONFIG
+        case GPT2LMHeadModel():
+            return _HF_GPT2_CONFIG
+        case _:
+            raise ValueError(
+                f"Unsupported model architecture: {type(model).__name__}. "
+                f"Add an ArchConfig for this model class in model_adapter.py."
+            )
+
+
+def _resolve_cross_seq_paths(
     target_module_paths: list[str],
-) -> tuple[set[str], set[str]]:
-    """Auto-detect (kv_paths, o_paths) for attention cross-sequence flow.
+    arch: ArchConfig,
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Resolve full module paths for cross-sequence attention roles.
 
-    Returns full module paths (not just roles) so same-block matching works.
+    For architectures where a role name like 'c_proj' appears in both attn and mlp
+    contexts, we only include paths that contain 'attn' in their path.
     """
     kv_paths: set[str] = set()
     o_paths: set[str] = set()
 
     for path in target_module_paths:
         role = _extract_role(path)
-        if _KV_ROLE_PATTERN.search(role):
+        if role in arch.kv_roles:
             kv_paths.add(path)
-        elif _O_ROLE_PATTERN.search(role):
+        elif role in arch.o_roles and "attn" in path:
             o_paths.add(path)
 
-    return kv_paths, o_paths
+    return frozenset(kv_paths), frozenset(o_paths)
+
+
+def _build_role_order(target_module_paths: list[str]) -> list[str]:
+    """Deduplicated roles in execution order from target module paths."""
+    seen: set[str] = set()
+    order: list[str] = []
+    for path in target_module_paths:
+        role = _extract_role(path)
+        if role not in seen:
+            seen.add(role)
+            order.append(role)
+    return order
+
+
+def _build_role_groups(
+    role_order: list[str],
+    arch: ArchConfig,
+) -> dict[str, list[str]]:
+    """Build role groups from the architecture config.
+
+    Only includes roles that are actually present in the target modules.
+    """
+    if not arch.qkv_group:
+        return {}
+    present = [r for r in arch.qkv_group if r in role_order]
+    if len(present) >= 2:
+        return {"qkv": present}
+    return {}
 
 
 @dataclass(frozen=True)
@@ -132,64 +216,43 @@ class ModelAdapter:
         return self.unembed_module.weight.T.detach()
 
 
-def _build_role_order(target_module_paths: list[str]) -> list[str]:
-    """Deduplicated roles in execution order from target module paths."""
-    seen: set[str] = set()
-    order: list[str] = []
-    for path in target_module_paths:
-        role = _extract_role(path)
-        if role not in seen:
-            seen.add(role)
-            order.append(role)
-    return order
-
-
-def _detect_role_groups(role_order: list[str]) -> dict[str, list[str]]:
-    """Auto-detect role groups (roles that share a visual row).
-
-    Currently detects QKV-like groups: consecutive roles matching q/k/v patterns.
-    """
-    qkv_roles = [r for r in role_order if _QKV_ROLE_PATTERN.search(r)]
-    if len(qkv_roles) >= 2:
-        return {"qkv": qkv_roles}
-    return {}
-
-
-def _build_display_names(
-    unembed_path: str | None,
-) -> dict[str, str]:
-    """Build display name mapping for special layers."""
-    names: dict[str, str] = {}
-    if unembed_path is not None:
-        names[_extract_role(unembed_path)] = "W_U"
-    return names
-
-
 def build_model_adapter(model: ComponentModel) -> ModelAdapter:
-    """Build a ModelAdapter by introspecting the ComponentModel."""
+    """Build a ModelAdapter by matching the model's architecture to an explicit config."""
     target_model = model.target_model
+    target_paths = model.target_module_paths
 
-    embedding_path, embedding_module = _find_embedding_module(target_model)
-    vocab_size = embedding_module.num_embeddings
+    arch = _get_arch_config(target_model, target_paths)
 
-    unembed_result = _find_unembed_module(target_model, model.target_module_paths, vocab_size)
-    unembed_path = unembed_result[0] if unembed_result else None
-    unembed_module = unembed_result[1] if unembed_result else None
+    # Resolve embedding
+    embedding_module = target_model.get_submodule(arch.embedding_path)
+    assert isinstance(embedding_module, nn.Embedding), (
+        f"Expected nn.Embedding at '{arch.embedding_path}', got {type(embedding_module).__name__}"
+    )
 
-    kv_paths, o_paths = _detect_cross_seq_roles(model.target_module_paths)
-    role_order = _build_role_order(model.target_module_paths)
-    role_groups = _detect_role_groups(role_order)
-    display_names = _build_display_names(unembed_path)
+    # Resolve unembed (only if it's among the decomposed targets)
+    unembed_path: str | None = None
+    unembed_module: nn.Linear | None = None
+    if arch.unembed_path in target_paths:
+        module = target_model.get_submodule(arch.unembed_path)
+        assert isinstance(module, nn.Linear), (
+            f"Expected nn.Linear at '{arch.unembed_path}', got {type(module).__name__}"
+        )
+        unembed_path = arch.unembed_path
+        unembed_module = module
+
+    kv_paths, o_paths = _resolve_cross_seq_paths(target_paths, arch)
+    role_order = _build_role_order(target_paths)
+    role_groups = _build_role_groups(role_order, arch)
 
     return ModelAdapter(
-        target_module_paths=model.target_module_paths,
-        embedding_path=embedding_path,
+        target_module_paths=target_paths,
+        embedding_path=arch.embedding_path,
         embedding_module=embedding_module,
         unembed_path=unembed_path,
         unembed_module=unembed_module,
-        kv_paths=frozenset(kv_paths),
-        o_paths=frozenset(o_paths),
+        kv_paths=kv_paths,
+        o_paths=o_paths,
         role_order=role_order,
         role_groups=role_groups,
-        display_names=display_names,
+        display_names=arch.display_names,
     )

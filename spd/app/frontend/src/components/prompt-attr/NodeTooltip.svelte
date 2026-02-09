@@ -1,9 +1,14 @@
 <script lang="ts">
+    import { getContext } from "svelte";
     import type { OutputProbability, EdgeData } from "../../lib/promptAttributionsTypes";
     import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import type { TooltipPos } from "./graphUtils";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
+    import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
+
+    const runState = getContext<RunContext>(RUN_KEY);
+    const displayNames = $derived(runState.modelInfo?.display_names ?? {});
 
     type HoveredNode = {
         layer: string;
@@ -86,8 +91,17 @@
     onmouseleave={onMouseLeave}
     onwheel={(e) => e.stopPropagation()}
 >
+    <h3>{getLayerDisplayName(hoveredNode.layer, displayNames)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
+    {#if isComponent && ciVal !== null}
+        <div class="ci-value">CI: {ciVal.toFixed(3)}</div>
+    {/if}
+    {#if isComponent && subcompAct !== null}
+        <div class="subcomp-act">Subcomp Act: {subcompAct.toFixed(3)}</div>
+    {/if}
+    {#if clusterId !== undefined}
+        <div class="cluster-id">Cluster: {clusterId ?? "null"}</div>
+    {/if}
     {#if isWte}
-        <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
         <p class="wte-info">Input embedding at position {hoveredNode.seqIdx}</p>
         <div class="wte-content">
             <div class="wte-token">"{token}"</div>
@@ -97,7 +111,6 @@
             </p>
         </div>
     {:else if isOutput}
-        <h3>{getLayerDisplayName(hoveredNode.layer)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
         <OutputNodeCard cIdx={hoveredNode.cIdx} {outputProbs} seqIdx={hoveredNode.seqIdx} />
     {:else if !hideNodeCard}
         <!-- Key forces remount when component identity changes, so ComponentNodeCard can load on mount -->
