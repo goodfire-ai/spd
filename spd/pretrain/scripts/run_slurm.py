@@ -17,6 +17,7 @@ def main(
     time: str = "72:00:00",
     job_name: str = "spd-pretrain",
     local: bool = False,
+    begin: str | None = None,
 ) -> None:
     """Submit pretraining job to SLURM or run locally.
 
@@ -27,14 +28,16 @@ def main(
         time: SLURM time limit
         job_name: SLURM job name
         local: If True, run locally instead of submitting to SLURM
+        begin: Defer job start (e.g. "now+6hours"). Passed to sbatch --begin.
     """
     config_path_resolved = Path(config_path)
     assert config_path_resolved.exists(), f"Config not found: {config_path}"
 
     if local:
+        assert begin is None, "--begin is not supported with --local"
         _run_local(config_path_resolved, n_gpus)
     else:
-        _submit_slurm(config_path_resolved, n_gpus, partition, time, job_name)
+        _submit_slurm(config_path_resolved, n_gpus, partition, time, job_name, begin)
 
 
 def _run_local(config_path: Path, n_gpus: int) -> None:
@@ -61,6 +64,7 @@ def _submit_slurm(
     partition: str,
     time: str,
     job_name: str,
+    begin: str | None = None,
 ) -> None:
     """Submit job to SLURM."""
     SLURM_LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -81,6 +85,7 @@ def _submit_slurm(
         n_gpus=n_gpus,
         time=time,
         snapshot_branch=execution_stamp.snapshot_branch,
+        begin=begin,
     )
 
     script = generate_script(config, train_cmd)
