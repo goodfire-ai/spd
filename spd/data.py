@@ -16,14 +16,15 @@ from spd.utils.distributed_utils import DistributedState
 
 
 class DatasetConfig(BaseConfig):
-    name: str = "lennart-finke/SimpleStories"
-    is_tokenized: bool = True
-    hf_tokenizer_path: str | None = None
-    streaming: bool = False
-    split: str = "train"
-    n_ctx: int = 1024
+    name: str
+    is_tokenized: bool
+    hf_tokenizer_path: str | None
+    streaming: bool
+    split: str
+    n_ctx: int
+    """Must be model n_ctx + 1 to provide room for next-token label indexing."""
     seed: int | None = None
-    column_name: str = "input_ids"
+    column_name: str
     """The name of the column in the dataset that contains the data (tokenized or non-tokenized).
     Typically 'input_ids' for datasets stored with e2e_sae/scripts/upload_hf_dataset.py, or "tokens"
     for datasets tokenized in TransformerLens (e.g. NeelNanda/pile-10k)."""
@@ -223,9 +224,14 @@ def create_data_loader(
         assert isinstance(sample, Tensor) and sample.ndim == 1, (
             f"Expected the dataset to be tokenized. Got type {type(sample)}"
         )
-        assert len(sample) == dataset_config.n_ctx, (
-            f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample)})."
+        tokenized_len = len(sample)
+        assert dataset_config.n_ctx <= tokenized_len, (
+            f"n_ctx ({dataset_config.n_ctx}) is larger than the tokenized length ({tokenized_len})."
         )
+        if dataset_config.n_ctx < tokenized_len:
+            col = dataset_config.column_name
+            n_ctx = dataset_config.n_ctx
+            torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
     else:
         to_lower = "SimpleStories" in dataset_config.name
         torch_dataset = tokenize_and_concatenate(
