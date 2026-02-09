@@ -177,10 +177,10 @@ async def request_component_interpretation(
     token_stats = loaded.harvest.token_stats
 
     input_token_stats = analysis.get_input_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k=20
+        token_stats, component_key, loaded.tokenizer.hf_tokenizer, top_k=20
     )
     output_token_stats = analysis.get_output_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k=50
+        token_stats, component_key, loaded.tokenizer.hf_tokenizer, top_k=50
     )
     if input_token_stats is None or output_token_stats is None:
         raise HTTPException(
@@ -197,7 +197,7 @@ async def request_component_interpretation(
             model=model_name,
             component=component_data,
             arch=arch,
-            tokenizer=loaded.tokenizer,
+            tokenizer=loaded.tokenizer.hf_tokenizer,
             input_token_stats=input_token_stats,
             output_token_stats=output_token_stats,
         )
@@ -254,10 +254,10 @@ def get_component_token_stats(
     component_key = f"{layer}:{component_idx}"
 
     input_stats = analysis.get_input_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k
+        token_stats, component_key, loaded.tokenizer.hf_tokenizer, top_k
     )
     output_stats = analysis.get_output_token_stats(
-        token_stats, component_key, loaded.tokenizer, top_k
+        token_stats, component_key, loaded.tokenizer.hf_tokenizer, top_k
     )
 
     if input_stats is None or output_stats is None:

@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import (
     Edge,
     compute_prompt_attributions,
@@ -209,19 +210,11 @@ def build_out_probs(
     target_out_probs: torch.Tensor,
     target_out_logits: torch.Tensor,
     output_prob_threshold: float,
-    token_strings: dict[int, str],
+    tok_display: Callable[[int], str],
 ) -> dict[str, OutputProbability]:
     """Build output probs dict from CI-masked and target model tensors.
 
     Filters by CI-masked probability threshold, but includes both probabilities.
-
-    Args:
-        ci_masked_out_probs: Shape [seq, vocab] - CI-masked model output probabilities
-        ci_masked_out_logits: Shape [seq, vocab] - CI-masked model output logits
-        target_out_probs: Shape [seq, vocab] - Target model output probabilities
-        target_out_logits: Shape [seq, vocab] - Target model output logits
-        output_prob_threshold: Threshold for filtering output probabilities
-        token_strings: Dictionary mapping token IDs to strings
     """
     assert ci_masked_out_probs.ndim == 2, f"Expected [seq, vocab], got {ci_masked_out_probs.shape}"
     assert target_out_probs.ndim == 2, f"Expected [seq, vocab], got {target_out_probs.shape}"
@@ -244,7 +237,7 @@ def build_out_probs(
                 logit=round(logit, 4),
                 target_prob=round(target_prob, 6),
                 target_logit=round(target_logit, 4),
-                token=token_strings[c_idx],
+                token=tok_display(c_idx),
             )
     return out_probs
 
@@ -298,7 +291,7 @@ def stream_computation(
 def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
     """Tokenize text and return tokens with probability of next token."""
     device = get_device()
-    token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(text)
 
     if len(token_ids) == 0:
         return TokenizeResponse(
@@ -325,7 +318,7 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
     return TokenizeResponse(
         text=text,
         token_ids=token_ids,
-        tokens=[loaded.token_strings[t] for t in token_ids],
+        tokens=loaded.tokenizer.get_spans(token_ids),
         next_token_probs=next_token_probs,
     )
 
@@ -335,7 +328,10 @@ def tokenize_text(text: str, loaded: DepLoadedRun) -> TokenizeResponse:
 def get_all_tokens(loaded: DepLoadedRun) -> TokensResponse:
     """Get all tokens in the tokenizer vocabulary for client-side search."""
     return TokensResponse(
-        tokens=[TokenInfo(id=tid, string=tstr) for tid, tstr in loaded.token_strings.items()]
+        tokens=[
+            TokenInfo(id=tid, string=loaded.tokenizer.get_tok_display(tid))
+            for tid in range(loaded.tokenizer.vocab_size)
+        ]
     )
 
 
@@ -409,7 +405,7 @@ def compute_graph_stream(
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     token_ids = prompt.token_ids
-    token_strings = [loaded.token_strings[t] for t in token_ids]
+    spans = loaded.tokenizer.get_spans(token_ids)
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
     def work(on_progress: ProgressCallback) -> GraphData:
@@ -430,7 +426,7 @@ def compute_graph_stream(
             target_out_probs=result.target_out_probs.cpu(),
             target_out_logits=result.target_out_logits.cpu(),
             output_prob_threshold=output_prob_threshold,
-            token_strings=loaded.token_strings,
+            tok_display=loaded.tokenizer.get_tok_display,
         )
         graph_id = db.save_graph(
             prompt_id=prompt_id,
@@ -457,7 +453,7 @@ def compute_graph_stream(
         return GraphData(
             id=graph_id,
             graphType=graph_type,
-            tokens=token_strings,
+            tokens=spans,
             edges=edges_data,
             outputProbs=out_probs,
             nodeCiVals=node_ci_vals_with_pseudo,
@@ -564,12 +560,13 @@ def compute_graph_optimized_stream(
             detail=f"loss_position {loss_position} out of bounds for prompt with {len(token_ids)} tokens",
         )
 
-    token_strings = [loaded.token_strings[t] for t in token_ids]
+    label_str = loaded.tokenizer.get_tok_display(label_token) if label_token is not None else None
+    spans = loaded.tokenizer.get_spans(token_ids)
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
     # Slice tokens to only include positions <= loss_position
     num_tokens = loss_position + 1
-    token_strings_sliced = token_strings[:num_tokens]
+    spans_sliced = spans[:num_tokens]
 
     opt_params = OptimizationParams(
         imp_min_coeff=imp_min_coeff,
@@ -613,7 +610,7 @@ def compute_graph_optimized_stream(
             target_out_probs=result.target_out_probs.cpu(),
             target_out_logits=result.target_out_logits.cpu(),
             output_prob_threshold=output_prob_threshold,
-            token_strings=loaded.token_strings,
+            tok_display=loaded.tokenizer.get_tok_display,
         )
         graph_id = db.save_graph(
             prompt_id=prompt_id,
@@ -641,11 +638,12 @@ def compute_graph_optimized_stream(
         loss_result: CELossResult | KLLossResult
         match loss_config:
             case CELossConfig(coeff=coeff, position=pos, label_token=label_tok):
+                assert label_str is not None
                 loss_result = CELossResult(
                     coeff=coeff,
                     position=pos,
                     label_token=label_tok,
-                    label_str=loaded.token_strings[label_tok],
+                    label_str=label_str,
                 )
             case KLLossConfig(coeff=coeff, position=pos):
                 loss_result = KLLossResult(coeff=coeff, position=pos)
@@ -653,7 +651,7 @@ def compute_graph_optimized_stream(
         return GraphDataWithOptimization(
             id=graph_id,
             graphType="optimized",
-            tokens=token_strings_sliced,
+            tokens=spans_sliced,
             edges=edges_data,
             outputProbs=out_probs,
             nodeCiVals=node_ci_vals_with_pseudo,
@@ -725,19 +723,19 @@ def process_edges_for_response(
 def stored_graph_to_response(
     graph: StoredGraph,
     token_ids: list[int],
-    token_strings_map: dict[int, str],
+    tokenizer: AppTokenizer,
     normalize: NormalizeType,
     ci_threshold: float,
 ) -> GraphData | GraphDataWithOptimization:
     """Convert a StoredGraph to API response format."""
-    token_strings = [token_strings_map[t] for t in token_ids]
+    spans = tokenizer.get_spans(token_ids)
     num_tokens = len(token_ids)
     is_optimized = graph.optimization_params is not None
 
     if is_optimized:
         assert graph.optimization_params is not None
         num_tokens = graph.optimization_params.loss.position + 1
-        token_strings = token_strings[:num_tokens]
+        spans = spans[:num_tokens]
 
     filtered_node_ci_vals = {k: v for k, v in graph.node_ci_vals.items() if v > ci_threshold}
     l0_total = len(filtered_node_ci_vals)
@@ -755,7 +753,7 @@ def stored_graph_to_response(
         return GraphData(
             id=graph.id,
             graphType=graph.graph_type,
-            tokens=token_strings,
+            tokens=spans,
             edges=edges_data,
             outputProbs=graph.out_probs,
             nodeCiVals=node_ci_vals_with_pseudo,
@@ -772,11 +770,12 @@ def stored_graph_to_response(
     loss_result: CELossResult | KLLossResult
     match opt.loss:
         case CELossConfig(coeff=coeff, position=pos, label_token=label_tok):
+            label_str = tokenizer.get_tok_display(label_tok)
             loss_result = CELossResult(
                 coeff=coeff,
                 position=pos,
                 label_token=label_tok,
-                label_str=token_strings_map[label_tok],
+                label_str=label_str,
             )
         case KLLossConfig(coeff=coeff, position=pos):
             loss_result = KLLossResult(coeff=coeff, position=pos)
@@ -784,7 +783,7 @@ def stored_graph_to_response(
     return GraphDataWithOptimization(
         id=graph.id,
         graphType=graph.graph_type,
-        tokens=token_strings,
+        tokens=spans,
         edges=edges_data,
         outputProbs=graph.out_probs,
         nodeCiVals=node_ci_vals_with_pseudo,
@@ -829,7 +828,7 @@ def get_graphs(
         stored_graph_to_response(
             graph=graph,
             token_ids=prompt.token_ids,
-            token_strings_map=loaded.token_strings,
+            tokenizer=loaded.tokenizer,
             normalize=normalize,
             ci_threshold=ci_threshold,
         )

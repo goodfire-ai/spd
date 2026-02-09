@@ -10,10 +10,11 @@ from pydantic import BaseModel
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import HarvestCache, RunState
-from spd.app.backend.utils import build_token_lookup, log_errors
+from spd.app.backend.utils import log_errors
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
@@ -107,17 +108,12 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     logger.info(f"[API] Building sources_by_target mapping for run {run.id}")
     sources_by_target = get_sources_by_target(model, DEVICE, spd_config.sampling)
 
-    # Build token lookup for activation contexts
-    logger.info(f"[API] Building token lookup for run {run.id}")
-    token_strings = build_token_lookup(loaded_tokenizer, spd_config.tokenizer_name)
-
     manager.run_state = RunState(
         run=run,
         model=model,
-        tokenizer=loaded_tokenizer,
+        tokenizer=AppTokenizer(loaded_tokenizer),
         sources_by_target=sources_by_target,
         config=spd_config,
-        token_strings=token_strings,
         context_length=context_length,
         harvest=HarvestCache(run_id=run_id),
     )

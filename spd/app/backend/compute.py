@@ -12,8 +12,9 @@ from typing import Any, override
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor, nn
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from tqdm.auto import tqdm
 
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimize_ci_values
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
@@ -749,7 +750,7 @@ def compute_intervention_forward(
     tokens: Float[Tensor, "1 seq"],
     active_nodes: list[tuple[str, int, int]],  # [(layer, seq_pos, component_idx)]
     top_k: int,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: AppTokenizer,
 ) -> InterventionResult:
     """Forward pass with only specified nodes active.
 
@@ -803,7 +804,7 @@ def compute_intervention_forward(
         pos_predictions: list[tuple[str, int, float, float, float, float]] = []
         for spd_prob, token_id in zip(top_probs, top_ids, strict=True):
             tid = int(token_id.item())
-            token_str = tokenizer.decode([tid])
+            token_str = tokenizer.get_tok_display(tid)
             target_prob = float(pos_target_out_probs[tid].item())
             target_logit = float(pos_target_logits[tid].item())
             pos_predictions.append(
@@ -819,7 +820,7 @@ def compute_intervention_forward(
         predictions_per_position.append(pos_predictions)
 
     # Decode input tokens
-    input_tokens = [tokenizer.decode([int(t.item())]) for t in tokens[0]]
+    input_tokens = tokenizer.get_spans([int(t.item()) for t in tokens[0]])
 
     return InterventionResult(
         input_tokens=input_tokens,

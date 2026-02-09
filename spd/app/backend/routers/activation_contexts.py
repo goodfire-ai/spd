@@ -89,13 +89,11 @@ def get_activation_context_detail(
 
     # Convert token IDs to strings
     PADDING_SENTINEL = -1
-    token_strings = loaded.token_strings
 
     def token_str(tid: int) -> str:
         if tid == PADDING_SENTINEL:
             return "<pad>"
-        assert tid in token_strings, f"Token ID {tid} not in vocab"
-        return token_strings[tid]
+        return loaded.tokenizer.get_tok_display(tid)
 
     # Apply limit to examples
     examples = comp.activation_examples
@@ -176,7 +174,7 @@ def probe_component(
     """
     device = get_device()
 
-    token_ids = loaded.tokenizer.encode(request.text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(request.text)
     assert len(token_ids) > 0, "Text produced no tokens"
 
     tokens_tensor = torch.tensor([token_ids], device=device)
@@ -191,7 +189,7 @@ def probe_component(
 
     ci_tensor = result.ci_lower_leaky[request.layer]
     ci_values = ci_tensor[0, :, request.component_idx].tolist()
-    token_strings = [loaded.token_strings[t] for t in token_ids]
+    spans = loaded.tokenizer.get_spans(token_ids)
 
     subcomp_acts_tensor = result.component_acts[request.layer]
     subcomp_acts = subcomp_acts_tensor[0, :, request.component_idx].tolist()
@@ -206,7 +204,7 @@ def probe_component(
     next_token_probs.append(None)  # No next token for last position
 
     return ComponentProbeResponse(
-        tokens=token_strings,
+        tokens=spans,
         ci_values=ci_values,
         subcomp_acts=subcomp_acts,
         next_token_probs=next_token_probs,

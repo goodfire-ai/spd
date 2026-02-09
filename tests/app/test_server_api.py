@@ -13,6 +13,7 @@ from unittest import mock
 import pytest
 from fastapi.testclient import TestClient
 
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.database import PromptAttrDB
 from spd.app.backend.routers import graphs as graphs_router
@@ -127,17 +128,20 @@ def app_with_state():
             model=model, device=DEVICE, sampling=config.sampling
         )
 
-        # The model has vocab_size=4019, so create entries for all token IDs
-        token_strings = {i: f"tok_{i}" for i in range(model_config.vocab_size)}
+        from transformers import AutoTokenizer
+        from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+
+        hf_tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
+        assert isinstance(hf_tokenizer, PreTrainedTokenizerBase)
+        tokenizer = AppTokenizer(hf_tokenizer)
 
         run_state = RunState(
             run=run,
             model=model,
             context_length=1,
-            tokenizer=None,  # pyright: ignore[reportArgumentType]
+            tokenizer=tokenizer,
             sources_by_target=sources_by_target,
             config=config,
-            token_strings=token_strings,
             harvest=HarvestCache(run_id="test_run"),
         )
 
