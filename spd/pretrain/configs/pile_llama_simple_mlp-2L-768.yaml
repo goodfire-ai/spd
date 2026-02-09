@@ -36,7 +36,7 @@ train_dataset_config:
   is_tokenized: true
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
   split: train
-  streaming: false
+  streaming: true
   n_ctx: 513
   seed: 0
   column_name: text
@@ -46,7 +46,7 @@ val_dataset_config:
   is_tokenized: true
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
   split: val
-  streaming: false
+  streaming: true
   n_ctx: 513
   seed: 0
   column_name: text
