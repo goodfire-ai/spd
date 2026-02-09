@@ -31,7 +31,7 @@ train_dataset_config:
   hf_tokenizer_path: gpt2
   split: train[:10000000]
   streaming: false
-  n_ctx: 512
+  n_ctx: 513  # model n_ctx + 1 for next-token label indexing
   seed: 0
   column_name: text
 
@@ -41,6 +41,6 @@ val_dataset_config:
   hf_tokenizer_path: gpt2
   split: train[-100000:]
   streaming: false
-  n_ctx: 512
+  n_ctx: 513  # model n_ctx + 1 for next-token label indexing
   seed: 0
   column_name: text

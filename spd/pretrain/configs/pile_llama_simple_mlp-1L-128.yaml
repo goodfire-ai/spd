@@ -1,9 +1,6 @@
-
-
-
 wandb_project: spd
 dtype: bfloat16
-batch_size: 64
+batch_size: 1024
 num_iterations: 100_000
 warmup_iters: 600
 learning_rate: 3e-4
@@ -17,22 +14,16 @@ intermediate_checkpoints: false
 
 model:
   model_type: LlamaSimpleMLP
-  attn_bias: false
   block_size: 512
-  flash_attention: false
-  mlp_bias: false
-  n_ctx: 512
-  n_embd: 2048
-  n_head: 16
-  n_intermediate: 8192  # 2048 * 4
-  n_key_value_heads: 16
+  vocab_size: 4019
   n_layer: 2
-  rms_norm_eps: 1.0e-06
-  rotary_adjacent_pairs: false
-  rotary_base: 10000
-  rotary_dim: 341       # 2048 // 6
-  use_grouped_query_attention: true
-  vocab_size: 50277
+  n_head: 4
+  n_embd: 128
+  n_intermediate: 512  # 128 * 4
+  rotary_dim: 32       # 128 // 4
+  n_ctx: 512
+  n_key_value_heads: 2
+  flash_attention: false
 
 train_dataset_config:
   name: danbraunai/pile-uncopyrighted-tok
