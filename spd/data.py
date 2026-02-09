@@ -184,12 +184,14 @@ def create_data_loader(
         A tuple of the DataLoader and the tokenizer.
     """
 
+    logger.info("Loading dataset '%s' (split=%s, streaming=%s)", dataset_config.name, dataset_config.split, dataset_config.streaming)
     dataset = load_dataset(
         dataset_config.name,
         streaming=dataset_config.streaming,
         split=dataset_config.split,
         trust_remote_code=False,
     )
+    logger.info("Loaded dataset")
     seed = dataset_config.seed if dataset_config.seed is not None else global_seed
 
     if dataset_config.streaming:
@@ -212,14 +214,21 @@ def create_data_loader(
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
         assert isinstance(dataset, Dataset)
+        logger.info("Shuffling dataset (len=%d)", len(dataset))
         dataset = dataset.shuffle(seed=seed)
+        logger.info("Shuffled dataset")
 
+    logger.info("Loading tokenizer")
     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
+    logger.info("Loaded tokenizer")
 
     torch_dataset: Dataset | IterableDataset
     if dataset_config.is_tokenized:
+        logger.info("Setting torch format on tokenized dataset")
         torch_dataset = dataset.with_format("torch")
+        logger.info("Set torch format")
         # Verify tokenization
+        logger.info("Verifying tokenization")
         sample = next(iter(torch_dataset))[dataset_config.column_name]
         assert isinstance(sample, Tensor) and sample.ndim == 1, (
             f"Expected the dataset to be tokenized. Got type {type(sample)}"
@@ -228,12 +237,19 @@ def create_data_loader(
         assert dataset_config.n_ctx <= tokenized_len, (
             f"n_ctx ({dataset_config.n_ctx}) is larger than the tokenized length ({tokenized_len})."
         )
+        logger.info("Verified tokenization")
         if dataset_config.n_ctx < tokenized_len:
             col = dataset_config.column_name
             n_ctx = dataset_config.n_ctx
-            torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
+            logger.info("Setting transform to truncate to n_ctx=%d", n_ctx)
+            if isinstance(torch_dataset, Dataset):
+                torch_dataset.set_transform(lambda x: {col: [row[:n_ctx] for row in x[col]]})
+            else:
+                torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
+            logger.info("Set transform")
     else:
         to_lower = "SimpleStories" in dataset_config.name
+        logger.info("Tokenizing and concatenating dataset")
         torch_dataset = tokenize_and_concatenate(
             dataset,  # pyright: ignore[reportArgumentType]
             tokenizer,
@@ -242,6 +258,7 @@ def create_data_loader(
             add_bos_token=False,
             to_lower=to_lower,
         )
+        logger.info("Tokenized and concatenated dataset")
 
     sampler = None
     if not dataset_config.streaming and dist_state is not None:
@@ -258,6 +275,7 @@ def create_data_loader(
     generator = torch.Generator(device="cpu")
     generator.manual_seed(seed)
 
+    logger.info("Creating DataLoader")
     loader = DataLoader[Dataset | IterableDataset](
         torch_dataset,  # pyright: ignore[reportArgumentType]
         batch_size=batch_size,
@@ -268,6 +286,7 @@ def create_data_loader(
         drop_last=True,
         generator=generator,
     )
+    logger.info("Created DataLoader")
     return loader, tokenizer
 
 
