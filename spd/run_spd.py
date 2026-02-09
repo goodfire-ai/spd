@@ -268,7 +268,7 @@ def optimize(
         }
 
         for _ in range(config.gradient_accumulation_steps):
-            microbatch = extract_batch_data(next(train_iterator)).to(device)
+            microbatch = extract_batch_data(next(train_iterator)).to(device, non_blocking=True)
 
             with bf16_autocast(enabled=config.autocast_bf16):
                 # NOTE: we need to call the wrapped_model at least once each step in order
@@ -361,7 +361,7 @@ def optimize(
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
-            with torch.no_grad():
+            with torch.no_grad(), bf16_autocast(enabled=config.autocast_bf16):
                 slow_step: bool = (
                     config.slow_eval_on_first_step
                     if step == 0

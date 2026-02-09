@@ -231,7 +231,10 @@ def create_data_loader(
         if dataset_config.n_ctx < tokenized_len:
             col = dataset_config.column_name
             n_ctx = dataset_config.n_ctx
-            torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
+            if isinstance(torch_dataset, Dataset):
+                torch_dataset.set_transform(lambda x: {col: x[col][:, :n_ctx]})
+            else:
+                torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
     else:
         to_lower = "SimpleStories" in dataset_config.name
         torch_dataset = tokenize_and_concatenate(
