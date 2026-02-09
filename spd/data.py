@@ -212,7 +212,10 @@ def create_data_loader(
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
         assert isinstance(dataset, Dataset)
+        # This can be slow if the dataset is large. Best to use streaming=True if so.
+        logger.info("Shuffling dataset (len=%d)", len(dataset))
         dataset = dataset.shuffle(seed=seed)
+        logger.info("Shuffled dataset")
 
     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
 

@@ -91,12 +91,12 @@ eval_metric_configs:
 ci_alive_threshold: 0.0
 pretrained_model_class: spd.pretrain.models.llama_simple_mlp.LlamaSimpleMLP
 pretrained_model_path: null
-pretrained_model_name: goodfire/spd/runs/ivdw6l06
+pretrained_model_name: goodfire/spd/runs/t-bd02d372
 pretrained_model_output_attr: idx_0
 tokenizer_name: EleutherAI/gpt-neox-20b
 task_config:
   task_name: lm
-  max_seq_len: 512 # Temporary. Later we will do n_ctx=513 for the dataset and streaming=false
+  max_seq_len: 512
   buffer_size: 1000
   dataset_name: danbraunai/pile-uncopyrighted-tok
   column_name: input_ids
@@ -104,4 +104,4 @@ task_config:
   eval_data_split: val
   shuffle_each_epoch: true
   is_tokenized: true
-  streaming: true # Temporary. Later we will do n_ctx=513 for the dataset and streaming=false
+  streaming: true
