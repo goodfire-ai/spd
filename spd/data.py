@@ -12,7 +12,7 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from spd.base_config import BaseConfig
 from spd.configs import Config, LMTaskConfig
 from spd.log import logger
-from spd.utils.distributed_utils import DistributedState
+from spd.utils.distributed_utils import DistributedState, sync_across_processes
 
 
 class DatasetConfig(BaseConfig):
@@ -228,6 +228,20 @@ def create_data_loader(
         )
     else:
         to_lower = "SimpleStories" in dataset_config.name
+        # In distributed non-streaming mode, serialize the expensive map(num_proc=10) call:
+        # local_rank 0 tokenizes first to populate the HF datasets cache, then remaining ranks
+        # load from cache. Without this, all ranks spawn map workers simultaneously and OOM.
+        if dist_state is not None and not dataset_config.streaming:
+            if dist_state.local_rank == 0:
+                tokenize_and_concatenate(
+                    dataset,  # pyright: ignore[reportArgumentType]
+                    tokenizer,
+                    max_length=dataset_config.n_ctx,
+                    column_name=dataset_config.column_name,
+                    add_bos_token=False,
+                    to_lower=to_lower,
+                )
+            sync_across_processes()
         torch_dataset = tokenize_and_concatenate(
             dataset,  # pyright: ignore[reportArgumentType]
             tokenizer,
