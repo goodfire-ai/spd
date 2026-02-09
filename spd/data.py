@@ -212,7 +212,6 @@ def create_data_loader(
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
         assert isinstance(dataset, Dataset)
-        dataset = dataset.shuffle(seed=seed)
 
     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
 
@@ -231,7 +230,10 @@ def create_data_loader(
         if dataset_config.n_ctx < tokenized_len:
             col = dataset_config.column_name
             n_ctx = dataset_config.n_ctx
-            torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
+            if isinstance(torch_dataset, Dataset):
+                torch_dataset.set_transform(lambda x: {col: [row[:n_ctx] for row in x[col]]})
+            else:
+                torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
     else:
         to_lower = "SimpleStories" in dataset_config.name
         torch_dataset = tokenize_and_concatenate(
