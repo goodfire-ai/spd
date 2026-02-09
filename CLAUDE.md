@@ -297,9 +297,8 @@ Config is YAML-based (see `spd/scripts/postprocess_config.yaml` for defaults). S
 SLURM dependency graph:
 
 ```
-harvest (GPU array → merge)
+harvest (GPU array → merge → intruder eval)
 └── autointerp (functional unit, depends on harvest merge)
-    ├── intruder eval       (CPU, label-free)
     ├── interpret           (CPU, LLM calls)
     │   ├── detection       (CPU, depends on interpret)
     │   └── fuzzing         (CPU, depends on interpret)

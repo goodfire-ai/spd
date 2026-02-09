@@ -36,7 +36,7 @@ class AttributionsSlurmConfig(BaseConfig):
 
 
 class AutointerpEvalConfig(BaseConfig):
-    """Config for autointerp eval jobs (intruder, detection, fuzzing)."""
+    """Config for autointerp eval jobs (detection, fuzzing)."""
 
     eval_model: str = "google/gemini-3-flash-preview"
     partition: str = DEFAULT_PARTITION_NAME
@@ -47,7 +47,6 @@ class AutointerpSlurmConfig(BaseConfig):
     """Config for the autointerp functional unit (interpret + evals).
 
     Dependency graph within autointerp:
-        intruder eval     (depends on harvest merge, label-free)
         interpret         (depends on harvest merge)
         ├── detection     (depends on interpret)
         └── fuzzing       (depends on interpret)
@@ -69,9 +68,8 @@ class PostprocessConfig(BaseConfig):
     to skip that stage entirely.
 
     Dependency graph:
-        harvest (workers → merge)
+        harvest (workers → merge → intruder eval)
         └── autointerp (depends on harvest merge)
-            ├── intruder eval
             ├── interpret
             │   ├── detection
             │   └── fuzzing

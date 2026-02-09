@@ -1,13 +1,14 @@
 """SLURM launcher for autointerp pipeline.
 
-Autointerp is a functional unit: interpret + evals. This module submits all
-jobs in the unit with proper dependency chaining.
+Autointerp is a functional unit: interpret + label-dependent evals. This module
+submits all jobs in the unit with proper dependency chaining.
 
-Dependency graph (all depend on a prior harvest merge):
-    intruder eval     (label-free, depends on harvest merge)
+Dependency graph (depends on a prior harvest merge):
     interpret         (depends on harvest merge)
     ├── detection     (depends on interpret)
     └── fuzzing       (depends on interpret)
+
+(Intruder eval is label-free and belongs to the harvest functional unit.)
 
 Usage:
     spd-autointerp <wandb_path>
@@ -106,31 +107,7 @@ def launch_autointerp_pipeline(
     if evals is None:
         return interpret_result
 
-    # === 2. Intruder eval (label-free, depends on harvest merge) ===
-    intruder_cmd = " \\\n    ".join(
-        [
-            "python -m spd.autointerp.eval.scripts.run_intruder",
-            f'"{wandb_path}"',
-        ]
-    )
-    intruder_result = _submit_cpu_job(
-        "spd-intruder-eval",
-        intruder_cmd,
-        evals.partition,
-        evals.time,
-        snapshot_branch,
-        dependency_job_id=dependency_job_id,
-    )
-    logger.section("Intruder eval job submitted")
-    logger.values(
-        {
-            "Job ID": intruder_result.job_id,
-            "Depends on": dependency_job_id or "(none)",
-            "Log": intruder_result.log_pattern,
-        }
-    )
-
-    # === 3. Detection + fuzzing scoring (depend on interpret) ===
+    # === 2. Detection + fuzzing scoring (depend on interpret) ===
     for scorer in ("detection", "fuzzing"):
         scoring_cmd = " \\\n    ".join(
             [
