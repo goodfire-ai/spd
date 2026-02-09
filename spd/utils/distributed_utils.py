@@ -4,6 +4,7 @@ import json
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import timedelta
 from functools import wraps
 from typing import Any, Literal, cast
 
@@ -81,6 +82,7 @@ def init_distributed() -> DistributedState | None:
         world_size=world_size,
         rank=rank,
         device_id=None if backend == "gloo" else device,
+        timeout=timedelta(hours=1),
     )
 
     _state = DistributedState(
