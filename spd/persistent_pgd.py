@@ -56,7 +56,7 @@ class PersistentPGDState:
         self._adam_m: PPGDMasks = {}
         self._adam_v: PPGDMasks = {}
 
-        self.masks: PPGDMasks = {}
+        self._logits: PPGDMasks = {}
 
         match cfg.scope:
             case SingleMaskScope():
@@ -69,41 +69,46 @@ class PersistentPGDState:
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
             mask_shape = mask_leading_dims + [mask_c]
-            mask_data = call_on_rank0_then_broadcast(torch.rand, mask_shape)
-            self.masks[module_name] = mask_data.to(device=device).requires_grad_(True)
+            logit_data = call_on_rank0_then_broadcast(torch.randn, mask_shape)
+            self._logits[module_name] = logit_data.to(device=device).requires_grad_(True)
             if self.optimizer.type == "adam":
-                self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
-                self._adam_v[module_name] = torch.zeros_like(self.masks[module_name])
+                self._adam_m[module_name] = torch.zeros_like(self._logits[module_name])
+                self._adam_v[module_name] = torch.zeros_like(self._logits[module_name])
+
+    @property
+    def masks(self) -> PPGDMasks:
+        return {k: torch.sigmoid(v) for k, v in self._logits.items()}
 
     def get_grads(self, loss: Float[Tensor, ""]) -> PPGDMasks:
-        grads = torch.autograd.grad(loss, list(self.masks.values()), retain_graph=True)
+        grads = torch.autograd.grad(loss, list(self._logits.values()), retain_graph=True)
 
         return {
-            k: all_reduce(g, op=ReduceOp.SUM) for k, g in zip(self.masks.keys(), grads, strict=True)
+            k: all_reduce(g, op=ReduceOp.SUM)
+            for k, g in zip(self._logits.keys(), grads, strict=True)
         }
 
     def step(self, grads: PPGDMasks) -> dict[str, float]:
         """Perform one PGD update step using the provided gradients.
 
-        Updates masks in-place, then clamps to [0, 1].
+        Updates logits in-place. The sigmoid parameterization guarantees masks stay in [0, 1].
 
         Returns:
-            Mean absolute step per module (before clamping).
+            Mean absolute step per module.
         """
         mean_abs_step: dict[str, float] = {}
         with torch.no_grad():
             if self.optimizer.type == "sign":
                 cfg = self.optimizer
-                for module_name in self.masks:
+                for module_name in self._logits:
                     step_tensor = cfg.step_size * grads[module_name].sign()
                     mean_abs_step[module_name] = step_tensor.abs().mean().item()
-                    self.masks[module_name].add_(step_tensor)
+                    self._logits[module_name].add_(step_tensor)
             elif self.optimizer.type == "adam":
                 cfg = self.optimizer
                 self._adam_step += 1
                 bias_correction1 = 1 - cfg.beta1**self._adam_step
                 bias_correction2 = 1 - cfg.beta2**self._adam_step
-                for module_name, mask in self.masks.items():
+                for module_name, logit in self._logits.items():
                     grad = grads[module_name]
                     m = self._adam_m[module_name]
                     v = self._adam_v[module_name]
@@ -114,17 +119,14 @@ class PersistentPGDState:
                     denom = v_hat.sqrt().add_(cfg.eps)
                     step_tensor = cfg.lr * m_hat / denom
                     mean_abs_step[module_name] = step_tensor.abs().mean().item()
-                    mask.add_(step_tensor)
+                    logit.add_(step_tensor)
             else:
                 raise ValueError(f"Unknown PersistentPGD optimizer: {self.optimizer.type}")
-
-            for mask in self.masks.values():
-                mask.clamp_(0.0, 1.0)
 
         return mean_abs_step
 
     def empty_grads(self) -> PPGDMasks:
-        return {module_name: torch.zeros_like(mask) for module_name, mask in self.masks.items()}
+        return {module_name: torch.zeros_like(logit) for module_name, logit in self._logits.items()}
 
 
 def get_mask_infos(
