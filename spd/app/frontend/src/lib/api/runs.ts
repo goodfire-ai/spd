@@ -26,6 +26,18 @@ export async function whoami(): Promise<string> {
     return data.user;
 }
 
+export type ModelInfo = {
+    module_paths: string[];
+    role_order: string[];
+    role_groups: Record<string, string[]>;
+    display_names: Record<string, string>;
+};
+
+export async function getModelInfo(): Promise<ModelInfo> {
+    const response = await fetch(`${API_URL}/api/model_info`);
+    return response.json();
+}
+
 export async function loadRun(wandbRunPath: string, contextLength: number): Promise<void> {
     const url = apiUrl("/api/runs/load");
     url.searchParams.set("wandb_path", wandbRunPath);

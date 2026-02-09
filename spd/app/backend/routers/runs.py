@@ -12,7 +12,7 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
-from spd.app.backend.dependencies import DepStateManager
+from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.model_adapter import build_model_adapter
 from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import log_errors
@@ -36,6 +36,15 @@ class LoadedRun(BaseModel):
     prompt_count: int
     context_length: int
     backend_user: str
+
+
+class ModelInfo(BaseModel):
+    """Model topology info for frontend layout."""
+
+    module_paths: list[str]
+    role_order: list[str]
+    role_groups: dict[str, list[str]]
+    display_names: dict[str, str]
 
 
 router = APIRouter(prefix="/api", tags=["runs"])
@@ -151,6 +160,19 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         prompt_count=prompt_count,
         context_length=context_length,
         backend_user=getpass.getuser(),
+    )
+
+
+@router.get("/model_info")
+@log_errors
+def get_model_info(loaded: DepLoadedRun) -> ModelInfo:
+    """Get model topology info for frontend layout."""
+    adapter = loaded.adapter
+    return ModelInfo(
+        module_paths=adapter.target_module_paths,
+        role_order=adapter.role_order,
+        role_groups=adapter.role_groups,
+        display_names=adapter.display_names,
     )
 
 

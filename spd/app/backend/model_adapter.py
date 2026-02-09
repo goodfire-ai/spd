@@ -65,6 +65,7 @@ def _extract_role(path: str) -> str:
 
 _KV_ROLE_PATTERN = re.compile(r"k_proj|v_proj|key|value|c_attn")
 _O_ROLE_PATTERN = re.compile(r"o_proj|out_proj|c_proj")
+_QKV_ROLE_PATTERN = re.compile(r"q_proj|k_proj|v_proj|query|key|value")
 
 
 def _detect_cross_seq_roles(
@@ -102,6 +103,9 @@ class ModelAdapter:
     unembed_module: nn.Linear | None
     kv_paths: frozenset[str]
     o_paths: frozenset[str]
+    role_order: list[str]  # Unique roles in execution order (e.g. ["q_proj", "k_proj", ...])
+    role_groups: dict[str, list[str]]  # Grouped roles sharing a row (e.g. {"qkv": [...]})
+    display_names: dict[str, str]  # Special layer display names (e.g. {"lm_head": "W_U"})
 
     def ordered_layers(self) -> list[str]:
         """Full layer list for gradient pair testing: [wte, ...components..., (unembed), output]."""
@@ -128,6 +132,39 @@ class ModelAdapter:
         return self.unembed_module.weight.T.detach()
 
 
+def _build_role_order(target_module_paths: list[str]) -> list[str]:
+    """Deduplicated roles in execution order from target module paths."""
+    seen: set[str] = set()
+    order: list[str] = []
+    for path in target_module_paths:
+        role = _extract_role(path)
+        if role not in seen:
+            seen.add(role)
+            order.append(role)
+    return order
+
+
+def _detect_role_groups(role_order: list[str]) -> dict[str, list[str]]:
+    """Auto-detect role groups (roles that share a visual row).
+
+    Currently detects QKV-like groups: consecutive roles matching q/k/v patterns.
+    """
+    qkv_roles = [r for r in role_order if _QKV_ROLE_PATTERN.search(r)]
+    if len(qkv_roles) >= 2:
+        return {"qkv": qkv_roles}
+    return {}
+
+
+def _build_display_names(
+    unembed_path: str | None,
+) -> dict[str, str]:
+    """Build display name mapping for special layers."""
+    names: dict[str, str] = {}
+    if unembed_path is not None:
+        names[_extract_role(unembed_path)] = "W_U"
+    return names
+
+
 def build_model_adapter(model: ComponentModel) -> ModelAdapter:
     """Build a ModelAdapter by introspecting the ComponentModel."""
     target_model = model.target_model
@@ -140,6 +177,9 @@ def build_model_adapter(model: ComponentModel) -> ModelAdapter:
     unembed_module = unembed_result[1] if unembed_result else None
 
     kv_paths, o_paths = _detect_cross_seq_roles(model.target_module_paths)
+    role_order = _build_role_order(model.target_module_paths)
+    role_groups = _detect_role_groups(role_order)
+    display_names = _build_display_names(unembed_path)
 
     return ModelAdapter(
         target_module_paths=model.target_module_paths,
@@ -149,4 +189,7 @@ def build_model_adapter(model: ComponentModel) -> ModelAdapter:
         unembed_module=unembed_module,
         kv_paths=frozenset(kv_paths),
         o_paths=frozenset(o_paths),
+        role_order=role_order,
+        role_groups=role_groups,
+        display_names=display_names,
     )
