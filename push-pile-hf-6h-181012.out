@@ -1,0 +1,1628 @@
+Uploading the dataset shards:   0%|          | 0/1975 [00:00<?, ? shards/s]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.27ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.29ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  36%|███▋      | 92.3MB /  253MB            [A[A
+
+                              :  36%|███▋      | 92.3MB /  253MB            [A[AProcessing Files (0 / 1)      :  36%|███▋      | 92.3MB /  253MB,  154MB/s  
+
+                              :  76%|███████▌  |  193MB /  253MB            [A[AProcessing Files (0 / 1)      :  76%|███████▌  |  193MB /  253MB,  241MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  253MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  158MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  253MB /  253MB            
+Uploading the dataset shards:   0%|          | 1/1975 [00:07<4:18:06,  7.85s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:02,  1.87ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.10ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.19ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  254MB            [A[A
+
+                              :  43%|████▎     |  109MB /  254MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  254MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  254MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  254MB,  502MB/s  
+
+                              : 100%|██████████|  254MB /  254MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  254MB /  254MB,  363MB/s  
+
+                              : 100%|██████████|  254MB /  254MB            [A[A
+
+                              : 100%|██████████|  254MB /  254MB            [A[A
+
+                              : 100%|██████████|  254MB /  254MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  254MB /  254MB,  181MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  254MB /  254MB            
+Uploading the dataset shards:   0%|          | 2/1975 [00:14<3:54:42,  7.14s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:02,  1.97ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.09ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.17ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.15ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.20ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.16ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  258MB,   ???B/s  
+
+                              :  81%|████████  |  210MB /  258MB            [A[AProcessing Files (0 / 1)      :  81%|████████  |  210MB /  258MB,  504MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  374MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  187MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   0%|          | 3/1975 [00:21<3:49:01,  6.97s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:02,  1.90ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.15ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  502MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  368MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  245MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   0%|          | 4/1975 [00:27<3:42:05,  6.76s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.26ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.21ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  261MB            [A[A
+
+                              :  42%|████▏     |  109MB /  261MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  261MB,   ???B/s  
+
+                              :  77%|███████▋  |  201MB /  261MB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  |  201MB /  261MB,  462MB/s  
+
+                              : 100%|██████████|  261MB /  261MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  261MB /  261MB,  379MB/s  
+
+                              : 100%|██████████|  261MB /  261MB            [A[A
+
+                              : 100%|██████████|  261MB /  261MB            [A[A
+
+                              : 100%|██████████|  261MB /  261MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  261MB /  261MB,  190MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  261MB /  261MB            
+Uploading the dataset shards:   0%|          | 5/1975 [00:34<3:40:54,  6.73s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:01<00:04,  1.13s/ba][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:01<00:02,  1.40ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:01,  1.69ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:02<00:00,  1.90ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  1.98ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  1.73ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  258MB            [A[A
+
+                              :  39%|███▉      |  101MB /  258MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  258MB,   ???B/s  
+
+                              :  75%|███████▍  |  193MB /  258MB            [A[AProcessing Files (0 / 1)      :  75%|███████▍  |  193MB /  258MB,  461MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  392MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  131MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   0%|          | 6/1975 [00:42<3:53:24,  7.11s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.02ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.18ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.04ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.06ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.13ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.11ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  38%|███▊      |  101MB /  261MB            [A[A
+
+                              :  38%|███▊      |  101MB /  261MB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  101MB /  261MB,   ???B/s  
+
+                              :  77%|███████▋  |  201MB /  261MB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  |  201MB /  261MB,  504MB/s  
+
+                              : 100%|██████████|  261MB /  261MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  261MB /  261MB,  402MB/s  
+
+                              : 100%|██████████|  261MB /  261MB            [A[A
+
+                              : 100%|██████████|  261MB /  261MB            [A[A
+
+                              : 100%|██████████|  261MB /  261MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  261MB /  261MB,  201MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  261MB /  261MB            
+Uploading the dataset shards:   0%|          | 7/1975 [00:49<3:50:15,  7.02s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.30ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.31ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.29ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.30ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  255MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  255MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  255MB,  503MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  365MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  183MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  255MB /  255MB            
+Uploading the dataset shards:   0%|          | 8/1975 [00:55<3:45:11,  6.87s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:02,  1.95ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.16ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.21ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.21ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.19ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  259MB            [A[A
+
+                              :  42%|████▏     |  109MB /  259MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  259MB,   ???B/s  
+
+                              :  81%|████████  |  210MB /  259MB            [A[AProcessing Files (0 / 1)      :  81%|████████  |  210MB /  259MB,  503MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  373MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  187MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  259MB /  259MB            
+Uploading the dataset shards:   0%|          | 9/1975 [01:02<3:43:30,  6.82s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.27ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  257MB            [A[A
+
+                              :  39%|███▉      |  101MB /  257MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  257MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  257MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  257MB,  544MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  390MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  195MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   1%|          | 10/1975 [01:08<3:41:49,  6.77s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.08ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.27ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.29ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.30ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  40%|████      |  101MB /  251MB            [A[A
+
+                              :  40%|████      |  101MB /  251MB            [A[AProcessing Files (0 / 1)      :  40%|████      |  101MB /  251MB,   ???B/s  
+
+                              :  84%|████████▎ |  210MB /  251MB            [A[AProcessing Files (0 / 1)      :  84%|████████▎ |  210MB /  251MB,  547MB/s  
+
+                              : 100%|██████████|  251MB /  251MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  251MB /  251MB,  376MB/s  
+
+                              : 100%|██████████|  251MB /  251MB            [A[A
+
+                              : 100%|██████████|  251MB /  251MB            [A[A
+
+                              : 100%|██████████|  251MB /  251MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  251MB /  251MB,  188MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  251MB /  251MB            
+Uploading the dataset shards:   1%|          | 11/1975 [01:15<3:38:47,  6.68s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.13ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  504MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  366MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  183MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   1%|          | 12/1975 [01:22<3:37:30,  6.65s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.09ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.16ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  503MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  367MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  184MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   1%|          | 13/1975 [01:28<3:37:00,  6.64s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.17ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.24ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.18ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.22ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.21ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  260MB            [A[A
+
+                              :  42%|████▏     |  109MB /  260MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  260MB,   ???B/s  
+
+                              :  81%|████████  |  210MB /  260MB            [A[AProcessing Files (0 / 1)      :  81%|████████  |  210MB /  260MB,  503MB/s  
+
+                              : 100%|██████████|  260MB /  260MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  260MB /  260MB,  377MB/s  
+
+                              : 100%|██████████|  260MB /  260MB            [A[A
+
+                              : 100%|██████████|  260MB /  260MB            [A[A
+
+                              : 100%|██████████|  260MB /  260MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  260MB /  260MB,  189MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  260MB /  260MB            
+Uploading the dataset shards:   1%|          | 14/1975 [01:35<3:37:22,  6.65s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.18ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.24ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  258MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  258MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  258MB,  502MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  373MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  186MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   1%|          | 15/1975 [01:41<3:36:59,  6.64s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.06ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  257MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  257MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  257MB,  503MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  371MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  186MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   1%|          | 16/1975 [01:48<3:36:33,  6.63s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.13ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.22ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  502MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  367MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  245MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   1%|          | 17/1975 [01:54<3:33:46,  6.55s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.11ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.25ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.18ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.19ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.20ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.20ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  260MB            [A[A
+
+                              :  42%|████▏     |  109MB /  260MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  260MB,   ???B/s  
+
+                              :  81%|████████  |  210MB /  260MB            [A[AProcessing Files (0 / 1)      :  81%|████████  |  210MB /  260MB,  505MB/s  
+
+                              : 100%|██████████|  260MB /  260MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  260MB /  260MB,  378MB/s  
+
+                              : 100%|██████████|  260MB /  260MB            [A[A
+
+                              : 100%|██████████|  260MB /  260MB            [A[A
+
+                              : 100%|██████████|  260MB /  260MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  260MB /  260MB,  189MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  260MB /  260MB            
+Uploading the dataset shards:   1%|          | 18/1975 [02:01<3:35:15,  6.60s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.17ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.26ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  255MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  255MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  255MB,  505MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  364MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  182MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  255MB /  255MB            
+Uploading the dataset shards:   1%|          | 19/1975 [02:08<3:35:44,  6.62s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.10ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.21ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  259MB            [A[A
+
+                              :  42%|████▏     |  109MB /  259MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  259MB,   ???B/s  
+
+                              :  81%|████████  |  210MB /  259MB            [A[AProcessing Files (0 / 1)      :  81%|████████  |  210MB /  259MB,  503MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  373MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  187MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  259MB /  259MB            
+Uploading the dataset shards:   1%|          | 20/1975 [02:14<3:36:13,  6.64s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.06ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.25ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  504MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  367MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  245MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   1%|          | 21/1975 [02:21<3:34:00,  6.57s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.02ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.15ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  254MB            [A[A
+
+                              :  43%|████▎     |  109MB /  254MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  254MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  254MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  254MB,  502MB/s  
+
+                              : 100%|██████████|  254MB /  254MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  254MB /  254MB,  362MB/s  
+
+                              : 100%|██████████|  254MB /  254MB            [A[A
+
+                              : 100%|██████████|  254MB /  254MB            [A[A
+
+                              : 100%|██████████|  254MB /  254MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  254MB /  254MB,  181MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  254MB /  254MB            
+Uploading the dataset shards:   1%|          | 22/1975 [02:28<3:34:22,  6.59s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.12ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.29ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.30ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  257MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  257MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  257MB,  502MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  371MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  185MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   1%|          | 23/1975 [02:34<3:35:00,  6.61s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:02,  1.98ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.15ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.30ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  40%|███▉      |  101MB /  253MB            [A[A
+
+                              :  40%|███▉      |  101MB /  253MB            [A[AProcessing Files (0 / 1)      :  40%|███▉      |  101MB /  253MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  253MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  253MB,  546MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  381MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  191MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  253MB /  253MB            
+Uploading the dataset shards:   1%|          | 24/1975 [02:41<3:35:15,  6.62s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.22ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.24ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  40%|███▉      |  101MB /  252MB            [A[A
+
+                              :  40%|███▉      |  101MB /  252MB            [A[AProcessing Files (0 / 1)      :  40%|███▉      |  101MB /  252MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  252MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  252MB,  543MB/s  
+
+                              : 100%|██████████|  252MB /  252MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  252MB /  252MB,  379MB/s  
+
+                              : 100%|██████████|  252MB /  252MB            [A[A
+
+                              : 100%|██████████|  252MB /  252MB            [A[A
+
+                              : 100%|██████████|  252MB /  252MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  252MB /  252MB,  190MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  252MB /  252MB            
+Uploading the dataset shards:   1%|▏         | 25/1975 [02:47<3:34:16,  6.59s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.18ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.30ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.33ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.30ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  253MB            [A[A
+
+                              :  43%|████▎     |  109MB /  253MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  253MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  253MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  253MB,  501MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  360MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  180MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  253MB /  253MB            
+Uploading the dataset shards:   1%|▏         | 26/1975 [02:54<3:33:33,  6.57s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.11ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.25ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.30ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  257MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  257MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  257MB,  504MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  371MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  185MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   1%|▏         | 27/1975 [03:01<3:34:05,  6.59s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.13ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.22ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.22ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.29ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  256MB            [A[A
+
+                              :  39%|███▉      |  101MB /  256MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  545MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  390MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  195MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   1%|▏         | 28/1975 [03:07<3:34:25,  6.61s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.14ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.24ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.21ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.22ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  259MB            [A[A
+
+                              :  39%|███▉      |  101MB /  259MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  259MB,   ???B/s  
+
+                              :  81%|████████  |  210MB /  259MB            [A[AProcessing Files (0 / 1)      :  81%|████████  |  210MB /  259MB,  545MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  397MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  198MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  259MB /  259MB            
+Uploading the dataset shards:   1%|▏         | 29/1975 [03:14<3:34:40,  6.62s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.31ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.30ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  251MB            [A[A
+
+                              :  43%|████▎     |  109MB /  251MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  251MB,   ???B/s  
+
+                              :  84%|████████▎ |  210MB /  251MB            [A[AProcessing Files (0 / 1)      :  84%|████████▎ |  210MB /  251MB,  505MB/s  
+
+                              : 100%|██████████|  251MB /  251MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  251MB /  251MB,  355MB/s  
+
+                              : 100%|██████████|  251MB /  251MB            [A[A
+
+                              : 100%|██████████|  251MB /  251MB            [A[A
+
+                              : 100%|██████████|  251MB /  251MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  251MB /  251MB,  177MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  251MB /  251MB            
+Uploading the dataset shards:   2%|▏         | 30/1975 [03:20<3:33:38,  6.59s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.17ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.21ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.22ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  260MB            [A[A
+
+                              :  42%|████▏     |  109MB /  260MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  260MB,   ???B/s  
+
+                              :  80%|████████  |  210MB /  260MB            [A[AProcessing Files (0 / 1)      :  80%|████████  |  210MB /  260MB,  505MB/s  
+
+                              : 100%|██████████|  260MB /  260MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  260MB /  260MB,  379MB/s  
+
+                              : 100%|██████████|  260MB /  260MB            [A[A
+
+                              : 100%|██████████|  260MB /  260MB            [A[A
+
+                              : 100%|██████████|  260MB /  260MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  260MB /  260MB,  189MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  260MB /  260MB            
+Uploading the dataset shards:   2%|▏         | 31/1975 [03:27<3:34:38,  6.62s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.25ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.20ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.22ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  257MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  257MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  257MB,  503MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  371MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  186MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   2%|▏         | 32/1975 [03:34<3:35:11,  6.65s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.10ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  505MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  368MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  184MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   2%|▏         | 33/1975 [03:40<3:35:23,  6.65s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.29ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.31ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.34ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.30ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  254MB            [A[A
+
+                              :  43%|████▎     |  109MB /  254MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  254MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  254MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  254MB,  502MB/s  
+
+                              : 100%|██████████|  254MB /  254MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  254MB /  254MB,  363MB/s  
+
+                              : 100%|██████████|  254MB /  254MB            [A[A
+
+                              : 100%|██████████|  254MB /  254MB            [A[A
+
+                              : 100%|██████████|  254MB /  254MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  254MB /  254MB,  181MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  254MB /  254MB            
+Uploading the dataset shards:   2%|▏         | 34/1975 [03:47<3:34:07,  6.62s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.16ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.29ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.30ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  257MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  257MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  257MB,  503MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  369MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  185MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   2%|▏         | 35/1975 [03:54<3:34:29,  6.63s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.10ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.16ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:01,  1.57ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:02<00:00,  1.81ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  1.96ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  1.90ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  38%|███▊      |  109MB /  283MB            [A[A
+
+                              :  38%|███▊      |  109MB /  283MB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  109MB /  283MB,   ???B/s  
+
+                              :  74%|███████▍  |  210MB /  283MB            [A[AProcessing Files (0 / 1)      :  74%|███████▍  |  210MB /  283MB,  501MB/s  
+
+                              : 100%|██████████|  283MB /  283MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  283MB /  283MB,  435MB/s  
+
+                              : 100%|██████████|  283MB /  283MB            [A[A
+
+                              : 100%|██████████|  283MB /  283MB            [A[A
+
+                              : 100%|██████████|  283MB /  283MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  283MB /  283MB,  218MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  283MB /  283MB            
+Uploading the dataset shards:   2%|▏         | 36/1975 [04:01<3:41:18,  6.85s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.08ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.17ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.29ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  254MB            [A[A
+
+                              :  43%|████▎     |  109MB /  254MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  254MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  254MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  254MB,  505MB/s  
+
+                              : 100%|██████████|  254MB /  254MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  254MB /  254MB,  363MB/s  
+
+                              : 100%|██████████|  254MB /  254MB            [A[A
+
+                              : 100%|██████████|  254MB /  254MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  254MB /  254MB,  242MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  254MB /  254MB            
+Uploading the dataset shards:   2%|▏         | 37/1975 [04:07<3:37:01,  6.72s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.12ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.25ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  259MB            [A[A
+
+                              :  39%|███▉      |  101MB /  259MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  259MB,   ???B/s  
+
+                              :  78%|███████▊  |  201MB /  259MB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  |  201MB /  259MB,  505MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  396MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  198MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  259MB /  259MB            
+Uploading the dataset shards:   2%|▏         | 38/1975 [04:14<3:36:30,  6.71s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.29ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.30ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.30ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.30ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  40%|███▉      |  101MB /  253MB            [A[A
+
+                              :  40%|███▉      |  101MB /  253MB            [A[AProcessing Files (0 / 1)      :  40%|███▉      |  101MB /  253MB,   ???B/s  
+
+                              :  80%|███████▉  |  201MB /  253MB            [A[AProcessing Files (0 / 1)      :  80%|███████▉  |  201MB /  253MB,  504MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  380MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  190MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  253MB /  253MB            
+Uploading the dataset shards:   2%|▏         | 39/1975 [04:21<3:34:13,  6.64s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.17ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.25ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  258MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  258MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  258MB,  503MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  372MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  186MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   2%|▏         | 40/1975 [04:27<3:34:03,  6.64s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:03,  1.26ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:01<00:01,  1.74ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:01,  1.98ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:02<00:00,  2.10ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.17ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.00ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  40%|███▉      |  109MB /  273MB            [A[A
+
+                              :  40%|███▉      |  109MB /  273MB            [A[AProcessing Files (0 / 1)      :  40%|███▉      |  109MB /  273MB,   ???B/s  
+
+                              :  77%|███████▋  |  210MB /  273MB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  |  210MB /  273MB,  502MB/s  
+
+                              : 100%|██████████|  273MB /  273MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  273MB /  273MB,  410MB/s  
+
+                              : 100%|██████████|  273MB /  273MB            [A[A
+
+                              : 100%|██████████|  273MB /  273MB            [A[A
+
+                              : 100%|██████████|  273MB /  273MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  273MB /  273MB,  205MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  273MB /  273MB            
+Uploading the dataset shards:   2%|▏         | 41/1975 [04:34<3:38:14,  6.77s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.06ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.23ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.21ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.22ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.21ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  259MB            [A[A
+
+                              :  42%|████▏     |  109MB /  259MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  259MB,   ???B/s  
+
+                              :  81%|████████  |  210MB /  259MB            [A[AProcessing Files (0 / 1)      :  81%|████████  |  210MB /  259MB,  503MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  375MB/s  
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[A
+
+                              : 100%|██████████|  259MB /  259MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  259MB /  259MB,  188MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  259MB /  259MB            
+Uploading the dataset shards:   2%|▏         | 42/1975 [04:41<3:37:00,  6.74s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.13ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.22ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  501MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  367MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  245MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   2%|▏         | 43/1975 [04:47<3:33:33,  6.63s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.06ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.15ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.22ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  258MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  258MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  258MB,  503MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  371MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  186MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   2%|▏         | 44/1975 [04:54<3:33:58,  6.65s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.04ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.18ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.22ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  258MB            [A[A
+
+                              :  39%|███▉      |  101MB /  258MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  258MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  258MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  258MB,  543MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  392MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  196MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   2%|▏         | 45/1975 [05:01<3:33:42,  6.64s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.12ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.23ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.29ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  255MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  255MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  255MB,  503MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  365MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  182MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  255MB /  255MB            
+Uploading the dataset shards:   2%|▏         | 46/1975 [05:07<3:33:20,  6.64s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.28ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  258MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  258MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  258MB,  503MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  371MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  186MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   2%|▏         | 47/1975 [05:14<3:33:07,  6.63s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.11ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.18ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[A
+
+                              :  43%|████▎     |  109MB /  256MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  256MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  256MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  256MB,  503MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  368MB/s  
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[A
+
+                              : 100%|██████████|  256MB /  256MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  256MB /  256MB,  184MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  256MB /  256MB            
+Uploading the dataset shards:   2%|▏         | 48/1975 [05:20<3:32:46,  6.63s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.06ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.29ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.29ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  255MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  255MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  255MB,  503MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  364MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  182MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  255MB /  255MB            
+Uploading the dataset shards:   2%|▏         | 49/1975 [05:27<3:32:16,  6.61s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:02,  1.99ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.16ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.22ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.21ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.21ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  257MB            [A[A
+
+                              :  39%|███▉      |  101MB /  257MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  257MB,   ???B/s  
+
+                              :  78%|███████▊  |  201MB /  257MB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  |  201MB /  257MB,  505MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  391MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  195MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   3%|▎         | 50/1975 [05:34<3:32:31,  6.62s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.30ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.30ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.26ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  40%|███▉      |  101MB /  252MB            [A[A
+
+                              :  40%|███▉      |  101MB /  252MB            [A[AProcessing Files (0 / 1)      :  40%|███▉      |  101MB /  252MB,   ???B/s  
+
+                              :  77%|███████▋  |  193MB /  252MB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  |  193MB /  252MB,  461MB/s  
+
+                              : 100%|██████████|  252MB /  252MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  252MB /  252MB,  378MB/s  
+
+                              : 100%|██████████|  252MB /  252MB            [A[A
+
+                              : 100%|██████████|  252MB /  252MB            [A[A
+
+                              : 100%|██████████|  252MB /  252MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  252MB /  252MB,  189MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  252MB /  252MB            
+Uploading the dataset shards:   3%|▎         | 51/1975 [05:40<3:32:06,  6.61s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.04ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.22ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  253MB            [A[A
+
+                              :  43%|████▎     |  109MB /  253MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  253MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  253MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  253MB,  503MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  360MB/s  
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[A
+
+                              : 100%|██████████|  253MB /  253MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  253MB /  253MB,  180MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  253MB /  253MB            
+Uploading the dataset shards:   3%|▎         | 52/1975 [05:47<3:33:40,  6.67s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.26ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.23ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.27ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.22ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▊      |  101MB /  260MB            [A[A
+
+                              :  39%|███▊      |  101MB /  260MB            [A[AProcessing Files (0 / 1)      :  39%|███▊      |  101MB /  260MB,   ???B/s  
+
+                              :  77%|███████▋  |  201MB /  260MB            [A[AProcessing Files (0 / 1)      :  77%|███████▋  |  201MB /  260MB,  503MB/s  
+
+                              : 100%|██████████|  260MB /  260MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  260MB /  260MB,  400MB/s  
+
+                              : 100%|██████████|  260MB /  260MB            [A[A
+
+                              : 100%|██████████|  260MB /  260MB            [A[A
+
+                              : 100%|██████████|  260MB /  260MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  260MB /  260MB,  200MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  260MB /  260MB            
+Uploading the dataset shards:   3%|▎         | 53/1975 [05:54<3:33:39,  6.67s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.12ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.19ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.24ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.24ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  257MB            [A[A
+
+                              :  39%|███▉      |  101MB /  257MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  257MB,   ???B/s  
+
+                              :  78%|███████▊  |  201MB /  257MB            [A[AProcessing Files (0 / 1)      :  78%|███████▊  |  201MB /  257MB,  503MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  390MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  195MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   3%|▎         | 54/1975 [06:01<3:37:03,  6.78s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.23ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.22ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.29ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  255MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  255MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  255MB,  503MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  364MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  182MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  255MB /  255MB            
+Uploading the dataset shards:   3%|▎         | 55/1975 [06:07<3:34:54,  6.72s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.11ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.26ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.29ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.31ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  255MB,   ???B/s  
+
+                              :  79%|███████▉  |  201MB /  255MB            [A[AProcessing Files (0 / 1)      :  79%|███████▉  |  201MB /  255MB,  463MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  366MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  183MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  255MB /  255MB            
+Uploading the dataset shards:   3%|▎         | 56/1975 [06:14<3:33:27,  6.67s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.09ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.00ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.07ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.12ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.21ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.15ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  38%|███▊      |  101MB /  267MB            [A[A
+
+                              :  38%|███▊      |  101MB /  267MB            [A[AProcessing Files (0 / 1)      :  38%|███▊      |  101MB /  267MB,   ???B/s  
+
+                              :  79%|███████▊  |  210MB /  267MB            [A[AProcessing Files (0 / 1)      :  79%|███████▊  |  210MB /  267MB,  546MB/s  
+
+                              : 100%|██████████|  267MB /  267MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  267MB /  267MB,  416MB/s  
+
+                              : 100%|██████████|  267MB /  267MB            [A[A
+
+                              : 100%|██████████|  267MB /  267MB            [A[A
+
+                              : 100%|██████████|  267MB /  267MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  267MB /  267MB,  208MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  267MB /  267MB            
+Uploading the dataset shards:   3%|▎         | 57/1975 [06:21<3:34:51,  6.72s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.16ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.30ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.25ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[A
+
+                              :  43%|████▎     |  109MB /  255MB            [A[AProcessing Files (0 / 1)      :  43%|████▎     |  109MB /  255MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  255MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  255MB,  504MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  365MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  183MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  255MB /  255MB            
+Uploading the dataset shards:   3%|▎         | 58/1975 [06:27<3:33:27,  6.68s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:02,  1.96ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.12ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.13ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.10ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.16ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.13ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  41%|████      |  109MB /  267MB            [A[A
+
+                              :  41%|████      |  109MB /  267MB            [A[AProcessing Files (0 / 1)      :  41%|████      |  109MB /  267MB,   ???B/s  
+
+                              :  79%|███████▊  |  210MB /  267MB            [A[AProcessing Files (0 / 1)      :  79%|███████▊  |  210MB /  267MB,  503MB/s  
+
+                              : 100%|██████████|  267MB /  267MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  267MB /  267MB,  394MB/s  
+
+                              : 100%|██████████|  267MB /  267MB            [A[A
+
+                              : 100%|██████████|  267MB /  267MB            [A[A
+
+                              : 100%|██████████|  267MB /  267MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  267MB /  267MB,  197MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  267MB /  267MB            
+Uploading the dataset shards:   3%|▎         | 59/1975 [06:34<3:35:15,  6.74s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.08ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.25ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.33ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.34ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.28ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  40%|████      |  101MB /  251MB            [A[A
+
+                              :  40%|████      |  101MB /  251MB            [A[AProcessing Files (0 / 1)      :  40%|████      |  101MB /  251MB,   ???B/s  
+
+                              :  83%|████████▎ |  210MB /  251MB            [A[AProcessing Files (0 / 1)      :  83%|████████▎ |  210MB /  251MB,  546MB/s  
+
+                              : 100%|██████████|  251MB /  251MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  251MB /  251MB,  377MB/s  
+
+                              : 100%|██████████|  251MB /  251MB            [A[A
+
+                              : 100%|██████████|  251MB /  251MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  251MB /  251MB,  252MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  251MB /  251MB            
+Uploading the dataset shards:   3%|▎         | 60/1975 [06:41<3:31:12,  6.62s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.07ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.19ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.22ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.29ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.27ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.25ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  255MB            [A[A
+
+                              :  39%|███▉      |  101MB /  255MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  255MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  255MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  255MB,  545MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  386MB/s  
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[A
+
+                              : 100%|██████████|  255MB /  255MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  255MB /  255MB,  193MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  255MB /  255MB            
+Uploading the dataset shards:   3%|▎         | 61/1975 [06:47<3:30:57,  6.61s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.08ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.20ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.21ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.18ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.21ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[A
+
+                              :  42%|████▏     |  109MB /  257MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  257MB,   ???B/s  
+
+                              :  82%|████████▏ |  210MB /  257MB            [A[AProcessing Files (0 / 1)      :  82%|████████▏ |  210MB /  257MB,  504MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  370MB/s  
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[A
+
+                              : 100%|██████████|  257MB /  257MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  257MB /  257MB,  185MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  257MB /  257MB            
+Uploading the dataset shards:   3%|▎         | 62/1975 [06:54<3:31:05,  6.62s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.06ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.17ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.17ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:02<00:00,  1.68ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  1.85ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  1.90ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  109MB /  281MB            [A[A
+
+                              :  39%|███▉      |  109MB /  281MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  109MB /  281MB,   ???B/s  
+
+                              :  75%|███████▍  |  210MB /  281MB            [A[AProcessing Files (0 / 1)      :  75%|███████▍  |  210MB /  281MB,  503MB/s  
+
+                              : 100%|██████████|  281MB /  281MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  281MB /  281MB,  429MB/s  
+
+                              : 100%|██████████|  281MB /  281MB            [A[A
+
+                              : 100%|██████████|  281MB /  281MB            [A[A
+
+                              : 100%|██████████|  281MB /  281MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  281MB /  281MB,  215MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  281MB /  281MB            
+Uploading the dataset shards:   3%|▎         | 63/1975 [07:01<3:37:46,  6.83s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.08ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.15ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.20ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:02<00:00,  1.48ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  1.70ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  1.77ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[A
+
+                              :  42%|████▏     |  109MB /  258MB            [A[AProcessing Files (0 / 1)      :  42%|████▏     |  109MB /  258MB,   ???B/s  
+
+                              :  81%|████████▏ |  210MB /  258MB            [A[AProcessing Files (0 / 1)      :  81%|████████▏ |  210MB /  258MB,  504MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  372MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  186MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   3%|▎         | 64/1975 [07:08<3:41:23,  6.95s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.08ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.17ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.23ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.23ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.22ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
+
+                              :  39%|███▉      |  101MB /  258MB            [A[A
+
+                              :  39%|███▉      |  101MB /  258MB            [A[AProcessing Files (0 / 1)      :  39%|███▉      |  101MB /  258MB,   ???B/s  
+
+                              :  81%|████████  |  210MB /  258MB            [A[AProcessing Files (0 / 1)      :  81%|████████  |  210MB /  258MB,  546MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  394MB/s  
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[A
+
+                              : 100%|██████████|  258MB /  258MB            [A[AProcessing Files (1 / 1)      : 100%|██████████|  258MB /  258MB,  197MB/s  
+New Data Upload               : |          |  0.00B /  0.00B,  0.00B/s  
+                              : 100%|██████████|  258MB /  258MB            
+Uploading the dataset shards:   3%|▎         | 65/1975 [07:15<3:38:49,  6.87s/ shards]
+Creating parquet from Arrow format:   0%|          | 0/5 [00:00<?, ?ba/s][A
+Creating parquet from Arrow format:  20%|██        | 1/5 [00:00<00:01,  2.15ba/s][A
+Creating parquet from Arrow format:  40%|████      | 2/5 [00:00<00:01,  2.25ba/s][A
+Creating parquet from Arrow format:  60%|██████    | 3/5 [00:01<00:00,  2.28ba/s][A
+Creating parquet from Arrow format:  80%|████████  | 4/5 [00:01<00:00,  2.30ba/s][A
+Creating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.32ba/s][ACreating parquet from Arrow format: 100%|██████████| 5/5 [00:02<00:00,  2.29ba/s]
+Processing Files (0 / 0)      : |          |  0.00B /  0.00B            
+New Data Upload               : |          |  0.00B /  0.00B            [A
