@@ -461,47 +461,60 @@ class AdamPGDConfig(BaseConfig):
 PGDOptimizerConfig = SignPGDConfig | AdamPGDConfig
 
 
-class SingleMaskScope(BaseConfig):
-    type: Literal["single_mask"] = "single_mask"
+class SingleSourceScope(BaseConfig):
+    type: Literal["single_source"] = "single_source"
 
 
 class BroadcastAcrossBatchScope(BaseConfig):
     type: Literal["broadcast_across_batch"] = "broadcast_across_batch"
 
 
-class BatchInvariantScope(BaseConfig):
-    """Masks of shape (N, S, C) where N divides both batch_size and eval_batch_size.
+class RepeatAcrossBatchScope(BaseConfig):
+    """Sources of shape (N, S, C) where N divides both batch_size and eval_batch_size.
 
     Repeated along batch dim at forward time: (N, S, C) -> (B, S, C).
     """
 
-    type: Literal["batch_invariant"] = "batch_invariant"
-    n_masks: PositiveInt
+    type: Literal["repeat_across_batch"] = "repeat_across_batch"
+    n_sources: PositiveInt
 
 
-class PerBatchScope(BaseConfig):
-    """Masks of shape (B, S, C) — one mask per batch element, separate across ranks.
+class PerBatchPerPositionScope(BaseConfig):
+    """Sources of shape (B, S, C) — one source per batch element per position, separate across
+    ranks.
 
     Unlike other scopes, gradients are NOT all-reduced across ranks, so each rank
-    maintains fully independent masks for its own batch elements.
+    maintains fully independent sources for its own batch elements.
     """
 
-    type: Literal["per_batch"] = "per_batch"
+    type: Literal["per_batch_per_position"] = "per_batch_per_position"
 
 
-PersistentPGDMaskScope = Annotated[
-    SingleMaskScope | BroadcastAcrossBatchScope | BatchInvariantScope | PerBatchScope,
+PersistentPGDSourceScope = Annotated[
+    SingleSourceScope | BroadcastAcrossBatchScope | RepeatAcrossBatchScope | PerBatchPerPositionScope,
     Field(discriminator="type"),
 ]
 
 
-_PPGD_SCOPE_COMPAT = {"single_mask", "broadcast_across_batch", "per_batch"}
+# Backwards compat for old YAML configs that used bare strings or old type names
+_PPGD_SCOPE_COMPAT: dict[str, str] = {
+    "single_mask": "single_source",
+    "broadcast_across_batch": "broadcast_across_batch",
+    "per_batch": "per_batch_per_position",
+    "batch_invariant": "repeat_across_batch",
+}
 
 
 def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
-    """Backwards compat: convert bare string scope to {type: string}."""
-    if isinstance(config_dict.get("scope"), str) and config_dict["scope"] in _PPGD_SCOPE_COMPAT:
-        config_dict["scope"] = {"type": config_dict["scope"]}
+    """Backwards compat: convert bare string scope or old type names to current names."""
+    scope = config_dict.get("scope")
+    if isinstance(scope, str) and scope in _PPGD_SCOPE_COMPAT:
+        config_dict["scope"] = {"type": _PPGD_SCOPE_COMPAT[scope]}
+    elif isinstance(scope, dict) and scope.get("type") in _PPGD_SCOPE_COMPAT:
+        scope["type"] = _PPGD_SCOPE_COMPAT[scope["type"]]
+    # Also handle n_masks -> n_sources rename
+    if isinstance(config_dict.get("scope"), dict) and "n_masks" in config_dict["scope"]:
+        config_dict["scope"]["n_sources"] = config_dict["scope"].pop("n_masks")
 
 
 class PersistentPGDReconLossConfig(LossMetricConfig):
@@ -515,7 +528,7 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
 
     classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
-    scope: PersistentPGDMaskScope
+    scope: PersistentPGDSourceScope
     optimize_in_logit_space: bool = False
 
     @model_validator(mode="before")
@@ -535,7 +548,7 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
 
     classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
-    scope: PersistentPGDMaskScope
+    scope: PersistentPGDSourceScope
     optimize_in_logit_space: bool = False
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
@@ -1008,12 +1021,12 @@ class Config(BaseConfig):
         for cfg in self.loss_metric_configs:
             if isinstance(
                 cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
-            ) and isinstance(cfg.scope, BatchInvariantScope):
-                n = cfg.scope.n_masks
+            ) and isinstance(cfg.scope, RepeatAcrossBatchScope):
+                n = cfg.scope.n_sources
                 mb = self.microbatch_size
-                assert mb % n == 0, f"batch_invariant n_masks={n} must divide microbatch_size={mb}"
+                assert mb % n == 0, f"repeat_across_batch n_sources={n} must divide microbatch_size={mb}"
                 assert self.eval_batch_size % n == 0, (
-                    f"batch_invariant n_masks={n} must divide eval_batch_size={self.eval_batch_size}"
+                    f"repeat_across_batch n_sources={n} must divide eval_batch_size={self.eval_batch_size}"
                 )
 
         return self

@@ -10,7 +10,7 @@ from spd.configs import (
     LayerwiseCiConfig,
     PersistentPGDReconLossConfig,
     SignPGDConfig,
-    SingleMaskScope,
+    SingleSourceScope,
     UniformKSubsetRoutingConfig,
 )
 from spd.metrics import (
@@ -714,7 +714,7 @@ class TestPersistentPGDReconLoss:
         ci = {"fc": torch.tensor([[[0.5], [0.5]]], dtype=torch.float32)}
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
         )
 
         # Initialize state
@@ -766,7 +766,7 @@ class TestPersistentPGDReconLoss:
         ci = {"fc": torch.tensor([[[0.3], [0.3]]], dtype=torch.float32)}
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
         )
 
         state = PersistentPGDState(
@@ -819,7 +819,7 @@ class TestPersistentPGDReconLoss:
         batch_dims = batch.shape[:2]
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
         )
 
         # Initialize state with delta component
@@ -883,7 +883,7 @@ class TestPersistentPGDReconLoss:
         batch_dims = batch.shape[:2]
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
         )
 
         state = PersistentPGDState(
@@ -923,7 +923,7 @@ class TestPersistentPGDReconLoss:
 
         cfg = PersistentPGDReconLossConfig(
             optimizer=AdamPGDConfig(lr=0.05, beta1=0.9, beta2=0.999, eps=1e-8),
-            scope=SingleMaskScope(),
+            scope=SingleSourceScope(),
         )
 
         state = PersistentPGDState(

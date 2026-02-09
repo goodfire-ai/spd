@@ -19,11 +19,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import (
-    BatchInvariantScope,
+    RepeatAcrossBatchScope,
     Config,
     LossMetricConfigType,
     MetricConfigType,
-    PerBatchScope,
+    PerBatchPerPositionScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
     PGDMultiBatchConfig,
@@ -231,7 +231,7 @@ def optimize(
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
 
-    # Skip persistent PGD losses whose mask leading dim doesn't divide eval_batch_size
+    # Skip persistent PGD losses whose source leading dim doesn't divide eval_batch_size
     eval_metric_configs = [
         cfg
         for cfg in eval_metric_configs
@@ -239,10 +239,10 @@ def optimize(
             isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
             and (
                 (
-                    isinstance(cfg.scope, BatchInvariantScope)
-                    and config.eval_batch_size % cfg.scope.n_masks != 0
+                    isinstance(cfg.scope, RepeatAcrossBatchScope)
+                    and config.eval_batch_size % cfg.scope.n_sources != 0
                 )
-                or isinstance(cfg.scope, PerBatchScope)
+                or isinstance(cfg.scope, PerBatchPerPositionScope)
             )
         )
     ]

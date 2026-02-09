@@ -16,12 +16,12 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import (
-    BatchInvariantScope,
     BroadcastAcrossBatchScope,
-    PerBatchScope,
+    PerBatchPerPositionScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
-    SingleMaskScope,
+    RepeatAcrossBatchScope,
+    SingleSourceScope,
     SubsetRoutingType,
 )
 from spd.metrics.base import Metric
@@ -38,9 +38,9 @@ class PersistentPGDState:
     """Persistent state for persistent PGD optimization.
 
     Holds adversarial sources per module that persist across training steps.
-    Source shape depends on scope: shared across batch (SingleMask, BroadcastAcrossBatch),
-    repeated along batch dim (BatchInvariant), or per-batch-element with no cross-rank
-    synchronization (PerBatch).
+    Source shape depends on scope: shared across batch (SingleSource, BroadcastAcrossBatch),
+    repeated along batch dim (RepeatAcrossBatch), or per-batch-element-per-position with no
+    cross-rank synchronization (PerBatchPerPosition).
     """
 
     def __init__(
@@ -53,7 +53,7 @@ class PersistentPGDState:
         batch_size: int | None = None,
     ) -> None:
         self.optimizer = cfg.optimizer
-        self._skip_all_reduce = isinstance(cfg.scope, PerBatchScope)
+        self._skip_all_reduce = isinstance(cfg.scope, PerBatchPerPositionScope)
         self._optimize_in_logit_space = cfg.optimize_in_logit_space
 
         self._adam_step = 0
@@ -63,14 +63,14 @@ class PersistentPGDState:
         self.sources: PPGDSources = {}
 
         match cfg.scope:
-            case SingleMaskScope():
+            case SingleSourceScope():
                 source_leading_dims = [1, 1]
             case BroadcastAcrossBatchScope():
                 source_leading_dims = [1, seq_len]
-            case BatchInvariantScope(n_masks=n):
+            case RepeatAcrossBatchScope(n_sources=n):
                 source_leading_dims = [n, seq_len]
-            case PerBatchScope():
-                assert batch_size is not None, "batch_size required for PerBatchScope"
+            case PerBatchPerPositionScope():
+                assert batch_size is not None, "batch_size required for PerBatchPerPositionScope"
                 source_leading_dims = [batch_size, seq_len]
 
         init_fn = torch.randn if self._optimize_in_logit_space else torch.rand
