@@ -223,9 +223,14 @@ def create_data_loader(
         assert isinstance(sample, Tensor) and sample.ndim == 1, (
             f"Expected the dataset to be tokenized. Got type {type(sample)}"
         )
-        assert len(sample) == dataset_config.n_ctx, (
-            f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample)})."
+        tokenized_len = len(sample)
+        assert dataset_config.n_ctx <= tokenized_len, (
+            f"n_ctx ({dataset_config.n_ctx}) is larger than the tokenized length ({tokenized_len})."
         )
+        if dataset_config.n_ctx < tokenized_len:
+            col = dataset_config.column_name
+            n_ctx = dataset_config.n_ctx
+            torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
     else:
         to_lower = "SimpleStories" in dataset_config.name
         torch_dataset = tokenize_and_concatenate(
