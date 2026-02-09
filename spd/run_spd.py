@@ -22,13 +22,11 @@ from spd.configs import (
     Config,
     LossMetricConfigType,
     MetricConfigType,
-    PerBatchPerPositionScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
     PGDMultiBatchConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
-    RepeatAcrossBatchScope,
 )
 from spd.data import loop_dataloader
 from spd.eval import evaluate, evaluate_multibatch_pgd
@@ -231,18 +229,12 @@ def optimize(
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
 
-    # Validate persistent PGD eval scopes are compatible with eval_batch_size
-    for cfg in eval_metric_configs:
-        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig):
-            continue
-        if isinstance(cfg.scope, RepeatAcrossBatchScope):
-            assert config.eval_batch_size % cfg.scope.n_sources == 0, (
-                f"repeat_across_batch n_sources={cfg.scope.n_sources} must divide "
-                f"eval_batch_size={config.eval_batch_size}"
-            )
-        assert not isinstance(cfg.scope, PerBatchPerPositionScope), (
-            "PerBatchPerPositionScope is not supported for eval metrics"
-        )
+    # Persistent PGD losses are training-only (sources are coupled to train batch size)
+    eval_metric_configs: list[MetricConfigType] = [
+        cfg
+        for cfg in eval_metric_configs
+        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+    ]
 
     sample_batch = extract_batch_data(next(train_iterator))
     batch_dims = (

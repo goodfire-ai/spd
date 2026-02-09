@@ -1030,8 +1030,5 @@ class Config(BaseConfig):
                 assert mb % n == 0, (
                     f"repeat_across_batch n_sources={n} must divide microbatch_size={mb}"
                 )
-                assert self.eval_batch_size % n == 0, (
-                    f"repeat_across_batch n_sources={n} must divide eval_batch_size={self.eval_batch_size}"
-                )
 
         return self
