@@ -5,15 +5,15 @@
 import { apiUrl } from "./index";
 
 export type DatasetSearchResult = {
-    story: string;
+    text: string;
     occurrence_count: number;
-    topic: string | null;
-    theme: string | null;
+    metadata: Record<string, string>;
 };
 
 export type DatasetSearchMetadata = {
     query: string;
     split: string;
+    dataset_name: string;
     total_results: number;
     search_time_seconds: number;
 };

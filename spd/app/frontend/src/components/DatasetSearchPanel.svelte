@@ -47,7 +47,7 @@
 <div class="panel">
     <div class="config-box">
         <div class="config-header">
-            <span class="config-title">Search SimpleStories Dataset</span>
+            <span class="config-title">Search Dataset{searchMetadata ? `: ${searchMetadata.dataset_name}` : ""}</span>
             <button
                 class="action-button"
                 onclick={performSearch}
@@ -99,7 +99,8 @@
             <div class="empty-state error">Error: {searchResults.error}</div>
         {:else}
             <div class="empty-state">
-                <p>Enter a query above to search the SimpleStories dataset</p>
+                <p>No search performed yet</p>
+                <p class="hint">Enter a query above to search the dataset</p>
             </div>
         {/if}
     </div>
