@@ -1,8 +1,8 @@
-"""Persistent PGD: Persistent adversarial masks that evolve across training steps.
+"""Persistent PGD: Persistent adversarial sources that evolve across training steps.
 
-Instead of reinitializing PGD masks each training step and running N optimization steps,
-PersistentPGD maintains persistent masks that receive one gradient update per training step.
-Over many steps, these masks converge to strong adversarial configurations.
+Instead of reinitializing PGD sources each training step and running N optimization steps,
+PersistentPGD maintains persistent sources that receive one gradient update per training step.
+Over many steps, these sources converge to strong adversarial configurations.
 
 The key insight is that this amortizes PGD optimization across training steps - getting the
 benefit of many PGD steps without the per-step computational cost.
@@ -31,14 +31,14 @@ from spd.routing import AllLayersRouter, Router, get_subset_router
 from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
-PPGDMasks = dict[str, Float[Tensor, " mask_c"]]
+PPGDSources = dict[str, Float[Tensor, " source_c"]]
 
 
 class PersistentPGDState:
     """Persistent state for persistent PGD optimization.
 
-    Holds adversarial masks per module that persist across training steps.
-    Mask shape depends on scope: shared across batch (SingleMask, BroadcastAcrossBatch),
+    Holds adversarial sources per module that persist across training steps.
+    Source shape depends on scope: shared across batch (SingleMask, BroadcastAcrossBatch),
     repeated along batch dim (BatchInvariant), or per-batch-element with no cross-rank
     synchronization (PerBatch).
     """
@@ -57,46 +57,47 @@ class PersistentPGDState:
         self._optimize_in_logit_space = cfg.optimize_in_logit_space
 
         self._adam_step = 0
-        self._adam_m: PPGDMasks = {}
-        self._adam_v: PPGDMasks = {}
+        self._adam_m: PPGDSources = {}
+        self._adam_v: PPGDSources = {}
 
-        self.masks: PPGDMasks = {}
+        self.sources: PPGDSources = {}
 
         match cfg.scope:
             case SingleMaskScope():
-                mask_leading_dims = [1, 1]
+                source_leading_dims = [1, 1]
             case BroadcastAcrossBatchScope():
-                mask_leading_dims = [1, seq_len]
+                source_leading_dims = [1, seq_len]
             case BatchInvariantScope(n_masks=n):
-                mask_leading_dims = [n, seq_len]
+                source_leading_dims = [n, seq_len]
             case PerBatchScope():
                 assert batch_size is not None, "batch_size required for PerBatchScope"
-                mask_leading_dims = [batch_size, seq_len]
+                source_leading_dims = [batch_size, seq_len]
 
         init_fn = torch.randn if self._optimize_in_logit_space else torch.rand
         for module_name, module_c in module_to_c.items():
-            mask_c = module_c + 1 if use_delta_component else module_c
-            mask_shape = mask_leading_dims + [mask_c]
-            mask_data = call_on_rank0_then_broadcast(init_fn, mask_shape)
-            self.masks[module_name] = mask_data.to(device=device).requires_grad_(True)
+            source_c = module_c + 1 if use_delta_component else module_c
+            source_shape = source_leading_dims + [source_c]
+            source_data = call_on_rank0_then_broadcast(init_fn, source_shape)
+            self.sources[module_name] = source_data.to(device=device).requires_grad_(True)
             if self.optimizer.type == "adam":
-                self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
-                self._adam_v[module_name] = torch.zeros_like(self.masks[module_name])
+                self._adam_m[module_name] = torch.zeros_like(self.sources[module_name])
+                self._adam_v[module_name] = torch.zeros_like(self.sources[module_name])
 
-    def get_grads(self, loss: Float[Tensor, ""]) -> PPGDMasks:
-        grads = torch.autograd.grad(loss, list(self.masks.values()), retain_graph=True)
+    def get_grads(self, loss: Float[Tensor, ""]) -> PPGDSources:
+        grads = torch.autograd.grad(loss, list(self.sources.values()), retain_graph=True)
 
         if self._skip_all_reduce:
-            return dict(zip(self.masks.keys(), grads, strict=True))
+            return dict(zip(self.sources.keys(), grads, strict=True))
         return {
-            k: all_reduce(g, op=ReduceOp.SUM) for k, g in zip(self.masks.keys(), grads, strict=True)
+            k: all_reduce(g, op=ReduceOp.SUM)
+            for k, g in zip(self.sources.keys(), grads, strict=True)
         }
 
-    def step(self, grads: PPGDMasks) -> dict[str, float]:
+    def step(self, grads: PPGDSources) -> dict[str, float]:
         """Perform one PGD update step using the provided gradients.
 
-        Updates masks in-place, then clamps to [0, 1] (or leaves unbounded if optimizing in
-        logit space, where sigmoid is applied when reading effective masks).
+        Updates sources in-place, then clamps to [0, 1] (or leaves unbounded if optimizing in
+        logit space, where sigmoid is applied when reading effective sources).
 
         Returns:
             Mean absolute step per module (before clamping).
@@ -105,16 +106,16 @@ class PersistentPGDState:
         with torch.no_grad():
             if self.optimizer.type == "sign":
                 cfg = self.optimizer
-                for module_name in self.masks:
+                for module_name in self.sources:
                     step_tensor = cfg.step_size * grads[module_name].sign()
                     mean_abs_step[module_name] = step_tensor.abs().mean().item()
-                    self.masks[module_name].add_(step_tensor)
+                    self.sources[module_name].add_(step_tensor)
             elif self.optimizer.type == "adam":
                 cfg = self.optimizer
                 self._adam_step += 1
                 bias_correction1 = 1 - cfg.beta1**self._adam_step
                 bias_correction2 = 1 - cfg.beta2**self._adam_step
-                for module_name, mask in self.masks.items():
+                for module_name, source in self.sources.items():
                     grad = grads[module_name]
                     m = self._adam_m[module_name]
                     v = self._adam_v[module_name]
@@ -125,35 +126,38 @@ class PersistentPGDState:
                     denom = v_hat.sqrt().add_(cfg.eps)
                     step_tensor = cfg.lr * m_hat / denom
                     mean_abs_step[module_name] = step_tensor.abs().mean().item()
-                    mask.add_(step_tensor)
+                    source.add_(step_tensor)
             else:
                 raise ValueError(f"Unknown PersistentPGD optimizer: {self.optimizer.type}")
 
             if not self._optimize_in_logit_space:
-                for mask in self.masks.values():
-                    mask.clamp_(0.0, 1.0)
+                for source in self.sources.values():
+                    source.clamp_(0.0, 1.0)
 
         return mean_abs_step
 
-    def get_effective_masks(self) -> PPGDMasks:
-        """Return masks in [0, 1] range.
+    def get_effective_sources(self) -> PPGDSources:
+        """Return sources in [0, 1] range.
 
-        If optimizing in logit space, applies sigmoid. Otherwise returns raw masks (already
+        If optimizing in logit space, applies sigmoid. Otherwise returns raw sources (already
         clamped to [0, 1]).
         """
         if self._optimize_in_logit_space:
-            return {k: torch.sigmoid(v) for k, v in self.masks.items()}
-        return self.masks
+            return {k: torch.sigmoid(v) for k, v in self.sources.items()}
+        return self.sources
 
-    def empty_grads(self) -> PPGDMasks:
-        return {module_name: torch.zeros_like(mask) for module_name, mask in self.masks.items()}
+    def empty_grads(self) -> PPGDSources:
+        return {
+            module_name: torch.zeros_like(source)
+            for module_name, source in self.sources.items()
+        }
 
 
 def get_mask_infos(
     model: ComponentModel,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    masks: dict[str, Float[Tensor, "*batch_dims mask_c"]],
+    ppgd_sources: dict[str, Float[Tensor, "*batch_dims source_c"]],
     router: Router,
 ) -> dict[str, ComponentsMaskInfo]:
     """Get mask infos for persistent PGD."""
@@ -163,17 +167,17 @@ def get_mask_infos(
         module_names=model.target_module_paths, mask_shape=batch_dims
     )
 
-    expanded_adv_sources: dict[str, Float[Tensor, "*batch_dims mask_c"]] = {}
-    for module_name, mask in masks.items():
+    expanded_adv_sources: dict[str, Float[Tensor, "*batch_dims source_c"]] = {}
+    for module_name, source in ppgd_sources.items():
         B = batch_dims[0]
-        N = mask.shape[0]
+        N = source.shape[0]
         if N == 1 or N == B:
-            expanded_adv_sources[module_name] = mask.expand(*batch_dims, -1)
+            expanded_adv_sources[module_name] = source.expand(*batch_dims, -1)
         else:
-            assert B % N == 0, f"mask leading dim {N} must divide batch dim {B}"
-            expanded_adv_sources[module_name] = mask.repeat(B // N, 1, 1)
+            assert B % N == 0, f"source leading dim {N} must divide batch dim {B}"
+            expanded_adv_sources[module_name] = source.repeat(B // N, 1, 1)
 
-    # Split into component masks and weight delta masks
+    # Split into component sources and weight delta sources
     adv_sources_components: dict[str, Float[Tensor, "*batch_dims C"]]
     weight_deltas_and_masks: (
         dict[str, tuple[Float[Tensor, "d_out d_in"], Float[Tensor, ...]]] | None
@@ -201,7 +205,7 @@ def _interpolate_component_mask(
     ci: dict[str, Float[Tensor, "... C"]],
     adv_sources_components: dict[str, Float[Tensor, "... C"]],
 ) -> dict[str, Float[Tensor, "... C"]]:
-    """Interpolate CI with adversarial masks: final = ci + (1 - ci) * adv."""
+    """Interpolate CI with adversarial sources: final = ci + (1 - ci) * adv."""
     component_masks: dict[str, Float[Tensor, "... C"]] = {}
     for module_name in ci:
         adv_source = adv_sources_components[module_name]
@@ -212,7 +216,7 @@ def _interpolate_component_mask(
 
 def _persistent_pgd_recon_subset_loss_update(
     model: ComponentModel,
-    ppgd_masks: PPGDMasks,
+    ppgd_sources: PPGDSources,
     output_loss_type: Literal["mse", "kl"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
@@ -222,7 +226,7 @@ def _persistent_pgd_recon_subset_loss_update(
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
 
-    mask_infos = get_mask_infos(model, ci, weight_deltas, ppgd_masks, router)
+    mask_infos = get_mask_infos(model, ci, weight_deltas, ppgd_sources, router)
     out = model(batch, mask_infos=mask_infos)
     loss_type = output_loss_type
     loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
@@ -233,7 +237,7 @@ def _persistent_pgd_recon_subset_loss_update(
 
 def persistent_pgd_recon_subset_loss(
     model: ComponentModel,
-    ppgd_masks: PPGDMasks,
+    ppgd_sources: PPGDSources,
     output_loss_type: Literal["mse", "kl"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
@@ -243,7 +247,7 @@ def persistent_pgd_recon_subset_loss(
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _persistent_pgd_recon_subset_loss_update(
         model=model,
-        ppgd_masks=ppgd_masks,
+        ppgd_sources=ppgd_sources,
         output_loss_type=output_loss_type,
         batch=batch,
         target_out=target_out,
@@ -256,7 +260,7 @@ def persistent_pgd_recon_subset_loss(
 
 def persistent_pgd_recon_loss(
     model: ComponentModel,
-    ppgd_masks: PPGDMasks,
+    ppgd_sources: PPGDSources,
     output_loss_type: Literal["mse", "kl"],
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
@@ -265,7 +269,7 @@ def persistent_pgd_recon_loss(
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _persistent_pgd_recon_subset_loss_update(
         model=model,
-        ppgd_masks=ppgd_masks,
+        ppgd_sources=ppgd_sources,
         output_loss_type=output_loss_type,
         batch=batch,
         target_out=target_out,
@@ -277,7 +281,7 @@ def persistent_pgd_recon_loss(
 
 
 class AbstractPersistentPGDReconLoss(Metric):
-    """Recon loss when sampling with persistently, adversarially optimized masks and routing."""
+    """Recon loss when sampling with persistently, adversarially optimized sources and routing."""
 
     metric_section: ClassVar[str] = "loss"
 
@@ -288,13 +292,13 @@ class AbstractPersistentPGDReconLoss(Metric):
         use_delta_component: bool,
         output_loss_type: Literal["mse", "kl"],
         router: Router,
-        ppgd_masks: PPGDMasks,
+        ppgd_sources: PPGDSources,
     ) -> None:
         self.model = model
         self.use_delta_component: bool = use_delta_component
         self.output_loss_type: Literal["mse", "kl"] = output_loss_type
         self.router = router
-        self.ppgd_masks = ppgd_masks
+        self.ppgd_sources = ppgd_sources
 
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
@@ -311,7 +315,7 @@ class AbstractPersistentPGDReconLoss(Metric):
     ) -> None:
         sum_loss, n_examples = _persistent_pgd_recon_subset_loss_update(
             model=self.model,
-            ppgd_masks=self.ppgd_masks,
+            ppgd_sources=self.ppgd_sources,
             output_loss_type=self.output_loss_type,
             batch=batch,
             target_out=target_out,
@@ -330,7 +334,7 @@ class AbstractPersistentPGDReconLoss(Metric):
 
 
 class PersistentPGDReconLoss(AbstractPersistentPGDReconLoss):
-    """Recon loss when sampling with persistently, adversarially optimized masks and routing to all component layers."""
+    """Recon loss when sampling with persistently, adversarially optimized sources and routing to all component layers."""
 
     def __init__(
         self,
@@ -338,7 +342,7 @@ class PersistentPGDReconLoss(AbstractPersistentPGDReconLoss):
         device: str,
         use_delta_component: bool,
         output_loss_type: Literal["mse", "kl"],
-        ppgd_masks: PPGDMasks,
+        ppgd_sources: PPGDSources,
     ) -> None:
         super().__init__(
             model=model,
@@ -346,12 +350,12 @@ class PersistentPGDReconLoss(AbstractPersistentPGDReconLoss):
             use_delta_component=use_delta_component,
             output_loss_type=output_loss_type,
             router=AllLayersRouter(),
-            ppgd_masks=ppgd_masks,
+            ppgd_sources=ppgd_sources,
         )
 
 
 class PersistentPGDReconSubsetLoss(AbstractPersistentPGDReconLoss):
-    """Recon loss when sampling with persistently, adversarially optimized masks and routing to subsets of component layers."""
+    """Recon loss when sampling with persistently, adversarially optimized sources and routing to subsets of component layers."""
 
     def __init__(
         self,
@@ -359,7 +363,7 @@ class PersistentPGDReconSubsetLoss(AbstractPersistentPGDReconLoss):
         device: str,
         use_delta_component: bool,
         output_loss_type: Literal["mse", "kl"],
-        ppgd_masks: PPGDMasks,
+        ppgd_sources: PPGDSources,
         routing: SubsetRoutingType,
     ) -> None:
         super().__init__(
@@ -368,5 +372,5 @@ class PersistentPGDReconSubsetLoss(AbstractPersistentPGDReconLoss):
             use_delta_component,
             output_loss_type,
             get_subset_router(routing, device),
-            ppgd_masks=ppgd_masks,
+            ppgd_sources=ppgd_sources,
         )

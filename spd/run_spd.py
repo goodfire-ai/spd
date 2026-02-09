@@ -314,8 +314,8 @@ def optimize(
                     sampling=config.sampling,
                     use_delta_component=config.use_delta_component,
                     n_mask_samples=config.n_mask_samples,
-                    ppgd_maskss={
-                        cfg: ppgd_states[cfg].get_effective_masks()
+                    ppgd_sourcess={
+                        cfg: ppgd_states[cfg].get_effective_sources()
                         for cfg in persistent_pgd_configs
                     },
                     output_loss_type=config.output_loss_type,
@@ -404,8 +404,8 @@ def optimize(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
                     eval_iterator=eval_iterator,
-                    ppgd_maskss={
-                        cfg: ppgd_states[cfg].get_effective_masks()
+                    ppgd_sourcess={
+                        cfg: ppgd_states[cfg].get_effective_sources()
                         for cfg in persistent_pgd_configs
                     },
                     device=device,
