@@ -2,7 +2,7 @@
 
 Sub-configs (HarvestSlurmConfig, AttributionsSlurmConfig, AutointerpSlurmConfig)
 are usable standalone by the individual CLI tools. PostprocessConfig composes them
-with pipeline-level controls.
+with pipeline-level controls including eval job orchestration.
 """
 
 from pydantic import PositiveInt
@@ -36,15 +36,25 @@ class AttributionsSlurmConfig(BaseConfig):
     time: str = "48:00:00"
 
 
-class AutointerpSlurmConfig(BaseConfig):
-    """Config for autointerp SLURM submission."""
+class InterpretSlurmConfig(BaseConfig):
+    """Config for autointerp interpret SLURM submission."""
 
     model: str = "google/gemini-3-flash-preview"
-    eval_model: str = "google/gemini-3-flash-preview"
     limit: int | None = None
     reasoning_effort: str | None = None
     cost_limit_usd: float | None = None
-    no_eval: bool = False
+    partition: str = DEFAULT_PARTITION_NAME
+    time: str = "12:00:00"
+
+
+class EvalSlurmConfig(BaseConfig):
+    """Config for eval SLURM jobs (intruder, detection, fuzzing).
+
+    All eval jobs are CPU-only. Intruder depends on harvest merge;
+    detection and fuzzing depend on interpret.
+    """
+
+    eval_model: str = "google/gemini-3-flash-preview"
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "12:00:00"
 
@@ -52,10 +62,19 @@ class AutointerpSlurmConfig(BaseConfig):
 class PostprocessConfig(BaseConfig):
     """Top-level config for the unified postprocessing pipeline.
 
-    Composes sub-configs for harvest, attributions, and autointerp.
-    Set a section to null to skip that pipeline stage.
+    Composes sub-configs for each pipeline stage. Set a section to null
+    to skip that stage entirely.
+
+    Dependency graph:
+        harvest (workers → merge)
+        ├── intruder eval     (depends on harvest merge)
+        ├── interpret         (depends on harvest merge)
+        │   ├── detection     (depends on interpret)
+        │   └── fuzzing       (depends on interpret)
+        attributions (workers → merge, parallel with harvest)
     """
 
     harvest: HarvestSlurmConfig = HarvestSlurmConfig()
     attributions: AttributionsSlurmConfig | None = AttributionsSlurmConfig()
-    autointerp: AutointerpSlurmConfig | None = AutointerpSlurmConfig()
+    interpret: InterpretSlurmConfig | None = InterpretSlurmConfig()
+    eval: EvalSlurmConfig | None = EvalSlurmConfig()

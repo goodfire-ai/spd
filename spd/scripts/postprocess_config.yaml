@@ -1,6 +1,14 @@
-# Default postprocess config. All values shown are defaults.
-# Set a section to null to skip that pipeline stage.
-# Only harvest is mandatory; attributions and autointerp can be null.
+# Default postprocessing pipeline config.
+#
+# Dependency graph:
+#   harvest (workers → merge)
+#   ├── intruder eval     (depends on harvest merge)
+#   ├── interpret         (depends on harvest merge)
+#   │   ├── detection     (depends on interpret)
+#   │   └── fuzzing       (depends on interpret)
+#   attributions (workers → merge, parallel with harvest)
+#
+# Set any section to null to skip it entirely.
 
 harvest:
   n_gpus: 4
@@ -21,12 +29,15 @@ attributions:
   partition: h200-reserved
   time: "48:00:00"
 
-autointerp:
+interpret:
   model: google/gemini-3-flash-preview
-  eval_model: google/gemini-3-flash-preview
   limit: null
   reasoning_effort: null
   cost_limit_usd: null
-  no_eval: false
+  partition: h200-reserved
+  time: "12:00:00"
+
+eval:
+  eval_model: google/gemini-3-flash-preview
   partition: h200-reserved
   time: "12:00:00"

@@ -195,7 +195,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 | `spd-harvest` | `spd/harvest/scripts/run_slurm_cli.py` | Submit harvest SLURM job |
 | `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
-| `spd-postprocess` | `spd/scripts/postprocess_cli.py` | Unified postprocessing pipeline (harvest + attributions + autointerp) |
+| `spd-postprocess` | `spd/scripts/postprocess_cli.py` | Unified postprocessing pipeline (harvest + attributions + interpret + evals) |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
 | `spd-pretrain` | `spd/pretrain/scripts/run_slurm_cli.py` | Pretrain target models |
 
@@ -285,13 +285,25 @@ Requires `OPENROUTER_API_KEY` env var. See `spd/autointerp/CLAUDE.md` for detail
 Run all postprocessing steps for a completed SPD run with a single command:
 
 ```bash
-spd-postprocess <wandb_path>                                    # Run everything (harvest + attributions + autointerp)
-spd-postprocess <wandb_path> --no_attributions                  # Skip attributions
-spd-postprocess <wandb_path> --no_autointerp                    # Skip autointerp
-spd-postprocess <wandb_path> --n_harvest_gpus 6 --n_attr_gpus 2 # Custom GPU allocation
+spd-postprocess <wandb_path>                              # Run everything with default config
+spd-postprocess <wandb_path> --config custom_config.yaml  # Use custom config
 ```
 
-Creates a single git snapshot shared across all jobs. Harvest and attributions run in parallel; autointerp chains off harvest via SLURM `--dependency=afterok`.
+Config is YAML-based (see `spd/scripts/postprocess_config.yaml` for defaults). Set any section to `null` to skip it:
+- `attributions: null` — skip dataset attributions
+- `interpret: null` — skip LLM interpretation
+- `eval: null` — skip all evals (intruder, detection, fuzzing)
+
+All job scheduling is centralized in `postprocess.py` with explicit SLURM dependency chaining:
+
+```
+harvest (GPU array → merge)
+├── intruder eval       (CPU, depends on harvest merge)
+├── interpret           (CPU, depends on harvest merge)
+│   ├── detection       (CPU, depends on interpret)
+│   └── fuzzing         (CPU, depends on interpret)
+attributions (GPU array → merge, parallel with harvest)
+```
 
 ### Running on SLURM Cluster (`spd-run`)
 
