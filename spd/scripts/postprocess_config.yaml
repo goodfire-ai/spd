@@ -1,0 +1,32 @@
+# Default postprocess config. All values shown are defaults.
+# Set a section to null to skip that pipeline stage.
+# Only harvest is mandatory; attributions and autointerp can be null.
+
+harvest:
+  n_gpus: 4
+  n_batches: null
+  batch_size: 256
+  ci_threshold: 1.0e-6
+  activation_examples_per_component: 1000
+  activation_context_tokens_per_side: 10
+  pmi_token_top_k: 40
+  partition: h200-reserved
+  time: "24:00:00"
+
+attributions:
+  n_gpus: 4
+  n_batches: null
+  batch_size: 256
+  ci_threshold: 0.0
+  partition: h200-reserved
+  time: "48:00:00"
+
+autointerp:
+  model: google/gemini-3-flash-preview
+  eval_model: google/gemini-3-flash-preview
+  limit: null
+  reasoning_effort: null
+  cost_limit_usd: null
+  no_eval: false
+  partition: h200-reserved
+  time: "12:00:00"
