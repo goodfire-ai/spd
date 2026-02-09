@@ -377,10 +377,10 @@ def get_component_token_stats_bulk(
 
     for component_key in request.component_keys:
         input_stats = analysis.get_input_token_stats(
-            token_stats, component_key, loaded.tokenizer, request.top_k
+            token_stats, component_key, loaded.tokenizer.hf_tokenizer, request.top_k
         )
         output_stats = analysis.get_output_token_stats(
-            token_stats, component_key, loaded.tokenizer, request.top_k
+            token_stats, component_key, loaded.tokenizer.hf_tokenizer, request.top_k
         )
 
         if input_stats is None or output_stats is None:

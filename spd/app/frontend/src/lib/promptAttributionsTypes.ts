@@ -1,7 +1,5 @@
 /** Types for the prompt attributions visualizer */
 
-import { getLayerAlias, formatNodeKeyWithAliases } from "./layerAliasing";
-
 // Server API types
 
 export type PromptPreview = {

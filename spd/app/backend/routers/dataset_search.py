@@ -40,8 +40,7 @@ class TokenizedSearchResult(BaseModel):
     tokens: list[str]
     next_token_probs: list[float | None]
     occurrence_count: int
-    topic: str | None = None
-    theme: str | None = None
+    metadata: dict[str, str]
 
 
 class DatasetSearchMetadata(BaseModel):
@@ -262,7 +261,7 @@ def get_tokenized_results(
     for result in page_results:
         story: str = result["story"]
 
-        token_ids = tokenizer.encode(story, add_special_tokens=False)
+        token_ids = tokenizer.encode(story)
         if len(token_ids) > max_tokens:
             token_ids = token_ids[:max_tokens]
 
@@ -282,15 +281,17 @@ def get_tokenized_results(
             next_token_probs.append(prob)
         next_token_probs.append(None)
 
-        token_strings = [loaded.token_strings[t] for t in token_ids]
+        token_strings = loaded.tokenizer.get_spans(token_ids)
+
+        # Extract all non-core fields as metadata
+        metadata = {k: str(v) for k, v in result.items() if k not in ["story", "occurrence_count"]}
 
         tokenized_results.append(
             TokenizedSearchResult(
                 tokens=token_strings,
                 next_token_probs=next_token_probs,
                 occurrence_count=result["occurrence_count"],
-                topic=result.get("topic"),
-                theme=result.get("theme"),
+                metadata=metadata,
             )
         )
 
@@ -346,12 +347,15 @@ def get_random_samples(
     results = []
     for item in samples:
         item_dict: dict[str, Any] = dict(item)
+        # Extract text field (usually "story" for SimpleStories, but could be different)
+        text = item_dict.get("story") or item_dict.get("text", "")
+        # Extract all non-text fields as metadata
+        metadata = {k: str(v) for k, v in item_dict.items() if k not in ["story", "text"]}
         results.append(
             DatasetSearchResult(
-                story=item_dict["story"],
+                text=text,
                 occurrence_count=0,
-                topic=item_dict.get("topic"),
-                theme=item_dict.get("theme"),
+                metadata=metadata,
             )
         )
 
@@ -369,8 +373,7 @@ class TokenizedSample(BaseModel):
 
     tokens: list[str]
     next_token_probs: list[float | None]  # Probability of next token; None for last position
-    topic: str | None = None
-    theme: str | None = None
+    metadata: dict[str, str]
 
 
 class RandomSamplesWithLossResult(BaseModel):
@@ -425,7 +428,7 @@ def get_random_samples_with_loss(
         item_dict: dict[str, Any] = dict(item)
         story: str = item_dict["story"]
 
-        token_ids = tokenizer.encode(story, add_special_tokens=False)
+        token_ids = tokenizer.encode(story)
         if len(token_ids) > max_tokens:
             token_ids = token_ids[:max_tokens]
 
@@ -446,14 +449,16 @@ def get_random_samples_with_loss(
             next_token_probs.append(prob)
         next_token_probs.append(None)  # No next token for last position
 
-        token_strings = [loaded.token_strings[t] for t in token_ids]
+        token_strings = loaded.tokenizer.get_spans(token_ids)
+
+        # Extract all non-text fields as metadata
+        metadata = {k: str(v) for k, v in item_dict.items() if k not in ["story", "text"]}
 
         results.append(
             TokenizedSample(
                 tokens=token_strings,
                 next_token_probs=next_token_probs,
-                topic=item_dict.get("topic"),
-                theme=item_dict.get("theme"),
+                metadata=metadata,
             )
         )
 

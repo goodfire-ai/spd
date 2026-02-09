@@ -91,7 +91,7 @@
             </div>
             {#if datasetSearchEnabled}
                 <div class="tab-content" class:hidden={activeTab !== "dataset-search"}>
-                    <DatasetSearchTab />
+                    <DatasetExplorerTab />
                 </div>
             {/if}
         {:else if runState.run.status === "loading" || runState.prompts.status === "loading" || runState.allTokens.status === "loading"}

@@ -132,14 +132,11 @@ def get_activation_contexts_bulk(
     Uses optimized bulk loader with single file handle and sorted seeks.
     """
     PADDING_SENTINEL = -1
-    token_strings = loaded.token_strings
 
     def token_str(tid: int) -> str:
         if tid == PADDING_SENTINEL:
             return "<pad>"
-        if tid not in token_strings:
-            return f"<unk:{tid}>"
-        return token_strings[tid]
+        return loaded.tokenizer.get_tok_display(tid)
 
     # Bulk load all components with single file handle
     components = load_component_activation_contexts_bulk(

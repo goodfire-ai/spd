@@ -2,6 +2,7 @@
     import type { SubcomponentProbeResult } from "../lib/promptAttributionsTypes";
     import type { Loadable } from "../lib";
     import { probeComponent } from "../lib/api";
+    import { displaySettings } from "../lib/displaySettings.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {

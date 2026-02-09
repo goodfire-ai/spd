@@ -18,6 +18,7 @@
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
+    const displayNames = $derived(runState.modelInfo?.display_names ?? {});
 
     type Props = {
         layer: string;
@@ -186,7 +187,7 @@
 
 <div class="component-node-card">
     <div class="card-header">
-        <h3 class="node-identifier">{getLayerDisplayName(layer)}:{seqIdx}:{cIdx}</h3>
+        <h3 class="node-identifier">{getLayerDisplayName(layer, displayNames)}:{seqIdx}:{cIdx}</h3>
         <div class="token-display">"{token}"</div>
         <div class="header-metrics">
             {#if ciVal !== null}

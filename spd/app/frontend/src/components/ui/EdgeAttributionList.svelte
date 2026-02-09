@@ -34,7 +34,7 @@
     // Extract just the aliased layer name from a key (e.g., "L0.attn.q" from "h.0.attn.q_proj:2:5")
     function getLayerLabel(key: string): string {
         const layer = key.split(":")[0];
-        return getLayerDisplayName(layer);
+        return getLayerDisplayName(layer, displayNames);
     }
 
     function getInterpretation(key: string): InterpretationBackendState {

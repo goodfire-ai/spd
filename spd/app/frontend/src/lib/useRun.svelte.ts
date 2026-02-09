@@ -7,7 +7,7 @@
 
 import type { Loadable } from ".";
 import * as api from "./api";
-import type { RunState as RunData, InterpretationHeadline, ModelInfo } from "./api";
+import type { LoadedRun as RunData, InterpretationHeadline, ModelInfo } from "./api";
 import type {
     SubcomponentCorrelationsResponse,
     PromptPreview,

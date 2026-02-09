@@ -49,6 +49,7 @@
     const isWte = $derived(hoveredNode.layer === "wte");
     const isOutput = $derived(hoveredNode.layer === "output");
     const isComponent = $derived(!isWte && !isOutput);
+    const clusterId = $derived(isComponent ? runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx) : undefined);
 
     // Get CI value for component nodes
     const ciVal = $derived.by(() => {

@@ -73,6 +73,7 @@
                 {@const nodeKey = `${node.layer}:${node.seqIdx}:${node.cIdx}`}
                 {@const ciVal = isComponent ? (nodeCiVals[nodeKey] ?? null) : null}
                 {@const subcompAct = isComponent ? (nodeSubcompActs[nodeKey] ?? null) : null}
+                {@const clusterId = isComponent ? runState.getClusterId(node.layer, node.cIdx) : undefined}
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">

@@ -12,7 +12,6 @@ from typing import Any, override
 import torch
 from jaxtyping import Bool, Float
 from torch import Tensor, nn
-from tqdm.auto import tqdm
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.model_adapter import ModelAdapter

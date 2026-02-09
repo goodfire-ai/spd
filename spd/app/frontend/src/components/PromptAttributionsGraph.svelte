@@ -3,7 +3,6 @@
     import { SvelteSet } from "svelte/reactivity";
     import type { GraphData, PinnedNode, HoveredNode, HoveredEdge, NodePosition } from "../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
-    import { getAliasedRowLabel } from "../lib/layerAliasing";
     import { colors, getEdgeColor, getSubcompActColor, rgbToCss, getNextTokenProbBgColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
@@ -749,7 +748,13 @@
                             stroke={colors.textMuted}
                             stroke-width="0.5"
                         >
-                            <title>{maskedProb !== null ? `P(self): ${(maskedProb * 100).toFixed(1)}%` : isFirstToken ? "First token" : "P(self): <1%"}</title>
+                            <title
+                                >{maskedProb !== null
+                                    ? `P(self): ${(maskedProb * 100).toFixed(1)}%`
+                                    : isFirstToken
+                                      ? "First token"
+                                      : "P(self): <1%"}</title
+                            >
                         </circle>
                     {/each}
                 </g>

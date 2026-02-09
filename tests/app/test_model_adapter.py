@@ -31,13 +31,14 @@ def _make_component_model(
         target_model,
         [ModulePatternInfoConfig(module_pattern=p, C=_C) for p in target_patterns],
     )
+    from spd.configs import LayerwiseCiConfig
+
     model = ComponentModel(
         target_model=target_model,
         module_path_info=module_path_info,
-        ci_fn_type="shared_mlp",
-        ci_fn_hidden_dims=[16],
-        pretrained_model_output_attr="idx_0",
+        ci_config=LayerwiseCiConfig(fn_type="shared_mlp", hidden_dims=[16]),
         sigmoid_type="leaky_hard",
+        pretrained_model_output_attr="idx_0",
     )
     model.eval()
     return model

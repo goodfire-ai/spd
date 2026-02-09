@@ -35,7 +35,7 @@ export type ModelInfo = {
 };
 
 export async function getModelInfo(): Promise<ModelInfo> {
-    const response = await fetch(`${API_URL}/api/model_info`);
+    const response = await fetch(apiUrl("/api/model_info").toString());
     return response.json();
 }
 
