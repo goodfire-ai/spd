@@ -31,7 +31,7 @@ train_dataset_config:
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
   split: train
   streaming: false
-  n_ctx: 513
+  n_ctx: 513  # model n_ctx + 1 for next-token label indexing
   seed: 0
   column_name: input_ids
 
@@ -41,6 +41,6 @@ val_dataset_config:
   hf_tokenizer_path: EleutherAI/gpt-neox-20b
   split: val
   streaming: false
-  n_ctx: 513
+  n_ctx: 513  # model n_ctx + 1 for next-token label indexing
   seed: 0
   column_name: input_ids

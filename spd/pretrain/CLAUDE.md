@@ -38,6 +38,13 @@ spd-pretrain --config_path ... --n_gpus 4
 - **SimpleStories**: `SimpleStories/test-SimpleStories-gpt2-1.25M` (vocab size: 4019)
 - **Pile/OpenWebText**: `gpt2` (vocab size: 50257)
 
+## Dataset n_ctx vs Model n_ctx
+
+The dataset `n_ctx` must be **model n_ctx + 1**. During training, sequences are split into
+input `[:, :-1]` and target `[:, 1:]` for next-token prediction, so the extra token provides
+room for label indexing. For example, if the model has `n_ctx: 512`, the dataset should have
+`n_ctx: 513`.
+
 ## Key Files
 
 - `train.py` - Main training loop with DDP support

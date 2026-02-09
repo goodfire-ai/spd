@@ -16,14 +16,15 @@ from spd.utils.distributed_utils import DistributedState
 
 
 class DatasetConfig(BaseConfig):
-    name: str = "lennart-finke/SimpleStories"
-    is_tokenized: bool = True
-    hf_tokenizer_path: str | None = None
-    streaming: bool = False
-    split: str = "train"
-    n_ctx: int = 1024
+    name: str
+    is_tokenized: bool
+    hf_tokenizer_path: str | None
+    streaming: bool
+    split: str
+    n_ctx: int
+    """Must be model n_ctx + 1 to provide room for next-token label indexing."""
     seed: int | None = None
-    column_name: str = "input_ids"
+    column_name: str
     """The name of the column in the dataset that contains the data (tokenized or non-tokenized).
     Typically 'input_ids' for datasets stored with e2e_sae/scripts/upload_hf_dataset.py, or "tokens"
     for datasets tokenized in TransformerLens (e.g. NeelNanda/pile-10k)."""
