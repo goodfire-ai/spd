@@ -2,7 +2,6 @@
     import type { SubcomponentProbeResult } from "../lib/promptAttributionsTypes";
     import type { Loadable } from "../lib";
     import { probeComponent } from "../lib/api";
-    import { displaySettings } from "../lib/displaySettings.svelte";
     import TokenHighlights from "./TokenHighlights.svelte";
 
     interface Props {
@@ -53,12 +52,7 @@
 </script>
 
 <div class="probe-section">
-    <div class="header-with-hint">
-        <h5>Custom Text</h5>
-        {#if displaySettings.exampleColorMode === "ci"}
-            <span class="hint">(Change "Color by" above to "Both" to see subcomponent activations)</span>
-        {/if}
-    </div>
+    <h5>Custom Text</h5>
     <input type="text" class="probe-input" placeholder="Enter text..." value={probeText} oninput={onProbeInput} />
     {#if probeResult.status === "loading"}
         <p class="probe-status">Loading...</p>
