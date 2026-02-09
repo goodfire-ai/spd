@@ -54,6 +54,7 @@ class PersistentPGDState:
     ) -> None:
         self.optimizer = cfg.optimizer
         self._skip_all_reduce = isinstance(cfg.scope, PerBatchScope)
+        self._optimize_in_logit_space = cfg.optimize_in_logit_space
 
         self._adam_step = 0
         self._adam_m: PPGDMasks = {}
@@ -72,10 +73,11 @@ class PersistentPGDState:
                 assert batch_size is not None, "batch_size required for PerBatchScope"
                 mask_leading_dims = [batch_size, seq_len]
 
+        init_fn = torch.randn if self._optimize_in_logit_space else torch.rand
         for module_name, module_c in module_to_c.items():
             mask_c = module_c + 1 if use_delta_component else module_c
             mask_shape = mask_leading_dims + [mask_c]
-            mask_data = call_on_rank0_then_broadcast(torch.rand, mask_shape)
+            mask_data = call_on_rank0_then_broadcast(init_fn, mask_shape)
             self.masks[module_name] = mask_data.to(device=device).requires_grad_(True)
             if self.optimizer.type == "adam":
                 self._adam_m[module_name] = torch.zeros_like(self.masks[module_name])
@@ -93,7 +95,8 @@ class PersistentPGDState:
     def step(self, grads: PPGDMasks) -> dict[str, float]:
         """Perform one PGD update step using the provided gradients.
 
-        Updates masks in-place, then clamps to [0, 1].
+        Updates masks in-place, then clamps to [0, 1] (or leaves unbounded if optimizing in
+        logit space, where sigmoid is applied when reading effective masks).
 
         Returns:
             Mean absolute step per module (before clamping).
@@ -126,10 +129,21 @@ class PersistentPGDState:
             else:
                 raise ValueError(f"Unknown PersistentPGD optimizer: {self.optimizer.type}")
 
-            for mask in self.masks.values():
-                mask.clamp_(0.0, 1.0)
+            if not self._optimize_in_logit_space:
+                for mask in self.masks.values():
+                    mask.clamp_(0.0, 1.0)
 
         return mean_abs_step
+
+    def get_effective_masks(self) -> PPGDMasks:
+        """Return masks in [0, 1] range.
+
+        If optimizing in logit space, applies sigmoid. Otherwise returns raw masks (already
+        clamped to [0, 1]).
+        """
+        if self._optimize_in_logit_space:
+            return {k: torch.sigmoid(v) for k, v in self.masks.items()}
+        return self.masks
 
     def empty_grads(self) -> PPGDMasks:
         return {module_name: torch.zeros_like(mask) for module_name, mask in self.masks.items()}
