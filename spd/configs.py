@@ -491,7 +491,10 @@ class PerBatchPerPositionScope(BaseConfig):
 
 
 PersistentPGDSourceScope = Annotated[
-    SingleSourceScope | BroadcastAcrossBatchScope | RepeatAcrossBatchScope | PerBatchPerPositionScope,
+    SingleSourceScope
+    | BroadcastAcrossBatchScope
+    | RepeatAcrossBatchScope
+    | PerBatchPerPositionScope,
     Field(discriminator="type"),
 ]
 
@@ -513,6 +516,8 @@ def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
                 scope["n_sources"] = scope.pop("n_masks")
         case "per_batch":
             scope["type"] = "per_batch_per_position"
+        case _:
+            pass
 
 
 class PersistentPGDReconLossConfig(LossMetricConfig):
@@ -1022,7 +1027,9 @@ class Config(BaseConfig):
             ) and isinstance(cfg.scope, RepeatAcrossBatchScope):
                 n = cfg.scope.n_sources
                 mb = self.microbatch_size
-                assert mb % n == 0, f"repeat_across_batch n_sources={n} must divide microbatch_size={mb}"
+                assert mb % n == 0, (
+                    f"repeat_across_batch n_sources={n} must divide microbatch_size={mb}"
+                )
                 assert self.eval_batch_size % n == 0, (
                     f"repeat_across_batch n_sources={n} must divide eval_batch_size={self.eval_batch_size}"
                 )

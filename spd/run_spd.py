@@ -19,7 +19,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from spd.configs import (
-    RepeatAcrossBatchScope,
     Config,
     LossMetricConfigType,
     MetricConfigType,
@@ -29,6 +28,7 @@ from spd.configs import (
     PGDMultiBatchConfig,
     PGDMultiBatchReconLossConfig,
     PGDMultiBatchReconSubsetLossConfig,
+    RepeatAcrossBatchScope,
 )
 from spd.data import loop_dataloader
 from spd.eval import evaluate, evaluate_multibatch_pgd
@@ -231,21 +231,18 @@ def optimize(
         cfg for cfg in eval_metric_configs if cfg not in multibatch_pgd_eval_configs
     ]
 
-    # Skip persistent PGD losses whose source leading dim doesn't divide eval_batch_size
-    eval_metric_configs = [
-        cfg
-        for cfg in eval_metric_configs
-        if not (
-            isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
-            and (
-                (
-                    isinstance(cfg.scope, RepeatAcrossBatchScope)
-                    and config.eval_batch_size % cfg.scope.n_sources != 0
-                )
-                or isinstance(cfg.scope, PerBatchPerPositionScope)
+    # Validate persistent PGD eval scopes are compatible with eval_batch_size
+    for cfg in eval_metric_configs:
+        if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig):
+            continue
+        if isinstance(cfg.scope, RepeatAcrossBatchScope):
+            assert config.eval_batch_size % cfg.scope.n_sources == 0, (
+                f"repeat_across_batch n_sources={cfg.scope.n_sources} must divide "
+                f"eval_batch_size={config.eval_batch_size}"
             )
+        assert not isinstance(cfg.scope, PerBatchPerPositionScope), (
+            "PerBatchPerPositionScope is not supported for eval metrics"
         )
-    ]
 
     sample_batch = extract_batch_data(next(train_iterator))
     batch_dims = (

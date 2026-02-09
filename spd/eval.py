@@ -122,7 +122,9 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
 def init_metric(
     cfg: MetricConfigType,
     model: ComponentModel,
-    ppgd_sourcess: dict[PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources],
+    ppgd_sourcess: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources
+    ],
     run_config: Config,
     device: str,
 ) -> Metric:

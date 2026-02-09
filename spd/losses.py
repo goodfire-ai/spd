@@ -53,7 +53,9 @@ def compute_losses(
     sampling: SamplingType,
     use_delta_component: bool,
     n_mask_samples: int,
-    ppgd_sourcess: dict[PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources],
+    ppgd_sourcess: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources
+    ],
     output_loss_type: Literal["mse", "kl"],
 ) -> dict[LossMetricConfigType, Float[Tensor, ""]]:
     """Compute losses for each config and return a dict mapping config to loss tensor."""

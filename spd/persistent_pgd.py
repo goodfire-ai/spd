@@ -8,6 +8,7 @@ The key insight is that this amortizes PGD optimization across training steps - 
 benefit of many PGD steps without the per-step computational cost.
 """
 
+from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Literal, override
 
 import torch
@@ -16,11 +17,14 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import (
+    AdamPGDConfig,
     BroadcastAcrossBatchScope,
     PerBatchPerPositionScope,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
+    PGDOptimizerConfig,
     RepeatAcrossBatchScope,
+    SignPGDConfig,
     SingleSourceScope,
     SubsetRoutingType,
 )
@@ -32,6 +36,84 @@ from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 PPGDSources = dict[str, Float[Tensor, " source_c"]]
+
+
+class PPGDOptimizer(ABC):
+    """Interface for persistent PGD optimizers."""
+
+    @abstractmethod
+    def init_state(self, sources: PPGDSources) -> None:
+        """Initialize any optimizer-specific state for the given sources."""
+
+    @abstractmethod
+    def step(self, sources: PPGDSources, grads: PPGDSources) -> dict[str, float]:
+        """Perform one update step on sources using gradients.
+
+        Updates sources in-place. Returns mean absolute step per module.
+        """
+
+
+class SignPGDOptimizer(PPGDOptimizer):
+    def __init__(self, cfg: SignPGDConfig) -> None:
+        self._step_size = cfg.step_size
+
+    @override
+    def init_state(self, sources: PPGDSources) -> None:
+        pass
+
+    @override
+    def step(self, sources: PPGDSources, grads: PPGDSources) -> dict[str, float]:
+        mean_abs_step: dict[str, float] = {}
+        for module_name in sources:
+            step_tensor = self._step_size * grads[module_name].sign()
+            mean_abs_step[module_name] = step_tensor.abs().mean().item()
+            sources[module_name].add_(step_tensor)
+        return mean_abs_step
+
+
+class AdamPGDOptimizer(PPGDOptimizer):
+    def __init__(self, cfg: AdamPGDConfig) -> None:
+        self._lr = cfg.lr
+        self._beta1 = cfg.beta1
+        self._beta2 = cfg.beta2
+        self._eps = cfg.eps
+        self._step_count = 0
+        self._m: PPGDSources = {}
+        self._v: PPGDSources = {}
+
+    @override
+    def init_state(self, sources: PPGDSources) -> None:
+        for module_name, source in sources.items():
+            self._m[module_name] = torch.zeros_like(source)
+            self._v[module_name] = torch.zeros_like(source)
+
+    @override
+    def step(self, sources: PPGDSources, grads: PPGDSources) -> dict[str, float]:
+        self._step_count += 1
+        bias_correction1 = 1 - self._beta1**self._step_count
+        bias_correction2 = 1 - self._beta2**self._step_count
+        mean_abs_step: dict[str, float] = {}
+        for module_name, source in sources.items():
+            grad = grads[module_name]
+            m = self._m[module_name]
+            v = self._v[module_name]
+            m.mul_(self._beta1).add_(grad, alpha=1 - self._beta1)
+            v.mul_(self._beta2).addcmul_(grad, grad, value=1 - self._beta2)
+            m_hat = m / bias_correction1
+            v_hat = v / bias_correction2
+            denom = v_hat.sqrt().add_(self._eps)
+            step_tensor = self._lr * m_hat / denom
+            mean_abs_step[module_name] = step_tensor.abs().mean().item()
+            source.add_(step_tensor)
+        return mean_abs_step
+
+
+def make_ppgd_optimizer(cfg: PGDOptimizerConfig) -> PPGDOptimizer:
+    match cfg:
+        case SignPGDConfig():
+            return SignPGDOptimizer(cfg)
+        case AdamPGDConfig():
+            return AdamPGDOptimizer(cfg)
 
 
 class PersistentPGDState:
@@ -52,13 +134,9 @@ class PersistentPGDState:
         cfg: PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
         batch_size: int | None = None,
     ) -> None:
-        self.optimizer = cfg.optimizer
+        self.optimizer = make_ppgd_optimizer(cfg.optimizer)
         self._skip_all_reduce = isinstance(cfg.scope, PerBatchPerPositionScope)
         self._use_sigmoid_parameterization = cfg.use_sigmoid_parameterization
-
-        self._adam_step = 0
-        self._adam_m: PPGDSources = {}
-        self._adam_v: PPGDSources = {}
 
         self.sources: PPGDSources = {}
 
@@ -79,9 +157,8 @@ class PersistentPGDState:
             source_shape = source_leading_dims + [source_c]
             source_data = call_on_rank0_then_broadcast(init_fn, source_shape)
             self.sources[module_name] = source_data.to(device=device).requires_grad_(True)
-            if self.optimizer.type == "adam":
-                self._adam_m[module_name] = torch.zeros_like(self.sources[module_name])
-                self._adam_v[module_name] = torch.zeros_like(self.sources[module_name])
+
+        self.optimizer.init_state(self.sources)
 
     def get_grads(self, loss: Float[Tensor, ""]) -> PPGDSources:
         grads = torch.autograd.grad(loss, list(self.sources.values()), retain_graph=True)
@@ -102,33 +179,8 @@ class PersistentPGDState:
         Returns:
             Mean absolute step per module (before clamping).
         """
-        mean_abs_step: dict[str, float] = {}
         with torch.no_grad():
-            if self.optimizer.type == "sign":
-                cfg = self.optimizer
-                for module_name in self.sources:
-                    step_tensor = cfg.step_size * grads[module_name].sign()
-                    mean_abs_step[module_name] = step_tensor.abs().mean().item()
-                    self.sources[module_name].add_(step_tensor)
-            elif self.optimizer.type == "adam":
-                cfg = self.optimizer
-                self._adam_step += 1
-                bias_correction1 = 1 - cfg.beta1**self._adam_step
-                bias_correction2 = 1 - cfg.beta2**self._adam_step
-                for module_name, source in self.sources.items():
-                    grad = grads[module_name]
-                    m = self._adam_m[module_name]
-                    v = self._adam_v[module_name]
-                    m.mul_(cfg.beta1).add_(grad, alpha=1 - cfg.beta1)
-                    v.mul_(cfg.beta2).addcmul_(grad, grad, value=1 - cfg.beta2)
-                    m_hat = m / bias_correction1
-                    v_hat = v / bias_correction2
-                    denom = v_hat.sqrt().add_(cfg.eps)
-                    step_tensor = cfg.lr * m_hat / denom
-                    mean_abs_step[module_name] = step_tensor.abs().mean().item()
-                    source.add_(step_tensor)
-            else:
-                raise ValueError(f"Unknown PersistentPGD optimizer: {self.optimizer.type}")
+            mean_abs_step = self.optimizer.step(self.sources, grads)
 
             if not self._use_sigmoid_parameterization:
                 for source in self.sources.values():
@@ -148,8 +200,7 @@ class PersistentPGDState:
 
     def empty_grads(self) -> PPGDSources:
         return {
-            module_name: torch.zeros_like(source)
-            for module_name, source in self.sources.items()
+            module_name: torch.zeros_like(source) for module_name, source in self.sources.items()
         }
 
 
