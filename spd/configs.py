@@ -148,6 +148,19 @@ class LMTaskConfig(BaseConfig):
     )
 
 
+class IndexOutputExtract(BaseConfig):
+    type: Literal["index"] = "index"
+    index: int
+
+
+class AttrOutputExtract(BaseConfig):
+    type: Literal["attr"] = "attr"
+    attr: str
+
+
+OutputExtractConfig = IndexOutputExtract | AttrOutputExtract
+
+
 class ModulePatternInfoConfig(BaseConfig):
     """Configuration for a module pattern with its number of components.
 
@@ -561,10 +574,9 @@ class Config(BaseConfig):
         default=None,
         description="hf model identifier. E.g. 'SimpleStories/SimpleStories-1.25M'",
     )
-    output_extract: Literal["first_element", "logits_attr"] | None = Field(
+    output_extract: Annotated[OutputExtractConfig, Field(discriminator="type")] | None = Field(
         default=None,
-        description="How to extract tensor from model output. "
-        "None = raw output, 'first_element' = output[0], 'logits_attr' = output.logits",
+        description="How to extract tensor from model output. None = raw output.",
     )
     tokenizer_name: str | None = Field(
         default=None,
@@ -656,9 +668,9 @@ class Config(BaseConfig):
                 case None:
                     pass
                 case "idx_0":
-                    config_dict["output_extract"] = "first_element"
+                    config_dict["output_extract"] = {"type": "index", "index": 0}
                 case "logits":
-                    config_dict["output_extract"] = "logits_attr"
+                    config_dict["output_extract"] = {"type": "attr", "attr": "logits"}
                 case _:
                     raise ValueError(f"Unknown pretrained_model_output_attr: {old_val!r}")
 
@@ -669,11 +681,22 @@ class Config(BaseConfig):
                 case None:
                     pass
                 case "[0]":
-                    config_dict["output_extract"] = "first_element"
+                    config_dict["output_extract"] = {"type": "index", "index": 0}
                 case ".logits":
-                    config_dict["output_extract"] = "logits_attr"
+                    config_dict["output_extract"] = {"type": "attr", "attr": "logits"}
                 case _:
                     raise ValueError(f"Unknown extract_tensor_output: {old_val!r}")
+
+        # Migrate old flat string values of output_extract
+        if isinstance(config_dict.get("output_extract"), str):
+            old_val = config_dict.pop("output_extract")
+            match old_val:
+                case "first_element":
+                    config_dict["output_extract"] = {"type": "index", "index": 0}
+                case "logits_attr":
+                    config_dict["output_extract"] = {"type": "attr", "attr": "logits"}
+                case _:
+                    raise ValueError(f"Unknown output_extract: {old_val!r}")
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]

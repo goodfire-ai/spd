@@ -3,14 +3,14 @@
 These functions parameterize ComponentModel and training for different target model architectures.
 """
 
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 import torch
 import torch.nn.functional as F
 from jaxtyping import Float
 from torch import Tensor, nn
 
-OutputExtract = Literal["first_element", "logits_attr"]
+from spd.configs import AttrOutputExtract, IndexOutputExtract, OutputExtractConfig
 
 
 class RunBatch[BatchT, OutputT](Protocol):
@@ -29,22 +29,14 @@ def run_batch_raw(model: nn.Module, batch: Any) -> Any:
     return model(batch)
 
 
-def run_batch_first_element(model: nn.Module, batch: Any) -> Tensor:
-    return model(batch)[0]
-
-
-def run_batch_logits_attr(model: nn.Module, batch: Any) -> Tensor:
-    return model(batch).logits
-
-
-def make_run_batch(output_extract: OutputExtract | None) -> RunBatch[Any, Any]:
+def make_run_batch(output_extract: OutputExtractConfig | None) -> RunBatch[Any, Any]:
     match output_extract:
         case None:
             return run_batch_raw
-        case "first_element":
-            return run_batch_first_element
-        case "logits_attr":
-            return run_batch_logits_attr
+        case IndexOutputExtract(index=idx):
+            return lambda model, batch: model(batch)[idx]
+        case AttrOutputExtract(attr=attr):
+            return lambda model, batch: getattr(model(batch), attr)
 
 
 def recon_loss_mse(

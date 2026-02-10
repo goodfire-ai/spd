@@ -53,7 +53,7 @@ TEST_CONFIG = {
     # --- Pretrained model info ---
     "pretrained_model_class": "transformers.LlamaForCausalLM",
     "pretrained_model_name": "SimpleStories/SimpleStories-1.25M",
-    "output_extract": "logits_attr",
+    "output_extract": {"type": "attr", "attr": "logits"},
     "tokenizer_name": "SimpleStories/SimpleStories-1.25M",
     # --- Task Specific ---
     "task_config": {

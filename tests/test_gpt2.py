@@ -4,6 +4,7 @@ import pytest
 from transformers import PreTrainedModel
 
 from spd.configs import (
+    AttrOutputExtract,
     CI_L0Config,
     Config,
     FaithfulnessLossConfig,
@@ -78,7 +79,7 @@ def test_gpt_2_decomposition_happy_path(tmp_path: Path) -> None:
         pretrained_model_class="transformers.GPT2LMHeadModel",
         pretrained_model_path=None,
         pretrained_model_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
-        output_extract="logits_attr",
+        output_extract=AttrOutputExtract(attr="logits"),
         tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
         # Task Specific
         task_config=LMTaskConfig(

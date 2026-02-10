@@ -20,7 +20,13 @@ from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
-from spd.configs import Config, LMTaskConfig, ModulePatternInfoConfig, ScheduleConfig
+from spd.configs import (
+    Config,
+    IndexOutputExtract,
+    LMTaskConfig,
+    ModulePatternInfoConfig,
+    ScheduleConfig,
+)
 from spd.models.batch_and_loss_fns import make_run_batch
 from spd.models.component_model import ComponentModel
 from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
@@ -92,7 +98,7 @@ def app_with_state():
                 ModulePatternInfoConfig(module_pattern=p, C=C) for p in target_module_patterns
             ],
             pretrained_model_class="spd.pretrain.models.gpt2_simple.GPT2Simple",
-            output_extract="first_element",
+            output_extract=IndexOutputExtract(index=0),
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
             lr_schedule=ScheduleConfig(start_val=1e-3),
             steps=1,
