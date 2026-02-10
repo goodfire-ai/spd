@@ -16,7 +16,6 @@ from fastapi.testclient import TestClient
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.database import PromptAttrDB
-from spd.app.backend.model_adapter import build_model_adapter
 from spd.app.backend.routers import graphs as graphs_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
@@ -30,6 +29,7 @@ from spd.configs import (
 )
 from spd.models.component_model import ComponentModel
 from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
+from spd.topology import TransformerTopology
 from spd.utils.module_utils import expand_module_patterns
 
 DEVICE = "cpu"
@@ -125,9 +125,9 @@ def app_with_state():
             sigmoid_type=config.sigmoid_type,
         )
         model.eval()
-        adapter = build_model_adapter(model)
+        adapter = TransformerTopology(model)
         sources_by_target = get_sources_by_target(
-            model=model, adapter=adapter, device=DEVICE, sampling=config.sampling
+            model=model, topology=adapter, device=DEVICE, sampling=config.sampling
         )
 
         from transformers import AutoTokenizer
@@ -140,7 +140,7 @@ def app_with_state():
         run_state = RunState(
             run=run,
             model=model,
-            adapter=adapter,
+            topology=adapter,
             context_length=1,
             tokenizer=tokenizer,
             sources_by_target=sources_by_target,

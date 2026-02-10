@@ -21,7 +21,6 @@ from jaxtyping import Bool
 from torch import Tensor
 
 from spd.app.backend.compute import get_sources_by_target
-from spd.app.backend.model_adapter import build_model_adapter
 from spd.data import train_loader_and_tokenizer
 from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvester import AttributionHarvester
@@ -30,6 +29,7 @@ from spd.dataset_attributions.storage import DatasetAttributionStorage
 from spd.harvest.loaders import load_activation_contexts_summary
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.topology import TransformerTopology
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
@@ -158,8 +158,8 @@ def harvest_attributions(
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
-    adapter = build_model_adapter(model)
-    sources_by_target_raw = get_sources_by_target(model, adapter, str(device), spd_config.sampling)
+    topology = TransformerTopology(model)
+    sources_by_target_raw = get_sources_by_target(model, topology, str(device), spd_config.sampling)
 
     # Filter sources_by_target:
     # - Valid targets: component layers + output
@@ -186,8 +186,8 @@ def harvest_attributions(
         source_alive=source_alive,
         target_alive=target_alive,
         sampling=spd_config.sampling,
-        embedding_module=adapter.embedding_module,
-        unembed_module=adapter.unembed_module,
+        embedding_module=topology.embedding_module,
+        unembed_module=topology.unembed_module,
         device=device,
         show_progress=True,
     )

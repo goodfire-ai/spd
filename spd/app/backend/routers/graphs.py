@@ -411,7 +411,7 @@ def compute_graph_stream(
     def work(on_progress: ProgressCallback) -> GraphData:
         result = compute_prompt_attributions(
             model=loaded.model,
-            adapter=loaded.adapter,
+            topology=loaded.topology,
             tokens=tokens_tensor,
             sources_by_target=loaded.sources_by_target,
             output_prob_threshold=output_prob_threshold,
@@ -597,7 +597,7 @@ def compute_graph_optimized_stream(
     def work(on_progress: ProgressCallback) -> GraphDataWithOptimization:
         result = compute_prompt_attributions_optimized(
             model=loaded.model,
-            adapter=loaded.adapter,
+            topology=loaded.topology,
             tokens=tokens_tensor,
             sources_by_target=loaded.sources_by_target,
             optim_config=optim_config,

@@ -14,11 +14,11 @@ from jaxtyping import Bool, Float
 from torch import Tensor, nn
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.app.backend.model_adapter import ModelAdapter
 from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimize_ci_values
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
+from spd.topology import TransformerTopology
 from spd.utils.general_utils import bf16_autocast
 
 
@@ -118,7 +118,7 @@ class OptimizedPromptAttributionResult:
 
 def get_sources_by_target(
     model: ComponentModel,
-    adapter: ModelAdapter,
+    topology: TransformerTopology,
     device: str,
     sampling: SamplingType,
 ) -> dict[str, list[str]]:
@@ -157,7 +157,7 @@ def get_sources_by_target(
         wte_cache["wte_post_detach"] = output
         return output
 
-    wte_handle = adapter.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
+    wte_handle = topology.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
 
     with torch.enable_grad(), bf16_autocast():
         comp_output_with_cache: OutputWithCache = model(
@@ -172,7 +172,7 @@ def get_sources_by_target(
     cache["wte_post_detach"] = wte_cache["wte_post_detach"]
     cache["output_pre_detach"] = comp_output_with_cache.output
 
-    layers = adapter.ordered_layers()
+    layers = topology.ordered_layers()
 
     # Test all ordered pairs for gradient flow
     test_pairs = []
@@ -228,7 +228,7 @@ def _compute_edges_for_target(
     source_infos: list[LayerAliveInfo],
     cache: dict[str, Tensor],
     loss_seq_pos: int,
-    adapter: ModelAdapter,
+    topology: TransformerTopology,
 ) -> list[Edge]:
     """Compute all edges flowing into a single target layer.
 
@@ -260,7 +260,7 @@ def _compute_edges_for_target(
                 for source, source_info, grad, in_post_detach in zip(
                     sources, source_infos, grads, in_post_detaches, strict=True
                 ):
-                    is_cross_seq = adapter.is_cross_seq_pair(source, target)
+                    is_cross_seq = topology.is_cross_seq_pair(source, target)
                     weighted: Float[Tensor, "s C"] = (grad * in_post_detach)[0]
                     if source == "wte":
                         weighted = weighted.sum(dim=1, keepdim=True)
@@ -283,7 +283,7 @@ def _compute_edges_for_target(
 
 def compute_edges_from_ci(
     model: ComponentModel,
-    adapter: ModelAdapter,
+    topology: TransformerTopology,
     tokens: Float[Tensor, "1 seq"],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
     pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
@@ -326,7 +326,7 @@ def compute_edges_from_ci(
 
     # Setup embedding hook and run forward pass for gradient computation
     wte_hook, wte_cache = _setup_wte_hook()
-    wte_handle = adapter.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
+    wte_handle = topology.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
 
     weight_deltas = model.calc_weight_deltas()
     weight_deltas_and_masks = {
@@ -378,7 +378,7 @@ def compute_edges_from_ci(
             source_infos=[alive_info[source] for source in sources],
             cache=cache,
             loss_seq_pos=loss_seq_pos,
-            adapter=adapter,
+            topology=topology,
         )
         edges.extend(target_edges)
 
@@ -468,7 +468,7 @@ def filter_ci_to_included_nodes(
 
 def compute_prompt_attributions(
     model: ComponentModel,
-    adapter: ModelAdapter,
+    topology: TransformerTopology,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     output_prob_threshold: float,
@@ -508,7 +508,7 @@ def compute_prompt_attributions(
 
     return compute_edges_from_ci(
         model=model,
-        adapter=adapter,
+        topology=topology,
         tokens=tokens,
         ci_lower_leaky=ci_lower_leaky,
         pre_weight_acts=pre_weight_acts,
@@ -524,7 +524,7 @@ def compute_prompt_attributions(
 
 def compute_prompt_attributions_optimized(
     model: ComponentModel,
-    adapter: ModelAdapter,
+    topology: TransformerTopology,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     optim_config: OptimCIConfig,
@@ -567,7 +567,7 @@ def compute_prompt_attributions_optimized(
 
     result = compute_edges_from_ci(
         model=model,
-        adapter=adapter,
+        topology=topology,
         tokens=tokens,
         ci_lower_leaky=ci_outputs.lower_leaky,
         pre_weight_acts=pre_weight_acts,

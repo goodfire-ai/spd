@@ -10,7 +10,6 @@ from typing import Any
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.database import PromptAttrDB, Run
-from spd.app.backend.model_adapter import ModelAdapter
 from spd.autointerp.loaders import (
     load_detection_scores,
     load_fuzzing_scores,
@@ -28,6 +27,7 @@ from spd.harvest.loaders import (
 from spd.harvest.schemas import ComponentSummary
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.models.component_model import ComponentModel
+from spd.topology import TransformerTopology
 
 _NOT_LOADED = object()
 
@@ -146,7 +146,7 @@ class RunState:
 
     run: Run
     model: ComponentModel
-    adapter: ModelAdapter
+    topology: TransformerTopology
     tokenizer: AppTokenizer
     sources_by_target: dict[str, list[str]]
     config: Config

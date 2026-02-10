@@ -11,12 +11,12 @@ from pydantic import BaseModel
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
-from spd.app.backend.model_adapter import build_model_adapter
 from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import log_errors
 from spd.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.topology import TransformerTopology
 from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -117,17 +117,17 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     logger.info(f"[API] Loading tokenizer for run {run.id}: {spd_config.tokenizer_name}")
     app_tokenizer = AppTokenizer.from_pretrained(spd_config.tokenizer_name)
 
-    # Build model adapter and sources_by_target mapping
-    logger.info(f"[API] Building model adapter for run {run.id}")
-    adapter = build_model_adapter(model)
+    # Build topology and sources_by_target mapping
+    logger.info(f"[API] Building topology for run {run.id}")
+    topology = TransformerTopology(model)
 
     logger.info(f"[API] Building sources_by_target mapping for run {run.id}")
-    sources_by_target = get_sources_by_target(model, adapter, DEVICE, spd_config.sampling)
+    sources_by_target = get_sources_by_target(model, topology, DEVICE, spd_config.sampling)
 
     manager.run_state = RunState(
         run=run,
         model=model,
-        adapter=adapter,
+        topology=topology,
         tokenizer=app_tokenizer,
         sources_by_target=sources_by_target,
         config=spd_config,
@@ -177,12 +177,12 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
 @log_errors
 def get_model_info(loaded: DepLoadedRun) -> ModelInfo:
     """Get model topology info for frontend layout."""
-    adapter = loaded.adapter
+    topo = loaded.topology
     return ModelInfo(
-        module_paths=adapter.target_module_paths,
-        role_order=adapter.role_order,
-        role_groups=adapter.role_groups,
-        display_names=adapter.display_names,
+        module_paths=topo.target_module_paths,
+        role_order=topo.role_order,
+        role_groups=topo.role_groups,
+        display_names=topo.display_names,
     )
 
 
