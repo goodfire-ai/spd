@@ -9,7 +9,7 @@ from torch import Tensor
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.plotting import plot_ci_values_histograms
-from spd.utils.distributed_utils import gather_all_tensors
+from spd.utils.distributed_utils import gather_all_tensors, is_main_process
 
 
 class CIHistograms(Metric):
@@ -56,6 +56,9 @@ class CIHistograms(Metric):
             pre_sigmoid_cis[module_name] = torch.cat(
                 gather_all_tensors(torch.cat(ci_list, dim=0)), dim=0
             )
+
+        if not is_main_process():
+            return {}
 
         lower_leaky_fig = plot_ci_values_histograms(causal_importances=lower_leaky_cis)
         pre_sigmoid_fig = plot_ci_values_histograms(causal_importances=pre_sigmoid_cis)

@@ -1,5 +1,7 @@
 """Evaluation utilities using the new Metric classes."""
 
+import sys
+import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -66,11 +68,28 @@ from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.persistent_pgd import PersistentPGDReconLoss, PersistentPGDReconSubsetLoss, PPGDSources
 from spd.routing import AllLayersRouter, get_subset_router
-from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
+from spd.utils.distributed_utils import (
+    avg_metrics_across_ranks,
+    get_distributed_state,
+    is_distributed,
+)
 from spd.utils.general_utils import dict_safe_update_, extract_batch_data
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
 DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
+
+_eval_debug_start: float = 0.0
+
+
+def _eval_debug_log(msg: str) -> None:
+    rank = "?"
+    try:
+        state = get_distributed_state()
+        rank = str(state.rank) if state else "N/A"
+    except Exception:
+        pass
+    elapsed = time.time() - _eval_debug_start
+    print(f"[EVAL-DEBUG r{rank} t={elapsed:.1f}s] {msg}", flush=True, file=sys.stderr)
 
 
 def clean_metric_output(
@@ -319,7 +338,10 @@ def evaluate(
     current_frac_of_training: float,
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
+    global _eval_debug_start
+    _eval_debug_start = time.time()
 
+    _eval_debug_log("evaluate() called")
     metrics: list[Metric] = []
     for cfg in eval_metric_configs:
         metric = init_metric(
@@ -330,17 +352,24 @@ def evaluate(
             device=device,
         )
         if metric.slow and not slow_step:
+            _eval_debug_log(f"  Skipping slow metric: {cfg.classname}")
             continue
         metrics.append(metric)
+    metric_names = [type(m).__name__ for m in metrics]
+    _eval_debug_log(f"Active metrics: {metric_names}")
 
     # Weight deltas can be computed once per eval since params are frozen
+    _eval_debug_log("calc_weight_deltas")
     weight_deltas = model.calc_weight_deltas()
 
-    for _ in range(n_eval_steps):
+    for eval_step_i in range(n_eval_steps):
+        _eval_debug_log(f"eval batch {eval_step_i}: loading")
         batch_raw = next(eval_iterator)
         batch = extract_batch_data(batch_raw).to(device)
+        _eval_debug_log(f"eval batch {eval_step_i}: forward pass")
 
         target_output: OutputWithCache = model(batch, cache_type="input")
+        _eval_debug_log(f"eval batch {eval_step_i}: calc CI")
         ci = model.calc_causal_importances(
             pre_weight_acts=target_output.cache,
             detach_inputs=False,
@@ -348,6 +377,7 @@ def evaluate(
         )
 
         for metric in metrics:
+            _eval_debug_log(f"eval batch {eval_step_i}: update {type(metric).__name__}")
             metric.update(
                 batch=batch,
                 target_out=target_output.output,
@@ -357,9 +387,13 @@ def evaluate(
                 weight_deltas=weight_deltas,
             )
 
+    _eval_debug_log("Computing final metric values...")
     outputs: MetricOutType = {}
     for metric in metrics:
+        name = type(metric).__name__
+        _eval_debug_log(f"  compute() for {name}")
         computed_raw: Any = metric.compute()
+        _eval_debug_log(f"  compute() for {name} done")
         computed = clean_metric_output(
             section=metric.metric_section,
             metric_name=type(metric).__name__,
@@ -381,6 +415,7 @@ def evaluate_multibatch_pgd(
     device: str,
 ) -> dict[str, float]:
     """Calculate multibatch PGD metrics."""
+    _eval_debug_log(f"evaluate_multibatch_pgd: {len(multibatch_pgd_eval_configs)} configs")
     weight_deltas = model.calc_weight_deltas() if config.use_delta_component else None
 
     metrics: dict[str, float] = {}

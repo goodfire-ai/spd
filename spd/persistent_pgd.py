@@ -8,6 +8,8 @@ The key insight is that this amortizes PGD optimization across training steps - 
 benefit of many PGD steps without the per-step computational cost.
 """
 
+import sys
+import time
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Literal, override
 
@@ -152,11 +154,23 @@ class PersistentPGDState:
                 source_leading_dims = [batch_size, seq_len]
 
         init_fn = torch.randn if self._use_sigmoid_parameterization else torch.rand
-        for module_name, module_c in module_to_c.items():
+        _ppgd_t0 = time.time()
+        for i, (module_name, module_c) in enumerate(module_to_c.items()):
             source_c = module_c + 1 if use_delta_component else module_c
             source_shape = source_leading_dims + [source_c]
+            print(
+                f"[PPGD-DEBUG] broadcast {i+1}/{len(module_to_c)}: {module_name} "
+                f"shape={source_shape} t={time.time()-_ppgd_t0:.1f}s",
+                flush=True,
+                file=sys.stderr,
+            )
             source_data = call_on_rank0_then_broadcast(init_fn, source_shape)
             self.sources[module_name] = source_data.to(device=device).requires_grad_(True)
+        print(
+            f"[PPGD-DEBUG] All {len(module_to_c)} broadcasts done in {time.time()-_ppgd_t0:.1f}s",
+            flush=True,
+            file=sys.stderr,
+        )
 
         self.optimizer.init_state(self.sources)
 

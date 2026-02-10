@@ -1,6 +1,8 @@
 """Run SPD on a model."""
 
 import gc
+import sys
+import time
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
@@ -53,6 +55,21 @@ from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import expand_module_patterns
 from spd.utils.run_utils import save_file
 from spd.utils.wandb_utils import try_wandb
+
+
+def _debug_log(msg: str) -> None:
+    """Debug log with timestamp and rank info, flushed immediately."""
+    rank = "?"
+    try:
+        state = get_distributed_state()
+        rank = str(state.rank) if state else "N/A"
+    except Exception:
+        pass
+    elapsed = time.time() - _debug_log.start_time
+    print(f"[DEBUG r{rank} t={elapsed:.1f}s] {msg}", flush=True, file=sys.stderr)
+
+
+_debug_log.start_time = time.time()  # type: ignore
 
 
 def run_faithfulness_warmup(
@@ -207,6 +224,9 @@ def optimize(
     if config.faithfulness_warmup_steps > 0:
         run_faithfulness_warmup(component_model, component_params, config)
 
+    _debug_log.start_time = time.time()  # type: ignore
+    _debug_log("Warmup complete, starting post-warmup setup")
+
     # Extract PersistentPGD configs for state initialization
     # (PPGD is handled in compute_losses but not evaluated)
     persistent_pgd_configs: list[
@@ -236,7 +256,9 @@ def optimize(
         if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
     ]
 
+    _debug_log("Loading first training batch...")
     sample_batch = extract_batch_data(next(train_iterator))
+    _debug_log(f"First batch loaded, shape={sample_batch.shape}")
     batch_dims = (
         sample_batch.shape[:-1]
         if config.output_loss_type == "mse"  # if mse then input is a vector
@@ -244,10 +266,13 @@ def optimize(
     )
 
     # Initialize PersistentPGD states if needed
+    _debug_log(f"Initializing PPGD states for {len(persistent_pgd_configs)} configs...")
     ppgd_states: dict[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
-    ] = {
-        ppgd_cfg: PersistentPGDState(
+    ] = {}
+    for ppgd_cfg in persistent_pgd_configs:
+        _debug_log(f"  Creating PersistentPGDState for {ppgd_cfg.classname}...")
+        ppgd_states[ppgd_cfg] = PersistentPGDState(
             module_to_c=model.module_to_c,
             seq_len=batch_dims[-1],
             device=device,
@@ -255,10 +280,14 @@ def optimize(
             cfg=ppgd_cfg,
             batch_size=batch_dims[0],
         )
-        for ppgd_cfg in persistent_pgd_configs
-    }
+        _debug_log(f"  PersistentPGDState for {ppgd_cfg.classname} initialized")
+    _debug_log("All PPGD states initialized")
 
+    _debug_log("Entering training loop")
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
+        _is_debug_step = step < 3
+        if _is_debug_step:
+            _debug_log(f"Step {step}: start")
         optimizer.zero_grad()
 
         step_lr = get_scheduled_value(
@@ -267,6 +296,8 @@ def optimize(
         for group in optimizer.param_groups:
             group["lr"] = step_lr
 
+        if _is_debug_step:
+            _debug_log(f"Step {step}: calc_weight_deltas")
         weight_deltas = component_model.calc_weight_deltas()
 
         batch_log_data: defaultdict[str, float] = defaultdict(float)
@@ -276,20 +307,28 @@ def optimize(
         }
 
         for _ in range(config.gradient_accumulation_steps):
+            if _is_debug_step:
+                _debug_log(f"Step {step}: loading microbatch")
             microbatch = extract_batch_data(next(train_iterator)).to(device, non_blocking=True)
 
+            if _is_debug_step:
+                _debug_log(f"Step {step}: forward pass (wrapped_model)")
             with bf16_autocast(enabled=config.autocast_bf16):
                 # NOTE: we need to call the wrapped_model at least once each step in order
                 # to setup the DDP gradient syncing for all parameters in the component model.
                 # Gradients will sync regardless of whether the parameters are used in this
                 # call to wrapped_model.
                 target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
+                if _is_debug_step:
+                    _debug_log(f"Step {step}: forward pass done, calc CI")
 
                 ci = component_model.calc_causal_importances(
                     pre_weight_acts=target_model_output.cache,
                     detach_inputs=False,
                     sampling=config.sampling,
                 )
+                if _is_debug_step:
+                    _debug_log(f"Step {step}: CI done, compute_losses")
 
                 microbatch_losses = compute_losses(
                     loss_metric_configs=config.loss_metric_configs,
@@ -309,6 +348,8 @@ def optimize(
                     },
                     output_loss_type=config.output_loss_type,
                 )
+                if _is_debug_step:
+                    _debug_log(f"Step {step}: compute_losses done")
 
             # Compute total loss and accumulate PPGD grads
             microbatch_total_loss = torch.tensor(0.0, device=device)
@@ -323,17 +364,25 @@ def optimize(
                 if isinstance(
                     loss_cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
                 ):
+                    if _is_debug_step:
+                        _debug_log(f"Step {step}: PPGD get_grads ({loss_cfg.classname})")
                     ppgd_grads = ppgd_states[loss_cfg].get_grads(loss_val)
                     for module_name, grad in ppgd_grads.items():
                         ppgd_batch_grads[loss_cfg][module_name] += (
                             grad / config.gradient_accumulation_steps
                         )
+                    if _is_debug_step:
+                        _debug_log(f"Step {step}: PPGD get_grads done")
 
+            if _is_debug_step:
+                _debug_log(f"Step {step}: backward pass")
             batch_log_data["train/loss/total"] += (
                 microbatch_total_loss.item() / config.gradient_accumulation_steps
             )
 
             microbatch_total_loss.div_(config.gradient_accumulation_steps).backward()
+            if _is_debug_step:
+                _debug_log(f"Step {step}: backward done")
 
             for layer_name, layer_ci in ci.lower_leaky.items():
                 l0_val = calc_ci_l_zero(layer_ci, config.ci_alive_threshold)
@@ -341,16 +390,28 @@ def optimize(
                     l0_val / config.gradient_accumulation_steps
                 )
         # Step PPGD optimizers
+        if _is_debug_step:
+            _debug_log(f"Step {step}: stepping PPGD optimizers")
         for ppgd_cfg in persistent_pgd_configs:
             mean_abs_steps = ppgd_states[ppgd_cfg].step(ppgd_batch_grads[ppgd_cfg])
             for module_name, mean_abs_step in mean_abs_steps.items():
                 batch_log_data[f"train/loss/{ppgd_cfg.classname}/mean_abs_step/{module_name}"] = (
                     mean_abs_step
                 )
+        if _is_debug_step:
+            _debug_log(f"Step {step}: PPGD optimizers done")
+
+        # --- Grad clipping --- #
+        if _is_debug_step:
+            _debug_log(f"Step {step}: grad clipping + optimizer step")
 
         # --- Train Logging --- #
         if step % config.train_log_freq == 0:
+            if _is_debug_step:
+                _debug_log(f"Step {step}: train logging - avg_metrics_across_ranks")
             avg_metrics = avg_metrics_across_ranks(batch_log_data, device=device)
+            if _is_debug_step:
+                _debug_log(f"Step {step}: train logging - avg_metrics done")
             batch_log_data = cast(defaultdict[str, float], avg_metrics)
 
             grad_norms = get_grad_norms_dict(component_model, device)
@@ -369,17 +430,25 @@ def optimize(
                 local_log(batch_log_data, step, out_dir)
                 if config.wandb_project:
                     try_wandb(wandb.log, batch_log_data, step=step)
+            if _is_debug_step:
+                _debug_log(f"Step {step}: train logging done")
 
         # --- Evaluation --- #
         if step % config.eval_freq == 0:
+            if _is_debug_step:
+                _debug_log(f"Step {step}: starting evaluation (slow_eval_on_first_step={config.slow_eval_on_first_step})")
             with torch.no_grad(), bf16_autocast(enabled=config.autocast_bf16):
                 slow_step: bool = (
                     config.slow_eval_on_first_step
                     if step == 0
                     else step % config.slow_eval_freq == 0
                 )
+                if _is_debug_step:
+                    _debug_log(f"Step {step}: slow_step={slow_step}")
 
                 assert batch_dims is not None, "batch_dims is not set"
+                if _is_debug_step:
+                    _debug_log(f"Step {step}: evaluate_multibatch_pgd start")
                 multibatch_pgd_metrics = evaluate_multibatch_pgd(
                     multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
                     model=component_model,
@@ -388,7 +457,11 @@ def optimize(
                     batch_dims=batch_dims,
                     device=device,
                 )
+                if _is_debug_step:
+                    _debug_log(f"Step {step}: evaluate_multibatch_pgd done")
 
+                if _is_debug_step:
+                    _debug_log(f"Step {step}: evaluate() start with {len(eval_metric_configs)} metrics")
                 metrics = evaluate(
                     eval_metric_configs=eval_metric_configs,
                     model=component_model,  # No backward passes so DDP wrapped_model not needed
@@ -403,6 +476,8 @@ def optimize(
                     n_eval_steps=n_eval_steps,
                     current_frac_of_training=step / config.steps,
                 )
+                if _is_debug_step:
+                    _debug_log(f"Step {step}: evaluate() done")
 
                 dict_safe_update_(metrics, multibatch_pgd_metrics)
 
