@@ -12,9 +12,9 @@ from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Literal, override
 
 import torch
+import torch.distributed as dist
 from jaxtyping import Float, Int
 from torch import Tensor
-from torch.distributed import ReduceOp
 
 from spd.configs import (
     AdamPGDConfig,
@@ -32,7 +32,11 @@ from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.routing import AllLayersRouter, Router, get_subset_router
-from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
+from spd.utils.distributed_utils import (
+    all_reduce,
+    call_on_rank0_then_broadcast,
+    is_distributed,
+)
 from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 PPGDSources = dict[str, Float[Tensor, " source_c"]]
@@ -137,6 +141,7 @@ class PersistentPGDState:
         self.optimizer = make_ppgd_optimizer(cfg.optimizer)
         self._skip_all_reduce = isinstance(cfg.scope, PerBatchPerPositionScope)
         self._use_sigmoid_parameterization = cfg.use_sigmoid_parameterization
+        self._reinit_prob = cfg.reinit_prob
 
         self.sources: PPGDSources = {}
 
@@ -166,7 +171,7 @@ class PersistentPGDState:
         if self._skip_all_reduce:
             return dict(zip(self.sources.keys(), grads, strict=True))
         return {
-            k: all_reduce(g, op=ReduceOp.SUM)
+            k: all_reduce(g, op=dist.ReduceOp.SUM)
             for k, g in zip(self.sources.keys(), grads, strict=True)
         }
 
@@ -175,6 +180,8 @@ class PersistentPGDState:
 
         Updates sources in-place, then clamps to [0, 1] (or leaves unbounded when using sigmoid
         parameterization, where sigmoid is applied when reading effective sources).
+
+        If reinit_prob > 0, each source entry is independently reinitialized with that probability.
 
         Returns:
             Mean absolute step per module (before clamping).
@@ -186,7 +193,23 @@ class PersistentPGDState:
                 for source in self.sources.values():
                     source.clamp_(0.0, 1.0)
 
+            if self._reinit_prob > 0:
+                self._reinit_sources()
+
         return mean_abs_step
+
+    def _reinit_sources(self) -> None:
+        """Randomly reinitialize a fraction of source entries to escape local optima."""
+        new_values_fn = torch.randn_like if self._use_sigmoid_parameterization else torch.rand_like
+        for source in self.sources.values():
+            rand_vals = torch.rand_like(source)
+            new_values = new_values_fn(source)
+
+            if not self._skip_all_reduce and is_distributed():
+                dist.broadcast(rand_vals, src=0)
+                dist.broadcast(new_values, src=0)
+
+            source.data = torch.where(rand_vals < self._reinit_prob, new_values, source.data)
 
     def get_effective_sources(self) -> PPGDSources:
         """Return sources in [0, 1] range.
@@ -379,8 +402,8 @@ class AbstractPersistentPGDReconLoss(Metric):
 
     @override
     def compute(self) -> Float[Tensor, ""]:
-        sum_loss = all_reduce(self.sum_loss, op=ReduceOp.SUM)
-        n_examples = all_reduce(self.n_examples, op=ReduceOp.SUM)
+        sum_loss = all_reduce(self.sum_loss, op=dist.ReduceOp.SUM)
+        n_examples = all_reduce(self.n_examples, op=dist.ReduceOp.SUM)
         return sum_loss / n_examples
 
 
