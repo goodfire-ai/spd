@@ -193,7 +193,7 @@ def get_sources_by_target(
         "mlp.c_fc",
         "mlp.down_proj",
     ]
-    n_blocks = get_model_n_blocks(cast(nn.Module, model.target_model))
+    n_blocks = get_model_n_blocks(model.target_model)
     for i in range(n_blocks):
         layers.extend([f"h.{i}.{layer_name}" for layer_name in component_layer_names])
 

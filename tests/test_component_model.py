@@ -17,10 +17,10 @@ from spd.configs import (
 )
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
+from spd.models.batch_and_loss_fns import run_batch_raw
 from spd.models.component_model import (
     ComponentModel,
     SPDRunInfo,
-    extract_with_accessor,
 )
 from spd.models.components import (
     ComponentsMaskInfo,
@@ -83,6 +83,7 @@ def test_correct_parameters_require_grad():
 
     component_model = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch_raw,
         module_path_info=[
             ModulePathInfo(module_path="linear1", C=4),
             ModulePathInfo(module_path="linear2", C=8),
@@ -152,7 +153,6 @@ def test_from_run_info():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
@@ -171,6 +171,7 @@ def test_from_run_info():
         module_path_info = expand_module_patterns(target_model, config.all_module_info)
         cm = ComponentModel(
             target_model=target_model,
+            run_batch=run_batch_raw,
             module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
@@ -199,6 +200,7 @@ def test_from_run_info():
         )
         cm_loaded = ComponentModel(
             target_model=loaded_target,
+            run_batch=run_batch_raw,
             module_path_info=loaded_module_path_info,
             ci_fn_type=cm_run_info.config.ci_fn_type,
             ci_fn_hidden_dims=cm_run_info.config.ci_fn_hidden_dims,
@@ -299,6 +301,7 @@ def test_full_weight_delta_matches_target_behaviour():
     C = 4
     cm = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch_raw,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
@@ -330,6 +333,7 @@ def test_input_cache_captures_pre_weight_input():
 
     cm = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch_raw,
         module_path_info=[ModulePathInfo(module_path=p, C=2) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
@@ -364,6 +368,7 @@ def test_weight_deltas():
     target_module_paths = ["embed", "mlp", "out"]
     cm = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch_raw,
         module_path_info=[ModulePathInfo(module_path=p, C=3) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
@@ -398,6 +403,7 @@ def test_replacement_effects_fwd_pass():
 
     cm = ComponentModel(
         target_model=model,
+        run_batch=run_batch_raw,
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
@@ -453,6 +459,7 @@ def test_replacing_identity():
     # wrapped in a component model that decomposes the prepended identity layer
     cm = ComponentModel(
         target_model=model,
+        run_batch=run_batch_raw,
         module_path_info=[ModulePathInfo(module_path="linear.pre_identity", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
@@ -502,6 +509,7 @@ def test_routing():
     # wrapped in a component model that decomposes the layer
     cm = ComponentModel(
         target_model=model,
+        run_batch=run_batch_raw,
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
@@ -539,48 +547,3 @@ def test_routing():
 
     # but it should be the same for the second example (where it's not routed to components)
     assert torch.allclose(cm_routed_out[1], target_out[1])
-
-
-class TestExtractWithAccessor:
-    def test_integer_index(self):
-        obj = ("a", "b", "c")
-        assert extract_with_accessor(obj, "[0]") == "a"
-        assert extract_with_accessor(obj, "[2]") == "c"
-
-    def test_attribute_access(self):
-        class Obj:
-            logits = 42
-
-        assert extract_with_accessor(Obj(), ".logits") == 42
-
-    def test_string_key_dict_access(self):
-        obj = {"hidden_states": "hs", "logits": "lg"}
-        assert extract_with_accessor(obj, '["hidden_states"]') == "hs"
-        assert extract_with_accessor(obj, '["logits"]') == "lg"
-
-    def test_chained_accessors(self):
-        class Inner:
-            value = 99
-
-        obj = ({"data": Inner()},)
-        assert extract_with_accessor(obj, '[0]["data"].value') == 99
-
-    def test_index_then_attribute(self):
-        class Out:
-            logits = torch.tensor([1.0, 2.0])
-
-        obj = (Out(),)
-        result = extract_with_accessor(obj, "[0].logits")
-        assert torch.equal(result, torch.tensor([1.0, 2.0]))
-
-    def test_invalid_accessor_raises(self):
-        with pytest.raises(AssertionError, match="Invalid accessor"):
-            extract_with_accessor({}, "invalid")
-
-    def test_invalid_accessor_with_special_chars(self):
-        with pytest.raises(AssertionError, match="Invalid accessor"):
-            extract_with_accessor({}, '[" spaces "]')
-
-    def test_empty_accessor_raises(self):
-        with pytest.raises(AssertionError, match="non-empty"):
-            extract_with_accessor({}, "")

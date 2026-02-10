@@ -5,10 +5,8 @@ import time
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import cast
 
 import httpx
-import torch.nn as nn
 from openrouter import OpenRouter
 from openrouter.components import JSONSchemaConfig, MessageTypedDict, ResponseFormatJSONSchema
 from openrouter.errors import (
@@ -337,7 +335,7 @@ async def interpret_all(
 def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
     run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info)
-    n_blocks = get_model_n_blocks(cast(nn.Module, model.target_model))
+    n_blocks = get_model_n_blocks(model.target_model)
     config = run_info.config
     task_config = config.task_config
     assert isinstance(task_config, LMTaskConfig)

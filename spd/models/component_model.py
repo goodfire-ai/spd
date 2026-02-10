@@ -1,9 +1,8 @@
-import re
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Literal, NamedTuple, Protocol, overload, override
+from typing import Any, Literal, NamedTuple, overload, override
 
 import torch
 from jaxtyping import Float, Int
@@ -14,6 +13,7 @@ from transformers.pytorch_utils import Conv1D as RadfordConv1D
 from spd.configs import Config, SamplingType
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
+from spd.models.batch_and_loss_fns import RunBatch, make_run_batch
 from spd.models.components import (
     Components,
     ComponentsMaskInfo,
@@ -28,29 +28,6 @@ from spd.models.sigmoids import SIGMOID_TYPES, SigmoidType
 from spd.spd_types import CiFnType, ModelPath
 from spd.utils.general_utils import resolve_class, runtime_cast
 from spd.utils.module_utils import ModulePathInfo, expand_module_patterns
-
-_ACCESSOR_TOKEN_RE = re.compile(r'\.\w+|\[\d+\]|\["\w+"\]')
-
-
-def extract_with_accessor(obj: Any, accessor: str) -> Any:
-    """Navigate a nested object using an accessor path string.
-
-    Supports attribute access (.attr), integer indexing ([i]), and string-key
-    dictionary access (["key"]).
-    Examples: "[0]", ".logits", "[0].logits[2]", '["hidden_states"]'
-    """
-    assert accessor, "Accessor must be non-empty (use None for no extraction)"
-    tokens = _ACCESSOR_TOKEN_RE.findall(accessor)
-    assert "".join(tokens) == accessor, f"Invalid accessor: {accessor!r}"
-    result = obj
-    for token in tokens:
-        if token.startswith('["'):
-            result = result[token[2:-2]]
-        elif token.startswith("["):
-            result = result[int(token[1:-1])]
-        else:
-            result = getattr(result, token[1:])
-    return result
 
 
 @dataclass
@@ -76,18 +53,6 @@ class CIOutputs:
     pre_sigmoid: dict[str, Tensor]
 
 
-class TargetModel[BatchT, OutputT](Protocol):
-    # def __call__(self, batch: BatchT) -> OutputT: ...
-
-    def __call__(self, batch: BatchT) -> OutputT: ...
-
-    def get_submodule(self, target: str) -> nn.Module: ...
-
-    def named_parameters(self) -> Iterator[tuple[str, nn.Parameter]]: ...
-
-    # def named_modules(self) -> Generator[tuple[str, nn.Module]]: ...
-
-
 class ComponentModel[BatchT, OutputT](nn.Module):
     """Wrapper around an arbitrary pytorch model for running SPD.
 
@@ -109,15 +74,15 @@ class ComponentModel[BatchT, OutputT](nn.Module):
 
     def __init__(
         self,
-        target_model: TargetModel[BatchT, OutputT],
+        target_model: nn.Module,
+        run_batch: RunBatch[BatchT, OutputT],
         module_path_info: list[ModulePathInfo],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
-        extract_tensor_output: str | None = None,
     ):
         super().__init__()
-        self.extract_tensor_output = extract_tensor_output
+        self._run_batch: RunBatch[BatchT, OutputT] = run_batch
 
         for name, param in target_model.named_parameters():
             assert not param.requires_grad, (
@@ -180,13 +145,15 @@ class ComponentModel[BatchT, OutputT](nn.Module):
 
         module_path_info = expand_module_patterns(target_model, config.all_module_info)
 
+        run_batch = make_run_batch(config.output_extract)
+
         comp_model: ComponentModel[Any, Any] = cls(
             target_model=target_model,
+            run_batch=run_batch,
             module_path_info=module_path_info,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
             ci_fn_type=config.ci_fn_type,
             sigmoid_type=config.sigmoid_type,
-            extract_tensor_output=config.extract_tensor_output,
         )
 
         weights = torch.load(run_info.checkpoint_path, map_location="cpu", weights_only=True)
@@ -256,7 +223,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
 
     @staticmethod
     def _create_components(
-        target_model: TargetModel[BatchT, OutputT],
+        target_model: nn.Module,
         module_to_c: dict[str, int],
     ) -> dict[str, Components]:
         components: dict[str, Components] = {}
@@ -299,7 +266,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
 
     @staticmethod
     def _create_ci_fns(
-        target_model: TargetModel[BatchT, OutputT],
+        target_model: nn.Module,
         module_to_c: dict[str, int],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
@@ -373,8 +340,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             model output tensor.
         """
         if mask_infos is None and cache_type == "none":
-            # No hooks needed. Do a regular forward pass of the target model.
-            return self._extract_output(self.target_model(batch))
+            return self._run_batch(self.target_model, batch)
 
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
@@ -395,18 +361,13 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             )
 
         with self._attach_forward_hooks(hooks):
-            out: OutputT = self._extract_output(self.target_model(batch))
+            out: OutputT = self._run_batch(self.target_model, batch)
 
         match cache_type:
             case "input" | "component_acts":
                 return OutputWithCache(output=out, cache=cache)
             case "none":
                 return out
-
-    def _extract_output(self, raw_output: Any) -> Any:
-        if self.extract_tensor_output is None:
-            return raw_output
-        return extract_with_accessor(raw_output, self.extract_tensor_output)
 
     def _components_and_cache_hook(
         self,

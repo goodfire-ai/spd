@@ -30,8 +30,8 @@ from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_total_loss
 from spd.metrics import faithfulness_loss
-from spd.models.batch_and_loss_fns import ReconstructionLoss
-from spd.models.component_model import ComponentModel, OutputWithCache, TargetModel
+from spd.models.batch_and_loss_fns import ReconstructionLoss, RunBatch
+from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import (
     avg_metrics_across_ranks,
@@ -43,7 +43,6 @@ from spd.utils.general_utils import (
     bf16_autocast,
     dict_safe_update_,
     get_scheduled_value,
-    runtime_cast,
 )
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
 from spd.utils.module_utils import expand_module_patterns
@@ -111,11 +110,12 @@ def get_unique_metric_configs(
 
 
 def optimize[BatchT, OutputT](
-    target_model: TargetModel[BatchT, OutputT],
+    target_model: nn.Module,
     config: Config,
     device: str,
     train_loader: DataLoader[BatchT],
     eval_loader: DataLoader[BatchT],
+    run_batch: RunBatch[BatchT, OutputT],
     reconstruction_loss: ReconstructionLoss[OutputT],
     out_dir: Path | None,
     tied_weights: list[tuple[str, str]] | None = None,
@@ -135,23 +135,21 @@ def optimize[BatchT, OutputT](
 
     if config.identity_module_info is not None:
         insert_identity_operations_(
-            runtime_cast(nn.Module, target_model),
+            target_model,
             identity_module_info=config.identity_module_info,
         )
 
-    cast(nn.Module, target_model).requires_grad_(False)
+    target_model.requires_grad_(False)
 
-    module_path_info = expand_module_patterns(
-        runtime_cast(nn.Module, target_model), config.all_module_info
-    )
+    module_path_info = expand_module_patterns(target_model, config.all_module_info)
 
     model = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch,
         module_path_info=module_path_info,
         ci_fn_type=config.ci_fn_type,
         ci_fn_hidden_dims=config.ci_fn_hidden_dims,
         sigmoid_type=config.sigmoid_type,
-        extract_tensor_output=config.extract_tensor_output,
     )
 
     model.to(device)

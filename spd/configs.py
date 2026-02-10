@@ -461,11 +461,6 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
-        ...,
-        description="Metric used to measure recon error between model outputs and targets",
-    )
-
     # --- Training ---
     lr_schedule: ScheduleConfig = Field(..., description="Learning rate schedule configuration")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
@@ -566,9 +561,10 @@ class Config(BaseConfig):
         default=None,
         description="hf model identifier. E.g. 'SimpleStories/SimpleStories-1.25M'",
     )
-    extract_tensor_output: str | None = Field(
+    output_extract: Literal["first_element", "logits_attr"] | None = Field(
         default=None,
-        description="Accessor path for extracting tensor from model output, e.g. '[0]' or '.logits'",
+        description="How to extract tensor from model output. "
+        "None = raw output, 'first_element' = output[0], 'logits_attr' = output.logits",
     )
     tokenizer_name: str | None = Field(
         default=None,
@@ -607,6 +603,7 @@ class Config(BaseConfig):
         "lr_exponential_halflife",
         "out_dir",
         "n_examples_until_dead",
+        "output_loss_type",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
@@ -652,15 +649,31 @@ class Config(BaseConfig):
                 "simple_stories_train.models.", "spd.pretrain.models.", 1
             )
 
-        # Migrate old pretrained_model_output_attr to extract_tensor_output
+        # Migrate old pretrained_model_output_attr to output_extract
         if "pretrained_model_output_attr" in config_dict:
             old_val = config_dict.pop("pretrained_model_output_attr")
-            if old_val is not None:
-                accessor = "[0]" if old_val == "idx_0" else f".{old_val}"
-                config_dict["extract_tensor_output"] = accessor
-                logger.info(
-                    f"Migrated pretrained_model_output_attr={old_val!r} to extract_tensor_output={accessor!r}"
-                )
+            match old_val:
+                case None:
+                    pass
+                case "idx_0":
+                    config_dict["output_extract"] = "first_element"
+                case "logits":
+                    config_dict["output_extract"] = "logits_attr"
+                case _:
+                    raise ValueError(f"Unknown pretrained_model_output_attr: {old_val!r}")
+
+        # Migrate extract_tensor_output to output_extract
+        if "extract_tensor_output" in config_dict:
+            old_val = config_dict.pop("extract_tensor_output")
+            match old_val:
+                case None:
+                    pass
+                case "[0]":
+                    config_dict["output_extract"] = "first_element"
+                case ".logits":
+                    config_dict["output_extract"] = "logits_attr"
+                case _:
+                    raise ValueError(f"Unknown extract_tensor_output: {old_val!r}")
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]

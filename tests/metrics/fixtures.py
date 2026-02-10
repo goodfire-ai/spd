@@ -7,6 +7,7 @@ import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.models.batch_and_loss_fns import run_batch_raw
 from spd.models.component_model import ComponentModel
 from spd.utils.module_utils import ModulePathInfo
 
@@ -55,6 +56,7 @@ def make_one_layer_component_model(weight: Float[Tensor, "d_out d_in"]) -> Compo
 
     comp_model = ComponentModel(
         target_model=target,
+        run_batch=run_batch_raw,
         module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",
@@ -88,6 +90,7 @@ def make_two_layer_component_model(
 
     comp_model = ComponentModel(
         target_model=target,
+        run_batch=run_batch_raw,
         module_path_info=[
             ModulePathInfo(module_path="fc1", C=1),
             ModulePathInfo(module_path="fc2", C=1),
