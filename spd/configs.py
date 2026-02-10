@@ -461,37 +461,63 @@ class AdamPGDConfig(BaseConfig):
 PGDOptimizerConfig = SignPGDConfig | AdamPGDConfig
 
 
-class SingleMaskScope(BaseConfig):
-    type: Literal["single_mask"] = "single_mask"
+class SingleSourceScope(BaseConfig):
+    type: Literal["single_source"] = "single_source"
 
 
 class BroadcastAcrossBatchScope(BaseConfig):
     type: Literal["broadcast_across_batch"] = "broadcast_across_batch"
 
 
-class BatchInvariantScope(BaseConfig):
-    """Masks of shape (N, S, C) where N divides both batch_size and eval_batch_size.
+class RepeatAcrossBatchScope(BaseConfig):
+    """Sources of shape (N, S, C) where N divides both batch_size and eval_batch_size.
 
     Repeated along batch dim at forward time: (N, S, C) -> (B, S, C).
     """
 
-    type: Literal["batch_invariant"] = "batch_invariant"
-    n_masks: PositiveInt
+    type: Literal["repeat_across_batch"] = "repeat_across_batch"
+    n_sources: PositiveInt
 
 
-PersistentPGDMaskScope = Annotated[
-    SingleMaskScope | BroadcastAcrossBatchScope | BatchInvariantScope,
+class PerBatchPerPositionScope(BaseConfig):
+    """Sources of shape (B, S, C) — one source per batch element per position, separate across
+    ranks.
+
+    Unlike other scopes, gradients are NOT all-reduced across ranks, so each rank
+    maintains fully independent sources for its own batch elements.
+    """
+
+    type: Literal["per_batch_per_position"] = "per_batch_per_position"
+
+
+PersistentPGDSourceScope = Annotated[
+    SingleSourceScope
+    | BroadcastAcrossBatchScope
+    | RepeatAcrossBatchScope
+    | PerBatchPerPositionScope,
     Field(discriminator="type"),
 ]
 
 
-_PPGD_SCOPE_COMPAT = {"single_mask", "broadcast_across_batch"}
-
-
 def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
-    """Backwards compat: convert bare string scope to {type: string}."""
-    if isinstance(config_dict.get("scope"), str) and config_dict["scope"] in _PPGD_SCOPE_COMPAT:
-        config_dict["scope"] = {"type": config_dict["scope"]}
+    """Backwards compat: migrate old scope format/names to current names."""
+    scope = config_dict.get("scope")
+    if isinstance(scope, str):
+        scope = {"type": scope}
+        config_dict["scope"] = scope
+    if not isinstance(scope, dict):
+        return
+    match scope.get("type"):
+        case "single_mask":
+            scope["type"] = "single_source"
+        case "batch_invariant":
+            scope["type"] = "repeat_across_batch"
+            if "n_masks" in scope:
+                scope["n_sources"] = scope.pop("n_masks")
+        case "per_batch":
+            scope["type"] = "per_batch_per_position"
+        case _:
+            pass
 
 
 class PersistentPGDReconLossConfig(LossMetricConfig):
@@ -505,7 +531,8 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
 
     classname: Literal["PersistentPGDReconLoss"] = "PersistentPGDReconLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
-    scope: PersistentPGDMaskScope
+    scope: PersistentPGDSourceScope
+    use_sigmoid_parameterization: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -524,7 +551,8 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
 
     classname: Literal["PersistentPGDReconSubsetLoss"] = "PersistentPGDReconSubsetLoss"
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
-    scope: PersistentPGDMaskScope
+    scope: PersistentPGDSourceScope
+    use_sigmoid_parameterization: bool = False
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]
@@ -899,6 +927,13 @@ class Config(BaseConfig):
                 new_vals = [cfg for cfg in val if "extra_init_kwargs" not in cfg]
                 config_dict[key] = new_vals
 
+        # Remap simple_stories_train → spd.pretrain (models moved in-tree)
+        pmc = config_dict.get("pretrained_model_class", "")
+        if pmc.startswith("simple_stories_train.models."):
+            config_dict["pretrained_model_class"] = pmc.replace(
+                "simple_stories_train.models.", "spd.pretrain.models.", 1
+            )
+
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]
         if "train_log_freq" not in config_dict:
@@ -993,15 +1028,12 @@ class Config(BaseConfig):
                 "mask_scope='shared_across_batch'"
             )
 
-        for cfg in self.loss_metric_configs:
-            if isinstance(
-                cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
-            ) and isinstance(cfg.scope, BatchInvariantScope):
-                n = cfg.scope.n_masks
-                mb = self.microbatch_size
-                assert mb % n == 0, f"batch_invariant n_masks={n} must divide microbatch_size={mb}"
-                assert self.eval_batch_size % n == 0, (
-                    f"batch_invariant n_masks={n} must divide eval_batch_size={self.eval_batch_size}"
-                )
+        if any(
+            isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
+            for cfg in self.loss_metric_configs
+        ):
+            assert isinstance(self.task_config, LMTaskConfig), (
+                "Persistent PGD losses are only supported with LM tasks"
+            )
 
         return self

@@ -7,11 +7,11 @@ import fire
 import wandb
 
 from spd.configs import (
-    BatchInvariantScope,
     Config,
     LMTaskConfig,
     PersistentPGDReconLossConfig,
     PersistentPGDReconSubsetLossConfig,
+    RepeatAcrossBatchScope,
 )
 from spd.data import DatasetConfig, create_data_loader
 from spd.log import logger
@@ -143,10 +143,10 @@ def main(
     for cfg in config.loss_metric_configs:
         if isinstance(
             cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig
-        ) and isinstance(cfg.scope, BatchInvariantScope):
-            n = cfg.scope.n_masks
+        ) and isinstance(cfg.scope, RepeatAcrossBatchScope):
+            n = cfg.scope.n_sources
             assert train_rank_microbatch_size % n == 0, (
-                f"batch_invariant n_masks={n} must divide per-rank microbatch_size="
+                f"repeat_across_batch n_sources={n} must divide per-rank microbatch_size="
                 f"{train_rank_microbatch_size}"
             )
 

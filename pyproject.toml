@@ -41,6 +41,7 @@ dev = [
     "pytest",
     "pytest-cov", # for coverage reports
     "pytest-xdist", # parallel test execution
+    "pytest-testmon", # only re-run tests affected by code changes
     "ruff",
     "basedpyright<1.32.0", # pyright and wandb issues, see https://github.com/goodfire-ai/spd/pull/232
     "pre-commit",
@@ -137,6 +138,7 @@ reportUnknownLambdaType = false
 
 
 [tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
 filterwarnings = [
     # https://github.com/google/python-fire/pull/447
     "ignore::DeprecationWarning:fire:59",

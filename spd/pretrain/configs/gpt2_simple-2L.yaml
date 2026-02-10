@@ -27,7 +27,7 @@ train_dataset_config:
   hf_tokenizer_path: SimpleStories/test-SimpleStories-gpt2-1.25M
   split: train
   streaming: false
-  n_ctx: 512
+  n_ctx: 513  # model block_size + 1 for next-token label indexing
   seed: 0
   column_name: story
 
@@ -37,6 +37,6 @@ val_dataset_config:
   hf_tokenizer_path: SimpleStories/test-SimpleStories-gpt2-1.25M
   split: test
   streaming: false
-  n_ctx: 512
+  n_ctx: 513  # model block_size + 1 for next-token label indexing
   seed: 0
   column_name: story

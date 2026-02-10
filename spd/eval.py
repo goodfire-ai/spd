@@ -64,7 +64,7 @@ from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetC
 from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
 from spd.metrics.uv_plots import UVPlots
 from spd.models.component_model import ComponentModel, OutputWithCache
-from spd.persistent_pgd import PersistentPGDReconLoss, PersistentPGDReconSubsetLoss, PPGDMasks
+from spd.persistent_pgd import PersistentPGDReconLoss, PersistentPGDReconSubsetLoss, PPGDSources
 from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
 from spd.utils.general_utils import dict_safe_update_, extract_batch_data
@@ -122,7 +122,9 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
 def init_metric(
     cfg: MetricConfigType,
     model: ComponentModel,
-    ppgd_maskss: dict[PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDMasks],
+    ppgd_sourcess: dict[
+        PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PPGDSources
+    ],
     run_config: Config,
     device: str,
 ) -> Metric:
@@ -284,7 +286,7 @@ def init_metric(
                 device=device,
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
-                ppgd_masks=ppgd_maskss[cfg],
+                ppgd_sources=ppgd_sourcess[cfg],
             )
         case PersistentPGDReconSubsetLossConfig():
             metric = PersistentPGDReconSubsetLoss(
@@ -292,7 +294,7 @@ def init_metric(
                 device=device,
                 use_delta_component=run_config.use_delta_component,
                 output_loss_type=run_config.output_loss_type,
-                ppgd_masks=ppgd_maskss[cfg],
+                ppgd_sources=ppgd_sourcess[cfg],
                 routing=cfg.routing,
             )
         case PGDMultiBatchReconLossConfig() | PGDMultiBatchReconSubsetLossConfig():
@@ -306,9 +308,9 @@ def evaluate(
     eval_metric_configs: list[MetricConfigType],
     model: ComponentModel,
     eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    ppgd_maskss: dict[
+    ppgd_sourcess: dict[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig,
-        dict[str, Float[Tensor, " mask_c"]],
+        dict[str, Float[Tensor, " source_c"]],
     ],
     device: str,
     run_config: Config,
@@ -323,7 +325,7 @@ def evaluate(
         metric = init_metric(
             cfg=cfg,
             model=model,
-            ppgd_maskss=ppgd_maskss,
+            ppgd_sourcess=ppgd_sourcess,
             run_config=run_config,
             device=device,
         )

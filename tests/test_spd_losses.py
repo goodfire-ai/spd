@@ -10,7 +10,7 @@ from spd.configs import (
     LayerwiseCiConfig,
     PersistentPGDReconLossConfig,
     SignPGDConfig,
-    SingleMaskScope,
+    SingleSourceScope,
     UniformKSubsetRoutingConfig,
 )
 from spd.metrics import (
@@ -714,7 +714,7 @@ class TestPersistentPGDReconLoss:
         ci = {"fc": torch.tensor([[[0.5], [0.5]]], dtype=torch.float32)}
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
         )
 
         # Initialize state
@@ -727,13 +727,13 @@ class TestPersistentPGDReconLoss:
         )
 
         # Store initial mask values
-        initial_masks = {k: v.clone() for k, v in state.masks.items()}
+        initial_sources = {k: v.clone() for k, v in state.sources.items()}
 
         # Compute loss and gradients
         loss = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
-            ppgd_masks=state.masks,
+            ppgd_sources=state.sources,
             ci=ci,
             weight_deltas=None,
             target_out=target_out,
@@ -748,12 +748,12 @@ class TestPersistentPGDReconLoss:
         assert loss >= 0.0
 
         # Masks should have been updated (not equal to initial)
-        for k in state.masks:
+        for k in state.sources:
             # Due to PGD step, masks should change (unless gradient is exactly 0)
-            assert state.masks[k].shape == initial_masks[k].shape
+            assert state.sources[k].shape == initial_sources[k].shape
             # Masks should still be in [0, 1]
-            assert torch.all(state.masks[k] >= 0.0)
-            assert torch.all(state.masks[k] <= 1.0)
+            assert torch.all(state.sources[k] >= 0.0)
+            assert torch.all(state.sources[k] <= 1.0)
 
     def test_masks_persist_across_calls(self: object) -> None:
         """Test that masks persist and accumulate updates across calls."""
@@ -766,7 +766,7 @@ class TestPersistentPGDReconLoss:
         ci = {"fc": torch.tensor([[[0.3], [0.3]]], dtype=torch.float32)}
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
         )
 
         state = PersistentPGDState(
@@ -778,13 +778,13 @@ class TestPersistentPGDReconLoss:
         )
 
         # Run multiple steps
-        masks_history = []
+        sources_history = []
         for _ in range(5):
-            masks_history.append({k: v.clone() for k, v in state.masks.items()})
+            sources_history.append({k: v.clone() for k, v in state.sources.items()})
             loss = persistent_pgd_recon_loss(
                 model=model,
                 batch=batch,
-                ppgd_masks=state.masks,
+                ppgd_sources=state.sources,
                 ci=ci,
                 weight_deltas=None,
                 target_out=target_out,
@@ -796,9 +796,9 @@ class TestPersistentPGDReconLoss:
 
         # Masks should have changed over time
         # (they accumulate updates, so later masks differ from earlier ones)
-        for k in state.masks:
-            initial = masks_history[0][k]
-            final = state.masks[k]
+        for k in state.sources:
+            initial = sources_history[0][k]
+            final = state.sources[k]
             # Should have changed from initial (very unlikely to be identical after 5 steps)
             assert not torch.allclose(initial, final)
 
@@ -819,7 +819,7 @@ class TestPersistentPGDReconLoss:
         batch_dims = batch.shape[:2]
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
         )
 
         # Initialize state with delta component
@@ -832,12 +832,12 @@ class TestPersistentPGDReconLoss:
         )
 
         # Masks should have C+1 elements when using delta component
-        assert state.masks["fc"].shape[-1] == model.module_to_c["fc"] + 1
+        assert state.sources["fc"].shape[-1] == model.module_to_c["fc"] + 1
 
         loss = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
-            ppgd_masks=state.masks,
+            ppgd_sources=state.sources,
             ci=ci,
             weight_deltas=weight_deltas,
             target_out=target_out,
@@ -883,7 +883,7 @@ class TestPersistentPGDReconLoss:
         batch_dims = batch.shape[:2]
 
         cfg = PersistentPGDReconLossConfig(
-            optimizer=SignPGDConfig(step_size=0.1), scope=SingleMaskScope()
+            optimizer=SignPGDConfig(step_size=0.1), scope=SingleSourceScope()
         )
 
         state = PersistentPGDState(
@@ -895,12 +895,12 @@ class TestPersistentPGDReconLoss:
         )
 
         # Masks should have shape (1, 1, C) for single_mask scope - single mask shared across batch
-        assert state.masks["fc"].shape == (1, 1, model.module_to_c["fc"])
+        assert state.sources["fc"].shape == (1, 1, model.module_to_c["fc"])
 
         loss = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
-            ppgd_masks=state.masks,
+            ppgd_sources=state.sources,
             ci=ci,
             weight_deltas=None,
             target_out=target_out,
@@ -923,7 +923,7 @@ class TestPersistentPGDReconLoss:
 
         cfg = PersistentPGDReconLossConfig(
             optimizer=AdamPGDConfig(lr=0.05, beta1=0.9, beta2=0.999, eps=1e-8),
-            scope=SingleMaskScope(),
+            scope=SingleSourceScope(),
         )
 
         state = PersistentPGDState(
@@ -937,7 +937,7 @@ class TestPersistentPGDReconLoss:
         loss = persistent_pgd_recon_loss(
             model=model,
             batch=batch,
-            ppgd_masks=state.masks,
+            ppgd_sources=state.sources,
             ci=ci,
             weight_deltas=None,
             target_out=target_out,

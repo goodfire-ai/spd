@@ -16,14 +16,15 @@ from spd.utils.distributed_utils import DistributedState
 
 
 class DatasetConfig(BaseConfig):
-    name: str = "lennart-finke/SimpleStories"
-    is_tokenized: bool = True
-    hf_tokenizer_path: str | None = None
-    streaming: bool = False
-    split: str = "train"
-    n_ctx: int = 1024
+    name: str
+    is_tokenized: bool
+    hf_tokenizer_path: str | None
+    streaming: bool
+    split: str
+    n_ctx: int
+    """Must be model n_ctx + 1 to provide room for next-token label indexing."""
     seed: int | None = None
-    column_name: str = "input_ids"
+    column_name: str
     """The name of the column in the dataset that contains the data (tokenized or non-tokenized).
     Typically 'input_ids' for datasets stored with e2e_sae/scripts/upload_hf_dataset.py, or "tokens"
     for datasets tokenized in TransformerLens (e.g. NeelNanda/pile-10k)."""
@@ -193,25 +194,19 @@ def create_data_loader(
 
     if dataset_config.streaming:
         assert isinstance(dataset, IterableDataset)
-        logger.warning(
-            "WARNING: Streaming is currently quite slow and not well tested. In general, we suggest"
-            " setting streaming=False and having the dataset download (and cache)."
-        )
         if dist_state is not None:
-            logger.warning("WARNING: Streaming with ddp has not been well tested. Use at own risk.")
-            ds_num_shards = getattr(dataset, "num_shards", None)
-            if isinstance(ds_num_shards, int) and ds_num_shards >= dist_state.world_size:
-                dataset = dataset.shard(num_shards=dist_state.world_size, index=dist_state.rank)
-            else:
-                # Fallback: example-level partitioning before shuffle
-                dataset = dataset.filter(
-                    lambda _ex, idx: idx % dist_state.world_size == dist_state.rank,
-                    with_indices=True,
-                )
+            assert hasattr(dataset, "num_shards"), (
+                "Dataset does not have num_shards attribute, consider streaming=False or implement "
+                "e.g. lambda x, idx: idx <mod> dist_state.world_size == dist_state.rank"
+            )
+            dataset = dataset.shard(num_shards=dist_state.world_size, index=dist_state.rank)
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
         assert isinstance(dataset, Dataset)
+        # This can be slow for large datasets. Maybe best to use streaming.
+        logger.info("Shuffling dataset (len=%d)", len(dataset))
         dataset = dataset.shuffle(seed=seed)
+        logger.info("Shuffled dataset")
 
     tokenizer = AutoTokenizer.from_pretrained(dataset_config.hf_tokenizer_path)
 
@@ -223,9 +218,14 @@ def create_data_loader(
         assert isinstance(sample, Tensor) and sample.ndim == 1, (
             f"Expected the dataset to be tokenized. Got type {type(sample)}"
         )
-        assert len(sample) == dataset_config.n_ctx, (
-            f"n_ctx ({dataset_config.n_ctx}) does not match the tokenized length ({len(sample)})."
+        tokenized_len = len(sample)
+        assert dataset_config.n_ctx <= tokenized_len, (
+            f"n_ctx ({dataset_config.n_ctx}) is larger than the tokenized length ({tokenized_len})."
         )
+        if dataset_config.n_ctx < tokenized_len:
+            col = dataset_config.column_name
+            n_ctx = dataset_config.n_ctx
+            torch_dataset = dataset.map(lambda x: {col: x[col][:n_ctx]}).with_format("torch")
     else:
         to_lower = "SimpleStories" in dataset_config.name
         torch_dataset = tokenize_and_concatenate(
