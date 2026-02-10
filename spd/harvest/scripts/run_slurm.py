@@ -93,7 +93,7 @@ def submit_harvest(
         partition=partition,
         n_gpus=0,  # No GPU needed for merge
         time="01:00:00",  # Merge is quick
-        mem="64G",  # Merge needs RAM to hold all worker states
+        mem="128G",  # Merge needs RAM to hold all worker states
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
     )
