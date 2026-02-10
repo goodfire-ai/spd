@@ -13,8 +13,8 @@ from spd.settings import DEFAULT_PARTITION_NAME
 
 
 class HarvestConfig(BaseConfig):
-    n_batches: int | Literal["whole_dataset"] = 1000
-    batch_size: int = 256
+    n_batches: int | Literal["whole_dataset"] = 2000
+    batch_size: int = 128
     ci_threshold: float = 1e-6
     activation_examples_per_component: int = 1000
     activation_context_tokens_per_side: int = 10
