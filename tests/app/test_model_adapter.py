@@ -7,6 +7,7 @@ and verifies that build_model_adapter produces the correct topology.
 
 import pytest
 import torch
+from torch import nn
 
 from spd.app.backend.model_adapter import build_model_adapter
 from spd.models.component_model import ComponentModel
@@ -79,9 +80,9 @@ def test_gpt2_simple():
 
     assert adapter.embedding_path == "wte"
     assert isinstance(adapter.embedding_module, torch.nn.Embedding)
-    # lm_head is not in target patterns, so unembed should be None
-    assert adapter.unembed_path is None
-    assert adapter.unembed_module is None
+    # lm_head is always resolved (needed for output attributions)
+    assert adapter.unembed_path == "lm_head"
+    assert isinstance(adapter.unembed_module, nn.Linear)
 
     # Cross-seq: k_proj and v_proj are KV, o_proj is O
     assert all("k_proj" in p or "v_proj" in p for p in adapter.kv_paths)
@@ -187,7 +188,7 @@ def test_llama_simple():
     adapter = build_model_adapter(model)
 
     assert adapter.embedding_path == "wte"
-    assert adapter.unembed_path is None  # lm_head not in targets
+    assert adapter.unembed_path == "lm_head"
 
     # Cross-seq detection
     assert len(adapter.kv_paths) == 4  # 2 layers * (k_proj + v_proj)
@@ -279,7 +280,7 @@ def test_hf_gpt2():
 
     assert adapter.embedding_path == "transformer.wte"
     assert isinstance(adapter.embedding_module, torch.nn.Embedding)
-    assert adapter.unembed_path is None  # lm_head not in targets
+    assert adapter.unembed_path == "lm_head"
 
     # c_attn is KV role for HF GPT2
     assert adapter.kv_paths == frozenset({"transformer.h.1.attn.c_attn"})

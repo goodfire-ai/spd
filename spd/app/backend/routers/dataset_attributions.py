@@ -83,10 +83,8 @@ def _require_target(storage: DatasetAttributionStorage, component_key: str) -> N
         )
 
 
-def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"] | None:
-    """Get the unembedding matrix from the loaded model, if available."""
-    if loaded.adapter.unembed_module is None:
-        return None
+def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
+    """Get the unembedding matrix from the loaded model."""
     return loaded.adapter.get_unembed_weight()
 
 

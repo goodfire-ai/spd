@@ -183,8 +183,8 @@ class ModelAdapter:
     target_module_paths: list[str]
     embedding_path: str
     embedding_module: nn.Embedding
-    unembed_path: str | None
-    unembed_module: nn.Linear | None
+    unembed_path: str
+    unembed_module: nn.Linear
     kv_paths: frozenset[str]
     o_paths: frozenset[str]
     role_order: list[str]  # Unique roles in execution order (e.g. ["q_proj", "k_proj", ...])
@@ -212,7 +212,6 @@ class ModelAdapter:
 
     def get_unembed_weight(self) -> Float[Tensor, "d_model vocab"]:
         """Get the unembedding weight matrix (transposed to [d_model, vocab])."""
-        assert self.unembed_module is not None, "No unembed module found"
         return self.unembed_module.weight.T.detach()
 
 
@@ -229,16 +228,11 @@ def build_model_adapter(model: ComponentModel) -> ModelAdapter:
         f"Expected nn.Embedding at '{arch.embedding_path}', got {type(embedding_module).__name__}"
     )
 
-    # Resolve unembed (only if it's among the decomposed targets)
-    unembed_path: str | None = None
-    unembed_module: nn.Linear | None = None
-    if arch.unembed_path in target_paths:
-        module = target_model.get_submodule(arch.unembed_path)
-        assert isinstance(module, nn.Linear), (
-            f"Expected nn.Linear at '{arch.unembed_path}', got {type(module).__name__}"
-        )
-        unembed_path = arch.unembed_path
-        unembed_module = module
+    # Resolve unembed module (always needed for output attributions, even if not decomposed)
+    unembed_module_raw = target_model.get_submodule(arch.unembed_path)
+    assert isinstance(unembed_module_raw, nn.Linear), (
+        f"Expected nn.Linear at '{arch.unembed_path}', got {type(unembed_module_raw).__name__}"
+    )
 
     kv_paths, o_paths = _resolve_cross_seq_paths(target_paths, arch)
     role_order = _build_role_order(target_paths)
@@ -248,8 +242,8 @@ def build_model_adapter(model: ComponentModel) -> ModelAdapter:
         target_module_paths=target_paths,
         embedding_path=arch.embedding_path,
         embedding_module=embedding_module,
-        unembed_path=unembed_path,
-        unembed_module=unembed_module,
+        unembed_path=arch.unembed_path,
+        unembed_module=unembed_module_raw,
         kv_paths=kv_paths,
         o_paths=o_paths,
         role_order=role_order,
