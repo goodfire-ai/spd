@@ -18,7 +18,7 @@ from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimi
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
-from spd.topology import TransformerTopology
+from spd.topology import CanonicalWeight, Embed, TransformerTopology, Unembed, canonical_to_str
 from spd.utils.general_utils import bf16_autocast
 
 
@@ -63,13 +63,13 @@ def compute_layer_alive_info(
 
 @dataclass
 class Node:
-    layer: str
+    layer: CanonicalWeight
     seq_pos: int
     component_idx: int
 
     @override
     def __str__(self) -> str:
-        return f"{self.layer}:{self.seq_pos}:{self.component_idx}"
+        return f"{canonical_to_str(self.layer)}:{self.seq_pos}:{self.component_idx}"
 
 
 def _get_seq_pos(node_key: str) -> int:
@@ -257,12 +257,14 @@ def _compute_edges_for_target(
                 retain_graph=True,
             )
             with torch.no_grad():
+                canonical_target = topology.get_canonical_weight(target)
                 for source, source_info, grad, in_post_detach in zip(
                     sources, source_infos, grads, in_post_detaches, strict=True
                 ):
-                    is_cross_seq = topology.is_cross_seq_pair(source, target)
+                    canonical_source = topology.get_canonical_weight(source)
+                    is_cross_seq = topology.is_cross_seq_pair(canonical_source, canonical_target)
                     weighted: Float[Tensor, "s C"] = (grad * in_post_detach)[0]
-                    if source == "wte":
+                    if isinstance(canonical_source, Embed):
                         weighted = weighted.sum(dim=1, keepdim=True)
 
                     s_in_range = range(s_out + 1) if is_cross_seq else [s_out]
@@ -272,8 +274,8 @@ def _compute_edges_for_target(
                                 continue
                             edges.append(
                                 Edge(
-                                    source=Node(layer=source, seq_pos=s_in, component_idx=c_in),
-                                    target=Node(layer=target, seq_pos=s_out, component_idx=c_out),
+                                    source=Node(layer=canonical_source, seq_pos=s_in, component_idx=c_in),
+                                    target=Node(layer=canonical_target, seq_pos=s_out, component_idx=c_out),
                                     strength=weighted[s_in, c_in].item(),
                                     is_cross_seq=is_cross_seq,
                                 )
@@ -386,10 +388,10 @@ def compute_edges_from_ci(
         if on_progress is not None:
             on_progress(progress_count, total_source_layers, target)
 
-    node_ci_vals = extract_node_ci_vals(ci_lower_leaky)
+    node_ci_vals = extract_node_ci_vals(ci_lower_leaky, topology)
     component_acts = model.get_all_component_acts(pre_weight_acts)
     node_subcomp_acts = extract_node_subcomp_acts(
-        component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky
+        component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky, topology=topology
     )
 
     # Filter nodes and output tensors to only include positions <= loss_seq_pos
@@ -640,22 +642,20 @@ def compute_ci_only(
 
 def extract_node_ci_vals(
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq n_components"]],
+    topology: TransformerTopology,
 ) -> dict[str, float]:
     """Extract per-node CI values from CI tensors.
 
-    Args:
-        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, n_components].
-
-    Returns:
-        Dict mapping "layer:seq:c_idx" to CI value.
+    Returns dict mapping canonical node key to CI value.
     """
     node_ci_vals: dict[str, float] = {}
     for layer_name, ci_tensor in ci_lower_leaky.items():
+        canonical = canonical_to_str(topology.get_canonical_weight(layer_name))
         n_seq = ci_tensor.shape[1]
         n_components = ci_tensor.shape[2]
         for seq_pos in range(n_seq):
             for c_idx in range(n_components):
-                key = f"{layer_name}:{seq_pos}:{c_idx}"
+                key = f"{canonical}:{seq_pos}:{c_idx}"
                 node_ci_vals[key] = float(ci_tensor[0, seq_pos, c_idx].item())
     return node_ci_vals
 
@@ -664,26 +664,22 @@ def extract_node_subcomp_acts(
     component_acts: dict[str, Float[Tensor, "1 seq C"]],
     ci_threshold: float,
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
+    topology: TransformerTopology,
 ) -> dict[str, float]:
     """Extract per-node subcomponent activations from pre-computed component acts.
 
-    Args:
-        component_acts: Dict mapping layer name to component activations [1, seq, C].
-        ci_threshold: Threshold for filtering nodes by CI value.
-        ci_lower_leaky: Dict mapping layer name to CI tensor [1, seq, C].
-
-    Returns:
-        Dict mapping "layer:seq:c_idx" to subcomponent activation value.
+    Returns dict mapping canonical node key to subcomponent activation value.
     """
     node_subcomp_acts: dict[str, float] = {}
     for layer_name, subcomp_acts in component_acts.items():
+        canonical = canonical_to_str(topology.get_canonical_weight(layer_name))
         ci = ci_lower_leaky[layer_name]
         alive_mask = ci[0] > ci_threshold  # [seq, C]
         alive_seq_indices, alive_c_indices = torch.where(alive_mask)
         for seq_pos, c_idx in zip(
             alive_seq_indices.tolist(), alive_c_indices.tolist(), strict=True
         ):
-            key = f"{layer_name}:{seq_pos}:{c_idx}"
+            key = f"{canonical}:{seq_pos}:{c_idx}"
             node_subcomp_acts[key] = float(subcomp_acts[0, seq_pos, c_idx].item())
 
     return node_subcomp_acts

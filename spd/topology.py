@@ -72,6 +72,21 @@ class LayerWeight:
 CanonicalWeight = Embed | LayerWeight | Unembed
 
 
+def canonical_to_str(w: CanonicalWeight) -> str:
+    """Render a CanonicalWeight as a canonical address string."""
+    match w:
+        case Embed():
+            return "wte"
+        case Unembed():
+            return "output"
+        case LayerWeight(layer_idx=idx, name=name):
+            match name:
+                case SeparateAttnWeight(weight=p) | FusedAttnWeight(weight=p):
+                    return f"{idx}.attn.{p}"
+                case GLUWeight(weight=p) | MLPWeight(weight=p):
+                    return f"{idx}.ffn.{p}"
+
+
 # ── Sublayer path schemas ──────────────────────────────────────────────
 
 
@@ -440,29 +455,3 @@ class TransformerTopology:
                 return si == ti
             case _:
                 return False
-
-# ==================
-# This logic belongs in the frontend
-
-#     def describe(self, canonical: CanonicalWeight) -> str:
-#         """Human-readable description for autointerp prompts."""
-#         match canonical:
-#             case Embed():
-#                 return "embedding"
-#             case Unembed():
-#                 return "unembedding"
-#             case LayerWeight() as lw:
-#                 desc = _describe_layer_weight(lw)
-#                 return f"{desc} in layer {lw.layer_idx + 1} of {self.n_blocks}"
-
-
-# def _describe_layer_weight(weight: LayerWeight) -> str:
-#     match weight.name:
-#         case SeparateAttnWeight(weight=w):
-#             return f"attention {w} projection"
-#         case FusedAttnWeight(weight=w):
-#             return f"attention {w} projection (fused)"
-#         case GLUWeight(weight=w):
-#             return f"GLU {w} projection"
-#         case MLPWeight(weight=w):
-#             return f"MLP {w} projection"
