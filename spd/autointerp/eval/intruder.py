@@ -20,7 +20,8 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup, delimit_tokens
+from spd.app.backend.app_tokenizer import AppTokenizer
+from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.llm_api import (
     chat_with_retry,
     make_response_format,
@@ -119,14 +120,14 @@ class DensityIndex:
 
 def _format_example(
     example: ActivationExample,
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
     ci_threshold: float,
 ) -> str:
-    tokens = [
-        (lookup[tid], ci > ci_threshold)
-        for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
-        if tid >= 0
+    valid = [
+        (tid, ci) for tid, ci in zip(example.token_ids, example.ci_values, strict=True) if tid >= 0
     ]
+    spans = app_tok.get_spans([tid for tid, _ in valid])
+    tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]
     return delimit_tokens(tokens)
 
 
@@ -144,7 +145,7 @@ def _build_prompt(
     real_examples: list[ActivationExample],
     intruder: ActivationExample,
     intruder_position: int,
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
     ci_threshold: float,
 ) -> str:
     all_examples = list(real_examples)
@@ -152,7 +153,7 @@ def _build_prompt(
 
     examples_text = ""
     for i, ex in enumerate(all_examples):
-        examples_text += f"Example {i + 1}: {_format_example(ex, lookup, ci_threshold)}\n\n"
+        examples_text += f"Example {i + 1}: {_format_example(ex, app_tok, ci_threshold)}\n\n"
 
     return f"""\
 Below are 5 text snippets from a neural network's training data. Four come from contexts \
@@ -172,7 +173,7 @@ async def score_component(
     model: str,
     component: ComponentData,
     density_index: DensityIndex,
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
     ci_threshold: float,
 ) -> IntruderResult:
     assert len(component.activation_examples) >= N_REAL + 1
@@ -187,7 +188,7 @@ async def score_component(
         intruder_pos = rng.randint(0, N_REAL)
         correct_answer = intruder_pos + 1
 
-        prompt = _build_prompt(real_examples, intruder, intruder_pos, lookup, ci_threshold)
+        prompt = _build_prompt(real_examples, intruder, intruder_pos, app_tok, ci_threshold)
 
         try:
             response, _, _ = await chat_with_retry(
@@ -241,9 +242,9 @@ async def run_intruder_scoring(
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[IntruderResult]:
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    assert isinstance(tokenizer, PreTrainedTokenizerBase)
-    lookup = build_token_lookup(tokenizer, tokenizer_name)
+    hf_tok = AutoTokenizer.from_pretrained(tokenizer_name)
+    assert isinstance(hf_tok, PreTrainedTokenizerBase)
+    app_tok = AppTokenizer(hf_tok)
 
     eligible = [c for c in components if len(c.activation_examples) >= N_REAL + 1]
     if limit is not None:
@@ -252,7 +253,7 @@ async def run_intruder_scoring(
     density_index = DensityIndex(components, min_examples=N_REAL + 1, ci_threshold=ci_threshold)
 
     async def _score(client: OpenRouter, component: ComponentData) -> IntruderResult:
-        return await score_component(client, model, component, density_index, lookup, ci_threshold)
+        return await score_component(client, model, component, density_index, app_tok, ci_threshold)
 
     return await run_scoring_pipeline(
         eligible=eligible,

@@ -12,11 +12,10 @@ from spd.settings import DEFAULT_PARTITION_NAME
 
 def main(
     wandb_path: str,
-    model: str = "google/gemini-3-flash-preview",
+    # model: str = "google/gemini-3-flash-preview",
     eval_model: str = "google/gemini-3-flash-preview",
     limit: int | None = None,
     reasoning_effort: str | None = None,
-    config: str | None = None,
     partition: str = DEFAULT_PARTITION_NAME,
     time: str = "12:00:00",
     cost_limit_usd: float | None = None,
@@ -29,10 +28,10 @@ def main(
 
     launch_autointerp_pipeline(
         wandb_path=wandb_path,
-        model=model,
+        model=eval_model,
         limit=limit,
         reasoning_effort=reasoning_effort,
-        config=config,
+        config=None,
         partition=partition,
         time=time,
         cost_limit_usd=cost_limit_usd,

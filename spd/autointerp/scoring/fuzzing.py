@@ -17,7 +17,8 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup, delimit_tokens
+from spd.app.backend.app_tokenizer import AppTokenizer
+from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.llm_api import (
     chat_with_retry,
     make_response_format,
@@ -67,43 +68,39 @@ class FuzzingResult:
 
 def _delimit_high_ci_tokens(
     example: ActivationExample,
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
     ci_threshold: float,
 ) -> tuple[str, int]:
     """Format example with high-CI tokens in <<delimiters>>. Returns (text, n_delimited)."""
-    tokens = [
-        (lookup[tid], ci > ci_threshold)
-        for tid, ci in zip(example.token_ids, example.ci_values, strict=True)
-        if tid >= 0
+    valid = [
+        (tid, ci) for tid, ci in zip(example.token_ids, example.ci_values, strict=True) if tid >= 0
     ]
+    spans = app_tok.get_spans([tid for tid, _ in valid])
+    tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]
     n_delimited = sum(1 for _, active in tokens if active)
     return delimit_tokens(tokens), n_delimited
 
 
 def _delimit_random_low_ci_tokens(
     example: ActivationExample,
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
     n_to_delimit: int,
     rng: random.Random,
     ci_threshold: float,
 ) -> str:
     """Format example with random LOW-CI tokens in <<delimiters>> instead of high-CI ones."""
-    valid_indices = [
-        i
-        for i, (tid, ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True))
-        if tid >= 0 and ci <= ci_threshold
+    valid = [
+        (tid, ci) for tid, ci in zip(example.token_ids, example.ci_values, strict=True) if tid >= 0
     ]
+    low_ci_indices = [j for j, (_, ci) in enumerate(valid) if ci <= ci_threshold]
 
-    if len(valid_indices) < n_to_delimit:
-        delimit_indices = set(valid_indices)
+    if len(low_ci_indices) < n_to_delimit:
+        delimit_set = set(low_ci_indices)
     else:
-        delimit_indices = set(rng.sample(valid_indices, n_to_delimit))
+        delimit_set = set(rng.sample(low_ci_indices, n_to_delimit))
 
-    tokens = [
-        (lookup[tid], i in delimit_indices)
-        for i, (tid, _ci) in enumerate(zip(example.token_ids, example.ci_values, strict=True))
-        if tid >= 0
-    ]
+    spans = app_tok.get_spans([tid for tid, _ in valid])
+    tokens = [(span, j in delimit_set) for j, span in enumerate(spans)]
     return delimit_tokens(tokens)
 
 
@@ -143,7 +140,7 @@ async def score_component(
     client: OpenRouter,
     model: str,
     component: ComponentData,
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
     label: str,
     ci_threshold: float,
 ) -> FuzzingResult:
@@ -166,14 +163,14 @@ async def score_component(
         formatted: list[tuple[str, bool]] = []
 
         for ex in correct_examples:
-            text, _ = _delimit_high_ci_tokens(ex, lookup, ci_threshold)
+            text, _ = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
             formatted.append((text, True))
 
         for ex in incorrect_examples:
             # Count how many tokens would be bolded in the correct version
-            _, n_delimited = _delimit_high_ci_tokens(ex, lookup, ci_threshold)
+            _, n_delimited = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
             n_to_delimit = max(n_delimited, 1)
-            text = _delimit_random_low_ci_tokens(ex, lookup, n_to_delimit, rng, ci_threshold)
+            text = _delimit_random_low_ci_tokens(ex, app_tok, n_to_delimit, rng, ci_threshold)
             formatted.append((text, False))
 
         rng.shuffle(formatted)
@@ -255,9 +252,9 @@ async def run_fuzzing_scoring(
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[FuzzingResult]:
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    assert isinstance(tokenizer, PreTrainedTokenizerBase)
-    lookup = build_token_lookup(tokenizer, tokenizer_name)
+    hf_tok = AutoTokenizer.from_pretrained(tokenizer_name)
+    assert isinstance(hf_tok, PreTrainedTokenizerBase)
+    app_tok = AppTokenizer(hf_tok)
 
     min_examples = N_CORRECT + N_INCORRECT
     eligible = [
@@ -270,7 +267,7 @@ async def run_fuzzing_scoring(
 
     async def _score(client: OpenRouter, component: ComponentData) -> FuzzingResult:
         return await score_component(
-            client, model, component, lookup, labels[component.component_key], ci_threshold
+            client, model, component, app_tok, labels[component.component_key], ci_threshold
         )
 
     return await run_scoring_pipeline(

@@ -7,8 +7,8 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_model_n_blocks
-from spd.app.backend.utils import build_token_lookup
 from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.llm_api import (
     CostTracker,
@@ -40,7 +40,7 @@ async def interpret_component(
     config: AutointerpConfig,
     component: ComponentData,
     arch: ArchitectureInfo,
-    tokenizer: PreTrainedTokenizerBase,
+    app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
     ci_threshold: float,
@@ -50,20 +50,19 @@ async def interpret_component(
         config=config,
         component=component,
         arch=arch,
-        tokenizer=tokenizer,
+        app_tok=app_tok,
         input_token_stats=input_token_stats,
         output_token_stats=output_token_stats,
         ci_threshold=ci_threshold,
     )
 
-    model = config.model
     reasoning = get_reasoning(config)
     schema = get_response_schema(config)
 
     try:
         raw, in_tok, out_tok = await chat_with_retry(
             client=client,
-            model=model,
+            model=config.model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=8000,  # High to accommodate reasoning tokens
             context_label=component.component_key,
@@ -138,11 +137,10 @@ async def interpret_all(
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE, period_seconds=60.0)
 
-    tokenizer = AutoTokenizer.from_pretrained(arch.tokenizer_name)
-    assert isinstance(tokenizer, PreTrainedTokenizerBase)
-    lookup = build_token_lookup(tokenizer, arch.tokenizer_name)
+    hf_tok = AutoTokenizer.from_pretrained(arch.tokenizer_name)
+    assert isinstance(hf_tok, PreTrainedTokenizerBase)
+    app_tok = AppTokenizer(hf_tok)
 
-    interpreter_model = config.model
     reasoning = get_reasoning(config)
 
     async def process_one(
@@ -161,10 +159,10 @@ async def interpret_all(
             try:
                 # Compute token stats for this component
                 input_stats = get_input_token_stats(
-                    token_stats, component.component_key, lookup, top_k=20
+                    token_stats, component.component_key, app_tok, top_k=20
                 )
                 output_stats = get_output_token_stats(
-                    token_stats, component.component_key, lookup, top_k=50
+                    token_stats, component.component_key, app_tok, top_k=50
                 )
                 assert input_stats is not None, (
                     f"No input token stats for {component.component_key}"
@@ -178,7 +176,7 @@ async def interpret_all(
                     config=config,
                     component=component,
                     arch=arch,
-                    tokenizer=tokenizer,
+                    app_tok=app_tok,
                     input_token_stats=input_stats,
                     output_token_stats=output_stats,
                     ci_threshold=ci_threshold,
@@ -208,7 +206,7 @@ async def interpret_all(
                 n_errors += 1
 
     async with OpenRouter(api_key=openrouter_api_key) as client:
-        input_price, output_price = await get_model_pricing(client, interpreter_model)
+        input_price, output_price = await get_model_pricing(client, config.model)
         cost_tracker = CostTracker(
             input_price_per_token=input_price,
             output_price_per_token=output_price,
@@ -216,7 +214,7 @@ async def interpret_all(
         )
         limit_str = f" (limit: ${cost_limit_usd:.2f})" if cost_limit_usd is not None else ""
         reasoning_str = f"reasoning={reasoning.effort}" if reasoning else "no reasoning"
-        print(f"Model: {interpreter_model}, {reasoning_str}")
+        print(f"Model: {config.model}, {reasoning_str}")
         print(
             f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}"
         )

@@ -87,22 +87,27 @@ def get_activation_context_detail(
     component_key = f"{layer}:{component_idx}"
     comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
 
-    # Convert token IDs to strings
     PADDING_SENTINEL = -1
-    token_strings = loaded.token_strings
 
-    def token_str(tid: int) -> str:
-        if tid == PADDING_SENTINEL:
-            return "<pad>"
-        assert tid in token_strings, f"Token ID {tid} not in vocab"
-        return token_strings[tid]
+    def decode_example_tokens(token_ids: list[int]) -> list[str]:
+        real_ids = [tid for tid in token_ids if tid != PADDING_SENTINEL]
+        spans = loaded.tokenizer.get_spans(real_ids)
+        result: list[str] = []
+        span_idx = 0
+        for tid in token_ids:
+            if tid == PADDING_SENTINEL:
+                result.append("<pad>")
+            else:
+                result.append(spans[span_idx])
+                span_idx += 1
+        return result
 
     # Apply limit to examples
     examples = comp.activation_examples
     if limit is not None:
         examples = examples[:limit]
 
-    example_tokens = [[token_str(tid) for tid in ex.token_ids] for ex in examples]
+    example_tokens = [decode_example_tokens(ex.token_ids) for ex in examples]
     example_ci = [ex.ci_values for ex in examples]
     example_component_acts = [ex.component_acts for ex in examples]
 
@@ -134,14 +139,20 @@ def get_activation_contexts_bulk(
     Uses optimized bulk loader with single file handle and sorted seeks.
     """
     PADDING_SENTINEL = -1
-    token_strings = loaded.token_strings
 
-    def token_str(tid: int) -> str:
-        if tid == PADDING_SENTINEL:
-            return "<pad>"
-        if tid not in token_strings:
-            return f"<unk:{tid}>"
-        return token_strings[tid]
+    def decode_example_tokens(token_ids: list[int]) -> list[str]:
+        """Decode a token sequence, handling padding sentinels."""
+        real_ids = [tid for tid in token_ids if tid != PADDING_SENTINEL]
+        spans = loaded.tokenizer.get_spans(real_ids)
+        result: list[str] = []
+        span_idx = 0
+        for tid in token_ids:
+            if tid == PADDING_SENTINEL:
+                result.append("<pad>")
+            else:
+                result.append(spans[span_idx])
+                span_idx += 1
+        return result
 
     # Bulk load all components with single file handle
     components = load_component_activation_contexts_bulk(
@@ -155,7 +166,7 @@ def get_activation_contexts_bulk(
         result[key] = SubcomponentActivationContexts(
             subcomponent_idx=comp.component_idx,
             mean_ci=comp.mean_ci,
-            example_tokens=[[token_str(tid) for tid in ex.token_ids] for ex in examples],
+            example_tokens=[decode_example_tokens(ex.token_ids) for ex in examples],
             example_ci=[ex.ci_values for ex in examples],
             example_component_acts=[ex.component_acts for ex in examples],
         )
@@ -176,7 +187,7 @@ def probe_component(
     """
     device = get_device()
 
-    token_ids = loaded.tokenizer.encode(request.text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(request.text)
     assert len(token_ids) > 0, "Text produced no tokens"
 
     tokens_tensor = torch.tensor([token_ids], device=device)
@@ -191,7 +202,7 @@ def probe_component(
 
     ci_tensor = result.ci_lower_leaky[request.layer]
     ci_values = ci_tensor[0, :, request.component_idx].tolist()
-    token_strings = [loaded.token_strings[t] for t in token_ids]
+    spans = loaded.tokenizer.get_spans(token_ids)
 
     subcomp_acts_tensor = result.component_acts[request.layer]
     subcomp_acts = subcomp_acts_tensor[0, :, request.component_idx].tolist()
@@ -206,7 +217,7 @@ def probe_component(
     next_token_probs.append(None)  # No next token for last position
 
     return ComponentProbeResponse(
-        tokens=token_strings,
+        tokens=spans,
         ci_values=ci_values,
         subcomp_acts=subcomp_acts,
         next_token_probs=next_token_probs,

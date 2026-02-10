@@ -13,6 +13,7 @@ export type LoadedRun = {
     context_length: number;
     backend_user: string;
     dataset_attributions_available: boolean;
+    dataset_search_enabled: boolean;
 };
 
 export async function getStatus(): Promise<LoadedRun | null> {
@@ -25,6 +26,18 @@ export async function whoami(): Promise<string> {
     const response = await fetch("/api/whoami");
     const data = await response.json();
     return data.user;
+}
+
+export type ModelInfo = {
+    module_paths: string[];
+    role_order: string[];
+    role_groups: Record<string, string[]>;
+    display_names: Record<string, string>;
+};
+
+export async function getModelInfo(): Promise<ModelInfo> {
+    const response = await fetch(apiUrl("/api/model_info").toString());
+    return response.json();
 }
 
 export async function loadRun(wandbRunPath: string, contextLength: number): Promise<void> {

@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, HTTPException, Query
 from jaxtyping import Float
 from pydantic import BaseModel
-from torch import Tensor, nn
+from torch import Tensor
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
@@ -83,11 +83,11 @@ def _require_target(storage: DatasetAttributionStorage, component_key: str) -> N
         )
 
 
-def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
-    """Get the unembedding matrix from the loaded model."""
-    lm_head = loaded.model.target_model.lm_head
-    assert isinstance(lm_head, nn.Linear), f"lm_head must be nn.Linear, got {type(lm_head)}"
-    return lm_head.weight.T.detach()
+def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"] | None:
+    """Get the unembedding matrix from the loaded model, if available."""
+    if loaded.adapter.unembed_module is None:
+        return None
+    return loaded.adapter.get_unembed_weight()
 
 
 def _to_api_entries(entries: list[StorageEntry]) -> list[DatasetAttributionEntry]:
@@ -162,12 +162,24 @@ def get_component_attributions(
         if is_target
         else [],
         positive_targets=_to_api_entries(
-            storage.get_top_targets(component_key, k, "positive", w_unembed=w_unembed)
+            storage.get_top_targets(
+                component_key,
+                k,
+                "positive",
+                w_unembed=w_unembed,
+                include_outputs=w_unembed is not None,
+            )
         )
         if is_source
         else [],
         negative_targets=_to_api_entries(
-            storage.get_top_targets(component_key, k, "negative", w_unembed=w_unembed)
+            storage.get_top_targets(
+                component_key,
+                k,
+                "negative",
+                w_unembed=w_unembed,
+                include_outputs=w_unembed is not None,
+            )
         )
         if is_source
         else [],

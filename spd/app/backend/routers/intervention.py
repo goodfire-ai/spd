@@ -107,7 +107,7 @@ def _run_intervention_forward(
     loaded: DepLoadedRun,
 ) -> InterventionResponse:
     """Run intervention forward pass and return response."""
-    token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(text)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
 
     active_nodes = [_parse_node_key(key) for key in selected_nodes]
@@ -150,7 +150,7 @@ def _run_intervention_forward(
 @log_errors
 def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> InterventionResponse:
     """Run intervention forward pass with specified nodes active (legacy endpoint)."""
-    token_ids = loaded.tokenizer.encode(request.text, add_special_tokens=False)
+    token_ids = loaded.tokenizer.encode(request.text)
     tokens = torch.tensor([token_ids], dtype=torch.long, device=DEVICE)
 
     active_nodes = [(n.layer, n.seq_pos, n.component_idx) for n in request.nodes]

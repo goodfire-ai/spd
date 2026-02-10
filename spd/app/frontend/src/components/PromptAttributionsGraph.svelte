@@ -1,16 +1,8 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
-    import type {
-        GraphData,
-        PinnedNode,
-        HoveredNode,
-        HoveredEdge,
-        LayerInfo,
-        NodePosition,
-    } from "../lib/promptAttributionsTypes";
+    import type { GraphData, PinnedNode, HoveredNode, HoveredEdge, NodePosition } from "../lib/promptAttributionsTypes";
     import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
-    import { getAliasedRowLabel } from "../lib/layerAliasing";
     import { colors, getEdgeColor, getSubcompActColor, rgbToCss, getNextTokenProbBgColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
@@ -27,8 +19,17 @@
     import { RUN_KEY, type RunContext } from "../lib/useRun.svelte";
     import { useZoomPan } from "../lib/useZoomPan.svelte";
     import ZoomControls from "../lib/ZoomControls.svelte";
+    import {
+        parseLayer,
+        getRowKey as _getRowKey,
+        getRowLabel as _getRowLabel,
+        sortRows,
+        getLayerPath,
+    } from "../lib/graphLayout";
 
     const runState = getContext<RunContext>(RUN_KEY);
+    const modelInfo = $derived(runState.modelInfo!);
+    const displayNames = $derived(modelInfo.display_names);
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -38,10 +39,6 @@
     const CLUSTER_BAR_HEIGHT = 3;
     const CLUSTER_BAR_GAP = 2;
     const LAYER_X_OFFSET = 3; // Horizontal offset per layer to avoid edge overlap
-
-    // Row order for layout (qkv share a row, lm_head before output)
-    const ROW_ORDER = ["wte", "qkv", "o_proj", "c_fc", "down_proj", "lm_head", "output"];
-    const QKV_SUBTYPES = ["q_proj", "k_proj", "v_proj"];
 
     type Props = {
         data: GraphData;
@@ -131,34 +128,12 @@
     // Zoom/pan
     const zoom = useZoomPan(() => innerContainer);
 
-    // Parse layer name into structured info
-    function parseLayer(name: string): LayerInfo {
-        if (name === "wte") {
-            return { name, block: -1, type: "embed", subtype: "wte" };
-        }
-        if (name === "lm_head") {
-            return { name, block: Infinity - 1, type: "mlp", subtype: "lm_head" };
-        }
-        if (name === "output") {
-            return { name, block: Infinity, type: "output", subtype: "output" };
-        }
-        const m = name.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-        if (!m) throw new Error(`parseLayer: unrecognized layer name: ${name}`);
-        return { name, block: +m[1], type: m[2] as "attn" | "mlp", subtype: m[3] };
-    }
-
     function getRowKey(layer: string): string {
-        const info = parseLayer(layer);
-        if (QKV_SUBTYPES.includes(info.subtype)) {
-            return `h.${info.block}.qkv`;
-        }
-        return layer;
+        return _getRowKey(layer, modelInfo);
     }
 
     function getRowLabel(layer: string): string {
-        const rowKey = getRowKey(layer);
-        const isQkvGroup = rowKey.endsWith(".qkv");
-        return getAliasedRowLabel(layer, isQkvGroup);
+        return _getRowLabel(layer, modelInfo);
     }
 
     // Use pre-computed values from backend, derive max CI
@@ -213,25 +188,7 @@
         }
 
         // Sort rows for Y positioning
-        const parseRow = (r: string) => {
-            if (r === "wte") return { block: -1, subtype: "wte" };
-            if (r === "lm_head") return { block: Infinity - 1, subtype: "lm_head" };
-            if (r === "output") return { block: Infinity, subtype: "output" };
-            const mQkv = r.match(/h\.(\d+)\.qkv/);
-            if (mQkv) return { block: +mQkv[1], subtype: "qkv" };
-            const m = r.match(/h\.(\d+)\.(attn|mlp)\.(\w+)/);
-            if (!m) throw new Error(`parseRow: unrecognized row key: ${r}`);
-            return { block: +m[1], subtype: m[3] };
-        };
-
-        const rows = Array.from(allRows).sort((a, b) => {
-            const infoA = parseRow(a);
-            const infoB = parseRow(b);
-            if (infoA.block !== infoB.block) return infoA.block - infoB.block;
-            const idxA = ROW_ORDER.indexOf(infoA.subtype);
-            const idxB = ROW_ORDER.indexOf(infoB.subtype);
-            return idxA - idxB;
-        });
+        const rows = sortRows(Array.from(allRows), modelInfo);
 
         // Assign Y positions (output at top, wte at bottom)
         const rowYPositions: Record<string, number> = {};
@@ -261,19 +218,23 @@
         const maxComponentsPerSeq = tokens.map((_, seqIdx) => {
             let maxAtSeq = 0;
             for (const row of rows) {
-                if (row.endsWith(".qkv")) {
-                    const blockMatch = row.match(/h\.(\d+)/);
-                    if (blockMatch) {
-                        const block = blockMatch[1];
-                        let totalQkv = 0;
-                        for (const subtype of QKV_SUBTYPES) {
-                            const layer = `h.${block}.attn.${subtype}`;
+                // Check if this row is a group (e.g. "0.qkv")
+                const dotIdx = row.indexOf(".");
+                const groupName = dotIdx !== -1 ? row.substring(dotIdx + 1) : null;
+                const groupRoles = groupName ? (modelInfo.role_groups[groupName] ?? null) : null;
+
+                if (groupRoles && dotIdx !== -1) {
+                    const block = +row.substring(0, dotIdx);
+                    let totalGrouped = 0;
+                    for (const role of groupRoles) {
+                        const layer = getLayerPath(block, role, modelInfo);
+                        if (layer) {
                             const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
-                            totalQkv += nodes.length;
+                            totalGrouped += nodes.length;
                         }
-                        totalQkv += 2; // gaps between groups
-                        maxAtSeq = Math.max(maxAtSeq, totalQkv);
                     }
+                    totalGrouped += groupRoles.length - 1; // gaps between subgroups
+                    maxAtSeq = Math.max(maxAtSeq, totalGrouped);
                 } else {
                     for (const layer of allLayers) {
                         if (getRowKey(layer) === row) {
@@ -302,8 +263,8 @@
         const QKV_GROUP_GAP = COMPONENT_SIZE + componentGap;
 
         for (const layer of allLayers) {
-            const info = parseLayer(layer);
-            const isQkv = QKV_SUBTYPES.includes(info.subtype);
+            const info = parseLayer(layer, modelInfo);
+            const isGrouped = info.group !== null;
 
             for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
                 const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -312,12 +273,13 @@
                 let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
-                // For qkv layers, offset X based on subtype
-                if (isQkv) {
-                    const subtypeIdx = QKV_SUBTYPES.indexOf(info.subtype);
-                    for (let i = 0; i < subtypeIdx; i++) {
-                        const prevLayer = `h.${info.block}.attn.${QKV_SUBTYPES[i]}`;
-                        const prevLayerNodes = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`];
+                // For grouped roles (e.g. QKV), offset X based on position in group
+                if (isGrouped && info.group) {
+                    const roles = modelInfo.role_groups[info.group];
+                    const roleIdx = roles.indexOf(info.role);
+                    for (let i = 0; i < roleIdx; i++) {
+                        const prevLayer = getLayerPath(info.block, roles[i], modelInfo);
+                        const prevLayerNodes = prevLayer ? nodesPerLayerSeq[`${prevLayer}:${seqIdx}`] : null;
                         const prevCount = prevLayerNodes?.length ?? 0;
                         baseX += prevCount * (COMPONENT_SIZE + componentGap);
                         baseX += QKV_GROUP_GAP;
@@ -786,7 +748,13 @@
                             stroke={colors.textMuted}
                             stroke-width="0.5"
                         >
-                            <title>{maskedProb !== null ? `P(self): ${(maskedProb * 100).toFixed(1)}%` : isFirstToken ? "First token" : "P(self): <1%"}</title>
+                            <title
+                                >{maskedProb !== null
+                                    ? `P(self): ${(maskedProb * 100).toFixed(1)}%`
+                                    : isFirstToken
+                                      ? "First token"
+                                      : "P(self): <1%"}</title
+                            >
                         </circle>
                     {/each}
                 </g>
@@ -799,11 +767,11 @@
         <div class="edge-tooltip" style="left: {edgeTooltipPos.x}px; top: {edgeTooltipPos.y}px;">
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Src</span>
-                <code>{formatNodeKeyForDisplay(hoveredEdge.src)}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.src, displayNames)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Tgt</span>
-                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt)}</code>
+                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt, displayNames)}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>

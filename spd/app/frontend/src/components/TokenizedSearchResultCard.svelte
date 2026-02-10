@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { SvelteSet } from "svelte/reactivity";
     import type { TokenizedSearchResult } from "../lib/api/dataset";
     import { getNextTokenProbBgColor } from "../lib/colors";
 
@@ -23,9 +24,9 @@
 
     // Check if a token is part of a query match by building the string and checking positions
     const matchPositions = $derived.by(() => {
-        if (!query) return new Set<number>();
+        if (!query) return new SvelteSet<number>();
 
-        const positions = new Set<number>();
+        const positions = new SvelteSet<number>();
         const lowerQuery = query.toLowerCase();
 
         // Rebuild the text and track character positions for each token
@@ -70,12 +71,9 @@
                 >{result.occurrence_count} occurrence{result.occurrence_count !== 1 ? "s" : ""}</span
             >
         {/if}
-        {#if result.topic}
-            <span class="tag">{result.topic}</span>
-        {/if}
-        {#if result.theme}
-            <span class="tag">{result.theme}</span>
-        {/if}
+        {#each Object.entries(result.metadata) as [metaKey, metaVal] (metaKey)}
+            <span class="tag">{metaVal}</span>
+        {/each}
     </div>
     <div class="tokens-container">
         <span class="prob-tokens"

@@ -4,9 +4,8 @@ Short labels (2-5 words), skeptical tone, structured JSON output.
 Extracted from the original prompt_template.py.
 """
 
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-
-from spd.app.backend.utils import build_token_lookup, delimit_tokens
+from spd.app.backend.app_tokenizer import AppTokenizer
+from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.config import CompactSkepticalConfig
 from spd.autointerp.schemas import ArchitectureInfo
 from spd.harvest.analysis import TokenPRLift
@@ -71,24 +70,22 @@ def format_prompt(
     config: CompactSkepticalConfig,
     component: ComponentData,
     arch: ArchitectureInfo,
-    tokenizer: PreTrainedTokenizerBase,
+    app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
     ci_threshold: float,
 ) -> str:
-    lookup = build_token_lookup(tokenizer, tokenizer.name_or_path)
-
     input_pmi: list[tuple[str, float]] | None = None
     output_pmi: list[tuple[str, float]] | None = None
 
     if config.include_pmi:
         input_pmi = (
-            [(lookup[tid], pmi) for tid, pmi in component.input_token_pmi.top]
+            [(app_tok.get_tok_display(tid), pmi) for tid, pmi in component.input_token_pmi.top]
             if component.input_token_pmi.top
             else None
         )
         output_pmi = (
-            [(lookup[tid], pmi) for tid, pmi in component.output_token_pmi.top]
+            [(app_tok.get_tok_display(tid), pmi) for tid, pmi in component.output_token_pmi.top]
             if component.output_token_pmi.top
             else None
         )
@@ -97,7 +94,7 @@ def format_prompt(
     output_section = _build_output_section(output_token_stats, output_pmi)
     examples_section = _build_examples_section(
         component,
-        lookup,
+        app_tok,
         ci_threshold,
         config.max_examples,
     )
@@ -198,7 +195,7 @@ def _build_output_section(
 
 def _build_examples_section(
     component: ComponentData,
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
     ci_threshold: float,
     max_examples: int,
 ) -> str:
@@ -206,11 +203,9 @@ def _build_examples_section(
     examples = component.activation_examples[:max_examples]
 
     for i, ex in enumerate(examples):
-        tokens = [
-            (lookup[tid], ci > ci_threshold)
-            for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True)
-            if tid >= 0
-        ]
+        valid = [(tid, ci) for tid, ci in zip(ex.token_ids, ex.ci_values, strict=True) if tid >= 0]
+        spans = app_tok.get_spans([tid for tid, _ in valid])
+        tokens = [(span, ci > ci_threshold) for span, (_, ci) in zip(spans, valid, strict=True)]
         has_active = any(active for _, active in tokens)
         if has_active:
             section += f"{i + 1}. {delimit_tokens(tokens)}\n"

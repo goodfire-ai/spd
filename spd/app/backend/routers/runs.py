@@ -10,14 +10,20 @@ from pydantic import BaseModel
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
-from spd.app.backend.dependencies import DepStateManager
+from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
+from spd.app.backend.model_adapter import build_model_adapter
 from spd.app.backend.state import HarvestCache, RunState
-from spd.app.backend.utils import build_token_lookup, log_errors
+from spd.app.backend.utils import log_errors
+from spd.configs import LMTaskConfig
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.wandb_utils import parse_wandb_run_path
+
+# Datasets small enough to load into memory for search
+_SEARCHABLE_DATASETS = {"SimpleStories/SimpleStories"}
 
 # =============================================================================
 # Schemas
@@ -35,6 +41,16 @@ class LoadedRun(BaseModel):
     context_length: int
     backend_user: str
     dataset_attributions_available: bool
+    dataset_search_enabled: bool
+
+
+class ModelInfo(BaseModel):
+    """Model topology info for frontend layout."""
+
+    module_paths: list[str]
+    role_order: list[str]
+    role_groups: dict[str, list[str]]
+    display_names: dict[str, str]
 
 
 router = APIRouter(prefix="/api", tags=["runs"])
@@ -104,21 +120,20 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     loaded_tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
     assert isinstance(loaded_tokenizer, PreTrainedTokenizerFast)
 
-    # Build sources_by_target mapping
-    logger.info(f"[API] Building sources_by_target mapping for run {run.id}")
-    sources_by_target = get_sources_by_target(model, DEVICE, spd_config.sampling)
+    # Build model adapter and sources_by_target mapping
+    logger.info(f"[API] Building model adapter for run {run.id}")
+    adapter = build_model_adapter(model)
 
-    # Build token lookup for activation contexts
-    logger.info(f"[API] Building token lookup for run {run.id}")
-    token_strings = build_token_lookup(loaded_tokenizer, spd_config.tokenizer_name)
+    logger.info(f"[API] Building sources_by_target mapping for run {run.id}")
+    sources_by_target = get_sources_by_target(model, adapter, DEVICE, spd_config.sampling)
 
     manager.run_state = RunState(
         run=run,
         model=model,
-        tokenizer=loaded_tokenizer,
+        adapter=adapter,
+        tokenizer=AppTokenizer(loaded_tokenizer),
         sources_by_target=sources_by_target,
         config=spd_config,
-        token_strings=token_strings,
         context_length=context_length,
         harvest=HarvestCache(run_id=run_id),
     )
@@ -143,6 +158,11 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
 
     prompt_count = manager.db.get_prompt_count(run.id, context_length)
 
+    task_config = manager.run_state.config.task_config
+    dataset_search_enabled = (
+        isinstance(task_config, LMTaskConfig) and task_config.dataset_name in _SEARCHABLE_DATASETS
+    )
+
     return LoadedRun(
         id=run.id,
         wandb_path=run.wandb_path,
@@ -152,6 +172,20 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         context_length=context_length,
         backend_user=getpass.getuser(),
         dataset_attributions_available=manager.run_state.harvest.has_dataset_attributions(),
+        dataset_search_enabled=dataset_search_enabled,
+    )
+
+
+@router.get("/model_info")
+@log_errors
+def get_model_info(loaded: DepLoadedRun) -> ModelInfo:
+    """Get model topology info for frontend layout."""
+    adapter = loaded.adapter
+    return ModelInfo(
+        module_paths=adapter.target_module_paths,
+        role_order=adapter.role_order,
+        role_groups=adapter.role_groups,
+        display_names=adapter.display_names,
     )
 
 

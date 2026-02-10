@@ -184,10 +184,10 @@ async def request_component_interpretation(
     token_stats = loaded.harvest.token_stats
 
     input_token_stats = analysis.get_input_token_stats(
-        token_stats, component_key, loaded.token_strings, top_k=20
+        token_stats, component_key, loaded.tokenizer, top_k=20
     )
     output_token_stats = analysis.get_output_token_stats(
-        token_stats, component_key, loaded.token_strings, top_k=50
+        token_stats, component_key, loaded.tokenizer, top_k=50
     )
     if input_token_stats is None or output_token_stats is None:
         raise HTTPException(
@@ -210,7 +210,7 @@ async def request_component_interpretation(
             config=config,
             component=component_data,
             arch=arch,
-            tokenizer=loaded.tokenizer,
+            app_tok=loaded.tokenizer,
             input_token_stats=input_token_stats,
             output_token_stats=output_token_stats,
             ci_threshold=ci_threshold,
@@ -279,10 +279,10 @@ def get_component_token_stats(
     component_key = f"{layer}:{component_idx}"
 
     input_stats = analysis.get_input_token_stats(
-        token_stats, component_key, loaded.token_strings, top_k
+        token_stats, component_key, loaded.tokenizer, top_k
     )
     output_stats = analysis.get_output_token_stats(
-        token_stats, component_key, loaded.token_strings, top_k
+        token_stats, component_key, loaded.tokenizer, top_k
     )
 
     if input_stats is None or output_stats is None:
@@ -402,10 +402,10 @@ def get_component_token_stats_bulk(
 
     for component_key in request.component_keys:
         input_stats = analysis.get_input_token_stats(
-            token_stats, component_key, loaded.token_strings, request.top_k
+            token_stats, component_key, loaded.tokenizer, request.top_k
         )
         output_stats = analysis.get_output_token_stats(
-            token_stats, component_key, loaded.token_strings, request.top_k
+            token_stats, component_key, loaded.tokenizer, request.top_k
         )
 
         if input_stats is None or output_stats is None:

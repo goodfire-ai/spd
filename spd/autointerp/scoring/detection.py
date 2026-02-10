@@ -19,7 +19,8 @@ from openrouter import OpenRouter
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from spd.app.backend.utils import build_token_lookup, delimit_tokens
+from spd.app.backend.app_tokenizer import AppTokenizer
+from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.llm_api import (
     chat_with_retry,
     make_response_format,
@@ -67,7 +68,7 @@ class DetectionResult:
 
 def _format_example_with_center_token(
     example: ActivationExample,
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
 ) -> str:
     """Format an example with the center token marked with <<delimiters>>.
 
@@ -75,9 +76,10 @@ def _format_example_with_center_token(
     is always the one that triggered collection. We mark center for both
     activating and non-activating examples to avoid positional leakage.
     """
-    valid = [(tid, i) for i, tid in enumerate(example.token_ids) if tid >= 0]
-    center = len(valid) // 2
-    tokens = [(lookup[tid], i == center) for i, (tid, _) in enumerate(valid)]
+    valid_ids = [tid for tid in example.token_ids if tid >= 0]
+    center = len(valid_ids) // 2
+    spans = app_tok.get_spans(valid_ids)
+    tokens = [(span, i == center) for i, span in enumerate(spans)]
     return delimit_tokens(tokens)
 
 
@@ -160,7 +162,7 @@ async def score_component(
     model: str,
     component: ComponentData,
     all_components: list[ComponentData],
-    lookup: dict[int, str],
+    app_tok: AppTokenizer,
     label: str,
 ) -> DetectionResult:
     assert len(component.activation_examples) >= N_ACTIVATING
@@ -179,9 +181,9 @@ async def score_component(
         # so non-activating examples (from other components) also have their center as a firing token.
         formatted: list[tuple[str, bool]] = []
         for ex in activating:
-            formatted.append((_format_example_with_center_token(ex, lookup), True))
+            formatted.append((_format_example_with_center_token(ex, app_tok), True))
         for ex in non_activating:
-            formatted.append((_format_example_with_center_token(ex, lookup), False))
+            formatted.append((_format_example_with_center_token(ex, app_tok), False))
 
         # Shuffle
         rng.shuffle(formatted)
@@ -255,9 +257,9 @@ async def run_detection_scoring(
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[DetectionResult]:
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    assert isinstance(tokenizer, PreTrainedTokenizerBase)
-    lookup = build_token_lookup(tokenizer, tokenizer_name)
+    hf_tok = AutoTokenizer.from_pretrained(tokenizer_name)
+    assert isinstance(hf_tok, PreTrainedTokenizerBase)
+    app_tok = AppTokenizer(hf_tok)
 
     eligible = [
         c
@@ -269,7 +271,7 @@ async def run_detection_scoring(
 
     async def _score(client: OpenRouter, component: ComponentData) -> DetectionResult:
         return await score_component(
-            client, model, component, components, lookup, labels[component.component_key]
+            client, model, component, components, app_tok, labels[component.component_key]
         )
 
     return await run_scoring_pipeline(

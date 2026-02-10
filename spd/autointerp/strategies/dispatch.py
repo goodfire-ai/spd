@@ -3,8 +3,8 @@
 from typing import Any
 
 from openrouter.components import Reasoning
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.config import AutointerpConfig, CompactSkepticalConfig
 from spd.autointerp.schemas import ArchitectureInfo
 from spd.autointerp.strategies.compact_skeptical import (
@@ -21,7 +21,7 @@ def format_prompt(
     config: AutointerpConfig,
     component: ComponentData,
     arch: ArchitectureInfo,
-    tokenizer: PreTrainedTokenizerBase,
+    app_tok: AppTokenizer,
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
     ci_threshold: float,
@@ -32,17 +32,13 @@ def format_prompt(
                 config,
                 component,
                 arch,
-                tokenizer,
+                app_tok,
                 input_token_stats,
                 output_token_stats,
                 ci_threshold,
             )
         case _:  # pyright: ignore[reportUnnecessaryComparison]
             raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]
-
-
-def get_model(config: AutointerpConfig) -> str:
-    return config.model
 
 
 def get_reasoning(config: AutointerpConfig) -> Reasoning | None:

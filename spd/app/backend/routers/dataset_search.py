@@ -1,7 +1,8 @@
-"""Dataset search endpoints for SimpleStories exploration.
+"""Dataset search endpoints.
 
-This module provides search functionality for the SimpleStories dataset,
-independent of any loaded SPD run. Results are cached in memory for pagination.
+Provides search functionality for the training dataset of the loaded run.
+The dataset name and text column are read from the run's config.
+Results are cached in memory for pagination.
 """
 
 import random
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.state import DatasetSearchState
 from spd.app.backend.utils import log_errors
+from spd.configs import LMTaskConfig
 from spd.log import logger
 from spd.utils.distributed_utils import get_device
 
@@ -25,12 +27,11 @@ from spd.utils.distributed_utils import get_device
 
 
 class DatasetSearchResult(BaseModel):
-    """A single search result from the SimpleStories dataset."""
+    """A single search result from the dataset."""
 
-    story: str
+    text: str
     occurrence_count: int
-    topic: str | None = None
-    theme: str | None = None
+    metadata: dict[str, str]
 
 
 class TokenizedSearchResult(BaseModel):
@@ -39,8 +40,7 @@ class TokenizedSearchResult(BaseModel):
     tokens: list[str]
     next_token_probs: list[float | None]
     occurrence_count: int
-    topic: str | None = None
-    theme: str | None = None
+    metadata: dict[str, str]
 
 
 class DatasetSearchMetadata(BaseModel):
@@ -48,6 +48,7 @@ class DatasetSearchMetadata(BaseModel):
 
     query: str
     split: str
+    dataset_name: str
     total_results: int
     search_time_seconds: float
 
@@ -76,71 +77,92 @@ class TokenizedSearchPage(BaseModel):
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
 
 
+def _get_lm_task_config(loaded: DepLoadedRun) -> LMTaskConfig:
+    """Extract LMTaskConfig from the loaded run, or raise 400."""
+    task_config = loaded.config.task_config
+    if not isinstance(task_config, LMTaskConfig):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Dataset search requires an LM experiment, got {task_config.task_name}",
+        )
+    return task_config
+
+
 @router.post("/search")
 @log_errors
 def search_dataset(
     query: Annotated[str, Query(min_length=1)],
+    loaded: DepLoadedRun,
     manager: DepStateManager,
     split: Annotated[str, Query(pattern="^(train|test)$")] = "train",
 ) -> DatasetSearchMetadata:
-    """Search SimpleStories dataset for stories containing query string.
+    """Search the run's training dataset for entries containing query string.
 
+    Reads dataset_name and column_name from the loaded run's config.
     Caches results for pagination via /results endpoint.
-    Works independently of any loaded run.
 
     Args:
         query: Text to search for (case-insensitive)
         split: Dataset split to search ("train" or "test")
 
     Returns:
-        Search metadata (query, split, total results, search time)
+        Search metadata (query, split, dataset_name, total results, search time)
     """
+    task_config = _get_lm_task_config(loaded)
+    dataset_name = task_config.dataset_name
+    text_column = task_config.column_name
+
     start_time = time.time()
     search_query = query.lower()
 
-    logger.info(f"Loading SimpleStories dataset (split={split})...")
-    dataset = load_dataset("lennart-finke/SimpleStories", split=split)
+    logger.info(f"Loading dataset {dataset_name} (split={split})...")
+    dataset = load_dataset(dataset_name, split=split)
     assert isinstance(dataset, Dataset), f"Expected Dataset, got {type(dataset)}"
 
-    total_stories = len(dataset)
-    logger.info(f"Searching {total_stories} stories for '{query}'...")
+    total_rows = len(dataset)
+    logger.info(f"Searching {total_rows} rows for '{query}'...")
 
     filtered = dataset.filter(
-        lambda x: search_query in x["story"].lower(),
+        lambda x: search_query in x[text_column].lower(),
         num_proc=8,
     )
+
+    # Collect extra string columns as metadata (skip the text column itself)
+    column_names = dataset.column_names
+    metadata_columns = [c for c in column_names if c != text_column]
 
     results: list[dict[str, Any]] = []
     for item in filtered:
         item_dict: dict[str, Any] = dict(item)
-        story: str = item_dict["story"]
+        text: str = item_dict[text_column]
+        row_metadata = {
+            col: str(item_dict[col]) for col in metadata_columns if item_dict.get(col) is not None
+        }
         results.append(
             {
-                "story": story,
-                "occurrence_count": story.lower().count(search_query),
-                "topic": item_dict.get("topic"),
-                "theme": item_dict.get("theme"),
+                "text": text,
+                "occurrence_count": text.lower().count(search_query),
+                "metadata": row_metadata,
             }
         )
 
     search_time = time.time() - start_time
 
-    metadata = DatasetSearchMetadata(
+    search_metadata = DatasetSearchMetadata(
         query=query,
         split=split,
+        dataset_name=dataset_name,
         total_results=len(results),
         search_time_seconds=search_time,
     )
     manager.state.dataset_search_state = DatasetSearchState(
         results=results,
-        metadata=metadata.model_dump(),
+        metadata=search_metadata.model_dump(),
     )
 
-    logger.info(
-        f"Found {len(results)} results in {search_time:.2f}s (searched {total_stories} stories)"
-    )
+    logger.info(f"Found {len(results)} results in {search_time:.2f}s (searched {total_rows} rows)")
 
-    return metadata
+    return search_metadata
 
 
 @router.get("/results")
@@ -239,7 +261,7 @@ def get_tokenized_results(
     for result in page_results:
         story: str = result["story"]
 
-        token_ids = tokenizer.encode(story, add_special_tokens=False)
+        token_ids = tokenizer.encode(story)
         if len(token_ids) > max_tokens:
             token_ids = token_ids[:max_tokens]
 
@@ -259,15 +281,17 @@ def get_tokenized_results(
             next_token_probs.append(prob)
         next_token_probs.append(None)
 
-        token_strings = [loaded.token_strings[t] for t in token_ids]
+        token_strings = loaded.tokenizer.get_spans(token_ids)
+
+        # Extract all non-core fields as metadata
+        metadata = {k: str(v) for k, v in result.items() if k not in ["story", "occurrence_count"]}
 
         tokenized_results.append(
             TokenizedSearchResult(
                 tokens=token_strings,
                 next_token_probs=next_token_probs,
                 occurrence_count=result["occurrence_count"],
-                topic=result.get("topic"),
-                theme=result.get("theme"),
+                metadata=metadata,
             )
         )
 
@@ -323,12 +347,15 @@ def get_random_samples(
     results = []
     for item in samples:
         item_dict: dict[str, Any] = dict(item)
+        # Extract text field (usually "story" for SimpleStories, but could be different)
+        text = item_dict.get("story") or item_dict.get("text", "")
+        # Extract all non-text fields as metadata
+        metadata = {k: str(v) for k, v in item_dict.items() if k not in ["story", "text"]}
         results.append(
             DatasetSearchResult(
-                story=item_dict["story"],
+                text=text,
                 occurrence_count=0,
-                topic=item_dict.get("topic"),
-                theme=item_dict.get("theme"),
+                metadata=metadata,
             )
         )
 
@@ -346,8 +373,7 @@ class TokenizedSample(BaseModel):
 
     tokens: list[str]
     next_token_probs: list[float | None]  # Probability of next token; None for last position
-    topic: str | None = None
-    theme: str | None = None
+    metadata: dict[str, str]
 
 
 class RandomSamplesWithLossResult(BaseModel):
@@ -402,7 +428,7 @@ def get_random_samples_with_loss(
         item_dict: dict[str, Any] = dict(item)
         story: str = item_dict["story"]
 
-        token_ids = tokenizer.encode(story, add_special_tokens=False)
+        token_ids = tokenizer.encode(story)
         if len(token_ids) > max_tokens:
             token_ids = token_ids[:max_tokens]
 
@@ -423,14 +449,16 @@ def get_random_samples_with_loss(
             next_token_probs.append(prob)
         next_token_probs.append(None)  # No next token for last position
 
-        token_strings = [loaded.token_strings[t] for t in token_ids]
+        token_strings = loaded.tokenizer.get_spans(token_ids)
+
+        # Extract all non-text fields as metadata
+        metadata = {k: str(v) for k, v in item_dict.items() if k not in ["story", "text"]}
 
         results.append(
             TokenizedSample(
                 tokens=token_strings,
                 next_token_probs=next_token_probs,
-                topic=item_dict.get("topic"),
-                theme=item_dict.get("theme"),
+                metadata=metadata,
             )
         )
 
