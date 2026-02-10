@@ -6,11 +6,15 @@
 
 ## Niggles
 
-- `ordered_paths()` returns paths in block order (attn before ffn within each block). This matches the execution order for most models but isn't verified against the actual `target_module_paths` ordering from `ComponentModel`. If a model has a different ordering convention, this could diverge.
-- Not all target modules may be decomposed (partial decomposition). The topology only includes paths that are in `target_module_paths`, so a block might have attention but no FFN if the FFN wasn't decomposed. Currently `_build_ffn` asserts up+down exist, which would fail for partial FFN decomposition.
+- `ordered_layers()` preserves `target_module_paths` ordering from ComponentModel. Attn-before-mlp ordering within a block is an unsolved issue, fine for now.
+- Partial FFN decomposition (decomposing only attention, not FFN) would crash `_build_ffn`. Not an issue in practice — all current configs decompose both.
 
 ## Assumptions
 
-- Every target module path contains exactly one integer segment (the block index)
+- Every target module path contains exactly one integer segment (the block index) — now asserted
 - Role mapping patterns are exhaustive — every target path matches exactly one pattern
-- Within a block, attention roles and FFN roles don't overlap (same role name can't be both)
+- Within a block, attention roles and FFN roles don't overlap
+
+## Terminology
+
+"Role" = the abstract function a layer serves within a transformer block. Maps concrete module names (q_proj, c_attn, c_fc, gate_proj, etc.) onto canonical abstract names (q, k, v, qkv, o, up, down, gate). This lets consumers reason about model structure without knowing architecture-specific naming.

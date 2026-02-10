@@ -201,12 +201,14 @@ def _get_arch_config(model: nn.Module) -> ArchConfig:
             )
 
 
-def _extract_block_index(path: str) -> int | None:
-    """Extract the first integer segment from a dotted path."""
-    for segment in path.split("."):
-        if segment.isdigit():
-            return int(segment)
-    return None
+def _extract_block_index(path: str) -> int:
+    """Extract the single integer segment from a dotted path.
+
+    Asserts exactly one integer segment exists (e.g. "h.3.attn.q_proj" -> 3).
+    """
+    digits = [s for s in path.split(".") if s.isdigit()]
+    assert len(digits) == 1, f"Expected exactly 1 integer segment in '{path}', got {digits}"
+    return int(digits[0])
 
 
 def _resolve_role(path: str, role_mapping: dict[str, AbstractRole]) -> AbstractRole:
@@ -266,7 +268,6 @@ class TransformerTopology:
 
         for path in target_paths:
             block_idx = _extract_block_index(path)
-            assert block_idx is not None, f"No block index in path: {path}"
             role = _resolve_role(path, arch.role_mapping)
 
             module = target_model.get_submodule(path)
