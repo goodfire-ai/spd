@@ -103,12 +103,12 @@ def test_gpt2_simple():
 
 
 # ---------------------------------------------------------------------------
-# GPT2Simple — noln variant (k_proj, v_proj, c_proj — no q_proj)
+# GPT2Simple — subset of target modules (no q_proj decomposed)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.slow
-def test_gpt2_simple_noln():
+def test_gpt2_simple_partial_targets():
     from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 
     config = GPT2SimpleConfig(
@@ -124,11 +124,7 @@ def test_gpt2_simple_noln():
     target.eval()
     target.requires_grad_(False)
 
-    # noln variant targets: no q_proj, uses c_proj for attn output
-    # Note: c_proj doesn't exist on GPT2Simple's attention (it uses o_proj).
-    # The noln config in practice targets: h.*.mlp.c_fc, h.*.mlp.c_proj, h.*.attn.k_proj, h.*.attn.v_proj, h.*.attn.c_proj
-    # But GPT2Simple has o_proj not c_proj. The actual noln model may differ.
-    # For this test, we use the patterns that DO exist on GPT2Simple.
+    # Only decomposing a subset of modules (no q_proj)
     patterns = [
         "h.*.mlp.c_fc",
         "h.*.mlp.down_proj",
@@ -139,8 +135,6 @@ def test_gpt2_simple_noln():
     model = _make_component_model(target, patterns)
     adapter = build_model_adapter(model)
 
-    # Without q_proj but with o_proj, this still uses _CUSTOM_SPD_CONFIG (not noln)
-    # because o_proj != c_proj
     assert adapter.embedding_path == "wte"
     assert all("k_proj" in p or "v_proj" in p for p in adapter.kv_paths)
     assert len(adapter.kv_paths) == 4
@@ -194,8 +188,11 @@ def test_llama_simple():
     assert len(adapter.kv_paths) == 4  # 2 layers * (k_proj + v_proj)
     assert len(adapter.o_paths) == 2  # 2 layers * o_proj
 
-    # QKV grouping
-    assert adapter.role_groups == {"qkv": ["q_proj", "k_proj", "v_proj"]}
+    # Role grouping: QKV and SwiGLU
+    assert adapter.role_groups == {
+        "qkv": ["q_proj", "k_proj", "v_proj"],
+        "swiglu": ["gate_proj", "up_proj"],
+    }
 
     assert adapter.role_order == [
         "gate_proj",
