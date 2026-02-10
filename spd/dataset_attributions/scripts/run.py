@@ -4,11 +4,13 @@ Called by SLURM jobs submitted via spd-attributions, or run directly for non-SLU
 
 Usage:
     # Single GPU
-    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000
+    python -m spd.dataset_attributions.scripts.run <path>
+
+    # With config file
+    python -m spd.dataset_attributions.scripts.run <path> --config_path path/to/config.yaml
 
     # Multi-GPU (run in parallel)
-    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4
-    python -m spd.dataset_attributions.scripts.run <path> --n_batches 1000 --rank 1 --world_size 4
+    python -m spd.dataset_attributions.scripts.run <path> --config_json '...' --rank 0 --world_size 4
     ...
     python -m spd.dataset_attributions.scripts.run <path> --merge
 """
@@ -22,9 +24,8 @@ from spd.dataset_attributions.harvest import (
 
 def main(
     wandb_path: str,
-    n_batches: int | None = None,
-    batch_size: int = 256,
-    ci_threshold: float = 0.0,
+    config_path: str | None = None,
+    config_json: str | None = None,
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
@@ -33,10 +34,8 @@ def main(
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
-        n_batches: Number of batches to process. If None, processes entire training dataset.
-        batch_size: Batch size for processing.
-        ci_threshold: CI threshold for filtering components. Components with mean_ci <= threshold
-            are excluded. Default 0.0 includes all components.
+        config_path: Path to DatasetAttributionConfig YAML/JSON file.
+        config_json: Inline DatasetAttributionConfig as JSON string.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
@@ -50,19 +49,22 @@ def main(
 
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
+    match (config_path, config_json):
+        case (str(path), None):
+            config = DatasetAttributionConfig.from_file(path)
+        case (None, str(json_str)):
+            config = DatasetAttributionConfig.model_validate_json(json_str)
+        case (None, None):
+            config = DatasetAttributionConfig()
+        case _:
+            raise ValueError("config_path and config_json are mutually exclusive")
+
     if world_size is not None:
         print(f"Distributed harvest: {wandb_path} (rank {rank}/{world_size})")
     else:
         print(f"Single-GPU harvest: {wandb_path}")
 
-    config = DatasetAttributionConfig(
-        wandb_path=wandb_path,
-        n_batches=n_batches,
-        batch_size=batch_size,
-        ci_threshold=ci_threshold,
-    )
-
-    harvest_attributions(config, rank=rank, world_size=world_size)
+    harvest_attributions(wandb_path, config, rank=rank, world_size=world_size)
 
 
 def cli() -> None:

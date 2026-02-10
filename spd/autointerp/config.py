@@ -51,3 +51,14 @@ AutointerpConfig = Annotated[
     CompactSkepticalConfig,
     Field(discriminator="type"),
 ]
+
+
+class AutointerpEvalConfig(BaseConfig):
+    """Config for autointerp eval jobs (detection, fuzzing).
+
+    Partition is inherited from the parent AutointerpSlurmConfig / CLI —
+    evals always run on the same partition as the interpret job.
+    """
+
+    eval_model: str = "google/gemini-3-flash-preview"
+    time: str = "12:00:00"

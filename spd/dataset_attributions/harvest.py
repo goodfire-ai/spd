@@ -13,7 +13,6 @@ See CLAUDE.md in this directory for usage instructions.
 """
 
 import itertools
-from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -23,6 +22,7 @@ from torch import Tensor
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.model_adapter import build_model_adapter
+from spd.base_config import BaseConfig
 from spd.data import train_loader_and_tokenizer
 from spd.dataset_attributions.harvester import AttributionHarvester
 from spd.dataset_attributions.loaders import get_attributions_dir
@@ -35,12 +35,10 @@ from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
-@dataclass
-class DatasetAttributionConfig:
-    wandb_path: str
-    n_batches: int | None
-    batch_size: int
-    ci_threshold: float
+class DatasetAttributionConfig(BaseConfig):
+    n_batches: int | None = None
+    batch_size: int = 256
+    ci_threshold: float = 0.0
 
 
 def _build_component_layer_keys(model: ComponentModel) -> list[str]:
@@ -120,6 +118,7 @@ def _get_output_path(run_id: str, rank: int | None) -> Path:
 
 
 def harvest_attributions(
+    wandb_path: str,
     config: DatasetAttributionConfig,
     rank: int | None = None,
     world_size: int | None = None,
@@ -127,6 +126,7 @@ def harvest_attributions(
     """Compute dataset attributions over the training dataset.
 
     Args:
+        wandb_path: WandB run path for the target decomposition run.
         config: Configuration for attribution harvesting.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
@@ -138,9 +138,9 @@ def harvest_attributions(
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
 
-    _, _, run_id = parse_wandb_run_path(config.wandb_path)
+    _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    run_info = SPDRunInfo.from_path(config.wandb_path)
+    run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 

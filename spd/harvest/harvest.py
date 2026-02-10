@@ -16,12 +16,14 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
 import torch
 import tqdm
 from jaxtyping import Float
 from torch import Tensor
 
+from spd.base_config import BaseConfig
 from spd.data import train_loader_and_tokenizer
 from spd.harvest.lib.harvester import Harvester, HarvesterState
 from spd.harvest.schemas import (
@@ -62,15 +64,13 @@ def _normalize_component_acts(
     return normalized
 
 
-@dataclass
-class HarvestConfig:
-    wandb_path: str
-    n_batches: int | None
-    batch_size: int
-    ci_threshold: float
-    activation_examples_per_component: int
-    activation_context_tokens_per_side: int
-    pmi_token_top_k: int
+class HarvestConfig(BaseConfig):
+    n_batches: int | Literal["whole_dataset"] = "whole_dataset"
+    batch_size: int = 256
+    ci_threshold: float = 1e-6
+    activation_examples_per_component: int = 1000
+    activation_context_tokens_per_side: int = 10
+    pmi_token_top_k: int = 40
 
 
 @dataclass
@@ -88,7 +88,7 @@ class HarvestResult:
         activation_contexts_dir.mkdir(parents=True, exist_ok=True)
 
         config_path = activation_contexts_dir / "config.json"
-        config_path.write_text(json.dumps(asdict(self.config), indent=2))
+        config_path.write_text(json.dumps(self.config.model_dump(), indent=2))
 
         components_path = activation_contexts_dir / "components.jsonl"
         with open(components_path, "w") as f:
@@ -159,6 +159,7 @@ def _build_harvest_result(
 
 
 def harvest_activation_contexts(
+    wandb_path: str,
     config: HarvestConfig,
     activation_contexts_dir: Path,
     correlations_dir: Path,
@@ -168,6 +169,7 @@ def harvest_activation_contexts(
     """Single-pass harvest of token stats, activation contexts, and correlations.
 
     Args:
+        wandb_path: WandB run path for the target decomposition run.
         config: Harvest configuration.
         activation_contexts_dir: Directory to save activation contexts.
         correlations_dir: Directory to save correlations.
@@ -180,7 +182,7 @@ def harvest_activation_contexts(
     device = torch.device(get_device())
     logger.info(f"Loading model on {device}")
 
-    run_info = SPDRunInfo.from_path(config.wandb_path)
+    run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info).to(device)
     model.eval()
 
@@ -207,7 +209,12 @@ def harvest_activation_contexts(
     train_iter = iter(train_loader)
     batches_processed = 0
     last_log_time = time.time()
-    batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
+    match config.n_batches:
+        case int(n_batches):
+            batch_range = range(n_batches)
+        case "whole_dataset":
+            batch_range = itertools.count()
+
     for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
         try:
             batch_data = extract_batch_data(next(train_iter))
@@ -309,15 +316,10 @@ def merge_activation_contexts(wandb_path: str) -> None:
     # Build harvester from merged state and generate results
     harvester = Harvester.from_state(merged_state, torch.device("cpu"))
 
-    # Load config from merged state (all workers use same config)
     config = HarvestConfig(
-        wandb_path=wandb_path,
-        n_batches=None,  # Not applicable for merge
-        batch_size=0,  # Not applicable for merge
         ci_threshold=merged_state.ci_threshold,
         activation_examples_per_component=merged_state.max_examples_per_component,
         activation_context_tokens_per_side=merged_state.context_tokens_per_side,
-        pmi_token_top_k=40,  # Standard value
     )
 
     result = _build_harvest_result(harvester, config)

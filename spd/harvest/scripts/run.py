@@ -2,16 +2,15 @@
 
 Usage (non-SLURM):
     # Single GPU
-    python -m spd.harvest.scripts.run <wandb_path> --n_batches 1000
+    python -m spd.harvest.scripts.run <wandb_path>
+
+    # With config file
+    python -m spd.harvest.scripts.run <wandb_path> --config_path path/to/config.yaml
 
     # Multi-GPU (run in parallel via shell, tmux, etc.)
-    python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4 &
-    python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 1 --world_size 4 &
-    python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 2 --world_size 4 &
-    python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 3 --world_size 4 &
-    wait
-
-    # Merge results after all workers complete
+    python -m spd.harvest.scripts.run <path> --config_json '...' --rank 0 --world_size 4 &
+    python -m spd.harvest.scripts.run <path> --config_json '...' --rank 1 --world_size 4 &
+    ...
     python -m spd.harvest.scripts.run <path> --merge
 
 Usage (SLURM submission):
@@ -29,12 +28,8 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    n_batches: int | None = None,
-    batch_size: int = 256,
-    ci_threshold: float = 1e-6,
-    activation_examples_per_component: int = 1000,
-    activation_context_tokens_per_side: int = 10,
-    pmi_token_top_k: int = 40,
+    config_path: str | None = None,
+    config_json: str | None = None,
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
@@ -43,12 +38,8 @@ def main(
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
-        n_batches: Number of batches to process. If None, processes entire training dataset.
-        batch_size: Batch size for processing.
-        ci_threshold: CI threshold for component activation.
-        activation_examples_per_component: Number of activation examples per component.
-        activation_context_tokens_per_side: Number of tokens per side of the activation context.
-        pmi_token_top_k: Number of top- and bottom-k tokens by PMI to include.
+        config_path: Path to HarvestConfig YAML/JSON file.
+        config_json: Inline HarvestConfig as JSON string.
         rank: Worker rank for parallel execution (0 to world_size-1).
         world_size: Total number of workers. If specified with rank, only processes
             batches where batch_idx % world_size == rank.
@@ -65,15 +56,15 @@ def main(
 
     assert (rank is None) == (world_size is None), "rank and world_size must both be set or unset"
 
-    config = HarvestConfig(
-        wandb_path=wandb_path,
-        n_batches=n_batches,
-        batch_size=batch_size,
-        ci_threshold=ci_threshold,
-        activation_examples_per_component=activation_examples_per_component,
-        activation_context_tokens_per_side=activation_context_tokens_per_side,
-        pmi_token_top_k=pmi_token_top_k,
-    )
+    match (config_path, config_json):
+        case (str(path), None):
+            config = HarvestConfig.from_file(path)
+        case (None, str(json_str)):
+            config = HarvestConfig.model_validate_json(json_str)
+        case (None, None):
+            config = HarvestConfig()
+        case _:
+            raise ValueError("config_path and config_json are mutually exclusive")
 
     activation_contexts_dir = get_activation_contexts_dir(run_id)
     correlations_dir = get_correlations_dir(run_id)
@@ -83,7 +74,9 @@ def main(
     else:
         print(f"Single-GPU harvest: {wandb_path}")
 
-    harvest_activation_contexts(config, activation_contexts_dir, correlations_dir, rank, world_size)
+    harvest_activation_contexts(
+        wandb_path, config, activation_contexts_dir, correlations_dir, rank, world_size
+    )
 
 
 if __name__ == "__main__":

@@ -11,6 +11,10 @@ Usage:
 
 import secrets
 
+from pydantic import PositiveInt
+
+from spd.base_config import BaseConfig
+from spd.dataset_attributions.harvest import DatasetAttributionConfig
 from spd.log import logger
 from spd.settings import DEFAULT_PARTITION_NAME
 from spd.utils.git_utils import create_git_snapshot
@@ -24,14 +28,18 @@ from spd.utils.slurm import (
 )
 
 
+class AttributionsSlurmConfig(BaseConfig):
+    """Config for dataset attributions SLURM submission."""
+
+    config: DatasetAttributionConfig = DatasetAttributionConfig()
+    n_gpus: PositiveInt = 4
+    partition: str = DEFAULT_PARTITION_NAME
+    time: str = "48:00:00"
+
+
 def submit_attributions(
     wandb_path: str,
-    n_gpus: int,
-    n_batches: int | None = None,
-    batch_size: int = 256,
-    ci_threshold: float = 0.0,
-    partition: str = DEFAULT_PARTITION_NAME,
-    time: str = "48:00:00",
+    slurm_config: AttributionsSlurmConfig,
     job_suffix: str | None = None,
     snapshot_branch: str | None = None,
 ) -> SubmitResult:
@@ -43,19 +51,18 @@ def submit_attributions(
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
-        n_batches: Total number of batches to process (divided among workers).
-            If None, processes entire training dataset.
-        n_gpus: Number of GPUs (each gets its own array task).
-        batch_size: Batch size for processing.
-        ci_threshold: CI threshold for filtering components.
-        partition: SLURM partition name.
-        time: Job time limit.
+        slurm_config: Attribution SLURM configuration.
         job_suffix: Optional suffix for SLURM job names (e.g., "1h" -> "spd-attr-1h").
         snapshot_branch: Git snapshot branch to use. If None, creates a new snapshot.
 
     Returns:
         SubmitResult for the merge job (the terminal job in the attribution pipeline).
     """
+    config = slurm_config.config
+    n_gpus = slurm_config.n_gpus
+    partition = slurm_config.partition
+    time = slurm_config.time
+
     if snapshot_branch is None:
         run_id = f"attr-{secrets.token_hex(4)}"
         snapshot_branch, commit_hash = create_git_snapshot(run_id)
@@ -66,16 +73,15 @@ def submit_attributions(
     suffix = f"-{job_suffix}" if job_suffix else ""
     array_job_name = f"spd-attr{suffix}"
 
+    config_json = config.model_dump_json()
+
     # SLURM arrays are 1-indexed, so task ID 1 -> rank 0, etc.
     worker_commands = []
     for rank in range(n_gpus):
-        n_batches_arg = f"--n_batches {n_batches} " if n_batches is not None else ""
         cmd = (
             f"python -m spd.dataset_attributions.scripts.run "
             f'"{wandb_path}" '
-            f"{n_batches_arg}"
-            f"--batch_size {batch_size} "
-            f"--ci_threshold {ci_threshold} "
+            f"--config_json '{config_json}' "
             f"--rank {rank} "
             f"--world_size {n_gpus}"
         )
@@ -113,9 +119,9 @@ def submit_attributions(
     logger.values(
         {
             "WandB path": wandb_path,
-            "N batches": n_batches,
+            "N batches": config.n_batches,
             "N GPUs": n_gpus,
-            "Batch size": batch_size,
+            "Batch size": config.batch_size,
             "Snapshot": f"{snapshot_branch} ({commit_hash[:8]})",
             "Array Job ID": array_result.job_id,
             "Merge Job ID": merge_result.job_id,

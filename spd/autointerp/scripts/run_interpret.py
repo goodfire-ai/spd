@@ -1,8 +1,8 @@
 """CLI for autointerp pipeline.
 
 Usage (direct execution):
-    python -m spd.autointerp.scripts.run_interpret <wandb_path>
-    python -m spd.autointerp.scripts.run_interpret <wandb_path> --config path/to/config.yaml
+    python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_path path/to/config.yaml
+    python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_json '...'
 
 Usage (SLURM submission):
     spd-autointerp <wandb_path>
@@ -13,7 +13,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
-from spd.autointerp.config import CompactSkepticalConfig, ReasoningEffort
+from spd.autointerp.config import CompactSkepticalConfig
 from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.loaders import load_harvest_ci_threshold
@@ -23,9 +23,8 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 
 def main(
     wandb_path: str,
-    config: str | None = None,
-    model: str | None = None,
-    reasoning_effort: str | None = None,
+    config_path: str | None = None,
+    config_json: str | None = None,
     autointerp_run_id: str | None = None,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
@@ -34,23 +33,20 @@ def main(
 
     Args:
         wandb_path: WandB run path (e.g. wandb:entity/project/runs/run_id).
-        config: Path to AutointerpConfig YAML file. If provided, model/reasoning_effort are ignored.
-        model: OpenRouter model name (used when config is not provided).
-        reasoning_effort: Reasoning effort level (used when config is not provided).
+        config_path: Path to CompactSkepticalConfig YAML/JSON file.
+        config_json: Inline CompactSkepticalConfig as JSON string.
         autointerp_run_id: Pre-assigned run ID (timestamp). Generated if not provided.
         limit: Max number of components to interpret.
         cost_limit_usd: Cost budget in USD.
     """
 
-    # Build or load config
-    match config, model, reasoning_effort:
-        case (str(config), None, None):
-            interp_config = CompactSkepticalConfig.from_file(config)
-        case (None, str(model), str(reasoning_effort)):
-            effort = ReasoningEffort(reasoning_effort) if reasoning_effort else None
-            interp_config = CompactSkepticalConfig(model=model, reasoning_effort=effort)
+    match (config_path, config_json):
+        case (str(path), None):
+            interp_config = CompactSkepticalConfig.from_file(path)
+        case (None, str(json_str)):
+            interp_config = CompactSkepticalConfig.model_validate_json(json_str)
         case _:
-            raise ValueError("config XOR (model and reasoning_effort) must be provided")
+            raise ValueError("Exactly one of config_path or config_json must be provided")
 
     _, _, run_id = parse_wandb_run_path(wandb_path)
 

@@ -29,17 +29,17 @@ The command:
 For environments without SLURM, run the worker script directly:
 
 ```bash
-# Single GPU with specific number of batches
-python -m spd.harvest.scripts.run <wandb_path> --n_batches 1000
-
-# Single GPU processing entire dataset (omit --n_batches)
+# Single GPU (defaults from HarvestConfig)
 python -m spd.harvest.scripts.run <wandb_path>
 
+# Single GPU with config file
+python -m spd.harvest.scripts.run <wandb_path> --config_path path/to/config.yaml
+
 # Multi-GPU (run in parallel via shell, tmux, etc.)
-python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 0 --world_size 4 &
-python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 1 --world_size 4 &
-python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 2 --world_size 4 &
-python -m spd.harvest.scripts.run <path> --n_batches 1000 --rank 3 --world_size 4 &
+python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 0 --world_size 4 &
+python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 1 --world_size 4 &
+python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 2 --world_size 4 &
+python -m spd.harvest.scripts.run <path> --config_json '{"n_batches": 1000}' --rank 3 --world_size 4 &
 wait
 
 # Merge results after all workers complete
@@ -73,15 +73,18 @@ Entry point via `spd-harvest`. Submits array job + dependent merge job.
 
 ### Worker Script (`scripts/run.py`)
 
-Internal script called by SLURM jobs. Supports:
+Internal script called by SLURM jobs. Accepts config via `--config_path` (file) or `--config_json` (inline JSON). Supports:
+- `--config_path`/`--config_json`: Provide `HarvestConfig` (defaults used if neither given)
 - `--rank R --world_size N`: Process subset of batches
 - `--merge`: Combine per-rank results into final files
 
 ### Harvest Logic (`harvest.py`)
 
+`HarvestConfig` (Pydantic `BaseConfig`) owns defaults for tuning params (batch_size, ci_threshold, etc.). `wandb_path` is a runtime arg passed separately.
+
 Main harvesting functions:
-- `harvest_activation_contexts()`: Process batches for a single rank
-- `merge_activation_contexts()`: Combine results from all ranks
+- `harvest_activation_contexts(wandb_path, config, ...)`: Process batches for a single rank
+- `merge_activation_contexts(wandb_path)`: Combine results from all ranks
 
 ### Harvester (`lib/harvester.py`)
 

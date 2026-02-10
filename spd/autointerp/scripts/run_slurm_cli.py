@@ -2,41 +2,30 @@
 
 Thin wrapper for fast --help. Heavy imports deferred to run_slurm.py.
 
-Submits interpret + eval jobs as a functional unit. Use --no_eval to skip evals.
+Usage:
+    spd-autointerp <wandb_path>
+    spd-autointerp <wandb_path> --config autointerp_config.yaml
 """
 
 import fire
 
-from spd.settings import DEFAULT_PARTITION_NAME
-
 
 def main(
     wandb_path: str,
-    # model: str = "google/gemini-3-flash-preview",
-    eval_model: str = "google/gemini-3-flash-preview",
-    limit: int | None = None,
-    reasoning_effort: str | None = None,
-    partition: str = DEFAULT_PARTITION_NAME,
-    time: str = "12:00:00",
-    cost_limit_usd: float | None = None,
-    no_eval: bool = False,
+    config: str | None = None,
 ) -> None:
-    from spd.autointerp.scripts.run_slurm import launch_autointerp_pipeline
-    from spd.scripts.postprocess_config import AutointerpEvalConfig
+    """Submit autointerp pipeline (interpret + evals) to SLURM.
 
-    evals = None if no_eval else AutointerpEvalConfig(eval_model=eval_model, partition=partition)
+    Args:
+        wandb_path: WandB run path for the target decomposition run.
+        config: Path to AutointerpSlurmConfig YAML/JSON. Uses built-in defaults if omitted.
+    """
+    from spd.autointerp.scripts.run_slurm import AutointerpSlurmConfig, submit_autointerp
 
-    launch_autointerp_pipeline(
-        wandb_path=wandb_path,
-        model=eval_model,
-        limit=limit,
-        reasoning_effort=reasoning_effort,
-        config=None,
-        partition=partition,
-        time=time,
-        cost_limit_usd=cost_limit_usd,
-        evals=evals,
+    slurm_config = (
+        AutointerpSlurmConfig.from_file(config) if config is not None else AutointerpSlurmConfig()
     )
+    submit_autointerp(wandb_path=wandb_path, slurm_config=slurm_config)
 
 
 def cli() -> None:

@@ -5,18 +5,15 @@ LLM-based automated interpretation of SPD components. Consumes pre-harvested dat
 ## Usage
 
 ```bash
-# Run interpretation with default config (CompactSkepticalConfig)
-python -m spd.autointerp.scripts.run_interpret <wandb_path>
+# Run interpretation with a config file
+python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_path path/to/config.yaml
 
-# Run with a custom config file
-python -m spd.autointerp.scripts.run_interpret <wandb_path> --config path/to/config.yaml
-
-# Override model/reasoning inline (without config file)
-python -m spd.autointerp.scripts.run_interpret <wandb_path> --model google/gemini-3-flash-preview --reasoning_effort medium
+# Run with inline config JSON
+python -m spd.autointerp.scripts.run_interpret <wandb_path> --config_json '{"model": "google/gemini-3-flash-preview", "reasoning_effort": null}'
 
 # Or via SLURM
 spd-autointerp <wandb_path>
-spd-autointerp <wandb_path> --config path/to/config.yaml
+spd-autointerp <wandb_path> --model google/gemini-3-flash-preview --reasoning_effort medium
 ```
 
 Requires `OPENROUTER_API_KEY` env var.
@@ -49,6 +46,8 @@ Legacy flat format (`results_*.jsonl` directly in the run dir) is still readable
 
 Current strategies:
 - `CompactSkepticalConfig` — compact prompt, skeptical tone, structured JSON output
+
+Also contains `AutointerpEvalConfig` for eval jobs (detection, fuzzing).
 
 ### Strategies (`strategies/`)
 

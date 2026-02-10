@@ -197,7 +197,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 | `spd-run` | `spd/scripts/run.py` | SLURM-based experiment runner |
 | `spd-local` | `spd/scripts/run_local.py` | Local experiment runner |
 | `spd-harvest` | `spd/harvest/scripts/run_slurm_cli.py` | Submit harvest SLURM job |
-| `spd-autointerp` | `spd/autointerp/scripts/cli.py` | Submit autointerp SLURM job |
+| `spd-autointerp` | `spd/autointerp/scripts/run_slurm_cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
 | `spd-postprocess` | `spd/scripts/postprocess_cli.py` | Unified postprocessing pipeline (harvest + attributions + interpret + evals) |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
@@ -293,7 +293,7 @@ spd-postprocess <wandb_path>                              # Run everything with 
 spd-postprocess <wandb_path> --config custom_config.yaml  # Use custom config
 ```
 
-Config is YAML-based (see `spd/scripts/postprocess_config.yaml` for defaults). Set any section to `null` to skip it:
+Defaults are defined in `PostprocessConfig` (`spd/scripts/postprocess_config.py`). Pass a custom YAML/JSON config to override. Set any section to `null` to skip it:
 - `attributions: null` — skip dataset attributions
 - `autointerp: null` — skip autointerp entirely (interpret + evals)
 - `autointerp.evals: null` — skip evals but still run interpret

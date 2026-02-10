@@ -17,42 +17,35 @@ Usage:
 
 from datetime import datetime
 
+from spd.autointerp.config import AutointerpEvalConfig, CompactSkepticalConfig
+from spd.base_config import BaseConfig
 from spd.log import logger
-from spd.scripts.postprocess_config import AutointerpEvalConfig
+from spd.settings import DEFAULT_PARTITION_NAME
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
 
 
-def _submit_cpu_job(
-    job_name: str,
-    command: str,
-    partition: str,
-    time: str,
-    snapshot_branch: str | None,
-    dependency_job_id: str | None,
-) -> SubmitResult:
-    slurm_config = SlurmConfig(
-        job_name=job_name,
-        partition=partition,
-        n_gpus=0,
-        cpus_per_task=16,
-        time=time,
-        snapshot_branch=snapshot_branch,
-        dependency_job_id=dependency_job_id,
+class AutointerpSlurmConfig(BaseConfig):
+    """Config for the autointerp functional unit (interpret + evals).
+
+    Dependency graph within autointerp:
+        interpret         (depends on harvest merge)
+        ├── detection     (depends on interpret)
+        └── fuzzing       (depends on interpret)
+    """
+
+    config: CompactSkepticalConfig = CompactSkepticalConfig(
+        model="google/gemini-3-flash-preview", reasoning_effort=None
     )
-    script_content = generate_script(slurm_config, command)
-    return submit_slurm_job(script_content, job_name)
+    limit: int | None = None
+    cost_limit_usd: float | None = None
+    partition: str = DEFAULT_PARTITION_NAME
+    time: str = "12:00:00"
+    evals: AutointerpEvalConfig | None = AutointerpEvalConfig()
 
 
-def launch_autointerp_pipeline(
+def submit_autointerp(
     wandb_path: str,
-    model: str,
-    limit: int | None,
-    reasoning_effort: str | None,
-    config: str | None,
-    partition: str,
-    time: str,
-    cost_limit_usd: float | None,
-    evals: AutointerpEvalConfig | None,
+    slurm_config: AutointerpSlurmConfig,
     dependency_job_id: str | None = None,
     snapshot_branch: str | None = None,
 ) -> SubmitResult:
@@ -62,36 +55,48 @@ def launch_autointerp_pipeline(
     prior harvest merge (passed as dependency_job_id).
 
     Args:
-        evals: Eval config. If None, only the interpret job is submitted.
+        wandb_path: WandB run path for the target decomposition run.
+        slurm_config: Autointerp SLURM configuration.
         dependency_job_id: Job to wait for before starting (e.g. harvest merge).
         snapshot_branch: Git snapshot branch to use.
 
     Returns:
         SubmitResult for the interpret job.
     """
+    interp_config = slurm_config.config
+    partition = slurm_config.partition
+    time = slurm_config.time
+    evals = slurm_config.evals
+
     autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    config_json = interp_config.model_dump_json()
 
     # === 1. Interpret job ===
     interpret_parts = [
         "python -m spd.autointerp.scripts.run_interpret",
         f'"{wandb_path}"',
         f"--autointerp_run_id {autointerp_run_id}",
+        f"--config_json '{config_json}'",
     ]
-    if config is not None:
-        interpret_parts.append(f"--config {config}")
-    else:
-        interpret_parts.append(f"--model {model}")
-        if reasoning_effort is not None:
-            interpret_parts.append(f"--reasoning_effort {reasoning_effort}")
-    if limit is not None:
-        interpret_parts.append(f"--limit {limit}")
-    if cost_limit_usd is not None:
-        interpret_parts.append(f"--cost_limit_usd {cost_limit_usd}")
+    if slurm_config.limit is not None:
+        interpret_parts.append(f"--limit {slurm_config.limit}")
+    if slurm_config.cost_limit_usd is not None:
+        interpret_parts.append(f"--cost_limit_usd {slurm_config.cost_limit_usd}")
 
     interpret_cmd = " \\\n    ".join(interpret_parts)
-    interpret_result = _submit_cpu_job(
-        "spd-interpret", interpret_cmd, partition, time, snapshot_branch, dependency_job_id
+
+    interpret_slurm = SlurmConfig(
+        job_name="spd-interpret",
+        partition=partition,
+        n_gpus=0,
+        cpus_per_task=16,
+        time=time,
+        snapshot_branch=snapshot_branch,
+        dependency_job_id=dependency_job_id,
     )
+    script_content = generate_script(interpret_slurm, interpret_cmd)
+    interpret_result = submit_slurm_job(script_content, "spd-interpret")
 
     logger.section("Interpret job submitted")
     logger.values(
@@ -99,7 +104,7 @@ def launch_autointerp_pipeline(
             "Job ID": interpret_result.job_id,
             "Autointerp run ID": autointerp_run_id,
             "WandB path": wandb_path,
-            "Model": model,
+            "Model": interp_config.model,
             "Log": interpret_result.log_pattern,
         }
     )
@@ -118,14 +123,19 @@ def launch_autointerp_pipeline(
                 f"--model {evals.eval_model}",
             ]
         )
-        scoring_result = _submit_cpu_job(
-            f"spd-{scorer}",
-            scoring_cmd,
-            evals.partition,
-            evals.time,
-            snapshot_branch,
+
+        eval_slurm = SlurmConfig(
+            job_name=f"spd-{scorer}",
+            partition=partition,
+            n_gpus=0,
+            cpus_per_task=16,
+            time=evals.time,
+            snapshot_branch=snapshot_branch,
             dependency_job_id=interpret_result.job_id,
         )
+        eval_script = generate_script(eval_slurm, scoring_cmd)
+        scoring_result = submit_slurm_job(eval_script, f"spd-{scorer}")
+
         logger.section(f"{scorer.capitalize()} scoring job submitted")
         logger.values(
             {

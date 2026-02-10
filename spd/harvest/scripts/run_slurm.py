@@ -1,6 +1,6 @@
 """SLURM launcher for harvest pipeline.
 
-Harvest is a functional unit: GPU workers → merge → intruder eval. This module
+Harvest is a functional unit: GPU workers -> merge -> intruder eval. This module
 submits all jobs in the unit with proper dependency chaining.
 
 Usage:
@@ -10,6 +10,10 @@ Usage:
 
 import secrets
 
+from pydantic import PositiveInt
+
+from spd.base_config import BaseConfig
+from spd.harvest.harvest import HarvestConfig
 from spd.log import logger
 from spd.settings import DEFAULT_PARTITION_NAME
 from spd.utils.git_utils import create_git_snapshot
@@ -23,17 +27,18 @@ from spd.utils.slurm import (
 )
 
 
-def harvest(
+class HarvestSlurmConfig(BaseConfig):
+    """Config for harvest SLURM submission."""
+
+    config: HarvestConfig = HarvestConfig()
+    n_gpus: PositiveInt = 4
+    partition: str = DEFAULT_PARTITION_NAME
+    time: str = "24:00:00"
+
+
+def submit_harvest(
     wandb_path: str,
-    n_gpus: int,
-    n_batches: int | None = None,
-    batch_size: int = 256,
-    ci_threshold: float = 1e-6,
-    activation_examples_per_component: int = 1000,
-    activation_context_tokens_per_side: int = 10,
-    pmi_token_top_k: int = 40,
-    partition: str = DEFAULT_PARTITION_NAME,
-    time: str = "24:00:00",
+    slurm_config: HarvestSlurmConfig,
     job_suffix: str | None = None,
     snapshot_branch: str | None = None,
 ) -> SubmitResult:
@@ -45,22 +50,18 @@ def harvest(
 
     Args:
         wandb_path: WandB run path for the target decomposition run.
-        n_batches: Total number of batches to process (divided among workers).
-            If None, processes entire training dataset.
-        n_gpus: Number of GPUs (each gets its own array task).
-        batch_size: Batch size for processing.
-        ci_threshold: CI threshold for component activation.
-        activation_examples_per_component: Number of activation examples per component.
-        activation_context_tokens_per_side: Number of tokens per side of the activation context.
-        pmi_token_top_k: Number of top- and bottom-k tokens by PMI to include.
-        partition: SLURM partition name.
-        time: Job time limit for worker jobs.
+        slurm_config: Harvest SLURM configuration.
         job_suffix: Optional suffix for SLURM job names (e.g., "v2" -> "spd-harvest-v2").
         snapshot_branch: Git snapshot branch to use. If None, creates a new snapshot.
 
     Returns:
         SubmitResult for the merge job (the terminal job in the harvest pipeline).
     """
+    config = slurm_config.config
+    n_gpus = slurm_config.n_gpus
+    partition = slurm_config.partition
+    time = slurm_config.time
+
     if snapshot_branch is None:
         run_id = f"harvest-{secrets.token_hex(4)}"
         snapshot_branch, commit_hash = create_git_snapshot(run_id)
@@ -74,16 +75,10 @@ def harvest(
     # Build worker commands (SLURM arrays are 1-indexed, so task ID 1 -> rank 0, etc.)
     worker_commands = []
     for rank in range(n_gpus):
-        n_batches_arg = f"--n_batches {n_batches} " if n_batches is not None else ""
         cmd = (
             f"python -m spd.harvest.scripts.run "
             f'"{wandb_path}" '
-            f"{n_batches_arg}"
-            f"--batch_size {batch_size} "
-            f"--ci_threshold {ci_threshold} "
-            f"--activation_examples_per_component {activation_examples_per_component} "
-            f"--activation_context_tokens_per_side {activation_context_tokens_per_side} "
-            f"--pmi_token_top_k {pmi_token_top_k} "
+            f"--config_json '{config.model_dump_json()}' "
             f"--rank {rank} "
             f"--world_size {n_gpus}"
         )
@@ -141,9 +136,9 @@ def harvest(
     logger.values(
         {
             "WandB path": wandb_path,
-            "N batches": n_batches,
+            "N batches": config.n_batches,
             "N GPUs": n_gpus,
-            "Batch size": batch_size,
+            "Batch size": config.batch_size,
             "Snapshot": f"{snapshot_branch} ({commit_hash[:8]})",
             "Array Job ID": array_result.job_id,
             "Merge Job ID": merge_result.job_id,

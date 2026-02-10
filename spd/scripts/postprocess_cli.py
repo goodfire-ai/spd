@@ -7,13 +7,9 @@ Usage:
     spd-postprocess <wandb_path> --config my_config.yaml
 """
 
-from pathlib import Path
-
 import fire
 
 from spd.scripts.postprocess_config import PostprocessConfig
-
-DEFAULT_CONFIG_PATH = Path(__file__).parent / "postprocess_config.yaml"
 
 
 def main(
@@ -32,7 +28,7 @@ def main(
     """
     from spd.scripts.postprocess import postprocess
 
-    cfg = PostprocessConfig.from_file(config if config is not None else DEFAULT_CONFIG_PATH)
+    cfg = PostprocessConfig.from_file(config) if config is not None else PostprocessConfig()
     postprocess(wandb_path=wandb_path, config=cfg)
 
 
