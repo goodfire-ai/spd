@@ -26,16 +26,11 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> None:
     from spd.dataset_attributions.scripts.run_slurm import submit_attributions
     from spd.harvest.scripts.run_slurm import submit_harvest
 
-    h = config.harvest
-    total_gpus = h.n_gpus + (0 if config.attributions is None else config.attributions.n_gpus)
-    assert total_gpus <= 8, f"Total GPUs ({total_gpus}) exceeds cluster limit of 8"
-
-    run_id = f"postprocess-{secrets.token_hex(4)}"
-    snapshot_branch, commit_hash = create_git_snapshot(run_id)
+    snapshot_branch, commit_hash = create_git_snapshot(f"postprocess-{secrets.token_hex(4)}")
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
     # === 1. Harvest (always) ===
-    harvest_result = submit_harvest(wandb_path, h, snapshot_branch=snapshot_branch)
+    harvest_result = submit_harvest(wandb_path, config.harvest, snapshot_branch=snapshot_branch)
 
     # === 2. Attributions (parallel with harvest) ===
     if config.attributions is not None:
