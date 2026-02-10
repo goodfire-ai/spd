@@ -1,8 +1,8 @@
 """Adapter that extracts model topology from a ComponentModel.
 
-Instead of auto-detecting model structure via regex heuristics, each supported
-architecture has an explicit config that declares its embedding path, unembed
-path, attention roles (kv/o), role groupings, and display names.
+Each supported architecture has an explicit config that declares its embedding
+path, unembed path, cross-sequence path patterns, role groupings, and display
+names. No regex, string heuristics, or role-name sniffing.
 
 Pseudo-layers:
 - "wte": embedding layer (always a source, never a target)
@@ -12,6 +12,7 @@ actual module names in the underlying model.
 """
 
 from dataclasses import dataclass
+from fnmatch import fnmatch
 
 from jaxtyping import Float
 from torch import Tensor, nn
@@ -46,73 +47,91 @@ class ArchConfig:
 
     Fields:
         embedding_path: Dotted path to the nn.Embedding (e.g. "wte", "transformer.wte")
-        unembed_path: Dotted path to the lm_head Linear, or None if never decomposed
-        kv_roles: Role names (last path segments) that are K/V projections
-        o_roles: Role names that are attention output projections
-        qkv_group: Role names that should be visually grouped (e.g. Q/K/V), empty if none
+        unembed_path: Dotted path to the lm_head Linear
+        kv_patterns: Glob patterns for K/V projection paths (e.g. "h.*.attn.k_proj")
+        o_patterns: Glob patterns for attention output projection paths (e.g. "h.*.attn.o_proj")
+        role_groups: Named groups of roles for visual layout (e.g. {"qkv": ("q_proj", "k_proj", "v_proj")})
         display_names: Static display-name overrides (e.g. {"lm_head": "W_U"})
     """
 
     embedding_path: str
     unembed_path: str
-    kv_roles: frozenset[str]
-    o_roles: frozenset[str]
-    qkv_group: tuple[str, ...]
+    kv_patterns: tuple[str, ...]
+    o_patterns: tuple[str, ...]
+    role_groups: dict[str, tuple[str, ...]]
     display_names: dict[str, str]
 
 
-# Custom SPD models: LlamaSimple, LlamaSimpleMLP, GPT2Simple
-_CUSTOM_SPD_CONFIG = ArchConfig(
+# LlamaSimple: SwiGLU MLP (gate_proj, up_proj, down_proj), separate Q/K/V/O attention
+_LLAMA_SIMPLE_CONFIG = ArchConfig(
     embedding_path="wte",
     unembed_path="lm_head",
-    kv_roles=frozenset({"k_proj", "v_proj"}),
-    o_roles=frozenset({"o_proj"}),
-    qkv_group=("q_proj", "k_proj", "v_proj"),
+    kv_patterns=("h.*.attn.k_proj", "h.*.attn.v_proj"),
+    o_patterns=("h.*.attn.o_proj",),
+    role_groups={
+        "qkv": ("q_proj", "k_proj", "v_proj"),
+        "swiglu": ("gate_proj", "up_proj"),
+    },
     display_names={"lm_head": "W_U"},
 )
 
-# HuggingFace GPT2LMHeadModel (also covers AutoModelForCausalLM when it resolves to GPT2)
+# LlamaSimpleMLP: GELU MLP (c_fc, down_proj), separate Q/K/V/O attention
+_LLAMA_SIMPLE_MLP_CONFIG = ArchConfig(
+    embedding_path="wte",
+    unembed_path="lm_head",
+    kv_patterns=("h.*.attn.k_proj", "h.*.attn.v_proj"),
+    o_patterns=("h.*.attn.o_proj",),
+    role_groups={"qkv": ("q_proj", "k_proj", "v_proj")},
+    display_names={"lm_head": "W_U"},
+)
+
+# GPT2Simple: GELU MLP (c_fc, down_proj), separate Q/K/V/O attention
+_GPT2_SIMPLE_CONFIG = ArchConfig(
+    embedding_path="wte",
+    unembed_path="lm_head",
+    kv_patterns=("h.*.attn.k_proj", "h.*.attn.v_proj"),
+    o_patterns=("h.*.attn.o_proj",),
+    role_groups={"qkv": ("q_proj", "k_proj", "v_proj")},
+    display_names={"lm_head": "W_U"},
+)
+
+# GPT2 (custom): GELU MLP (c_fc, c_proj), fused c_attn QKV, c_proj attn output
+# c_proj appears in both attn and mlp — fully-qualified patterns disambiguate
+_GPT2_CONFIG = ArchConfig(
+    embedding_path="wte",
+    unembed_path="lm_head",
+    kv_patterns=("h.*.attn.c_attn",),
+    o_patterns=("h.*.attn.c_proj",),
+    role_groups={},
+    display_names={"lm_head": "W_U"},
+)
+
+# HuggingFace GPT2LMHeadModel (AutoModelForCausalLM resolving to GPT2)
 _HF_GPT2_CONFIG = ArchConfig(
     embedding_path="transformer.wte",
     unembed_path="lm_head",
-    # c_attn is a fused QKV projection — it carries K/V information
-    kv_roles=frozenset({"c_attn"}),
-    o_roles=frozenset({"c_proj"}),
-    qkv_group=(),  # c_attn is fused, no separate Q/K/V to group
-    display_names={"lm_head": "W_U"},
-)
-
-# GPT2Simple with the "noln" config uses c_proj for both attn output and MLP output.
-# Cross-seq detection filters by 'attn' in the path (see _resolve_cross_seq_paths).
-_CUSTOM_SPD_NOLN_CONFIG = ArchConfig(
-    embedding_path="wte",
-    unembed_path="lm_head",
-    kv_roles=frozenset({"k_proj", "v_proj"}),
-    o_roles=frozenset({"c_proj"}),
-    qkv_group=(),  # noln variant doesn't have q_proj, only k_proj/v_proj
+    kv_patterns=("transformer.h.*.attn.c_attn",),
+    o_patterns=("transformer.h.*.attn.c_proj",),
+    role_groups={},
     display_names={"lm_head": "W_U"},
 )
 
 
-def _get_arch_config(model: nn.Module, target_module_paths: list[str]) -> ArchConfig:
-    """Get the architecture config by matching the model class.
-
-    For models loaded via AutoModelForCausalLM, the resolved class
-    (e.g. GPT2LMHeadModel) is matched, not AutoModelForCausalLM itself.
-    """
+def _get_arch_config(model: nn.Module) -> ArchConfig:
+    """Get the architecture config by matching the model class."""
     from transformers.models.gpt2 import GPT2LMHeadModel
 
     from spd.pretrain.models import GPT2, GPT2Simple, LlamaSimple, LlamaSimpleMLP
 
     match model:
-        case LlamaSimple() | LlamaSimpleMLP():
-            return _CUSTOM_SPD_CONFIG
-        case GPT2Simple() | GPT2():
-            # Detect "noln" variant: uses c_proj in attn without separate q_proj
-            roles = {_extract_role(p) for p in target_module_paths}
-            if "c_proj" in roles and "q_proj" not in roles:
-                return _CUSTOM_SPD_NOLN_CONFIG
-            return _CUSTOM_SPD_CONFIG
+        case LlamaSimple():
+            return _LLAMA_SIMPLE_CONFIG
+        case LlamaSimpleMLP():
+            return _LLAMA_SIMPLE_MLP_CONFIG
+        case GPT2Simple():
+            return _GPT2_SIMPLE_CONFIG
+        case GPT2():
+            return _GPT2_CONFIG
         case GPT2LMHeadModel():
             return _HF_GPT2_CONFIG
         case _:
@@ -126,22 +145,12 @@ def _resolve_cross_seq_paths(
     target_module_paths: list[str],
     arch: ArchConfig,
 ) -> tuple[frozenset[str], frozenset[str]]:
-    """Resolve full module paths for cross-sequence attention roles.
-
-    For architectures where a role name like 'c_proj' appears in both attn and mlp
-    contexts, we only include paths that contain 'attn' in their path.
-    """
-    kv_paths: set[str] = set()
-    o_paths: set[str] = set()
-
-    for path in target_module_paths:
-        role = _extract_role(path)
-        if role in arch.kv_roles:
-            kv_paths.add(path)
-        elif role in arch.o_roles and "attn" in path:
-            o_paths.add(path)
-
-    return frozenset(kv_paths), frozenset(o_paths)
+    """Resolve full module paths for cross-sequence attention roles by matching against patterns."""
+    kv = frozenset(
+        p for p in target_module_paths if any(fnmatch(p, pat) for pat in arch.kv_patterns)
+    )
+    o = frozenset(p for p in target_module_paths if any(fnmatch(p, pat) for pat in arch.o_patterns))
+    return kv, o
 
 
 def _build_role_order(target_module_paths: list[str]) -> list[str]:
@@ -162,14 +171,14 @@ def _build_role_groups(
 ) -> dict[str, list[str]]:
     """Build role groups from the architecture config.
 
-    Only includes roles that are actually present in the target modules.
+    Only includes groups where at least 2 roles are present in the target modules.
     """
-    if not arch.qkv_group:
-        return {}
-    present = [r for r in arch.qkv_group if r in role_order]
-    if len(present) >= 2:
-        return {"qkv": present}
-    return {}
+    groups: dict[str, list[str]] = {}
+    for group_name, roles in arch.role_groups.items():
+        present = [r for r in roles if r in role_order]
+        if len(present) >= 2:
+            groups[group_name] = present
+    return groups
 
 
 @dataclass(frozen=True)
@@ -221,7 +230,7 @@ def build_model_adapter(model: ComponentModel) -> ModelAdapter:
     target_model = model.target_model
     target_paths = model.target_module_paths
 
-    arch = _get_arch_config(target_model, target_paths)
+    arch = _get_arch_config(target_model)
 
     # Resolve embedding
     embedding_module = target_model.get_submodule(arch.embedding_path)
