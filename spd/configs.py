@@ -514,7 +514,7 @@ def _coerce_ppgd_scope(config_dict: dict[str, Any]) -> None:
             scope["type"] = "repeat_across_batch"
             if "n_masks" in scope:
                 scope["n_sources"] = scope.pop("n_masks")
-        case "per_batch":
+        case "per_batch" | "unique_per_batch_per_token":
             scope["type"] = "per_batch_per_position"
         case _:
             pass
