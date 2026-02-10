@@ -17,7 +17,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from spd.settings import REPO_ROOT, SBATCH_SCRIPTS_DIR, SLURM_LOGS_DIR
+from spd.settings import REPO_ROOT, SBATCH_SCRIPTS_DIR, SLURM_EXCLUDE_NODES, SLURM_LOGS_DIR
 
 
 @dataclass
@@ -44,6 +44,7 @@ class SlurmConfig:
     cpus_per_task: int | None = None
     snapshot_branch: str | None = None
     dependency_job_id: str | None = None
+    exclude_nodes: str | None = SLURM_EXCLUDE_NODES
 
 
 @dataclass
@@ -260,6 +261,9 @@ def _sbatch_header(
 
     if is_array and array_range:
         lines.append(f"#SBATCH --array={array_range}")
+
+    if config.exclude_nodes:
+        lines.append(f"#SBATCH --exclude={config.exclude_nodes}")
 
     if config.dependency_job_id:
         lines.append(f"#SBATCH --dependency=afterok:{config.dependency_job_id}")

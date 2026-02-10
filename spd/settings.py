@@ -24,3 +24,6 @@ SBATCH_SCRIPTS_DIR = SPD_OUT_DIR / "sbatch_scripts"
 DEFAULT_PARTITION_NAME = "h200-reserved"
 
 DEFAULT_PROJECT_NAME = "spd"
+
+# Comma-separated list of SLURM nodes to exclude from job scheduling
+SLURM_EXCLUDE_NODES: str | None = os.environ.get("SLURM_EXCLUDE_NODES", "h200-reserved-145-015")
