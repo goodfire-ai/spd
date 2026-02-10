@@ -14,6 +14,20 @@ from spd.app.backend.utils import log_errors
 from spd.harvest import analysis
 from spd.harvest.loaders import load_component_activation_contexts
 from spd.log import logger
+from spd.topology import CanonicalWeight, TransformerTopology
+
+
+def _canonical_to_concrete_key(canonical_layer: str, component_idx: int, topology: TransformerTopology) -> str:
+    """Translate canonical layer address + component idx to concrete component key for harvest data."""
+    concrete = topology.get_target_module_path(CanonicalWeight.parse(canonical_layer))
+    return f"{concrete}:{component_idx}"
+
+
+def _concrete_to_canonical_key(concrete_key: str, topology: TransformerTopology) -> str:
+    """Translate concrete component key to canonical component key."""
+    layer, idx = concrete_key.rsplit(":", 1)
+    canonical = topology.get_canonical_weight(layer).canonical_str()
+    return f"{canonical}:{idx}"
 
 
 class CorrelatedComponent(BaseModel):
@@ -97,7 +111,7 @@ def get_all_interpretations(
     fuzzing_scores = loaded.harvest.fuzzing_scores
 
     return {
-        key: InterpretationHeadline(
+        _concrete_to_canonical_key(key, loaded.topology): InterpretationHeadline(
             label=result.label,
             confidence=result.confidence,
             detection_score=detection_scores.get(key) if detection_scores else None,
@@ -118,16 +132,16 @@ def get_interpretation_detail(
 
     Returns reasoning and prompt for the specified component.
     """
-    component_key = f"{layer}:{component_idx}"
+    concrete_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
     interpretations = loaded.harvest.interpretations
 
-    if component_key not in interpretations:
+    if concrete_key not in interpretations:
         raise HTTPException(
             status_code=404,
-            detail=f"No interpretation found for component {component_key}",
+            detail=f"No interpretation found for component {layer}:{component_idx}",
         )
 
-    result = interpretations[component_key]
+    result = interpretations[concrete_key]
     return InterpretationDetail(reasoning=result.reasoning, prompt=result.prompt)
 
 
@@ -156,7 +170,7 @@ async def request_component_interpretation(
     )
     from spd.autointerp.schemas import get_autointerp_dir
 
-    component_key = f"{layer}:{component_idx}"
+    component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
     interpretations = loaded.harvest.interpretations
 
@@ -276,7 +290,7 @@ def get_component_token_stats(
     Returns None if token stats haven't been harvested for this run.
     """
     token_stats = loaded.harvest.token_stats
-    component_key = f"{layer}:{component_idx}"
+    component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
     input_stats = analysis.get_input_token_stats(
         token_stats, component_key, loaded.tokenizer, top_k
@@ -445,7 +459,7 @@ def get_component_correlations(
     Returns None if correlations haven't been harvested for this run.
     """
     correlations = loaded.harvest.correlations
-    component_key = f"{layer}:{component_idx}"
+    component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
     if not analysis.has_component(correlations, component_key):
         raise HTTPException(

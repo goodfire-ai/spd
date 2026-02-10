@@ -328,6 +328,8 @@ class LlamaSimpleMLPPathSchema(PathSchema):
                 return self.unembed_path
             case LayerWeight() as lw:
                 return self._render_layer_weight(lw)
+            case _:
+                raise ValueError(f"Unknown canonical weight: {weight!r}")
 
 
 class GPT2SimplePathSchema(PathSchema):
@@ -352,6 +354,8 @@ class GPT2SimplePathSchema(PathSchema):
                 return self.unembed_path
             case LayerWeight() as lw:
                 return self._render_layer_weight(lw)
+            case _:
+                raise ValueError(f"Unknown canonical weight: {weight!r}")
 
 
 class GPT2PathSchema(PathSchema):
@@ -376,6 +380,8 @@ class GPT2PathSchema(PathSchema):
                 return self.unembed_path
             case LayerWeight() as lw:
                 return self._render_layer_weight(lw)
+            case _:
+                raise ValueError(f"Unknown canonical weight: {weight!r}")
 
 
 class HFGpt2PathSchema(PathSchema):
@@ -400,6 +406,8 @@ class HFGpt2PathSchema(PathSchema):
                 return self.unembed_path
             case LayerWeight() as lw:
                 return self._render_layer_weight(lw)
+            case _:
+                raise ValueError(f"Unknown canonical weight: {weight!r}")
 
 
 # ── Schema lookup ──────────────────────────────────────────────────────

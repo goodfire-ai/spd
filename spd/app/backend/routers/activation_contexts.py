@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
+from spd.topology import CanonicalWeight
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
 from spd.harvest.loaders import (
@@ -53,7 +54,8 @@ def get_activation_contexts_summary(
 
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
     for comp in summary_data.values():
-        summary[comp.layer].append(
+        canonical_layer = loaded.topology.get_canonical_weight(comp.layer).canonical_str()
+        summary[canonical_layer].append(
             SubcomponentMetadata(
                 subcomponent_idx=comp.component_idx,
                 mean_ci=comp.mean_ci,
@@ -84,7 +86,8 @@ def get_activation_context_detail(
     TODO: Add offset parameter for pagination to allow fetching remaining examples
           after initial view is loaded.
     """
-    component_key = f"{layer}:{component_idx}"
+    concrete_layer = loaded.topology.get_target_module_path(CanonicalWeight.parse(layer))
+    component_key = f"{concrete_layer}:{component_idx}"
     comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
 
     PADDING_SENTINEL = -1
@@ -154,10 +157,14 @@ def get_activation_contexts_bulk(
                 span_idx += 1
         return result
 
-    # Bulk load all components with single file handle
-    components = load_component_activation_contexts_bulk(
-        loaded.harvest.run_id, request.component_keys
-    )
+    # Translate canonical component keys to concrete paths for harvest lookup
+    def _to_concrete_key(canonical_key: str) -> str:
+        layer, idx = canonical_key.rsplit(":", 1)
+        concrete = loaded.topology.get_target_module_path(CanonicalWeight.parse(layer))
+        return f"{concrete}:{idx}"
+
+    concrete_keys = [_to_concrete_key(k) for k in request.component_keys]
+    components = load_component_activation_contexts_bulk(loaded.harvest.run_id, concrete_keys)
 
     # Convert to response format with limit applied
     result: dict[str, SubcomponentActivationContexts] = {}
@@ -198,13 +205,14 @@ def probe_component(
         sampling=loaded.config.sampling,
     )
 
-    assert request.layer in loaded.model.components, f"Layer {request.layer} not in model"
+    concrete_layer = loaded.topology.get_target_module_path(CanonicalWeight.parse(request.layer))
+    assert concrete_layer in loaded.model.components, f"Layer {request.layer} not in model"
 
-    ci_tensor = result.ci_lower_leaky[request.layer]
+    ci_tensor = result.ci_lower_leaky[concrete_layer]
     ci_values = ci_tensor[0, :, request.component_idx].tolist()
     spans = loaded.tokenizer.get_spans(token_ids)
 
-    subcomp_acts_tensor = result.component_acts[request.layer]
+    subcomp_acts_tensor = result.component_acts[concrete_layer]
     subcomp_acts = subcomp_acts_tensor[0, :, request.component_idx].tolist()
 
     # Get probability of next token at each position
