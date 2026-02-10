@@ -9,7 +9,7 @@ Usage:
 
 import fire
 
-from spd.scripts.postprocess_config import PostprocessConfig
+from spd.postprocess.config import PostprocessConfig
 
 
 def main(
@@ -26,7 +26,7 @@ def main(
         spd-postprocess wandb:goodfire/spd/runs/abc123
         spd-postprocess wandb:goodfire/spd/runs/abc123 --config my_config.yaml
     """
-    from spd.scripts.postprocess import postprocess
+    from spd.postprocess import postprocess
 
     cfg = PostprocessConfig.from_file(config) if config is not None else PostprocessConfig()
     postprocess(wandb_path=wandb_path, config=cfg)

@@ -165,6 +165,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 │   ├── clustering/                  # Component clustering (see clustering/CLAUDE.md)
 │   ├── dataset_attributions/        # Dataset attributions (see dataset_attributions/CLAUDE.md)
 │   ├── harvest/                     # Statistics collection (see harvest/CLAUDE.md)
+│   ├── postprocess/                 # Unified postprocessing pipeline (harvest + attributions + autointerp)
 │   ├── pretrain/                    # Target model pretraining (see pretrain/CLAUDE.md)
 │   ├── experiments/                 # Experiment implementations
 │   │   ├── tms/                     # Toy Model of Superposition
@@ -199,7 +200,7 @@ Each experiment (`spd/experiments/{tms,resid_mlp,lm}/`) contains:
 | `spd-harvest` | `spd/harvest/scripts/run_slurm_cli.py` | Submit harvest SLURM job |
 | `spd-autointerp` | `spd/autointerp/scripts/run_slurm_cli.py` | Submit autointerp SLURM job |
 | `spd-attributions` | `spd/dataset_attributions/scripts/run_slurm_cli.py` | Submit dataset attribution SLURM job |
-| `spd-postprocess` | `spd/scripts/postprocess_cli.py` | Unified postprocessing pipeline (harvest + attributions + interpret + evals) |
+| `spd-postprocess` | `spd/postprocess/cli.py` | Unified postprocessing pipeline (harvest + attributions + interpret + evals) |
 | `spd-clustering` | `spd/clustering/scripts/run_pipeline.py` | Clustering pipeline |
 | `spd-pretrain` | `spd/pretrain/scripts/run_slurm_cli.py` | Pretrain target models |
 
@@ -230,7 +231,7 @@ Use `spd/` as the search root (not repo root) to avoid noise.
 - `spd-harvest` → `spd/harvest/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → SLURM array → `spd/harvest/scripts/run.py` → `spd/harvest/harvest.py`
 
 **Autointerp Pipeline:**
-- `spd-autointerp` → `spd/autointerp/scripts/cli.py` → `spd/utils/slurm.py` → `spd/autointerp/interpret.py`
+- `spd-autointerp` → `spd/autointerp/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → `spd/autointerp/interpret.py`
 
 **Dataset Attributions Pipeline:**
 - `spd-attributions` → `spd/dataset_attributions/scripts/run_slurm_cli.py` → `spd/utils/slurm.py` → SLURM array → `spd/dataset_attributions/harvest.py`
@@ -293,7 +294,7 @@ spd-postprocess <wandb_path>                              # Run everything with 
 spd-postprocess <wandb_path> --config custom_config.yaml  # Use custom config
 ```
 
-Defaults are defined in `PostprocessConfig` (`spd/scripts/postprocess_config.py`). Pass a custom YAML/JSON config to override. Set any section to `null` to skip it:
+Defaults are defined in `PostprocessConfig` (`spd/postprocess/config.py`). Pass a custom YAML/JSON config to override. Set any section to `null` to skip it:
 - `attributions: null` — skip dataset attributions
 - `autointerp: null` — skip autointerp entirely (interpret + evals)
 - `autointerp.evals: null` — skip evals but still run interpret

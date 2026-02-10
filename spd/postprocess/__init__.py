@@ -16,7 +16,7 @@ Dependency graph:
 import secrets
 
 from spd.log import logger
-from spd.scripts.postprocess_config import PostprocessConfig
+from spd.postprocess.config import PostprocessConfig
 from spd.utils.git_utils import create_git_snapshot
 
 
