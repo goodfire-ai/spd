@@ -21,20 +21,16 @@ from torch import Tensor, nn
 
 from spd.models.component_model import ComponentModel
 
-AttentionRole = Literal["q", "k", "v", "qkv", "o"]
-FFNRole = Literal["up", "down", "gate"]
-AbstractRole = AttentionRole | FFNRole
-
-_ATTN_ROLES: set[AttentionRole] = {"q", "k", "v", "qkv", "o"}
-_KV_ROLES: set[AttentionRole] = {"k", "v", "qkv"}
-_O_ROLES: set[AttentionRole] = {"o"}
+# Construction-only role type — used to sort paths into struct fields during init.
+# Not exposed on LayerInfo or any public API.
+_Role = Literal["q", "k", "v", "qkv", "o", "up", "down", "gate"]
+_ATTN_ROLES: set[_Role] = {"q", "k", "v", "qkv", "o"}
 
 
 @dataclass(frozen=True)
 class LayerInfo:
     path: str
     module: nn.Module
-    role: AbstractRole
 
 
 # --- Attention variants ---
@@ -90,13 +86,13 @@ class BlockInfo:
 class ArchConfig:
     """Per-architecture topology declaration.
 
-    role_mapping maps glob patterns to abstract roles. Every target module path
-    must match exactly one pattern.
+    role_mapping maps glob patterns to roles used during construction to sort
+    paths into the correct struct fields. These roles are not exposed publicly.
     """
 
     embedding_path: str
     unembed_path: str
-    role_mapping: dict[str, AbstractRole]
+    role_mapping: dict[str, _Role]
     role_groups: dict[str, tuple[str, ...]]
     display_names: dict[str, str]
 
@@ -211,27 +207,77 @@ def _extract_block_index(path: str) -> int:
     return int(digits[0])
 
 
-def _resolve_role(path: str, role_mapping: dict[str, AbstractRole]) -> AbstractRole:
+def _resolve_role(path: str, role_mapping: dict[str, _Role]) -> _Role:
     """Match a concrete path against role_mapping patterns."""
-    matches: list[AbstractRole] = [
+    matches: list[_Role] = [
         role for pattern, role in role_mapping.items() if fnmatch(path, pattern)
     ]
     assert len(matches) == 1, f"Expected exactly 1 role match for {path}, got {matches}"
     return matches[0]
 
 
-# --- Role descriptions for autointerp prompts ---
+# --- Descriptions derived from struct position ---
 
-_ROLE_DESCRIPTIONS: dict[AbstractRole, str] = {
-    "q": "attention Q projection",
-    "k": "attention K projection",
-    "v": "attention V projection",
-    "qkv": "attention QKV projection (fused)",
-    "o": "attention output projection",
-    "up": "MLP up-projection",
-    "down": "MLP down-projection",
-    "gate": "MLP gate projection",
-}
+
+def _describe_attn_layer(attn: AttentionInfo, layer: LayerInfo) -> str:
+    match attn:
+        case SeparateAttention(q, k, v, o):
+            if layer is q:
+                return "attention Q projection"
+            if layer is k:
+                return "attention K projection"
+            if layer is v:
+                return "attention V projection"
+            assert layer is o
+            return "attention output projection"
+        case FusedAttention(qkv, o):
+            if layer is qkv:
+                return "attention QKV projection (fused)"
+            assert layer is o
+            return "attention output projection"
+
+
+def _describe_ffn_layer(ffn: FFNInfo, layer: LayerInfo) -> str:
+    match ffn:
+        case StandardFFN(up, down):
+            if layer is up:
+                return "MLP up-projection"
+            assert layer is down
+            return "MLP down-projection"
+        case SwiGLUFFN(gate, up, down):
+            if layer is gate:
+                return "SwiGLU gate projection"
+            if layer is up:
+                return "SwiGLU up-projection"
+            assert layer is down
+            return "SwiGLU down-projection"
+
+
+def _get_kv_paths(blocks: list[BlockInfo]) -> frozenset[str]:
+    paths: set[str] = set()
+    for block in blocks:
+        match block.attn:
+            case SeparateAttention(_, k, v, _):
+                paths.add(k.path)
+                paths.add(v.path)
+            case FusedAttention(qkv, _):
+                paths.add(qkv.path)
+            case None:
+                pass
+    return frozenset(paths)
+
+
+def _get_o_paths(blocks: list[BlockInfo]) -> frozenset[str]:
+    paths: set[str] = set()
+    for block in blocks:
+        match block.attn:
+            case SeparateAttention(_, _, _, o):
+                paths.add(o.path)
+            case FusedAttention(_, o):
+                paths.add(o.path)
+            case None:
+                pass
+    return frozenset(paths)
 
 
 class TransformerTopology:
@@ -252,29 +298,24 @@ class TransformerTopology:
             f"Expected nn.Embedding at '{arch.embedding_path}', "
             f"got {type(embedding_module).__name__}"
         )
-        self.embedding = LayerInfo(arch.embedding_path, embedding_module, "up")
+        self.embedding = LayerInfo(arch.embedding_path, embedding_module)
 
         # Resolve unembed
         unembed_module = target_model.get_submodule(arch.unembed_path)
         assert isinstance(unembed_module, nn.Linear), (
             f"Expected nn.Linear at '{arch.unembed_path}', got {type(unembed_module).__name__}"
         )
-        self.unembed = LayerInfo(arch.unembed_path, unembed_module, "down")
+        self.unembed = LayerInfo(arch.unembed_path, unembed_module)
 
-        # Group target paths by block index and assign roles
-        block_layers: dict[int, dict[AbstractRole, LayerInfo]] = {}
-        self._path_to_role: dict[str, AbstractRole] = {}
+        # Group target paths by block index, assign roles, build LayerInfos
+        block_layers: dict[int, dict[_Role, LayerInfo]] = {}
         self._path_to_block_idx: dict[str, int] = {}
 
         for path in target_paths:
             block_idx = _extract_block_index(path)
             role = _resolve_role(path, arch.role_mapping)
-
-            module = target_model.get_submodule(path)
-            layer_info = LayerInfo(path, module, role)
-
+            layer_info = LayerInfo(path, target_model.get_submodule(path))
             block_layers.setdefault(block_idx, {})[role] = layer_info
-            self._path_to_role[path] = role
             self._path_to_block_idx[path] = block_idx
 
         # Build blocks in order
@@ -288,9 +329,15 @@ class TransformerTopology:
         # Preserve original target path ordering from ComponentModel
         self._model_target_paths = target_paths
 
-        # Derive kv/o path sets for cross-seq queries
-        self.kv_paths = frozenset(p for p, r in self._path_to_role.items() if r in _KV_ROLES)
-        self.o_paths = frozenset(p for p, r in self._path_to_role.items() if r in _O_ROLES)
+        # Derive kv/o path sets from block structs
+        self.kv_paths = _get_kv_paths(self.blocks)
+        self.o_paths = _get_o_paths(self.blocks)
+
+        # Build path -> (block, layer_info) lookup for describe()
+        self._path_to_layer: dict[str, tuple[BlockInfo, LayerInfo]] = {}
+        for block in self.blocks:
+            for layer in _block_layers(block):
+                self._path_to_layer[layer.path] = (block, layer)
 
         # Role order: deduplicated concrete role names in execution order (for frontend layout)
         seen: set[str] = set()
@@ -340,22 +387,20 @@ class TransformerTopology:
     def block_index(self, path: str) -> int:
         return self._path_to_block_idx[path]
 
-    def role(self, path: str) -> AbstractRole:
-        return self._path_to_role[path]
-
     def describe(self, path: str) -> str:
-        role = self.role(path)
-        block_idx = self.block_index(path)
-        desc = _ROLE_DESCRIPTIONS[role]
-        return f"{desc} in layer {block_idx + 1} of {self.n_blocks}"
+        """Human-readable description for autointerp prompts."""
+        block, layer = self._path_to_layer[path]
+        if block.attn is not None and _layer_in_attn(block.attn, layer):
+            desc = _describe_attn_layer(block.attn, layer)
+        else:
+            desc = _describe_ffn_layer(block.ffn, layer)
+        return f"{desc} in layer {block.index + 1} of {self.n_blocks}"
 
     def is_cross_seq_pair(self, source: str, target: str) -> bool:
         """True if source is k/v and target is o in the same block."""
-        src_role = self._path_to_role.get(source)
-        tgt_role = self._path_to_role.get(target)
-        if src_role is None or tgt_role is None:
+        if source not in self._path_to_block_idx or target not in self._path_to_block_idx:
             return False
-        if src_role not in _KV_ROLES or tgt_role not in _O_ROLES:
+        if source not in self.kv_paths or target not in self.o_paths:
             return False
         return self._path_to_block_idx[source] == self._path_to_block_idx[target]
 
@@ -376,7 +421,32 @@ class TransformerTopology:
         return self._arch.display_names
 
 
-def _build_attention(roles: dict[AbstractRole, LayerInfo]) -> AttentionInfo | None:
+def _layer_in_attn(attn: AttentionInfo, layer: LayerInfo) -> bool:
+    match attn:
+        case SeparateAttention(q, k, v, o):
+            return layer is q or layer is k or layer is v or layer is o
+        case FusedAttention(qkv, o):
+            return layer is qkv or layer is o
+
+
+def _block_layers(block: BlockInfo) -> list[LayerInfo]:
+    """All LayerInfos in a block, for building lookups."""
+    layers: list[LayerInfo] = []
+    if block.attn is not None:
+        match block.attn:
+            case SeparateAttention(q, k, v, o):
+                layers.extend([q, k, v, o])
+            case FusedAttention(qkv, o):
+                layers.extend([qkv, o])
+    match block.ffn:
+        case StandardFFN(up, down):
+            layers.extend([up, down])
+        case SwiGLUFFN(gate, up, down):
+            layers.extend([gate, up, down])
+    return layers
+
+
+def _build_attention(roles: dict[_Role, LayerInfo]) -> AttentionInfo | None:
     """Build attention info from collected roles. Returns None if no attention roles present."""
     attn_roles = {r: info for r, info in roles.items() if r in _ATTN_ROLES}
     if not attn_roles:
@@ -396,7 +466,7 @@ def _build_attention(roles: dict[AbstractRole, LayerInfo]) -> AttentionInfo | No
     )
 
 
-def _build_ffn(roles: dict[AbstractRole, LayerInfo]) -> FFNInfo:
+def _build_ffn(roles: dict[_Role, LayerInfo]) -> FFNInfo:
     """Build FFN info from collected roles."""
     ffn_roles = {r: info for r, info in roles.items() if r not in _ATTN_ROLES}
     assert "up" in ffn_roles and "down" in ffn_roles, (
