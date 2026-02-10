@@ -1,67 +1,189 @@
-# --- WandB ---
 wandb_project: spd
 wandb_run_name: null
-wandb_run_name_prefix: ""
-
-# --- General ---
+wandb_run_name_prefix: ''
 seed: 0
 n_mask_samples: 1
 ci_config:
-  mode: layerwise
-  fn_type: vector_mlp
-  hidden_dims: [12]
-sigmoid_type: "leaky_hard"
+  mode: global
+  fn_type: global_reverse_residual
+  transition_hidden_dim: 3072
+  d_resid_ci_fn: 3072
+  reader_hidden_dims: [3072]
+  block_groups:
+  # - name: layer_11_attn
+  #   patterns:
+  #   - transformer.h.11.attn.*
+  # - name: layer_11_mlp
+  #   patterns:
+  #   - transformer.h.11.mlp.*
+  # - name: layer_10_attn
+  #   patterns:
+  #   - transformer.h.10.attn.*
+  # - name: layer_10_mlp
+  #   patterns:
+  #   - transformer.h.10.mlp.*
+  # - name: layer_9_attn
+  #   patterns:
+  #   - transformer.h.9.attn.*
+  # - name: layer_9_mlp
+  #   patterns:
+  #   - transformer.h.9.mlp.*
+  # - name: layer_8_attn
+  #   patterns:
+  #   - transformer.h.8.attn.*
+  # - name: layer_8_mlp
+  #   patterns:
+  #   - transformer.h.8.mlp.*
+  # - name: layer_7_attn
+  #   patterns:
+  #   - transformer.h.7.attn.*
+  # - name: layer_7_mlp
+  #   patterns:
+  #   - transformer.h.7.mlp.*
+  # - name: layer_6_attn
+  #   patterns:
+  #   - transformer.h.6.attn.*
+  # - name: layer_6_mlp
+  #   patterns:
+  #   - transformer.h.6.mlp.*
+  # - name: layer_5_attn
+  #   patterns:
+  #   - transformer.h.5.attn.*
+  # - name: layer_5_mlp
+  #   patterns:
+  #   - transformer.h.5.mlp.*
+  # - name: layer_4_attn
+  #   patterns:
+  #   - transformer.h.4.attn.*
+  # - name: layer_4_mlp
+  #   patterns:
+  #   - transformer.h.4.mlp.*
+  # - name: layer_3_mlp
+  #   patterns:
+  #   - transformer.h.3.mlp.*
+  # - name: layer_3_attn
+  #   patterns:
+  #   - transformer.h.3.attn.*
+  # - name: layer_2_mlp
+  #   patterns:
+  #   - transformer.h.2.mlp.*
+  # - name: layer_2_attn
+  #   patterns:
+  #   - transformer.h.2.attn.*
+  - name: layer_10
+    patterns:
+    - transformer.h.10.mlp.*
+    - transformer.h.10.attn.*
+  # - name: layer_1_attn
+  #   patterns:
+  #   - transformer.h.1.attn.*
+  # - name: layer_0_mlp
+  #   patterns:
+  #   - transformer.h.0.mlp.*
+  # - name: layer_0_attn
+  #   patterns:
+  #   - transformer.h.0.attn.*
+  transition_attn_config:
+    n_heads: 24
+    max_len: 1024
+    rope_base: 10000.0
+sampling: continuous
+sigmoid_type: leaky_hard
 module_info:
-  - module_pattern: "transformer.h.1.attn.c_attn"
-    C: 768
+- module_pattern: transformer.h.10.mlp.c_fc
+  C: 6144
+- module_pattern: transformer.h.10.mlp.c_proj
+  C: 3072
+- module_pattern: transformer.h.10.attn.c_attn
+  C: 2048
+- module_pattern: transformer.h.10.attn.c_proj
+  C: 2048
 identity_module_info: null
-sampling: "continuous"
 use_delta_component: true
 loss_metric_configs:
-  - classname: "ImportanceMinimalityLoss"
-    coeff: 0.0003
-    pnorm: 2.0
-    beta: 0
-    p_anneal_start_frac: 0.0
-    p_anneal_final_p: 0.3
-    p_anneal_end_frac: 1.0
-  - classname: "StochasticReconLayerwiseLoss"
-    coeff: 2.0
+- coeff: 2e-4
+  classname: ImportanceMinimalityLoss
+  pnorm: 2.0
+  beta: 0.1
+  p_anneal_start_frac: 0.0
+  p_anneal_final_p: 0.4
+  p_anneal_end_frac: 1.0
+  eps: 1.0e-12
+- coeff: 0.5
+  classname: StochasticReconSubsetLoss
+  routing:
+    type: uniform_k_subset
+- coeff: 0.5
+  classname: PersistentPGDReconSubsetLoss
+  optimizer:
+    type: adam
+    lr: 0.01
+    beta1: 0.8
+    beta2: 0.99
+    eps: 1.0e-08
+  scope: unique_per_batch_per_token
+  routing:
+    type: uniform_k_subset
+# - coeff: 0.5
+#   classname: PersistentPGDReconLoss
+#   optimizer:
+#     type: adam
+#     lr: 0.01
+#     beta1: 0.8
+#     beta2: 0.99
+#     eps: 1.0e-08
+#   scope: unique_per_batch_per_token
+- coeff: 10000.0
+  classname: FaithfulnessLoss
 output_loss_type: kl
-
-# --- Training ---
-batch_size: 2
-steps: 50_000
 lr_schedule:
-  start_val: 3e-4
-  fn_type: cosine
-  warmup_pct: 0.01
+  start_val: 3e-5
+  warmup_pct: 0.0
   final_val_frac: 0.1
+  fn_type: cosine
+steps: 200000
+batch_size: 32
 gradient_accumulation_steps: 1
-
-# --- Faithfulness Warmup ---
-faithfulness_warmup_steps: 200
-faithfulness_warmup_lr: 0.01
-faithfulness_warmup_weight_decay: 0.1
-
-# --- Logging & Saving ---
-train_log_freq: 100
+grad_clip_norm_components: 0.01
+grad_clip_norm_ci_fns: null
+faithfulness_warmup_steps: 400
+faithfulness_warmup_lr: 0.001
+faithfulness_warmup_weight_decay: 0.0
+train_log_freq: 200
 eval_freq: 1000
-slow_eval_freq: 5000
+eval_batch_size: 128
+slow_eval_freq: 10000
+n_eval_steps: 1
 slow_eval_on_first_step: true
-n_eval_steps: 5
 save_freq: null
-ci_alive_threshold: 0.0
 eval_metric_configs:
-  - classname: "CIHistograms"
-    n_batches_accum: 5
-  - classname: "ComponentActivationDensity"
-  - classname: "CI_L0"
-    groups: null
-  - classname: "CEandKLLosses"
-    rounding_threshold: 0.0
-  - classname: "CIMeanPerComponent"
-  - classname: "StochasticHiddenActsReconLoss"
+- classname: CIHistograms
+  n_batches_accum: 1
+- classname: ComponentActivationDensity
+- classname: CI_L0
+  groups:
+    layer_0:
+    - h.0.*
+    layer_1:
+    - h.1.*
+    layer_2:
+    - h.2.*
+    layer_3:
+    - h.3.*
+    total:
+    - '*'
+- classname: CEandKLLosses
+  rounding_threshold: 0.0
+- classname: CIMeanPerComponent
+- coeff: null
+  classname: StochasticHiddenActsReconLoss
+- coeff: null
+  init: random
+  step_size: 0.1
+  n_steps: 20
+  mask_scope: shared_across_batch
+  classname: PGDReconLoss
+ci_alive_threshold: 0.0
 
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel
