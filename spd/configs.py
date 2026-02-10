@@ -533,6 +533,11 @@ class PersistentPGDReconLossConfig(LossMetricConfig):
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
+    reinit_prob: Probability = Field(
+        default=0.0,
+        description="Per-entry probability of reinitializing a source value each step. "
+        "0.0 disables reinitialization.",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -553,6 +558,11 @@ class PersistentPGDReconSubsetLossConfig(LossMetricConfig):
     optimizer: Annotated[PGDOptimizerConfig, Field(discriminator="type")]
     scope: PersistentPGDSourceScope
     use_sigmoid_parameterization: bool = False
+    reinit_prob: Probability = Field(
+        default=0.0,
+        description="Per-entry probability of reinitializing a source value each step. "
+        "0.0 disables reinitialization.",
+    )
     routing: Annotated[
         SubsetRoutingType, Field(discriminator="type", default=UniformKSubsetRoutingConfig())
     ]
