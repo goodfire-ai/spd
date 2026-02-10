@@ -18,6 +18,7 @@ import secrets
 from spd.log import logger
 from spd.postprocess.config import PostprocessConfig
 from spd.utils.git_utils import create_git_snapshot
+from spd.utils.wandb_utils import parse_wandb_run_path
 
 
 def postprocess(wandb_path: str, config: PostprocessConfig) -> None:
@@ -25,6 +26,8 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> None:
     from spd.autointerp.scripts.run_slurm import submit_autointerp
     from spd.dataset_attributions.scripts.run_slurm import submit_attributions
     from spd.harvest.scripts.run_slurm import submit_harvest
+
+    parse_wandb_run_path(wandb_path)
 
     snapshot_branch, commit_hash = create_git_snapshot(f"postprocess-{secrets.token_hex(4)}")
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
