@@ -178,6 +178,7 @@ def harvest_attributions(
     logger.info(f"Found {len(sources_by_target)} target layers with gradient connections")
 
     # Create harvester
+    assert adapter.unembed_module is not None, "Model must have unembed module for attributions"
     harvester = AttributionHarvester(
         model=model,
         sources_by_target=sources_by_target,
@@ -186,6 +187,8 @@ def harvest_attributions(
         source_alive=source_alive,
         target_alive=target_alive,
         sampling=spd_config.sampling,
+        embedding_module=adapter.embedding_module,
+        unembed_module=adapter.unembed_module,
         device=device,
         show_progress=True,
     )
