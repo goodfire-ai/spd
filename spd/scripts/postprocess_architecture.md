@@ -4,14 +4,14 @@
 
 ```mermaid
 graph TD
-    subgraph "CLI Entry Points (defaults live here)"
+    subgraph "CLI Entry Points"
         PP_CLI["spd-postprocess<br/><code>postprocess_cli.py</code>"]
         H_CLI["spd-harvest<br/><code>harvest/.../run_slurm_cli.py</code>"]
         A_CLI["spd-attributions<br/><code>dataset_attributions/.../run_slurm_cli.py</code>"]
         AI_CLI["spd-autointerp<br/><code>autointerp/.../run_slurm_cli.py</code>"]
     end
 
-    subgraph "Config (defaults live here too)"
+    subgraph "Config (defaults live here)"
         PC["PostprocessConfig"]
         HSC["HarvestSlurmConfig"]
         ASC["AttributionsSlurmConfig"]
@@ -31,10 +31,10 @@ graph TD
         PP["postprocess()"]
     end
 
-    subgraph "SLURM Launchers (no defaults)"
-        H_SLURM["harvest()"]
+    subgraph "SLURM Launchers"
+        H_SLURM["submit_harvest()"]
         A_SLURM["submit_attributions()"]
-        AI_SLURM["launch_autointerp_pipeline()"]
+        AI_SLURM["submit_autointerp()"]
     end
 
     subgraph "SLURM Workers"
@@ -52,19 +52,19 @@ graph TD
     end
 
     PP_CLI -- "PostprocessConfig" --> PP
-    PP --> H_SLURM & A_SLURM & AI_SLURM
+    PP -- "SlurmConfig" --> H_SLURM & A_SLURM & AI_SLURM
 
-    H_CLI -- "constructs HarvestConfig" --> H_SLURM
-    A_CLI -- "constructs DatasetAttributionConfig" --> A_SLURM
-    AI_CLI -- "constructs CompactSkepticalConfig" --> AI_SLURM
+    H_CLI -- "HarvestSlurmConfig" --> H_SLURM
+    A_CLI -- "AttributionsSlurmConfig" --> A_SLURM
+    AI_CLI -- "AutointerpSlurmConfig" --> AI_SLURM
 
     H_SLURM -- "serializes config_json" --> H_RUN
     A_SLURM -- "serializes config_json" --> A_RUN
     AI_SLURM -- "serializes config_json" --> AI_RUN
 
-    H_RUN -- "deserializes HarvestConfig" --> H_CORE & H_MERGE
-    A_RUN -- "deserializes DatasetAttributionConfig" --> A_CORE & A_MERGE
-    AI_RUN -- "deserializes CompactSkepticalConfig" --> AI_CORE
+    H_RUN -- "HarvestConfig" --> H_CORE & H_MERGE
+    A_RUN -- "DatasetAttributionConfig" --> A_CORE & A_MERGE
+    AI_RUN -- "CompactSkepticalConfig" --> AI_CORE
 ```
 
 ## SLURM Dependency Graph
@@ -94,25 +94,36 @@ graph LR
     HM --> INT
 ```
 
-## Config Ownership
+## Config File Locations
 
 ```mermaid
 graph LR
-    subgraph "Tuning Params (owned by config classes)"
-        HC2["HarvestConfig<br/>n_batches, batch_size,<br/>ci_threshold, ..."]
-        DAC2["DatasetAttributionConfig<br/>n_batches, batch_size,<br/>ci_threshold"]
-        CSC2["CompactSkepticalConfig<br/>model, reasoning_effort,<br/>max_examples, ..."]
-        AEC2["AutointerpEvalConfig<br/>eval_model, partition, time"]
+    subgraph "spd/harvest/config.py"
+        HC2["HarvestConfig"]
+        HSC2["HarvestSlurmConfig"]
     end
 
-    subgraph "SLURM Params (owned by SlurmConfigs / CLIs)"
-        S1["n_gpus, partition, time"]
+    subgraph "spd/dataset_attributions/config.py"
+        DAC2["DatasetAttributionConfig"]
+        ASC2["AttributionsSlurmConfig"]
     end
 
-    subgraph "Runtime Args (not in any config)"
+    subgraph "spd/autointerp/config.py"
+        CSC2["CompactSkepticalConfig"]
+        AEC2["AutointerpEvalConfig"]
+        AISC2["AutointerpSlurmConfig"]
+    end
+
+    subgraph "spd/scripts/postprocess_config.py"
+        PC2["PostprocessConfig"]
+    end
+
+    PC2 --> HSC2 & ASC2 & AISC2
+
+    subgraph "Runtime args (not in any config)"
         R1["wandb_path"]
         R2["rank, world_size, merge"]
-        R3["limit, cost_limit_usd"]
-        R4["snapshot_branch, job_suffix"]
+        R3["snapshot_branch, job_suffix"]
+        R4["dependency_job_id"]
     end
 ```

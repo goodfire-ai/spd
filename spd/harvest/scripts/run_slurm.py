@@ -10,12 +10,8 @@ Usage:
 
 import secrets
 
-from pydantic import PositiveInt
-
-from spd.base_config import BaseConfig
-from spd.harvest.harvest import HarvestConfig
+from spd.harvest.config import HarvestSlurmConfig
 from spd.log import logger
-from spd.settings import DEFAULT_PARTITION_NAME
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.slurm import (
     SlurmArrayConfig,
@@ -25,15 +21,6 @@ from spd.utils.slurm import (
     generate_script,
     submit_slurm_job,
 )
-
-
-class HarvestSlurmConfig(BaseConfig):
-    """Config for harvest SLURM submission."""
-
-    config: HarvestConfig = HarvestConfig()
-    n_gpus: PositiveInt = 4
-    partition: str = DEFAULT_PARTITION_NAME
-    time: str = "24:00:00"
 
 
 def submit_harvest(

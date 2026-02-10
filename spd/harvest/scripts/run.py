@@ -17,8 +17,8 @@ Usage (SLURM submission):
     spd-harvest <wandb_path> --n_batches 1000 --n_gpus 8
 """
 
+from spd.harvest.config import HarvestConfig
 from spd.harvest.harvest import (
-    HarvestConfig,
     harvest_activation_contexts,
     merge_activation_contexts,
 )

@@ -4,8 +4,6 @@ from dataclasses import asdict
 from pathlib import Path
 
 from openrouter import OpenRouter
-from transformers import AutoTokenizer
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_model_n_blocks
@@ -137,9 +135,7 @@ async def interpret_all(
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE, period_seconds=60.0)
 
-    hf_tok = AutoTokenizer.from_pretrained(arch.tokenizer_name)
-    assert isinstance(hf_tok, PreTrainedTokenizerBase)
-    app_tok = AppTokenizer(hf_tok)
+    app_tok = AppTokenizer.from_pretrained(arch.tokenizer_name)
 
     reasoning = get_reasoning(config)
 

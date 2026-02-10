@@ -4,10 +4,10 @@ PostprocessConfig composes sub-configs for harvest, attributions, and autointerp
 Set any section to null to skip that pipeline stage.
 """
 
-from spd.autointerp.scripts.run_slurm import AutointerpSlurmConfig
+from spd.autointerp.config import AutointerpSlurmConfig
 from spd.base_config import BaseConfig
-from spd.dataset_attributions.scripts.run_slurm import AttributionsSlurmConfig
-from spd.harvest.scripts.run_slurm import HarvestSlurmConfig
+from spd.dataset_attributions.config import AttributionsSlurmConfig
+from spd.harvest.config import HarvestSlurmConfig
 
 
 class PostprocessConfig(BaseConfig):

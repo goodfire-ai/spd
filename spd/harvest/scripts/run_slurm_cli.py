@@ -22,7 +22,8 @@ def harvest(
         config: Path to HarvestSlurmConfig YAML/JSON. Uses built-in defaults if omitted.
         job_suffix: Optional suffix for SLURM job names (e.g., "v2" -> "spd-harvest-v2").
     """
-    from spd.harvest.scripts.run_slurm import HarvestSlurmConfig, submit_harvest
+    from spd.harvest.config import HarvestSlurmConfig
+    from spd.harvest.scripts.run_slurm import submit_harvest
 
     slurm_config = (
         HarvestSlurmConfig.from_file(config) if config is not None else HarvestSlurmConfig()

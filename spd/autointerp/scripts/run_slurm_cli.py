@@ -20,7 +20,8 @@ def main(
         wandb_path: WandB run path for the target decomposition run.
         config: Path to AutointerpSlurmConfig YAML/JSON. Uses built-in defaults if omitted.
     """
-    from spd.autointerp.scripts.run_slurm import AutointerpSlurmConfig, submit_autointerp
+    from spd.autointerp.config import AutointerpSlurmConfig
+    from spd.autointerp.scripts.run_slurm import submit_autointerp
 
     slurm_config = (
         AutointerpSlurmConfig.from_file(config) if config is not None else AutointerpSlurmConfig()

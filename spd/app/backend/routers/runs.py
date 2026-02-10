@@ -7,8 +7,6 @@ import torch
 import yaml
 from fastapi import APIRouter
 from pydantic import BaseModel
-from transformers import AutoTokenizer
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
@@ -117,8 +115,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
     spd_config = run_info.config
     assert spd_config.tokenizer_name is not None
     logger.info(f"[API] Loading tokenizer for run {run.id}: {spd_config.tokenizer_name}")
-    loaded_tokenizer = AutoTokenizer.from_pretrained(spd_config.tokenizer_name)
-    assert isinstance(loaded_tokenizer, PreTrainedTokenizerFast)
+    app_tokenizer = AppTokenizer.from_pretrained(spd_config.tokenizer_name)
 
     # Build model adapter and sources_by_target mapping
     logger.info(f"[API] Building model adapter for run {run.id}")
@@ -131,7 +128,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         run=run,
         model=model,
         adapter=adapter,
-        tokenizer=AppTokenizer(loaded_tokenizer),
+        tokenizer=app_tokenizer,
         sources_by_target=sources_by_target,
         config=spd_config,
         context_length=context_length,

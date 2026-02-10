@@ -4,8 +4,8 @@ import math
 
 import torch
 
-from spd.harvest.lib.reservoir_sampler import ReservoirSampler, ReservoirState
-from spd.harvest.lib.sampling import compute_pmi, sample_at_most_n_per_group, top_k_pmi
+from spd.harvest.reservoir_sampler import ReservoirSampler, ReservoirState
+from spd.harvest.sampling import compute_pmi, sample_at_most_n_per_group, top_k_pmi
 
 
 class TestSampleAtMostNPerGroup:

@@ -78,15 +78,17 @@ Internal script called by SLURM jobs. Accepts config via `--config_path` (file) 
 - `--rank R --world_size N`: Process subset of batches
 - `--merge`: Combine per-rank results into final files
 
-### Harvest Logic (`harvest.py`)
+### Config (`config.py`)
 
-`HarvestConfig` (Pydantic `BaseConfig`) owns defaults for tuning params (batch_size, ci_threshold, etc.). `wandb_path` is a runtime arg passed separately.
+`HarvestConfig` (tuning params) and `HarvestSlurmConfig` (HarvestConfig + SLURM params). `wandb_path` is a runtime arg, not part of config.
+
+### Harvest Logic (`harvest.py`)
 
 Main harvesting functions:
 - `harvest_activation_contexts(wandb_path, config, ...)`: Process batches for a single rank
 - `merge_activation_contexts(wandb_path)`: Combine results from all ranks
 
-### Harvester (`lib/harvester.py`)
+### Harvester (`harvester.py`)
 
 Core class that accumulates statistics in a single pass:
 - **Correlations**: Co-occurrence counts between components (for precision/recall/PMI)
@@ -98,7 +100,7 @@ Key optimizations:
 - Subsampling: Caps firings per batch at 10k (plenty for k=20 examples per component)
 - All accumulation on GPU, only moves to CPU for final `build_results()`
 
-### Reservoir Sampler (`lib/reservoir_sampler.py`)
+### Reservoir Sampler (`reservoir_sampler.py`)
 
 Implements reservoir sampling for uniform random sampling from a stream. Maintains a fixed-size buffer of examples that represents a uniform sample over all items seen.
 

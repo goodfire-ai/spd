@@ -1,0 +1,27 @@
+"""Dataset attribution configuration.
+
+DatasetAttributionConfig: tuning params for the attribution pipeline.
+AttributionsSlurmConfig: DatasetAttributionConfig + SLURM submission params.
+"""
+
+from typing import Literal
+
+from pydantic import PositiveInt
+
+from spd.base_config import BaseConfig
+from spd.settings import DEFAULT_PARTITION_NAME
+
+
+class DatasetAttributionConfig(BaseConfig):
+    n_batches: int | Literal["whole_dataset"] = "whole_dataset"
+    batch_size: int = 256
+    ci_threshold: float = 0.0
+
+
+class AttributionsSlurmConfig(BaseConfig):
+    """Config for dataset attributions SLURM submission."""
+
+    config: DatasetAttributionConfig = DatasetAttributionConfig()
+    n_gpus: PositiveInt = 4
+    partition: str = DEFAULT_PARTITION_NAME
+    time: str = "48:00:00"

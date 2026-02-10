@@ -16,16 +16,15 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Literal
 
 import torch
 import tqdm
 from jaxtyping import Float
 from torch import Tensor
 
-from spd.base_config import BaseConfig
 from spd.data import train_loader_and_tokenizer
-from spd.harvest.lib.harvester import Harvester, HarvesterState
+from spd.harvest.config import HarvestConfig
+from spd.harvest.harvester import Harvester, HarvesterState
 from spd.harvest.schemas import (
     ComponentData,
     ComponentSummary,
@@ -62,15 +61,6 @@ def _normalize_component_acts(
         norms = u_norms[layer_name].to(acts.device)
         normalized[layer_name] = acts * norms
     return normalized
-
-
-class HarvestConfig(BaseConfig):
-    n_batches: int | Literal["whole_dataset"] = "whole_dataset"
-    batch_size: int = 256
-    ci_threshold: float = 1e-6
-    activation_examples_per_component: int = 1000
-    activation_context_tokens_per_side: int = 10
-    pmi_token_top_k: int = 40
 
 
 @dataclass

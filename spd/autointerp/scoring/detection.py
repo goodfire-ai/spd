@@ -16,8 +16,6 @@ from pathlib import Path
 from typing import Any
 
 from openrouter import OpenRouter
-from transformers import AutoTokenizer
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
@@ -257,9 +255,7 @@ async def run_detection_scoring(
     limit: int | None = None,
     cost_limit_usd: float | None = None,
 ) -> list[DetectionResult]:
-    hf_tok = AutoTokenizer.from_pretrained(tokenizer_name)
-    assert isinstance(hf_tok, PreTrainedTokenizerBase)
-    app_tok = AppTokenizer(hf_tok)
+    app_tok = AppTokenizer.from_pretrained(tokenizer_name)
 
     eligible = [
         c

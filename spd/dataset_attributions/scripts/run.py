@@ -15,8 +15,8 @@ Usage:
     python -m spd.dataset_attributions.scripts.run <path> --merge
 """
 
+from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvest import (
-    DatasetAttributionConfig,
     harvest_attributions,
     merge_attributions,
 )

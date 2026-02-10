@@ -22,8 +22,8 @@ from torch import Tensor
 
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.model_adapter import build_model_adapter
-from spd.base_config import BaseConfig
 from spd.data import train_loader_and_tokenizer
+from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvester import AttributionHarvester
 from spd.dataset_attributions.loaders import get_attributions_dir
 from spd.dataset_attributions.storage import DatasetAttributionStorage
@@ -33,12 +33,6 @@ from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
-
-
-class DatasetAttributionConfig(BaseConfig):
-    n_batches: int | None = None
-    batch_size: int = 256
-    ci_threshold: float = 0.0
 
 
 def _build_component_layer_keys(model: ComponentModel) -> list[str]:
@@ -198,7 +192,11 @@ def harvest_attributions(
 
     # Process batches
     train_iter = iter(train_loader)
-    batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
+    match config.n_batches:
+        case int(n_batches):
+            batch_range = range(n_batches)
+        case "whole_dataset":
+            batch_range = itertools.count()
     for batch_idx in tqdm.tqdm(batch_range, desc="Attribution batches"):
         try:
             batch_data = next(train_iter)

@@ -71,9 +71,11 @@ Internal script called by SLURM jobs. Accepts config via `--config_path` (file) 
 - `--rank R --world_size N`: Process subset of batches
 - `--merge`: Combine per-rank results into final file
 
-### Harvest Logic (`harvest.py`)
+### Config (`config.py`)
 
-`DatasetAttributionConfig` (Pydantic `BaseConfig`) owns defaults for tuning params (batch_size, ci_threshold, etc.). `wandb_path` is a runtime arg passed separately.
+`DatasetAttributionConfig` (tuning params) and `AttributionsSlurmConfig` (DatasetAttributionConfig + SLURM params). `wandb_path` is a runtime arg, not part of config.
+
+### Harvest Logic (`harvest.py`)
 
 Main harvesting functions:
 - `harvest_attributions(wandb_path, config, ...)`: Process batches for a single rank

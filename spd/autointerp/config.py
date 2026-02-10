@@ -1,7 +1,8 @@
-"""Autointerp config: discriminated union over interpretation strategies.
+"""Autointerp configuration.
 
-Each config variant specifies everything that affects interpretation output.
-Admin/execution params (cost limits, parallelism) are NOT part of the config.
+CompactSkepticalConfig: interpretation strategy config.
+AutointerpEvalConfig: eval job config (detection, fuzzing).
+AutointerpSlurmConfig: CompactSkepticalConfig + eval + SLURM submission params.
 """
 
 from enum import StrEnum
@@ -10,6 +11,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from spd.base_config import BaseConfig
+from spd.settings import DEFAULT_PARTITION_NAME
 
 
 class ReasoningEffort(StrEnum):
@@ -62,3 +64,22 @@ class AutointerpEvalConfig(BaseConfig):
 
     eval_model: str = "google/gemini-3-flash-preview"
     time: str = "12:00:00"
+
+
+class AutointerpSlurmConfig(BaseConfig):
+    """Config for the autointerp functional unit (interpret + evals).
+
+    Dependency graph within autointerp:
+        interpret         (depends on harvest merge)
+        ├── detection     (depends on interpret)
+        └── fuzzing       (depends on interpret)
+    """
+
+    config: CompactSkepticalConfig = CompactSkepticalConfig(
+        model="google/gemini-3-flash-preview", reasoning_effort=None
+    )
+    limit: int | None = None
+    cost_limit_usd: float | None = None
+    partition: str = DEFAULT_PARTITION_NAME
+    time: str = "12:00:00"
+    evals: AutointerpEvalConfig | None = AutointerpEvalConfig()

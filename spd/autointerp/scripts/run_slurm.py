@@ -17,30 +17,9 @@ Usage:
 
 from datetime import datetime
 
-from spd.autointerp.config import AutointerpEvalConfig, CompactSkepticalConfig
-from spd.base_config import BaseConfig
+from spd.autointerp.config import AutointerpSlurmConfig
 from spd.log import logger
-from spd.settings import DEFAULT_PARTITION_NAME
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
-
-
-class AutointerpSlurmConfig(BaseConfig):
-    """Config for the autointerp functional unit (interpret + evals).
-
-    Dependency graph within autointerp:
-        interpret         (depends on harvest merge)
-        ├── detection     (depends on interpret)
-        └── fuzzing       (depends on interpret)
-    """
-
-    config: CompactSkepticalConfig = CompactSkepticalConfig(
-        model="google/gemini-3-flash-preview", reasoning_effort=None
-    )
-    limit: int | None = None
-    cost_limit_usd: float | None = None
-    partition: str = DEFAULT_PARTITION_NAME
-    time: str = "12:00:00"
-    evals: AutointerpEvalConfig | None = AutointerpEvalConfig()
 
 
 def submit_autointerp(

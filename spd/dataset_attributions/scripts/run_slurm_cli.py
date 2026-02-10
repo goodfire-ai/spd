@@ -22,12 +22,8 @@ def submit_attributions(
         config: Path to AttributionsSlurmConfig YAML/JSON. Uses built-in defaults if omitted.
         job_suffix: Optional suffix for SLURM job names (e.g., "v2" -> "spd-attr-v2").
     """
-    from spd.dataset_attributions.scripts.run_slurm import (
-        AttributionsSlurmConfig,
-    )
-    from spd.dataset_attributions.scripts.run_slurm import (
-        submit_attributions as impl,
-    )
+    from spd.dataset_attributions.config import AttributionsSlurmConfig
+    from spd.dataset_attributions.scripts.run_slurm import submit_attributions as impl
 
     slurm_config = (
         AttributionsSlurmConfig.from_file(config)

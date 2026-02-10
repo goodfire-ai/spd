@@ -9,8 +9,8 @@ from einops import einsum, rearrange, reduce
 from jaxtyping import Float, Int
 from torch import Tensor
 
-from spd.harvest.lib.reservoir_sampler import ReservoirSampler, ReservoirState
-from spd.harvest.lib.sampling import sample_at_most_n_per_group, top_k_pmi
+from spd.harvest.reservoir_sampler import ReservoirSampler, ReservoirState
+from spd.harvest.sampling import sample_at_most_n_per_group, top_k_pmi
 from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
 
 # Sentinel for padding token windows at sequence boundaries.

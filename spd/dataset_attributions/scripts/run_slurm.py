@@ -11,12 +11,8 @@ Usage:
 
 import secrets
 
-from pydantic import PositiveInt
-
-from spd.base_config import BaseConfig
-from spd.dataset_attributions.harvest import DatasetAttributionConfig
+from spd.dataset_attributions.config import AttributionsSlurmConfig
 from spd.log import logger
-from spd.settings import DEFAULT_PARTITION_NAME
 from spd.utils.git_utils import create_git_snapshot
 from spd.utils.slurm import (
     SlurmArrayConfig,
@@ -26,15 +22,6 @@ from spd.utils.slurm import (
     generate_script,
     submit_slurm_job,
 )
-
-
-class AttributionsSlurmConfig(BaseConfig):
-    """Config for dataset attributions SLURM submission."""
-
-    config: DatasetAttributionConfig = DatasetAttributionConfig()
-    n_gpus: PositiveInt = 4
-    partition: str = DEFAULT_PARTITION_NAME
-    time: str = "48:00:00"
 
 
 def submit_attributions(

@@ -9,6 +9,9 @@ AppTokenizer provides two clean interfaces:
 - get_tok_display(token_id): single-token display string for vocab browsers / hover labels
 """
 
+from typing import Self
+
+from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
@@ -18,6 +21,12 @@ class AppTokenizer:
     def __init__(self, tokenizer: PreTrainedTokenizerBase) -> None:
         self._tok = tokenizer
         self._is_fast = hasattr(tokenizer, "backend_tokenizer")
+
+    @classmethod
+    def from_pretrained(cls, tokenizer_name: str) -> Self:
+        hf_tok = AutoTokenizer.from_pretrained(tokenizer_name)
+        assert isinstance(hf_tok, PreTrainedTokenizerBase)
+        return cls(hf_tok)
 
     @property
     def hf_tokenizer(self) -> PreTrainedTokenizerBase:
