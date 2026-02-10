@@ -22,10 +22,11 @@ def get_autointerp_run_dir(wandb_run_id: str, autointerp_run_id: str) -> Path:
 @dataclass
 class ArchitectureInfo:
     n_blocks: int
-    c_per_layer: dict[str, int]  # Maps layer name -> number of components
+    c_per_layer: dict[str, int]
     model_class: str
     dataset_name: str
     tokenizer_name: str
+    layer_descriptions: dict[str, str]
 
 
 @dataclass

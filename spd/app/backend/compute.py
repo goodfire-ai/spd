@@ -689,23 +689,6 @@ def extract_node_subcomp_acts(
     return node_subcomp_acts
 
 
-def get_model_n_blocks(model: nn.Module) -> int:
-    """Get the number of blocks in the model."""
-    from transformers.models.gpt2 import GPT2LMHeadModel
-
-    from spd.pretrain.models import GPT2, GPT2Simple, LlamaSimple, LlamaSimpleMLP
-
-    match model:
-        case GPT2LMHeadModel():
-            return len(model.transformer.h)
-        case GPT2() | GPT2Simple() | LlamaSimple() | LlamaSimpleMLP():
-            return len(model.h)
-        case _ if hasattr(model, "h"):
-            return len(model.h)  # pyright: ignore[reportArgumentType]
-        case _:
-            raise ValueError(f"Unsupported model: {type(model)}")
-
-
 @dataclass
 class InterventionResult:
     """Result of intervention forward pass."""

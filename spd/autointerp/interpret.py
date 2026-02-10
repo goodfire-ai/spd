@@ -6,7 +6,6 @@ from pathlib import Path
 from openrouter import OpenRouter
 
 from spd.app.backend.app_tokenizer import AppTokenizer
-from spd.app.backend.compute import get_model_n_blocks
 from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.llm_api import (
     CostTracker,
@@ -234,19 +233,22 @@ async def interpret_all(
 
 
 def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
+    from spd.topology import TransformerTopology
+
     run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info)
-    n_blocks = get_model_n_blocks(model.target_model)
+    topology = TransformerTopology(model)
     config = run_info.config
     task_config = config.task_config
     assert isinstance(task_config, LMTaskConfig)
     assert config.tokenizer_name is not None
     return ArchitectureInfo(
-        n_blocks=n_blocks,
+        n_blocks=topology.n_blocks,
         c_per_layer=model.module_to_c,
         model_class=config.pretrained_model_class,
         dataset_name=task_config.dataset_name,
         tokenizer_name=config.tokenizer_name,
+        layer_descriptions={path: topology.describe(path) for path in model.target_module_paths},
     )
 
 

@@ -46,32 +46,6 @@ SPD_CONTEXT = (
 )
 
 
-def _parse_layer_description(layer: str, n_blocks: int) -> str:
-    parts = layer.split(".")
-
-    # Find the block index — skip any prefix segments (e.g. "transformer" in HF GPT-2)
-    block_start = next(i for i, p in enumerate(parts) if p.isdigit())
-    layer_idx = int(parts[block_start])
-    layer_num = layer_idx + 1
-
-    sublayer = ".".join(parts[block_start + 1 :])
-    sublayer_desc = {
-        "mlp.c_fc": "MLP up-projection",
-        "mlp.c_proj": "MLP down-projection",
-        "mlp.down_proj": "MLP down-projection",
-        "mlp.gate_proj": "MLP gate projection",
-        "mlp.up_proj": "MLP up-projection",
-        "attn.q_proj": "attention Q projection",
-        "attn.k_proj": "attention K projection",
-        "attn.v_proj": "attention V projection",
-        "attn.o_proj": "attention output projection",
-        "attn.c_attn": "attention QKV projection (fused)",
-        "attn.c_proj": "attention output projection",
-    }.get(sublayer, sublayer)
-
-    return f"{sublayer_desc} in layer {layer_num} of {n_blocks}"
-
-
 def format_prompt(
     config: CompactSkepticalConfig,
     component: ComponentData,
@@ -110,7 +84,7 @@ def format_prompt(
     else:
         rate_str = "extremely rare"
 
-    layer_desc = _parse_layer_description(component.layer, arch.n_blocks)
+    layer_desc = arch.layer_descriptions.get(component.layer, component.layer)
 
     dataset_line = ""
     if config.include_dataset_description:
