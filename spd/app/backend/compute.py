@@ -172,7 +172,7 @@ def get_sources_by_target(
     cache["wte_post_detach"] = wte_cache["wte_post_detach"]
     cache["output_pre_detach"] = comp_output_with_cache.output
 
-    layers = topology.ordered_layers()
+    layers = ["wte", *model.target_module_paths, "output"]
 
     # Test all ordered pairs for gradient flow
     test_pairs = []

@@ -158,7 +158,7 @@ def harvest_attributions(
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
-    topology = TransformerTopology(model)
+    topology = TransformerTopology(model.target_model)
     sources_by_target_raw = get_sources_by_target(model, topology, str(device), spd_config.sampling)
 
     # Filter sources_by_target:

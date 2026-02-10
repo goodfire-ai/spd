@@ -237,7 +237,7 @@ def get_architecture_info(wandb_path: str) -> ArchitectureInfo:
 
     run_info = SPDRunInfo.from_path(wandb_path)
     model = ComponentModel.from_run_info(run_info)
-    topology = TransformerTopology(model)
+    topology = TransformerTopology(model.target_model)
     config = run_info.config
     task_config = config.task_config
     assert isinstance(task_config, LMTaskConfig)

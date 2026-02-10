@@ -119,7 +119,7 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
 
     # Build topology and sources_by_target mapping
     logger.info(f"[API] Building topology for run {run.id}")
-    topology = TransformerTopology(model)
+    topology = TransformerTopology(model.target_model)
 
     logger.info(f"[API] Building sources_by_target mapping for run {run.id}")
     sources_by_target = get_sources_by_target(model, topology, DEVICE, spd_config.sampling)
@@ -177,11 +177,29 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
 @log_errors
 def get_model_info(loaded: DepLoadedRun) -> ModelInfo:
     """Get model topology info for frontend layout."""
+    target_paths = loaded.model.target_module_paths
     topo = loaded.topology
+
+    # Derive role order: deduplicated concrete role names in execution order
+    seen: set[str] = set()
+    role_order: list[str] = []
+    for path in target_paths:
+        role_name = path.rsplit(".", maxsplit=1)[-1]
+        if role_name not in seen:
+            seen.add(role_name)
+            role_order.append(role_name)
+
+    # Derive role groups: only include groups where >= 2 roles are present
+    role_groups: dict[str, list[str]] = {}
+    for group_name, roles in topo.role_group_patterns.items():
+        present = [r for r in roles if r in seen]
+        if len(present) >= 2:
+            role_groups[group_name] = present
+
     return ModelInfo(
-        module_paths=topo.target_module_paths,
-        role_order=topo.role_order,
-        role_groups=topo.role_groups,
+        module_paths=target_paths,
+        role_order=role_order,
+        role_groups=role_groups,
         display_names=topo.display_names,
     )
 

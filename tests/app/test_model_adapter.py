@@ -76,7 +76,7 @@ def test_gpt2_simple():
         "h.*.attn.o_proj",
     ]
     model = _make_component_model(target, patterns)
-    adapter = TransformerTopology(model)
+    adapter = TransformerTopology(target)
 
     assert adapter.embedding_path == "wte"
     assert isinstance(adapter.embedding_module, torch.nn.Embedding)
@@ -133,7 +133,7 @@ def test_gpt2_simple_partial_targets():
         "h.*.attn.o_proj",
     ]
     model = _make_component_model(target, patterns)
-    adapter = TransformerTopology(model)
+    adapter = TransformerTopology(target)
 
     assert adapter.embedding_path == "wte"
     assert all("k_proj" in p or "v_proj" in p for p in adapter.kv_paths)
@@ -179,7 +179,7 @@ def test_llama_simple():
         "h.*.attn.o_proj",
     ]
     model = _make_component_model(target, patterns)
-    adapter = TransformerTopology(model)
+    adapter = TransformerTopology(target)
 
     assert adapter.embedding_path == "wte"
     assert adapter.unembed_path == "lm_head"
@@ -239,7 +239,7 @@ def test_llama_simple_mlp():
         "h.*.attn.o_proj",
     ]
     model = _make_component_model(target, patterns)
-    adapter = TransformerTopology(model)
+    adapter = TransformerTopology(target)
 
     assert adapter.embedding_path == "wte"
     assert len(adapter.kv_paths) == 2  # 1 layer * (k_proj + v_proj)
@@ -273,7 +273,7 @@ def test_hf_gpt2():
         "transformer.h.1.mlp.c_fc",
     ]
     model = _make_component_model(target, patterns)
-    adapter = TransformerTopology(model)
+    adapter = TransformerTopology(target)
 
     assert adapter.embedding_path == "transformer.wte"
     assert isinstance(adapter.embedding_module, torch.nn.Embedding)
@@ -321,7 +321,7 @@ def test_cross_seq_pair_detection():
         "h.*.mlp.c_fc",
     ]
     model = _make_component_model(target, patterns)
-    adapter = TransformerTopology(model)
+    adapter = TransformerTopology(target)
 
     # Same block: k_proj -> o_proj in block 0 should be cross-seq
     assert adapter.is_cross_seq_pair("h.0.attn.k_proj", "h.0.attn.o_proj") is True
