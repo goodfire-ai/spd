@@ -14,7 +14,7 @@ ci_config:
   transition_attn_config: null
   transition_hidden_dim: null
   simple_transformer_ci_cfg:
-    d_model: 1024
+    d_model: 2048
     n_blocks: 8
     mlp_hidden_dim:
     - 8192
@@ -56,20 +56,20 @@ loss_metric_configs:
   classname: PersistentPGDReconSubsetLoss
   optimizer:
     type: adam
-    lr: 0.1
-    beta1: 0.9
+    lr: 0.05
+    beta1: 0.8
     beta2: 0.99
     eps: 1.0e-08
+  reinit_prob: 0.02
   scope:
-    type: batch_invariant
-    n_masks: 8
+    type: per_batch_per_position
   routing:
     type: uniform_k_subset
 - coeff: 1000000.0
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr_schedule:
-  start_val: 1.0e-04
+  start_val: 5.0e-05
   warmup_pct: 0.0
   final_val_frac: 0.1
   fn_type: cosine
@@ -83,7 +83,7 @@ faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
 train_log_freq: 200
 eval_freq: 1000
-eval_batch_size: 256
+eval_batch_size: 128
 slow_eval_freq: 10000
 n_eval_steps: 1
 slow_eval_on_first_step: true
