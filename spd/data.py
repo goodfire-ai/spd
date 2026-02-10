@@ -198,11 +198,14 @@ def create_data_loader(
     if dataset_config.streaming:
         assert isinstance(dataset, IterableDataset)
         if dist_state is not None:
-            assert hasattr(dataset, "num_shards"), (
-                "Dataset does not have num_shards attribute, consider streaming=False or implement "
-                "e.g. lambda x, idx: idx <mod> dist_state.world_size == dist_state.rank"
-            )
-            dataset = dataset.shard(num_shards=dist_state.world_size, index=dist_state.rank)
+            ds_num_shards = getattr(dataset, "num_shards", None)
+            if isinstance(ds_num_shards, int) and ds_num_shards >= dist_state.world_size:
+                dataset = dataset.shard(num_shards=dist_state.world_size, index=dist_state.rank)
+            else:
+                dataset = dataset.filter(
+                    lambda _ex, idx: idx % dist_state.world_size == dist_state.rank,
+                    with_indices=True,
+                )
         dataset = dataset.shuffle(seed=seed, buffer_size=buffer_size)
     else:
         assert isinstance(dataset, Dataset)
