@@ -16,7 +16,8 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from typing import Literal
 
-from torch import nn
+from jaxtyping import Float
+from torch import Tensor, nn
 
 from spd.models.component_model import ComponentModel
 
@@ -283,7 +284,53 @@ class TransformerTopology:
             ffn = _build_ffn(roles)
             self.blocks.append(BlockInfo(idx, attn, ffn))
 
+        # Preserve original target path ordering from ComponentModel
+        self._model_target_paths = target_paths
+
+        # Derive kv/o path sets for cross-seq queries
+        self.kv_paths = frozenset(p for p, r in self._path_to_role.items() if r in _KV_ROLES)
+        self.o_paths = frozenset(p for p, r in self._path_to_role.items() if r in _O_ROLES)
+
+        # Role order: deduplicated concrete role names in execution order (for frontend layout)
+        seen: set[str] = set()
+        role_order: list[str] = []
+        for path in target_paths:
+            role_name = path.rsplit(".", maxsplit=1)[-1]
+            if role_name not in seen:
+                seen.add(role_name)
+                role_order.append(role_name)
+        self.role_order = role_order
+
+        # Role groups: only include groups where >= 2 roles are present
+        self.role_groups: dict[str, list[str]] = {}
+        for group_name, roles in arch.role_groups.items():
+            present = [r for r in roles if r in seen]
+            if len(present) >= 2:
+                self.role_groups[group_name] = present
+
         self._arch = arch
+
+    @property
+    def target_module_paths(self) -> list[str]:
+        return self._model_target_paths
+
+    @property
+    def embedding_path(self) -> str:
+        return self.embedding.path
+
+    @property
+    def embedding_module(self) -> nn.Embedding:
+        assert isinstance(self.embedding.module, nn.Embedding)
+        return self.embedding.module
+
+    @property
+    def unembed_path(self) -> str:
+        return self.unembed.path
+
+    @property
+    def unembed_module(self) -> nn.Linear:
+        assert isinstance(self.unembed.module, nn.Linear)
+        return self.unembed.module
 
     @property
     def n_blocks(self) -> int:
@@ -311,27 +358,17 @@ class TransformerTopology:
             return False
         return self._path_to_block_idx[source] == self._path_to_block_idx[target]
 
-    def ordered_paths(self) -> list[str]:
-        """All paths in execution order: ["wte", ...components..., "output"]."""
-        paths: list[str] = ["wte"]
-        for block in self.blocks:
-            if block.attn is not None:
-                match block.attn:
-                    case SeparateAttention(q, k, v, o):
-                        paths.extend([q.path, k.path, v.path, o.path])
-                    case FusedAttention(qkv, o):
-                        paths.extend([qkv.path, o.path])
-            match block.ffn:
-                case StandardFFN(up, down):
-                    paths.extend([up.path, down.path])
-                case SwiGLUFFN(gate, up, down):
-                    paths.extend([gate.path, up.path, down.path])
-        paths.append("output")
-        return paths
+    def ordered_layers(self) -> list[str]:
+        """Full layer list for gradient pair testing: [wte, ...components..., output]."""
+        layers = ["wte"]
+        layers.extend(self._model_target_paths)
+        layers.append("output")
+        return layers
 
-    @property
-    def role_groups(self) -> dict[str, tuple[str, ...]]:
-        return self._arch.role_groups
+    def get_unembed_weight(self) -> Float[Tensor, "d_model vocab"]:
+        """Get the unembedding weight matrix (transposed to [d_model, vocab])."""
+        assert isinstance(self.unembed.module, nn.Linear)
+        return self.unembed.module.weight.T.detach()
 
     @property
     def display_names(self) -> dict[str, str]:
