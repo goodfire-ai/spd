@@ -3,18 +3,46 @@
 These functions parameterize ComponentModel and training for different target model architectures.
 """
 
-from typing import Protocol
+from typing import Any, Protocol
 
 import torch
 import torch.nn.functional as F
 from jaxtyping import Float
-from torch import Tensor
+from torch import Tensor, nn
+
+from spd.configs import AttrOutputExtract, IndexOutputExtract, OutputExtractConfig
+
+
+class RunBatch[BatchT, OutputT](Protocol):
+    """Protocol for running a batch through a model and returning the output."""
+
+    def __call__(self, model: nn.Module, batch: BatchT) -> OutputT: ...
 
 
 class ReconstructionLoss[OutputT](Protocol):
     """Protocol for computing reconstruction loss between predictions and targets."""
 
     def __call__(self, pred: OutputT, target: OutputT) -> tuple[Float[Tensor, ""], int]: ...
+
+
+def run_batch_passthrough(model: nn.Module, batch: Any) -> Any:
+    return model(batch)
+
+
+def make_run_batch(output_extract: OutputExtractConfig | None) -> RunBatch[Any, Any]:
+    """creates a RunBatch function for a given configuration.
+
+    Note that if you plan to override the RunBatch functionality, you can simply pass
+    a custom RunBatch function into optimize and do not need to use this function at
+    all.
+    """
+    match output_extract:
+        case None:
+            return run_batch_passthrough
+        case IndexOutputExtract(index=idx):
+            return lambda model, batch: model(batch)[idx]
+        case AttrOutputExtract(attr=attr):
+            return lambda model, batch: getattr(model(batch), attr)
 
 
 def recon_loss_mse(

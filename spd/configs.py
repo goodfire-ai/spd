@@ -148,6 +148,19 @@ class LMTaskConfig(BaseConfig):
     )
 
 
+class IndexOutputExtract(BaseConfig):
+    type: Literal["index"] = "index"
+    index: int
+
+
+class AttrOutputExtract(BaseConfig):
+    type: Literal["attr"] = "attr"
+    attr: str
+
+
+OutputExtractConfig = IndexOutputExtract | AttrOutputExtract
+
+
 class ModulePatternInfoConfig(BaseConfig):
     """Configuration for a module pattern with its number of components.
 
@@ -461,11 +474,6 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
-        ...,
-        description="Metric used to measure recon error between model outputs and targets",
-    )
-
     # --- Training ---
     lr_schedule: ScheduleConfig = Field(..., description="Learning rate schedule configuration")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
@@ -566,9 +574,9 @@ class Config(BaseConfig):
         default=None,
         description="hf model identifier. E.g. 'SimpleStories/SimpleStories-1.25M'",
     )
-    extract_tensor_output: str | None = Field(
+    output_extract: Annotated[OutputExtractConfig, Field(discriminator="type")] | None = Field(
         default=None,
-        description="Accessor path for extracting tensor from model output, e.g. '[0]' or '.logits'",
+        description="How to extract tensor from model output. None = raw output. Note that you can ignore this field if you plan to create your own `run_batch` function to pass to run_spd.optimize().",
     )
     tokenizer_name: str | None = Field(
         default=None,
@@ -607,6 +615,7 @@ class Config(BaseConfig):
         "lr_exponential_halflife",
         "out_dir",
         "n_examples_until_dead",
+        "output_loss_type",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
@@ -652,15 +661,18 @@ class Config(BaseConfig):
                 "simple_stories_train.models.", "spd.pretrain.models.", 1
             )
 
-        # Migrate old pretrained_model_output_attr to extract_tensor_output
+        # Migrate old pretrained_model_output_attr to output_extract
         if "pretrained_model_output_attr" in config_dict:
             old_val = config_dict.pop("pretrained_model_output_attr")
-            if old_val is not None:
-                accessor = "[0]" if old_val == "idx_0" else f".{old_val}"
-                config_dict["extract_tensor_output"] = accessor
-                logger.info(
-                    f"Migrated pretrained_model_output_attr={old_val!r} to extract_tensor_output={accessor!r}"
-                )
+            match old_val:
+                case None:
+                    pass
+                case "idx_0":
+                    config_dict["output_extract"] = {"type": "index", "index": 0}
+                case "logits":
+                    config_dict["output_extract"] = {"type": "attr", "attr": "logits"}
+                case _:
+                    raise ValueError(f"Unknown pretrained_model_output_attr: {old_val!r}")
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]

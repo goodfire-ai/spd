@@ -34,7 +34,6 @@ TEST_CONFIG = {
         {"classname": "CIMaskedReconLayerwiseLoss", "coeff": 1.0},
         {"classname": "CIMaskedReconLoss", "coeff": 1.0},
     ],
-    "output_loss_type": "kl",
     # --- Training ---
     "batch_size": 2,
     "steps": 20,
@@ -54,7 +53,7 @@ TEST_CONFIG = {
     # --- Pretrained model info ---
     "pretrained_model_class": "transformers.LlamaForCausalLM",
     "pretrained_model_name": "SimpleStories/SimpleStories-1.25M",
-    "extract_tensor_output": ".logits",
+    "output_extract": {"type": "attr", "attr": "logits"},
     "tokenizer_name": "SimpleStories/SimpleStories-1.25M",
     # --- Task Specific ---
     "task_config": {

@@ -18,7 +18,7 @@ from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
 from spd.experiments.tms.models import TMSModel
 from spd.experiments.tms.train_tms import get_model_and_dataloader, train
 from spd.identity_insertion import insert_identity_operations_
-from spd.models.batch_and_loss_fns import recon_loss_mse
+from spd.models.batch_and_loss_fns import recon_loss_mse, run_batch_passthrough
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader, SparseFeatureDataset
 from spd.utils.general_utils import set_seed
@@ -69,7 +69,6 @@ def test_tms_decomposition_happy_path(tmp_path: Path) -> None:
             StochasticReconLossConfig(coeff=1.0),
             FaithfulnessLossConfig(coeff=1.0),
         ],
-        output_loss_type="mse",
         # Training
         lr_schedule=ScheduleConfig(
             start_val=1e-3, fn_type="cosine", warmup_pct=0.0, final_val_frac=0.0
@@ -92,7 +91,6 @@ def test_tms_decomposition_happy_path(tmp_path: Path) -> None:
         pretrained_model_class="spd.experiments.tms.models.TMSModel",
         pretrained_model_path=None,
         pretrained_model_name=None,
-        extract_tensor_output=None,
         tokenizer_name=None,
         # Task Specific
         task_config=TMSTaskConfig(
@@ -138,6 +136,7 @@ def test_tms_decomposition_happy_path(tmp_path: Path) -> None:
         device=device,
         train_loader=train_loader,
         eval_loader=eval_loader,
+        run_batch=run_batch_passthrough,
         reconstruction_loss=recon_loss_mse,
         out_dir=tmp_path,
         tied_weights=tied_weights,
