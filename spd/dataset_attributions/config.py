@@ -14,7 +14,7 @@ from spd.settings import DEFAULT_PARTITION_NAME
 
 class DatasetAttributionConfig(BaseConfig):
     n_batches: int | Literal["whole_dataset"] = 1000
-    batch_size: int = 256
+    batch_size: int = 128
     ci_threshold: float = 0.0
 
 
