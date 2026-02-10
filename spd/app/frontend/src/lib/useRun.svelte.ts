@@ -7,7 +7,7 @@
 
 import type { Loadable } from ".";
 import * as api from "./api";
-import type { LoadedRun as RunData, InterpretationHeadline, ModelInfo } from "./api";
+import type { LoadedRun as RunData, InterpretationHeadline } from "./api";
 import type {
     SubcomponentCorrelationsResponse,
     PromptPreview,
@@ -58,7 +58,6 @@ export function useRun() {
     let allTokens = $state<Loadable<TokenInfo[]>>({ status: "uninitialized" });
 
     /** Model topology info for frontend layout */
-    let modelInfo = $state<ModelInfo | null>(null);
 
     /** Activation contexts summary */
     let activationContextsSummary = $state<Loadable<Record<string, SubcomponentMetadata[]>>>({
@@ -86,7 +85,6 @@ export function useRun() {
         _correlationsCache = {};
         _tokenStatsCache = {};
         clusterMapping = null;
-        modelInfo = null;
     }
 
     /** Fetch run-scoped data that can load asynchronously (prompts, interpretations) */
@@ -131,10 +129,9 @@ export function useRun() {
         run = { status: "loading" };
         try {
             await api.loadRun(wandbPath, contextLength);
-            const [status, info] = await Promise.all([api.getStatus(), fetchTokens(), api.getModelInfo()]).then(
-                ([s, , m]) => [s, m] as const,
+            const [status] = await Promise.all([api.getStatus(), fetchTokens()]).then(
+                ([s]) => [s] as const,
             );
-            modelInfo = info;
             if (status) {
                 run = { status: "loaded", data: status };
                 fetchRunScopedData();
@@ -159,9 +156,6 @@ export function useRun() {
                 // Fetch tokens and model info if we don't have them (e.g., page refresh)
                 if (allTokens.status === "uninitialized") {
                     await fetchTokens();
-                }
-                if (modelInfo === null) {
-                    modelInfo = await api.getModelInfo();
                 }
                 run = { status: "loaded", data: status };
                 // Fetch other run-scoped data if we don't have it
@@ -312,9 +306,6 @@ export function useRun() {
         },
         get datasetAttributionsAvailable() {
             return run.status === "loaded" && run.data.dataset_attributions_available;
-        },
-        get modelInfo() {
-            return modelInfo;
         },
         loadRun,
         clearRun,

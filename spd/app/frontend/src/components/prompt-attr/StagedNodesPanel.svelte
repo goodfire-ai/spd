@@ -1,13 +1,11 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import type { OutputProbability, PinnedNode, EdgeData } from "../../lib/promptAttributionsTypes";
-    import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
-    const displayNames = $derived(runState.modelInfo?.display_names ?? {});
 
     type Props = {
         stagedNodes: PinnedNode[];
@@ -77,7 +75,7 @@
                 <div class="staged-item">
                     <div class="staged-header">
                         <div class="node-info">
-                            <strong>{getLayerDisplayName(node.layer, displayNames)}:{node.seqIdx}:{node.cIdx}</strong>
+                            <strong>{node.layer}:{node.seqIdx}:{node.cIdx}</strong>
                             <span class="token-preview">"{token}"</span>
                             {#if clusterId !== undefined}
                                 <span class="cluster-id">Cluster: {clusterId ?? "null"}</span>

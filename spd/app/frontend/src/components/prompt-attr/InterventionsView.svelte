@@ -11,11 +11,11 @@
         getRowKey as _getRowKey,
         getRowLabel as _getRowLabel,
         sortRows,
-        getLayerPath,
+        getGroupProjections,
+        buildLayerAddress,
     } from "../../lib/graphLayout";
 
     const runState = getContext<RunContext>(RUN_KEY);
-    const modelInfo = $derived(runState.modelInfo!);
     import {
         calcTooltipPos,
         computeClusterSpans,
@@ -212,7 +212,7 @@
     let svgElement: SVGSVGElement | null = null;
 
     function getRowKey(layer: string): string {
-        return _getRowKey(layer, modelInfo);
+        return _getRowKey(layer);
     }
 
     // All nodes from the graph (for rendering)
@@ -257,7 +257,7 @@
         }
 
         // Sort rows
-        const rows = sortRows(Array.from(allRows), modelInfo);
+        const rows = sortRows(Array.from(allRows));
 
         const numTokens = tokens.length;
 
@@ -265,28 +265,18 @@
         const maxComponentsPerSeq = Array.from({ length: numTokens }, (_, seqIdx) => {
             let maxAtSeq = 1;
             for (const row of rows) {
-                const dotIdx = row.indexOf(".");
-                const groupName = dotIdx !== -1 ? row.substring(dotIdx + 1) : null;
-                const groupRoles = groupName ? (modelInfo.role_groups[groupName] ?? null) : null;
-
-                if (groupRoles && dotIdx !== -1) {
-                    const block = +row.substring(0, dotIdx);
-                    let totalGrouped = 0;
-                    for (const role of groupRoles) {
-                        const layer = getLayerPath(block, role, modelInfo);
-                        if (layer) {
-                            totalGrouped += (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length;
-                        }
-                    }
-                    totalGrouped += groupRoles.length - 1;
-                    maxAtSeq = Math.max(maxAtSeq, totalGrouped);
-                } else {
-                    for (const layer of allLayers) {
-                        if (getRowKey(layer) === row) {
-                            maxAtSeq = Math.max(maxAtSeq, (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length);
-                        }
+                let totalInRow = 0;
+                for (const layer of allLayers) {
+                    if (getRowKey(layer) === row) {
+                        totalInRow += (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length;
                     }
                 }
+                const rowInfo = parseLayer(row.includes(".") ? row + ".x" : row);
+                const groupProjs = rowInfo.sublayer ? getGroupProjections(rowInfo.sublayer) : null;
+                if (groupProjs && groupProjs.length > 1) {
+                    totalInRow += groupProjs.length - 1;
+                }
+                maxAtSeq = Math.max(maxAtSeq, totalInRow);
             }
             return maxAtSeq;
         });
@@ -328,8 +318,9 @@
         const nodePositions: Record<string, NodePosition> = {};
         const allClusterSpans: ClusterSpan[] = [];
         for (const layer of allLayers) {
-            const info = parseLayer(layer, modelInfo);
-            const isGrouped = info.group !== null;
+            const info = parseLayer(layer);
+            const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
+            const isGrouped = groupProjs !== null && info.projection !== null;
 
             for (let seqIdx = 0; seqIdx < numTokens; seqIdx++) {
                 const layerNodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -338,13 +329,12 @@
                 let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
-                if (isGrouped && info.group) {
-                    const roles = modelInfo.role_groups[info.group];
-                    const roleIdx = roles.indexOf(info.role);
-                    for (let i = 0; i < roleIdx; i++) {
-                        const prevLayer = getLayerPath(info.block, roles[i], modelInfo);
+                if (isGrouped && groupProjs && info.projection) {
+                    const projIdx = groupProjs.indexOf(info.projection);
+                    for (let i = 0; i < projIdx; i++) {
+                        const prevLayer = buildLayerAddress(info.block, info.sublayer, groupProjs[i]);
                         baseX +=
-                            (prevLayer ? (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) : 0) *
+                            (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) *
                             (COMPONENT_SIZE + componentGap);
                         baseX += COMPONENT_SIZE + componentGap;
                     }
@@ -606,7 +596,7 @@
     }
 
     function getRowLabel(layer: string): string {
-        return _getRowLabel(layer, modelInfo);
+        return _getRowLabel(layer);
     }
 </script>
 

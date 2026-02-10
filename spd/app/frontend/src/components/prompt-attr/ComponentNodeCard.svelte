@@ -4,7 +4,6 @@
     import { COMPONENT_CARD_CONSTANTS } from "../../lib/componentCardConstants";
     import { anyCorrelationStatsEnabled, displaySettings } from "../../lib/displaySettings.svelte";
     import type { EdgeAttribution, EdgeData, OutputProbability } from "../../lib/promptAttributionsTypes";
-    import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import { useComponentDataExpectCached } from "../../lib/useComponentDataExpectCached.svelte";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
     import ActivationContextsPagedTable from "../ActivationContextsPagedTable.svelte";
@@ -18,7 +17,6 @@
     import TokenStatsSection from "../ui/TokenStatsSection.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
-    const displayNames = $derived(runState.modelInfo?.display_names ?? {});
 
     type Props = {
         layer: string;
@@ -188,7 +186,7 @@
 
 <div class="component-node-card">
     <div class="card-header">
-        <h3 class="node-identifier">{getLayerDisplayName(layer, displayNames)}:{seqIdx}:{cIdx}</h3>
+        <h3 class="node-identifier">{layer}:{seqIdx}:{cIdx}</h3>
         <div class="token-display">"{token}"</div>
         <div class="header-metrics">
             {#if ciVal !== null}

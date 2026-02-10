@@ -2,12 +2,10 @@
     import { getContext } from "svelte";
     import { colors } from "../../lib/colors";
     import type { EdgeAttribution, OutputProbability } from "../../lib/promptAttributionsTypes";
-    import { formatNodeKeyForDisplay, getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import { RUN_KEY, type InterpretationBackendState, type RunContext } from "../../lib/useRun.svelte";
     import { lerp } from "../prompt-attr/graphUtils";
 
     const runState = getContext<RunContext>(RUN_KEY);
-    const displayNames = $derived(runState.modelInfo?.display_names ?? {});
 
     type Props = {
         items: EdgeAttribution[];
@@ -34,7 +32,7 @@
     // Extract just the aliased layer name from a key (e.g., "L0.attn.q" from "h.0.attn.q_proj:2:5")
     function getLayerLabel(key: string): string {
         const layer = key.split(":")[0];
-        return getLayerDisplayName(layer, displayNames);
+        return layer;
     }
 
     function getInterpretation(key: string): InterpretationBackendState {
@@ -161,7 +159,7 @@
         {#each paginatedItems as { key, value, normalizedMagnitude } (key)}
             {@const bgColor = getBgColor(normalizedMagnitude)}
             {@const textColor = normalizedMagnitude > 0.8 ? "white" : "var(--text-primary)"}
-            {@const formattedKey = formatNodeKeyForDisplay(key, displayNames)}
+            {@const formattedKey = key}
             {@const isToken = isTokenNode(key)}
             {@const interp = isToken ? undefined : getInterpretation(key)}
             {@const hasInterpretation = interp?.status === "generated"}

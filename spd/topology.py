@@ -22,7 +22,7 @@ Examples:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from torch import nn
 
@@ -49,13 +49,25 @@ class CanonicalWeight(ABC):
 
         match sublayer:
             case "attn":
-                return LayerWeight(layer_idx, SeparateAttnWeight(projection))  # type: ignore[arg-type]
+                assert projection in ["q", "k", "v", "o"]
+                return LayerWeight(
+                    layer_idx, SeparateAttnWeight(cast(Literal["q", "k", "v", "o"], projection))
+                )
             case "attn_fused":
-                return LayerWeight(layer_idx, FusedAttnWeight(projection))  # type: ignore[arg-type]
+                assert projection in ["qkv", "o"]
+                return LayerWeight(
+                    layer_idx, FusedAttnWeight(cast(Literal["qkv", "o"], projection))
+                )
             case "glu":
-                return LayerWeight(layer_idx, GLUWeight(projection))  # type: ignore[arg-type]
+                assert projection in ["up", "down", "gate"]
+                return LayerWeight(
+                    layer_idx, GLUWeight(cast(Literal["up", "down", "gate"], projection))
+                )
             case "mlp":
-                return LayerWeight(layer_idx, MLPWeight(projection))  # type: ignore[arg-type]
+                assert projection in ["up", "down"]
+                return LayerWeight(
+                    layer_idx, MLPWeight(weight=cast(Literal["up", "down"], projection))
+                )
             case _:
                 raise ValueError(f"Unknown sublayer type: {sublayer!r} in {s!r}")
 
@@ -304,6 +316,8 @@ class LlamaSimplePathSchema(PathSchema):
                 return self.unembed_path
             case LayerWeight() as lw:
                 return self._render_layer_weight(lw)
+            case _:
+                raise ValueError(f"Unknown canonical weight: {weight!r}")
 
 
 class LlamaSimpleMLPPathSchema(PathSchema):

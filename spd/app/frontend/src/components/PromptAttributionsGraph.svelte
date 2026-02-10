@@ -2,7 +2,6 @@
     import { getContext } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
     import type { GraphData, PinnedNode, HoveredNode, HoveredEdge, NodePosition } from "../lib/promptAttributionsTypes";
-    import { formatNodeKeyForDisplay } from "../lib/promptAttributionsTypes";
     import { colors, getEdgeColor, getSubcompActColor, rgbToCss, getNextTokenProbBgColor } from "../lib/colors";
     import { displaySettings } from "../lib/displaySettings.svelte";
     import {
@@ -24,12 +23,11 @@
         getRowKey as _getRowKey,
         getRowLabel as _getRowLabel,
         sortRows,
-        getLayerPath,
+        getGroupProjections,
+        buildLayerAddress,
     } from "../lib/graphLayout";
 
     const runState = getContext<RunContext>(RUN_KEY);
-    const modelInfo = $derived(runState.modelInfo!);
-    const displayNames = $derived(modelInfo.display_names);
 
     // Constants
     const COMPONENT_SIZE = 8;
@@ -129,11 +127,11 @@
     const zoom = useZoomPan(() => innerContainer);
 
     function getRowKey(layer: string): string {
-        return _getRowKey(layer, modelInfo);
+        return _getRowKey(layer);
     }
 
     function getRowLabel(layer: string): string {
-        return _getRowLabel(layer, modelInfo);
+        return _getRowLabel(layer);
     }
 
     // Use pre-computed values from backend, derive max CI
@@ -188,7 +186,7 @@
         }
 
         // Sort rows for Y positioning
-        const rows = sortRows(Array.from(allRows), modelInfo);
+        const rows = sortRows(Array.from(allRows));
 
         // Assign Y positions (output at top, wte at bottom)
         const rowYPositions: Record<string, number> = {};
@@ -218,31 +216,22 @@
         const maxComponentsPerSeq = tokens.map((_, seqIdx) => {
             let maxAtSeq = 0;
             for (const row of rows) {
-                // Check if this row is a group (e.g. "0.qkv")
-                const dotIdx = row.indexOf(".");
-                const groupName = dotIdx !== -1 ? row.substring(dotIdx + 1) : null;
-                const groupRoles = groupName ? (modelInfo.role_groups[groupName] ?? null) : null;
-
-                if (groupRoles && dotIdx !== -1) {
-                    const block = +row.substring(0, dotIdx);
-                    let totalGrouped = 0;
-                    for (const role of groupRoles) {
-                        const layer = getLayerPath(block, role, modelInfo);
-                        if (layer) {
-                            const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
-                            totalGrouped += nodes.length;
-                        }
-                    }
-                    totalGrouped += groupRoles.length - 1; // gaps between subgroups
-                    maxAtSeq = Math.max(maxAtSeq, totalGrouped);
-                } else {
-                    for (const layer of allLayers) {
-                        if (getRowKey(layer) === row) {
-                            const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
-                            maxAtSeq = Math.max(maxAtSeq, nodes.length);
-                        }
+                // Count nodes in this row at this seq position
+                // Rows are "block.sublayer" — find all layers that belong to this row
+                let totalInRow = 0;
+                for (const layer of allLayers) {
+                    if (getRowKey(layer) === row) {
+                        const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? [];
+                        totalInRow += nodes.length;
                     }
                 }
+                // Add gaps between grouped projections
+                const info = parseLayer(row.includes(".") ? row + ".x" : row);
+                const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
+                if (groupProjs && groupProjs.length > 1) {
+                    totalInRow += groupProjs.length - 1;
+                }
+                maxAtSeq = Math.max(maxAtSeq, totalInRow);
             }
             return maxAtSeq;
         });
@@ -263,8 +252,9 @@
         const QKV_GROUP_GAP = COMPONENT_SIZE + componentGap;
 
         for (const layer of allLayers) {
-            const info = parseLayer(layer, modelInfo);
-            const isGrouped = info.group !== null;
+            const info = parseLayer(layer);
+            const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
+            const isGrouped = groupProjs !== null && info.projection !== null;
 
             for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
                 const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -273,15 +263,13 @@
                 let baseX = seqXStarts[seqIdx] + COL_PADDING + layerXOffsets[layer];
                 const baseY = layerYPositions[layer];
 
-                // For grouped roles (e.g. QKV), offset X based on position in group
-                if (isGrouped && info.group) {
-                    const roles = modelInfo.role_groups[info.group];
-                    const roleIdx = roles.indexOf(info.role);
-                    for (let i = 0; i < roleIdx; i++) {
-                        const prevLayer = getLayerPath(info.block, roles[i], modelInfo);
-                        const prevLayerNodes = prevLayer ? nodesPerLayerSeq[`${prevLayer}:${seqIdx}`] : null;
-                        const prevCount = prevLayerNodes?.length ?? 0;
-                        baseX += prevCount * (COMPONENT_SIZE + componentGap);
+                // For grouped projections (e.g. q/k/v), offset X based on position in group
+                if (isGrouped && groupProjs && info.projection) {
+                    const projIdx = groupProjs.indexOf(info.projection);
+                    for (let i = 0; i < projIdx; i++) {
+                        const prevLayer = buildLayerAddress(info.block, info.sublayer, groupProjs[i]);
+                        const prevLayerNodes = nodesPerLayerSeq[`${prevLayer}:${seqIdx}`] ?? [];
+                        baseX += prevLayerNodes.length * (COMPONENT_SIZE + componentGap);
                         baseX += QKV_GROUP_GAP;
                     }
                 }
@@ -767,11 +755,11 @@
         <div class="edge-tooltip" style="left: {edgeTooltipPos.x}px; top: {edgeTooltipPos.y}px;">
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Src</span>
-                <code>{formatNodeKeyForDisplay(hoveredEdge.src, displayNames)}</code>
+                <code>{hoveredEdge.src}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Tgt</span>
-                <code>{formatNodeKeyForDisplay(hoveredEdge.tgt, displayNames)}</code>
+                <code>{hoveredEdge.tgt}</code>
             </div>
             <div class="edge-tooltip-row">
                 <span class="edge-tooltip-label">Val</span>

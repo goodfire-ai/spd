@@ -1,14 +1,12 @@
 <script lang="ts">
     import { getContext } from "svelte";
     import type { OutputProbability, EdgeData } from "../../lib/promptAttributionsTypes";
-    import { getLayerDisplayName } from "../../lib/promptAttributionsTypes";
     import type { TooltipPos } from "./graphUtils";
     import ComponentNodeCard from "./ComponentNodeCard.svelte";
     import OutputNodeCard from "./OutputNodeCard.svelte";
     import { RUN_KEY, type RunContext } from "../../lib/useRun.svelte";
 
     const runState = getContext<RunContext>(RUN_KEY);
-    const displayNames = $derived(runState.modelInfo?.display_names ?? {});
 
     type HoveredNode = {
         layer: string;
@@ -92,7 +90,7 @@
     onmouseleave={onMouseLeave}
     onwheel={(e) => e.stopPropagation()}
 >
-    <h3>{getLayerDisplayName(hoveredNode.layer, displayNames)}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
+    <h3>{hoveredNode.layer}:{hoveredNode.seqIdx}:{hoveredNode.cIdx}</h3>
     {#if isComponent && ciVal !== null}
         <div class="ci-value">CI: {ciVal.toFixed(3)}</div>
     {/if}
