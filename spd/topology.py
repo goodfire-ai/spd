@@ -1,180 +1,115 @@
-"""Abstract transformer topology.
+"""Canonical transformer topology.
 
-Maps concrete model paths onto a canonical abstract structure. Built once at
-model load time, consumed by harvest, attributions, autointerp, and the app.
+Defines a normalized addressing scheme for transformer layers. All API
+consumers use canonical addresses instead of raw module paths.
 
-Usage:
-    topology = TransformerTopology(model)
-    topology.n_blocks               # 12
-    topology.describe("h.1.mlp.down_proj")  # "MLP down-projection in layer 2 of 12"
-    topology.is_cross_seq_pair(src, tgt)    # True if k/v -> o in same block
-    topology.embedding.module       # nn.Embedding
-    topology.unembed.module         # nn.Linear
+Canonical layer address format:
+    "wte"              — embedding
+    "output"           — unembed / logits
+    "{block}.attn.{p}" — attention projection (p: q | k | v | qkv | o)
+    "{block}.ffn.{p}"  — FFN projection (p: up | down | gate)
+
+Node key format (layer address + position):
+    "{layer_address}:{seq_pos}:{component_idx}"
+
+Examples:
+    "0.attn.q"         — block 0, attention Q projection
+    "2.ffn.gate"       — block 2, SwiGLU gate projection
+    "0.attn.q:3:5"     — block 0, Q proj, seq pos 3, component 5
+    "wte:0:0"          — embedding, seq 0, pseudo-component 0
+    "output:7:42"       — output, seq 7, token 42
 """
 
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from typing import Literal
 
-from jaxtyping import Float
-from torch import Tensor, nn
-
-from spd.models.component_model import ComponentModel
-
-# Construction-only role type — used to sort paths into struct fields during init.
-# Not exposed on LayerInfo or any public API.
-_Role = Literal["q", "k", "v", "qkv", "o", "up", "down", "gate"]
-_ATTN_ROLES: set[_Role] = {"q", "k", "v", "qkv", "o"}
+from torch import nn
 
 
-@dataclass(frozen=True)
-class LayerInfo:
-    path: str
-    module: nn.Module
+@dataclass
+class GLUPathSchema:
+    base: str
+    gate: str
+    up: str
+    down: str
 
 
-# --- Attention variants ---
+@dataclass
+class FFNPathSchema:
+    base: str
+    up: str
+    down: str
 
 
-@dataclass(frozen=True)
-class SeparateAttention:
-    q: LayerInfo
-    k: LayerInfo
-    v: LayerInfo
-    o: LayerInfo
+@dataclass
+class SeparateAttnPathSchema:
+    base: str
+    q: str
+    k: str
+    v: str
+    o: str
 
 
-@dataclass(frozen=True)
-class FusedAttention:
-    qkv: LayerInfo
-    o: LayerInfo
-
-
-AttentionInfo = SeparateAttention | FusedAttention
-
-
-# --- FFN variants ---
+@dataclass
+class FusedAttentionPathSchema:
+    base: str
+    qkv: str
+    o: str
 
 
 @dataclass(frozen=True)
-class StandardFFN:
-    up: LayerInfo
-    down: LayerInfo
-
-
-@dataclass(frozen=True)
-class SwiGLUFFN:
-    gate: LayerInfo
-    up: LayerInfo
-    down: LayerInfo
-
-
-FFNInfo = StandardFFN | SwiGLUFFN
-
-
-@dataclass(frozen=True)
-class BlockInfo:
-    index: int
-    attn: AttentionInfo | None
-    ffn: FFNInfo
-
-
-# --- Architecture configs ---
-
-
-@dataclass(frozen=True)
-class ArchConfig:
-    """Per-architecture topology declaration.
-
-    role_mapping maps glob patterns to roles used during construction to sort
-    paths into the correct struct fields. These roles are not exposed publicly.
-    """
+class PathSchema:
+    """Maps concrete module path patterns to canonical projections."""
 
     embedding_path: str
+    blocks: str
+    attn: SeparateAttnPathSchema | FusedAttentionPathSchema
+    mlp: GLUPathSchema | FFNPathSchema
     unembed_path: str
-    role_mapping: dict[str, _Role]
-    role_groups: dict[str, tuple[str, ...]]
-    display_names: dict[str, str]
 
 
-_LLAMA_SIMPLE_CONFIG = ArchConfig(
+_LLAMA_SIMPLE_CONFIG = PathSchema(
     embedding_path="wte",
+    blocks="h",
+    attn=SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj"),
+    mlp=GLUPathSchema(base="mlp", gate="gate_proj", up="up_proj", down="down_proj"),
     unembed_path="lm_head",
-    role_mapping={
-        "h.*.attn.q_proj": "q",
-        "h.*.attn.k_proj": "k",
-        "h.*.attn.v_proj": "v",
-        "h.*.attn.o_proj": "o",
-        "h.*.mlp.gate_proj": "gate",
-        "h.*.mlp.up_proj": "up",
-        "h.*.mlp.down_proj": "down",
-    },
-    role_groups={
-        "qkv": ("q_proj", "k_proj", "v_proj"),
-        "swiglu": ("gate_proj", "up_proj"),
-    },
-    display_names={"lm_head": "W_U"},
 )
 
-_LLAMA_SIMPLE_MLP_CONFIG = ArchConfig(
+_LLAMA_SIMPLE_MLP_CONFIG = PathSchema(
     embedding_path="wte",
+    blocks="h",
+    attn=SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj"),
+    mlp=FFNPathSchema(base="mlp", up="c_fc", down="down_proj"),
     unembed_path="lm_head",
-    role_mapping={
-        "h.*.attn.q_proj": "q",
-        "h.*.attn.k_proj": "k",
-        "h.*.attn.v_proj": "v",
-        "h.*.attn.o_proj": "o",
-        "h.*.mlp.c_fc": "up",
-        "h.*.mlp.down_proj": "down",
-    },
-    role_groups={"qkv": ("q_proj", "k_proj", "v_proj")},
-    display_names={"lm_head": "W_U"},
 )
 
-_GPT2_SIMPLE_CONFIG = ArchConfig(
+_GPT2_SIMPLE_CONFIG = PathSchema(
     embedding_path="wte",
+    blocks="h",
+    attn=SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj"),
+    mlp=FFNPathSchema(base="mlp", up="c_fc", down="down_proj"),
     unembed_path="lm_head",
-    role_mapping={
-        "h.*.attn.q_proj": "q",
-        "h.*.attn.k_proj": "k",
-        "h.*.attn.v_proj": "v",
-        "h.*.attn.o_proj": "o",
-        "h.*.mlp.c_fc": "up",
-        "h.*.mlp.down_proj": "down",
-    },
-    role_groups={"qkv": ("q_proj", "k_proj", "v_proj")},
-    display_names={"lm_head": "W_U"},
 )
 
-_GPT2_CONFIG = ArchConfig(
+_GPT2_CONFIG = PathSchema(
     embedding_path="wte",
+    blocks="h_torch",
+    attn=FusedAttentionPathSchema(base="attn", qkv="c_attn", o="c_proj"),
+    mlp=FFNPathSchema(base="mlp", up="c_fc", down="c_proj"),
     unembed_path="lm_head",
-    role_mapping={
-        "h_torch.*.attn.c_attn": "qkv",
-        "h_torch.*.attn.c_proj": "o",
-        "h_torch.*.mlp.c_fc": "up",
-        "h_torch.*.mlp.c_proj": "down",
-    },
-    role_groups={},
-    display_names={"lm_head": "W_U"},
 )
 
-_HF_GPT2_CONFIG = ArchConfig(
+_HF_GPT2_CONFIG = PathSchema(
     embedding_path="transformer.wte",
+    blocks="transformer.h",
+    attn=FusedAttentionPathSchema(base="attn", qkv="c_attn", o="c_proj"),
+    mlp=FFNPathSchema(base="mlp", up="c_fc", down="c_proj"),
     unembed_path="lm_head",
-    role_mapping={
-        "transformer.h.*.attn.c_attn": "qkv",
-        "transformer.h.*.attn.c_proj": "o",
-        "transformer.h.*.mlp.c_fc": "up",
-        "transformer.h.*.mlp.c_proj": "down",
-    },
-    role_groups={},
-    display_names={"lm_head": "W_U"},
 )
 
 
-def _get_arch_config(model: nn.Module) -> ArchConfig:
-    """Get the architecture config by matching the model class."""
+def _get_path_schema(model: nn.Module) -> PathSchema:
     from transformers.models.gpt2 import GPT2LMHeadModel
 
     from spd.pretrain.models import GPT2, GPT2Simple, LlamaSimple, LlamaSimpleMLP
@@ -192,287 +127,169 @@ def _get_arch_config(model: nn.Module) -> ArchConfig:
             return _HF_GPT2_CONFIG
         case _:
             raise ValueError(
-                f"Unsupported model architecture: {type(model).__name__}. "
-                f"Add an ArchConfig for this model class in topology.py."
+                f"Unsupported model class {type(model).__name__}. Add a PathSchema in topology.py."
             )
 
 
-def _extract_block_index(path: str) -> int:
-    """Extract the single integer segment from a dotted path.
-
-    Asserts exactly one integer segment exists (e.g. "h.3.attn.q_proj" -> 3).
-    """
-    digits = [s for s in path.split(".") if s.isdigit()]
-    assert len(digits) == 1, f"Expected exactly 1 integer segment in '{path}', got {digits}"
-    return int(digits[0])
+# canonical representations
+class Embed: ...
 
 
-def _resolve_role(path: str, role_mapping: dict[str, _Role]) -> _Role:
-    """Match a concrete path against role_mapping patterns."""
-    matches: list[_Role] = [
-        role for pattern, role in role_mapping.items() if fnmatch(path, pattern)
-    ]
-    assert len(matches) == 1, f"Expected exactly 1 role match for {path}, got {matches}"
-    return matches[0]
+class Unembed: ...
 
 
-# --- Descriptions derived from struct position ---
+class SeparateAttnWeight:
+    weight: Literal["q", "k", "v", "o"]
 
 
-def _describe_attn_layer(attn: AttentionInfo, layer: LayerInfo) -> str:
-    match attn:
-        case SeparateAttention(q, k, v, o):
-            if layer is q:
-                return "attention Q projection"
-            if layer is k:
-                return "attention K projection"
-            if layer is v:
-                return "attention V projection"
-            assert layer is o
-            return "attention output projection"
-        case FusedAttention(qkv, o):
-            if layer is qkv:
-                return "attention QKV projection (fused)"
-            assert layer is o
-            return "attention output projection"
+class FusedAttnWeight:
+    weight: Literal["qkv", "o"]
 
 
-def _describe_ffn_layer(ffn: FFNInfo, layer: LayerInfo) -> str:
-    match ffn:
-        case StandardFFN(up, down):
-            if layer is up:
-                return "MLP up-projection"
-            assert layer is down
-            return "MLP down-projection"
-        case SwiGLUFFN(gate, up, down):
-            if layer is gate:
-                return "SwiGLU gate projection"
-            if layer is up:
-                return "SwiGLU up-projection"
-            assert layer is down
-            return "SwiGLU down-projection"
+AttnWeight = FusedAttnWeight | SeparateAttnWeight
 
 
-def _get_kv_paths(blocks: list[BlockInfo]) -> frozenset[str]:
-    paths: set[str] = set()
-    for block in blocks:
-        match block.attn:
-            case SeparateAttention(_, k, v, _):
-                paths.add(k.path)
-                paths.add(v.path)
-            case FusedAttention(qkv, _):
-                paths.add(qkv.path)
-            case None:
-                pass
-    return frozenset(paths)
+class GLUWeight:
+    weight: Literal["up", "down", "gate"]
 
 
-def _get_o_paths(blocks: list[BlockInfo]) -> frozenset[str]:
-    paths: set[str] = set()
-    for block in blocks:
-        match block.attn:
-            case SeparateAttention(_, _, _, o):
-                paths.add(o.path)
-            case FusedAttention(_, o):
-                paths.add(o.path)
-            case None:
-                pass
-    return frozenset(paths)
+class MLPWeight:
+    weight: Literal["up", "down"]
+
+
+FFNWeight = GLUWeight | MLPWeight
+
+
+@dataclass
+class LayerWeight:
+    layer_idx: int
+    name: AttnWeight | FFNWeight
+
+
+CanonicalWeight = Embed | LayerWeight | Unembed
 
 
 class TransformerTopology:
-    """Abstract transformer topology resolved at model load time."""
+    """Bidirectional mapping between canonical addresses and concrete module paths.
 
-    embedding: LayerInfo
-    blocks: list[BlockInfo]
-    unembed: LayerInfo
+    Built from a target model (nn.Module). Independent of decomposition —
+    discovers the full model structure via named_modules().
+    """
 
-    def __init__(self, model: ComponentModel) -> None:
-        target_model = model.target_model
-        target_paths = model.target_module_paths
-        arch = _get_arch_config(target_model)
+    def __init__(self, target_model: nn.Module) -> None:
+        self.target_model = target_model
+        self.path_schema = _get_path_schema(target_model)
+        # self.canonical_weights = self.build_canonical_weights()
 
-        # Resolve embedding
-        embedding_module = target_model.get_submodule(arch.embedding_path)
-        assert isinstance(embedding_module, nn.Embedding), (
-            f"Expected nn.Embedding at '{arch.embedding_path}', "
-            f"got {type(embedding_module).__name__}"
-        )
-        self.embedding = LayerInfo(arch.embedding_path, embedding_module)
+    def get_target_module_path(self, canonical: CanonicalWeight) -> str:
+        match canonical:
+            case Embed():
+                return self.path_schema.embedding_path
+            case Unembed():
+                return self.path_schema.unembed_path
+            case LayerWeight(layer_idx=layer_idx, name=name):
+                base = f"{self.path_schema.blocks}.{layer_idx}"
+                match name:
+                    case SeparateAttnWeight(weight=weight):
+                        assert isinstance(self.path_schema.attn, SeparateAttnPathSchema)
+                        match weight:
+                            case "q":
+                                return f"{base}.{self.path_schema.attn.q}"
+                            case "k":
+                                return f"{base}.{self.path_schema.attn.k}"
+                            case "v":
+                                return f"{base}.{self.path_schema.attn.v}"
+                            case "o":
+                                return f"{base}.{self.path_schema.attn.o}"
+                    case FusedAttnWeight(weight=weight):
+                        assert isinstance(self.path_schema.attn, FusedAttentionPathSchema)
+                        match weight:
+                            case "qkv":
+                                return f"{base}.{self.path_schema.attn.qkv}"
+                            case "o":
+                                return f"{base}.{self.path_schema.attn.o}"
+                    case GLUWeight(weight=weight):
+                        assert isinstance(self.path_schema.mlp, GLUPathSchema)
+                        match weight:
+                            case "up":
+                                return f"{base}.{self.path_schema.mlp.up}"
+                            case "down":
+                                return f"{base}.{self.path_schema.mlp.down}"
+                            case "gate":
+                                return f"{base}.{self.path_schema.mlp.gate}"
+                    case MLPWeight(weight=weight):
+                        assert isinstance(self.path_schema.mlp, FFNPathSchema)
+                        match weight:
+                            case "up":
+                                return f"{base}.{self.path_schema.mlp.up}"
+                            case "down":
+                                return f"{base}.{self.path_schema.mlp.down}"
 
-        # Resolve unembed
-        unembed_module = target_model.get_submodule(arch.unembed_path)
-        assert isinstance(unembed_module, nn.Linear), (
-            f"Expected nn.Linear at '{arch.unembed_path}', got {type(unembed_module).__name__}"
-        )
-        self.unembed = LayerInfo(arch.unembed_path, unembed_module)
-
-        # Group target paths by block index, assign roles, build LayerInfos
-        block_layers: dict[int, dict[_Role, LayerInfo]] = {}
-        self._path_to_block_idx: dict[str, int] = {}
-
-        for path in target_paths:
-            block_idx = _extract_block_index(path)
-            role = _resolve_role(path, arch.role_mapping)
-            layer_info = LayerInfo(path, target_model.get_submodule(path))
-            block_layers.setdefault(block_idx, {})[role] = layer_info
-            self._path_to_block_idx[path] = block_idx
-
-        # Build blocks in order
-        self.blocks = []
-        for idx in sorted(block_layers):
-            roles = block_layers[idx]
-            attn = _build_attention(roles)
-            ffn = _build_ffn(roles)
-            self.blocks.append(BlockInfo(idx, attn, ffn))
-
-        # Preserve original target path ordering from ComponentModel
-        self._model_target_paths = target_paths
-
-        # Derive kv/o path sets from block structs
-        self.kv_paths = _get_kv_paths(self.blocks)
-        self.o_paths = _get_o_paths(self.blocks)
-
-        # Build path -> (block, layer_info) lookup for describe()
-        self._path_to_layer: dict[str, tuple[BlockInfo, LayerInfo]] = {}
-        for block in self.blocks:
-            for layer in _block_layers(block):
-                self._path_to_layer[layer.path] = (block, layer)
-
-        # Role order: deduplicated concrete role names in execution order (for frontend layout)
-        seen: set[str] = set()
-        role_order: list[str] = []
-        for path in target_paths:
-            role_name = path.rsplit(".", maxsplit=1)[-1]
-            if role_name not in seen:
-                seen.add(role_name)
-                role_order.append(role_name)
-        self.role_order = role_order
-
-        # Role groups: only include groups where >= 2 roles are present
-        self.role_groups: dict[str, list[str]] = {}
-        for group_name, roles in arch.role_groups.items():
-            present = [r for r in roles if r in seen]
-            if len(present) >= 2:
-                self.role_groups[group_name] = present
-
-        self._arch = arch
-
-    @property
-    def target_module_paths(self) -> list[str]:
-        return self._model_target_paths
-
-    @property
-    def embedding_path(self) -> str:
-        return self.embedding.path
-
-    @property
-    def embedding_module(self) -> nn.Embedding:
-        assert isinstance(self.embedding.module, nn.Embedding)
-        return self.embedding.module
-
-    @property
-    def unembed_path(self) -> str:
-        return self.unembed.path
-
-    @property
-    def unembed_module(self) -> nn.Linear:
-        assert isinstance(self.unembed.module, nn.Linear)
-        return self.unembed.module
+    def get_canonical_weight(self, target_module_path: str) -> CanonicalWeight:
+        # TODO: parse path based on path_schema and return the corresponding CanonicalWeight
+        raise NotImplementedError("Not implemented")
 
     @property
     def n_blocks(self) -> int:
-        return len(self.blocks)
+        blocks = self.target_model.get_submodule(self.path_schema.blocks)
+        assert isinstance(blocks, nn.ModuleList)
+        return len(blocks)
 
-    def block_index(self, path: str) -> int:
-        return self._path_to_block_idx[path]
+    def is_cross_seq_pair(self, source: CanonicalWeight, target: CanonicalWeight) -> bool:
+        """True if source is k/v and target is o in the same block.
 
-    def describe(self, path: str) -> str:
+        Takes canonical addresses.
+        """
+        match source, target:
+            case (
+                LayerWeight(layer_idx=source_idx, name=SeparateAttnWeight(weight="k")),
+                LayerWeight(layer_idx=target_idx, name=SeparateAttnWeight(weight="q")),
+            ):
+                return source_idx < target_idx
+            case (
+                LayerWeight(layer_idx=source_idx, name=FusedAttnWeight(weight="qkv")),
+                LayerWeight(layer_idx=target_idx, name=FusedAttnWeight(weight=_)),
+            ):
+                return source_idx < target_idx
+            case _:
+                return False
+
+    def describe(self, canonical: CanonicalWeight) -> str:
         """Human-readable description for autointerp prompts."""
-        block, layer = self._path_to_layer[path]
-        if block.attn is not None and _layer_in_attn(block.attn, layer):
-            desc = _describe_attn_layer(block.attn, layer)
-        else:
-            desc = _describe_ffn_layer(block.ffn, layer)
-        return f"{desc} in layer {block.index + 1} of {self.n_blocks}"
-
-    def is_cross_seq_pair(self, source: str, target: str) -> bool:
-        """True if source is k/v and target is o in the same block."""
-        if source not in self._path_to_block_idx or target not in self._path_to_block_idx:
-            return False
-        if source not in self.kv_paths or target not in self.o_paths:
-            return False
-        return self._path_to_block_idx[source] == self._path_to_block_idx[target]
-
-    def ordered_layers(self) -> list[str]:
-        """Full layer list for gradient pair testing: [wte, ...components..., output]."""
-        layers = ["wte"]
-        layers.extend(self._model_target_paths)
-        layers.append("output")
-        return layers
-
-    def get_unembed_weight(self) -> Float[Tensor, "d_model vocab"]:
-        """Get the unembedding weight matrix (transposed to [d_model, vocab])."""
-        assert isinstance(self.unembed.module, nn.Linear)
-        return self.unembed.module.weight.T.detach()
-
-    @property
-    def display_names(self) -> dict[str, str]:
-        return self._arch.display_names
-
-
-def _layer_in_attn(attn: AttentionInfo, layer: LayerInfo) -> bool:
-    match attn:
-        case SeparateAttention(q, k, v, o):
-            return layer is q or layer is k or layer is v or layer is o
-        case FusedAttention(qkv, o):
-            return layer is qkv or layer is o
-
-
-def _block_layers(block: BlockInfo) -> list[LayerInfo]:
-    """All LayerInfos in a block, for building lookups."""
-    layers: list[LayerInfo] = []
-    if block.attn is not None:
-        match block.attn:
-            case SeparateAttention(q, k, v, o):
-                layers.extend([q, k, v, o])
-            case FusedAttention(qkv, o):
-                layers.extend([qkv, o])
-    match block.ffn:
-        case StandardFFN(up, down):
-            layers.extend([up, down])
-        case SwiGLUFFN(gate, up, down):
-            layers.extend([gate, up, down])
-    return layers
-
-
-def _build_attention(roles: dict[_Role, LayerInfo]) -> AttentionInfo | None:
-    """Build attention info from collected roles. Returns None if no attention roles present."""
-    attn_roles = {r: info for r, info in roles.items() if r in _ATTN_ROLES}
-    if not attn_roles:
-        return None
-
-    if "qkv" in attn_roles:
-        assert set(attn_roles) == {"qkv", "o"}, (
-            f"Fused attention expects qkv + o, got {set(attn_roles)}"
-        )
-        return FusedAttention(qkv=attn_roles["qkv"], o=attn_roles["o"])
-
-    assert set(attn_roles) >= {"q", "k", "v", "o"}, (
-        f"Separate attention expects q, k, v, o; got {set(attn_roles)}"
-    )
-    return SeparateAttention(
-        q=attn_roles["q"], k=attn_roles["k"], v=attn_roles["v"], o=attn_roles["o"]
-    )
-
-
-def _build_ffn(roles: dict[_Role, LayerInfo]) -> FFNInfo:
-    """Build FFN info from collected roles."""
-    ffn_roles = {r: info for r, info in roles.items() if r not in _ATTN_ROLES}
-    assert "up" in ffn_roles and "down" in ffn_roles, (
-        f"FFN requires up + down, got {set(ffn_roles)}"
-    )
-
-    if "gate" in ffn_roles:
-        return SwiGLUFFN(gate=ffn_roles["gate"], up=ffn_roles["up"], down=ffn_roles["down"])
-    return StandardFFN(up=ffn_roles["up"], down=ffn_roles["down"])
+        match canonical:
+            case Embed():
+                return "embedding"
+            case LayerWeight(name=name):
+                match name:
+                    case SeparateAttnWeight(weight=weight):
+                        match weight:
+                            case "q":
+                                return "attention Q projection"
+                            case "k":
+                                return "attention K projection"
+                            case "v":
+                                return "attention V projection"
+                            case "o":
+                                return "attention output projection"
+                    case FusedAttnWeight(weight=weight):
+                        match weight:
+                            case "qkv":
+                                return "attention QKV projection (fused)"
+                            case "o":
+                                return "attention output projection"
+                    case GLUWeight(weight=weight):
+                        match weight:
+                            case "up":
+                                return "GLU up-projection"
+                            case "down":
+                                return "GLU down-projection"
+                            case "gate":
+                                return "GLU gate projection"
+                    case MLPWeight(weight=weight):
+                        match weight:
+                            case "up":
+                                return "MLP up-projection"
+                            case "down":
+                                return "MLP down-projection"
+            case Unembed():
+                return "unembedding"
