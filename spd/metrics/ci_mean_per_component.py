@@ -8,7 +8,7 @@ from torch.distributed import ReduceOp
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.plotting import plot_mean_component_cis_both_scales
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, is_main_process
 
 
 class CIMeanPerComponent(Metric):
@@ -43,6 +43,9 @@ class CIMeanPerComponent(Metric):
             summed_ci = all_reduce(self.component_ci_sums[module_name], op=ReduceOp.SUM)
             examples_reduced = all_reduce(self.examples_seen[module_name], op=ReduceOp.SUM)
             mean_component_cis[module_name] = summed_ci / examples_reduced
+
+        if not is_main_process():
+            return {}
 
         img_linear, img_log = plot_mean_component_cis_both_scales(mean_component_cis)
 

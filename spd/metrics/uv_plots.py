@@ -7,6 +7,7 @@ from spd.configs import SamplingType
 from spd.metrics.base import Metric
 from spd.models.component_model import ComponentModel
 from spd.plotting import plot_causal_importance_vals, plot_UV_matrices
+from spd.utils.distributed_utils import is_main_process
 
 
 class UVPlots(Metric):
@@ -37,6 +38,9 @@ class UVPlots(Metric):
     @override
     def compute(self) -> dict[str, Image.Image]:
         assert self.batch_shape is not None, "haven't seen any inputs yet"
+
+        if not is_main_process():
+            return {}
 
         all_perm_indices = plot_causal_importance_vals(
             model=self.model,

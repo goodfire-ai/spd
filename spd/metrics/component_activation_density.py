@@ -10,7 +10,7 @@ from torch.distributed import ReduceOp
 from spd.metrics.base import Metric
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.plotting import plot_component_activation_density
-from spd.utils.distributed_utils import all_reduce
+from spd.utils.distributed_utils import all_reduce, is_main_process
 
 
 class ComponentActivationDensity(Metric):
@@ -48,6 +48,9 @@ class ComponentActivationDensity(Metric):
                 self.component_activation_counts[module_name], op=ReduceOp.SUM
             )
             activation_densities[module_name] = counts_reduced / n_examples_reduced
+
+        if not is_main_process():
+            return {}
 
         fig = plot_component_activation_density(activation_densities)
         return {"component_activation_density": fig}
