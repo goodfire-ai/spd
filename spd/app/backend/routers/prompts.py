@@ -81,5 +81,25 @@ def list_prompts(manager: DepStateManager, loaded: DepLoadedRun) -> list[PromptP
     return results
 
 
-# TODO: Re-enable generate_prompts and search_prompts endpoints
-# when dependencies are available (extract_active_from_ci, schemas, etc.)
+@router.post("/custom")
+@log_errors
+def add_custom_prompt(text: str, manager: DepStateManager, loaded: DepLoadedRun) -> PromptPreview:
+    """Add a custom text prompt."""
+    token_ids = loaded.tokenizer.encode(text)
+    assert len(token_ids) > 0, "Text produced no tokens"
+
+    # Truncate to context length
+    token_ids = token_ids[: loaded.context_length]
+
+    db = manager.db
+    prompt_id = db.add_custom_prompt(loaded.run.id, token_ids, loaded.context_length)
+    spans = loaded.tokenizer.get_spans(token_ids)
+    next_token_probs = compute_next_token_probs(token_ids, loaded)
+
+    return PromptPreview(
+        id=prompt_id,
+        token_ids=token_ids,
+        tokens=spans,
+        preview="".join(spans[:10]) + ("..." if len(spans) > 10 else ""),
+        next_token_probs=next_token_probs,
+    )
