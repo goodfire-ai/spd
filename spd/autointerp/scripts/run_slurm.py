@@ -49,7 +49,7 @@ def submit_autointerp(
 
     autointerp_run_id = "a-" + datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    config_json = interp_config.model_dump_json()
+    config_json = interp_config.model_dump_json(exclude_none=True)
 
     # === 1. Interpret job ===
     interpret_parts = [

@@ -65,7 +65,7 @@ def submit_harvest(
         cmd = (
             f"python -m spd.harvest.scripts.run "
             f'"{wandb_path}" '
-            f"--config_json '{config.model_dump_json()}' "
+            f"--config_json '{config.model_dump_json(exclude_none=True)}' "
             f"--rank {rank} "
             f"--world_size {n_gpus}"
         )

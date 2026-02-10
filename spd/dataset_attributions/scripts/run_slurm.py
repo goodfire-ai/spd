@@ -60,7 +60,7 @@ def submit_attributions(
     suffix = f"-{job_suffix}" if job_suffix else ""
     array_job_name = f"spd-attr{suffix}"
 
-    config_json = config.model_dump_json()
+    config_json = config.model_dump_json(exclude_none=True)
 
     # SLURM arrays are 1-indexed, so task ID 1 -> rank 0, etc.
     worker_commands = []
