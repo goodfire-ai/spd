@@ -29,7 +29,7 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 def main(
     wandb_path: str,
     config_path: str | None = None,
-    config_json: str | None = None,
+    config_json: str | dict[str, object] | None = None,
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
@@ -61,6 +61,8 @@ def main(
             config = HarvestConfig.from_file(path)
         case (None, str(json_str)):
             config = HarvestConfig.model_validate_json(json_str)
+        case (None, dict(d)):
+            config = HarvestConfig.model_validate(d)
         case (None, None):
             config = HarvestConfig()
         case _:

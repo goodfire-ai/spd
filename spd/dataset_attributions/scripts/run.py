@@ -25,7 +25,7 @@ from spd.dataset_attributions.harvest import (
 def main(
     wandb_path: str,
     config_path: str | None = None,
-    config_json: str | None = None,
+    config_json: str | dict[str, object] | None = None,
     rank: int | None = None,
     world_size: int | None = None,
     merge: bool = False,
@@ -54,6 +54,8 @@ def main(
             config = DatasetAttributionConfig.from_file(path)
         case (None, str(json_str)):
             config = DatasetAttributionConfig.model_validate_json(json_str)
+        case (None, dict(d)):
+            config = DatasetAttributionConfig.model_validate(d)
         case (None, None):
             config = DatasetAttributionConfig()
         case _:

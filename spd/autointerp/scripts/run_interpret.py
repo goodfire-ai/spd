@@ -24,7 +24,7 @@ from spd.utils.wandb_utils import parse_wandb_run_path
 def main(
     wandb_path: str,
     config_path: str | None = None,
-    config_json: str | None = None,
+    config_json: str | dict[str, object] | None = None,
     autointerp_run_id: str | None = None,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
@@ -45,6 +45,8 @@ def main(
             interp_config = CompactSkepticalConfig.from_file(path)
         case (None, str(json_str)):
             interp_config = CompactSkepticalConfig.model_validate_json(json_str)
+        case (None, dict(d)):
+            interp_config = CompactSkepticalConfig.model_validate(d)
         case _:
             raise ValueError("Exactly one of config_path or config_json must be provided")
 
