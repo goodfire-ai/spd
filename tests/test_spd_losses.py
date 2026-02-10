@@ -16,7 +16,7 @@ from spd.metrics import (
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
 )
-from spd.models.batch_and_loss_fns import recon_loss_mse, run_batch_raw
+from spd.models.batch_and_loss_fns import recon_loss_mse, run_batch_passthrough
 from spd.models.component_model import ComponentModel
 from spd.utils.module_utils import ModulePathInfo
 
@@ -40,7 +40,7 @@ def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel
 
     comp_model = ComponentModel(
         target_model=target,
-        run_batch=run_batch_raw,
+        run_batch=run_batch_passthrough,
         module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_fn_hidden_dims=[2],
         ci_fn_type="mlp",

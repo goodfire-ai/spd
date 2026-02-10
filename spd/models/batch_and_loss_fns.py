@@ -25,14 +25,14 @@ class ReconstructionLoss[OutputT](Protocol):
     def __call__(self, pred: OutputT, target: OutputT) -> tuple[Float[Tensor, ""], int]: ...
 
 
-def run_batch_raw(model: nn.Module, batch: Any) -> Any:
+def run_batch_passthrough(model: nn.Module, batch: Any) -> Any:
     return model(batch)
 
 
 def make_run_batch(output_extract: OutputExtractConfig | None) -> RunBatch[Any, Any]:
     match output_extract:
         case None:
-            return run_batch_raw
+            return run_batch_passthrough
         case IndexOutputExtract(index=idx):
             return lambda model, batch: model(batch)[idx]
         case AttrOutputExtract(attr=attr):
