@@ -29,12 +29,21 @@ from torch import nn
 # ── Canonical weight types ──────────────────────────────────────────────
 
 
-@dataclass(frozen=True)
-class Embed: ...
+class CanonicalWeight(ABC):
+    @abstractmethod
+    def canonical_str(self) -> str: ...
 
 
 @dataclass(frozen=True)
-class Unembed: ...
+class Embed(CanonicalWeight):
+    def canonical_str(self) -> str:
+        return "wte"
+
+
+@dataclass(frozen=True)
+class Unembed(CanonicalWeight):
+    def canonical_str(self) -> str:
+        return "output"
 
 
 @dataclass(frozen=True)
@@ -64,27 +73,16 @@ FFNWeight = GLUWeight | MLPWeight
 
 
 @dataclass(frozen=True)
-class LayerWeight:
+class LayerWeight(CanonicalWeight):
     layer_idx: int
     name: AttnWeight | FFNWeight
 
-
-CanonicalWeight = Embed | LayerWeight | Unembed
-
-
-def canonical_to_str(w: CanonicalWeight) -> str:
-    """Render a CanonicalWeight as a canonical address string."""
-    match w:
-        case Embed():
-            return "wte"
-        case Unembed():
-            return "output"
-        case LayerWeight(layer_idx=idx, name=name):
-            match name:
-                case SeparateAttnWeight(weight=p) | FusedAttnWeight(weight=p):
-                    return f"{idx}.attn.{p}"
-                case GLUWeight(weight=p) | MLPWeight(weight=p):
-                    return f"{idx}.ffn.{p}"
+    def canonical_str(self) -> str:
+        match self.name:
+            case SeparateAttnWeight(weight=p) | FusedAttnWeight(weight=p):
+                return f"{self.layer_idx}.attn.{p}"
+            case GLUWeight(weight=p) | MLPWeight(weight=p):
+                return f"{self.layer_idx}.ffn.{p}"
 
 
 # ── Sublayer path schemas ──────────────────────────────────────────────

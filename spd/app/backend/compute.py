@@ -18,7 +18,7 @@ from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimi
 from spd.configs import SamplingType
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
-from spd.topology import CanonicalWeight, Embed, TransformerTopology, Unembed, canonical_to_str
+from spd.topology import CanonicalWeight, Embed, TransformerTopology
 from spd.utils.general_utils import bf16_autocast
 
 
@@ -69,7 +69,7 @@ class Node:
 
     @override
     def __str__(self) -> str:
-        return f"{canonical_to_str(self.layer)}:{self.seq_pos}:{self.component_idx}"
+        return f"{self.layer.canonical_str()}:{self.seq_pos}:{self.component_idx}"
 
 
 def _get_seq_pos(node_key: str) -> int:
@@ -650,7 +650,7 @@ def extract_node_ci_vals(
     """
     node_ci_vals: dict[str, float] = {}
     for layer_name, ci_tensor in ci_lower_leaky.items():
-        canonical = canonical_to_str(topology.get_canonical_weight(layer_name))
+        canonical = topology.get_canonical_weight(layer_name).canonical_str()
         n_seq = ci_tensor.shape[1]
         n_components = ci_tensor.shape[2]
         for seq_pos in range(n_seq):
@@ -672,7 +672,7 @@ def extract_node_subcomp_acts(
     """
     node_subcomp_acts: dict[str, float] = {}
     for layer_name, subcomp_acts in component_acts.items():
-        canonical = canonical_to_str(topology.get_canonical_weight(layer_name))
+        canonical = topology.get_canonical_weight(layer_name).canonical_str()
         ci = ci_lower_leaky[layer_name]
         alive_mask = ci[0] > ci_threshold  # [seq, C]
         alive_seq_indices, alive_c_indices = torch.where(alive_mask)
