@@ -137,6 +137,7 @@ class PersistentPGDState:
         self.optimizer = make_ppgd_optimizer(cfg.optimizer)
         self._skip_all_reduce = isinstance(cfg.scope, PerBatchPerPositionScope)
         self._use_sigmoid_parameterization = cfg.use_sigmoid_parameterization
+        self._reinit_prob = cfg.reinit_prob
 
         self.sources: PPGDSources = {}
 
@@ -176,6 +177,8 @@ class PersistentPGDState:
         Updates sources in-place, then clamps to [0, 1] (or leaves unbounded when using sigmoid
         parameterization, where sigmoid is applied when reading effective sources).
 
+        If reinit_prob > 0, each source entry is independently reinitialized with that probability.
+
         Returns:
             Mean absolute step per module (before clamping).
         """
@@ -186,7 +189,33 @@ class PersistentPGDState:
                 for source in self.sources.values():
                     source.clamp_(0.0, 1.0)
 
+            if self._reinit_prob > 0:
+                self._reinit_sources()
+
         return mean_abs_step
+
+    def _reinit_sources(self) -> None:
+        """Randomly reinitialize a fraction of source entries to escape local optima."""
+        init_fn = torch.randn if self._use_sigmoid_parameterization else torch.rand
+        for source in self.sources.values():
+
+            def _generate_mask_and_values(
+                shape: list[int],
+            ) -> tuple[Tensor, Tensor]:
+                mask = torch.bernoulli(torch.full(shape, self._reinit_prob)).bool()
+                new_values = init_fn(shape)
+                return mask, new_values
+
+            if self._skip_all_reduce:
+                mask, new_values = _generate_mask_and_values(list(source.shape))
+            else:
+                mask, new_values = call_on_rank0_then_broadcast(
+                    _generate_mask_and_values, list(source.shape)
+                )
+
+            mask = mask.to(source.device)
+            new_values = new_values.to(source.device)
+            source[mask] = new_values[mask]
 
     def get_effective_sources(self) -> PPGDSources:
         """Return sources in [0, 1] range.
