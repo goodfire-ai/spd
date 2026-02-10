@@ -1,7 +1,12 @@
 """Harvester for collecting component statistics in a single pass."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from spd.topology import TransformerTopology
 
 import torch
 import tqdm
@@ -325,7 +330,9 @@ class Harvester:
         ]
         return harvester
 
-    def build_results(self, pmi_top_k_tokens: int) -> list[ComponentData]:
+    def build_results(
+        self, pmi_top_k_tokens: int, topology: "TransformerTopology"
+    ) -> list[ComponentData]:
         """Convert accumulated state into ComponentData objects."""
         print("  Moving tensors to CPU...")
         mean_ci_per_component = (self.ci_sums / self.total_tokens_processed).cpu()
@@ -379,10 +386,11 @@ class Harvester:
                     top_k=pmi_top_k_tokens,
                 )
 
+                canonical_layer = topology.get_canonical_weight(layer_name).canonical_str()
                 components.append(
                     ComponentData(
-                        component_key=f"{layer_name}:{component_idx}",
-                        layer=layer_name,
+                        component_key=f"{canonical_layer}:{component_idx}",
+                        layer=canonical_layer,
                         component_idx=component_idx,
                         mean_ci=mean_ci,
                         activation_examples=activation_examples,

@@ -25,6 +25,7 @@ from torch import Tensor
 from spd.data import train_loader_and_tokenizer
 from spd.harvest.config import HarvestConfig
 from spd.harvest.harvester import Harvester, HarvesterState
+from spd.topology import TransformerTopology
 from spd.harvest.schemas import (
     ComponentData,
     ComponentSummary,
@@ -109,15 +110,18 @@ class HarvestResult:
 def _build_harvest_result(
     harvester: Harvester,
     config: HarvestConfig,
+    topology: TransformerTopology,
 ) -> HarvestResult:
     """Build HarvestResult from a harvester."""
     logger.info("Building component results...")
-    components = harvester.build_results(pmi_top_k_tokens=config.pmi_token_top_k)
+    components = harvester.build_results(
+        pmi_top_k_tokens=config.pmi_token_top_k, topology=topology
+    )
     logger.info(f"Built {len(components)} components (skipped components with no firings)")
 
-    # Build component keys list (same ordering as tensors)
+    # Build component keys list with canonical addresses
     component_keys = [
-        f"{layer}:{c}"
+        f"{topology.get_canonical_weight(layer).canonical_str()}:{c}"
         for layer in harvester.layer_names
         for c in range(harvester.c_per_layer[layer])
     ]
@@ -265,7 +269,8 @@ def harvest_activation_contexts(
         logger.info(f"[Worker {rank}] Saved state to {state_path}")
     else:
         # Single GPU: save full result
-        result = _build_harvest_result(harvester, config)
+        topology = TransformerTopology(model.target_model)
+        result = _build_harvest_result(harvester, config, topology)
         result.save(activation_contexts_dir, correlations_dir)
         logger.info(f"Saved results to {activation_contexts_dir} and {correlations_dir}")
 
@@ -312,7 +317,12 @@ def merge_activation_contexts(wandb_path: str) -> None:
         activation_context_tokens_per_side=merged_state.context_tokens_per_side,
     )
 
-    result = _build_harvest_result(harvester, config)
+    # Load model just for topology (canonical key generation)
+    run_info = SPDRunInfo.from_path(wandb_path)
+    target_model = ComponentModel.from_run_info(run_info).target_model
+    topology = TransformerTopology(target_model)
+
+    result = _build_harvest_result(harvester, config, topology)
     result.save(activation_contexts_dir, correlations_dir)
     logger.info(f"Saved merged results to {activation_contexts_dir} and {correlations_dir}")
 
