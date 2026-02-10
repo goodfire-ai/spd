@@ -100,8 +100,8 @@ _GPT2_SIMPLE_CONFIG = ArchConfig(
 _GPT2_CONFIG = ArchConfig(
     embedding_path="wte",
     unembed_path="lm_head",
-    kv_patterns=("h.*.attn.c_attn",),
-    o_patterns=("h.*.attn.c_proj",),
+    kv_patterns=("h_torch.*.attn.c_attn",),
+    o_patterns=("h_torch.*.attn.c_proj",),
     role_groups={},
     display_names={"lm_head": "W_U"},
 )
