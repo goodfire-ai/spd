@@ -13,6 +13,7 @@ from torch import Tensor
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
+from spd.topology import CanonicalWeight
 from spd.dataset_attributions.storage import (
     DatasetAttributionEntry as StorageEntry,
 )
@@ -58,6 +59,17 @@ NOT_AVAILABLE_MSG = (
 )
 
 
+def _to_concrete_key(canonical_layer: str, component_idx: int, loaded: DepLoadedRun) -> str:
+    """Translate canonical layer + idx to concrete storage key.
+
+    wte and output are pseudo-layers that don't need translation.
+    """
+    if canonical_layer in ("wte", "output"):
+        return f"{canonical_layer}:{component_idx}"
+    concrete = loaded.topology.get_target_module_path(CanonicalWeight.parse(canonical_layer))
+    return f"{concrete}:{component_idx}"
+
+
 def _require_storage(loaded: DepLoadedRun) -> DatasetAttributionStorage:
     """Get storage or raise 404."""
     if not loaded.harvest.has_dataset_attributions():
@@ -88,12 +100,18 @@ def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
     return loaded.topology.get_unembed_weight()
 
 
-def _to_api_entries(entries: list[StorageEntry]) -> list[DatasetAttributionEntry]:
-    """Convert storage entries to API response format."""
+def _to_api_entries(loaded: DepLoadedRun, entries: list[StorageEntry]) -> list[DatasetAttributionEntry]:
+    """Convert storage entries to API response format with canonical keys."""
+
+    def _canonicalize_layer(layer: str) -> str:
+        if layer in ("wte", "output"):
+            return layer
+        return loaded.topology.get_canonical_weight(layer).canonical_str()
+
     return [
         DatasetAttributionEntry(
-            component_key=e.component_key,
-            layer=e.layer,
+            component_key=f"{_canonicalize_layer(e.layer)}:{e.component_idx}",
+            layer=_canonicalize_layer(e.layer),
             component_idx=e.component_idx,
             value=e.value,
         )
@@ -138,7 +156,7 @@ def get_component_attributions(
 ) -> ComponentAttributions:
     """Get all attribution data for a component (sources and targets, positive and negative)."""
     storage = _require_storage(loaded)
-    component_key = f"{layer}:{component_idx}"
+    component_key = _to_concrete_key(layer, component_idx, loaded)
 
     # Component can be both a source and a target, so we need to check both
     is_source = storage.has_source(component_key)
@@ -153,31 +171,33 @@ def get_component_attributions(
     w_unembed = _get_w_unembed(loaded) if is_source else None
 
     return ComponentAttributions(
-        positive_sources=_to_api_entries(storage.get_top_sources(component_key, k, "positive"))
+        positive_sources=_to_api_entries(loaded, storage.get_top_sources(component_key, k, "positive"))
         if is_target
         else [],
-        negative_sources=_to_api_entries(storage.get_top_sources(component_key, k, "negative"))
+        negative_sources=_to_api_entries(loaded, storage.get_top_sources(component_key, k, "negative"))
         if is_target
         else [],
         positive_targets=_to_api_entries(
+            loaded,
             storage.get_top_targets(
                 component_key,
                 k,
                 "positive",
                 w_unembed=w_unembed,
                 include_outputs=w_unembed is not None,
-            )
+            ),
         )
         if is_source
         else [],
         negative_targets=_to_api_entries(
+            loaded,
             storage.get_top_targets(
                 component_key,
                 k,
                 "negative",
                 w_unembed=w_unembed,
                 include_outputs=w_unembed is not None,
-            )
+            ),
         )
         if is_source
         else [],
@@ -195,12 +215,12 @@ def get_attribution_sources(
 ) -> list[DatasetAttributionEntry]:
     """Get top-k source components that attribute TO this target over the dataset."""
     storage = _require_storage(loaded)
-    target_key = f"{layer}:{component_idx}"
+    target_key = _to_concrete_key(layer, component_idx, loaded)
     _require_target(storage, target_key)
 
     w_unembed = _get_w_unembed(loaded) if layer == "output" else None
 
-    return _to_api_entries(storage.get_top_sources(target_key, k, sign, w_unembed=w_unembed))
+    return _to_api_entries(loaded, storage.get_top_sources(target_key, k, sign, w_unembed=w_unembed))
 
 
 @router.get("/{layer}/{component_idx}/targets")
@@ -214,12 +234,12 @@ def get_attribution_targets(
 ) -> list[DatasetAttributionEntry]:
     """Get top-k target components this source attributes TO over the dataset."""
     storage = _require_storage(loaded)
-    source_key = f"{layer}:{component_idx}"
+    source_key = _to_concrete_key(layer, component_idx, loaded)
     _require_source(storage, source_key)
 
     w_unembed = _get_w_unembed(loaded)
 
-    return _to_api_entries(storage.get_top_targets(source_key, k, sign, w_unembed=w_unembed))
+    return _to_api_entries(loaded, storage.get_top_targets(source_key, k, sign, w_unembed=w_unembed))
 
 
 @router.get("/between/{source_layer}/{source_idx}/{target_layer}/{target_idx}")
@@ -233,8 +253,8 @@ def get_attribution_between(
 ) -> float:
     """Get attribution strength from source component to target component."""
     storage = _require_storage(loaded)
-    source_key = f"{source_layer}:{source_idx}"
-    target_key = f"{target_layer}:{target_idx}"
+    source_key = _to_concrete_key(source_layer, source_idx, loaded)
+    target_key = _to_concrete_key(target_layer, target_idx, loaded)
     _require_source(storage, source_key)
     _require_target(storage, target_key)
 
