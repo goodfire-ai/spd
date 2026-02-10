@@ -576,7 +576,7 @@ class Config(BaseConfig):
     )
     output_extract: Annotated[OutputExtractConfig, Field(discriminator="type")] | None = Field(
         default=None,
-        description="How to extract tensor from model output. None = raw output.",
+        description="How to extract tensor from model output. None = raw output. Note that you can ignore this field if you plan to create your own `run_batch` function to pass to run_spd.optimize().",
     )
     tokenizer_name: str | None = Field(
         default=None,
@@ -673,30 +673,6 @@ class Config(BaseConfig):
                     config_dict["output_extract"] = {"type": "attr", "attr": "logits"}
                 case _:
                     raise ValueError(f"Unknown pretrained_model_output_attr: {old_val!r}")
-
-        # Migrate extract_tensor_output to output_extract
-        if "extract_tensor_output" in config_dict:
-            old_val = config_dict.pop("extract_tensor_output")
-            match old_val:
-                case None:
-                    pass
-                case "[0]":
-                    config_dict["output_extract"] = {"type": "index", "index": 0}
-                case ".logits":
-                    config_dict["output_extract"] = {"type": "attr", "attr": "logits"}
-                case _:
-                    raise ValueError(f"Unknown extract_tensor_output: {old_val!r}")
-
-        # Migrate old flat string values of output_extract
-        if isinstance(config_dict.get("output_extract"), str):
-            old_val = config_dict.pop("output_extract")
-            match old_val:
-                case "first_element":
-                    config_dict["output_extract"] = {"type": "index", "index": 0}
-                case "logits_attr":
-                    config_dict["output_extract"] = {"type": "attr", "attr": "logits"}
-                case _:
-                    raise ValueError(f"Unknown output_extract: {old_val!r}")
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]

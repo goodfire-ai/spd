@@ -30,6 +30,12 @@ def run_batch_passthrough(model: nn.Module, batch: Any) -> Any:
 
 
 def make_run_batch(output_extract: OutputExtractConfig | None) -> RunBatch[Any, Any]:
+    """creates a RunBatch function for a given configuration.
+
+    Note that if you plan to override the RunBatch functionality, you can simply pass
+    a custom RunBatch function into optimize and do not need to use this function at
+    all.
+    """
     match output_extract:
         case None:
             return run_batch_passthrough
