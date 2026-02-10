@@ -79,10 +79,14 @@ class LayerWeight(CanonicalWeight):
 
     def canonical_str(self) -> str:
         match self.name:
-            case SeparateAttnWeight(weight=p) | FusedAttnWeight(weight=p):
+            case SeparateAttnWeight(weight=p):
                 return f"{self.layer_idx}.attn.{p}"
-            case GLUWeight(weight=p) | MLPWeight(weight=p):
-                return f"{self.layer_idx}.ffn.{p}"
+            case FusedAttnWeight(weight=p):
+                return f"{self.layer_idx}.attn_fused.{p}"
+            case GLUWeight(weight=p):
+                return f"{self.layer_idx}.glu.{p}"
+            case MLPWeight(weight=p):
+                return f"{self.layer_idx}.mlp.{p}"
 
 
 # ── Sublayer path schemas ──────────────────────────────────────────────
