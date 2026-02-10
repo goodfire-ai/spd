@@ -38,7 +38,7 @@ def format_prompt(
                 ci_threshold,
             )
         case _:  # pyright: ignore[reportUnnecessaryComparison]
-            raise AssertionError(f"Unhandled config type: {type(config)}")
+            raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]
 
 
 def get_model(config: AutointerpConfig) -> str:
@@ -52,7 +52,7 @@ def get_reasoning(config: AutointerpConfig) -> Reasoning | None:
                 return None
             return Reasoning(effort=config.reasoning_effort.value)
         case _:  # pyright: ignore[reportUnnecessaryComparison]
-            raise AssertionError(f"Unhandled config type: {type(config)}")
+            raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]
 
 
 def get_response_schema(config: AutointerpConfig) -> dict[str, Any]:
@@ -60,4 +60,4 @@ def get_response_schema(config: AutointerpConfig) -> dict[str, Any]:
         case CompactSkepticalConfig():
             return INTERPRETATION_SCHEMA
         case _:  # pyright: ignore[reportUnnecessaryComparison]
-            raise AssertionError(f"Unhandled config type: {type(config)}")
+            raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]

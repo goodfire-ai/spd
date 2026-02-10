@@ -300,6 +300,9 @@ export function useRun() {
         get activationContextsSummary() {
             return activationContextsSummary;
         },
+        get datasetAttributionsAvailable() {
+            return run.status === "loaded" && run.data.dataset_attributions_available;
+        },
         loadRun,
         clearRun,
         syncStatus,

@@ -34,6 +34,7 @@ class LoadedRun(BaseModel):
     prompt_count: int
     context_length: int
     backend_user: str
+    dataset_attributions_available: bool
 
 
 router = APIRouter(prefix="/api", tags=["runs"])
@@ -150,6 +151,7 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         prompt_count=prompt_count,
         context_length=context_length,
         backend_user=getpass.getuser(),
+        dataset_attributions_available=manager.run_state.harvest.has_dataset_attributions(),
     )
 
 
