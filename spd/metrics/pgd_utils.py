@@ -68,7 +68,7 @@ def pgd_masked_recon_loss_update(
             loss = sum_loss / n_examples
         grads = torch.autograd.grad(loss, list(adv_sources.values()))
         adv_sources_grads = {
-            k: all_reduce(g, op=ReduceOp.SUM)
+            k: all_reduce(g, op=ReduceOp.AVG)
             for k, g in zip(adv_sources.keys(), grads, strict=True)
         }
         with torch.no_grad():
@@ -257,7 +257,7 @@ def _multibatch_pgd_fwd_bwd(
         # important: take gradient wrt the UNEXPANDED adv_sources, not the expanded ones
         grads = torch.autograd.grad(batch_sum_loss, list(adv_sources.values()))
         for k, g in zip(adv_sources.keys(), grads, strict=True):
-            pgd_step_accum_grads[k] += all_reduce(g, op=ReduceOp.SUM).detach()
+            pgd_step_accum_grads[k] += all_reduce(g, op=ReduceOp.AVG).detach()
 
         del target_model_output, ci
 
