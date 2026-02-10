@@ -5,7 +5,7 @@
 ```mermaid
 graph TD
     subgraph "CLI Entry Points"
-        PP_CLI["spd-postprocess<br/><code>postprocess_cli.py</code>"]
+        PP_CLI["spd-postprocess<br/><code>postprocess/cli.py</code>"]
         H_CLI["spd-harvest<br/><code>harvest/.../run_slurm_cli.py</code>"]
         A_CLI["spd-attributions<br/><code>dataset_attributions/.../run_slurm_cli.py</code>"]
         AI_CLI["spd-autointerp<br/><code>autointerp/.../run_slurm_cli.py</code>"]
@@ -114,7 +114,7 @@ graph LR
         AISC2["AutointerpSlurmConfig"]
     end
 
-    subgraph "spd/scripts/postprocess_config.py"
+    subgraph "spd/postprocess/config.py"
         PC2["PostprocessConfig"]
     end
 
