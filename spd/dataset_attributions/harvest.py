@@ -35,18 +35,17 @@ from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
-def _build_component_layer_keys(model: ComponentModel, topology: TransformerTopology) -> list[str]:
-    """Build list of component layer keys using canonical addresses.
+def _build_component_layer_keys(model: ComponentModel) -> list[str]:
+    """Build list of component layer keys in canonical order.
 
-    Returns keys like ["0.attn.q:0", "0.attn.q:1", ...] for all layers.
+    Returns keys like ["h.0.attn.q_proj:0", "h.0.attn.q_proj:1", ...] for all layers.
     wte and output keys are not included - they're constructed from vocab_size.
     """
     component_layer_keys = []
     for layer in model.target_module_paths:
-        canonical = topology.get_canonical_weight(layer).canonical_str()
         n_components = model.module_to_c[layer]
         for c_idx in range(n_components):
-            component_layer_keys.append(f"{canonical}:{c_idx}")
+            component_layer_keys.append(f"{layer}:{c_idx}")
     return component_layer_keys
 
 
@@ -146,7 +145,7 @@ def harvest_attributions(
     logger.info(f"Vocab size: {vocab_size}")
 
     # Build component keys and alive masks
-    component_layer_keys = _build_component_layer_keys(model, topology)
+    component_layer_keys = _build_component_layer_keys(model)
     n_components = len(component_layer_keys)
     source_alive, target_alive = _build_alive_masks(
         model, run_id, config.ci_threshold, n_components, vocab_size
