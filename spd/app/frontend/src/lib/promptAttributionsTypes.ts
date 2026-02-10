@@ -1,7 +1,5 @@
 /** Types for the prompt attributions visualizer */
 
-import { getLayerAlias, formatNodeKeyWithAliases } from "./layerAliasing";
-
 // Server API types
 
 export type PromptPreview = {
@@ -173,13 +171,6 @@ export type TokenInfo = {
 
 // Client-side computed types
 
-export type LayerInfo = {
-    name: string;
-    block: number;
-    type: "attn" | "mlp" | "embed" | "output";
-    subtype: string;
-};
-
 export type NodePosition = {
     x: number;
     y: number;
@@ -221,14 +212,16 @@ export type SubcomponentProbeResult = {
     next_token_probs: (number | null)[]; // Probability of next token (last is null)
 };
 
-/** Get display name for a layer (e.g., "h.0.mlp.c_fc" -> "L0.mlp.in") */
-export function getLayerDisplayName(layer: string): string {
-    return getLayerAlias(layer);
+/** Get display name for a layer (e.g., "lm_head" -> "W_U") using model-provided names */
+export function getLayerDisplayName(layer: string, displayNames: Record<string, string>): string {
+    return displayNames[layer] ?? layer;
 }
 
 /** Format a node key for display, replacing layer names with display names */
-export function formatNodeKeyForDisplay(nodeKey: string): string {
-    return formatNodeKeyWithAliases(nodeKey);
+export function formatNodeKeyForDisplay(nodeKey: string, displayNames: Record<string, string>): string {
+    const [layer, ...rest] = nodeKey.split(":");
+    const displayName = getLayerDisplayName(layer, displayNames);
+    return [displayName, ...rest].join(":");
 }
 
 // Node intervention helpers

@@ -22,6 +22,7 @@ from jaxtyping import Bool
 from torch import Tensor
 
 from spd.app.backend.compute import get_sources_by_target
+from spd.app.backend.model_adapter import build_model_adapter
 from spd.data import train_loader_and_tokenizer
 from spd.dataset_attributions.harvester import AttributionHarvester
 from spd.dataset_attributions.loaders import get_attributions_dir
@@ -163,7 +164,8 @@ def harvest_attributions(
 
     # Get gradient connectivity
     logger.info("Computing sources_by_target...")
-    sources_by_target_raw = get_sources_by_target(model, str(device), spd_config.sampling)
+    adapter = build_model_adapter(model)
+    sources_by_target_raw = get_sources_by_target(model, adapter, str(device), spd_config.sampling)
 
     # Filter sources_by_target:
     # - Valid targets: component layers + output

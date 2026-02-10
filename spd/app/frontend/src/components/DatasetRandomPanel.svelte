@@ -51,7 +51,11 @@
                 <button class="action-button" onclick={loadRandomSamples} disabled={randomSamples.status === "loading"}>
                     {randomSamples.status === "loading" ? "Loading..." : "Load Samples"}
                 </button>
-                <button class="action-button secondary" onclick={shuffleRandom} disabled={randomSamples.status === "loading"}>
+                <button
+                    class="action-button secondary"
+                    onclick={shuffleRandom}
+                    disabled={randomSamples.status === "loading"}
+                >
                     Shuffle
                 </button>
             </div>

@@ -8,9 +8,9 @@ Contains:
 from dataclasses import dataclass, field
 from typing import Any
 
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-
+from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.database import PromptAttrDB, Run
+from spd.app.backend.model_adapter import ModelAdapter
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
@@ -111,10 +111,10 @@ class RunState:
 
     run: Run
     model: ComponentModel
-    tokenizer: PreTrainedTokenizerBase
+    adapter: ModelAdapter
+    tokenizer: AppTokenizer
     sources_by_target: dict[str, list[str]]
     config: Config
-    token_strings: dict[int, str]
     context_length: int
     harvest: HarvestCache
 

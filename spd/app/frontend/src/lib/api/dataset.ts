@@ -5,15 +5,15 @@
 import { apiUrl } from "./index";
 
 export type DatasetSearchResult = {
-    story: string;
+    text: string;
     occurrence_count: number;
-    topic: string | null;
-    theme: string | null;
+    metadata: Record<string, string>;
 };
 
 export type DatasetSearchMetadata = {
     query: string;
     split: string;
+    dataset_name: string;
     total_results: number;
     search_time_seconds: number;
 };
@@ -58,8 +58,7 @@ export type TokenizedSearchResult = {
     tokens: string[];
     next_token_probs: (number | null)[];
     occurrence_count: number;
-    topic: string | null;
-    theme: string | null;
+    metadata: Record<string, string>;
 };
 
 export type TokenizedSearchPage = {
@@ -118,8 +117,7 @@ export async function getRandomSamples(
 export type TokenizedSample = {
     tokens: string[];
     next_token_probs: (number | null)[]; // Probability of next token; null for last position
-    topic: string | null;
-    theme: string | null;
+    metadata: Record<string, string>;
 };
 
 export type RandomSamplesWithLossResult = {

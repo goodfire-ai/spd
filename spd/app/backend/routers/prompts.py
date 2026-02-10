@@ -1,11 +1,21 @@
 """Prompt listing endpoints."""
 
 import torch
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
 from spd.app.backend.utils import log_errors
+from spd.utils.distributed_utils import get_device
+
+# TODO: Re-enable these endpoints when dependencies are available:
+# - extract_active_from_ci from database
+# - PromptSearchQuery, PromptSearchResponse from schemas
+# - DatasetConfig, LMTaskConfig from configs
+# - create_data_loader, extract_batch_data from data
+# - logger from utils
+
+DEVICE = get_device()
 
 # =============================================================================
 # Schemas
@@ -57,49 +67,19 @@ def list_prompts(manager: DepStateManager, loaded: DepLoadedRun) -> list[PromptP
     for pid in prompt_ids:
         prompt = db.get_prompt(pid)
         assert prompt is not None, f"Prompt {pid} in index but not in DB"
-        token_strings = [loaded.token_strings[t] for t in prompt.token_ids]
+        spans = loaded.tokenizer.get_spans(prompt.token_ids)
         next_token_probs = compute_next_token_probs(prompt.token_ids, loaded)
         results.append(
             PromptPreview(
                 id=prompt.id,
                 token_ids=prompt.token_ids,
-                tokens=token_strings,
-                preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
+                tokens=spans,
+                preview="".join(spans[:10]) + ("..." if len(spans) > 10 else ""),
                 next_token_probs=next_token_probs,
             )
         )
     return results
 
 
-@router.post("/custom")
-@log_errors
-def create_custom_prompt(
-    text: str,
-    manager: DepStateManager,
-    loaded: DepLoadedRun,
-) -> PromptPreview:
-    """Create a custom prompt from text and store it.
-
-    Returns the created prompt with its ID for further operations.
-    """
-    db = manager.db
-
-    token_ids = loaded.tokenizer.encode(text, add_special_tokens=False)
-    if not token_ids:
-        raise HTTPException(status_code=400, detail="Text produced no tokens")
-
-    prompt_id = db.add_custom_prompt(
-        run_id=loaded.run.id,
-        token_ids=token_ids,
-        context_length=loaded.context_length,
-    )
-
-    token_strings = [loaded.token_strings[t] for t in token_ids]
-    next_token_probs = compute_next_token_probs(token_ids, loaded)
-    return PromptPreview(
-        id=prompt_id,
-        token_ids=token_ids,
-        tokens=token_strings,
-        preview="".join(token_strings[:10]) + ("..." if len(token_strings) > 10 else ""),
-        next_token_probs=next_token_probs,
-    )
+# TODO: Re-enable generate_prompts and search_prompts endpoints
+# when dependencies are available (extract_active_from_ci, schemas, etc.)
