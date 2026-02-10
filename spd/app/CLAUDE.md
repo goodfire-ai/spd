@@ -35,7 +35,7 @@ backend/
 ├── state.py               # Singleton StateManager + HarvestCache (lazy-loaded harvest data)
 ├── compute.py             # Core attribution computation
 ├── app_tokenizer.py       # AppTokenizer: wraps HF tokenizers for display/encoding
-├── model_adapter.py       # ModelAdapter: abstracts model topology (embedding, layers, roles)
+├── (topology lives at spd/topology.py — TransformerTopology)
 ├── schemas.py             # Pydantic API models
 ├── dependencies.py        # FastAPI dependency injection
 ├── utils.py               # Logging/timing utilities
@@ -302,7 +302,7 @@ StateManager.get() → AppState:
   - db: PromptAttrDB (always available)
   - run_state: RunState | None
       - model: ComponentModel
-      - adapter: ModelAdapter       # Model topology (embedding, unembed, cross-seq roles)
+      - topology: TransformerTopology  # Model topology (embedding, unembed, cross-seq roles)
       - tokenizer: AppTokenizer     # Token display, encoding, span construction
       - sources_by_target: dict[target_layer → source_layers]
       - config, context_length
