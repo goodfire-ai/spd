@@ -42,14 +42,6 @@ class LoadedRun(BaseModel):
     dataset_search_enabled: bool
 
 
-class ModelInfo(BaseModel):
-    """Model topology info for frontend layout."""
-
-    module_paths: list[str]
-    role_order: list[str]
-    role_groups: dict[str, list[str]]
-    display_names: dict[str, str]
-
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
@@ -170,37 +162,6 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         backend_user=getpass.getuser(),
         dataset_attributions_available=manager.run_state.harvest.has_dataset_attributions(),
         dataset_search_enabled=dataset_search_enabled,
-    )
-
-
-@router.get("/model_info")
-@log_errors
-def get_model_info(loaded: DepLoadedRun) -> ModelInfo:
-    """Get model topology info for frontend layout."""
-    target_paths = loaded.model.target_module_paths
-    topo = loaded.topology
-
-    # Derive role order: deduplicated concrete role names in execution order
-    seen: set[str] = set()
-    role_order: list[str] = []
-    for path in target_paths:
-        role_name = path.rsplit(".", maxsplit=1)[-1]
-        if role_name not in seen:
-            seen.add(role_name)
-            role_order.append(role_name)
-
-    # Derive role groups: only include groups where >= 2 roles are present
-    role_groups: dict[str, list[str]] = {}
-    for group_name, roles in topo.role_group_patterns.items():
-        present = [r for r in roles if r in seen]
-        if len(present) >= 2:
-            role_groups[group_name] = present
-
-    return ModelInfo(
-        module_paths=target_paths,
-        role_order=role_order,
-        role_groups=role_groups,
-        display_names=topo.display_names,
     )
 
 

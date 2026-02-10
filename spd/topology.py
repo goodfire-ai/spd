@@ -489,6 +489,10 @@ class TransformerTopology:
         assert isinstance(blocks, nn.ModuleList)
         return len(blocks)
 
+    def get_unembed_weight(self):
+        """Unembedding weight matrix transposed to [d_model, vocab]."""
+        return self.unembed_module.weight.T.detach()
+
     # NOTE: is_cross_seq_pair logic needs review — stubbed for now
     def is_cross_seq_pair(self, source: CanonicalWeight, target: CanonicalWeight) -> bool:
         """True if source is k/v and target is o in the same block."""
