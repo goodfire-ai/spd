@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from spd.app.backend.compute import compute_intervention_forward
 from spd.app.backend.dependencies import DepDB, DepLoadedRun, DepStateManager
 from spd.app.backend.utils import log_errors
-from spd.topology import TransformerTopology, parse_canonical_str
+from spd.topology import CanonicalWeight, TransformerTopology
 from spd.utils.distributed_utils import get_device
 
 # =============================================================================
@@ -100,7 +100,7 @@ def _parse_node_key(key: str, topology: TransformerTopology) -> tuple[str, int, 
     assert canonical_layer not in ("wte", "output"), (
         f"Cannot intervene on {canonical_layer!r} nodes - only internal layers are interventable"
     )
-    canonical_weight = parse_canonical_str(canonical_layer)
+    canonical_weight = CanonicalWeight.parse(canonical_layer)
     concrete_path = topology.get_target_module_path(canonical_weight)
     return concrete_path, int(seq_str), int(cidx_str)
 
@@ -160,7 +160,7 @@ def run_intervention(request: InterventionRequest, loaded: DepLoadedRun) -> Inte
 
     active_nodes = [
         (
-            loaded.topology.get_target_module_path(parse_canonical_str(n.layer)),
+            loaded.topology.get_target_module_path(CanonicalWeight.parse(n.layer)),
             n.seq_pos,
             n.component_idx,
         )

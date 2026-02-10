@@ -33,6 +33,32 @@ class CanonicalWeight(ABC):
     @abstractmethod
     def canonical_str(self) -> str: ...
 
+    @staticmethod
+    def parse(s: str) -> "CanonicalWeight":
+        """Parse a canonical address string into a CanonicalWeight."""
+        if s == "wte":
+            return Embed()
+        if s == "output":
+            return Unembed()
+
+        parts = s.split(".")
+        assert len(parts) == 3, f"Invalid canonical address: {s!r}"
+        layer_idx = int(parts[0])
+        sublayer = parts[1]
+        projection = parts[2]
+
+        match sublayer:
+            case "attn":
+                return LayerWeight(layer_idx, SeparateAttnWeight(projection))  # type: ignore[arg-type]
+            case "attn_fused":
+                return LayerWeight(layer_idx, FusedAttnWeight(projection))  # type: ignore[arg-type]
+            case "glu":
+                return LayerWeight(layer_idx, GLUWeight(projection))  # type: ignore[arg-type]
+            case "mlp":
+                return LayerWeight(layer_idx, MLPWeight(projection))  # type: ignore[arg-type]
+            case _:
+                raise ValueError(f"Unknown sublayer type: {sublayer!r} in {s!r}")
+
 
 @dataclass(frozen=True)
 class Embed(CanonicalWeight):
@@ -87,33 +113,6 @@ class LayerWeight(CanonicalWeight):
                 return f"{self.layer_idx}.glu.{p}"
             case MLPWeight(weight=p):
                 return f"{self.layer_idx}.mlp.{p}"
-
-
-def parse_canonical_str(s: str) -> CanonicalWeight:
-    """Parse a canonical address string into a CanonicalWeight."""
-    if s == "wte":
-        return Embed()
-    if s == "output":
-        return Unembed()
-
-    # "{block}.{sublayer}.{projection}"
-    parts = s.split(".")
-    assert len(parts) == 3, f"Invalid canonical address: {s!r}"
-    layer_idx = int(parts[0])
-    sublayer = parts[1]
-    projection = parts[2]
-
-    match sublayer:
-        case "attn":
-            return LayerWeight(layer_idx, SeparateAttnWeight(projection))  # type: ignore[arg-type]
-        case "attn_fused":
-            return LayerWeight(layer_idx, FusedAttnWeight(projection))  # type: ignore[arg-type]
-        case "glu":
-            return LayerWeight(layer_idx, GLUWeight(projection))  # type: ignore[arg-type]
-        case "mlp":
-            return LayerWeight(layer_idx, MLPWeight(projection))  # type: ignore[arg-type]
-        case _:
-            raise ValueError(f"Unknown sublayer type: {sublayer!r} in {s!r}")
 
 
 # ── Sublayer path schemas ──────────────────────────────────────────────
