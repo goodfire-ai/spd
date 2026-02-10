@@ -1,181 +1,96 @@
 /**
- * Shared graph layout utilities for attribution visualizations.
+ * Graph layout utilities for canonical transformer addresses.
  *
- * Replaces hardcoded parseLayer/ROW_ORDER/QKV_SUBTYPES with generic
- * layout driven by ModelInfo from the backend.
+ * Canonical address format:
+ *   "wte"              — embedding
+ *   "output"           — unembed / logits
+ *   "{block}.{sublayer}.{projection}" — e.g. "0.attn.q", "2.mlp.down"
+ *
+ * Node key format:
+ *   "{layer}:{seqIdx}:{cIdx}" — e.g. "0.attn.q:3:5", "wte:0:0"
  */
-
-import type { ModelInfo } from "./api/runs";
 
 export type LayerInfo = {
-    name: string;
-    block: number; // -1 for embed, Infinity for output, else block index
-    role: string; // last segment of dotted path, or "wte"/"output" for pseudo-layers
-    group: string | null; // group key if this role belongs to a role_group, else null
+	name: string;
+	block: number; // -1 for wte, Infinity for output
+	sublayer: string; // "attn" | "attn_fused" | "mlp" | "glu" | "wte" | "output"
+	projection: string | null; // "q" | "k" | "v" | "o" | "qkv" | "up" | "down" | "gate" | null
 };
 
-/**
- * Parse a layer name into structured info.
- *
- * Works with any dotted module path: extracts the first integer as block,
- * last segment as role. Special-cases "wte" and "output" pseudo-layers.
- */
-export function parseLayer(name: string, modelInfo: ModelInfo): LayerInfo {
-    if (name === "wte") {
-        return { name, block: -1, role: "wte", group: null };
-    }
-    if (name === "output") {
-        return { name, block: Infinity, role: "output", group: null };
-    }
+const SUBLAYER_ORDER = ["attn", "attn_fused", "glu", "mlp"];
 
-    // Extract block index: first integer segment in dotted path
-    const segments = name.split(".");
-    let block = Infinity - 1; // fallback for paths without block (e.g. "lm_head")
-    for (const seg of segments) {
-        if (/^\d+$/.test(seg)) {
-            block = +seg;
-            break;
-        }
-    }
+// Projections that share a row and get grouped horizontally
+const GROUPED_PROJECTIONS: Record<string, string[]> = {
+	attn: ["q", "k", "v"],
+	glu: ["gate", "up"],
+};
 
-    // Role is the last segment
-    const role = segments[segments.length - 1];
+export function parseLayer(name: string): LayerInfo {
+	if (name === "wte") return { name, block: -1, sublayer: "wte", projection: null };
+	if (name === "output") return { name, block: Infinity, sublayer: "output", projection: null };
 
-    // Check if this role belongs to a group
-    let group: string | null = null;
-    for (const [groupName, roles] of Object.entries(modelInfo.role_groups)) {
-        if (roles.includes(role)) {
-            group = groupName;
-            break;
-        }
-    }
-
-    return { name, block, role, group };
+	const parts = name.split(".");
+	return {
+		name,
+		block: +parts[0],
+		sublayer: parts[1],
+		projection: parts[2],
+	};
 }
 
 /**
- * Get the visual row key for a layer. Grouped roles share a row key.
- *
- * For grouped roles (e.g. QKV), the row key is "block.groupName" (e.g. "0.qkv").
- * For ungrouped roles, the row key is the layer name itself.
+ * Row key: layers that share the same visual row.
+ * q/k/v share "0.attn", gate/up share "0.glu", etc.
  */
-export function getRowKey(layer: string, modelInfo: ModelInfo): string {
-    const info = parseLayer(layer, modelInfo);
-    if (info.group !== null) {
-        return `${info.block}.${info.group}`;
-    }
-    return layer;
+export function getRowKey(layer: string): string {
+	const info = parseLayer(layer);
+	if (info.sublayer === "wte" || info.sublayer === "output") return layer;
+	return `${info.block}.${info.sublayer}`;
 }
 
 /**
- * Build the row ordering for sorting. Returns an ordered list of role keys
- * (with groups collapsed) that determines vertical position.
- *
- * Order: wte, then roles in execution order (groups collapsed), then output.
+ * Row label for display.
  */
-export function buildRowOrder(modelInfo: ModelInfo): string[] {
-    const order: string[] = ["wte"];
-    const seen = new Set<string>();
+export function getRowLabel(layer: string): string {
+	if (layer === "wte") return "wte";
+	if (layer === "output") return "output";
 
-    for (const role of modelInfo.role_order) {
-        // Check if role belongs to a group
-        let key = role;
-        for (const [groupName, roles] of Object.entries(modelInfo.role_groups)) {
-            if (roles.includes(role)) {
-                key = groupName;
-                break;
-            }
-        }
-        if (!seen.has(key)) {
-            seen.add(key);
-            order.push(key);
-        }
-    }
-
-    order.push("output");
-    return order;
+	const info = parseLayer(layer);
+	return `${info.block}.${info.sublayer}`;
 }
 
 /**
- * Get display label for a row.
+ * Sort row keys: wte at bottom, output at top, blocks in between.
+ * Within a block, sublayers follow SUBLAYER_ORDER.
  */
-export function getRowLabel(layer: string, modelInfo: ModelInfo): string {
-    const info = parseLayer(layer, modelInfo);
-    if (layer === "wte" || layer === "output") return layer;
+export function sortRows(rows: string[]): string[] {
+	return [...rows].sort((a, b) => {
+		const infoA = parseLayer(a.includes(".") ? a + ".x" : a); // row keys like "0.attn" need a fake projection to parse
+		const infoB = parseLayer(b.includes(".") ? b + ".x" : b);
 
-    // Check display_names for the role
-    const displayName = modelInfo.display_names[info.role];
-    if (displayName) return displayName;
+		// Parse row keys (which are "block.sublayer" format)
+		const blockA = a === "wte" ? -1 : a === "output" ? Infinity : +a.split(".")[0];
+		const blockB = b === "wte" ? -1 : b === "output" ? Infinity : +b.split(".")[0];
 
-    // For grouped roles, show "block.group" (e.g. "0.q/k/v")
-    if (info.group !== null) {
-        const groupRoles = modelInfo.role_groups[info.group];
-        const shortNames = groupRoles.map((r) => r.replace(/_proj$/, ""));
-        return `${info.block}.${shortNames.join("/")}`;
-    }
+		if (blockA !== blockB) return blockA - blockB;
 
-    return `${info.block}.${info.role}`;
+		const sublayerA = a.split(".")[1] ?? "";
+		const sublayerB = b.split(".")[1] ?? "";
+		return SUBLAYER_ORDER.indexOf(sublayerA) - SUBLAYER_ORDER.indexOf(sublayerB);
+	});
 }
 
 /**
- * Sort row keys by block index, then by role order within a block.
+ * Get the grouped projections for a sublayer, if any.
+ * Returns null if no grouping (each projection gets its own horizontal space).
  */
-export function sortRows(rows: string[], modelInfo: ModelInfo): string[] {
-    const rowOrder = buildRowOrder(modelInfo);
-
-    const parseRow = (r: string) => {
-        if (r === "wte") return { block: -1, role: "wte" };
-        if (r === "output") return { block: Infinity, role: "output" };
-
-        // Try "block.groupOrRole" format (e.g. "0.qkv" or "3.c_fc")
-        const dotIdx = r.indexOf(".");
-        if (dotIdx !== -1) {
-            const blockStr = r.substring(0, dotIdx);
-            if (/^\d+$/.test(blockStr)) {
-                return { block: +blockStr, role: r.substring(dotIdx + 1) };
-            }
-        }
-
-        // Fallback: parse as a layer name
-        const info = parseLayer(r, modelInfo);
-        return { block: info.block, role: info.group ?? info.role };
-    };
-
-    return [...rows].sort((a, b) => {
-        const infoA = parseRow(a);
-        const infoB = parseRow(b);
-        if (infoA.block !== infoB.block) return infoA.block - infoB.block;
-        const idxA = rowOrder.indexOf(infoA.role);
-        const idxB = rowOrder.indexOf(infoB.role);
-        return idxA - idxB;
-    });
+export function getGroupProjections(sublayer: string): string[] | null {
+	return GROUPED_PROJECTIONS[sublayer] ?? null;
 }
 
 /**
- * Get the grouped roles (e.g. QKV subtypes) for a given group name, if any.
- * Returns null if no group exists.
+ * Build the full layer address from block + sublayer + projection.
  */
-export function getGroupRoles(groupName: string, modelInfo: ModelInfo): string[] | null {
-    return modelInfo.role_groups[groupName] ?? null;
-}
-
-/**
- * Reconstruct the full layer path for a role within a specific block.
- *
- * Looks up the module_paths to find a matching path with the given block and role.
- * Returns null if no match is found.
- */
-export function getLayerPath(block: number, role: string, modelInfo: ModelInfo): string | null {
-    for (const path of modelInfo.module_paths) {
-        const segments = path.split(".");
-        const pathRole = segments[segments.length - 1];
-        if (pathRole !== role) continue;
-
-        for (const seg of segments) {
-            if (/^\d+$/.test(seg) && +seg === block) {
-                return path;
-            }
-        }
-    }
-    return null;
+export function buildLayerAddress(block: number, sublayer: string, projection: string): string {
+	return `${block}.${sublayer}.${projection}`;
 }
