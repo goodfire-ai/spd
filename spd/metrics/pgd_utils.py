@@ -1,19 +1,18 @@
 from collections.abc import Callable, Iterator
 from functools import partial
-from typing import Literal
 
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import PGDConfig, PGDInitStrategy, PGDMultiBatchConfig, SamplingType
+from spd.configs import OutputLossType, PGDConfig, PGDInitStrategy, PGDMultiBatchConfig, SamplingType
 from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
+from spd.utils.general_utils import calc_n_recon_examples_lm, calc_sum_recon_loss_lm, extract_batch_data
 
 
 def pgd_masked_recon_loss_update(
@@ -22,7 +21,7 @@ def pgd_masked_recon_loss_update(
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     router: Router,
     pgd_config: PGDConfig,
 ) -> tuple[Float[Tensor, ""], int]:
@@ -90,7 +89,7 @@ def calc_multibatch_pgd_masked_recon_loss(
     model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     create_data_iter: CreateDataIter,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     router: Router,
     sampling: SamplingType,
     use_delta_component: bool,
@@ -161,7 +160,7 @@ def _forward_with_adv_sources(
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing_masks: RoutingMasks,
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     batch_dims: tuple[int, ...],
 ):
     expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
@@ -183,11 +182,10 @@ def _forward_with_adv_sources(
     )
     out = model(batch, mask_infos=mask_infos)
 
-    sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-
-    n_examples = (
-        target_out.shape.numel() if output_loss_type == "mse" else target_out.shape[:-1].numel()
+    sum_loss = calc_sum_recon_loss_lm(
+        pred=out, target=target_out, loss_type=output_loss_type, batch=batch
     )
+    n_examples = calc_n_recon_examples_lm(target_out.shape, output_loss_type)
 
     return sum_loss, n_examples
 
@@ -200,7 +198,7 @@ def _multibatch_pgd_fwd_bwd(
     data_iter: Iterator[Int[Tensor, "..."]]
     | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
     device: torch.device | str,
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     router: Router,
     sampling: SamplingType,
     batch_dims: tuple[int, ...],
