@@ -21,6 +21,7 @@ from openrouter import OpenRouter
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.llm_api import (
+    RateLimiter,
     chat_with_retry,
     make_response_format,
     run_scoring_pipeline,
@@ -173,6 +174,7 @@ async def score_component(
     density_index: DensityIndex,
     app_tok: AppTokenizer,
     ci_threshold: float,
+    rate_limiter: RateLimiter | None = None,
 ) -> IntruderResult:
     assert len(component.activation_examples) >= N_REAL + 1
 
@@ -196,6 +198,7 @@ async def score_component(
                 max_tokens=300,
                 context_label=f"{component.component_key}/trial{trial_idx}",
                 response_format=INTRUDER_RESPONSE_FORMAT,
+                rate_limiter=rate_limiter,
             )
             parsed = json.loads(response)
             predicted = int(parsed["intruder"])
@@ -248,8 +251,12 @@ async def run_intruder_scoring(
 
     density_index = DensityIndex(components, min_examples=N_REAL + 1, ci_threshold=ci_threshold)
 
-    async def _score(client: OpenRouter, component: ComponentData) -> IntruderResult:
-        return await score_component(client, model, component, density_index, app_tok, ci_threshold)
+    async def _score(
+        client: OpenRouter, component: ComponentData, rate_limiter: RateLimiter
+    ) -> IntruderResult:
+        return await score_component(
+            client, model, component, density_index, app_tok, ci_threshold, rate_limiter
+        )
 
     return await run_scoring_pipeline(
         eligible=eligible,

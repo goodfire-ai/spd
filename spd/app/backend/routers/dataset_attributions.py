@@ -13,13 +13,13 @@ from torch import Tensor
 
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
-from spd.topology import CanonicalWeight
 from spd.dataset_attributions.storage import (
     DatasetAttributionEntry as StorageEntry,
 )
 from spd.dataset_attributions.storage import (
     DatasetAttributionStorage,
 )
+from spd.topology import CanonicalWeight
 
 
 class DatasetAttributionEntry(BaseModel):
@@ -100,7 +100,9 @@ def _get_w_unembed(loaded: DepLoadedRun) -> Float[Tensor, "d_model vocab"]:
     return loaded.topology.get_unembed_weight()
 
 
-def _to_api_entries(loaded: DepLoadedRun, entries: list[StorageEntry]) -> list[DatasetAttributionEntry]:
+def _to_api_entries(
+    loaded: DepLoadedRun, entries: list[StorageEntry]
+) -> list[DatasetAttributionEntry]:
     """Convert storage entries to API response format with canonical keys."""
 
     def _canonicalize_layer(layer: str) -> str:
@@ -171,10 +173,14 @@ def get_component_attributions(
     w_unembed = _get_w_unembed(loaded) if is_source else None
 
     return ComponentAttributions(
-        positive_sources=_to_api_entries(loaded, storage.get_top_sources(component_key, k, "positive"))
+        positive_sources=_to_api_entries(
+            loaded, storage.get_top_sources(component_key, k, "positive")
+        )
         if is_target
         else [],
-        negative_sources=_to_api_entries(loaded, storage.get_top_sources(component_key, k, "negative"))
+        negative_sources=_to_api_entries(
+            loaded, storage.get_top_sources(component_key, k, "negative")
+        )
         if is_target
         else [],
         positive_targets=_to_api_entries(
@@ -220,7 +226,9 @@ def get_attribution_sources(
 
     w_unembed = _get_w_unembed(loaded) if layer == "output" else None
 
-    return _to_api_entries(loaded, storage.get_top_sources(target_key, k, sign, w_unembed=w_unembed))
+    return _to_api_entries(
+        loaded, storage.get_top_sources(target_key, k, sign, w_unembed=w_unembed)
+    )
 
 
 @router.get("/{layer}/{component_idx}/targets")
@@ -239,7 +247,9 @@ def get_attribution_targets(
 
     w_unembed = _get_w_unembed(loaded)
 
-    return _to_api_entries(loaded, storage.get_top_targets(source_key, k, sign, w_unembed=w_unembed))
+    return _to_api_entries(
+        loaded, storage.get_top_targets(source_key, k, sign, w_unembed=w_unembed)
+    )
 
 
 @router.get("/between/{source_layer}/{source_idx}/{target_layer}/{target_idx}")
