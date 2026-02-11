@@ -257,34 +257,28 @@ class Harvester:
         seq_idx = seq_idx[keep_mask]
         component_idx = component_idx[keep_mask]
 
-        batch_padded = torch.nn.functional.pad(
-            batch,
-            (self.context_tokens_per_side, self.context_tokens_per_side),
-            value=WINDOW_PAD_SENTINEL,
-        )
-        ci_padded = torch.nn.functional.pad(
-            ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
-        )
-        subcomp_acts_padded = torch.nn.functional.pad(
-            subcomp_acts,
-            (0, 0, self.context_tokens_per_side, self.context_tokens_per_side),
-            value=0.0,
-        )
-
+        S = batch.shape[1]
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
         )
-        seq_idx_padded = seq_idx + self.context_tokens_per_side
-        window_seq_indices = seq_idx_padded.unsqueeze(1) + offsets
+        window_seq_indices = seq_idx.unsqueeze(1) + offsets  # [n_firings, window_size]
+        valid_mask = (window_seq_indices >= 0) & (window_seq_indices < S)
+        clamped_indices = window_seq_indices.clamp(0, S - 1)
+
         batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
         component_idx_expanded = component_idx.unsqueeze(1).expand(-1, window_size)
 
-        token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
-        ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
-        component_act_windows = subcomp_acts_padded[
-            batch_idx_expanded, window_seq_indices, component_idx_expanded
+        token_windows = batch[batch_idx_expanded, clamped_indices]
+        token_windows[~valid_mask] = WINDOW_PAD_SENTINEL
+
+        ci_windows = ci[batch_idx_expanded, clamped_indices, component_idx_expanded]
+        ci_windows[~valid_mask] = 0.0
+
+        component_act_windows = subcomp_acts[
+            batch_idx_expanded, clamped_indices, component_idx_expanded
         ]
+        component_act_windows[~valid_mask] = 0.0
 
         for comp_idx, tokens, ci_vals, component_acts in zip(
             cast(list[int], component_idx.cpu().tolist()),
