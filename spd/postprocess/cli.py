@@ -29,7 +29,8 @@ def main(
     from spd.postprocess import postprocess
 
     cfg = PostprocessConfig.from_file(config) if config is not None else PostprocessConfig()
-    postprocess(wandb_path=wandb_path, config=cfg)
+    manifest_path = postprocess(wandb_path=wandb_path, config=cfg)
+    print(f"\nManifest: {manifest_path}")
 
 
 def cli() -> None:

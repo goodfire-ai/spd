@@ -15,11 +15,19 @@ Usage:
     spd-autointerp <wandb_path> --cost_limit_usd 100
 """
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from spd.autointerp.config import AutointerpSlurmConfig
 from spd.log import logger
 from spd.utils.slurm import SlurmConfig, SubmitResult, generate_script, submit_slurm_job
+
+
+@dataclass
+class AutointerpSubmitResult:
+    interpret_result: SubmitResult
+    detection_result: SubmitResult | None
+    fuzzing_result: SubmitResult | None
 
 
 def submit_autointerp(
@@ -28,7 +36,7 @@ def submit_autointerp(
     dependency_job_id: str | None = None,
     snapshot_branch: str | None = None,
     harvest_subrun_id: str | None = None,
-) -> SubmitResult:
+) -> AutointerpSubmitResult:
     """Submit the autointerp pipeline to SLURM.
 
     Submits interpret + eval jobs as a functional unit. All jobs depend on a
@@ -41,7 +49,7 @@ def submit_autointerp(
         snapshot_branch: Git snapshot branch to use.
 
     Returns:
-        SubmitResult for the interpret job.
+        AutointerpSubmitResult with interpret, detection, and fuzzing results.
     """
     interp_config = slurm_config.config
     partition = slurm_config.partition
@@ -92,9 +100,14 @@ def submit_autointerp(
     )
 
     if evals is None:
-        return interpret_result
+        return AutointerpSubmitResult(
+            interpret_result=interpret_result,
+            detection_result=None,
+            fuzzing_result=None,
+        )
 
     # === 2. Detection + fuzzing scoring (depend on interpret) ===
+    scoring_results: dict[str, SubmitResult] = {}
     for scorer in ("detection", "fuzzing"):
         scoring_parts = [
             "python -m spd.autointerp.scoring.scripts.run_label_scoring",
@@ -117,6 +130,7 @@ def submit_autointerp(
         )
         eval_script = generate_script(eval_slurm, scoring_cmd)
         scoring_result = submit_slurm_job(eval_script, f"spd-{scorer}")
+        scoring_results[scorer] = scoring_result
 
         logger.section(f"{scorer.capitalize()} scoring job submitted")
         logger.values(
@@ -127,4 +141,8 @@ def submit_autointerp(
             }
         )
 
-    return interpret_result
+    return AutointerpSubmitResult(
+        interpret_result=interpret_result,
+        detection_result=scoring_results["detection"],
+        fuzzing_result=scoring_results["fuzzing"],
+    )

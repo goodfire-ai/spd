@@ -27,7 +27,9 @@ from spd.utils.slurm import (
 
 @dataclass
 class HarvestSubmitResult:
+    array_result: SubmitResult
     merge_result: SubmitResult
+    intruder_result: SubmitResult
     subrun_id: str
 
     @property
@@ -153,4 +155,9 @@ def submit_harvest(
         }
     )
 
-    return HarvestSubmitResult(merge_result=merge_result, subrun_id=subrun_id)
+    return HarvestSubmitResult(
+        array_result=array_result,
+        merge_result=merge_result,
+        intruder_result=intruder_result,
+        subrun_id=subrun_id,
+    )

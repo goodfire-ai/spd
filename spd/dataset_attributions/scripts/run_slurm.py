@@ -10,6 +10,7 @@ Usage:
 """
 
 import secrets
+from dataclasses import dataclass
 from datetime import datetime
 
 from spd.dataset_attributions.config import AttributionsSlurmConfig
@@ -25,12 +26,23 @@ from spd.utils.slurm import (
 )
 
 
+@dataclass
+class AttributionsSubmitResult:
+    array_result: SubmitResult
+    merge_result: SubmitResult
+    subrun_id: str
+
+    @property
+    def job_id(self) -> str:
+        return self.merge_result.job_id
+
+
 def submit_attributions(
     wandb_path: str,
     slurm_config: AttributionsSlurmConfig,
     job_suffix: str | None = None,
     snapshot_branch: str | None = None,
-) -> SubmitResult:
+) -> AttributionsSubmitResult:
     """Submit multi-GPU attribution harvesting job to SLURM.
 
     Submits a job array where each task processes a subset of batches, then
@@ -44,7 +56,7 @@ def submit_attributions(
         snapshot_branch: Git snapshot branch to use. If None, creates a new snapshot.
 
     Returns:
-        SubmitResult for the merge job (the terminal job in the attribution pipeline).
+        AttributionsSubmitResult with array, merge results and subrun ID.
     """
     config = slurm_config.config
     n_gpus = slurm_config.n_gpus
@@ -127,4 +139,8 @@ def submit_attributions(
         }
     )
 
-    return merge_result
+    return AttributionsSubmitResult(
+        array_result=array_result,
+        merge_result=merge_result,
+        subrun_id=subrun_id,
+    )
