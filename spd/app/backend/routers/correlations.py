@@ -257,7 +257,7 @@ def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
     Returns a dict keyed by component_key (layer:cIdx) → score (0-1).
     Returns empty dict if no intruder scores are available.
     """
-    return loaded.interp.get_intruder_scores() or {}
+    return loaded.harvest.get_intruder_scores() or {}
 
 
 # =============================================================================

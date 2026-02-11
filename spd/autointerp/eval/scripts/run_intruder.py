@@ -9,10 +9,9 @@ import os
 
 from dotenv import load_dotenv
 
-from spd.autointerp.db import InterpDB
 from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
-from spd.autointerp.schemas import get_autointerp_dir
+from spd.harvest.db import HarvestDB
 from spd.harvest.repo import HarvestRepo
 from spd.utils.wandb_utils import parse_wandb_run_path
 
@@ -34,9 +33,10 @@ def main(
     components = harvest.get_all_components()
     ci_threshold = harvest.get_ci_threshold()
 
-    db_path = get_autointerp_dir(run_id) / "interp.db"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    db = InterpDB(db_path)
+    # Write intruder scores to the latest harvest sub-run's DB
+    db_path = harvest._resolve_db_path()
+    assert db_path is not None, f"No harvest.db for run {run_id}"
+    db = HarvestDB(db_path)
 
     asyncio.run(
         run_intruder_scoring(

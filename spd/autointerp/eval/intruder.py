@@ -19,7 +19,7 @@ from openrouter import OpenRouter
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
-from spd.autointerp.db import InterpDB
+from spd.harvest.db import HarvestDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
@@ -231,7 +231,7 @@ async def run_intruder_scoring(
     model: str,
     openrouter_api_key: str,
     tokenizer_name: str,
-    db: InterpDB,
+    db: HarvestDB,
     ci_threshold: float,
     limit: int | None = None,
     cost_limit_usd: float | None = None,

@@ -56,14 +56,7 @@ class InterpRepo:
         db = self._get_or_create_db()
         db.save_interpretation(result)
 
-    # -- Eval scores -----------------------------------------------------------
-
-    def get_intruder_scores(self) -> dict[str, float] | None:
-        db = self._get_db()
-        if db is None:
-            return None
-        scores = db.get_scores("intruder")
-        return scores if scores else None
+    # -- Eval scores (label-dependent only) ------------------------------------
 
     def get_detection_scores(self) -> dict[str, float] | None:
         db = self._get_db()

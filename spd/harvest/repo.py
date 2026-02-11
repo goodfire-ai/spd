@@ -135,3 +135,12 @@ class HarvestRepo:
         if not path.exists():
             return None
         return TokenStatsStorage.load(path)
+
+    # -- Eval scores (e.g. intruder) -------------------------------------------
+
+    def get_intruder_scores(self) -> dict[str, float] | None:
+        db = self._get_db()
+        if db is None:
+            return None
+        scores = db.get_scores("intruder")
+        return scores if scores else None

@@ -29,6 +29,14 @@ CREATE TABLE IF NOT EXISTS config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scores (
+    component_key TEXT NOT NULL,
+    score_type TEXT NOT NULL,
+    score REAL NOT NULL,
+    details TEXT NOT NULL,
+    PRIMARY KEY (component_key, score_type)
+);
 """
 
 
@@ -142,6 +150,22 @@ class HarvestDB:
             (ci_threshold,),
         ).fetchall()
         return [_deserialize_component(row) for row in rows]
+
+    # -- Scores (e.g. intruder eval) ------------------------------------------
+
+    def save_score(self, component_key: str, score_type: str, score: float, details: str) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO scores VALUES (?, ?, ?, ?)",
+            (component_key, score_type, score, details),
+        )
+        self._conn.commit()
+
+    def get_scores(self, score_type: str) -> dict[str, float]:
+        rows = self._conn.execute(
+            "SELECT component_key, score FROM scores WHERE score_type = ?",
+            (score_type,),
+        ).fetchall()
+        return {row["component_key"]: row["score"] for row in rows}
 
     def close(self) -> None:
         self._conn.close()
