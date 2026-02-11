@@ -5,6 +5,7 @@ import math
 import queue
 import sys
 import threading
+import time
 import traceback
 from collections.abc import Callable, Generator
 from itertools import groupby
@@ -33,6 +34,7 @@ from spd.app.backend.optim_cis import (
 from spd.app.backend.schemas import OutputProbability
 from spd.app.backend.utils import log_errors
 from spd.configs import ImportanceMinimalityLossConfig
+from spd.log import logger
 from spd.utils.distributed_utils import get_device
 
 
@@ -418,6 +420,8 @@ def compute_graph_stream(
     tokens_tensor = torch.tensor([token_ids], device=DEVICE)
 
     def work(on_progress: ProgressCallback) -> GraphData:
+        t_total = time.perf_counter()
+
         result = compute_prompt_attributions(
             model=loaded.model,
             topology=loaded.topology,
@@ -430,6 +434,7 @@ def compute_graph_stream(
             included_nodes=included_nodes_set,
         )
 
+        t0 = time.perf_counter()
         out_probs = build_out_probs(
             ci_masked_out_probs=result.ci_masked_out_probs.cpu(),
             ci_masked_out_logits=result.ci_masked_out_logits.cpu(),
@@ -438,6 +443,9 @@ def compute_graph_stream(
             output_prob_threshold=output_prob_threshold,
             tok_display=loaded.tokenizer.get_tok_display,
         )
+        logger.info(f"[perf] build_out_probs: {time.perf_counter() - t0:.2f}s ({len(out_probs)} output nodes)")
+
+        t0 = time.perf_counter()
         graph_id = db.save_graph(
             prompt_id=prompt_id,
             graph=StoredGraph(
@@ -449,7 +457,9 @@ def compute_graph_stream(
                 included_nodes=included_nodes_list,
             ),
         )
+        logger.info(f"[perf] save_graph: {time.perf_counter() - t0:.2f}s")
 
+        t0 = time.perf_counter()
         filtered_node_ci_vals = {k: v for k, v in result.node_ci_vals.items() if v > ci_threshold}
         node_ci_vals_with_pseudo = _add_pseudo_layer_nodes(
             filtered_node_ci_vals, len(token_ids), out_probs
@@ -459,6 +469,8 @@ def compute_graph_stream(
             normalize=normalize,
             node_ci_vals_with_pseudo=node_ci_vals_with_pseudo,
         )
+        logger.info(f"[perf] process_edges: {time.perf_counter() - t0:.2f}s ({len(edges_data)} edges after filter)")
+        logger.info(f"[perf] Total graph computation: {time.perf_counter() - t_total:.2f}s")
 
         return GraphData(
             id=graph_id,

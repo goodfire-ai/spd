@@ -4,6 +4,7 @@ Copied and cleaned up from spd/scripts/calc_prompt_attributions.py and calc_data
 to avoid importing script files with global execution.
 """
 
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from torch import Tensor, nn
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.optim_cis import OptimCIConfig, OptimizationMetrics, optimize_ci_values
 from spd.configs import SamplingType
+from spd.log import logger
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import make_mask_infos
 from spd.topology import CanonicalWeight, Embed, TransformerTopology
@@ -343,20 +345,24 @@ def compute_edges_from_ci(
         loss_seq_pos: Maximum sequence position to include (inclusive).
                       If None, includes all positions (default behavior).
     """
+    t_start = time.perf_counter()
     n_seq = tokens.shape[1]
     if loss_seq_pos is None:
         loss_seq_pos = n_seq - 1
 
     # Compute CI-masked output probs (for display) before the gradient computation
+    t0 = time.perf_counter()
     with torch.no_grad(), bf16_autocast():
         ci_masks = make_mask_infos(component_masks=ci_lower_leaky)
         ci_masked_logits: Tensor = model(tokens, mask_infos=ci_masks)
         ci_masked_out_probs = torch.softmax(ci_masked_logits, dim=-1)
+    logger.info(f"[perf] CI-masked forward: {time.perf_counter() - t0:.2f}s")
 
     embed_path = topology.path_schema.embedding_path
     unembed_path = topology.path_schema.unembed_path
 
     # Setup embedding hook and run forward pass for gradient computation
+    t0 = time.perf_counter()
     embed_hook, embed_cache = _setup_embed_hook()
     embed_handle = topology.embedding_module.register_forward_hook(embed_hook, with_kwargs=True)
 
@@ -379,8 +385,10 @@ def compute_edges_from_ci(
     cache = comp_output_with_cache.cache
     cache[f"{embed_path}_post_detach"] = embed_cache[0]
     cache[f"{unembed_path}_pre_detach"] = comp_output_with_cache.output
+    logger.info(f"[perf] Gradient forward pass: {time.perf_counter() - t0:.2f}s")
 
     # Compute alive info for all layers upfront
+    t0 = time.perf_counter()
     all_layers: set[str] = set(sources_by_target.keys())
     for sources in sources_by_target.values():
         all_layers.update(sources)
@@ -397,13 +405,21 @@ def compute_edges_from_ci(
         )
         for layer in all_layers
     }
+    total_alive = sum(len(info.alive_c_idxs) for info in alive_info.values())
+    unembed_alive = len(alive_info.get(unembed_path, LayerAliveInfo(torch.tensor([]), [])).alive_c_idxs)
+    logger.info(
+        f"[perf] Alive info: {time.perf_counter() - t0:.2f}s "
+        f"({total_alive} alive components, {unembed_alive} output nodes)"
+    )
 
     # Compute edges for each target layer
+    t0 = time.perf_counter()
     edges: list[Edge] = []
     total_source_layers = sum(len(sources) for sources in sources_by_target.values())
     progress_count = 0
 
     for target, sources in sources_by_target.items():
+        t_target = time.perf_counter()
         target_edges = _compute_edges_for_target(
             target=target,
             sources=sources,
@@ -414,16 +430,25 @@ def compute_edges_from_ci(
             topology=topology,
         )
         edges.extend(target_edges)
+        canonical_target = topology.get_canonical_weight(target).canonical_str()
+        logger.info(
+            f"[perf]   {canonical_target}: {time.perf_counter() - t_target:.2f}s, "
+            f"{len(target_edges)} edges"
+        )
 
         progress_count += len(sources)
         if on_progress is not None:
             on_progress(progress_count, total_source_layers, target)
 
+    logger.info(f"[perf] Edge computation total: {time.perf_counter() - t0:.2f}s ({len(edges)} edges)")
+
+    t0 = time.perf_counter()
     node_ci_vals = extract_node_ci_vals(ci_lower_leaky, topology)
     component_acts = model.get_all_component_acts(pre_weight_acts)
     node_subcomp_acts = extract_node_subcomp_acts(
         component_acts, ci_threshold=0.0, ci_lower_leaky=ci_lower_leaky, topology=topology
     )
+    logger.info(f"[perf] Node CI/subcomp extraction: {time.perf_counter() - t0:.2f}s")
 
     # Filter nodes and output tensors to only include positions <= loss_seq_pos
     node_ci_vals = {k: v for k, v in node_ci_vals.items() if _get_seq_pos(k) <= loss_seq_pos}
@@ -524,6 +549,7 @@ def compute_prompt_attributions(
         loss_seq_pos: Maximum sequence position to include (inclusive).
                       If None, includes all positions (default behavior).
     """
+    t0 = time.perf_counter()
     with torch.no_grad(), bf16_autocast():
         output_with_cache = model(tokens, cache_type="input")
         pre_weight_acts = output_with_cache.cache
@@ -534,6 +560,7 @@ def compute_prompt_attributions(
             sampling=sampling,
             detach_inputs=False,
         )
+    logger.info(f"[perf] CI forward pass: {time.perf_counter() - t0:.2f}s")
 
     ci_lower_leaky = ci.lower_leaky
     if included_nodes is not None:
