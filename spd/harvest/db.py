@@ -70,11 +70,14 @@ def _deserialize_component(row: sqlite3.Row) -> ComponentData:
 
 
 class HarvestDB:
-    def __init__(self, db_path: Path) -> None:
-        self._conn = sqlite3.connect(str(db_path))
+    def __init__(self, db_path: Path, readonly: bool = False) -> None:
+        if readonly:
+            self._conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        else:
+            self._conn = sqlite3.connect(str(db_path))
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.executescript(_SCHEMA)
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.executescript(_SCHEMA)
 
     def save_component(self, comp: ComponentData) -> None:
         row = _serialize_component(comp)
