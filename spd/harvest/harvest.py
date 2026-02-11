@@ -253,10 +253,9 @@ def merge_activation_contexts(output_dir: Path) -> None:
     Looks for worker_*.pt state files in output_dir/worker_states/ and merges them
     into final harvest results written to output_dir.
 
-    Tensors go on GPU, reservoir states stay on CPU RAM. Requires 1 GPU.
+    Reservoir data is tensor-packed (~26GB per state vs ~170GB as Python lists),
+    so two states fit comfortably in CPU RAM (~112GB total, well under 200GB).
     """
-    device = torch.device(get_device())
-    logger.info(f"Merge device: {device}")
 
     state_dir = output_dir / "worker_states"
 
@@ -267,13 +266,11 @@ def merge_activation_contexts(output_dir: Path) -> None:
     first_worker_file, *rest_worker_files = worker_files
 
     logger.info(f"Loading worker 0: {first_worker_file.name}")
-    merged_state: HarvesterState = torch.load(
-        first_worker_file, weights_only=False, map_location=device
-    )
+    merged_state: HarvesterState = torch.load(first_worker_file, weights_only=False)
     logger.info(f"Loaded worker 0: {merged_state.total_tokens_processed:,} tokens")
 
     for worker_file in tqdm.tqdm(rest_worker_files, desc="Merging worker states"):
-        state: HarvesterState = torch.load(worker_file, weights_only=False, map_location=device)
+        state: HarvesterState = torch.load(worker_file, weights_only=False)
         merged_state.merge_into(state)
         del state
 
