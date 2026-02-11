@@ -15,6 +15,21 @@ from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
+_CONTROL_CHAR_MAP = {
+    "\t": "⇥",
+    "\n": "↵",
+    "\r": "⏎",
+    "\x00": "␀",
+}
+
+
+def escape_for_display(s: str) -> str:
+    """Escape control characters for human-readable display."""
+    for char, replacement in _CONTROL_CHAR_MAP.items():
+        s = s.replace(char, replacement)
+    return s
+
+
 class AppTokenizer:
     """Wraps a HuggingFace tokenizer. All decoding grossness lives here."""
 
@@ -79,11 +94,11 @@ class AppTokenizer:
                 spans.append("")
 
         assert "".join(spans) == text, f"span concat mismatch: {''.join(spans)!r} != {text!r}"
-        return spans
+        return [escape_for_display(span) for span in spans]
 
     def get_tok_display(self, token_id: int) -> str:
         """Single token -> display string for vocab browsers and hover labels."""
-        return self._tok.decode([token_id], skip_special_tokens=False)
+        return escape_for_display(self._tok.decode([token_id], skip_special_tokens=False))
 
     def _fallback_spans(self, token_ids: list[int]) -> list[str]:
         """Incremental decode: each span = decode(:i+1) - decode(:i).
@@ -94,6 +109,6 @@ class AppTokenizer:
         prev = ""
         for i in range(len(token_ids)):
             current = self._tok.decode(token_ids[: i + 1], skip_special_tokens=False)
-            spans.append(current[len(prev) :])
+            spans.append(escape_for_display(current[len(prev) :]))
             prev = current
         return spans

@@ -34,7 +34,7 @@
 </script>
 
 <div class="tokens">
-    {#each items as { token, value } (token)}
+    {#each items as { token, value }, i (i)}
         <span
             class="token-pill"
             style="background: {getPmiBg(value)}; color: {getTextColor(value)}"

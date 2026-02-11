@@ -70,9 +70,9 @@ export function useRun() {
     let _tokenStatsCache: Record<string, TokenStatsResponse> = {};
 
     // Prefetch parameters for bulk component data
-    const PREFETCH_ACTIVATION_CONTEXTS_LIMIT = 100;
-    const PREFETCH_CORRELATIONS_TOP_K = 20;
-    const PREFETCH_TOKEN_STATS_TOP_K = 30;
+    const PREFETCH_ACTIVATION_CONTEXTS_LIMIT = 10;
+    const PREFETCH_CORRELATIONS_TOP_K = 10;
+    const PREFETCH_TOKEN_STATS_TOP_K = 10;
 
     /** Reset all run-scoped state */
     function resetRunScopedState() {

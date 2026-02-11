@@ -32,6 +32,16 @@ class PromptPreview(BaseModel):
     next_token_probs: list[float | None]  # Probability of next token (last is None)
 
 
+PREVIEW_MAX_CHARS = 60
+
+
+def _make_preview(spans: list[str]) -> str:
+    text = "".join(spans)
+    if len(text) <= PREVIEW_MAX_CHARS:
+        return text
+    return text[:PREVIEW_MAX_CHARS] + "..."
+
+
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
 
@@ -74,7 +84,7 @@ def list_prompts(manager: DepStateManager, loaded: DepLoadedRun) -> list[PromptP
                 id=prompt.id,
                 token_ids=prompt.token_ids,
                 tokens=spans,
-                preview="".join(spans[:10]) + ("..." if len(spans) > 10 else ""),
+                preview=_make_preview(spans),
                 next_token_probs=next_token_probs,
             )
         )
@@ -100,6 +110,6 @@ def add_custom_prompt(text: str, manager: DepStateManager, loaded: DepLoadedRun)
         id=prompt_id,
         token_ids=token_ids,
         tokens=spans,
-        preview="".join(spans[:10]) + ("..." if len(spans) > 10 else ""),
+        preview=_make_preview(spans),
         next_token_probs=next_token_probs,
     )

@@ -355,10 +355,13 @@ class Harvester:
                     continue
 
                 # Build activation examples from reservoir (uniform random sample)
+                # Strip padding sentinels introduced for GPU window extraction
                 sampler = self.activation_example_samplers[flat_idx]
                 activation_examples = [
                     ActivationExample(
-                        token_ids=token_ids, ci_values=ci_values, component_acts=component_acts
+                        token_ids=[t for t in token_ids if t != WINDOW_PAD_SENTINEL],
+                        ci_values=[c for t, c in zip(token_ids, ci_values, strict=True) if t != WINDOW_PAD_SENTINEL],
+                        component_acts=[a for t, a in zip(token_ids, component_acts, strict=True) if t != WINDOW_PAD_SENTINEL],
                     )
                     for token_ids, ci_values, component_acts in sampler.samples
                 ]

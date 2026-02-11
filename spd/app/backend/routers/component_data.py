@@ -1,5 +1,7 @@
 """Bulk component data endpoint for prefetching."""
 
+import time
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -18,6 +20,7 @@ from spd.app.backend.routers.correlations import (
 )
 from spd.app.backend.schemas import SubcomponentActivationContexts
 from spd.app.backend.utils import log_errors
+from spd.log import logger
 
 router = APIRouter(prefix="/api/component_data", tags=["component_data"])
 
@@ -51,8 +54,20 @@ def get_component_data_bulk(
     This eliminates GIL contention from multiple concurrent requests and reduces
     HTTP roundtrips from 3 to 1.
     """
+    t_total = time.perf_counter()
     harvest = loaded.harvest
+    logger.info(f"[perf] component_data/bulk: {len(request.component_keys)} keys requested")
 
+    t0 = time.perf_counter()
+    has_ac = harvest.has_activation_contexts_summary()
+    has_corr = harvest.has_correlations()
+    has_ts = harvest.has_token_stats()
+    logger.info(
+        f"[perf] harvest availability checks: {time.perf_counter() - t0:.2f}s "
+        f"(ac={has_ac}, corr={has_corr}, ts={has_ts})"
+    )
+
+    t0 = time.perf_counter()
     activation_contexts: dict[str, SubcomponentActivationContexts] = (
         get_activation_contexts_bulk(
             BulkActivationContextsRequest(
@@ -61,10 +76,12 @@ def get_component_data_bulk(
             ),
             loaded,
         )
-        if harvest.has_activation_contexts_summary()
+        if has_ac
         else {}
     )
+    logger.info(f"[perf] activation_contexts: {time.perf_counter() - t0:.2f}s ({len(activation_contexts)} results)")
 
+    t0 = time.perf_counter()
     correlations: dict[str, ComponentCorrelationsResponse] = (
         get_component_correlations_bulk(
             BulkCorrelationsRequest(
@@ -73,10 +90,12 @@ def get_component_data_bulk(
             ),
             loaded,
         )
-        if harvest.has_correlations()
+        if has_corr
         else {}
     )
+    logger.info(f"[perf] correlations: {time.perf_counter() - t0:.2f}s ({len(correlations)} results)")
 
+    t0 = time.perf_counter()
     token_stats: dict[str, TokenStatsResponse] = (
         get_component_token_stats_bulk(
             BulkTokenStatsRequest(
@@ -85,9 +104,11 @@ def get_component_data_bulk(
             ),
             loaded,
         )
-        if harvest.has_token_stats()
+        if has_ts
         else {}
     )
+    logger.info(f"[perf] token_stats: {time.perf_counter() - t0:.2f}s ({len(token_stats)} results)")
+    logger.info(f"[perf] component_data/bulk total: {time.perf_counter() - t_total:.2f}s")
 
     return BulkComponentDataResponse(
         activation_contexts=activation_contexts,
