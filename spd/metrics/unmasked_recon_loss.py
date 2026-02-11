@@ -13,11 +13,11 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def _unmasked_recon_loss_update[BatchT, OutputT](
-    model: ComponentModel[BatchT, OutputT],
+def _unmasked_recon_loss_update[BatchT](
+    model: ComponentModel[BatchT],
     batch: BatchT,
-    target_out: OutputT,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    target_out: Tensor,
+    reconstruction_loss: ReconstructionLoss,
 ) -> tuple[Float[Tensor, ""], int]:
     all_ones_mask_infos = make_mask_infos(
         # (C,) will broadcast to (B, S, C)
@@ -36,11 +36,11 @@ def _unmasked_recon_loss_compute(
     return sum_loss / n_examples
 
 
-def unmasked_recon_loss[BatchT, OutputT](
-    model: ComponentModel[BatchT, OutputT],
+def unmasked_recon_loss[BatchT](
+    model: ComponentModel[BatchT],
     batch: BatchT,
-    target_out: OutputT,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    target_out: Tensor,
+    reconstruction_loss: ReconstructionLoss,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _unmasked_recon_loss_update(
         model,
@@ -51,16 +51,16 @@ def unmasked_recon_loss[BatchT, OutputT](
     return _unmasked_recon_loss_compute(sum_loss, n_examples)
 
 
-class UnmaskedReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
+class UnmaskedReconLoss[BatchT](Metric[BatchT]):
     """Recon loss using the unmasked components and without the delta component."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel[BatchT, OutputT],
+        model: ComponentModel[BatchT],
         device: str,
-        reconstruction_loss: ReconstructionLoss[OutputT],
+        reconstruction_loss: ReconstructionLoss,
     ) -> None:
         self.model = model
         self.reconstruction_loss = reconstruction_loss
@@ -72,7 +72,7 @@ class UnmaskedReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         self,
         *,
         batch: BatchT,
-        target_out: OutputT,
+        target_out: Tensor,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _unmasked_recon_loss_update(

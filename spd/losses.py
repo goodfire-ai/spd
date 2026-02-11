@@ -39,19 +39,19 @@ from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.general_utils import get_obj_device
 
 
-def compute_total_loss[BatchT, OutputT](
+def compute_total_loss[BatchT](
     loss_metric_configs: list[LossMetricConfigType],
-    model: ComponentModel[BatchT, OutputT],
+    model: ComponentModel[BatchT],
     batch: BatchT,
     ci: CIOutputs,
-    target_out: OutputT,
+    target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     current_frac_of_training: float,
     sampling: SamplingType,
     use_delta_component: bool,
     n_mask_samples: int,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> tuple[Float[Tensor, ""], dict[str, float]]:
     """Compute weighted total loss and per-term raw values using new loss primitives.
 

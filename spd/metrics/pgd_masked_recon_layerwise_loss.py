@@ -14,15 +14,15 @@ from spd.routing import LayerRouter
 from spd.utils.distributed_utils import all_reduce
 
 
-def _pgd_recon_layerwise_loss_update[BatchT, OutputT](
+def _pgd_recon_layerwise_loss_update[BatchT](
     *,
-    model: ComponentModel[BatchT, OutputT],
+    model: ComponentModel[BatchT],
     batch: BatchT,
-    target_out: OutputT,
+    target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> tuple[Float[Tensor, ""], Int[Tensor, ""]]:
     device = next(iter(ci.values())).device
     sum_loss = torch.tensor(0.0, device=device)
@@ -43,15 +43,15 @@ def _pgd_recon_layerwise_loss_update[BatchT, OutputT](
     return sum_loss, n_examples
 
 
-def pgd_recon_layerwise_loss[BatchT, OutputT](
+def pgd_recon_layerwise_loss[BatchT](
     *,
-    model: ComponentModel[BatchT, OutputT],
+    model: ComponentModel[BatchT],
     batch: BatchT,
-    target_out: OutputT,
+    target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _pgd_recon_layerwise_loss_update(
         model=model,
@@ -65,7 +65,7 @@ def pgd_recon_layerwise_loss[BatchT, OutputT](
     return sum_loss / n_examples
 
 
-class PGDReconLayerwiseLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
+class PGDReconLayerwiseLoss[BatchT](Metric[BatchT]):
     """Recon loss when masking with adversarially-optimized values and routing to one layer at a
     time."""
 
@@ -73,11 +73,11 @@ class PGDReconLayerwiseLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
 
     def __init__(
         self,
-        model: ComponentModel[BatchT, OutputT],
+        model: ComponentModel[BatchT],
         pgd_config: PGDConfig,
         device: str,
         use_delta_component: bool,
-        reconstruction_loss: ReconstructionLoss[OutputT],
+        reconstruction_loss: ReconstructionLoss,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
@@ -91,7 +91,7 @@ class PGDReconLayerwiseLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         self,
         *,
         batch: BatchT,
-        target_out: OutputT,
+        target_out: Tensor,
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
         **_: Any,

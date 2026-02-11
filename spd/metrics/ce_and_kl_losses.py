@@ -17,7 +17,7 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
-class CEandKLLosses(Metric[Any, Any]):
+class CEandKLLosses(Metric[Any]):
     """CE and KL losses for different masking strategies.
 
     NOTE: Assumes all batches and sequences are the same size.
@@ -47,7 +47,7 @@ class CEandKLLosses(Metric[Any, Any]):
 
     def __init__(
         self,
-        model: ComponentModel[Any, Any],
+        model: ComponentModel[Any],
         device: str,
         sampling: SamplingType,
         rounding_threshold: float,

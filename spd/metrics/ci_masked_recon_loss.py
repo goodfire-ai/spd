@@ -12,12 +12,12 @@ from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
 
 
-def _ci_masked_recon_loss_update[BatchT, OutputT](
-    model: ComponentModel[BatchT, OutputT],
+def _ci_masked_recon_loss_update[BatchT](
+    model: ComponentModel[BatchT],
     batch: BatchT,
-    target_out: OutputT,
+    target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> tuple[Float[Tensor, ""], int]:
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
     out = model(batch, mask_infos=mask_infos)
@@ -30,12 +30,12 @@ def _ci_masked_recon_loss_compute(
     return sum_loss / n_examples
 
 
-def ci_masked_recon_loss[BatchT, OutputT](
-    model: ComponentModel[BatchT, OutputT],
+def ci_masked_recon_loss[BatchT](
+    model: ComponentModel[BatchT],
     batch: BatchT,
-    target_out: OutputT,
+    target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_loss_update(
         model=model,
@@ -47,16 +47,16 @@ def ci_masked_recon_loss[BatchT, OutputT](
     return _ci_masked_recon_loss_compute(sum_loss, n_examples)
 
 
-class CIMaskedReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
+class CIMaskedReconLoss[BatchT](Metric[BatchT]):
     """Recon loss when masking with CI values directly on all component layers."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel[BatchT, OutputT],
+        model: ComponentModel[BatchT],
         device: str,
-        reconstruction_loss: ReconstructionLoss[OutputT],
+        reconstruction_loss: ReconstructionLoss,
     ) -> None:
         self.model = model
         self.reconstruction_loss = reconstruction_loss
@@ -68,7 +68,7 @@ class CIMaskedReconLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         self,
         *,
         batch: BatchT,
-        target_out: OutputT,
+        target_out: Tensor,
         ci: CIOutputs,
         **_: Any,
     ) -> None:

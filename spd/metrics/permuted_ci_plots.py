@@ -9,7 +9,7 @@ from spd.models.component_model import ComponentModel
 from spd.plotting import plot_causal_importance_vals
 
 
-class PermutedCIPlots(Metric[Any, Any]):
+class PermutedCIPlots(Metric[Any]):
     slow: ClassVar[bool] = True
     input_magnitude: ClassVar[float] = 0.75
 
@@ -17,7 +17,7 @@ class PermutedCIPlots(Metric[Any, Any]):
 
     def __init__(
         self,
-        model: ComponentModel[Any, Any],
+        model: ComponentModel[Any],
         sampling: SamplingType,
         identity_patterns: list[str] | None = None,
         dense_patterns: list[str] | None = None,

@@ -51,7 +51,7 @@ from spd.utils.wandb_utils import try_wandb
 
 
 def run_faithfulness_warmup(
-    component_model: ComponentModel[Any, Any],
+    component_model: ComponentModel[Any],
     component_params: list[torch.nn.Parameter],
     config: Config,
 ) -> None:
@@ -109,14 +109,14 @@ def get_unique_metric_configs(
     return eval_metric_configs
 
 
-def optimize[BatchT, OutputT](
+def optimize[BatchT](
     target_model: nn.Module,
     config: Config,
     device: str,
     train_loader: DataLoader[BatchT],
     eval_loader: DataLoader[BatchT],
-    run_batch: RunBatch[BatchT, OutputT],
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    run_batch: RunBatch[BatchT],
+    reconstruction_loss: ReconstructionLoss,
     out_dir: Path | None,
     tied_weights: list[tuple[str, str]] | None = None,
 ) -> None:
@@ -158,7 +158,7 @@ def optimize[BatchT, OutputT](
     dist_state = get_distributed_state()
     wrapped_model: nn.Module = model
 
-    component_model: ComponentModel[BatchT, OutputT]
+    component_model: ComponentModel[BatchT]
     if dist_state is not None:
         if dist_state.backend == "nccl":
             device_id = dist_state.local_rank
@@ -171,7 +171,7 @@ def optimize[BatchT, OutputT](
             # For CPU, don't pass device_ids or output_device
             wrapped_model = torch.nn.parallel.DistributedDataParallel(model)
         # Access the underlying module for component operations
-        component_model = wrapped_model.module  # type: ignore[attr-defined]
+        component_model = cast(ComponentModel[BatchT], wrapped_model.module)  # type: ignore[attr-defined]
     else:
         component_model = model
     assert isinstance(component_model, ComponentModel), "component_model is not a ComponentModel"
@@ -233,9 +233,7 @@ def optimize[BatchT, OutputT](
                 # NOTE: we need to call the wrapped_model at least once each step in order to setup
                 # the DDP gradient syncing for all parameters in the component model. Gradients will
                 # sync regardless of whether the parameters are used in this call to wrapped_model.
-                target_model_output: OutputWithCache[OutputT] = wrapped_model(
-                    microbatch, cache_type="input"
-                )
+                target_model_output: OutputWithCache = wrapped_model(microbatch, cache_type="input")
 
                 ci = component_model.calc_causal_importances(
                     pre_weight_acts=target_model_output.cache,

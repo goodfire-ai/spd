@@ -12,7 +12,7 @@ from torch import Tensor
 from spd.models.component_model import CIOutputs
 
 
-class Metric[BatchT, OutputT](Protocol):
+class Metric[BatchT](Protocol):
     """Interface for metrics that can be used in training and/or evaluation."""
 
     slow: ClassVar[bool] = False
@@ -22,11 +22,11 @@ class Metric[BatchT, OutputT](Protocol):
         self,
         *,
         batch: BatchT,
-        target_out: OutputT,
+        target_out: Tensor,
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
         ci: CIOutputs,
         current_frac_of_training: float,
-        weight_deltas: dict[str, Float[Tensor, "... C"]],
+        weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
     ) -> None:
         """Update metric state with a batch of data."""
         ...

@@ -31,7 +31,7 @@ class TinyLinearModel(nn.Module):
         return self.fc(x)
 
 
-def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel[Any, Any]:
+def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel[Any]:
     d_out, d_in = weight.shape
     target = TinyLinearModel(d_in=d_in, d_out=d_out)
     with torch.no_grad():
@@ -50,7 +50,7 @@ def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel
     return comp_model
 
 
-def _zero_components_for_test(model: ComponentModel[Any, Any]) -> None:
+def _zero_components_for_test(model: ComponentModel[Any]) -> None:
     with torch.no_grad():
         for cm in model.components.values():
             cm.V.zero_()

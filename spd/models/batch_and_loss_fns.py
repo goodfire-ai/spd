@@ -11,25 +11,26 @@ from jaxtyping import Float
 from torch import Tensor, nn
 
 from spd.configs import AttrOutputExtract, IndexOutputExtract, OutputExtractConfig
+from spd.utils.general_utils import runtime_cast
 
 
-class RunBatch[BatchT, OutputT](Protocol):
+class RunBatch[BatchT](Protocol):
     """Protocol for running a batch through a model and returning the output."""
 
-    def __call__(self, model: nn.Module, batch: BatchT) -> OutputT: ...
+    def __call__(self, model: nn.Module, batch: BatchT) -> Tensor: ...
 
 
-class ReconstructionLoss[OutputT](Protocol):
+class ReconstructionLoss(Protocol):
     """Protocol for computing reconstruction loss between predictions and targets."""
 
-    def __call__(self, pred: OutputT, target: OutputT) -> tuple[Float[Tensor, ""], int]: ...
+    def __call__(self, pred: Tensor, target: Tensor) -> tuple[Float[Tensor, ""], int]: ...
 
 
-def run_batch_passthrough(model: nn.Module, batch: Any) -> Any:
-    return model(batch)
+def run_batch_passthrough(model: nn.Module, batch: Any) -> Tensor:
+    return runtime_cast(Tensor, model(batch))
 
 
-def make_run_batch(output_extract: OutputExtractConfig | None) -> RunBatch[Any, Any]:
+def make_run_batch(output_extract: OutputExtractConfig | None) -> RunBatch[Any]:
     """creates a RunBatch function for a given configuration.
 
     Note that if you plan to override the RunBatch functionality, you can simply pass
@@ -40,9 +41,17 @@ def make_run_batch(output_extract: OutputExtractConfig | None) -> RunBatch[Any, 
         case None:
             return run_batch_passthrough
         case IndexOutputExtract(index=idx):
-            return lambda model, batch: model(batch)[idx]
+
+            def _run_index(model: nn.Module, batch: Any) -> Tensor:
+                return model(batch)[idx]
+
+            return _run_index
         case AttrOutputExtract(attr=attr):
-            return lambda model, batch: getattr(model(batch), attr)
+
+            def _run_attr(model: nn.Module, batch: Any) -> Tensor:
+                return getattr(model(batch), attr)
+
+            return _run_attr
 
 
 def recon_loss_mse(

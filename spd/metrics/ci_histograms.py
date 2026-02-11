@@ -12,13 +12,13 @@ from spd.plotting import plot_ci_values_histograms
 from spd.utils.distributed_utils import gather_all_tensors
 
 
-class CIHistograms(Metric[Any, Any]):
+class CIHistograms(Metric[Any]):
     slow: ClassVar[bool] = True
     metric_section: ClassVar[str] = "figures"
 
     def __init__(
         self,
-        model: ComponentModel[Any, Any],
+        model: ComponentModel[Any],
         n_batches_accum: int | None = None,
     ):
         self.n_batches_accum = n_batches_accum

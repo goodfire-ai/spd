@@ -41,7 +41,7 @@ class DatasetAttributionConfig:
     ci_threshold: float
 
 
-def _build_component_layer_keys(model: ComponentModel[Tensor, Tensor]) -> list[str]:
+def _build_component_layer_keys(model: ComponentModel[Tensor]) -> list[str]:
     """Build list of component layer keys in canonical order.
 
     Returns keys like ["h.0.attn.q_proj:0", "h.0.attn.q_proj:1", ...] for all layers.
@@ -56,7 +56,7 @@ def _build_component_layer_keys(model: ComponentModel[Tensor, Tensor]) -> list[s
 
 
 def _build_alive_masks(
-    model: ComponentModel[Tensor, Tensor],
+    model: ComponentModel[Tensor],
     run_id: str,
     ci_threshold: float,
     n_components: int,

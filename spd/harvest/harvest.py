@@ -38,7 +38,7 @@ from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import bf16_autocast
 
 
-def _compute_u_norms(model: ComponentModel[Any, Any]) -> dict[str, Float[Tensor, " C"]]:
+def _compute_u_norms(model: ComponentModel[Any]) -> dict[str, Float[Tensor, " C"]]:
     """Compute ||U[c,:]|| for each component c in each layer.
 
     Component activations (v_i^T @ a) have a scale invariance: scaling V by α and U by 1/α

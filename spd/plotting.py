@@ -183,7 +183,7 @@ def plot_mean_component_cis_both_scales(
 
 
 def get_single_feature_causal_importances(
-    model: ComponentModel[Any, Any],
+    model: ComponentModel[Any],
     batch_shape: tuple[int, ...],
     input_magnitude: float,
     sampling: SamplingType,
@@ -217,7 +217,7 @@ def get_single_feature_causal_importances(
 
 
 def plot_causal_importance_vals(
-    model: ComponentModel[Any, Any],
+    model: ComponentModel[Any],
     batch_shape: tuple[int, ...],
     input_magnitude: float,
     sampling: SamplingType,

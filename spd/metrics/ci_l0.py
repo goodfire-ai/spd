@@ -12,7 +12,7 @@ from spd.utils.component_utils import calc_ci_l_zero
 from spd.utils.distributed_utils import all_reduce
 
 
-class CI_L0(Metric[Any, Any]):
+class CI_L0(Metric[Any]):
     """L0 metric for CI values.
 
     NOTE: Assumes all batches and sequences are the same size.
@@ -22,7 +22,7 @@ class CI_L0(Metric[Any, Any]):
 
     def __init__(
         self,
-        model: ComponentModel[Any, Any],
+        model: ComponentModel[Any],
         device: str,
         ci_alive_threshold: float,
         groups: dict[str, list[str]] | None = None,

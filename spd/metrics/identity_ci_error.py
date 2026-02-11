@@ -9,7 +9,7 @@ from spd.plotting import get_single_feature_causal_importances
 from spd.utils.target_ci_solutions import compute_target_metrics, make_target_ci_solution
 
 
-class IdentityCIError(Metric[Any, Any]):
+class IdentityCIError(Metric[Any]):
     """Error between the CI values and an Identity or Dense CI pattern."""
 
     slow: ClassVar[bool] = True
@@ -19,7 +19,7 @@ class IdentityCIError(Metric[Any, Any]):
 
     def __init__(
         self,
-        model: ComponentModel[Any, Any],
+        model: ComponentModel[Any],
         sampling: SamplingType,
         identity_ci: list[dict[str, str | int]] | None = None,
         dense_ci: list[dict[str, str | int]] | None = None,

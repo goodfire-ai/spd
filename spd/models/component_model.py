@@ -39,10 +39,10 @@ class SPDRunInfo(RunInfo[Config]):
     checkpoint_prefix = "model"
 
 
-class OutputWithCache[OutputT](NamedTuple):
+class OutputWithCache(NamedTuple):
     """Output tensor and cached activations."""
 
-    output: OutputT
+    output: Tensor
     cache: dict[str, Tensor]
 
 
@@ -53,7 +53,7 @@ class CIOutputs:
     pre_sigmoid: dict[str, Tensor]
 
 
-class ComponentModel[BatchT, OutputT](nn.Module):
+class ComponentModel[BatchT](nn.Module):
     """Wrapper around an arbitrary pytorch model for running SPD.
 
     The underlying *base model* can be any subclass of `nn.Module` (e.g.
@@ -75,14 +75,14 @@ class ComponentModel[BatchT, OutputT](nn.Module):
     def __init__(
         self,
         target_model: nn.Module,
-        run_batch: RunBatch[BatchT, OutputT],
+        run_batch: RunBatch[BatchT],
         module_path_info: list[ModulePathInfo],
         ci_fn_type: CiFnType,
         ci_fn_hidden_dims: list[int],
         sigmoid_type: SigmoidType,
     ):
         super().__init__()
-        self._run_batch: RunBatch[BatchT, OutputT] = run_batch
+        self._run_batch: RunBatch[BatchT] = run_batch
 
         for name, param in target_model.named_parameters():
             assert not param.requires_grad, (
@@ -121,7 +121,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             self.upper_leaky_fn = SIGMOID_TYPES[sigmoid_type]
 
     @classmethod
-    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel[Any, Any]":
+    def from_run_info(cls, run_info: RunInfo[Config]) -> "ComponentModel[Any]":
         """Load a trained ComponentModel from a run info object."""
         config = run_info.config
 
@@ -147,7 +147,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
 
         run_batch = make_run_batch(config.output_extract)
 
-        comp_model: ComponentModel[Any, Any] = cls(
+        comp_model = ComponentModel(
             target_model=target_model,
             run_batch=run_batch,
             module_path_info=module_path_info,
@@ -162,7 +162,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
         return comp_model
 
     @classmethod
-    def from_pretrained(cls, path: ModelPath) -> "ComponentModel[Any, Any]":
+    def from_pretrained(cls, path: ModelPath) -> "ComponentModel[Any]":
         """Load a trained ComponentModel from a wandb or local path."""
         run_info = SPDRunInfo.from_path(path)
         return cls.from_run_info(run_info)
@@ -288,7 +288,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
         batch: BatchT,
         cache_type: Literal["component_acts"],
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-    ) -> OutputWithCache[OutputT]: ...
+    ) -> OutputWithCache: ...
 
     @overload
     def __call__(
@@ -296,7 +296,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
         batch: BatchT,
         cache_type: Literal["input"],
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
-    ) -> OutputWithCache[OutputT]: ...
+    ) -> OutputWithCache: ...
 
     @overload
     def __call__(
@@ -304,10 +304,10 @@ class ComponentModel[BatchT, OutputT](nn.Module):
         batch: BatchT,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["none"] = "none",
-    ) -> OutputT: ...
+    ) -> Tensor: ...
 
     @override
-    def __call__(self, *args: Any, **kwargs: Any) -> OutputT | OutputWithCache[OutputT]:
+    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | OutputWithCache:
         return super().__call__(*args, **kwargs)
 
     @override
@@ -316,7 +316,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
         batch: BatchT,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["component_acts", "input", "none"] = "none",
-    ) -> OutputT | OutputWithCache[OutputT]:
+    ) -> Tensor | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
 
         This method handles the following 4 cases:
@@ -361,7 +361,7 @@ class ComponentModel[BatchT, OutputT](nn.Module):
             )
 
         with self._attach_forward_hooks(hooks):
-            out: OutputT = self._run_batch(self.target_model, batch)
+            out: Tensor = self._run_batch(self.target_model, batch)
 
         match cache_type:
             case "input" | "component_acts":

@@ -15,16 +15,16 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def _stochastic_recon_subset_loss_update[BatchT, OutputT](
-    model: ComponentModel[BatchT, OutputT],
+def _stochastic_recon_subset_loss_update[BatchT](
+    model: ComponentModel[BatchT],
     sampling: SamplingType,
     n_mask_samples: int,
     batch: BatchT,
-    target_out: OutputT,
+    target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     router: Router,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> tuple[Float[Tensor, ""], int]:
     assert ci, "Empty ci"
     device = get_obj_device(ci)
@@ -55,16 +55,16 @@ def _stochastic_recon_subset_loss_compute(
     return sum_loss / n_examples
 
 
-def stochastic_recon_subset_loss[BatchT, OutputT](
-    model: ComponentModel[BatchT, OutputT],
+def stochastic_recon_subset_loss[BatchT](
+    model: ComponentModel[BatchT],
     sampling: SamplingType,
     n_mask_samples: int,
     batch: BatchT,
-    target_out: OutputT,
+    target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing: SubsetRoutingType,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _stochastic_recon_subset_loss_update(
         model=model,
@@ -80,20 +80,20 @@ def stochastic_recon_subset_loss[BatchT, OutputT](
     return _stochastic_recon_subset_loss_compute(sum_loss, n_examples)
 
 
-class StochasticReconSubsetLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
+class StochasticReconSubsetLoss[BatchT](Metric[BatchT]):
     """Recon loss when sampling with stochastic masks and routing to subsets of component layers."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel[BatchT, OutputT],
+        model: ComponentModel[BatchT],
         device: str,
         sampling: SamplingType,
         use_delta_component: bool,
         n_mask_samples: int,
         routing: SubsetRoutingType,
-        reconstruction_loss: ReconstructionLoss[OutputT],
+        reconstruction_loss: ReconstructionLoss,
     ) -> None:
         self.model = model
         self.sampling: SamplingType = sampling
@@ -109,7 +109,7 @@ class StochasticReconSubsetLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         self,
         *,
         batch: BatchT,
-        target_out: OutputT,
+        target_out: Tensor,
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,

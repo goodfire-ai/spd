@@ -39,7 +39,9 @@ class TwoLayerLinearModel(nn.Module):
         return x
 
 
-def make_one_layer_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel[Any, Any]:
+def make_one_layer_component_model(
+    weight: Float[Tensor, "d_out d_in"],
+) -> ComponentModel[Any]:
     """Create a ComponentModel with a single linear layer for testing.
 
     Args:
@@ -68,7 +70,7 @@ def make_one_layer_component_model(weight: Float[Tensor, "d_out d_in"]) -> Compo
 
 def make_two_layer_component_model(
     weight1: Float[Tensor, " d_hidden d_in"], weight2: Float[Tensor, " d_out d_hidden"]
-) -> ComponentModel[Any, Any]:
+) -> ComponentModel[Any]:
     """Create a ComponentModel with two linear layers for testing.
 
     Args:

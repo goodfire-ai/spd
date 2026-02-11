@@ -15,16 +15,16 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def pgd_recon_subset_loss[BatchT, OutputT](
+def pgd_recon_subset_loss[BatchT](
     *,
-    model: ComponentModel[BatchT, OutputT],
+    model: ComponentModel[BatchT],
     batch: BatchT,
-    target_out: OutputT,
+    target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
     routing: SubsetRoutingType,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = pgd_masked_recon_loss_update(
         model=model,
@@ -39,7 +39,7 @@ def pgd_recon_subset_loss[BatchT, OutputT](
     return sum_loss / n_examples
 
 
-class PGDReconSubsetLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
+class PGDReconSubsetLoss[BatchT](Metric[BatchT]):
     """Recon loss when masking with adversarially-optimized values and routing to subsets of
     component layers."""
 
@@ -47,12 +47,12 @@ class PGDReconSubsetLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
 
     def __init__(
         self,
-        model: ComponentModel[BatchT, OutputT],
+        model: ComponentModel[BatchT],
         device: str,
         use_delta_component: bool,
         pgd_config: PGDConfig,
         routing: SubsetRoutingType,
-        reconstruction_loss: ReconstructionLoss[OutputT],
+        reconstruction_loss: ReconstructionLoss,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
@@ -68,7 +68,7 @@ class PGDReconSubsetLoss[BatchT, OutputT](Metric[BatchT, OutputT]):
         self,
         *,
         batch: BatchT,
-        target_out: OutputT,
+        target_out: Tensor,
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,

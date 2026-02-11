@@ -111,7 +111,7 @@ class RunState:
     """Runtime state for a loaded run (model, tokenizer, etc.)"""
 
     run: Run
-    model: ComponentModel[Tensor, Tensor]
+    model: ComponentModel[Tensor]
     tokenizer: PreTrainedTokenizerBase
     sources_by_target: dict[str, list[str]]
     config: Config

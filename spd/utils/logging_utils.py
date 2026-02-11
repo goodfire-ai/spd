@@ -40,7 +40,7 @@ def local_log(data: dict[str, Any], step: int, out_dir: Path) -> None:
 
 
 def get_grad_norms_dict(
-    component_model: ComponentModel[Any, Any], device: torch.device | str
+    component_model: ComponentModel[Any], device: torch.device | str
 ) -> dict[str, float]:
     """Create a dictionary of gradient norms for the parameters of a component model."""
 

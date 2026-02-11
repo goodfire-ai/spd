@@ -19,7 +19,7 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import calc_kl_divergence_lm
 
 
-class StochasticReconSubsetCEAndKL(Metric[Any, Any]):
+class StochasticReconSubsetCEAndKL(Metric[Any]):
     """Compute reconstruction loss for specific subsets of components.
 
     NOTE: Assumes all batches and sequences are the same size.
@@ -29,7 +29,7 @@ class StochasticReconSubsetCEAndKL(Metric[Any, Any]):
 
     def __init__(
         self,
-        model: ComponentModel[Any, Any],
+        model: ComponentModel[Any],
         device: str,
         sampling: SamplingType,
         use_delta_component: bool,

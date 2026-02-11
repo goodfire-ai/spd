@@ -118,13 +118,13 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
     return {**metrics, **avg_metrics}
 
 
-def init_metric[BatchT, OutputT](
+def init_metric[BatchT](
     cfg: MetricConfigType,
-    model: ComponentModel[BatchT, OutputT],
+    model: ComponentModel[BatchT],
     run_config: Config,
     device: str,
-    reconstruction_loss: ReconstructionLoss[OutputT],
-) -> Metric[BatchT, OutputT]:
+    reconstruction_loss: ReconstructionLoss,
+) -> Metric[BatchT]:
     match cfg:
         case ImportanceMinimalityLossConfig():
             metric = ImportanceMinimalityLoss(
@@ -288,20 +288,20 @@ def init_metric[BatchT, OutputT](
     return metric
 
 
-def evaluate[BatchT, OutputT](
+def evaluate[BatchT](
     eval_metric_configs: list[MetricConfigType],
-    model: ComponentModel[BatchT, OutputT],
+    model: ComponentModel[BatchT],
     eval_iterator: Iterator[BatchT],
     device: str,
     run_config: Config,
     slow_step: bool,
     n_eval_steps: int,
     current_frac_of_training: float,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
-    metrics: list[Metric[BatchT, OutputT]] = []
+    metrics: list[Metric[BatchT]] = []
     for cfg in eval_metric_configs:
         metric = init_metric(
             cfg=cfg,
@@ -320,7 +320,7 @@ def evaluate[BatchT, OutputT](
     for _ in range(n_eval_steps):
         batch = next(eval_iterator)
 
-        target_output: OutputWithCache[OutputT] = model(batch, cache_type="input")
+        target_output: OutputWithCache = model(batch, cache_type="input")
         ci = model.calc_causal_importances(
             pre_weight_acts=target_output.cache,
             detach_inputs=False,
@@ -350,15 +350,15 @@ def evaluate[BatchT, OutputT](
     return outputs
 
 
-def evaluate_multibatch_pgd[BatchT, OutputT](
+def evaluate_multibatch_pgd[BatchT](
     multibatch_pgd_eval_configs: list[
         PGDMultiBatchReconLossConfig | PGDMultiBatchReconSubsetLossConfig
     ],
-    model: ComponentModel[BatchT, OutputT],
+    model: ComponentModel[BatchT],
     create_data_iter: CreateDataIter[BatchT],
     config: Config,
     device: str,
-    reconstruction_loss: ReconstructionLoss[OutputT],
+    reconstruction_loss: ReconstructionLoss,
 ) -> dict[str, float]:
     """Calculate multibatch PGD metrics."""
     weight_deltas = model.calc_weight_deltas() if config.use_delta_component else None

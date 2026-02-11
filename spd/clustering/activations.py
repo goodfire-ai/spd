@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Literal, NamedTuple
+from typing import Literal, NamedTuple
 
 import torch
 from jaxtyping import Bool, Float, Float16, Int
@@ -17,14 +17,14 @@ from spd.models.component_model import ComponentModel, OutputWithCache
 
 
 def component_activations(
-    model: ComponentModel[Tensor, Tensor],
+    model: ComponentModel[Tensor],
     device: torch.device | str,
     batch: Int[Tensor, "batch_size n_ctx"],
 ) -> dict[str, ActivationsTensor]:
     """Get the component activations over a **single** batch."""
     causal_importances: dict[str, ActivationsTensor]
     with torch.no_grad():
-        model_output: OutputWithCache[Any] = model(
+        model_output: OutputWithCache = model(
             batch.to(device),
             cache_type="input",
         )
