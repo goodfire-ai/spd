@@ -69,7 +69,7 @@ def pgd_masked_recon_loss_update[BatchT, OutputT](
             loss = sum_loss / n_examples
         grads = torch.autograd.grad(loss, list(adv_sources.values()))
         adv_sources_grads = {
-            k: all_reduce(g, op=ReduceOp.SUM)
+            k: all_reduce(g, op=ReduceOp.AVG)
             for k, g in zip(adv_sources.keys(), grads, strict=True)
         }
         with torch.no_grad():
