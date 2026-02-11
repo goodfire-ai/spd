@@ -72,7 +72,10 @@ def _deserialize_component(row: sqlite3.Row) -> ComponentData:
 class HarvestDB:
     def __init__(self, db_path: Path, readonly: bool = False) -> None:
         if readonly:
-            self._conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            # immutable=1 skips ALL locking — required on network filesystems where
+            # SQLite's locking protocol fails. Safe because readers only open DBs
+            # that are fully written and closed by a prior pipeline stage.
+            self._conn = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
         else:
             self._conn = sqlite3.connect(str(db_path))
             self._conn.execute("PRAGMA journal_mode=WAL")
