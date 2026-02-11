@@ -28,6 +28,7 @@ def main(
     model: str = "google/gemini-3-flash-preview",
     limit: int | None = None,
     cost_limit_usd: float | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> None:
     load_dotenv()
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -41,7 +42,7 @@ def main(
     assert interpretations, f"No interpretation results for {run_id}. Run autointerp first."
     labels = {key: result.label for key, result in interpretations.items()}
 
-    harvest = HarvestRepo(run_id)
+    harvest = HarvestRepo(run_id, subrun_id=harvest_subrun_id)
     components = harvest.get_all_components()
     ci_threshold = harvest.get_ci_threshold()
 

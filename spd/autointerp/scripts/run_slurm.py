@@ -96,15 +96,15 @@ def submit_autointerp(
 
     # === 2. Detection + fuzzing scoring (depend on interpret) ===
     for scorer in ("detection", "fuzzing"):
-        scoring_cmd = " \\\n    ".join(
-            [
-                "python -m spd.autointerp.scoring.scripts.run_label_scoring",
-                f'"{wandb_path}"',
-                f"--scorer {scorer}",
-                f"--autointerp_run_id {autointerp_run_id}",
-                f"--model {evals.eval_model}",
-            ]
-        )
+        scoring_parts = [
+            "python -m spd.autointerp.scoring.scripts.run_label_scoring",
+            f'"{wandb_path}"',
+            f"--scorer {scorer}",
+            f"--model {evals.eval_model}",
+        ]
+        if harvest_subrun_id is not None:
+            scoring_parts.append(f"--harvest_subrun_id {harvest_subrun_id}")
+        scoring_cmd = " \\\n    ".join(scoring_parts)
 
         eval_slurm = SlurmConfig(
             job_name=f"spd-{scorer}",

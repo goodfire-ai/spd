@@ -14,7 +14,6 @@ from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
 from spd.harvest.db import HarvestDB
 from spd.harvest.repo import HarvestRepo
-from spd.harvest.schemas import get_harvest_subrun_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -32,15 +31,11 @@ def main(
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    harvest = HarvestRepo(run_id)
+    harvest = HarvestRepo(run_id, subrun_id=harvest_subrun_id)
     components = harvest.get_all_components()
     ci_threshold = harvest.get_ci_threshold()
 
-    # Write intruder scores to the specified harvest sub-run's DB
-    if harvest_subrun_id is not None:
-        db_path = get_harvest_subrun_dir(run_id, harvest_subrun_id) / "harvest.db"
-    else:
-        db_path = harvest._resolve_db_path()
+    db_path = harvest._resolve_db_path()
     assert db_path is not None, f"No harvest.db for run {run_id}"
     db = HarvestDB(db_path)
 
