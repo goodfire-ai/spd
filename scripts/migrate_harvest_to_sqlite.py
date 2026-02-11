@@ -59,15 +59,17 @@ def migrate_run(run_id: str) -> bool:
                 )
                 for ex in data["activation_examples"]
             ]
-            components.append(ComponentData(
-                component_key=data["component_key"],
-                layer=data["layer"],
-                component_idx=data["component_idx"],
-                mean_ci=data["mean_ci"],
-                activation_examples=examples,
-                input_token_pmi=ComponentTokenPMI(**data["input_token_pmi"]),
-                output_token_pmi=ComponentTokenPMI(**data["output_token_pmi"]),
-            ))
+            components.append(
+                ComponentData(
+                    component_key=data["component_key"],
+                    layer=data["layer"],
+                    component_idx=data["component_idx"],
+                    mean_ci=data["mean_ci"],
+                    activation_examples=examples,
+                    input_token_pmi=ComponentTokenPMI(**data["input_token_pmi"]),
+                    output_token_pmi=ComponentTokenPMI(**data["output_token_pmi"]),
+                )
+            )
 
     # Write to SQLite
     db = HarvestDB(db_path)

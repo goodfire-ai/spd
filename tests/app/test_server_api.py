@@ -19,7 +19,8 @@ from spd.app.backend.database import PromptAttrDB
 from spd.app.backend.routers import graphs as graphs_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
-from spd.app.backend.state import HarvestCache, RunState, StateManager
+from spd.app.backend.state import RunState, StateManager
+from spd.autointerp.repo import InterpRepo
 from spd.configs import (
     Config,
     LayerwiseCiConfig,
@@ -27,6 +28,8 @@ from spd.configs import (
     ModulePatternInfoConfig,
     ScheduleConfig,
 )
+from spd.dataset_attributions.repo import AttributionRepo
+from spd.harvest.repo import HarvestRepo
 from spd.models.component_model import ComponentModel
 from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 from spd.topology import TransformerTopology
@@ -145,7 +148,9 @@ def app_with_state():
             tokenizer=tokenizer,
             sources_by_target=sources_by_target,
             config=config,
-            harvest=HarvestCache(run_id="test_run"),
+            harvest=HarvestRepo("test_run"),
+            interp=InterpRepo("test_run"),
+            attributions=AttributionRepo("test_run"),
         )
 
         manager = StateManager.get()

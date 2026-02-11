@@ -79,7 +79,9 @@ def get_component_data_bulk(
         if has_ac
         else {}
     )
-    logger.info(f"[perf] activation_contexts: {time.perf_counter() - t0:.2f}s ({len(activation_contexts)} results)")
+    logger.info(
+        f"[perf] activation_contexts: {time.perf_counter() - t0:.2f}s ({len(activation_contexts)} results)"
+    )
 
     t0 = time.perf_counter()
     correlations: dict[str, ComponentCorrelationsResponse] = (
@@ -93,7 +95,9 @@ def get_component_data_bulk(
         if has_corr
         else {}
     )
-    logger.info(f"[perf] correlations: {time.perf_counter() - t0:.2f}s ({len(correlations)} results)")
+    logger.info(
+        f"[perf] correlations: {time.perf_counter() - t0:.2f}s ({len(correlations)} results)"
+    )
 
     t0 = time.perf_counter()
     token_stats: dict[str, TokenStatsResponse] = (

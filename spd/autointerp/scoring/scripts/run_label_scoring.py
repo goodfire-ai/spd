@@ -25,7 +25,6 @@ LabelScorerType = Literal["detection", "fuzzing"]
 def main(
     wandb_path: str,
     scorer: LabelScorerType,
-    autointerp_run_id: str | None = None,
     model: str = "google/gemini-3-flash-preview",
     limit: int | None = None,
     cost_limit_usd: float | None = None,

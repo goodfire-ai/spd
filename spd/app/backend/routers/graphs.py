@@ -454,7 +454,9 @@ def compute_graph_stream(
             ci_threshold=ci_threshold,
             normalize=normalize,
         )
-        logger.info(f"[perf] filter_graph: {time.perf_counter() - t0:.2f}s ({len(fg.edges)} edges after filter)")
+        logger.info(
+            f"[perf] filter_graph: {time.perf_counter() - t0:.2f}s ({len(fg.edges)} edges after filter)"
+        )
         logger.info(f"[perf] Total graph computation: {time.perf_counter() - t_total:.2f}s")
 
         return GraphData(

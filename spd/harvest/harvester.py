@@ -360,8 +360,16 @@ class Harvester:
                 activation_examples = [
                     ActivationExample(
                         token_ids=[t for t in token_ids if t != WINDOW_PAD_SENTINEL],
-                        ci_values=[c for t, c in zip(token_ids, ci_values, strict=True) if t != WINDOW_PAD_SENTINEL],
-                        component_acts=[a for t, a in zip(token_ids, component_acts, strict=True) if t != WINDOW_PAD_SENTINEL],
+                        ci_values=[
+                            c
+                            for t, c in zip(token_ids, ci_values, strict=True)
+                            if t != WINDOW_PAD_SENTINEL
+                        ],
+                        component_acts=[
+                            a
+                            for t, a in zip(token_ids, component_acts, strict=True)
+                            if t != WINDOW_PAD_SENTINEL
+                        ],
                     )
                     for token_ids, ci_values, component_acts in sampler.samples
                 ]

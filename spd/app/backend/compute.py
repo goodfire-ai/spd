@@ -345,7 +345,6 @@ def compute_edges_from_ci(
         loss_seq_pos: Maximum sequence position to include (inclusive).
                       If None, includes all positions (default behavior).
     """
-    t_start = time.perf_counter()
     n_seq = tokens.shape[1]
     if loss_seq_pos is None:
         loss_seq_pos = n_seq - 1
@@ -406,7 +405,9 @@ def compute_edges_from_ci(
         for layer in all_layers
     }
     total_alive = sum(len(info.alive_c_idxs) for info in alive_info.values())
-    unembed_alive = len(alive_info.get(unembed_path, LayerAliveInfo(torch.tensor([]), [])).alive_c_idxs)
+    unembed_alive = len(
+        alive_info.get(unembed_path, LayerAliveInfo(torch.tensor([]), [])).alive_c_idxs
+    )
     logger.info(
         f"[perf] Alive info: {time.perf_counter() - t0:.2f}s "
         f"({total_alive} alive components, {unembed_alive} output nodes)"
@@ -440,7 +441,9 @@ def compute_edges_from_ci(
         if on_progress is not None:
             on_progress(progress_count, total_source_layers, target)
 
-    logger.info(f"[perf] Edge computation total: {time.perf_counter() - t0:.2f}s ({len(edges)} edges)")
+    logger.info(
+        f"[perf] Edge computation total: {time.perf_counter() - t0:.2f}s ({len(edges)} edges)"
+    )
 
     t0 = time.perf_counter()
     node_ci_vals = extract_node_ci_vals(ci_lower_leaky, topology)

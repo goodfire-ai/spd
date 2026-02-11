@@ -126,16 +126,12 @@ class HarvestDB:
         }
 
     def get_ci_threshold(self) -> float:
-        row = self._conn.execute(
-            "SELECT value FROM config WHERE key = 'ci_threshold'"
-        ).fetchone()
+        row = self._conn.execute("SELECT value FROM config WHERE key = 'ci_threshold'").fetchone()
         assert row is not None, "ci_threshold not found in config table"
         return orjson.loads(row["value"])
 
     def has_data(self) -> bool:
-        row = self._conn.execute(
-            "SELECT EXISTS(SELECT 1 FROM components LIMIT 1)"
-        ).fetchone()
+        row = self._conn.execute("SELECT EXISTS(SELECT 1 FROM components LIMIT 1)").fetchone()
         assert row is not None
         return bool(row[0])
 

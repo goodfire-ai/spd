@@ -174,7 +174,6 @@ async def request_component_interpretation(
     from spd.autointerp.llm_api import CostTracker, LLMClient, RateLimiter  # noqa: F811
 
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
-    run_id = loaded.harvest.run_id
 
     existing = loaded.interp.get_interpretation(component_key)
     if existing is not None:
@@ -281,6 +280,8 @@ def get_component_token_stats(
     Returns None if token stats haven't been harvested for this run.
     """
     token_stats = loaded.harvest.get_token_stats()
+    if token_stats is None:
+        return None
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
     input_stats = analysis.get_input_token_stats(
@@ -336,6 +337,8 @@ def get_component_correlations_bulk(
     Returns a dict keyed by component_key. Components not found are omitted.
     """
     correlations = loaded.harvest.get_correlations()
+    if correlations is None:
+        return {}
 
     def to_schema(c: analysis.CorrelatedComponent) -> CorrelatedComponent:
         return CorrelatedComponent(
@@ -405,6 +408,8 @@ def get_component_token_stats_bulk(
     Returns a dict keyed by component_key. Components not found are omitted.
     """
     token_stats = loaded.harvest.get_token_stats()
+    if token_stats is None:
+        return {}
     result: dict[str, TokenStatsResponse] = {}
 
     def to_concrete(canonical_key: str) -> str:
@@ -457,6 +462,8 @@ def get_component_correlations(
     Returns None if correlations haven't been harvested for this run.
     """
     correlations = loaded.harvest.get_correlations()
+    if correlations is None:
+        raise HTTPException(status_code=404, detail="No correlations data available")
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
     if not analysis.has_component(correlations, component_key):

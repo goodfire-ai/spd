@@ -85,6 +85,8 @@ def get_activation_context_detail(
     concrete_layer = loaded.topology.get_target_module_path(CanonicalWeight.parse(layer))
     component_key = f"{concrete_layer}:{component_idx}"
     comp = loaded.harvest.get_component(component_key)
+    if comp is None:
+        raise HTTPException(status_code=404, detail=f"Component {component_key} not found")
 
     # Apply limit to examples
     examples = comp.activation_examples
@@ -122,6 +124,7 @@ def get_activation_contexts_bulk(
     Returns a dict keyed by component_key. Components not found are omitted.
     Uses optimized bulk loader with single file handle and sorted seeks.
     """
+
     # Translate canonical component keys to concrete paths for harvest lookup
     def _to_concrete_key(canonical_key: str) -> str:
         layer, idx = canonical_key.rsplit(":", 1)
