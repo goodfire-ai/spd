@@ -55,6 +55,7 @@ from spd.metrics import (
     StochasticHiddenActsReconLoss,
     StochasticReconLayerwiseLoss,
     StochasticReconLoss,
+    StochasticReconSubsetCEAndKL,
     StochasticReconSubsetLoss,
     UnmaskedReconLoss,
     UVPlots,
@@ -249,16 +250,15 @@ def init_metric[BatchT, OutputT](
                 reconstruction_loss=reconstruction_loss,
             )
         case StochasticReconSubsetCEAndKLConfig():
-            raise ValueError("fix this typing!")
-            # metric = StochasticReconSubsetCEAndKL(
-            #     model=model,
-            #     device=device,
-            #     sampling=run_config.sampling,
-            #     use_delta_component=run_config.use_delta_component,
-            #     n_mask_samples=run_config.n_mask_samples,
-            #     include_patterns=cfg.include_patterns,
-            #     exclude_patterns=cfg.exclude_patterns,
-            # )
+            metric = StochasticReconSubsetCEAndKL(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                use_delta_component=run_config.use_delta_component,
+                n_mask_samples=run_config.n_mask_samples,
+                include_patterns=cfg.include_patterns,
+                exclude_patterns=cfg.exclude_patterns,
+            )
         case StochasticHiddenActsReconLossConfig():
             metric = StochasticHiddenActsReconLoss(
                 model=model,
