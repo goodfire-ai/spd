@@ -1,12 +1,11 @@
 """Harvest data repository.
 
 Owns SPD_OUT_DIR/harvest/<run_id>/ and provides read access to all harvest artifacts.
-No in-memory caching — reads go through on every call. Currently backed by files
-(JSONL, JSON, .pt); will migrate component-level data to SQLite.
+No in-memory caching -- reads go through on every call. Component data backed by SQLite;
+correlations and token stats remain as .pt files.
 """
 
-from pathlib import Path
-
+from spd.harvest.db import HarvestDB
 from spd.harvest.schemas import (
     ComponentData,
     ComponentSummary,
@@ -23,40 +22,48 @@ class HarvestRepo:
         self.run_id = run_id
         self._ac_dir = get_activation_contexts_dir(run_id)
         self._corr_dir = get_correlations_dir(run_id)
+        self._db: HarvestDB | None = None
 
-    # ── Activation contexts ───────────────────────────────────────────
+    def _get_db(self) -> HarvestDB | None:
+        """Lazily open the SQLite database on first access."""
+        if self._db is not None:
+            return self._db
+        db_path = self._ac_dir / "harvest.db"
+        if not db_path.exists():
+            return None
+        self._db = HarvestDB(db_path)
+        return self._db
+
+    # -- Activation contexts ---------------------------------------------------
 
     def has_activation_contexts(self) -> bool:
-        return (self._ac_dir / "summary.json").exists()
+        db = self._get_db()
+        return db is not None and db.has_data()
 
     def get_summary(self) -> dict[str, ComponentSummary] | None:
-        path = self._ac_dir / "summary.json"
-        if not path.exists():
+        db = self._get_db()
+        if db is None:
             return None
-        return ComponentSummary.load_all(path)
+        return db.get_summary()
 
     def get_component(self, component_key: str) -> ComponentData | None:
-        """Load a single component's full data (examples, PMI, etc.)."""
-        from spd.harvest.loaders import load_component_activation_contexts
-
-        if not (self._ac_dir / "components.jsonl").exists():
+        db = self._get_db()
+        if db is None:
             return None
-        return load_component_activation_contexts(self.run_id, component_key)
+        return db.get_component(component_key)
 
     def get_components_bulk(self, component_keys: list[str]) -> dict[str, ComponentData]:
-        """Load multiple components in a single pass."""
-        from spd.harvest.loaders import load_component_activation_contexts_bulk
-
-        if not (self._ac_dir / "components.jsonl").exists():
+        db = self._get_db()
+        if db is None:
             return {}
-        return load_component_activation_contexts_bulk(self.run_id, component_keys)
+        return db.get_components_bulk(component_keys)
 
     def get_ci_threshold(self) -> float:
-        from spd.harvest.loaders import load_harvest_ci_threshold
+        db = self._get_db()
+        assert db is not None, f"No harvest.db for run {self.run_id}"
+        return db.get_ci_threshold()
 
-        return load_harvest_ci_threshold(self.run_id)
-
-    # ── Correlations & token stats (tensor data) ──────────────────────
+    # -- Correlations & token stats (tensor data) ------------------------------
 
     def has_correlations(self) -> bool:
         return (self._corr_dir / "component_correlations.pt").exists()
