@@ -52,29 +52,39 @@ def get_component_data_bulk(
     HTTP roundtrips from 3 to 1.
     """
     # Fetch all data sequentially (no GIL contention)
-    activation_contexts = get_activation_contexts_bulk(
-        BulkActivationContextsRequest(
-            component_keys=request.component_keys,
-            limit=request.activation_contexts_limit,
-        ),
-        loaded,
-    )
+    # Each section returns empty dict if harvest data is unavailable
+    try:
+        activation_contexts = get_activation_contexts_bulk(
+            BulkActivationContextsRequest(
+                component_keys=request.component_keys,
+                limit=request.activation_contexts_limit,
+            ),
+            loaded,
+        )
+    except (AssertionError, FileNotFoundError):
+        activation_contexts = {}
 
-    correlations = get_component_correlations_bulk(
-        BulkCorrelationsRequest(
-            component_keys=request.component_keys,
-            top_k=request.correlations_top_k,
-        ),
-        loaded,
-    )
+    try:
+        correlations = get_component_correlations_bulk(
+            BulkCorrelationsRequest(
+                component_keys=request.component_keys,
+                top_k=request.correlations_top_k,
+            ),
+            loaded,
+        )
+    except (AssertionError, FileNotFoundError):
+        correlations = {}
 
-    token_stats = get_component_token_stats_bulk(
-        BulkTokenStatsRequest(
-            component_keys=request.component_keys,
-            top_k=request.token_stats_top_k,
-        ),
-        loaded,
-    )
+    try:
+        token_stats = get_component_token_stats_bulk(
+            BulkTokenStatsRequest(
+                component_keys=request.component_keys,
+                top_k=request.token_stats_top_k,
+            ),
+            loaded,
+        )
+    except (AssertionError, FileNotFoundError):
+        token_stats = {}
 
     return BulkComponentDataResponse(
         activation_contexts=activation_contexts,

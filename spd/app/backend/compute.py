@@ -30,6 +30,9 @@ class LayerAliveInfo:
     alive_c_idxs: list[int]  # Components alive at any position
 
 
+MAX_OUTPUT_NODES_PER_POS = 15
+
+
 def compute_layer_alive_info(
     layer_name: str,
     ci_lower_leaky: dict[str, Tensor],
@@ -37,20 +40,36 @@ def compute_layer_alive_info(
     output_prob_threshold: float,
     n_seq: int,
     device: str,
+    topology: TransformerTopology,
 ) -> LayerAliveInfo:
-    """Compute alive info for a layer. Handles regular, wte, and output layers.
+    """Compute alive info for a layer. Handles regular, embedding, and unembed layers.
 
     For CI layers, all components with CI > 0 are considered alive.
     Filtering by CI threshold is done at display time, not computation time.
+
+    For unembed layer, caps at MAX_OUTPUT_NODES_PER_POS per position to keep
+    edge computation tractable with large vocabularies.
     """
-    if layer_name == "wte":
-        # WTE: single pseudo-component, always alive at all positions
+    embed_path = topology.path_schema.embedding_path
+    unembed_path = topology.path_schema.unembed_path
+
+    if layer_name == embed_path:
         alive_mask = torch.ones(n_seq, 1, device=device, dtype=torch.bool)
         alive_c_idxs = [0]
-    elif layer_name == "output":
+    elif layer_name == unembed_path:
         assert ci_masked_out_probs is not None
         assert ci_masked_out_probs.shape[0] == 1
-        alive_mask = ci_masked_out_probs[0] > output_prob_threshold
+        probs = ci_masked_out_probs[0]  # [seq, vocab]
+        alive_mask = probs > output_prob_threshold
+        # Cap per position: keep only top-k per seq pos
+        for s in range(n_seq):
+            pos_alive = torch.where(alive_mask[s])[0]
+            if len(pos_alive) > MAX_OUTPUT_NODES_PER_POS:
+                pos_probs = probs[s, pos_alive]
+                _, keep_local = torch.topk(pos_probs, MAX_OUTPUT_NODES_PER_POS)
+                keep_idxs = pos_alive[keep_local]
+                alive_mask[s] = False
+                alive_mask[s, keep_idxs] = True
         alive_c_idxs = torch.where(alive_mask.any(dim=0))[0].tolist()
     else:
         ci = ci_lower_leaky[layer_name]
@@ -124,7 +143,8 @@ def get_sources_by_target(
 ) -> dict[str, list[str]]:
     """Find valid gradient connections grouped by target layer.
 
-    Includes wte (input embeddings) as a source and output (logits) as a target.
+    Includes embedding as a source and unembed as a target, using the topology's
+    actual module paths (not pseudo-names).
 
     Returns:
         Dict mapping out_layer -> list of in_layers that have gradient flow to it.
@@ -147,17 +167,20 @@ def get_sources_by_target(
         routing_masks="all",
     )
 
-    # Hook to capture embedding output with gradients
-    wte_cache: dict[str, Tensor] = {}
+    embed_path = topology.path_schema.embedding_path
+    unembed_path = topology.path_schema.unembed_path
 
-    def wte_hook(
+    # Hook to capture embedding output with gradients
+    embed_cache: dict[str, Tensor] = {}
+
+    def embed_hook(
         _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
     ) -> Any:
         output.requires_grad_(True)
-        wte_cache["wte_post_detach"] = output
+        embed_cache[f"{embed_path}_post_detach"] = output
         return output
 
-    wte_handle = topology.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
+    embed_handle = topology.embedding_module.register_forward_hook(embed_hook, with_kwargs=True)
 
     with torch.enable_grad(), bf16_autocast():
         comp_output_with_cache: OutputWithCache = model(
@@ -166,13 +189,13 @@ def get_sources_by_target(
             cache_type="component_acts",
         )
 
-    wte_handle.remove()
+    embed_handle.remove()
 
     cache = comp_output_with_cache.cache
-    cache["wte_post_detach"] = wte_cache["wte_post_detach"]
-    cache["output_pre_detach"] = comp_output_with_cache.output
+    cache[f"{embed_path}_post_detach"] = embed_cache[f"{embed_path}_post_detach"]
+    cache[f"{unembed_path}_pre_detach"] = comp_output_with_cache.output
 
-    layers = ["wte", *model.target_module_paths, "output"]
+    layers = [embed_path, *model.target_module_paths, unembed_path]
 
     # Test all ordered pairs for gradient flow
     test_pairs = []
@@ -202,23 +225,23 @@ def get_sources_by_target(
 ProgressCallback = Callable[[int, int, str], None]  # (current, total, stage)
 
 
-def _setup_wte_hook() -> tuple[Callable[..., Any], list[Tensor]]:
-    """Create hook to capture wte output with gradients.
+def _setup_embed_hook() -> tuple[Callable[..., Any], list[Tensor]]:
+    """Create hook to capture embedding output with gradients.
 
     Returns the hook function and a mutable container for the cached output.
     The container is a list to allow mutation from the hook closure.
     """
-    wte_cache: list[Tensor] = []
+    embed_cache: list[Tensor] = []
 
-    def wte_hook(
+    def embed_hook(
         _module: nn.Module, _args: tuple[Any, ...], _kwargs: dict[Any, Any], output: Tensor
     ) -> Any:
         output.requires_grad_(True)
-        assert len(wte_cache) == 0, "wte output should be cached only once"
-        wte_cache.append(output)
+        assert len(embed_cache) == 0, "embedding output should be cached only once"
+        embed_cache.append(output)
         return output
 
-    return wte_hook, wte_cache
+    return embed_hook, embed_cache
 
 
 def _compute_edges_for_target(
@@ -274,8 +297,12 @@ def _compute_edges_for_target(
                                 continue
                             edges.append(
                                 Edge(
-                                    source=Node(layer=canonical_source, seq_pos=s_in, component_idx=c_in),
-                                    target=Node(layer=canonical_target, seq_pos=s_out, component_idx=c_out),
+                                    source=Node(
+                                        layer=canonical_source, seq_pos=s_in, component_idx=c_in
+                                    ),
+                                    target=Node(
+                                        layer=canonical_target, seq_pos=s_out, component_idx=c_out
+                                    ),
                                     strength=weighted[s_in, c_in].item(),
                                     is_cross_seq=is_cross_seq,
                                 )
@@ -326,9 +353,12 @@ def compute_edges_from_ci(
         ci_masked_logits: Tensor = model(tokens, mask_infos=ci_masks)
         ci_masked_out_probs = torch.softmax(ci_masked_logits, dim=-1)
 
+    embed_path = topology.path_schema.embedding_path
+    unembed_path = topology.path_schema.unembed_path
+
     # Setup embedding hook and run forward pass for gradient computation
-    wte_hook, wte_cache = _setup_wte_hook()
-    wte_handle = topology.embedding_module.register_forward_hook(wte_hook, with_kwargs=True)
+    embed_hook, embed_cache = _setup_embed_hook()
+    embed_handle = topology.embedding_module.register_forward_hook(embed_hook, with_kwargs=True)
 
     weight_deltas = model.calc_weight_deltas()
     weight_deltas_and_masks = {
@@ -343,12 +373,12 @@ def compute_edges_from_ci(
             tokens, mask_infos=unmasked_masks, cache_type="component_acts"
         )
 
-    wte_handle.remove()
-    assert len(wte_cache) == 1, "wte output should be cached"
+    embed_handle.remove()
+    assert len(embed_cache) == 1, "embedding output should be cached"
 
     cache = comp_output_with_cache.cache
-    cache["wte_post_detach"] = wte_cache[0]
-    cache["output_pre_detach"] = comp_output_with_cache.output
+    cache[f"{embed_path}_post_detach"] = embed_cache[0]
+    cache[f"{unembed_path}_pre_detach"] = comp_output_with_cache.output
 
     # Compute alive info for all layers upfront
     all_layers: set[str] = set(sources_by_target.keys())
@@ -363,6 +393,7 @@ def compute_edges_from_ci(
             output_prob_threshold=output_prob_threshold,
             n_seq=n_seq,
             device=device,
+            topology=topology,
         )
         for layer in all_layers
     }

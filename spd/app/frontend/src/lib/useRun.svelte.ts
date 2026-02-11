@@ -59,8 +59,8 @@ export function useRun() {
 
     /** Model topology info for frontend layout */
 
-    /** Activation contexts summary */
-    let activationContextsSummary = $state<Loadable<Record<string, SubcomponentMetadata[]>>>({
+    /** Activation contexts summary (null = harvest not available) */
+    let activationContextsSummary = $state<Loadable<Record<string, SubcomponentMetadata[]> | null>>({
         status: "uninitialized",
     });
 
@@ -129,9 +129,7 @@ export function useRun() {
         run = { status: "loading" };
         try {
             await api.loadRun(wandbPath, contextLength);
-            const [status] = await Promise.all([api.getStatus(), fetchTokens()]).then(
-                ([s]) => [s] as const,
-            );
+            const [status] = await Promise.all([api.getStatus(), fetchTokens()]).then(([s]) => [s] as const);
             if (status) {
                 run = { status: "loaded", data: status };
                 fetchRunScopedData();

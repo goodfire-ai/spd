@@ -204,6 +204,9 @@ GLOBAL_EDGE_LIMIT = 5_000
 ProgressCallback = Callable[[int, int, str], None]
 
 
+MAX_OUTPUT_NODES_PER_POS = 15
+
+
 def build_out_probs(
     ci_masked_out_probs: torch.Tensor,
     ci_masked_out_logits: torch.Tensor,
@@ -214,7 +217,8 @@ def build_out_probs(
 ) -> dict[str, OutputProbability]:
     """Build output probs dict from CI-masked and target model tensors.
 
-    Filters by CI-masked probability threshold, but includes both probabilities.
+    Filters by CI-masked probability threshold and caps at MAX_OUTPUT_NODES_PER_POS
+    per sequence position (keeping highest-probability tokens).
     """
     assert ci_masked_out_probs.ndim == 2, f"Expected [seq, vocab], got {ci_masked_out_probs.shape}"
     assert target_out_probs.ndim == 2, f"Expected [seq, vocab], got {target_out_probs.shape}"
@@ -224,10 +228,15 @@ def build_out_probs(
 
     out_probs: dict[str, OutputProbability] = {}
     for s in range(ci_masked_out_probs.shape[0]):
-        for c_idx in range(ci_masked_out_probs.shape[1]):
-            prob = float(ci_masked_out_probs[s, c_idx].item())
+        pos_probs = ci_masked_out_probs[s]
+        top_vals, top_idxs = torch.topk(
+            pos_probs, min(MAX_OUTPUT_NODES_PER_POS, pos_probs.shape[0])
+        )
+        for prob_t, c_idx_t in zip(top_vals, top_idxs, strict=True):
+            prob = float(prob_t.item())
             if prob < output_prob_threshold:
-                continue
+                break  # topk is sorted descending, so remaining are smaller
+            c_idx = int(c_idx_t.item())
             logit = float(ci_masked_out_logits[s, c_idx].item())
             target_prob = float(target_out_probs[s, c_idx].item())
             target_logit = float(target_out_logits[s, c_idx].item())

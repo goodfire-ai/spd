@@ -65,9 +65,11 @@ class HarvestCache:
         return self._token_stats
 
     @property
-    def interpretations(self) -> dict[str, InterpretationResult]:
+    def interpretations(self) -> dict[str, InterpretationResult] | None:
         if self._interpretations is _NOT_LOADED:
             self._interpretations = load_interpretations(self.run_id)
+        if self._interpretations is None:
+            return None
         assert isinstance(self._interpretations, dict)
         return self._interpretations
 

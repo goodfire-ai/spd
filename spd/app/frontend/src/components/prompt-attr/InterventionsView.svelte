@@ -271,10 +271,13 @@
                         totalInRow += (nodesPerLayerSeq[`${layer}:${seqIdx}`] ?? []).length;
                     }
                 }
-                const rowInfo = parseLayer(row.includes(".") ? row + ".x" : row);
-                const groupProjs = rowInfo.sublayer ? getGroupProjections(rowInfo.sublayer) : null;
-                if (groupProjs && groupProjs.length > 1) {
-                    totalInRow += groupProjs.length - 1;
+                const rowParts = row.split(".");
+                const isGroupedRow = rowParts.length >= 3 && rowParts[2].includes("_");
+                if (isGroupedRow) {
+                    const groupProjs = getGroupProjections(rowParts[1]);
+                    if (groupProjs && groupProjs.length > 1) {
+                        totalInRow += groupProjs.length - 1;
+                    }
                 }
                 maxAtSeq = Math.max(maxAtSeq, totalInRow);
             }
@@ -320,7 +323,7 @@
         for (const layer of allLayers) {
             const info = parseLayer(layer);
             const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
-            const isGrouped = groupProjs !== null && info.projection !== null;
+            const isGrouped = groupProjs !== null && info.projection !== null && groupProjs.includes(info.projection);
 
             for (let seqIdx = 0; seqIdx < numTokens; seqIdx++) {
                 const layerNodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];
@@ -334,8 +337,7 @@
                     for (let i = 0; i < projIdx; i++) {
                         const prevLayer = buildLayerAddress(info.block, info.sublayer, groupProjs[i]);
                         baseX +=
-                            (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) *
-                            (COMPONENT_SIZE + componentGap);
+                            (nodesPerLayerSeq[`${prevLayer}:${seqIdx}`]?.length ?? 0) * (COMPONENT_SIZE + componentGap);
                         baseX += COMPONENT_SIZE + componentGap;
                     }
                 }

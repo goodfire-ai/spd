@@ -17,7 +17,9 @@ from spd.log import logger
 from spd.topology import CanonicalWeight, TransformerTopology
 
 
-def _canonical_to_concrete_key(canonical_layer: str, component_idx: int, topology: TransformerTopology) -> str:
+def _canonical_to_concrete_key(
+    canonical_layer: str, component_idx: int, topology: TransformerTopology
+) -> str:
     """Translate canonical layer address + component idx to concrete component key for harvest data."""
     concrete = topology.get_target_module_path(CanonicalWeight.parse(canonical_layer))
     return f"{concrete}:{component_idx}"
@@ -104,9 +106,14 @@ def get_all_interpretations(
     """Get all interpretation headlines (label + confidence + eval scores).
 
     Returns a dict keyed by component_key (layer:cIdx).
+    Returns empty dict if no interpretations are available.
     Reasoning and prompt are excluded - fetch individually via
     GET /interpretations/{layer}/{component_idx} when needed.
     """
+    interpretations = loaded.harvest.interpretations
+    if interpretations is None:
+        return {}
+
     detection_scores = loaded.harvest.detection_scores
     fuzzing_scores = loaded.harvest.fuzzing_scores
 
@@ -117,7 +124,7 @@ def get_all_interpretations(
             detection_score=detection_scores.get(key) if detection_scores else None,
             fuzzing_score=fuzzing_scores.get(key) if fuzzing_scores else None,
         )
-        for key, result in loaded.harvest.interpretations.items()
+        for key, result in interpretations.items()
     }
 
 
@@ -133,7 +140,7 @@ def get_interpretation_detail(
     Returns reasoning and prompt for the specified component.
     """
     concrete_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
-    interpretations = loaded.harvest.interpretations
+    interpretations = loaded.harvest.interpretations or {}
 
     if concrete_key not in interpretations:
         raise HTTPException(
@@ -172,7 +179,7 @@ async def request_component_interpretation(
 
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
-    interpretations = loaded.harvest.interpretations
+    interpretations = loaded.harvest.interpretations or {}
 
     if component_key in interpretations:
         result = interpretations[component_key]
@@ -302,9 +309,6 @@ def get_component_token_stats(
     if input_stats is None or output_stats is None:
         return None
 
-    assert input_stats.bottom_pmi is None, "Input stats should not have bottom PMI"
-    assert output_stats.bottom_pmi is not None, "Output stats should have bottom PMI"
-
     return TokenStatsResponse(
         input=TokenPRLiftPMI(
             top_recall=input_stats.top_recall,
@@ -359,41 +363,46 @@ def get_component_correlations_bulk(
             n_tokens=c.count_total,
         )
 
+    def to_concrete(canonical_key: str) -> str:
+        layer, idx = canonical_key.rsplit(":", 1)
+        return _canonical_to_concrete_key(layer, int(idx), loaded.topology)
+
     result: dict[str, ComponentCorrelationsResponse] = {}
 
-    for component_key in request.component_keys:
-        if not analysis.has_component(correlations, component_key):
+    for canonical_key in request.component_keys:
+        concrete_key = to_concrete(canonical_key)
+        if not analysis.has_component(correlations, concrete_key):
             continue
 
-        result[component_key] = ComponentCorrelationsResponse(
+        result[canonical_key] = ComponentCorrelationsResponse(
             precision=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "precision", request.top_k
+                    correlations, concrete_key, "precision", request.top_k
                 )
             ],
             recall=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "recall", request.top_k
+                    correlations, concrete_key, "recall", request.top_k
                 )
             ],
             jaccard=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "jaccard", request.top_k
+                    correlations, concrete_key, "jaccard", request.top_k
                 )
             ],
             pmi=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "pmi", request.top_k
+                    correlations, concrete_key, "pmi", request.top_k
                 )
             ],
             bottom_pmi=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "pmi", request.top_k, largest=False
+                    correlations, concrete_key, "pmi", request.top_k, largest=False
                 )
             ],
         )
@@ -414,18 +423,23 @@ def get_component_token_stats_bulk(
     token_stats = loaded.harvest.token_stats
     result: dict[str, TokenStatsResponse] = {}
 
-    for component_key in request.component_keys:
+    def to_concrete(canonical_key: str) -> str:
+        layer, idx = canonical_key.rsplit(":", 1)
+        return _canonical_to_concrete_key(layer, int(idx), loaded.topology)
+
+    for canonical_key in request.component_keys:
+        concrete_key = to_concrete(canonical_key)
         input_stats = analysis.get_input_token_stats(
-            token_stats, component_key, loaded.tokenizer, request.top_k
+            token_stats, concrete_key, loaded.tokenizer, request.top_k
         )
         output_stats = analysis.get_output_token_stats(
-            token_stats, component_key, loaded.tokenizer, request.top_k
+            token_stats, concrete_key, loaded.tokenizer, request.top_k
         )
 
         if input_stats is None or output_stats is None:
             continue
 
-        result[component_key] = TokenStatsResponse(
+        result[canonical_key] = TokenStatsResponse(
             input=TokenPRLiftPMI(
                 top_recall=input_stats.top_recall,
                 top_precision=input_stats.top_precision,

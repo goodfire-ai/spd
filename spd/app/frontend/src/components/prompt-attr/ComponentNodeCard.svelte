@@ -73,14 +73,15 @@
         const tokenStats = componentData.tokenStats;
         if (tokenStats.status !== "loaded" || tokenStats.data === null) return null;
         return [
-            {
-                title: "Top Recall",
-                mathNotation: "P(token | component fires)",
-                items: tokenStats.data.input.top_recall
-                    .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
-                    .map(([token, value]) => ({ token, value })),
-                maxScale: 1,
-            },
+            // TODO clean this up, but for now Top Recall is honestly not useful
+            // {
+            //     title: "Top Recall",
+            //     mathNotation: "P(token | component fires)",
+            //     items: tokenStats.data.input.top_recall
+            //         .slice(0, COMPONENT_CARD_CONSTANTS.N_INPUT_TOKENS)
+            //         .map(([token, value]) => ({ token, value })),
+            //     maxScale: 1,
+            // },
             {
                 title: "Top Precision",
                 mathNotation: "P(component fires | token)",

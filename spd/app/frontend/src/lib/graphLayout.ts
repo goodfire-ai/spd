@@ -25,6 +25,14 @@ const GROUPED_PROJECTIONS: Record<string, string[]> = {
     glu: ["gate", "up"],
 };
 
+// Full projection ordering within each sublayer (grouped inputs first, then outputs)
+const PROJECTION_ORDER: Record<string, string[]> = {
+    attn: ["q", "k", "v", "o"],
+    attn_fused: ["qkv", "o"],
+    glu: ["gate", "up", "down"],
+    mlp: ["up", "down"],
+};
+
 export function parseLayer(name: string): LayerInfo {
     if (name === "wte") return { name, block: -1, sublayer: "wte", projection: null };
     if (name === "output") return { name, block: Infinity, sublayer: "output", projection: null };
@@ -40,41 +48,67 @@ export function parseLayer(name: string): LayerInfo {
 
 /**
  * Row key: layers that share the same visual row.
- * q/k/v share "0.attn", gate/up share "0.glu", etc.
+ * q/k/v share "0.attn.qkv", gate/up share "0.glu.gate_up".
+ * Ungrouped projections (o, down) get their own row.
  */
 export function getRowKey(layer: string): string {
     const info = parseLayer(layer);
     if (info.sublayer === "wte" || info.sublayer === "output") return layer;
-    return `${info.block}.${info.sublayer}`;
+
+    const grouped = GROUPED_PROJECTIONS[info.sublayer];
+    if (grouped && info.projection && grouped.includes(info.projection)) {
+        return `${info.block}.${info.sublayer}.${grouped.join("_")}`;
+    }
+    return layer;
 }
 
 /**
  * Row label for display.
  */
-export function getRowLabel(layer: string): string {
-    if (layer === "wte") return "wte";
-    if (layer === "output") return "output";
+export function getRowLabel(rowKey: string): string {
+    if (rowKey === "wte") return "wte";
+    if (rowKey === "output") return "output";
 
-    const info = parseLayer(layer);
-    return `${info.block}.${info.sublayer}`;
+    const parts = rowKey.split(".");
+    const block = parts[0];
+    const sublayer = parts[1];
+    const projPart = parts[2];
+
+    if (!projPart) return `${block}.${sublayer}`;
+
+    // Grouped projections: show "0.attn.qkv" or "0.glu.gate/up"
+    if (projPart.includes("_")) {
+        return `${block}.${sublayer}.${projPart.replace(/_/g, "/")}`;
+    }
+    return rowKey;
 }
 
 /**
  * Sort row keys: wte at bottom, output at top, blocks in between.
- * Within a block, sublayers follow SUBLAYER_ORDER.
+ * Within a block: sublayers follow SUBLAYER_ORDER, grouped projections before ungrouped.
  */
 export function sortRows(rows: string[]): string[] {
-    // TODO(oli) adjust me for canonical addresses
     return [...rows].sort((a, b) => {
-        // Parse row keys (which are "block.sublayer" format)
-        const blockA = a === "wte" ? -1 : a === "output" ? Infinity : +a.split(".")[0];
-        const blockB = b === "wte" ? -1 : b === "output" ? Infinity : +b.split(".")[0];
+        const partsA = a.split(".");
+        const partsB = b.split(".");
+
+        const blockA = a === "wte" ? -1 : a === "output" ? Infinity : +partsA[0];
+        const blockB = b === "wte" ? -1 : b === "output" ? Infinity : +partsB[0];
 
         if (blockA !== blockB) return blockA - blockB;
 
-        const sublayerA = a.split(".")[1] ?? "";
-        const sublayerB = b.split(".")[1] ?? "";
-        return SUBLAYER_ORDER.indexOf(sublayerA) - SUBLAYER_ORDER.indexOf(sublayerB);
+        const sublayerA = partsA[1] ?? "";
+        const sublayerB = partsB[1] ?? "";
+        const sublayerDiff = SUBLAYER_ORDER.indexOf(sublayerA) - SUBLAYER_ORDER.indexOf(sublayerB);
+        if (sublayerDiff !== 0) return sublayerDiff;
+
+        // Within same sublayer: order by first projection in the row key
+        const projOrder = PROJECTION_ORDER[sublayerA] ?? [];
+        const firstProjA = (partsA[2] ?? "").split("_")[0];
+        const firstProjB = (partsB[2] ?? "").split("_")[0];
+        const projIdxA = projOrder.indexOf(firstProjA);
+        const projIdxB = projOrder.indexOf(firstProjB);
+        return (projIdxA === -1 ? 999 : projIdxA) - (projIdxB === -1 ? 999 : projIdxB);
     });
 }
 
@@ -84,6 +118,14 @@ export function sortRows(rows: string[]): string[] {
  */
 export function getGroupProjections(sublayer: string): string[] | null {
     return GROUPED_PROJECTIONS[sublayer] ?? null;
+}
+
+/**
+ * Check if a specific projection is part of its sublayer's group.
+ */
+export function isGroupedProjection(sublayer: string, projection: string): boolean {
+    const group = GROUPED_PROJECTIONS[sublayer];
+    return group !== undefined && group.includes(projection);
 }
 
 /**
