@@ -25,7 +25,14 @@ def _load_results_from_jsonl(path: Path) -> dict[str, InterpretationResult]:
     with open(path) as f:
         for line in f:
             data = json.loads(line)
-            result = InterpretationResult(**data)
+            result = InterpretationResult(
+                component_key=data["component_key"],
+                label=data["label"],
+                confidence=data["confidence"],
+                reasoning=data.get("reasoning", ""),
+                raw_response=data.get("raw_response", ""),
+                prompt=data.get("prompt", ""),
+            )
             results[result.component_key] = result
     return results
 
