@@ -128,9 +128,9 @@ def app_with_state():
             sigmoid_type=config.sigmoid_type,
         )
         model.eval()
-        adapter = TransformerTopology(model)
+        topology = TransformerTopology(model)
         sources_by_target = get_sources_by_target(
-            model=model, topology=adapter, device=DEVICE, sampling=config.sampling
+            model=model, topology=topology, device=DEVICE, sampling=config.sampling
         )
 
         from transformers import AutoTokenizer
@@ -143,7 +143,7 @@ def app_with_state():
         run_state = RunState(
             run=run,
             model=model,
-            topology=adapter,
+            topology=topology,
             context_length=1,
             tokenizer=tokenizer,
             sources_by_target=sources_by_target,

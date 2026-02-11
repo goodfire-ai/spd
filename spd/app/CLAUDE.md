@@ -32,7 +32,7 @@ This launches both backend (FastAPI/uvicorn) and frontend (Vite) dev servers.
 ```
 backend/
 ├── server.py              # FastAPI app, CORS, routers
-├── state.py               # Singleton StateManager + HarvestCache (lazy-loaded harvest data)
+├── state.py               # Singleton StateManager + HarvestRepo (lazy-loaded harvest data)
 ├── compute.py             # Core attribution computation
 ├── app_tokenizer.py       # AppTokenizer: wraps HF tokenizers for display/encoding
 ├── (topology lives at spd/topology.py — TransformerTopology)
@@ -191,7 +191,7 @@ GraphData = {
    - `strength = grad * source_activation`
    - Create Edge for each alive source component
 
-**Cross-sequence edges**: `adapter.is_cross_seq_pair()` detects k/v → o_proj in same attention block.
+**Cross-sequence edges**: `topology.is_cross_seq_pair()` detects k/v → o_proj in same attention block.
 These have gradients across sequence positions (causal attention pattern).
 
 ### Causal Importance (CI)
@@ -253,15 +253,15 @@ POST /api/intervention {text, nodes: ["h.0.attn.q_proj:3:5", ...]}
 
 ```
 GET /api/correlations/components/{layer}/{component_idx}
-  → Load from HarvestCache (pre-harvested data)
+  → Load from HarvestRepo (pre-harvested data)
   ← ComponentCorrelationsResponse (precision, recall, jaccard, pmi)
 
 GET /api/correlations/token_stats/{layer}/{component_idx}
-  → Load from HarvestCache
+  → Load from HarvestRepo
   ← TokenStatsResponse (input/output token associations)
 
 GET /api/correlations/interpretation/{layer}/{component_idx}
-  → Load from HarvestCache (autointerp results)
+  → Load from HarvestRepo (autointerp results)
   ← InterpretationResponse (label, confidence, reasoning)
 ```
 
@@ -306,10 +306,10 @@ StateManager.get() → AppState:
       - tokenizer: AppTokenizer     # Token display, encoding, span construction
       - sources_by_target: dict[target_layer → source_layers]
       - config, context_length
-      - harvest: HarvestCache       # Lazy-loaded pre-harvested data
+      - harvest: HarvestRepo       # Lazy-loaded pre-harvested data
   - dataset_search_state: DatasetSearchState | None  # Cached search results
 
-HarvestCache:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
+HarvestRepo:  # Lazy-loads from SPD_OUT_DIR/harvest/<run_id>/
   - correlations: CorrelationStorage | None
   - token_stats: TokenStatsStorage | None
   - activation_contexts: dict[str, ComponentData] | None
