@@ -9,6 +9,7 @@ Usage:
 """
 
 import secrets
+from dataclasses import dataclass
 from datetime import datetime
 
 from spd.harvest.config import HarvestSlurmConfig
@@ -24,12 +25,22 @@ from spd.utils.slurm import (
 )
 
 
+@dataclass
+class HarvestSubmitResult:
+    merge_result: SubmitResult
+    subrun_id: str
+
+    @property
+    def job_id(self) -> str:
+        return self.merge_result.job_id
+
+
 def submit_harvest(
     wandb_path: str,
     slurm_config: HarvestSlurmConfig,
     job_suffix: str | None = None,
     snapshot_branch: str | None = None,
-) -> SubmitResult:
+) -> HarvestSubmitResult:
     """Submit multi-GPU harvest job to SLURM.
 
     Submits a job array where each task processes a subset of batches, then
@@ -142,4 +153,4 @@ def submit_harvest(
         }
     )
 
-    return merge_result
+    return HarvestSubmitResult(merge_result=merge_result, subrun_id=subrun_id)

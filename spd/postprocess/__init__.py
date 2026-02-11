@@ -46,4 +46,5 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> None:
             config.autointerp,
             dependency_job_id=harvest_result.job_id,
             snapshot_branch=snapshot_branch,
+            harvest_subrun_id=harvest_result.subrun_id,
         )

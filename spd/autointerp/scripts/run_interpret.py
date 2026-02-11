@@ -27,6 +27,7 @@ def main(
     autointerp_run_id: str | None = None,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> None:
     """Interpret harvested components.
 
@@ -55,7 +56,7 @@ def main(
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    harvest = HarvestRepo(run_id)
+    harvest = HarvestRepo(run_id, subrun_id=harvest_subrun_id)
 
     # Create timestamped run directory
     if autointerp_run_id is None:

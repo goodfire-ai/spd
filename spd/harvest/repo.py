@@ -24,12 +24,17 @@ from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 class HarvestRepo:
     """Read-only access to harvest data for a single run."""
 
-    def __init__(self, run_id: str) -> None:
+    def __init__(self, run_id: str, subrun_id: str | None = None) -> None:
         self.run_id = run_id
+        self._subrun_id = subrun_id
         self._db: HarvestDB | None = None
 
-    def _find_latest_subrun(self) -> Path | None:
-        """Find the latest sub-run directory, or fall back to legacy layout."""
+    def _find_subrun(self) -> Path | None:
+        """Find the sub-run directory: pinned if subrun_id set, otherwise latest."""
+        if self._subrun_id is not None:
+            path = get_harvest_dir(self.run_id) / self._subrun_id
+            return path if path.exists() else None
+
         harvest_dir = get_harvest_dir(self.run_id)
         if not harvest_dir.exists():
             return None
@@ -41,7 +46,7 @@ class HarvestRepo:
 
     def _resolve_db_path(self) -> Path | None:
         """Resolve the path to harvest.db, checking sub-run dirs then legacy layout."""
-        subrun = self._find_latest_subrun()
+        subrun = self._find_subrun()
         if subrun is not None:
             path = subrun / "harvest.db"
             return path if path.exists() else None
@@ -51,7 +56,7 @@ class HarvestRepo:
 
     def _resolve_data_dir(self) -> Path | None:
         """Resolve the directory containing correlations and token stats .pt files."""
-        subrun = self._find_latest_subrun()
+        subrun = self._find_subrun()
         if subrun is not None:
             return subrun
         # Legacy fallback

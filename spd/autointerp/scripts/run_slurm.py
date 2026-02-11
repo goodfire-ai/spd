@@ -27,6 +27,7 @@ def submit_autointerp(
     slurm_config: AutointerpSlurmConfig,
     dependency_job_id: str | None = None,
     snapshot_branch: str | None = None,
+    harvest_subrun_id: str | None = None,
 ) -> SubmitResult:
     """Submit the autointerp pipeline to SLURM.
 
@@ -58,6 +59,8 @@ def submit_autointerp(
         f"--autointerp_run_id {autointerp_run_id}",
         f"--config_json '{config_json}'",
     ]
+    if harvest_subrun_id is not None:
+        interpret_parts.append(f"--harvest_subrun_id {harvest_subrun_id}")
     if slurm_config.limit is not None:
         interpret_parts.append(f"--limit {slurm_config.limit}")
     if slurm_config.cost_limit_usd is not None:
