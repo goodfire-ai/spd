@@ -320,7 +320,7 @@ def evaluate[BatchT, OutputT](
     for _ in range(n_eval_steps):
         batch = next(eval_iterator)
 
-        target_output: OutputWithCache[OutputT] = model.__call__(batch, cache_type="input")
+        target_output: OutputWithCache[OutputT] = model(batch, cache_type="input")
         ci = model.calc_causal_importances(
             pre_weight_acts=target_output.cache,
             detach_inputs=False,
