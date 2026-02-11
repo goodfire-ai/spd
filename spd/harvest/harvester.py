@@ -78,50 +78,60 @@ def _merge_reservoirs_inplace(dst: HarvesterState, src: HarvesterState) -> None:
     """Merge src reservoir tensors into dst, vectorized over all components.
 
     Uses Efraimidis-Spirakis: key = random()^(1/weight), take top-k.
-    Weight = n_seen of the originating reservoir.
+    Avoids concatenating the big [n_comp, k, window] tensors — computes
+    selection indices on small [n_comp, 2k] tensors, then gathers from
+    dst/src separately based on whether each selected index came from dst or src.
     """
     k = dst.max_examples_per_component
     device = dst.reservoir_tokens.device
-
-    # Concatenate along the k dimension: [n_comp, 2k, window]
-    cat_tokens = torch.cat([dst.reservoir_tokens, src.reservoir_tokens], dim=1)
-    cat_ci = torch.cat([dst.reservoir_ci, src.reservoir_ci], dim=1)
-    cat_acts = torch.cat([dst.reservoir_acts, src.reservoir_acts], dim=1)
-
-    # Build validity mask: [n_comp, 2k]
     n_comp = dst.reservoir_n_items.shape[0]
-    idx = torch.arange(k, device=device).unsqueeze(0)  # [1, k]
-    valid_dst = idx < dst.reservoir_n_items.unsqueeze(1)  # [n_comp, k]
+
+    # Validity mask over virtual [n_comp, 2k] index space: [0..k) = dst, [k..2k) = src
+    idx = torch.arange(k, device=device).unsqueeze(0)
+    valid_dst = idx < dst.reservoir_n_items.unsqueeze(1)
     valid_src = idx < src.reservoir_n_items.unsqueeze(1)
     valid = torch.cat([valid_dst, valid_src], dim=1)  # [n_comp, 2k]
 
-    # Weights: items from dst get weight dst.n_seen, items from src get weight src.n_seen
+    # Efraimidis-Spirakis weighted sampling keys
     weights = torch.zeros(n_comp, 2 * k, device=device)
     weights[:, :k] = dst.reservoir_n_seen.unsqueeze(1).float()
     weights[:, k:] = src.reservoir_n_seen.unsqueeze(1).float()
     weights[~valid] = 0.0
 
-    # Total valid items per component
-    total_valid = valid.sum(dim=1)  # [n_comp]
-    n_to_keep = total_valid.clamp(max=k)  # [n_comp]
-
-    # Efraimidis-Spirakis keys: random()^(1/weight). Invalid items get -inf.
     rand = torch.rand(n_comp, 2 * k, device=device).clamp(min=1e-30)
     keys = rand.pow(1.0 / weights.clamp(min=1.0))
     keys[~valid] = -1.0
 
-    # For components where total_valid <= k, all valid items survive (no sampling needed).
-    # For others, take top-k by key.
-    _, top_indices = keys.topk(k, dim=1)  # [n_comp, k]
+    _, top_indices = keys.topk(k, dim=1)  # [n_comp, k] — indices into [0..2k)
 
-    dst.reservoir_tokens = cat_tokens.gather(
-        1, top_indices.unsqueeze(-1).expand(-1, -1, cat_tokens.shape[2])
+    # Split selected indices into dst-sourced and src-sourced
+    from_dst = top_indices < k
+    dst_indices = top_indices.clamp(max=k - 1)  # indices into dst's k dim
+    src_indices = (top_indices - k).clamp(min=0)  # indices into src's k dim
+
+    window = dst.reservoir_tokens.shape[2]
+    dst_idx_exp = dst_indices.unsqueeze(-1).expand(-1, -1, window)
+    src_idx_exp = src_indices.unsqueeze(-1).expand(-1, -1, window)
+    from_dst_exp = from_dst.unsqueeze(-1).expand(-1, -1, window)
+
+    dst.reservoir_tokens = torch.where(
+        from_dst_exp,
+        dst.reservoir_tokens.gather(1, dst_idx_exp),
+        src.reservoir_tokens.gather(1, src_idx_exp),
     )
-    dst.reservoir_ci = cat_ci.gather(1, top_indices.unsqueeze(-1).expand(-1, -1, cat_ci.shape[2]))
-    dst.reservoir_acts = cat_acts.gather(
-        1, top_indices.unsqueeze(-1).expand(-1, -1, cat_acts.shape[2])
+    dst.reservoir_ci = torch.where(
+        from_dst_exp,
+        dst.reservoir_ci.gather(1, dst_idx_exp),
+        src.reservoir_ci.gather(1, src_idx_exp),
     )
-    dst.reservoir_n_items = n_to_keep
+    dst.reservoir_acts = torch.where(
+        from_dst_exp,
+        dst.reservoir_acts.gather(1, dst_idx_exp),
+        src.reservoir_acts.gather(1, src_idx_exp),
+    )
+
+    total_valid = valid.sum(dim=1)
+    dst.reservoir_n_items = total_valid.clamp(max=k)
     dst.reservoir_n_seen = dst.reservoir_n_seen + src.reservoir_n_seen
 
 
