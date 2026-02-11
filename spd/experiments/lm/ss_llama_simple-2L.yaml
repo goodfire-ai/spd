@@ -93,9 +93,7 @@ ci_alive_threshold: 0.0
 pretrained_model_class: spd.pretrain.models.llama_simple.LlamaSimple
 pretrained_model_path: null
 pretrained_model_name: wandb:goodfire/spd/runs/tb8373uo # 100k steps
-output_extract:
-  type: index
-  index: 0
+output_extract: 0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 task_config:
   task_name: lm

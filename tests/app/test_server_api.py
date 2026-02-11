@@ -22,7 +22,6 @@ from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
 from spd.configs import (
     Config,
-    IndexOutputExtract,
     LMTaskConfig,
     ModulePatternInfoConfig,
     ScheduleConfig,
@@ -98,7 +97,7 @@ def app_with_state():
                 ModulePatternInfoConfig(module_pattern=p, C=C) for p in target_module_patterns
             ],
             pretrained_model_class="spd.pretrain.models.gpt2_simple.GPT2Simple",
-            output_extract=IndexOutputExtract(index=0),
+            output_extract=0,
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
             lr_schedule=ScheduleConfig(start_val=1e-3),
             steps=1,

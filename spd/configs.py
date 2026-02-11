@@ -148,19 +148,6 @@ class LMTaskConfig(BaseConfig):
     )
 
 
-class IndexOutputExtract(BaseConfig):
-    type: Literal["index"] = "index"
-    index: int
-
-
-class AttrOutputExtract(BaseConfig):
-    type: Literal["attr"] = "attr"
-    attr: str
-
-
-OutputExtractConfig = IndexOutputExtract | AttrOutputExtract
-
-
 class ModulePatternInfoConfig(BaseConfig):
     """Configuration for a module pattern with its number of components.
 
@@ -574,9 +561,10 @@ class Config(BaseConfig):
         default=None,
         description="hf model identifier. E.g. 'SimpleStories/SimpleStories-1.25M'",
     )
-    output_extract: Annotated[OutputExtractConfig, Field(discriminator="type")] | None = Field(
+    output_extract: int | str | None = Field(
         default=None,
-        description="How to extract tensor from model output. None = raw output. Note that you can ignore this field if you plan to create your own `run_batch` function to pass to run_spd.optimize().",
+        description="How to extract tensor from model output. None = raw output, int = index into "
+        "output tuple, str = attribute name.",
     )
     tokenizer_name: str | None = Field(
         default=None,
@@ -668,9 +656,9 @@ class Config(BaseConfig):
                 case None:
                     pass
                 case "idx_0":
-                    config_dict["output_extract"] = {"type": "index", "index": 0}
+                    config_dict["output_extract"] = 0
                 case "logits":
-                    config_dict["output_extract"] = {"type": "attr", "attr": "logits"}
+                    config_dict["output_extract"] = "logits"
                 case _:
                     raise ValueError(f"Unknown pretrained_model_output_attr: {old_val!r}")
 

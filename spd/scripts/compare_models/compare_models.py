@@ -79,7 +79,7 @@ class ModelComparator:
             config.reference_model_path
         )
 
-    def _load_model_and_config(self, model_path: str) -> tuple[ComponentModel[Any], Config]:
+    def _load_model_and_config(self, model_path: str) -> tuple[ComponentModel, Config]:
         """Load model and config using the standard pattern from existing codebase."""
         run_info = SPDRunInfo.from_path(model_path)
         # TODO(oli): this should actually be generic (one of the only instances of this I think)
@@ -234,7 +234,7 @@ class ModelComparator:
         )
 
     def compute_activation_densities(
-        self, model: ComponentModel[Any], eval_iterator: Iterator[Any], n_steps: int
+        self, model: ComponentModel, eval_iterator: Iterator[Any], n_steps: int
     ) -> dict[str, Float[Tensor, " C"]]:
         """Compute activation densities using same logic as ComponentActivationDensity."""
 

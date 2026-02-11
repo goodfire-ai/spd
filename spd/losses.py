@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 from jaxtyping import Float
 from torch import Tensor
@@ -39,10 +41,10 @@ from spd.models.component_model import CIOutputs, ComponentModel
 from spd.utils.general_utils import get_obj_device
 
 
-def compute_total_loss[BatchT](
+def compute_total_loss(
     loss_metric_configs: list[LossMetricConfigType],
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+    model: ComponentModel,
+    batch: Any,
     ci: CIOutputs,
     target_out: Tensor,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],

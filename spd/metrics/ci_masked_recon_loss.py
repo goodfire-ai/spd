@@ -12,9 +12,9 @@ from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
 
 
-def _ci_masked_recon_loss_update[BatchT](
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+def _ci_masked_recon_loss_update(
+    model: ComponentModel,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     reconstruction_loss: ReconstructionLoss,
@@ -30,9 +30,9 @@ def _ci_masked_recon_loss_compute(
     return sum_loss / n_examples
 
 
-def ci_masked_recon_loss[BatchT](
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+def ci_masked_recon_loss(
+    model: ComponentModel,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     reconstruction_loss: ReconstructionLoss,
@@ -47,14 +47,14 @@ def ci_masked_recon_loss[BatchT](
     return _ci_masked_recon_loss_compute(sum_loss, n_examples)
 
 
-class CIMaskedReconLoss[BatchT](Metric[BatchT]):
+class CIMaskedReconLoss(Metric):
     """Recon loss when masking with CI values directly on all component layers."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel[BatchT],
+        model: ComponentModel,
         device: str,
         reconstruction_loss: ReconstructionLoss,
     ) -> None:
@@ -67,7 +67,7 @@ class CIMaskedReconLoss[BatchT](Metric[BatchT]):
     def update(
         self,
         *,
-        batch: BatchT,
+        batch: Any,
         target_out: Tensor,
         ci: CIOutputs,
         **_: Any,

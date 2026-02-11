@@ -127,7 +127,7 @@ def is_kv_to_o_pair(in_layer: str, out_layer: str) -> bool:
 
 
 def get_sources_by_target(
-    model: ComponentModel[Tensor],
+    model: ComponentModel,
     device: str,
     sampling: SamplingType,
 ) -> dict[str, list[str]]:
@@ -306,7 +306,7 @@ def _compute_edges_for_target(
 
 
 def compute_edges_from_ci(
-    model: ComponentModel[Tensor],
+    model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     ci_lower_leaky: dict[str, Float[Tensor, "1 seq C"]],
     pre_weight_acts: dict[str, Float[Tensor, "1 seq d_in"]],
@@ -492,7 +492,7 @@ def filter_ci_to_included_nodes(
 
 
 def compute_prompt_attributions(
-    model: ComponentModel[Tensor],
+    model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     output_prob_threshold: float,
@@ -542,7 +542,7 @@ def compute_prompt_attributions(
 
 
 def compute_prompt_attributions_optimized(
-    model: ComponentModel[Tensor],
+    model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     sources_by_target: dict[str, list[str]],
     optim_config: OptimCIConfig,
@@ -626,7 +626,7 @@ class CIOnlyResult:
 
 
 def compute_ci_only(
-    model: ComponentModel[Tensor],
+    model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     sampling: SamplingType,
 ) -> CIOnlyResult:
@@ -791,7 +791,7 @@ class InterventionResult:
 
 
 def compute_intervention_forward(
-    model: ComponentModel[Tensor],
+    model: ComponentModel,
     tokens: Float[Tensor, "1 seq"],
     active_nodes: list[tuple[str, int, int]],  # [(layer, seq_pos, component_idx)]
     top_k: int,

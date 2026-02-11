@@ -13,9 +13,9 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def _ci_masked_recon_layerwise_loss_update[BatchT](
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+def _ci_masked_recon_layerwise_loss_update(
+    model: ComponentModel,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     reconstruction_loss: ReconstructionLoss,
@@ -37,9 +37,9 @@ def _ci_masked_recon_layerwise_loss_compute(
     return sum_loss / sum_n_examples
 
 
-def ci_masked_recon_layerwise_loss[BatchT](
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+def ci_masked_recon_layerwise_loss(
+    model: ComponentModel,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     reconstruction_loss: ReconstructionLoss,
@@ -54,14 +54,14 @@ def ci_masked_recon_layerwise_loss[BatchT](
     return _ci_masked_recon_layerwise_loss_compute(sum_loss, sum_n_examples)
 
 
-class CIMaskedReconLayerwiseLoss[BatchT](Metric[BatchT]):
+class CIMaskedReconLayerwiseLoss(Metric):
     """Recon loss when masking with CI values directly one layer at a time."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel[BatchT],
+        model: ComponentModel,
         device: str,
         reconstruction_loss: ReconstructionLoss,
     ) -> None:
@@ -74,7 +74,7 @@ class CIMaskedReconLayerwiseLoss[BatchT](Metric[BatchT]):
     def update(
         self,
         *,
-        batch: BatchT,
+        batch: Any,
         target_out: Tensor,
         ci: CIOutputs,
         **_: Any,

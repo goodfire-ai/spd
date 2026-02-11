@@ -1,6 +1,6 @@
 """Shared test fixtures for loss function tests."""
 
-from typing import Any, override
+from typing import override
 
 import torch
 import torch.nn as nn
@@ -41,7 +41,7 @@ class TwoLayerLinearModel(nn.Module):
 
 def make_one_layer_component_model(
     weight: Float[Tensor, "d_out d_in"],
-) -> ComponentModel[Any]:
+) -> ComponentModel:
     """Create a ComponentModel with a single linear layer for testing.
 
     Args:
@@ -70,7 +70,7 @@ def make_one_layer_component_model(
 
 def make_two_layer_component_model(
     weight1: Float[Tensor, " d_hidden d_in"], weight2: Float[Tensor, " d_out d_hidden"]
-) -> ComponentModel[Any]:
+) -> ComponentModel:
     """Create a ComponentModel with two linear layers for testing.
 
     Args:

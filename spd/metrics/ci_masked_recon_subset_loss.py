@@ -15,9 +15,9 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def _ci_masked_recon_subset_loss_update[BatchT](
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+def _ci_masked_recon_subset_loss_update(
+    model: ComponentModel,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     router: Router,
@@ -42,9 +42,9 @@ def _ci_masked_recon_subset_loss_compute(
     return sum_loss / n_examples
 
 
-def ci_masked_recon_subset_loss[BatchT](
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+def ci_masked_recon_subset_loss(
+    model: ComponentModel,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     routing: SubsetRoutingType,
@@ -61,14 +61,14 @@ def ci_masked_recon_subset_loss[BatchT](
     return _ci_masked_recon_subset_loss_compute(sum_loss, n_examples)
 
 
-class CIMaskedReconSubsetLoss[BatchT](Metric[BatchT]):
+class CIMaskedReconSubsetLoss(Metric):
     """Recon loss when masking with raw CI values and routing to subsets of component layers."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel[BatchT],
+        model: ComponentModel,
         device: str,
         routing: SubsetRoutingType,
         reconstruction_loss: ReconstructionLoss,
@@ -83,7 +83,7 @@ class CIMaskedReconSubsetLoss[BatchT](Metric[BatchT]):
     def update(
         self,
         *,
-        batch: BatchT,
+        batch: Any,
         target_out: Tensor,
         ci: CIOutputs,
         **_: Any,

@@ -1,4 +1,4 @@
-from typing import Any, override
+from typing import override
 
 import torch
 import torch.nn as nn
@@ -31,7 +31,7 @@ class TinyLinearModel(nn.Module):
         return self.fc(x)
 
 
-def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel[Any]:
+def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel:
     d_out, d_in = weight.shape
     target = TinyLinearModel(d_in=d_in, d_out=d_out)
     with torch.no_grad():
@@ -50,7 +50,7 @@ def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel
     return comp_model
 
 
-def _zero_components_for_test(model: ComponentModel[Any]) -> None:
+def _zero_components_for_test(model: ComponentModel) -> None:
     with torch.no_grad():
         for cm in model.components.values():
             cm.V.zero_()

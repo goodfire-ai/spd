@@ -12,7 +12,7 @@ from torch import Tensor
 from spd.models.component_model import CIOutputs
 
 
-class Metric[BatchT](Protocol):
+class Metric(Protocol):
     """Interface for metrics that can be used in training and/or evaluation."""
 
     slow: ClassVar[bool] = False
@@ -21,7 +21,7 @@ class Metric[BatchT](Protocol):
     def update(
         self,
         *,
-        batch: BatchT,
+        batch: Any,
         target_out: Tensor,
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
         ci: CIOutputs,

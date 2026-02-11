@@ -1,6 +1,6 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from functools import partial
-from typing import Protocol
+from typing import Any
 
 import torch
 from jaxtyping import Float
@@ -17,9 +17,9 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def pgd_masked_recon_loss_update[BatchT](
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+def pgd_masked_recon_loss_update(
+    model: ComponentModel,
+    batch: Any,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     target_out: Tensor,
@@ -80,15 +80,14 @@ def pgd_masked_recon_loss_update[BatchT](
     return fwd_pass()
 
 
-class CreateDataIter[BatchT](Protocol):
-    def __call__(self) -> Iterator[BatchT]: ...
+CreateDataIter = Callable[[], Iterator[Any]]
 
 
-def calc_multibatch_pgd_masked_recon_loss[BatchT](
+def calc_multibatch_pgd_masked_recon_loss(
     pgd_config: PGDMultiBatchConfig,
-    model: ComponentModel[BatchT],
+    model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    create_data_iter: CreateDataIter[BatchT],
+    create_data_iter: CreateDataIter,
     router: Router,
     sampling: SamplingType,
     use_delta_component: bool,
@@ -156,9 +155,9 @@ def calc_multibatch_pgd_masked_recon_loss[BatchT](
     return final_loss / final_sum_n_examples
 
 
-def _forward_with_adv_sources[BatchT](
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+def _forward_with_adv_sources(
+    model: ComponentModel,
+    batch: Any,
     adv_sources: dict[str, Float[Tensor, "*batch_dim_or_ones mask_c"]],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
@@ -191,12 +190,12 @@ def _forward_with_adv_sources[BatchT](
     return sum_loss, n_examples
 
 
-def _multibatch_pgd_fwd_bwd[BatchT](
+def _multibatch_pgd_fwd_bwd(
     adv_sources: dict[str, Float[Tensor, "*ones mask_c"]],
     pgd_config: PGDMultiBatchConfig,
-    model: ComponentModel[BatchT],
+    model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    data_iter: Iterator[BatchT],
+    data_iter: Iterator[Any],
     device: torch.device | str,
     router: Router,
     sampling: SamplingType,

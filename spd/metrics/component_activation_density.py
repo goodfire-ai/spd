@@ -13,13 +13,13 @@ from spd.plotting import plot_component_activation_density
 from spd.utils.distributed_utils import all_reduce
 
 
-class ComponentActivationDensity(Metric[Any]):
+class ComponentActivationDensity(Metric):
     """Activation density for each component."""
 
     slow: ClassVar[bool] = True
     metric_section: ClassVar[str] = "figures"
 
-    def __init__(self, model: ComponentModel[Any], device: str, ci_alive_threshold: float) -> None:
+    def __init__(self, model: ComponentModel, device: str, ci_alive_threshold: float) -> None:
         self.model = model
         self.ci_alive_threshold = ci_alive_threshold
 

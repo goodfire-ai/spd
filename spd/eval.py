@@ -118,13 +118,13 @@ def avg_eval_metrics_across_ranks(metrics: MetricOutType, device: str) -> DistMe
     return {**metrics, **avg_metrics}
 
 
-def init_metric[BatchT](
+def init_metric(
     cfg: MetricConfigType,
-    model: ComponentModel[BatchT],
+    model: ComponentModel,
     run_config: Config,
     device: str,
     reconstruction_loss: ReconstructionLoss,
-) -> Metric[BatchT]:
+) -> Metric:
     match cfg:
         case ImportanceMinimalityLossConfig():
             metric = ImportanceMinimalityLoss(
@@ -288,10 +288,10 @@ def init_metric[BatchT](
     return metric
 
 
-def evaluate[BatchT](
+def evaluate(
     eval_metric_configs: list[MetricConfigType],
-    model: ComponentModel[BatchT],
-    eval_iterator: Iterator[BatchT],
+    model: ComponentModel,
+    eval_iterator: Iterator[Any],
     device: str,
     run_config: Config,
     slow_step: bool,
@@ -301,7 +301,7 @@ def evaluate[BatchT](
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
-    metrics: list[Metric[BatchT]] = []
+    metrics: list[Metric] = []
     for cfg in eval_metric_configs:
         metric = init_metric(
             cfg=cfg,
@@ -350,12 +350,12 @@ def evaluate[BatchT](
     return outputs
 
 
-def evaluate_multibatch_pgd[BatchT](
+def evaluate_multibatch_pgd(
     multibatch_pgd_eval_configs: list[
         PGDMultiBatchReconLossConfig | PGDMultiBatchReconSubsetLossConfig
     ],
-    model: ComponentModel[BatchT],
-    create_data_iter: CreateDataIter[BatchT],
+    model: ComponentModel,
+    create_data_iter: CreateDataIter,
     config: Config,
     device: str,
     reconstruction_loss: ReconstructionLoss,

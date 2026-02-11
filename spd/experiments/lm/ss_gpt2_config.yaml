@@ -63,9 +63,7 @@ eval_metric_configs:
 # --- Pretrained model info ---
 pretrained_model_class: transformers.GPT2LMHeadModel
 pretrained_model_name: SimpleStories/test-SimpleStories-gpt2-1.25M
-output_extract:
-  type: attr
-  attr: logits
+output_extract: logits
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M
 
 # --- Task Specific ---

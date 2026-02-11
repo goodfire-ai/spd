@@ -10,14 +10,13 @@ import torch.nn.functional as F
 from jaxtyping import Float
 from torch import Tensor, nn
 
-from spd.configs import AttrOutputExtract, IndexOutputExtract, OutputExtractConfig
 from spd.utils.general_utils import runtime_cast
 
 
-class RunBatch[BatchT](Protocol):
+class RunBatch(Protocol):
     """Protocol for running a batch through a model and returning the output."""
 
-    def __call__(self, model: nn.Module, batch: BatchT) -> Tensor: ...
+    def __call__(self, model: nn.Module, batch: Any) -> Tensor: ...
 
 
 class ReconstructionLoss(Protocol):
@@ -30,23 +29,29 @@ def run_batch_passthrough(model: nn.Module, batch: Any) -> Tensor:
     return runtime_cast(Tensor, model(batch))
 
 
-def make_run_batch(output_extract: OutputExtractConfig | None) -> RunBatch[Any]:
-    """creates a RunBatch function for a given configuration.
+def make_run_batch(output_extract: int | str | None) -> RunBatch:
+    """Creates a RunBatch function for a given configuration.
 
-    Note that if you plan to override the RunBatch functionality, you can simply pass
+    NOTE: If you plan to override the RunBatch functionality, you can simply pass
     a custom RunBatch function into optimize and do not need to use this function at
     all.
+
+    Args:
+        output_extract: How to extract the tensor from model output.
+            None: passthrough (model output is the tensor)
+            int: index into model output tuple (e.g. 0 for first element)
+            str: attribute name on model output (e.g. "logits")
     """
     match output_extract:
         case None:
             return run_batch_passthrough
-        case IndexOutputExtract(index=idx):
+        case int(idx):
 
             def _run_index(model: nn.Module, batch: Any) -> Tensor:
                 return model(batch)[idx]
 
             return _run_index
-        case AttrOutputExtract(attr=attr):
+        case str(attr):
 
             def _run_attr(model: nn.Module, batch: Any) -> Tensor:
                 return getattr(model(batch), attr)

@@ -96,9 +96,7 @@ eval_metric_configs:
 # --- Pretrained model info ---
 pretrained_model_class: spd.pretrain.models.gpt2_simple.GPT2Simple
 pretrained_model_name: wandb:goodfire/spd/runs/rvu66183 # 100k steps. 4019 tokenizer
-output_extract:
-  type: index
-  index: 0
+output_extract: 0
 tokenizer_name: SimpleStories/test-SimpleStories-gpt2-1.25M # 4019 tok:  TODO: Load from wandb instead
 
 # --- Task Specific ---

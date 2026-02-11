@@ -15,11 +15,11 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def _stochastic_recon_subset_loss_update[BatchT](
-    model: ComponentModel[BatchT],
+def _stochastic_recon_subset_loss_update(
+    model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    batch: BatchT,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
@@ -55,11 +55,11 @@ def _stochastic_recon_subset_loss_compute(
     return sum_loss / n_examples
 
 
-def stochastic_recon_subset_loss[BatchT](
-    model: ComponentModel[BatchT],
+def stochastic_recon_subset_loss(
+    model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    batch: BatchT,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
@@ -80,14 +80,14 @@ def stochastic_recon_subset_loss[BatchT](
     return _stochastic_recon_subset_loss_compute(sum_loss, n_examples)
 
 
-class StochasticReconSubsetLoss[BatchT](Metric[BatchT]):
+class StochasticReconSubsetLoss(Metric):
     """Recon loss when sampling with stochastic masks and routing to subsets of component layers."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel[BatchT],
+        model: ComponentModel,
         device: str,
         sampling: SamplingType,
         use_delta_component: bool,
@@ -108,7 +108,7 @@ class StochasticReconSubsetLoss[BatchT](Metric[BatchT]):
     def update(
         self,
         *,
-        batch: BatchT,
+        batch: Any,
         target_out: Tensor,
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],

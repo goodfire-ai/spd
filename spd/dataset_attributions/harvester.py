@@ -46,7 +46,7 @@ class AttributionHarvester:
 
     def __init__(
         self,
-        model: ComponentModel[Tensor],
+        model: ComponentModel,
         sources_by_target: dict[str, list[str]],
         n_components: int,
         vocab_size: int,

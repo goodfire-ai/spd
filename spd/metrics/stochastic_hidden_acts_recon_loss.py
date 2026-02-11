@@ -14,11 +14,11 @@ from spd.utils.distributed_utils import all_reduce
 from spd.utils.general_utils import get_obj_device
 
 
-def _stochastic_hidden_acts_recon_loss_update[BatchT](
-    model: ComponentModel[BatchT],
+def _stochastic_hidden_acts_recon_loss_update(
+    model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    batch: BatchT,
+    batch: Any,
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
@@ -59,11 +59,11 @@ def _stochastic_hidden_acts_recon_loss_compute(
     return sum_mse / n_examples
 
 
-def stochastic_hidden_acts_recon_loss[BatchT](
-    model: ComponentModel[BatchT],
+def stochastic_hidden_acts_recon_loss(
+    model: ComponentModel,
     sampling: SamplingType,
     n_mask_samples: int,
-    batch: BatchT,
+    batch: Any,
     pre_weight_acts: dict[str, Float[Tensor, "..."]],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
@@ -80,14 +80,14 @@ def stochastic_hidden_acts_recon_loss[BatchT](
     return _stochastic_hidden_acts_recon_loss_compute(sum_mse, n_examples)
 
 
-class StochasticHiddenActsReconLoss[BatchT](Metric[BatchT]):
+class StochasticHiddenActsReconLoss(Metric):
     """Reconstruction loss between target and stochastic hidden activations when sampling with stochastic masks."""
 
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
         self,
-        model: ComponentModel[BatchT],
+        model: ComponentModel,
         device: str,
         sampling: SamplingType,
         use_delta_component: bool,
@@ -104,7 +104,7 @@ class StochasticHiddenActsReconLoss[BatchT](Metric[BatchT]):
     def update(
         self,
         *,
-        batch: BatchT,
+        batch: Any,
         pre_weight_acts: dict[str, Float[Tensor, "..."]],
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],

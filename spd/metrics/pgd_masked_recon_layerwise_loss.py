@@ -14,10 +14,10 @@ from spd.routing import LayerRouter
 from spd.utils.distributed_utils import all_reduce
 
 
-def _pgd_recon_layerwise_loss_update[BatchT](
+def _pgd_recon_layerwise_loss_update(
     *,
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+    model: ComponentModel,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
@@ -43,10 +43,10 @@ def _pgd_recon_layerwise_loss_update[BatchT](
     return sum_loss, n_examples
 
 
-def pgd_recon_layerwise_loss[BatchT](
+def pgd_recon_layerwise_loss(
     *,
-    model: ComponentModel[BatchT],
-    batch: BatchT,
+    model: ComponentModel,
+    batch: Any,
     target_out: Tensor,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
@@ -65,7 +65,7 @@ def pgd_recon_layerwise_loss[BatchT](
     return sum_loss / n_examples
 
 
-class PGDReconLayerwiseLoss[BatchT](Metric[BatchT]):
+class PGDReconLayerwiseLoss(Metric):
     """Recon loss when masking with adversarially-optimized values and routing to one layer at a
     time."""
 
@@ -73,7 +73,7 @@ class PGDReconLayerwiseLoss[BatchT](Metric[BatchT]):
 
     def __init__(
         self,
-        model: ComponentModel[BatchT],
+        model: ComponentModel,
         pgd_config: PGDConfig,
         device: str,
         use_delta_component: bool,
@@ -90,7 +90,7 @@ class PGDReconLayerwiseLoss[BatchT](Metric[BatchT]):
     def update(
         self,
         *,
-        batch: BatchT,
+        batch: Any,
         target_out: Tensor,
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,

@@ -1,5 +1,3 @@
-from typing import Any
-
 import torch
 
 from spd.metrics import faithfulness_loss
@@ -7,7 +5,7 @@ from spd.models.component_model import ComponentModel
 from tests.metrics.fixtures import make_one_layer_component_model
 
 
-def zero_out_components(model: ComponentModel[Any]) -> None:
+def zero_out_components(model: ComponentModel) -> None:
     with torch.no_grad():
         for cm in model.components.values():
             cm.V.zero_()

@@ -144,7 +144,7 @@ def importance_minimality_loss(
     )
 
 
-class ImportanceMinimalityLoss(Metric[Any]):
+class ImportanceMinimalityLoss(Metric):
     """L_p loss on the sum of CI values.
 
     NOTE: We don't normalize over the number of layers because a change in the number of layers
@@ -165,7 +165,7 @@ class ImportanceMinimalityLoss(Metric[Any]):
 
     def __init__(
         self,
-        model: ComponentModel[Any],
+        model: ComponentModel,
         device: str,
         pnorm: float,
         beta: float,
