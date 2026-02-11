@@ -30,7 +30,6 @@ from spd.harvest.loaders import load_activation_contexts_summary
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -206,7 +205,7 @@ def harvest_attributions(
         # Skip batches not assigned to this rank
         if world_size is not None and batch_idx % world_size != rank:
             continue
-        batch = extract_batch_data(batch_data).to(device)
+        batch = batch_data["input_ids"].to(device)
         harvester.process_batch(batch)
 
     logger.info(

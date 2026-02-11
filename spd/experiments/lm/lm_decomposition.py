@@ -7,8 +7,9 @@ import fire
 import wandb
 
 from spd.configs import Config, LMTaskConfig
-from spd.data import DatasetConfig, create_data_loader
+from spd.data import DatasetConfig, create_data_loader, lm_collate_fn
 from spd.log import logger
+from spd.models.batch_and_loss_fns import make_run_batch, recon_loss_kl
 from spd.pretrain.run_info import PretrainRunInfo
 from spd.run_spd import optimize
 from spd.utils.distributed_utils import (
@@ -140,6 +141,7 @@ def main(
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed,
         dist_state=dist_state,
+        collate_fn=lm_collate_fn,
     )
 
     eval_data_config = DatasetConfig(
@@ -169,18 +171,21 @@ def main(
         buffer_size=config.task_config.buffer_size,
         global_seed=config.seed + 1,
         dist_state=dist_state,
+        collate_fn=lm_collate_fn,
     )
 
     if is_main_process():
         logger.info("Starting optimization...")
 
+    assert config.output_extract is not None, "LM models require output_extract"
     optimize(
         target_model=target_model,
         config=config,
         device=device,
         train_loader=train_loader,
         eval_loader=eval_loader,
-        n_eval_steps=config.n_eval_steps,
+        run_batch=make_run_batch(config.output_extract),
+        reconstruction_loss=recon_loss_kl,
         out_dir=out_dir,
     )
 

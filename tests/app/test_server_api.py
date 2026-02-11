@@ -20,7 +20,13 @@ from spd.app.backend.routers import prompts as prompts_router
 from spd.app.backend.routers import runs as runs_router
 from spd.app.backend.server import app
 from spd.app.backend.state import HarvestCache, RunState, StateManager
-from spd.configs import Config, LMTaskConfig, ModulePatternInfoConfig, ScheduleConfig
+from spd.configs import (
+    Config,
+    LMTaskConfig,
+    ModulePatternInfoConfig,
+    ScheduleConfig,
+)
+from spd.models.batch_and_loss_fns import make_run_batch
 from spd.models.component_model import ComponentModel
 from spd.pretrain.models.gpt2_simple import GPT2Simple, GPT2SimpleConfig
 from spd.utils.module_utils import expand_module_patterns
@@ -91,9 +97,8 @@ def app_with_state():
                 ModulePatternInfoConfig(module_pattern=p, C=C) for p in target_module_patterns
             ],
             pretrained_model_class="spd.pretrain.models.gpt2_simple.GPT2Simple",
-            pretrained_model_output_attr="idx_0",
+            output_extract=0,
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
-            output_loss_type="kl",
             lr_schedule=ScheduleConfig(start_val=1e-3),
             steps=1,
             batch_size=1,
@@ -114,10 +119,10 @@ def app_with_state():
         module_path_info = expand_module_patterns(target_model, config.module_info)
         model = ComponentModel(
             target_model=target_model,
+            run_batch=make_run_batch(config.output_extract),
             module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
             sigmoid_type=config.sigmoid_type,
         )
         model.eval()

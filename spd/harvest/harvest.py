@@ -34,7 +34,7 @@ from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import bf16_autocast, extract_batch_data
+from spd.utils.general_utils import bf16_autocast
 
 
 def _compute_u_norms(model: ComponentModel) -> dict[str, Float[Tensor, " C"]]:
@@ -231,7 +231,7 @@ def harvest_activation_contexts(
     batch_range = range(config.n_batches) if config.n_batches is not None else itertools.count()
     for batch_idx in tqdm.tqdm(batch_range, desc="Harvesting", disable=rank is not None):
         try:
-            batch_data = extract_batch_data(next(train_iter))
+            batch = next(train_iter)
         except StopIteration:
             logger.info(f"Dataset exhausted at batch {batch_idx}. Processing complete.")
             break
@@ -240,8 +240,8 @@ def harvest_activation_contexts(
         if world_size is not None and batch_idx % world_size != rank:
             continue
 
-        batch = batch_data.to(device)
-        with torch.no_grad(), bf16_autocast():
+        batch = batch.to(device)
+        with torch.no_grad(), bf16_autocast(enabled=spd_config.autocast_bf16):
             out = model(batch, cache_type="input")
             probs = torch.softmax(out.output, dim=-1)
 

@@ -3,7 +3,6 @@
 from collections.abc import Iterator
 from typing import Any
 
-from jaxtyping import Float, Int
 from PIL import Image
 from torch import Tensor
 from torch.types import Number
@@ -37,34 +36,37 @@ from spd.configs import (
     UnmaskedReconLossConfig,
     UVPlotsConfig,
 )
-from spd.metrics import UnmaskedReconLoss
+from spd.metrics import (
+    CI_L0,
+    CEandKLLosses,
+    CIHistograms,
+    CIMaskedReconLayerwiseLoss,
+    CIMaskedReconLoss,
+    CIMaskedReconSubsetLoss,
+    CIMeanPerComponent,
+    ComponentActivationDensity,
+    FaithfulnessLoss,
+    IdentityCIError,
+    ImportanceMinimalityLoss,
+    PermutedCIPlots,
+    PGDReconLayerwiseLoss,
+    PGDReconLoss,
+    PGDReconSubsetLoss,
+    StochasticHiddenActsReconLoss,
+    StochasticReconLayerwiseLoss,
+    StochasticReconLoss,
+    StochasticReconSubsetCEAndKL,
+    StochasticReconSubsetLoss,
+    UnmaskedReconLoss,
+    UVPlots,
+)
 from spd.metrics.base import Metric
-from spd.metrics.ce_and_kl_losses import CEandKLLosses
-from spd.metrics.ci_histograms import CIHistograms
-from spd.metrics.ci_l0 import CI_L0
-from spd.metrics.ci_masked_recon_layerwise_loss import CIMaskedReconLayerwiseLoss
-from spd.metrics.ci_masked_recon_loss import CIMaskedReconLoss
-from spd.metrics.ci_masked_recon_subset_loss import CIMaskedReconSubsetLoss
-from spd.metrics.ci_mean_per_component import CIMeanPerComponent
-from spd.metrics.component_activation_density import ComponentActivationDensity
-from spd.metrics.faithfulness_loss import FaithfulnessLoss
-from spd.metrics.identity_ci_error import IdentityCIError
-from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
-from spd.metrics.permuted_ci_plots import PermutedCIPlots
-from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
-from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
-from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
-from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
-from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
-from spd.metrics.stochastic_recon_loss import StochasticReconLoss
-from spd.metrics.stochastic_recon_subset_ce_and_kl import StochasticReconSubsetCEAndKL
-from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
-from spd.metrics.uv_plots import UVPlots
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.routing import AllLayersRouter, get_subset_router
 from spd.utils.distributed_utils import avg_metrics_across_ranks, is_distributed
-from spd.utils.general_utils import dict_safe_update_, extract_batch_data
+from spd.utils.general_utils import dict_safe_update_
 
 MetricOutType = dict[str, str | Number | Image.Image | CustomChart]
 DistMetricOutType = dict[str, str | float | Image.Image | CustomChart]
@@ -121,6 +123,7 @@ def init_metric(
     model: ComponentModel,
     run_config: Config,
     device: str,
+    reconstruction_loss: ReconstructionLoss,
 ) -> Metric:
     match cfg:
         case ImportanceMinimalityLossConfig():
@@ -158,16 +161,20 @@ def init_metric(
             metric = CIMaskedReconSubsetLoss(
                 model=model,
                 device=device,
-                output_loss_type=run_config.output_loss_type,
                 routing=cfg.routing,
+                reconstruction_loss=reconstruction_loss,
             )
         case CIMaskedReconLayerwiseLossConfig():
             metric = CIMaskedReconLayerwiseLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
+                model=model,
+                device=device,
+                reconstruction_loss=reconstruction_loss,
             )
         case CIMaskedReconLossConfig():
             metric = CIMaskedReconLoss(
-                model=model, device=device, output_loss_type=run_config.output_loss_type
+                model=model,
+                device=device,
+                reconstruction_loss=reconstruction_loss,
             )
         case CIMeanPerComponentConfig():
             metric = CIMeanPerComponent(model=model, device=device)
@@ -196,7 +203,7 @@ def init_metric(
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
-                output_loss_type=run_config.output_loss_type,
+                reconstruction_loss=reconstruction_loss,
             )
         case StochasticReconLossConfig():
             metric = StochasticReconLoss(
@@ -205,7 +212,7 @@ def init_metric(
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
-                output_loss_type=run_config.output_loss_type,
+                reconstruction_loss=reconstruction_loss,
             )
         case StochasticReconSubsetLossConfig():
             metric = StochasticReconSubsetLoss(
@@ -214,33 +221,33 @@ def init_metric(
                 sampling=run_config.sampling,
                 use_delta_component=run_config.use_delta_component,
                 n_mask_samples=run_config.n_mask_samples,
-                output_loss_type=run_config.output_loss_type,
                 routing=cfg.routing,
+                reconstruction_loss=reconstruction_loss,
             )
         case PGDReconLossConfig():
             metric = PGDReconLoss(
                 model=model,
                 device=device,
                 use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg,
+                reconstruction_loss=reconstruction_loss,
             )
         case PGDReconSubsetLossConfig():
             metric = PGDReconSubsetLoss(
                 model=model,
                 device=device,
                 use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg,
                 routing=cfg.routing,
+                reconstruction_loss=reconstruction_loss,
             )
         case PGDReconLayerwiseLossConfig():
             metric = PGDReconLayerwiseLoss(
                 model=model,
                 device=device,
                 use_delta_component=run_config.use_delta_component,
-                output_loss_type=run_config.output_loss_type,
                 pgd_config=cfg,
+                reconstruction_loss=reconstruction_loss,
             )
         case StochasticReconSubsetCEAndKLConfig():
             metric = StochasticReconSubsetCEAndKL(
@@ -271,7 +278,7 @@ def init_metric(
             metric = UnmaskedReconLoss(
                 model=model,
                 device=device,
-                output_loss_type=run_config.output_loss_type,
+                reconstruction_loss=reconstruction_loss,
             )
 
         case _:
@@ -284,18 +291,25 @@ def init_metric(
 def evaluate(
     eval_metric_configs: list[MetricConfigType],
     model: ComponentModel,
-    eval_iterator: Iterator[Int[Tensor, "..."] | tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    eval_iterator: Iterator[Any],
     device: str,
     run_config: Config,
     slow_step: bool,
     n_eval_steps: int,
     current_frac_of_training: float,
+    reconstruction_loss: ReconstructionLoss,
 ) -> MetricOutType:
     """Run evaluation and return a mapping of metric names to values/images."""
 
     metrics: list[Metric] = []
     for cfg in eval_metric_configs:
-        metric = init_metric(cfg=cfg, model=model, run_config=run_config, device=device)
+        metric = init_metric(
+            cfg=cfg,
+            model=model,
+            run_config=run_config,
+            device=device,
+            reconstruction_loss=reconstruction_loss,
+        )
         if metric.slow and not slow_step:
             continue
         metrics.append(metric)
@@ -304,8 +318,7 @@ def evaluate(
     weight_deltas = model.calc_weight_deltas()
 
     for _ in range(n_eval_steps):
-        batch_raw = next(eval_iterator)
-        batch = extract_batch_data(batch_raw).to(device)
+        batch = next(eval_iterator)
 
         target_output: OutputWithCache = model(batch, cache_type="input")
         ci = model.calc_causal_importances(
@@ -344,8 +357,8 @@ def evaluate_multibatch_pgd(
     model: ComponentModel,
     create_data_iter: CreateDataIter,
     config: Config,
-    batch_dims: tuple[int, ...],
     device: str,
+    reconstruction_loss: ReconstructionLoss,
 ) -> dict[str, float]:
     """Calculate multibatch PGD metrics."""
     weight_deltas = model.calc_weight_deltas() if config.use_delta_component else None
@@ -367,11 +380,10 @@ def evaluate_multibatch_pgd(
             model=model,
             weight_deltas=weight_deltas,
             create_data_iter=create_data_iter,
-            output_loss_type=config.output_loss_type,
             router=router,
             sampling=config.sampling,
             use_delta_component=config.use_delta_component,
-            batch_dims=batch_dims,
             device=device,
+            reconstruction_loss=reconstruction_loss,
         ).item()
     return metrics

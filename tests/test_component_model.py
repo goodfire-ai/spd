@@ -17,6 +17,7 @@ from spd.configs import (
 )
 from spd.identity_insertion import insert_identity_operations_
 from spd.interfaces import LoadableModule, RunInfo
+from spd.models.batch_and_loss_fns import run_batch_passthrough
 from spd.models.component_model import (
     ComponentModel,
     SPDRunInfo,
@@ -82,6 +83,7 @@ def test_correct_parameters_require_grad():
 
     component_model = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch_passthrough,
         module_path_info=[
             ModulePathInfo(module_path="linear1", C=4),
             ModulePathInfo(module_path="linear2", C=8),
@@ -91,7 +93,6 @@ def test_correct_parameters_require_grad():
         ],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -152,7 +153,6 @@ def test_from_run_info():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
@@ -171,10 +171,10 @@ def test_from_run_info():
         module_path_info = expand_module_patterns(target_model, config.all_module_info)
         cm = ComponentModel(
             target_model=target_model,
+            run_batch=run_batch_passthrough,
             module_path_info=module_path_info,
             ci_fn_type=config.ci_fn_type,
             ci_fn_hidden_dims=config.ci_fn_hidden_dims,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
             sigmoid_type=config.sigmoid_type,
         )
 
@@ -278,10 +278,10 @@ def test_full_weight_delta_matches_target_behaviour():
     C = 4
     cm = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch_passthrough,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[4],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -310,10 +310,10 @@ def test_input_cache_captures_pre_weight_input():
 
     cm = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch_passthrough,
         module_path_info=[ModulePathInfo(module_path=p, C=2) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -345,10 +345,10 @@ def test_weight_deltas():
     target_module_paths = ["embed", "mlp", "out"]
     cm = ComponentModel(
         target_model=target_model,
+        run_batch=run_batch_passthrough,
         module_path_info=[ModulePathInfo(module_path=p, C=3) for p in target_module_paths],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -380,10 +380,10 @@ def test_replacement_effects_fwd_pass():
 
     cm = ComponentModel(
         target_model=model,
+        run_batch=run_batch_passthrough,
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -436,10 +436,10 @@ def test_replacing_identity():
     # wrapped in a component model that decomposes the prepended identity layer
     cm = ComponentModel(
         target_model=model,
+        run_batch=run_batch_passthrough,
         module_path_info=[ModulePathInfo(module_path="linear.pre_identity", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -486,10 +486,10 @@ def test_routing():
     # wrapped in a component model that decomposes the layer
     cm = ComponentModel(
         target_model=model,
+        run_batch=run_batch_passthrough,
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_fn_type="mlp",
         ci_fn_hidden_dims=[2],
-        pretrained_model_output_attr=None,
         sigmoid_type="leaky_hard",
     )
 
