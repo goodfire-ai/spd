@@ -6,14 +6,14 @@ Usage:
 
 import asyncio
 import os
-from datetime import datetime
 
 from dotenv import load_dotenv
 
+from spd.autointerp.db import InterpDB
 from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
+from spd.autointerp.schemas import get_autointerp_dir
 from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
-from spd.harvest.schemas import get_harvest_dir
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -31,13 +31,11 @@ def main(
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
     components = load_all_components(run_id)
-
-    scoring_dir = get_harvest_dir(run_id) / "eval" / "intruder"
-    scoring_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = scoring_dir / f"results_{timestamp}.jsonl"
-
     ci_threshold = load_harvest_ci_threshold(run_id)
+
+    db_path = get_autointerp_dir(run_id) / "interp.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db = InterpDB(db_path)
 
     asyncio.run(
         run_intruder_scoring(
@@ -45,7 +43,7 @@ def main(
             model=model,
             openrouter_api_key=openrouter_api_key,
             tokenizer_name=arch.tokenizer_name,
-            output_path=output_path,
+            db=db,
             ci_threshold=ci_threshold,
             limit=limit,
             cost_limit_usd=cost_limit_usd,

@@ -8,11 +8,11 @@ Usage:
 
 import asyncio
 import os
-from datetime import datetime
 from typing import Literal
 
 from dotenv import load_dotenv
 
+from spd.autointerp.db import InterpDB
 from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.loaders import load_interpretations
 from spd.autointerp.schemas import get_autointerp_dir
@@ -44,14 +44,8 @@ def main(
     components = load_all_components(run_id)
     ci_threshold = load_harvest_ci_threshold(run_id)
 
-    # Scoring output goes under the autointerp run dir if specified, else under SPD run dir
-    if autointerp_run_id is not None:
-        scoring_dir = get_autointerp_dir(run_id) / autointerp_run_id / "scoring" / scorer
-    else:
-        scoring_dir = get_autointerp_dir(run_id) / "scoring" / scorer
-    scoring_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = scoring_dir / f"results_{timestamp}.jsonl"
+    db_path = get_autointerp_dir(run_id) / "interp.db"
+    db = InterpDB(db_path)
 
     match scorer:
         case "detection":
@@ -64,7 +58,7 @@ def main(
                     model=model,
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=arch.tokenizer_name,
-                    output_path=output_path,
+                    db=db,
                     limit=limit,
                     cost_limit_usd=cost_limit_usd,
                 )
@@ -79,7 +73,7 @@ def main(
                     model=model,
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=arch.tokenizer_name,
-                    output_path=output_path,
+                    db=db,
                     ci_threshold=ci_threshold,
                     limit=limit,
                     cost_limit_usd=cost_limit_usd,

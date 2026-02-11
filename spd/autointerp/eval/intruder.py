@@ -14,13 +14,12 @@ import bisect
 import json
 import random
 from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any
 
 from openrouter import OpenRouter
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
+from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
@@ -227,21 +226,12 @@ async def score_component(
     )
 
 
-def _deserialize_result(data: dict[str, Any]) -> IntruderResult:
-    return IntruderResult(
-        component_key=data["component_key"],
-        score=data["score"],
-        trials=[IntruderTrial(**t) for t in data["trials"]],
-        n_errors=data["n_errors"],
-    )
-
-
 async def run_intruder_scoring(
     components: list[ComponentData],
     model: str,
     openrouter_api_key: str,
     tokenizer_name: str,
-    output_path: Path,
+    db: InterpDB,
     ci_threshold: float,
     limit: int | None = None,
     cost_limit_usd: float | None = None,
@@ -260,14 +250,10 @@ async def run_intruder_scoring(
     )
 
     results: list[IntruderResult] = []
-    completed = set[str]()
 
-    if output_path.exists():
-        with open(output_path) as f:
-            for line in f:
-                data = json.loads(line)
-                results.append(_deserialize_result(data))
-                completed.add(data["component_key"])
+    existing_scores = db.get_scores("intruder")
+    completed = set(existing_scores.keys())
+    if completed:
         print(f"Resuming: {len(completed)} already scored")
 
     remaining = [c for c in eligible if c.component_key not in completed]
@@ -289,8 +275,8 @@ async def run_intruder_scoring(
                 return
             async with output_lock:
                 results.append(result)
-                with open(output_path, "a") as f:
-                    f.write(json.dumps(asdict(result)) + "\n")
+                details = json.dumps(asdict(result))
+                db.save_score(result.component_key, "intruder", result.score, details)
                 if index % 100 == 0:
                     logger.info(
                         f"[{index}] scored {len(results)}, ${llm.cost_tracker.cost_usd():.2f}"
@@ -313,5 +299,5 @@ async def run_intruder_scoring(
 
         print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
-    print(f"Scored {len(results)} components -> {output_path}")
+    print(f"Scored {len(results)} components")
     return results

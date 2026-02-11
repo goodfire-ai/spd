@@ -20,23 +20,21 @@ Requires `OPENROUTER_API_KEY` env var.
 
 ## Data Storage
 
-Autointerp runs are versioned with timestamped subdirectories:
+All autointerp data (interpretations and scores) is stored in a single SQLite database:
 
 ```
 SPD_OUT_DIR/autointerp/<spd_run_id>/
-├── eval/                          # Label-independent eval (intruder detection)
-│   └── intruder/...
-├── <autointerp_run_id>/           # e.g. 20260206_153040
-│   ├── config.yaml                # AutointerpConfig (for reproducibility)
-│   ├── results.jsonl              # InterpretationResults (append-only for resume)
-│   └── scoring/                   # Label-dependent scoring
-│       ├── detection/...
-│       └── fuzzing/...
-└── <another_autointerp_run_id>/
-    └── ...
+├── interp.db                      # SQLite DB: interpretations + scores (WAL mode)
+└── <autointerp_run_id>/           # e.g. a-20260206_153040
+    └── config.yaml                # AutointerpConfig (for reproducibility)
 ```
 
-Legacy flat format (`results_*.jsonl` directly in the run dir) is still readable via fallback in `loaders.py`.
+The `interp.db` schema has three tables:
+- `interpretations`: component_key -> label, confidence, reasoning, raw_response, prompt
+- `scores`: (component_key, score_type) -> score, details (JSON blob with trial data)
+- `config`: key-value store
+
+Score types: `intruder`, `detection`, `fuzzing`.
 
 ## Architecture
 
@@ -55,18 +53,30 @@ Each strategy config type has a corresponding prompt implementation:
 - `strategies/compact_skeptical.py` — prompt formatting for `CompactSkepticalConfig`
 - `strategies/dispatch.py` — routes `AutointerpConfig` → strategy implementation via `match`
 
+### Database (`db.py`)
+
+`InterpDB` class wrapping SQLite for interpretations and scores. Uses WAL mode for concurrent reads. Serialization via `orjson`.
+
+### Repository (`repo.py`)
+
+`InterpRepo` provides read/write access to autointerp data for a run. Lazily opens the SQLite database on first access. Used by the app backend.
+
 ### Interpret (`interpret.py`)
 
 - Uses OpenRouter API with structured JSON outputs
 - Maximum parallelism with exponential backoff on rate limits
-- Resume support: Skips already-completed components on restart
+- Resume support: Skips already-completed components via `db.get_completed_keys()`
 - Progress logging via `spd.log.logger`
-- `interpret_component()` and `interpret_all()` accept `AutointerpConfig`
+- `interpret_component()` interprets a single component
+- `run_interpret()` orchestrates batch interpretation with resume support
 
 ### Loaders (`loaders.py`)
 
-- `load_interpretations(run_id, autointerp_run_id=None)` — loads from specific or latest run
-- `find_latest_results_path(run_id)` — finds latest results file (nested then flat fallback)
+Standalone loader functions used by scoring scripts:
+- `load_interpretations(run_id)` — loads all interpretations from DB
+- `load_intruder_scores(run_id)` — loads intruder scores from DB
+- `load_detection_scores(run_id)` — loads detection scores from DB
+- `load_fuzzing_scores(run_id)` — loads fuzzing scores from DB
 
 ## Key Types (`schemas.py`)
 

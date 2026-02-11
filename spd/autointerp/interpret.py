@@ -1,12 +1,12 @@
 import asyncio
 import json
-from dataclasses import asdict
 from pathlib import Path
 
 from openrouter import OpenRouter
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.config import AutointerpConfig
+from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
     CostTracker,
@@ -88,7 +88,7 @@ def run_interpret(
     config: AutointerpConfig,
     run_id: str,
     correlations_dir: Path,
-    output_path: Path,
+    db_path: Path,
     ci_threshold: float,
     limit: int | None,
     cost_limit_usd: float | None = None,
@@ -118,16 +118,13 @@ def run_interpret(
         cost_limit_usd=cost_limit_usd,
     )
 
+    db = InterpDB(db_path)
+
     async def _run() -> list[InterpretationResult]:
         results: list[InterpretationResult] = []
-        completed = set[str]()
 
-        if output_path.exists():
-            with open(output_path) as f:
-                for line in f:
-                    data = json.loads(line)
-                    results.append(InterpretationResult(**data))
-                    completed.add(data["component_key"])
+        completed = db.get_completed_keys()
+        if completed:
             print(f"Resuming: {len(completed)} already completed")
 
         remaining = [c for c in eligible if c.component_key not in completed]
@@ -164,8 +161,7 @@ def run_interpret(
                     return
                 async with output_lock:
                     results.append(result)
-                    with open(output_path, "a") as f:
-                        f.write(json.dumps(asdict(result)) + "\n")
+                    db.save_interpretation(result)
                     if index % 100 == 0:
                         logger.info(
                             f"[{index}] ${llm.cost_tracker.cost_usd():.2f} "
@@ -190,7 +186,7 @@ def run_interpret(
 
             print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
 
-        print(f"Completed {len(results)} interpretations -> {output_path}")
+        print(f"Completed {len(results)} interpretations -> {db_path}")
         return results
 
     return asyncio.run(_run())

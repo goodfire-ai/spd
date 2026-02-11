@@ -163,9 +163,7 @@ async def request_component_interpretation(
     Requires OPENROUTER_API_KEY environment variable.
     Returns the headline (label + confidence). Full detail available via GET endpoint.
     """
-    import json
     import os
-    from dataclasses import asdict
 
     from openrouter import OpenRouter
 
@@ -175,7 +173,6 @@ async def request_component_interpretation(
         interpret_component,
     )
     from spd.autointerp.llm_api import CostTracker, LLMClient, RateLimiter  # noqa: F811
-    from spd.autointerp.schemas import get_autointerp_dir
 
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
     run_id = loaded.harvest.run_id
@@ -243,11 +240,7 @@ async def request_component_interpretation(
                 detail=f"Failed to generate interpretation: {e}",
             ) from e
 
-    autointerp_dir = get_autointerp_dir(run_id)
-    autointerp_dir.mkdir(parents=True, exist_ok=True)
-    output_path = autointerp_dir / "results.jsonl"
-    with open(output_path, "a") as f:
-        f.write(json.dumps(asdict(result)) + "\n")
+    loaded.interp.save_interpretation(result)
 
     logger.info(f"Generated interpretation for {component_key}: {result.label}")
 

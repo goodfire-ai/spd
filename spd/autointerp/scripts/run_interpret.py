@@ -66,7 +66,9 @@ def main(
 
     # Save config for reproducibility
     interp_config.to_file(run_dir / "config.yaml")
-    output_path = run_dir / "results.jsonl"
+
+    # DB lives at autointerp/<run_id>/interp.db (shared across autointerp runs)
+    db_path = get_autointerp_dir(run_id) / "interp.db"
 
     print(f"Autointerp run: {run_dir}")
 
@@ -78,7 +80,7 @@ def main(
         interp_config,
         run_id,
         correlations_dir,
-        output_path,
+        db_path,
         ci_threshold,
         limit,
         cost_limit_usd,
