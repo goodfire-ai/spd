@@ -15,9 +15,11 @@ import random
 from dataclasses import asdict, dataclass
 
 from openrouter import OpenRouter
+from openrouter.components import Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
+from spd.autointerp.config import ReasoningEffort
 from spd.autointerp.db import InterpDB
 from spd.autointerp.llm_api import (
     BudgetExceededError,
@@ -157,6 +159,7 @@ Respond with the list of activating example numbers."""
 async def score_component(
     llm: LLMClient,
     model: str,
+    reasoning_effort: ReasoningEffort,
     component: ComponentData,
     all_components: list[ComponentData],
     app_tok: AppTokenizer,
@@ -187,6 +190,7 @@ async def score_component(
         try:
             response = await llm.chat(
                 model=model,
+                reasoning=Reasoning(effort=reasoning_effort),
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=300,
                 context_label=f"{component.component_key}/trial{trial_idx}",
@@ -233,6 +237,7 @@ async def run_detection_scoring(
     components: list[ComponentData],
     labels: dict[str, str],
     model: str,
+    reasoning_effort: ReasoningEffort,
     openrouter_api_key: str,
     tokenizer_name: str,
     db: InterpDB,
@@ -272,7 +277,13 @@ async def run_detection_scoring(
         async with semaphore:
             try:
                 result = await score_component(
-                    llm, model, component, components, app_tok, labels[component.component_key]
+                    llm,
+                    model,
+                    reasoning_effort,
+                    component,
+                    components,
+                    app_tok,
+                    labels[component.component_key],
                 )
             except BudgetExceededError:
                 return

@@ -209,10 +209,7 @@ async def request_component_interpretation(
             detail=f"Token stats not available for component {component_key}",
         )
 
-    config = CompactSkepticalConfig(
-        model="google/gemini-3-flash-preview",
-        reasoning_effort=None,
-    )
+    config = CompactSkepticalConfig()
 
     ci_threshold = loaded.harvest.get_ci_threshold()
 

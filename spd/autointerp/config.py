@@ -5,7 +5,6 @@ AutointerpEvalConfig: eval job config (detection, fuzzing).
 AutointerpSlurmConfig: CompactSkepticalConfig + eval + SLURM submission params.
 """
 
-from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import Field
@@ -13,13 +12,7 @@ from pydantic import Field
 from spd.base_config import BaseConfig
 from spd.settings import DEFAULT_PARTITION_NAME
 
-
-class ReasoningEffort(StrEnum):
-    MINIMAL = "minimal"
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high"]
 
 FORBIDDEN_WORDS_DEFAULT = [
     "narrative",
@@ -39,8 +32,8 @@ class CompactSkepticalConfig(BaseConfig):
     """Current default strategy: compact prompt, skeptical tone, structured JSON output."""
 
     type: Literal["compact_skeptical"] = "compact_skeptical"
-    model: str
-    reasoning_effort: ReasoningEffort | None = None
+    model: str = "google/gemini-3-flash-preview"
+    reasoning_effort: ReasoningEffort = "medium"
     max_examples: int = 30
     include_pmi: bool = True
     include_spd_context: bool = True
@@ -62,7 +55,8 @@ class AutointerpEvalConfig(BaseConfig):
     evals always run on the same partition as the interpret job.
     """
 
-    eval_model: str = "google/gemini-3-flash-preview"
+    model: str = "google/gemini-3-flash-preview"
+    reasoning_effort: ReasoningEffort = "medium"
     time: str = "12:00:00"
 
 
@@ -75,9 +69,7 @@ class AutointerpSlurmConfig(BaseConfig):
         └── fuzzing       (depends on interpret)
     """
 
-    config: CompactSkepticalConfig = CompactSkepticalConfig(
-        model="google/gemini-3-flash-preview", reasoning_effort=None
-    )
+    config: CompactSkepticalConfig = CompactSkepticalConfig()
     limit: int | None = None
     cost_limit_usd: float | None = None
     partition: str = DEFAULT_PARTITION_NAME

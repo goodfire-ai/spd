@@ -12,6 +12,7 @@ from typing import Literal
 
 from dotenv import load_dotenv
 
+from spd.autointerp.config import ReasoningEffort
 from spd.autointerp.db import InterpDB
 from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.repo import InterpRepo
@@ -26,6 +27,7 @@ def main(
     wandb_path: str,
     scorer: LabelScorerType,
     model: str = "google/gemini-3-flash-preview",
+    reasoning_effort: ReasoningEffort = "medium",
     limit: int | None = None,
     cost_limit_usd: float | None = None,
     harvest_subrun_id: str | None = None,
@@ -58,6 +60,7 @@ def main(
                     components=components,
                     labels=labels,
                     model=model,
+                    reasoning_effort=reasoning_effort,
                     openrouter_api_key=openrouter_api_key,
                     tokenizer_name=arch.tokenizer_name,
                     db=db,
