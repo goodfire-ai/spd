@@ -75,7 +75,9 @@ class HarvestDB:
             # immutable=1 skips ALL locking — required on network filesystems where
             # SQLite's locking protocol fails. Safe because readers only open DBs
             # that are fully written and closed by a prior pipeline stage.
-            self._conn = sqlite3.connect(f"file:{db_path}?immutable=1", uri=True)
+            self._conn = sqlite3.connect(
+                f"file:{db_path}?immutable=1", uri=True, check_same_thread=False
+            )
         else:
             self._conn = sqlite3.connect(str(db_path))
             self._conn.execute("PRAGMA journal_mode=WAL")
