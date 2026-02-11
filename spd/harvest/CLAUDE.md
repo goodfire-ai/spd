@@ -55,9 +55,7 @@ Data is stored in `SPD_OUT_DIR/harvest/` (see `spd/settings.py`):
 ```
 SPD_OUT_DIR/harvest/<run_id>/
 ├── activation_contexts/
-│   ├── config.json
-│   ├── summary.json          # Lightweight {component_key: {layer, idx, mean_ci}}
-│   └── components.jsonl      # One ComponentData per line (quite big - usually ≈10gb)
+│   └── harvest.db            # SQLite DB: components table + config table (WAL mode)
 ├── correlations/
 │   ├── component_correlations.pt
 │   └── token_stats.pt
@@ -108,11 +106,25 @@ Implements reservoir sampling for uniform random sampling from a stream. Maintai
 
 `CorrelationStorage` and `TokenStatsStorage` classes for loading/saving harvested data.
 
+### Database (`db.py`)
+
+`HarvestDB` class wrapping SQLite for component-level data. Two tables:
+- `components`: keyed by `component_key`, stores layer/idx/mean_ci + JSON blobs for activation examples and PMI data
+- `config`: key-value store for harvest config (ci_threshold, etc.)
+
+Uses WAL mode for concurrent reads. Serialization via `orjson`.
+
+### Repository (`repo.py`)
+
+`HarvestRepo` provides read-only access to all harvest data for a run. Lazily opens the SQLite database on first access. Used by the app backend.
+
 ### Loaders (`loaders.py`)
 
-Functions for loading harvested data by run ID:
+Standalone loader functions used by autointerp, dataset_attributions, and other modules:
+- `load_all_components(run_id)` -> list[ComponentData] (filtered by ci_threshold)
 - `load_activation_contexts_summary(run_id)` -> dict[component_key, ComponentSummary]
 - `load_component_activation_contexts(run_id, component_key)` -> ComponentData
+- `load_harvest_ci_threshold(run_id)` -> float
 - `load_correlations(run_id)` -> CorrelationStorage
 - `load_token_stats(run_id)` -> TokenStatsStorage
 

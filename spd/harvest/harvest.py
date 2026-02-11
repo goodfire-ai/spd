@@ -12,9 +12,8 @@ Performance (SimpleStories, 600M tokens, batch_size=256):
 """
 
 import itertools
-import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -24,11 +23,9 @@ from torch import Tensor
 
 from spd.data import train_loader_and_tokenizer
 from spd.harvest.config import HarvestConfig
+from spd.harvest.db import HarvestDB
 from spd.harvest.harvester import Harvester, HarvesterState
-from spd.harvest.schemas import (
-    ComponentData,
-    ComponentSummary,
-)
+from spd.harvest.schemas import ComponentData
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
@@ -75,30 +72,14 @@ class HarvestResult:
 
     def save(self, activation_contexts_dir: Path, correlations_dir: Path) -> None:
         """Save harvest result to disk."""
-        # Save activation contexts (JSONL)
         activation_contexts_dir.mkdir(parents=True, exist_ok=True)
 
-        config_path = activation_contexts_dir / "config.json"
-        config_path.write_text(json.dumps(self.config.model_dump(), indent=2))
-
-        components_path = activation_contexts_dir / "components.jsonl"
-        with open(components_path, "w") as f:
-            for comp in self.components:
-                f.write(json.dumps(asdict(comp)) + "\n")
-        logger.info(f"Saved {len(self.components)} components to {components_path}")
-
-        # Save lightweight summary for fast /summary endpoint
-        summaries = {
-            comp.component_key: ComponentSummary(
-                layer=comp.layer,
-                component_idx=comp.component_idx,
-                mean_ci=comp.mean_ci,
-            )
-            for comp in self.components
-        }
-        summary_path = activation_contexts_dir / "summary.json"
-        ComponentSummary.save_all(summaries, summary_path)
-        logger.info(f"Saved summary to {summary_path}")
+        db_path = activation_contexts_dir / "harvest.db"
+        db = HarvestDB(db_path)
+        db.save_config(self.config)
+        db.save_components(self.components)
+        db.close()
+        logger.info(f"Saved {len(self.components)} components to {db_path}")
 
         # Save correlations (.pt)
         self.correlations.save(correlations_dir / "component_correlations.pt")

@@ -11,7 +11,6 @@ Usage:
 """
 
 import argparse
-import json
 from collections import defaultdict
 from pathlib import Path
 
@@ -19,38 +18,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from spd.harvest.schemas import (
-    ActivationExample,
-    ComponentData,
-    ComponentTokenPMI,
-    get_activation_contexts_dir,
-)
+from spd.harvest.db import HarvestDB
+from spd.harvest.schemas import ComponentData, get_activation_contexts_dir
 from spd.settings import SPD_OUT_DIR
 
 
 def load_activation_contexts(run_id: str) -> dict[str, ComponentData]:
     """Load all activation contexts."""
-    ctx_dir = get_activation_contexts_dir(run_id)
-    path = ctx_dir / "components.jsonl"
-    assert path.exists(), f"No harvest data found for run {run_id}"
-
-    components: dict[str, ComponentData] = {}
-    with open(path) as f:
-        for line in f:
-            data = json.loads(line)
-            data["activation_examples"] = [
-                ActivationExample(
-                    token_ids=ex["token_ids"],
-                    ci_values=ex["ci_values"],
-                    component_acts=ex.get("component_acts", [0.0] * len(ex["token_ids"])),
-                )
-                for ex in data["activation_examples"]
-            ]
-            data["input_token_pmi"] = ComponentTokenPMI(**data["input_token_pmi"])
-            data["output_token_pmi"] = ComponentTokenPMI(**data["output_token_pmi"])
-            comp = ComponentData(**data)
-            components[comp.component_key] = comp
-    return components
+    db_path = get_activation_contexts_dir(run_id) / "harvest.db"
+    assert db_path.exists(), f"No harvest data found for run {run_id}"
+    db = HarvestDB(db_path)
+    summary = db.get_summary()
+    all_keys = list(summary.keys())
+    return db.get_components_bulk(all_keys)
 
 
 def load_firing_counts(run_id: str) -> dict[str, int]:
