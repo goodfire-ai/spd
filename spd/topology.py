@@ -4,12 +4,12 @@ Defines a normalized addressing scheme for transformer layers. All API
 consumers use canonical addresses instead of raw module paths.
 
 Canonical layer address format:
-    "embed"                 — embedding
-    "output"                — unembed / logits
-    "{block}.attn.{p}"      — separate attention (p: q | k | v | o)
-    "{block}.attn_fused.{p}" — fused attention (p: qkv | o)
-    "{block}.glu.{p}"       — gated FFN / SwiGLU (p: up | down | gate)
-    "{block}.mlp.{p}"       — simple FFN (p: up | down)
+    "embed"                   — embedding
+    "output"                  — unembed / logits
+    "{block}.attn.{p}"        — separate attention (p: q | k | v | o)
+    "{block}.attn_fused.{p}"  — fused attention (p: qkv | o)
+    "{block}.glu.{p}"         — gated FFN / SwiGLU (p: up | down | gate)
+    "{block}.mlp.{p}"         — simple FFN (p: up | down)
 
 Node key format (layer address + position):
     "{layer_address}:{seq_pos}:{component_idx}"
@@ -34,13 +34,9 @@ from torch import nn
 
 # ── Canonical weight types ──────────────────────────────────────────────
 
-_CANONICAL_RE = re.compile(
-    r"^(?:"
-    r"(?P<embed>embed)"
-    r"|(?P<output>output)"
-    r"|(?P<layer>\d+)\.(?P<sublayer>attn|attn_fused|glu|mlp)\.(?P<proj>[a-z]+)"
-    r")$"
-)
+_EMBED_RE = re.compile(r"^embed$")
+_OUTPUT_RE = re.compile(r"^output$")
+_LAYER_RE = re.compile(r"^(?P<layer>\d+)\.(?P<sublayer>attn|attn_fused|glu|mlp)\.(?P<proj>[a-z]+)$")
 
 
 class CanonicalWeight(ABC):
@@ -50,17 +46,22 @@ class CanonicalWeight(ABC):
     @staticmethod
     def parse(s: str) -> CanonicalWeight:
         """Parse a canonical address string into a CanonicalWeight."""
-        m = _CANONICAL_RE.match(s)
-        assert m is not None, f"Invalid canonical address: {s!r}"
+        m_embed = _EMBED_RE.match(s)
+        m_output = _OUTPUT_RE.match(s)
+        m_layer = _LAYER_RE.match(s)
 
-        if m.group("embed"):
+        matches = [m for m in (m_embed, m_output, m_layer) if m is not None]
+        assert len(matches) == 1, f"Invalid canonical address: {s!r}"
+
+        if m_embed:
             return Embed()
-        if m.group("output"):
+        if m_output:
             return Unembed()
 
-        layer_idx = int(m.group("layer"))
-        sublayer = m.group("sublayer")
-        proj = m.group("proj")
+        assert m_layer is not None
+        layer_idx = int(m_layer.group("layer"))
+        sublayer = m_layer.group("sublayer")
+        proj = m_layer.group("proj")
 
         cls, valid = _SUBLAYER_PROJECTIONS[sublayer]
         assert proj in valid, f"Invalid projection {proj!r} for {sublayer!r} in {s!r}"
