@@ -9,7 +9,7 @@ from einops import einsum, rearrange, reduce
 from jaxtyping import Float, Int
 from torch import Tensor
 
-from spd.harvest.reservoir_sampler import ReservoirSampler, ReservoirState
+from spd.harvest.reservoir_sampler import ReservoirSampler
 from spd.harvest.sampling import sample_at_most_n_per_group, top_k_pmi
 from spd.harvest.schemas import ActivationExample, ComponentData, ComponentTokenPMI
 
@@ -22,42 +22,46 @@ ActivationExampleTuple = tuple[list[int], list[float], list[float]]
 
 @dataclass
 class HarvesterState:
-    """Serializable state of a Harvester for parallel merging."""
+    """Serializable state of a Harvester for parallel merging.
+
+    Reservoir data is stored as dense tensors rather than Python lists to avoid
+    massive Python object overhead (~170 GB as lists vs ~26 GB as tensors for
+    40K components × 1K examples × 41 window).
+    """
 
     layer_names: list[str]
-    c_per_layer: dict[str, int]  # Maps layer name -> number of components
+    c_per_layer: dict[str, int]
     vocab_size: int
     ci_threshold: float
     max_examples_per_component: int
     context_tokens_per_side: int
 
-    # Tensor accumulators (on CPU)
+    # Tensor accumulators
     firing_counts: Tensor
     ci_sums: Tensor
-    count_ij: Tensor  # Component co-occurrence matrix
+    count_ij: Tensor
     input_token_counts: Tensor
     input_token_totals: Tensor
     output_token_prob_mass: Tensor
     output_token_prob_totals: Tensor
     total_tokens_processed: int
 
-    # Reservoir states
-    reservoir_states: list[ReservoirState[ActivationExampleTuple]]
+    # Reservoir data as tensors: [n_components, k, window_size]
+    reservoir_tokens: Int[Tensor, "n_comp k window"]
+    reservoir_ci: Float[Tensor, "n_comp k window"]
+    reservoir_acts: Float[Tensor, "n_comp k window"]
+    reservoir_n_items: Int[Tensor, " n_comp"]  # actual items per component (0..k)
+    reservoir_n_seen: Int[Tensor, " n_comp"]  # total items seen (for merge weighting)
 
     def merge_into(self, other: "HarvesterState") -> None:
-        """Merge another HarvesterState into this one (in-place accumulation).
+        """Merge another HarvesterState into this one (in-place).
 
-        This is the streaming merge primitive used to avoid OOM when merging many workers.
+        Tensor stats: simple +=.
+        Reservoirs: Efraimidis-Spirakis weighted merge, vectorized over components.
         """
         assert other.layer_names == self.layer_names
         assert other.c_per_layer == self.c_per_layer
-        assert other.vocab_size == self.vocab_size
-        assert other.ci_threshold == self.ci_threshold
-        assert other.max_examples_per_component == self.max_examples_per_component
-        assert other.context_tokens_per_side == self.context_tokens_per_side
-        assert len(other.reservoir_states) == len(self.reservoir_states)
 
-        # Accumulate tensor stats
         self.firing_counts += other.firing_counts
         self.ci_sums += other.ci_sums
         self.count_ij += other.count_ij
@@ -67,10 +71,58 @@ class HarvesterState:
         self.output_token_prob_totals += other.output_token_prob_totals
         self.total_tokens_processed += other.total_tokens_processed
 
-        # Merge reservoir states pairwise
-        for i in range(len(self.reservoir_states)):
-            merged = ReservoirState.merge([self.reservoir_states[i], other.reservoir_states[i]])
-            self.reservoir_states[i] = merged
+        _merge_reservoirs_inplace(self, other)
+
+
+def _merge_reservoirs_inplace(dst: HarvesterState, src: HarvesterState) -> None:
+    """Merge src reservoir tensors into dst, vectorized over all components.
+
+    Uses Efraimidis-Spirakis: key = random()^(1/weight), take top-k.
+    Weight = n_seen of the originating reservoir.
+    """
+    k = dst.max_examples_per_component
+    device = dst.reservoir_tokens.device
+
+    # Concatenate along the k dimension: [n_comp, 2k, window]
+    cat_tokens = torch.cat([dst.reservoir_tokens, src.reservoir_tokens], dim=1)
+    cat_ci = torch.cat([dst.reservoir_ci, src.reservoir_ci], dim=1)
+    cat_acts = torch.cat([dst.reservoir_acts, src.reservoir_acts], dim=1)
+
+    # Build validity mask: [n_comp, 2k]
+    n_comp = dst.reservoir_n_items.shape[0]
+    idx = torch.arange(k, device=device).unsqueeze(0)  # [1, k]
+    valid_dst = idx < dst.reservoir_n_items.unsqueeze(1)  # [n_comp, k]
+    valid_src = idx < src.reservoir_n_items.unsqueeze(1)
+    valid = torch.cat([valid_dst, valid_src], dim=1)  # [n_comp, 2k]
+
+    # Weights: items from dst get weight dst.n_seen, items from src get weight src.n_seen
+    weights = torch.zeros(n_comp, 2 * k, device=device)
+    weights[:, :k] = dst.reservoir_n_seen.unsqueeze(1).float()
+    weights[:, k:] = src.reservoir_n_seen.unsqueeze(1).float()
+    weights[~valid] = 0.0
+
+    # Total valid items per component
+    total_valid = valid.sum(dim=1)  # [n_comp]
+    n_to_keep = total_valid.clamp(max=k)  # [n_comp]
+
+    # Efraimidis-Spirakis keys: random()^(1/weight). Invalid items get -inf.
+    rand = torch.rand(n_comp, 2 * k, device=device).clamp(min=1e-30)
+    keys = rand.pow(1.0 / weights.clamp(min=1.0))
+    keys[~valid] = -1.0
+
+    # For components where total_valid <= k, all valid items survive (no sampling needed).
+    # For others, take top-k by key.
+    _, top_indices = keys.topk(k, dim=1)  # [n_comp, k]
+
+    dst.reservoir_tokens = cat_tokens.gather(
+        1, top_indices.unsqueeze(-1).expand(-1, -1, cat_tokens.shape[2])
+    )
+    dst.reservoir_ci = cat_ci.gather(1, top_indices.unsqueeze(-1).expand(-1, -1, cat_ci.shape[2]))
+    dst.reservoir_acts = cat_acts.gather(
+        1, top_indices.unsqueeze(-1).expand(-1, -1, cat_acts.shape[2])
+    )
+    dst.reservoir_n_items = n_to_keep
+    dst.reservoir_n_seen = dst.reservoir_n_seen + src.reservoir_n_seen
 
 
 class Harvester:
@@ -95,7 +147,6 @@ class Harvester:
         self.device = device
 
         # Precompute layer offsets for flat indexing
-        # layer_offsets[layer_name] gives the starting flat index for that layer's components
         self.layer_offsets: dict[str, int] = {}
         offset = 0
         for layer in layer_names:
@@ -123,7 +174,7 @@ class Harvester:
             vocab_size, device=device
         )
 
-        # Reservoir samplers for activation examples
+        # Reservoir samplers for activation examples (Python-side during harvesting)
         self.activation_example_samplers = [
             ReservoirSampler[ActivationExampleTuple](k=max_examples_per_component)
             for _ in range(n_components)
@@ -138,14 +189,7 @@ class Harvester:
         output_probs: Float[Tensor, "B S V"],
         subcomp_acts: Float[Tensor, "B S n_comp"],
     ) -> None:
-        """Accumulate stats from a single batch.
-
-        Args:
-            batch: Token IDs
-            ci: Causal importance values per component
-            output_probs: Output probabilities
-            subcomp_acts: Normalized subcomponent activations: (v_i^T @ a) * ||u_i||.
-        """
+        """Accumulate stats from a single batch."""
         self.total_tokens_processed += batch.numel()
 
         firing = (ci > self.ci_threshold).float()
@@ -169,7 +213,6 @@ class Harvester:
         self.ci_sums += reduce(ci, "b s c -> c", "sum")
 
     def _accumulate_cooccurrence_stats(self, firing_flat: Float[Tensor, "pos n_comp"]) -> None:
-        """Accumulate component-component co-occurrence counts."""
         self.count_ij += einsum(firing_flat, firing_flat, "pos c1, pos c2 -> c1 c2")
 
     def _accumulate_input_token_stats(
@@ -177,22 +220,11 @@ class Harvester:
         batch_flat: Int[Tensor, " pos"],
         firing_flat: Float[Tensor, "pos n_comp"],
     ) -> None:
-        """Accumulate which input tokens caused each component to fire.
-
-        Uses scatter_add_ to efficiently accumulate counts into a sparse [n_comp, vocab] matrix.
-        For each position, we add the firing indicator (0 or 1) to the count for that token.
-
-        Equivalent to: for each pos, for each component c:
-            input_token_counts[c, batch_flat[pos]] += firing_flat[pos, c]
-        """
         n_components = firing_flat.shape[1]
-        # Broadcast token_ids to [n_comp, pos] so scatter_add_ can index into vocab dim
         token_indices = batch_flat.unsqueeze(0).expand(n_components, -1)
-        # input_token_counts[c, token_indices[c, pos]] += firing_flat.T[c, pos]
         self.input_token_counts.scatter_add_(
             dim=1, index=token_indices, src=rearrange(firing_flat, "pos c -> c pos").long()
         )
-        # Count total occurrences of each token (denominator for precision)
         self.input_token_totals.scatter_add_(
             dim=0,
             index=batch_flat,
@@ -204,15 +236,7 @@ class Harvester:
         output_probs_flat: Float[Tensor, "pos vocab"],
         firing_flat: Float[Tensor, "pos n_comp"],
     ) -> None:
-        """Accumulate which output tokens each component predicts.
-
-        Unlike input tokens (hard counts), we accumulate probability mass.
-        When component c fires, we add the full output probability distribution,
-        weighted by the firing indicator.
-        """
-        # Sum of P(token | pos) for positions where component c fired
         self.output_token_prob_mass += einsum(firing_flat, output_probs_flat, "pos c, pos v -> c v")
-        # Sum of P(token | pos) across all positions (for normalization)
         self.output_token_prob_totals += reduce(output_probs_flat, "pos v -> v", "sum")
 
     def _collect_activation_examples(
@@ -227,17 +251,12 @@ class Harvester:
         if len(batch_idx) == 0:
             return
 
-        # Cap firings per component to ensure rare components get examples.
-        # With ~3000 batches and topk=1000 examples, we only need ~1 per component per batch.
         MAX_FIRINGS_PER_COMPONENT = 5
         keep_mask = sample_at_most_n_per_group(component_idx, MAX_FIRINGS_PER_COMPONENT)
         batch_idx = batch_idx[keep_mask]
         seq_idx = seq_idx[keep_mask]
         component_idx = component_idx[keep_mask]
 
-        # Pad sequences so we can extract windows at boundaries without going out of bounds.
-        # E.g. if context_tokens_per_side=3, a firing at seq_idx=0 needs tokens at [-3, -2, -1, 0, 1, 2, 3]
-        # Padding with sentinel allows uniform window extraction; sentinels are filtered in display.
         batch_padded = torch.nn.functional.pad(
             batch,
             (self.context_tokens_per_side, self.context_tokens_per_side),
@@ -252,25 +271,21 @@ class Harvester:
             value=0.0,
         )
 
-        # Build indices to extract [n_firings, window_size] windows via advanced indexing.
-        # For each firing, we want tokens at [seq_idx - k, ..., seq_idx, ..., seq_idx + k]
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
         )
-        seq_idx_padded = seq_idx + self.context_tokens_per_side  # Adjust for padding
-        window_seq_indices = seq_idx_padded.unsqueeze(1) + offsets  # [n_firings, window_size]
+        seq_idx_padded = seq_idx + self.context_tokens_per_side
+        window_seq_indices = seq_idx_padded.unsqueeze(1) + offsets
         batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
         component_idx_expanded = component_idx.unsqueeze(1).expand(-1, window_size)
 
-        # Advanced indexing: token_windows[i, j] = batch_padded[batch_idx[i], window_seq_indices[i, j]]
         token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
         ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
         component_act_windows = subcomp_acts_padded[
             batch_idx_expanded, window_seq_indices, component_idx_expanded
         ]
 
-        # Add to reservoir samplers
         for comp_idx, tokens, ci_vals, component_acts in zip(
             cast(list[int], component_idx.cpu().tolist()),
             cast(list[list[int]], token_windows.cpu().tolist()),
@@ -281,7 +296,33 @@ class Harvester:
             self.activation_example_samplers[comp_idx].add((tokens, ci_vals, component_acts))
 
     def get_state(self) -> HarvesterState:
-        """Extract serializable state for parallel merging."""
+        """Extract serializable state for parallel merging.
+
+        Packs reservoir sampler contents into dense tensors to avoid Python object
+        overhead during serialization and merge (~26 GB as tensors vs ~170 GB as
+        Python lists for 40K components).
+        """
+        n_components = sum(self.c_per_layer[layer] for layer in self.layer_names)
+        k = self.max_examples_per_component
+        window_size = 2 * self.context_tokens_per_side + 1
+
+        reservoir_tokens = torch.full(
+            (n_components, k, window_size), WINDOW_PAD_SENTINEL, dtype=torch.long
+        )
+        reservoir_ci = torch.zeros(n_components, k, window_size)
+        reservoir_acts = torch.zeros(n_components, k, window_size)
+        reservoir_n_items = torch.zeros(n_components, dtype=torch.long)
+        reservoir_n_seen = torch.zeros(n_components, dtype=torch.long)
+
+        for i, sampler in enumerate(self.activation_example_samplers):
+            n = len(sampler.samples)
+            reservoir_n_items[i] = n
+            reservoir_n_seen[i] = sampler.n_seen
+            for j, (tokens, ci_vals, acts) in enumerate(sampler.samples):
+                reservoir_tokens[i, j] = torch.tensor(tokens, dtype=torch.long)
+                reservoir_ci[i, j] = torch.tensor(ci_vals)
+                reservoir_acts[i, j] = torch.tensor(acts)
+
         return HarvesterState(
             layer_names=self.layer_names,
             c_per_layer=self.c_per_layer,
@@ -297,7 +338,11 @@ class Harvester:
             output_token_prob_mass=self.output_token_prob_mass.cpu(),
             output_token_prob_totals=self.output_token_prob_totals.cpu(),
             total_tokens_processed=self.total_tokens_processed,
-            reservoir_states=[s.get_state() for s in self.activation_example_samplers],
+            reservoir_tokens=reservoir_tokens,
+            reservoir_ci=reservoir_ci,
+            reservoir_acts=reservoir_acts,
+            reservoir_n_items=reservoir_n_items,
+            reservoir_n_seen=reservoir_n_seen,
         )
 
     @staticmethod
@@ -320,9 +365,33 @@ class Harvester:
         harvester.output_token_prob_mass = state.output_token_prob_mass.to(device)
         harvester.output_token_prob_totals = state.output_token_prob_totals.to(device)
         harvester.total_tokens_processed = state.total_tokens_processed
-        harvester.activation_example_samplers = [
-            ReservoirSampler.from_state(s) for s in state.reservoir_states
-        ]
+
+        # Unpack tensor reservoirs back into Python samplers for build_results
+        n_components = state.reservoir_n_items.shape[0]
+        reservoir_tokens = state.reservoir_tokens.cpu()
+        reservoir_ci = state.reservoir_ci.cpu()
+        reservoir_acts = state.reservoir_acts.cpu()
+        reservoir_n_items = state.reservoir_n_items.cpu()
+        reservoir_n_seen = state.reservoir_n_seen.cpu()
+
+        samplers: list[ReservoirSampler[ActivationExampleTuple]] = []
+        for i in range(n_components):
+            sampler: ReservoirSampler[ActivationExampleTuple] = ReservoirSampler(
+                k=state.max_examples_per_component
+            )
+            sampler.n_seen = int(reservoir_n_seen[i])
+            n = int(reservoir_n_items[i])
+            sampler.samples = [
+                (
+                    reservoir_tokens[i, j].tolist(),
+                    reservoir_ci[i, j].tolist(),
+                    reservoir_acts[i, j].tolist(),
+                )
+                for j in range(n)
+            ]
+            samplers.append(sampler)
+        harvester.activation_example_samplers = samplers
+
         return harvester
 
     def build_results(self, pmi_top_k_tokens: int) -> list[ComponentData]:
@@ -354,8 +423,6 @@ class Harvester:
                 if component_firing_count == 0:
                     continue
 
-                # Build activation examples from reservoir (uniform random sample)
-                # Strip padding sentinels introduced for GPU window extraction
                 sampler = self.activation_example_samplers[flat_idx]
                 activation_examples = [
                     ActivationExample(
@@ -405,7 +472,6 @@ class Harvester:
         return components
 
     def _log_base_rate_summary(self, firing_counts: Tensor, input_token_totals: Tensor) -> None:
-        """Log summary statistics about base rates."""
         active_counts = firing_counts[firing_counts > 0]
         if len(active_counts) == 0:
             print("  WARNING: No components fired above threshold!")
@@ -456,7 +522,6 @@ def _compute_token_pmi(
     total_tokens: int,
     top_k: int,
 ) -> ComponentTokenPMI:
-    """Compute PMI for tokens associated with a component."""
     top, bottom = top_k_pmi(
         cooccurrence_counts=token_mass_for_component,
         marginal_counts=token_mass_totals,

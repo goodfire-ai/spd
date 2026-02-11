@@ -108,9 +108,8 @@ def submit_harvest(
     merge_config = SlurmConfig(
         job_name="spd-harvest-merge",
         partition=partition,
-        n_gpus=0,  # No GPU needed for merge
-        time="01:00:00",  # Merge is quick
-        mem="128G",  # Merge needs RAM to hold all worker states
+        n_gpus=1,  # Tensors merge on GPU, reservoirs on CPU
+        time="02:00:00",
         snapshot_branch=snapshot_branch,
         dependency_job_id=array_result.job_id,
     )

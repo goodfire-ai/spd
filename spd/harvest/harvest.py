@@ -253,29 +253,32 @@ def merge_activation_contexts(output_dir: Path) -> None:
     Looks for worker_*.pt state files in output_dir/worker_states/ and merges them
     into final harvest results written to output_dir.
 
-    Uses streaming merge to avoid OOM - loads one file at a time instead of all at once.
+    Tensors go on GPU, reservoir states stay on CPU RAM. Requires 1 GPU.
     """
+    device = torch.device(get_device())
+    logger.info(f"Merge device: {device}")
+
     state_dir = output_dir / "worker_states"
 
-    # Find all worker state files
     worker_files = sorted(state_dir.glob("worker_*.pt"))
     assert worker_files, f"No worker state files found in {state_dir}"
     logger.info(f"Found {len(worker_files)} worker state files to merge")
 
-    # Load first file to initialize merged state
-    logger.info(f"Loading worker 0: {worker_files[0].name}")
-    merged_state: HarvesterState = torch.load(worker_files[0], weights_only=False)
+    first_worker_file, *rest_worker_files = worker_files
+
+    logger.info(f"Loading worker 0: {first_worker_file.name}")
+    merged_state: HarvesterState = torch.load(
+        first_worker_file, weights_only=False, map_location=device
+    )
     logger.info(f"Loaded worker 0: {merged_state.total_tokens_processed:,} tokens")
 
-    # Stream remaining files one at a time
-    for worker_file in tqdm.tqdm(worker_files[1:], desc="Merging worker states"):
-        state = torch.load(worker_file, weights_only=False)
+    for worker_file in tqdm.tqdm(rest_worker_files, desc="Merging worker states"):
+        state: HarvesterState = torch.load(worker_file, weights_only=False, map_location=device)
         merged_state.merge_into(state)
-        # state will be garbage collected here before loading the next file
+        del state
 
     logger.info(f"Merge complete. Total tokens: {merged_state.total_tokens_processed:,}")
 
-    # Build harvester from merged state and generate results
     harvester = Harvester.from_state(merged_state, torch.device("cpu"))
 
     config = HarvestConfig(
