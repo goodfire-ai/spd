@@ -4,8 +4,6 @@ Depends on torch.nn and specific model classes. For pure canonical types
 without torch, use canonical.py directly.
 """
 
-from __future__ import annotations
-
 from abc import ABC
 from dataclasses import dataclass
 from typing import Literal
@@ -23,11 +21,9 @@ from spd.topology.canonical import (
     Unembed,
 )
 
-# ── Sublayer path schemas ──────────────────────────────────────────────
-
 
 @dataclass
-class SeparateAttnPathSchema:
+class _SeparateAttnPathSchema:
     base: str
     q: str
     k: str
@@ -50,7 +46,7 @@ class SeparateAttnPathSchema:
 
 
 @dataclass
-class FusedAttnPathSchema:
+class _FusedAttnPathSchema:
     base: str
     qkv: str
     o: str
@@ -71,7 +67,7 @@ class FusedAttnPathSchema:
 
 
 @dataclass
-class GLUPathSchema:
+class _GLUPathSchema:
     base: str
     gate: str
     up: str
@@ -93,7 +89,7 @@ class GLUPathSchema:
 
 
 @dataclass
-class FFNPathSchema:
+class _FFNPathSchema:
     base: str
     up: str
     down: str
@@ -116,11 +112,11 @@ class FFNPathSchema:
 # ── Path schema (base + concrete subclasses) ──────────────────────────
 
 
-class PathSchema(ABC):
+class _PathSchema(ABC):
     embedding_path: str
     blocks: str
-    attn: SeparateAttnPathSchema | FusedAttnPathSchema
-    mlp: GLUPathSchema | FFNPathSchema
+    attn: _SeparateAttnPathSchema | _FusedAttnPathSchema
+    mlp: _GLUPathSchema | _FFNPathSchema
     unembed_path: str
 
     def parse_target_path(self, path: str) -> CanonicalWeight:
@@ -162,81 +158,81 @@ class PathSchema(ABC):
         base = f"{self.blocks}.{w.layer_idx}"
         match w.name:
             case SeparateAttnWeight() as attn_w:
-                assert isinstance(self.attn, SeparateAttnPathSchema)
+                assert isinstance(self.attn, _SeparateAttnPathSchema)
                 return f"{base}.{self.attn.render(attn_w)}"
             case FusedAttnWeight() as attn_w:
-                assert isinstance(self.attn, FusedAttnPathSchema)
+                assert isinstance(self.attn, _FusedAttnPathSchema)
                 return f"{base}.{self.attn.render(attn_w)}"
             case GLUWeight() as ffn_w:
-                assert isinstance(self.mlp, GLUPathSchema)
+                assert isinstance(self.mlp, _GLUPathSchema)
                 return f"{base}.{self.mlp.render(ffn_w)}"
             case MLPWeight() as ffn_w:
-                assert isinstance(self.mlp, FFNPathSchema)
+                assert isinstance(self.mlp, _FFNPathSchema)
                 return f"{base}.{self.mlp.render(ffn_w)}"
 
 
-class LlamaSimplePathSchema(PathSchema):
+class _LlamaSimplePathSchema(_PathSchema):
     embedding_path = "wte"
     blocks = "h"
-    attn = SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
-    mlp = GLUPathSchema(base="mlp", gate="gate_proj", up="up_proj", down="down_proj")
+    attn = _SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
+    mlp = _GLUPathSchema(base="mlp", gate="gate_proj", up="up_proj", down="down_proj")
     unembed_path = "lm_head"
 
 
-class LlamaSimpleMLPPathSchema(PathSchema):
+class _LlamaSimpleMLPPathSchema(_PathSchema):
     embedding_path = "wte"
     blocks = "h"
-    attn = SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
-    mlp = FFNPathSchema(base="mlp", up="c_fc", down="down_proj")
+    attn = _SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
+    mlp = _FFNPathSchema(base="mlp", up="c_fc", down="down_proj")
     unembed_path = "lm_head"
 
 
-class GPT2SimplePathSchema(PathSchema):
+class _GPT2SimplePathSchema(_PathSchema):
     embedding_path = "wte"
     blocks = "h"
-    attn = SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
-    mlp = FFNPathSchema(base="mlp", up="c_fc", down="down_proj")
+    attn = _SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
+    mlp = _FFNPathSchema(base="mlp", up="c_fc", down="down_proj")
     unembed_path = "lm_head"
 
 
-class GPT2PathSchema(PathSchema):
+class _GPT2PathSchema(_PathSchema):
     embedding_path = "wte"
     blocks = "h_torch"
-    attn = FusedAttnPathSchema(base="attn", qkv="c_attn", o="c_proj")
-    mlp = FFNPathSchema(base="mlp", up="c_fc", down="c_proj")
+    attn = _FusedAttnPathSchema(base="attn", qkv="c_attn", o="c_proj")
+    mlp = _FFNPathSchema(base="mlp", up="c_fc", down="c_proj")
     unembed_path = "lm_head"
 
 
-class HFGpt2PathSchema(PathSchema):
+class _HFGpt2PathSchema(_PathSchema):
     embedding_path = "transformer.wte"
     blocks = "transformer.h"
-    attn = FusedAttnPathSchema(base="attn", qkv="c_attn", o="c_proj")
-    mlp = FFNPathSchema(base="mlp", up="c_fc", down="c_proj")
+    attn = _FusedAttnPathSchema(base="attn", qkv="c_attn", o="c_proj")
+    mlp = _FFNPathSchema(base="mlp", up="c_fc", down="c_proj")
     unembed_path = "lm_head"
 
 
 # ── Schema lookup ──────────────────────────────────────────────────────
 
 
-def _get_path_schema(model: nn.Module) -> PathSchema:
+def _get_path_schema(model: nn.Module) -> _PathSchema:
     from transformers.models.gpt2 import GPT2LMHeadModel
 
     from spd.pretrain.models import GPT2, GPT2Simple, LlamaSimple, LlamaSimpleMLP
 
     match model:
         case LlamaSimple():
-            return LlamaSimplePathSchema()
+            return _LlamaSimplePathSchema()
         case LlamaSimpleMLP():
-            return LlamaSimpleMLPPathSchema()
+            return _LlamaSimpleMLPPathSchema()
         case GPT2Simple():
-            return GPT2SimplePathSchema()
+            return _GPT2SimplePathSchema()
         case GPT2():
-            return GPT2PathSchema()
+            return _GPT2PathSchema()
         case GPT2LMHeadModel():
-            return HFGpt2PathSchema()
+            return _HFGpt2PathSchema()
         case _:
             raise ValueError(
-                f"Unsupported model class {type(model).__name__}. Add a PathSchema in topology.py."
+                f"Unsupported model class _{type(model).__name__}. Add a _PathSchema in topology.py."
             )
 
 

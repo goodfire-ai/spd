@@ -10,14 +10,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal, override
 
-# ── Parsing ──────────────────────────────────────────────────────────────
-
 _EMBED_RE = re.compile(r"^embed$")
 _OUTPUT_RE = re.compile(r"^output$")
 _LAYER_RE = re.compile(r"^(?P<layer>\d+)\.(?P<sublayer>attn|attn_fused|glu|mlp)\.(?P<proj>[a-z]+)$")
-
-
-# ── Types ────────────────────────────────────────────────────────────────
 
 
 class CanonicalWeight(ABC):
