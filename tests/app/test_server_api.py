@@ -128,7 +128,7 @@ def app_with_state():
             sigmoid_type=config.sigmoid_type,
         )
         model.eval()
-        topology = TransformerTopology(model)
+        topology = TransformerTopology(model.target_model)
         sources_by_target = get_sources_by_target(
             model=model, topology=topology, device=DEVICE, sampling=config.sampling
         )

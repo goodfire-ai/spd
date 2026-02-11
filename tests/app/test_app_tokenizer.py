@@ -40,7 +40,9 @@ class TestGetSpans:
         token_ids = gpt2_tokenizer.encode(text)
         spans = gpt2_tokenizer.get_spans(token_ids)
         assert len(spans) == len(token_ids)
-        assert "".join(spans) == gpt2_tokenizer.decode(token_ids)
+        from spd.app.backend.app_tokenizer import escape_for_display
+
+        assert "".join(spans) == escape_for_display(gpt2_tokenizer.decode(token_ids))
 
     @pytest.mark.parametrize("text", UNICODE_STRINGS)
     def test_round_trip_unicode(self, gpt2_tokenizer: AppTokenizer, text: str) -> None:
@@ -48,7 +50,9 @@ class TestGetSpans:
         spans = gpt2_tokenizer.get_spans(token_ids)
         assert len(spans) == len(token_ids)
         # For unicode, some spans may be empty (multi-byte split), but concat must match
-        assert "".join(spans) == gpt2_tokenizer.decode(token_ids)
+        from spd.app.backend.app_tokenizer import escape_for_display
+
+        assert "".join(spans) == escape_for_display(gpt2_tokenizer.decode(token_ids))
 
     def test_single_token(self, gpt2_tokenizer: AppTokenizer) -> None:
         token_ids = gpt2_tokenizer.encode("hi")
