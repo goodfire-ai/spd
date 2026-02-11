@@ -35,6 +35,10 @@ class InterpRepo:
 
     # -- Interpretations -------------------------------------------------------
 
+    def has_interpretations(self) -> bool:
+        db = self._get_db()
+        return db is not None and db.has_interpretations()
+
     def get_all_interpretations(self) -> dict[str, InterpretationResult] | None:
         db = self._get_db()
         if db is None:
