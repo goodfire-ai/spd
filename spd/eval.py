@@ -36,28 +36,31 @@ from spd.configs import (
     UnmaskedReconLossConfig,
     UVPlotsConfig,
 )
-from spd.metrics import UnmaskedReconLoss
+from spd.metrics import (
+    CI_L0,
+    CEandKLLosses,
+    CIHistograms,
+    CIMaskedReconLayerwiseLoss,
+    CIMaskedReconLoss,
+    CIMaskedReconSubsetLoss,
+    CIMeanPerComponent,
+    ComponentActivationDensity,
+    FaithfulnessLoss,
+    IdentityCIError,
+    ImportanceMinimalityLoss,
+    PermutedCIPlots,
+    PGDReconLayerwiseLoss,
+    PGDReconLoss,
+    PGDReconSubsetLoss,
+    StochasticHiddenActsReconLoss,
+    StochasticReconLayerwiseLoss,
+    StochasticReconLoss,
+    StochasticReconSubsetLoss,
+    UnmaskedReconLoss,
+    UVPlots,
+)
 from spd.metrics.base import Metric
-from spd.metrics.ci_histograms import CIHistograms
-from spd.metrics.ci_l0 import CI_L0
-from spd.metrics.ci_masked_recon_layerwise_loss import CIMaskedReconLayerwiseLoss
-from spd.metrics.ci_masked_recon_loss import CIMaskedReconLoss
-from spd.metrics.ci_masked_recon_subset_loss import CIMaskedReconSubsetLoss
-from spd.metrics.ci_mean_per_component import CIMeanPerComponent
-from spd.metrics.component_activation_density import ComponentActivationDensity
-from spd.metrics.faithfulness_loss import FaithfulnessLoss
-from spd.metrics.identity_ci_error import IdentityCIError
-from spd.metrics.importance_minimality_loss import ImportanceMinimalityLoss
-from spd.metrics.permuted_ci_plots import PermutedCIPlots
-from spd.metrics.pgd_masked_recon_layerwise_loss import PGDReconLayerwiseLoss
-from spd.metrics.pgd_masked_recon_loss import PGDReconLoss
-from spd.metrics.pgd_masked_recon_subset_loss import PGDReconSubsetLoss
 from spd.metrics.pgd_utils import CreateDataIter, calc_multibatch_pgd_masked_recon_loss
-from spd.metrics.stochastic_hidden_acts_recon_loss import StochasticHiddenActsReconLoss
-from spd.metrics.stochastic_recon_layerwise_loss import StochasticReconLayerwiseLoss
-from spd.metrics.stochastic_recon_loss import StochasticReconLoss
-from spd.metrics.stochastic_recon_subset_loss import StochasticReconSubsetLoss
-from spd.metrics.uv_plots import UVPlots
 from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.routing import AllLayersRouter, get_subset_router
@@ -138,13 +141,12 @@ def init_metric[BatchT, OutputT](
                 device=device,
             )
         case CEandKLLossesConfig():
-            raise ValueError("fix this typing!")
-            # metric = CEandKLLosses(
-            #     model=model,
-            #     device=device,
-            #     sampling=run_config.sampling,
-            #     rounding_threshold=cfg.rounding_threshold,
-            # )
+            metric = CEandKLLosses(
+                model=model,
+                device=device,
+                sampling=run_config.sampling,
+                rounding_threshold=cfg.rounding_threshold,
+            )
         case CIHistogramsConfig():
             metric = CIHistograms(model=model, n_batches_accum=cfg.n_batches_accum)
         case CI_L0Config():
