@@ -16,8 +16,7 @@ from dotenv import load_dotenv
 from spd.autointerp.config import CompactSkepticalConfig
 from spd.autointerp.interpret import run_interpret
 from spd.autointerp.schemas import get_autointerp_dir
-from spd.harvest.loaders import load_harvest_ci_threshold
-from spd.harvest.schemas import get_correlations_dir
+from spd.harvest.repo import HarvestRepo
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -56,7 +55,7 @@ def main(
     openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
     assert openrouter_api_key, "OPENROUTER_API_KEY not set"
 
-    correlations_dir = get_correlations_dir(run_id)
+    harvest = HarvestRepo(run_id)
 
     # Create timestamped run directory
     if autointerp_run_id is None:
@@ -72,16 +71,12 @@ def main(
 
     print(f"Autointerp run: {run_dir}")
 
-    ci_threshold = load_harvest_ci_threshold(run_id)
-
     run_interpret(
         wandb_path,
         openrouter_api_key,
         interp_config,
-        run_id,
-        correlations_dir,
+        harvest,
         db_path,
-        ci_threshold,
         limit,
         cost_limit_usd,
     )

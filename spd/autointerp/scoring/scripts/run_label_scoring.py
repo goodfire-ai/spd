@@ -14,9 +14,9 @@ from dotenv import load_dotenv
 
 from spd.autointerp.db import InterpDB
 from spd.autointerp.interpret import get_architecture_info
-from spd.autointerp.loaders import load_interpretations
+from spd.autointerp.repo import InterpRepo
 from spd.autointerp.schemas import get_autointerp_dir
-from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
+from spd.harvest.repo import HarvestRepo
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 LabelScorerType = Literal["detection", "fuzzing"]
@@ -37,12 +37,14 @@ def main(
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    interpretations = load_interpretations(run_id, autointerp_run_id)
+    interp = InterpRepo(run_id)
+    interpretations = interp.get_all_interpretations()
     assert interpretations, f"No interpretation results for {run_id}. Run autointerp first."
     labels = {key: result.label for key, result in interpretations.items()}
 
-    components = load_all_components(run_id)
-    ci_threshold = load_harvest_ci_threshold(run_id)
+    harvest = HarvestRepo(run_id)
+    components = harvest.get_all_components()
+    ci_threshold = harvest.get_ci_threshold()
 
     db_path = get_autointerp_dir(run_id) / "interp.db"
     db = InterpDB(db_path)

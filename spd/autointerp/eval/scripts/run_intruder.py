@@ -13,7 +13,7 @@ from spd.autointerp.db import InterpDB
 from spd.autointerp.eval.intruder import run_intruder_scoring
 from spd.autointerp.interpret import get_architecture_info
 from spd.autointerp.schemas import get_autointerp_dir
-from spd.harvest.loaders import load_all_components, load_harvest_ci_threshold
+from spd.harvest.repo import HarvestRepo
 from spd.utils.wandb_utils import parse_wandb_run_path
 
 
@@ -30,8 +30,9 @@ def main(
     arch = get_architecture_info(wandb_path)
     _, _, run_id = parse_wandb_run_path(wandb_path)
 
-    components = load_all_components(run_id)
-    ci_threshold = load_harvest_ci_threshold(run_id)
+    harvest = HarvestRepo(run_id)
+    components = harvest.get_all_components()
+    ci_threshold = harvest.get_ci_threshold()
 
     db_path = get_autointerp_dir(run_id) / "interp.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)

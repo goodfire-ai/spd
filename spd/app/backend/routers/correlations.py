@@ -12,7 +12,6 @@ from pydantic import BaseModel
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.utils import log_errors
 from spd.harvest import analysis
-from spd.harvest.loaders import load_component_activation_contexts
 from spd.log import logger
 from spd.topology import CanonicalWeight, TransformerTopology
 
@@ -184,7 +183,8 @@ async def request_component_interpretation(
             confidence=existing.confidence,
         )
 
-    component_data = load_component_activation_contexts(run_id, component_key)
+    component_data = loaded.harvest.get_component(component_key)
+    assert component_data is not None, f"Component {component_key} not found in harvest"
 
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:

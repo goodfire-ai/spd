@@ -24,9 +24,8 @@ from spd.autointerp.strategies.dispatch import (
 )
 from spd.configs import LMTaskConfig
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
-from spd.harvest.loaders import load_all_components
+from spd.harvest.repo import HarvestRepo
 from spd.harvest.schemas import ComponentData
-from spd.harvest.storage import TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
@@ -86,21 +85,17 @@ def run_interpret(
     wandb_path: str,
     openrouter_api_key: str,
     config: AutointerpConfig,
-    run_id: str,
-    correlations_dir: Path,
+    harvest: HarvestRepo,
     db_path: Path,
-    ci_threshold: float,
     limit: int | None,
     cost_limit_usd: float | None = None,
 ) -> list[InterpretationResult]:
     arch = get_architecture_info(wandb_path)
-    components = load_all_components(run_id)
+    components = harvest.get_all_components()
 
-    token_stats_path = correlations_dir / "token_stats.pt"
-    assert token_stats_path.exists(), (
-        f"token_stats.pt not found at {token_stats_path}. Run harvest first."
-    )
-    token_stats = TokenStatsStorage.load(token_stats_path)
+    token_stats = harvest.get_token_stats()
+    assert token_stats is not None, "token_stats.pt not found. Run harvest first."
+    ci_threshold = harvest.get_ci_threshold()
 
     app_tok = AppTokenizer.from_pretrained(arch.tokenizer_name)
 

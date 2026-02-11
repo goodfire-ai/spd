@@ -63,6 +63,12 @@ class HarvestRepo:
         assert db is not None, f"No harvest.db for run {self.run_id}"
         return db.get_ci_threshold()
 
+    def get_all_components(self) -> list[ComponentData]:
+        """Load all components with mean_ci above the harvest ci_threshold."""
+        db = self._get_db()
+        assert db is not None, f"No harvest.db for run {self.run_id}"
+        return db.get_all_components(db.get_ci_threshold())
+
     # -- Correlations & token stats (tensor data) ------------------------------
 
     def has_correlations(self) -> bool:

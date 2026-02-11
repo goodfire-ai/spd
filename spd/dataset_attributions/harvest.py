@@ -26,7 +26,7 @@ from spd.dataset_attributions.config import DatasetAttributionConfig
 from spd.dataset_attributions.harvester import AttributionHarvester
 from spd.dataset_attributions.loaders import get_attributions_dir
 from spd.dataset_attributions.storage import DatasetAttributionStorage
-from spd.harvest.loaders import load_activation_contexts_summary
+from spd.harvest.repo import HarvestRepo
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.topology import TransformerTopology
@@ -64,7 +64,7 @@ def _build_alive_masks(
     - Sources: [0, vocab_size) = wte tokens, [vocab_size, vocab_size + n_components) = component layers
     - Targets: [0, n_components) = component layers (output handled via out_residual)
     """
-    summary = load_activation_contexts_summary(run_id)
+    summary = HarvestRepo(run_id).get_summary()
 
     n_sources = vocab_size + n_components
 
