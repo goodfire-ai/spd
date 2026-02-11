@@ -42,7 +42,12 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
     # === 1. Harvest (always runs, upserts into harvest.db) ===
-    harvest_result = submit_harvest(wandb_path, config.harvest, snapshot_branch=snapshot_branch)
+    harvest_result = submit_harvest(
+        wandb_path,
+        config.harvest,
+        snapshot_branch=snapshot_branch,
+        submit_intruder=config.autointerp is not None,
+    )
 
     # === 2. Attributions (parallel with harvest, overwrites) ===
     attr_result = None
@@ -71,9 +76,10 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
     jobs: dict[str, str] = {
         "harvest_array": harvest_result.array_result.job_id,
         "harvest_merge": harvest_result.merge_result.job_id,
-        "intruder_eval": harvest_result.intruder_result.job_id,
         "harvest_subrun": harvest_result.subrun_id,
     }
+    if harvest_result.intruder_result is not None:
+        jobs["intruder_eval"] = harvest_result.intruder_result.job_id
     if attr_result is not None:
         jobs["attr_array"] = attr_result.array_result.job_id
         jobs["attr_merge"] = attr_result.merge_result.job_id
