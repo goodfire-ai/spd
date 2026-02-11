@@ -302,9 +302,6 @@ def get_component_token_stats(
     if input_stats is None or output_stats is None:
         return None
 
-    assert input_stats.bottom_pmi is None, "Input stats should not have bottom PMI"
-    assert output_stats.bottom_pmi is not None, "Output stats should have bottom PMI"
-
     return TokenStatsResponse(
         input=TokenPRLiftPMI(
             top_recall=input_stats.top_recall,
@@ -359,41 +356,46 @@ def get_component_correlations_bulk(
             n_tokens=c.count_total,
         )
 
+    def to_concrete(canonical_key: str) -> str:
+        layer, idx = canonical_key.rsplit(":", 1)
+        return _canonical_to_concrete_key(layer, int(idx), loaded.topology)
+
     result: dict[str, ComponentCorrelationsResponse] = {}
 
-    for component_key in request.component_keys:
-        if not analysis.has_component(correlations, component_key):
+    for canonical_key in request.component_keys:
+        concrete_key = to_concrete(canonical_key)
+        if not analysis.has_component(correlations, concrete_key):
             continue
 
-        result[component_key] = ComponentCorrelationsResponse(
+        result[canonical_key] = ComponentCorrelationsResponse(
             precision=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "precision", request.top_k
+                    correlations, concrete_key, "precision", request.top_k
                 )
             ],
             recall=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "recall", request.top_k
+                    correlations, concrete_key, "recall", request.top_k
                 )
             ],
             jaccard=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "jaccard", request.top_k
+                    correlations, concrete_key, "jaccard", request.top_k
                 )
             ],
             pmi=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "pmi", request.top_k
+                    correlations, concrete_key, "pmi", request.top_k
                 )
             ],
             bottom_pmi=[
                 to_schema(c)
                 for c in analysis.get_correlated_components(
-                    correlations, component_key, "pmi", request.top_k, largest=False
+                    correlations, concrete_key, "pmi", request.top_k, largest=False
                 )
             ],
         )
@@ -414,18 +416,23 @@ def get_component_token_stats_bulk(
     token_stats = loaded.harvest.token_stats
     result: dict[str, TokenStatsResponse] = {}
 
-    for component_key in request.component_keys:
+    def to_concrete(canonical_key: str) -> str:
+        layer, idx = canonical_key.rsplit(":", 1)
+        return _canonical_to_concrete_key(layer, int(idx), loaded.topology)
+
+    for canonical_key in request.component_keys:
+        concrete_key = to_concrete(canonical_key)
         input_stats = analysis.get_input_token_stats(
-            token_stats, component_key, loaded.tokenizer, request.top_k
+            token_stats, concrete_key, loaded.tokenizer, request.top_k
         )
         output_stats = analysis.get_output_token_stats(
-            token_stats, component_key, loaded.tokenizer, request.top_k
+            token_stats, concrete_key, loaded.tokenizer, request.top_k
         )
 
         if input_stats is None or output_stats is None:
             continue
 
-        result[component_key] = TokenStatsResponse(
+        result[canonical_key] = TokenStatsResponse(
             input=TokenPRLiftPMI(
                 top_recall=input_stats.top_recall,
                 top_precision=input_stats.top_precision,

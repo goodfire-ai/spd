@@ -32,6 +32,7 @@ from spd.harvest.schemas import (
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
+from spd.topology import TransformerTopology
 from spd.utils.distributed_utils import get_device
 from spd.utils.general_utils import bf16_autocast, extract_batch_data
 
@@ -177,11 +178,11 @@ def harvest_activation_contexts(
     model.eval()
 
     spd_config = run_info.config
-    train_loader, tokenizer = train_loader_and_tokenizer(spd_config, config.batch_size)
+    train_loader, _ = train_loader_and_tokenizer(spd_config, config.batch_size)
 
     layer_names = list(model.target_module_paths)
-    vocab_size = tokenizer.vocab_size
-    assert isinstance(vocab_size, int)
+    topology = TransformerTopology(model.target_model)
+    vocab_size = topology.unembed_module.out_features
 
     # Precompute U norms for normalizing component activations
     u_norms = _compute_u_norms(model)

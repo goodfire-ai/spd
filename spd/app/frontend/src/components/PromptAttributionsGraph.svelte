@@ -225,11 +225,14 @@
                         totalInRow += nodes.length;
                     }
                 }
-                // Add gaps between grouped projections
-                const info = parseLayer(row.includes(".") ? row + ".x" : row);
-                const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
-                if (groupProjs && groupProjs.length > 1) {
-                    totalInRow += groupProjs.length - 1;
+                // Add gaps between grouped projections (only for grouped rows)
+                const rowParts = row.split(".");
+                const isGroupedRow = rowParts.length >= 3 && rowParts[2].includes("_");
+                if (isGroupedRow) {
+                    const groupProjs = getGroupProjections(rowParts[1]);
+                    if (groupProjs && groupProjs.length > 1) {
+                        totalInRow += groupProjs.length - 1;
+                    }
                 }
                 maxAtSeq = Math.max(maxAtSeq, totalInRow);
             }
@@ -254,7 +257,7 @@
         for (const layer of allLayers) {
             const info = parseLayer(layer);
             const groupProjs = info.sublayer ? getGroupProjections(info.sublayer) : null;
-            const isGrouped = groupProjs !== null && info.projection !== null;
+            const isGrouped = groupProjs !== null && info.projection !== null && groupProjs.includes(info.projection);
 
             for (let seqIdx = 0; seqIdx < tokens.length; seqIdx++) {
                 const nodes = nodesPerLayerSeq[`${layer}:${seqIdx}`];

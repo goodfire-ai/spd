@@ -9,7 +9,6 @@ Interpretations are stored separately at SPD_OUT_DIR/autointerp/<run_id>/.
 import hashlib
 import json
 import sqlite3
-from dataclasses import asdict
 from pathlib import Path
 from typing import Literal
 
@@ -18,6 +17,7 @@ from pydantic import BaseModel
 from spd.app.backend.compute import Edge, Node
 from spd.app.backend.optim_cis import CELossConfig, KLLossConfig, LossConfig, MaskType
 from spd.app.backend.schemas import OutputProbability
+from spd.topology import CanonicalWeight
 from spd.settings import REPO_ROOT
 
 GraphType = Literal["standard", "optimized", "manual"]
@@ -371,7 +371,18 @@ class PromptAttrDB:
         """
         conn = self._get_conn()
 
-        edges_json = json.dumps([asdict(e) for e in graph.edges])
+        def _node_to_dict(n: Node) -> dict[str, str | int]:
+            return {"layer": n.layer.canonical_str(), "seq_pos": n.seq_pos, "component_idx": n.component_idx}
+
+        edges_json = json.dumps([
+            {
+                "source": _node_to_dict(e.source),
+                "target": _node_to_dict(e.target),
+                "strength": e.strength,
+                "is_cross_seq": e.is_cross_seq,
+            }
+            for e in graph.edges
+        ])
         probs_json = json.dumps({k: v.model_dump() for k, v in graph.out_probs.items()})
         node_ci_vals_json = json.dumps(graph.node_ci_vals)
         node_subcomp_acts_json = json.dumps(graph.node_subcomp_acts)
@@ -460,10 +471,17 @@ class PromptAttrDB:
 
     def _row_to_stored_graph(self, row: sqlite3.Row) -> StoredGraph:
         """Convert a database row to a StoredGraph."""
+        def _node_from_dict(d: dict[str, str | int]) -> Node:
+            return Node(
+                layer=CanonicalWeight.parse(str(d["layer"])),
+                seq_pos=int(d["seq_pos"]),
+                component_idx=int(d["component_idx"]),
+            )
+
         edges = [
             Edge(
-                source=Node(**e["source"]),
-                target=Node(**e["target"]),
+                source=_node_from_dict(e["source"]),
+                target=_node_from_dict(e["target"]),
                 strength=float(e["strength"]),
                 is_cross_seq=bool(e["is_cross_seq"]),
             )
