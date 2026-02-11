@@ -28,3 +28,4 @@ class HarvestSlurmConfig(BaseConfig):
     n_gpus: PositiveInt = 8
     partition: str = DEFAULT_PARTITION_NAME
     time: str = "24:00:00"
+    intruder_eval: bool = True

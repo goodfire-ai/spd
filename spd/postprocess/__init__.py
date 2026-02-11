@@ -42,12 +42,7 @@ def postprocess(wandb_path: str, config: PostprocessConfig) -> Path:
     logger.info(f"Created git snapshot: {snapshot_branch} ({commit_hash[:8]})")
 
     # === 1. Harvest (always runs, upserts into harvest.db) ===
-    harvest_result = submit_harvest(
-        wandb_path,
-        config.harvest,
-        snapshot_branch=snapshot_branch,
-        submit_intruder=config.autointerp is not None,
-    )
+    harvest_result = submit_harvest(wandb_path, config.harvest, snapshot_branch=snapshot_branch)
 
     # === 2. Attributions (parallel with harvest, overwrites) ===
     attr_result = None

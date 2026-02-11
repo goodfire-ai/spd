@@ -42,7 +42,6 @@ def submit_harvest(
     slurm_config: HarvestSlurmConfig,
     job_suffix: str | None = None,
     snapshot_branch: str | None = None,
-    submit_intruder: bool = True,
 ) -> HarvestSubmitResult:
     """Submit multi-GPU harvest job to SLURM.
 
@@ -117,7 +116,7 @@ def submit_harvest(
     merge_result = submit_slurm_job(merge_script, "harvest_merge")
 
     intruder_result = None
-    if submit_intruder:
+    if slurm_config.intruder_eval:
         intruder_cmd = " \\\n    ".join(
             [
                 "python -m spd.autointerp.eval.scripts.run_intruder",
