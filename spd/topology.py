@@ -4,20 +4,23 @@ Defines a normalized addressing scheme for transformer layers. All API
 consumers use canonical addresses instead of raw module paths.
 
 Canonical layer address format:
-    "embed"            — embedding
-    "output"           — unembed / logits
-    "{block}.attn.{p}" — attention projection (p: q | k | v | qkv | o)
-    "{block}.ffn.{p}"  — FFN projection (p: up | down | gate)
+    "embed"                 — embedding
+    "output"                — unembed / logits
+    "{block}.attn.{p}"      — separate attention (p: q | k | v | o)
+    "{block}.attn_fused.{p}" — fused attention (p: qkv | o)
+    "{block}.glu.{p}"       — gated FFN / SwiGLU (p: up | down | gate)
+    "{block}.mlp.{p}"       — simple FFN (p: up | down)
 
 Node key format (layer address + position):
     "{layer_address}:{seq_pos}:{component_idx}"
 
 Examples:
     "0.attn.q"         — block 0, attention Q projection
-    "2.ffn.gate"       — block 2, SwiGLU gate projection
+    "2.glu.gate"       — block 2, SwiGLU gate projection
+    "1.mlp.up"         — block 1, simple FFN up projection
     "0.attn.q:3:5"     — block 0, Q proj, seq pos 3, component 5
     "embed:0:0"        — embedding, seq 0, pseudo-component 0
-    "output:7:42"       — output, seq 7, token 42
+    "output:7:42"      — output, seq 7, token 42
 """
 
 from __future__ import annotations
