@@ -14,7 +14,6 @@ from typing import Self
 from transformers import AutoTokenizer
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-
 _CONTROL_CHAR_MAP = {
     "\t": "⇥",
     "\n": "↵",

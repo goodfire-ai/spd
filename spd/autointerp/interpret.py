@@ -8,6 +8,7 @@ from openrouter import OpenRouter
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.config import AutointerpConfig
 from spd.autointerp.llm_api import (
+    MAX_REQUESTS_PER_MINUTE,
     CostTracker,
     RateLimiter,
     chat_with_retry,
@@ -29,7 +30,6 @@ from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 
 MAX_CONCURRENT_REQUESTS = 50
-MAX_REQUESTS_PER_MINUTE = 300  # Gemini flash has 400 RPM limit
 
 
 async def interpret_component(
@@ -41,6 +41,7 @@ async def interpret_component(
     input_token_stats: TokenPRLift,
     output_token_stats: TokenPRLift,
     ci_threshold: float,
+    rate_limiter: RateLimiter | None = None,
 ) -> tuple[InterpretationResult, int, int] | None:
     """Returns (result, input_tokens, output_tokens), or None on failure."""
     prompt = format_prompt(
@@ -65,6 +66,7 @@ async def interpret_component(
             context_label=component.component_key,
             response_format=make_response_format("interpretation", schema),
             reasoning=reasoning,
+            rate_limiter=rate_limiter,
         )
     except RuntimeError as e:
         logger.error(str(e))
@@ -132,7 +134,7 @@ async def interpret_all(
 
     output_lock = asyncio.Lock()
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-    rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE, period_seconds=60.0)
+    rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
 
     app_tok = AppTokenizer.from_pretrained(arch.tokenizer_name)
 
@@ -147,7 +149,6 @@ async def interpret_all(
         nonlocal n_errors
         if cost_tracker.over_budget():
             return
-        await rate_limiter.acquire()
         async with semaphore:
             if cost_tracker.over_budget():
                 return
@@ -175,6 +176,7 @@ async def interpret_all(
                     input_token_stats=input_stats,
                     output_token_stats=output_stats,
                     ci_threshold=ci_threshold,
+                    rate_limiter=rate_limiter,
                 )
                 if res is None:
                     n_errors += 1

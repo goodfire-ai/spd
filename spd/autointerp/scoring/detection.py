@@ -20,6 +20,7 @@ from openrouter import OpenRouter
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.llm_api import (
+    RateLimiter,
     chat_with_retry,
     make_response_format,
     run_scoring_pipeline,
@@ -162,6 +163,7 @@ async def score_component(
     all_components: list[ComponentData],
     app_tok: AppTokenizer,
     label: str,
+    rate_limiter: RateLimiter | None = None,
 ) -> DetectionResult:
     assert len(component.activation_examples) >= N_ACTIVATING
 
@@ -196,6 +198,7 @@ async def score_component(
                 max_tokens=300,
                 context_label=f"{component.component_key}/trial{trial_idx}",
                 response_format=DETECTION_RESPONSE_FORMAT,
+                rate_limiter=rate_limiter,
             )
             parsed = json.loads(response)
             predicted_activating = set(int(x) for x in parsed["activating"])
@@ -265,9 +268,12 @@ async def run_detection_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    async def _score(client: OpenRouter, component: ComponentData) -> DetectionResult:
+    async def _score(
+        client: OpenRouter, component: ComponentData, rate_limiter: RateLimiter
+    ) -> DetectionResult:
         return await score_component(
-            client, model, component, components, app_tok, labels[component.component_key]
+            client, model, component, components, app_tok, labels[component.component_key],
+            rate_limiter,
         )
 
     return await run_scoring_pipeline(

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
-from spd.app.backend.dependencies import DepLoadedRun, DepStateManager
+from spd.app.backend.dependencies import DepStateManager
 from spd.app.backend.state import HarvestCache, RunState
 from spd.app.backend.utils import log_errors
 from spd.configs import LMTaskConfig
@@ -40,7 +40,6 @@ class LoadedRun(BaseModel):
     backend_user: str
     dataset_attributions_available: bool
     dataset_search_enabled: bool
-
 
 
 router = APIRouter(prefix="/api", tags=["runs"])

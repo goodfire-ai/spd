@@ -88,17 +88,20 @@ class RateLimiter:
         self.lock = asyncio.Lock()
 
     async def acquire(self) -> None:
-        async with self.lock:
-            now = time.monotonic()
-            self.timestamps = [t for t in self.timestamps if now - t < self.period]
+        while True:
+            async with self.lock:
+                now = time.monotonic()
+                self.timestamps = [t for t in self.timestamps if now - t < self.period]
 
-            if len(self.timestamps) >= self.max_requests:
+                if len(self.timestamps) < self.max_requests:
+                    self.timestamps.append(now)
+                    return
+
                 sleep_time = self.timestamps[0] + self.period - now
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-                self.timestamps = self.timestamps[1:]
 
-            self.timestamps.append(time.monotonic())
+            # Sleep OUTSIDE the lock so other coroutines aren't blocked
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
 
 
 def make_response_format(name: str, schema: dict[str, Any]) -> ResponseFormatJSONSchema:
@@ -119,10 +122,13 @@ async def chat_with_retry(
     context_label: str,
     response_format: ResponseFormatJSONSchema | None = None,
     reasoning: Reasoning | None = None,
+    rate_limiter: RateLimiter | None = None,
 ) -> tuple[str, int, int]:
     """Send chat request with exponential backoff retry. Returns (content, input_tokens, output_tokens)."""
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES):
+        if rate_limiter is not None:
+            await rate_limiter.acquire()
         try:
             kwargs: dict[str, Any] = dict(
                 model=model,
@@ -189,7 +195,7 @@ MAX_REQUESTS_PER_MINUTE = 200
 async def run_scoring_pipeline(
     *,
     eligible: list[ComponentData],
-    score_fn: Callable[[OpenRouter, ComponentData], Awaitable[T]],
+    score_fn: Callable[[OpenRouter, ComponentData, RateLimiter], Awaitable[T]],
     serialize_fn: Callable[[T], dict[str, Any]],
     deserialize_fn: Callable[[dict[str, Any]], T],
     model: str,
@@ -201,7 +207,7 @@ async def run_scoring_pipeline(
 
     Args:
         eligible: Components to score (already filtered for eligibility).
-        score_fn: Async function (client, component) -> result dataclass.
+        score_fn: Async function (client, component, rate_limiter) -> result dataclass.
         serialize_fn: Convert a result to a JSON-serializable dict.
         deserialize_fn: Construct a result from a JSON dict (for resume).
         model: OpenRouter model ID (for pricing lookup).
@@ -235,12 +241,11 @@ async def run_scoring_pipeline(
     ) -> None:
         if cost_tracker.over_budget():
             return
-        await rate_limiter.acquire()
         async with semaphore:
             if cost_tracker.over_budget():
                 return
             try:
-                result = await score_fn(client, component)
+                result = await score_fn(client, component, rate_limiter)
                 async with output_lock:
                     results.append(result)
                     with open(output_path, "a") as f:
