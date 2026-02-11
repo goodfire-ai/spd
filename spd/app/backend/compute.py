@@ -202,7 +202,7 @@ def get_sources_by_target(
     # Test all ordered pairs for gradient flow
     test_pairs = []
     for in_layer in layers[:-1]:  # Don't include "output" as source
-        for out_layer in layers[1:]:  # Don't include "wte" as target
+        for out_layer in layers[1:]:  # Don't include embed as target
             if layers.index(in_layer) < layers.index(out_layer):
                 test_pairs.append((in_layer, out_layer))
 

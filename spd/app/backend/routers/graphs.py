@@ -66,7 +66,7 @@ class GraphData(BaseModel):
     outputProbs: dict[str, OutputProbability]
     nodeCiVals: dict[
         str, float
-    ]  # node key -> CI value (or output prob for output nodes or 1 for wte node)
+    ]  # node key -> CI value (or output prob for output nodes or 1 for embed node)
     nodeSubcompActs: dict[str, float]  # node key -> subcomponent activation (v_i^T @ a)
     maxAbsAttr: float  # max absolute edge value
     maxAbsSubcompAct: float  # max absolute subcomponent activation for normalization
@@ -705,14 +705,14 @@ def _add_pseudo_layer_nodes(
     num_tokens: int,
     out_probs: dict[str, OutputProbability],
 ) -> dict[str, float]:
-    """Add wte and output pseudo-nodes for simpler rendering and filtering logic.
+    """Add embed and output pseudo-nodes for simpler rendering and filtering logic.
 
-    wte nodes get CI=1.0 (always visible), output nodes use their CI-masked probability.
-    num_tokens determines how many WTE nodes to create (one per input position).
+    embed nodes get CI=1.0 (always visible), output nodes use their CI-masked probability.
+    num_tokens determines how many embed nodes to create (one per input position).
     """
     result = dict(node_ci_vals)
     for seq_pos in range(num_tokens):
-        result[f"wte:{seq_pos}:0"] = 1.0
+        result[f"embed:{seq_pos}:0"] = 1.0
     for key, out_prob in out_probs.items():
         seq_pos, token_id = key.split(":")
         result[f"output:{seq_pos}:{token_id}"] = out_prob.prob

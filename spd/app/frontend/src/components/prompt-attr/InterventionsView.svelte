@@ -310,7 +310,7 @@
             layerYPositions[layer] = rowYPositions[rowKey];
             const rowIdx = rows.indexOf(rowKey);
             const distanceFromOutput = rows.length - 1 - rowIdx;
-            if (distanceFromOutput === 0 || layer === "wte") {
+            if (distanceFromOutput === 0 || layer === "embed") {
                 layerXOffsets[layer] = 0;
             } else {
                 layerXOffsets[layer] = distanceFromOutput % 2 === 1 ? LAYER_X_OFFSET : -LAYER_X_OFFSET;
@@ -440,7 +440,7 @@
             hoverTimeout = null;
         }
         hoveredNode = { layer, seqIdx, cIdx };
-        const size = layer === "wte" || layer === "output" ? "small" : "large";
+        const size = layer === "embed" || layer === "output" ? "small" : "large";
         tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 

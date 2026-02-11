@@ -2,18 +2,18 @@
  * Graph layout utilities for canonical transformer addresses.
  *
  * Canonical address format:
- *   "wte"              — embedding
+ *   "embed"              — embedding
  *   "output"           — unembed / logits
  *   "{block}.{sublayer}.{projection}" — e.g. "0.attn.q", "2.mlp.down"
  *
  * Node key format:
- *   "{layer}:{seqIdx}:{cIdx}" — e.g. "0.attn.q:3:5", "wte:0:0"
+ *   "{layer}:{seqIdx}:{cIdx}" — e.g. "0.attn.q:3:5", "embed:0:0"
  */
 
 export type LayerInfo = {
     name: string;
-    block: number; // -1 for wte, Infinity for output
-    sublayer: string; // "attn" | "attn_fused" | "mlp" | "glu" | "wte" | "output"
+    block: number; // -1 for embed, Infinity for output
+    sublayer: string; // "attn" | "attn_fused" | "mlp" | "glu" | "embed" | "output"
     projection: string | null; // "q" | "k" | "v" | "o" | "qkv" | "up" | "down" | "gate" | null
 };
 
@@ -34,7 +34,7 @@ const PROJECTION_ORDER: Record<string, string[]> = {
 };
 
 export function parseLayer(name: string): LayerInfo {
-    if (name === "wte") return { name, block: -1, sublayer: "wte", projection: null };
+    if (name === "embed") return { name, block: -1, sublayer: "embed", projection: null };
     if (name === "output") return { name, block: Infinity, sublayer: "output", projection: null };
 
     const parts = name.split(".");
@@ -53,7 +53,7 @@ export function parseLayer(name: string): LayerInfo {
  */
 export function getRowKey(layer: string): string {
     const info = parseLayer(layer);
-    if (info.sublayer === "wte" || info.sublayer === "output") return layer;
+    if (info.sublayer === "embed" || info.sublayer === "output") return layer;
 
     const grouped = GROUPED_PROJECTIONS[info.sublayer];
     if (grouped && info.projection && grouped.includes(info.projection)) {
@@ -66,7 +66,7 @@ export function getRowKey(layer: string): string {
  * Row label for display.
  */
 export function getRowLabel(rowKey: string): string {
-    if (rowKey === "wte") return "wte";
+    if (rowKey === "embed") return "embed";
     if (rowKey === "output") return "output";
 
     const parts = rowKey.split(".");
@@ -84,7 +84,7 @@ export function getRowLabel(rowKey: string): string {
 }
 
 /**
- * Sort row keys: wte at bottom, output at top, blocks in between.
+ * Sort row keys: embed at bottom, output at top, blocks in between.
  * Within a block: sublayers follow SUBLAYER_ORDER, grouped projections before ungrouped.
  */
 export function sortRows(rows: string[]): string[] {
@@ -92,8 +92,8 @@ export function sortRows(rows: string[]): string[] {
         const partsA = a.split(".");
         const partsB = b.split(".");
 
-        const blockA = a === "wte" ? -1 : a === "output" ? Infinity : +partsA[0];
-        const blockB = b === "wte" ? -1 : b === "output" ? Infinity : +partsB[0];
+        const blockA = a === "embed" ? -1 : a === "output" ? Infinity : +partsA[0];
+        const blockB = b === "embed" ? -1 : b === "output" ? Infinity : +partsB[0];
 
         if (blockA !== blockB) return blockA - blockB;
 

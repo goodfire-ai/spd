@@ -97,7 +97,7 @@ def _parse_node_key(key: str, topology: TransformerTopology) -> tuple[str, int, 
     parts = key.split(":")
     assert len(parts) == 3, f"Invalid node key format: {key!r} (expected 'layer:seq:cIdx')"
     canonical_layer, seq_str, cidx_str = parts
-    assert canonical_layer not in ("wte", "output"), (
+    assert canonical_layer not in ("embed", "output"), (
         f"Cannot intervene on {canonical_layer!r} nodes - only internal layers are interventable"
     )
     canonical_weight = CanonicalWeight.parse(canonical_layer)

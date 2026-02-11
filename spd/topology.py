@@ -4,7 +4,7 @@ Defines a normalized addressing scheme for transformer layers. All API
 consumers use canonical addresses instead of raw module paths.
 
 Canonical layer address format:
-    "wte"              — embedding
+    "embed"            — embedding
     "output"           — unembed / logits
     "{block}.attn.{p}" — attention projection (p: q | k | v | qkv | o)
     "{block}.ffn.{p}"  — FFN projection (p: up | down | gate)
@@ -16,7 +16,7 @@ Examples:
     "0.attn.q"         — block 0, attention Q projection
     "2.ffn.gate"       — block 2, SwiGLU gate projection
     "0.attn.q:3:5"     — block 0, Q proj, seq pos 3, component 5
-    "wte:0:0"          — embedding, seq 0, pseudo-component 0
+    "embed:0:0"        — embedding, seq 0, pseudo-component 0
     "output:7:42"       — output, seq 7, token 42
 """
 
@@ -33,7 +33,7 @@ from torch import nn
 
 _CANONICAL_RE = re.compile(
     r"^(?:"
-    r"(?P<wte>wte)"
+    r"(?P<embed>embed)"
     r"|(?P<output>output)"
     r"|(?P<layer>\d+)\.(?P<sublayer>attn|attn_fused|glu|mlp)\.(?P<proj>[a-z]+)"
     r")$"
@@ -50,7 +50,7 @@ class CanonicalWeight(ABC):
         m = _CANONICAL_RE.match(s)
         assert m is not None, f"Invalid canonical address: {s!r}"
 
-        if m.group("wte"):
+        if m.group("embed"):
             return Embed()
         if m.group("output"):
             return Unembed()
@@ -68,7 +68,7 @@ class CanonicalWeight(ABC):
 class Embed(CanonicalWeight):
     @override
     def canonical_str(self) -> str:
-        return "wte"
+        return "embed"
 
 
 @dataclass(frozen=True)

@@ -66,7 +66,7 @@
             {#each stagedNodes as node, idx (`${node.layer}:${node.seqIdx}:${node.cIdx}-${idx}`)}
                 {@const token = getTokenAtPosition(node.seqIdx)}
                 {@const isOutput = node.layer === "output"}
-                {@const isWte = node.layer === "wte"}
+                {@const isWte = node.layer === "embed"}
                 {@const isComponent = !isWte && !isOutput}
                 {@const nodeKey = `${node.layer}:${node.seqIdx}:${node.cIdx}`}
                 {@const ciVal = isComponent ? (nodeCiVals[nodeKey] ?? null) : null}

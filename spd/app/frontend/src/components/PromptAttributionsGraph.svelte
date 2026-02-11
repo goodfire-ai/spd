@@ -188,7 +188,7 @@
         // Sort rows for Y positioning
         const rows = sortRows(Array.from(allRows));
 
-        // Assign Y positions (output at top, wte at bottom)
+        // Assign Y positions (output at top, embed at bottom)
         const rowYPositions: Record<string, number> = {};
         for (let i = 0; i < rows.length; i++) {
             const distanceFromEnd = rows.length - 1 - i;
@@ -204,7 +204,7 @@
             layerYPositions[layer] = rowYPositions[rowKey];
             const rowIdx = rows.indexOf(rowKey);
             const distanceFromOutput = rows.length - 1 - rowIdx;
-            if (distanceFromOutput === 0 || layer === "wte") {
+            if (distanceFromOutput === 0 || layer === "embed") {
                 layerXOffsets[layer] = 0;
             } else {
                 layerXOffsets[layer] = distanceFromOutput % 2 === 1 ? LAYER_X_OFFSET : -LAYER_X_OFFSET;
@@ -330,16 +330,16 @@
     const EDGE_HIT_AREA_WIDTH = 4; // Wider invisible stroke for easier hover
 
     // Check if a node key matches the currently hovered component (same layer:cIdx, any seqIdx)
-    // For wte nodes: match by token value (highlight same tokens across positions)
+    // For embed nodes: match by token value (highlight same tokens across positions)
     // For other nodes: match by layer:cIdx (highlight same component across positions)
     function nodeMatchesHoveredComponent(nodeKey: string): boolean {
         if (!hoveredNode) return false;
         const [layer, seqIdxStr, cIdx] = nodeKey.split(":");
         const seqIdx = parseInt(seqIdxStr);
 
-        // For wte nodes, match by token value
-        if (hoveredNode.layer === "wte") {
-            if (layer !== "wte") return false;
+        // For embed nodes, match by token value
+        if (hoveredNode.layer === "embed") {
+            if (layer !== "embed") return false;
             return data.tokens[seqIdx] === data.tokens[hoveredNode.seqIdx];
         }
 
@@ -506,7 +506,7 @@
         }
 
         hoveredNode = { layer, seqIdx, cIdx };
-        const size = layer === "wte" || layer === "output" ? "small" : "large";
+        const size = layer === "embed" || layer === "output" ? "small" : "large";
         tooltipPos = calcTooltipPos(event.clientX, event.clientY, size);
     }
 

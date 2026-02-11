@@ -9,7 +9,7 @@
  * - GPT-2: c_fc -> mlp.in, down_proj -> mlp.out
  * - Llama SwiGLU: gate_proj -> mlp.gate, up_proj -> mlp.up, down_proj -> mlp.down
  * - Attention: q_proj -> attn.q, k_proj -> attn.k, v_proj -> attn.v, o_proj -> attn.o
- * - Special: lm_head -> W_U, wte/output unchanged
+ * - Special: lm_head -> W_U, embed/output unchanged
  */
 
 type Architecture = "gpt2" | "llama" | "unknown";
@@ -49,7 +49,7 @@ const ALIASES: Record<Architecture, Record<string, string>> = {
 /** Special layers with fixed display names */
 const SPECIAL_LAYERS: Record<string, string> = {
     lm_head: "W_U",
-    wte: "wte",
+    embed: "embed",
     output: "output",
 };
 
@@ -118,7 +118,7 @@ function detectArchitecture(layer: string): Architecture {
 
 /**
  * Parse a layer name into components.
- * Returns null for special layers (wte, output, lm_head) or unrecognized formats.
+ * Returns null for special layers (embed, output, lm_head) or unrecognized formats.
  */
 function parseLayerName(layer: string): { block: number; moduleType: string; submodule: string } | null {
     if (layer in SPECIAL_LAYERS) {
@@ -145,7 +145,7 @@ function parseLayerName(layer: string): { block: number; moduleType: string; sub
  * - "h.0.mlp.c_fc" -> "L0.mlp.in"
  * - "h.2.attn.q_proj" -> "L2.attn.q"
  * - "lm_head" -> "W_U"
- * - "wte" -> "wte"
+ * - "embed" -> "embed"
  */
 export function getLayerAlias(layer: string): string {
     if (layer in SPECIAL_LAYERS) {

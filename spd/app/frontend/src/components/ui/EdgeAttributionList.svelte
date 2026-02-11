@@ -13,7 +13,7 @@
         pageSize: number;
         direction: "positive" | "negative";
         title?: string;
-        // Optional: only needed for prompt-level attributions with wte/output pseudo-layers
+        // Optional: only needed for prompt-level attributions with embed/output pseudo-layers
         tokens?: string[];
         outputProbs?: Record<string, OutputProbability>;
     };
@@ -42,10 +42,10 @@
         return { status: "none" };
     }
 
-    // Check if a key refers to a pseudo-layer token node (wte/output)
+    // Check if a key refers to a pseudo-layer token node (embed/output)
     function isTokenNode(key: string): boolean {
         const layer = key.split(":")[0];
-        return layer === "wte" || layer === "output";
+        return layer === "embed" || layer === "output";
     }
 
     // Get the raw token text for a token node (used in tooltips)
@@ -57,7 +57,7 @@
             const [layer, seqStr, cIdx] = parts;
             const seqIdx = parseInt(seqStr);
 
-            if (layer === "wte") {
+            if (layer === "embed") {
                 if (seqIdx < 0 || seqIdx >= tokens.length) {
                     throw new Error(
                         `EdgeAttributionList: seqIdx ${seqIdx} out of bounds for tokens length ${tokens.length}`,
@@ -79,7 +79,7 @@
         if (parts.length === 2) {
             const [layer, cIdx] = parts;
 
-            if (layer === "wte" || layer === "output") {
+            if (layer === "embed" || layer === "output") {
                 const vocabIdx = parseInt(cIdx);
                 // Tokens are guaranteed loaded when run is loaded (see useRun.svelte.ts)
                 if (runState.allTokens.status !== "loaded") {
@@ -102,7 +102,7 @@
     // Get the token type label for the right side (e.g., "Input token" or "Output token")
     function getTokenTypeLabel(key: string): string {
         const layer = key.split(":")[0];
-        return layer === "wte" ? "Input token" : "Output token";
+        return layer === "embed" ? "Input token" : "Output token";
     }
 
     let currentPage = $state(0);

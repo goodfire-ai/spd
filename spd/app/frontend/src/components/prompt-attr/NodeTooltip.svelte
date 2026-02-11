@@ -44,7 +44,7 @@
         onPinComponent,
     }: Props = $props();
 
-    const isWte = $derived(hoveredNode.layer === "wte");
+    const isWte = $derived(hoveredNode.layer === "embed");
     const isOutput = $derived(hoveredNode.layer === "output");
     const isComponent = $derived(!isWte && !isOutput);
     const clusterId = $derived(isComponent ? runState.getClusterId(hoveredNode.layer, hoveredNode.cIdx) : undefined);
