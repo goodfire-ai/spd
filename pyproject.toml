@@ -56,7 +56,6 @@ spd-harvest = "spd.harvest.scripts.run_slurm_cli:cli"
 spd-autointerp = "spd.autointerp.scripts.run_slurm_cli:cli"
 spd-attributions = "spd.dataset_attributions.scripts.run_slurm_cli:cli"
 spd-postprocess = "spd.postprocess.cli:cli"
-spd-watch = "spd.postprocess.scripts.watch:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]
