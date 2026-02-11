@@ -126,7 +126,7 @@ def get_activation_context_detail(
 class BulkActivationContextsRequest(BaseModel):
     """Request for bulk activation contexts."""
 
-    component_keys: list[str]  # ["h.0.mlp.c_fc:5", "h.1.attn.q_proj:12", ...]
+    component_keys: list[str]  # canonical keys, e.g. ["0.mlp.up:5", "1.attn.q:12"]
     limit: int = 30
 
 
@@ -163,14 +163,16 @@ def get_activation_contexts_bulk(
         concrete = loaded.topology.get_target_module_path(CanonicalWeight.parse(layer))
         return f"{concrete}:{idx}"
 
-    concrete_keys = [_to_concrete_key(k) for k in request.component_keys]
+    concrete_to_canonical = {_to_concrete_key(k): k for k in request.component_keys}
+    concrete_keys = list(concrete_to_canonical.keys())
     components = load_component_activation_contexts_bulk(loaded.harvest.run_id, concrete_keys)
 
-    # Convert to response format with limit applied
+    # Convert to response format with limit applied, keyed by canonical keys
     result: dict[str, SubcomponentActivationContexts] = {}
-    for key, comp in components.items():
+    for concrete_key, comp in components.items():
+        canonical_key = concrete_to_canonical[concrete_key]
         examples = comp.activation_examples[: request.limit]
-        result[key] = SubcomponentActivationContexts(
+        result[canonical_key] = SubcomponentActivationContexts(
             subcomponent_idx=comp.component_idx,
             mean_ci=comp.mean_ci,
             example_tokens=[decode_example_tokens(ex.token_ids) for ex in examples],
