@@ -235,40 +235,29 @@ class Harvester:
         seq_idx = seq_idx[keep_mask]
         component_idx = component_idx[keep_mask]
 
-        # Pad sequences so we can extract windows at boundaries without going out of bounds.
-        # E.g. if context_tokens_per_side=3, a firing at seq_idx=0 needs tokens at [-3, -2, -1, 0, 1, 2, 3]
-        # Padding with sentinel allows uniform window extraction; sentinels are filtered in display.
-        batch_padded = torch.nn.functional.pad(
-            batch,
-            (self.context_tokens_per_side, self.context_tokens_per_side),
-            value=WINDOW_PAD_SENTINEL,
-        )
-        ci_padded = torch.nn.functional.pad(
-            ci, (0, 0, self.context_tokens_per_side, self.context_tokens_per_side), value=0.0
-        )
-        subcomp_acts_padded = torch.nn.functional.pad(
-            subcomp_acts,
-            (0, 0, self.context_tokens_per_side, self.context_tokens_per_side),
-            value=0.0,
-        )
-
-        # Build indices to extract [n_firings, window_size] windows via advanced indexing.
-        # For each firing, we want tokens at [seq_idx - k, ..., seq_idx, ..., seq_idx + k]
+        # Extract [n_firings, window_size] windows around each firing position.
+        # Instead of padding full [B, S, n_comp] tensors (which OOMs on large models),
+        # index into original tensors with clamped indices and mask out-of-bounds positions.
+        S = batch.shape[1]
         window_size = 2 * self.context_tokens_per_side + 1
         offsets = torch.arange(
             -self.context_tokens_per_side, self.context_tokens_per_side + 1, device=self.device
         )
-        seq_idx_padded = seq_idx + self.context_tokens_per_side  # Adjust for padding
-        window_seq_indices = seq_idx_padded.unsqueeze(1) + offsets  # [n_firings, window_size]
+        window_seq_indices = seq_idx.unsqueeze(1) + offsets  # [n_firings, window_size]
+        valid_mask = (window_seq_indices >= 0) & (window_seq_indices < S)
+        clamped_indices = window_seq_indices.clamp(0, S - 1)
+
         batch_idx_expanded = batch_idx.unsqueeze(1).expand(-1, window_size)
         component_idx_expanded = component_idx.unsqueeze(1).expand(-1, window_size)
 
-        # Advanced indexing: token_windows[i, j] = batch_padded[batch_idx[i], window_seq_indices[i, j]]
-        token_windows = batch_padded[batch_idx_expanded, window_seq_indices]
-        ci_windows = ci_padded[batch_idx_expanded, window_seq_indices, component_idx_expanded]
-        component_act_windows = subcomp_acts_padded[
-            batch_idx_expanded, window_seq_indices, component_idx_expanded
-        ]
+        token_windows = batch[batch_idx_expanded, clamped_indices]
+        token_windows[~valid_mask] = WINDOW_PAD_SENTINEL
+
+        ci_windows = ci[batch_idx_expanded, clamped_indices, component_idx_expanded]
+        ci_windows[~valid_mask] = 0.0
+
+        component_act_windows = subcomp_acts[batch_idx_expanded, clamped_indices, component_idx_expanded]
+        component_act_windows[~valid_mask] = 0.0
 
         # Add to reservoir samplers
         for comp_idx, tokens, ci_vals, component_acts in zip(
