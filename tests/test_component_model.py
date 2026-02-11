@@ -96,7 +96,7 @@ def test_correct_parameters_require_grad():
             ModulePathInfo(module_path="conv1d2", C=5),
         ],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[4]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -156,7 +156,6 @@ def test_from_run_info():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
@@ -177,7 +176,7 @@ def test_from_run_info():
             target_model=target_model,
             module_path_info=module_path_info,
             ci_config=config.ci_config,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
+            extract_tensor_output=config.extract_tensor_output,
             sigmoid_type=config.sigmoid_type,
         )
 
@@ -283,7 +282,7 @@ def test_full_weight_delta_matches_target_behaviour():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[4]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -314,7 +313,7 @@ def test_input_cache_captures_pre_weight_input():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=2) for p in target_module_paths],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -348,7 +347,7 @@ def test_weight_deltas():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=3) for p in target_module_paths],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -382,7 +381,7 @@ def test_replacement_effects_fwd_pass():
         target_model=model,
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -437,7 +436,7 @@ def test_replacing_identity():
         target_model=model,
         module_path_info=[ModulePathInfo(module_path="linear.pre_identity", C=C)],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -486,7 +485,7 @@ def test_routing():
         target_model=model,
         module_path_info=[ModulePathInfo(module_path="linear", C=C)],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -557,7 +556,6 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
@@ -572,7 +570,7 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
             target_model=target_model,
             module_path_info=module_path_info,
             ci_config=config_global.ci_config,
-            pretrained_model_output_attr=config_global.pretrained_model_output_attr,
+            extract_tensor_output=config_global.extract_tensor_output,
             sigmoid_type=config_global.sigmoid_type,
         )
 
@@ -599,7 +597,6 @@ def test_checkpoint_ci_config_mismatch_global_to_layerwise():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
@@ -657,7 +654,6 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
@@ -672,7 +668,7 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
             target_model=target_model,
             module_path_info=module_path_info,
             ci_config=config_layerwise.ci_config,
-            pretrained_model_output_attr=config_layerwise.pretrained_model_output_attr,
+            extract_tensor_output=config_layerwise.extract_tensor_output,
             sigmoid_type=config_layerwise.sigmoid_type,
         )
 
@@ -699,7 +695,6 @@ def test_checkpoint_ci_config_mismatch_layerwise_to_global():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
@@ -955,7 +950,7 @@ def test_component_model_with_global_ci():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -980,7 +975,7 @@ def test_component_model_global_ci_calc_causal_importances():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1024,7 +1019,7 @@ def test_component_model_global_ci_different_inputs_different_ci():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1055,7 +1050,7 @@ def test_component_model_global_ci_binomial_sampling():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1080,7 +1075,7 @@ def test_component_model_global_ci_with_embeddings():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1116,7 +1111,7 @@ def test_component_model_global_ci_gradient_flow():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1153,7 +1148,7 @@ def test_component_model_global_ci_detach_inputs_blocks_gradients():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1190,7 +1185,7 @@ def test_component_model_global_ci_masking_zeros():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1236,7 +1231,7 @@ def test_component_model_global_ci_partial_masking():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1268,7 +1263,7 @@ def test_component_model_global_ci_weight_deltas_all_ones_matches_target():
         target_model=target_model,
         module_path_info=[ModulePathInfo(module_path=p, C=C) for p in target_module_paths],
         ci_config=GlobalCiConfig(fn_type="global_shared_mlp", hidden_dims=[16]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -1320,7 +1315,6 @@ def test_global_ci_save_and_load():
             eval_freq=1,
             slow_eval_freq=1,
             loss_metric_configs=[ImportanceMinimalityLossConfig(coeff=1.0, pnorm=1.0, beta=0.5)],
-            output_loss_type="mse",
             train_log_freq=1,
             n_mask_samples=1,
             task_config=TMSTaskConfig(
@@ -1335,7 +1329,7 @@ def test_global_ci_save_and_load():
             target_model=target_model,
             module_path_info=module_path_info,
             ci_config=config.ci_config,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
+            extract_tensor_output=config.extract_tensor_output,
             sigmoid_type=config.sigmoid_type,
         )
 

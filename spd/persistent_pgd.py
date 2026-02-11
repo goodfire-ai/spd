@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Literal, override
 
 import torch
+import torch.nn.functional as F
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
@@ -33,7 +34,6 @@ from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import ComponentsMaskInfo, RoutingMasks, make_mask_infos
 from spd.routing import AllLayersRouter, Router, get_subset_router
 from spd.utils.distributed_utils import all_reduce, call_on_rank0_then_broadcast
-from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 PPGDSources = dict[str, Float[Tensor, " source_c"]]
 
@@ -279,9 +279,15 @@ def _persistent_pgd_recon_subset_loss_update(
 
     mask_infos = get_mask_infos(model, ci, weight_deltas, ppgd_sources, router)
     out = model(batch, mask_infos=mask_infos)
-    loss_type = output_loss_type
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=loss_type)
-    n_examples = out.shape.numel() if loss_type == "mse" else out.shape[:-1].numel()
+    match output_loss_type:
+        case "mse":
+            loss = ((out - target_out) ** 2).sum()
+            n_examples = out.numel()
+        case "kl":
+            log_q = torch.log_softmax(out, dim=-1)
+            p = torch.softmax(target_out, dim=-1)
+            loss = F.kl_div(log_q, p, reduction="none").sum()
+            n_examples = out[..., 0].numel()
 
     return loss, n_examples
 

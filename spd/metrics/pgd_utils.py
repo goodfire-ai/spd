@@ -1,28 +1,28 @@
 from collections.abc import Callable, Iterator
 from functools import partial
-from typing import Literal
+from typing import Any
 
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import PGDConfig, PGDInitStrategy, PGDMultiBatchConfig, SamplingType
 from spd.log import logger
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.models.components import RoutingMasks, make_mask_infos
 from spd.routing import Router
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm, extract_batch_data
 
 
 def pgd_masked_recon_loss_update(
     model: ComponentModel,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+    batch: Any,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    target_out: Any,
+    reconstruction_loss: ReconstructionLoss,
     router: Router,
     pgd_config: PGDConfig,
 ) -> tuple[Float[Tensor, ""], int]:
@@ -57,7 +57,7 @@ def pgd_masked_recon_loss_update(
         weight_deltas=weight_deltas,
         routing_masks=routing_masks,
         target_out=target_out,
-        output_loss_type=output_loss_type,
+        reconstruction_loss=reconstruction_loss,
         batch_dims=batch_dims,
     )
 
@@ -79,10 +79,7 @@ def pgd_masked_recon_loss_update(
     return fwd_pass()
 
 
-CreateDataIter = Callable[
-    [],
-    Iterator[Int[Tensor, "..."]] | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-]
+CreateDataIter = Callable[[], Iterator[Any]]
 
 
 def calc_multibatch_pgd_masked_recon_loss(
@@ -90,11 +87,10 @@ def calc_multibatch_pgd_masked_recon_loss(
     model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     create_data_iter: CreateDataIter,
-    output_loss_type: Literal["mse", "kl"],
+    reconstruction_loss: ReconstructionLoss,
     router: Router,
     sampling: SamplingType,
     use_delta_component: bool,
-    batch_dims: tuple[int, ...],
     device: str,
 ) -> Float[Tensor, ""]:
     """PGD masked reconstruction loss with gradient accumulation over multiple batches.
@@ -108,14 +104,15 @@ def calc_multibatch_pgd_masked_recon_loss(
         create_data_iter: Function to create an iterator over batches. This function should return
             an iterator which behaves identically each time. Specifically in terms of data ordering
             and shuffling.
-        output_loss_type: Loss type for reconstruction ("mse" or "kl")
+        reconstruction_loss: Reconstruction loss function
         router: Router to use for routing masks
         sampling: Sampling mode for causal importance calculation
         use_delta_component: Whether to include weight delta component
-        batch_dims: Dimensions of batch (e.g., (batch_size,) or (batch_size, seq_len))
     Returns:
         Final reconstruction loss after PGD optimization
     """
+    first_batch = next(create_data_iter())
+    batch_dims = tuple(first_batch.shape[:-1]) if first_batch.dim() > 1 else (first_batch.shape[0],)
     singleton_batch_dims = [1 for _ in batch_dims]
 
     adv_sources: dict[str, Float[Tensor, "*ones mask_c"]] = {}
@@ -134,10 +131,9 @@ def calc_multibatch_pgd_masked_recon_loss(
         model=model,
         weight_deltas=weight_deltas,
         device=device,
-        output_loss_type=output_loss_type,
+        reconstruction_loss=reconstruction_loss,
         sampling=sampling,
         router=router,
-        batch_dims=batch_dims,
     )
 
     for _ in range(pgd_config.n_steps):
@@ -155,13 +151,13 @@ def calc_multibatch_pgd_masked_recon_loss(
 
 def _forward_with_adv_sources(
     model: ComponentModel,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
+    batch: Any,
     adv_sources: dict[str, Float[Tensor, "*batch_dim_or_ones mask_c"]],
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     routing_masks: RoutingMasks,
-    target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    target_out: Any,
+    reconstruction_loss: ReconstructionLoss,
     batch_dims: tuple[int, ...],
 ):
     expanded_adv_sources = {k: v.expand(*batch_dims, -1) for k, v in adv_sources.items()}
@@ -183,13 +179,9 @@ def _forward_with_adv_sources(
     )
     out = model(batch, mask_infos=mask_infos)
 
-    sum_loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
+    loss, count = reconstruction_loss(out, target_out)
 
-    n_examples = (
-        target_out.shape.numel() if output_loss_type == "mse" else target_out.shape[:-1].numel()
-    )
-
-    return sum_loss, n_examples
+    return loss, count
 
 
 def _multibatch_pgd_fwd_bwd(
@@ -197,13 +189,11 @@ def _multibatch_pgd_fwd_bwd(
     pgd_config: PGDMultiBatchConfig,
     model: ComponentModel,
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
-    data_iter: Iterator[Int[Tensor, "..."]]
-    | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
+    data_iter: Iterator[Any],
     device: torch.device | str,
-    output_loss_type: Literal["mse", "kl"],
+    reconstruction_loss: ReconstructionLoss,
     router: Router,
     sampling: SamplingType,
-    batch_dims: tuple[int, ...],
 ) -> tuple[Float[Tensor, ""], int, dict[str, Float[Tensor, "*ones mask_c"]]]:
     """Perform a forward and backward pass over multiple batches with gradient accumulation.
 
@@ -218,11 +208,10 @@ def _multibatch_pgd_fwd_bwd(
 
     for microbatch_idx in range(pgd_config.gradient_accumulation_steps):
         try:
-            microbatch_item = next(data_iter)
+            microbatch = next(data_iter)
         except StopIteration:
             logger.warning(f"Dataloader exhausted after {microbatch_idx} batches, ending PGD step.")
             break
-        microbatch = extract_batch_data(microbatch_item).to(device)
 
         # NOTE: technically this is duplicated work across PGD steps, but that's the price we pay to
         # enable accumulating gradients over more microbatches than we'd be able to fit CI values in
@@ -232,6 +221,8 @@ def _multibatch_pgd_fwd_bwd(
             pre_weight_acts=target_model_output.cache,
             sampling=sampling,
         ).lower_leaky
+
+        batch_dims = next(iter(ci.values())).shape[:-1]
 
         # It's important that we call this every microbatch to ensure stochastic routing masks are
         # sampled independently for each example.
@@ -247,7 +238,7 @@ def _multibatch_pgd_fwd_bwd(
             weight_deltas=weight_deltas,
             routing_masks=routing_masks,
             target_out=target_model_output.output,
-            output_loss_type=output_loss_type,
+            reconstruction_loss=reconstruction_loss,
             batch_dims=batch_dims,
         )
 

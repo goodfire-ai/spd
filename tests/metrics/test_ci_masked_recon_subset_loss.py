@@ -5,6 +5,7 @@ from torch import Tensor
 
 from spd.configs import UniformKSubsetRoutingConfig
 from spd.metrics import ci_masked_recon_subset_loss
+from spd.models.batch_and_loss_fns import recon_loss_mse
 from tests.metrics.fixtures import make_one_layer_component_model
 
 
@@ -77,7 +78,7 @@ class TestCIMaskedReconSubsetLoss:
             for _ in range(2):
                 actual_loss = ci_masked_recon_subset_loss(
                     model=model,
-                    output_loss_type="mse",
+                    reconstruction_loss=recon_loss_mse,
                     batch=batch,
                     target_out=target_out,
                     ci=ci,

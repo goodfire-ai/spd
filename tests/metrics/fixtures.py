@@ -58,7 +58,7 @@ def make_one_layer_component_model(weight: Float[Tensor, "d_out d_in"]) -> Compo
         target_model=target,
         module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -94,7 +94,7 @@ def make_two_layer_component_model(
             ModulePathInfo(module_path="fc2", C=1),
         ],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 

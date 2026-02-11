@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -6,17 +6,17 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
 def _ci_masked_recon_layerwise_loss_update(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+    reconstruction_loss: ReconstructionLoss,
+    batch: Any,
+    target_out: Any,
     ci: dict[str, Float[Tensor, "... C"]],
 ) -> tuple[Float[Tensor, ""], int]:
     sum_loss = torch.tensor(0.0, device=batch.device)
@@ -24,8 +24,8 @@ def _ci_masked_recon_layerwise_loss_update(
     mask_infos = make_mask_infos(ci, weight_deltas_and_masks=None)
     for module_name, mask_info in mask_infos.items():
         out = model(batch, mask_infos={module_name: mask_info})
-        loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-        n_examples += out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
+        loss, count = reconstruction_loss(out, target_out)
+        n_examples += count
         sum_loss += loss
     return sum_loss, n_examples
 
@@ -38,14 +38,14 @@ def _ci_masked_recon_layerwise_loss_compute(
 
 def ci_masked_recon_layerwise_loss(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+    reconstruction_loss: ReconstructionLoss,
+    batch: Any,
+    target_out: Any,
     ci: dict[str, Float[Tensor, "... C"]],
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _ci_masked_recon_layerwise_loss_update(
         model=model,
-        output_loss_type=output_loss_type,
+        reconstruction_loss=reconstruction_loss,
         batch=batch,
         target_out=target_out,
         ci=ci,
@@ -59,10 +59,10 @@ class CIMaskedReconLayerwiseLoss(Metric):
     metric_section: ClassVar[str] = "loss"
 
     def __init__(
-        self, model: ComponentModel, device: str, output_loss_type: Literal["mse", "kl"]
+        self, model: ComponentModel, device: str, reconstruction_loss: ReconstructionLoss
     ) -> None:
         self.model = model
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.reconstruction_loss = reconstruction_loss
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -70,14 +70,14 @@ class CIMaskedReconLayerwiseLoss(Metric):
     def update(
         self,
         *,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
+        batch: Any,
+        target_out: Any,
         ci: CIOutputs,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _ci_masked_recon_layerwise_loss_update(
             model=self.model,
-            output_loss_type=self.output_loss_type,
+            reconstruction_loss=self.reconstruction_loss,
             batch=batch,
             target_out=target_out,
             ci=ci.lower_leaky,

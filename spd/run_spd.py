@@ -4,16 +4,14 @@ import gc
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-import torch.optim as optim
 import wandb
-from jaxtyping import Float, Int
 from PIL import Image
-from torch import Tensor
+from torch import optim
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -34,6 +32,7 @@ from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_losses
 from spd.metrics import faithfulness_loss
+from spd.models.batch_and_loss_fns import ReconstructionLoss, recon_loss_mse
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.persistent_pgd import PersistentPGDState
 from spd.utils.component_utils import calc_ci_l_zero
@@ -46,7 +45,6 @@ from spd.utils.distributed_utils import (
 from spd.utils.general_utils import (
     bf16_autocast,
     dict_safe_update_,
-    extract_batch_data,
     get_scheduled_value,
 )
 from spd.utils.logging_utils import get_grad_norms_dict, local_log
@@ -118,11 +116,9 @@ def optimize(
     target_model: nn.Module,
     config: Config,
     device: str,
-    train_loader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    eval_loader: DataLoader[Int[Tensor, "..."]]
-    | DataLoader[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]],
-    n_eval_steps: int,
+    train_loader: DataLoader[Any],
+    eval_loader: DataLoader[Any],
+    reconstruction_loss: ReconstructionLoss,
     out_dir: Path | None,
     tied_weights: list[tuple[str, str]] | None = None,
 ) -> None:
@@ -131,9 +127,7 @@ def optimize(
     train_iterator = loop_dataloader(train_loader)
     eval_iterator = loop_dataloader(eval_loader)
 
-    def create_pgd_data_iter() -> (
-        Iterator[Int[Tensor, "..."]] | Iterator[tuple[Float[Tensor, "..."], Float[Tensor, "..."]]]
-    ):
+    def create_pgd_data_iter() -> Iterator[Any]:
         assert hasattr(train_loader, "generator") and train_loader.generator is not None
         train_loader.generator.manual_seed(config.seed)
         return iter(train_loader)
@@ -155,8 +149,8 @@ def optimize(
         target_model=target_model,
         module_path_info=module_path_info,
         ci_config=config.ci_config,
+        extract_tensor_output=config.extract_tensor_output,
         sigmoid_type=config.sigmoid_type,
-        pretrained_model_output_attr=config.pretrained_model_output_attr,
     )
 
     model.to(device)
@@ -164,6 +158,8 @@ def optimize(
     # Wrap model with DDP if distributed
     dist_state = get_distributed_state()
     wrapped_model: nn.Module = model
+
+    component_model: ComponentModel
     if dist_state is not None:
         if dist_state.backend == "nccl":
             device_id = dist_state.local_rank
@@ -176,7 +172,7 @@ def optimize(
             # For CPU, don't pass device_ids or output_device
             wrapped_model = torch.nn.parallel.DistributedDataParallel(model)
         # Access the underlying module for component operations
-        component_model = wrapped_model.module  # type: ignore[attr-defined]
+        component_model = cast(ComponentModel, wrapped_model.module)  # type: ignore[attr-defined]
     else:
         component_model = model
     assert isinstance(component_model, ComponentModel), "component_model is not a ComponentModel"
@@ -236,27 +232,29 @@ def optimize(
         if not isinstance(cfg, PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig)
     ]
 
-    sample_batch = extract_batch_data(next(train_iterator))
-    batch_dims = (
-        sample_batch.shape[:-1]
-        if config.output_loss_type == "mse"  # if mse then input is a vector
-        else sample_batch.shape  # else it's a batch of token ids
-    )
-
     # Initialize PersistentPGD states if needed
     ppgd_states: dict[
         PersistentPGDReconLossConfig | PersistentPGDReconSubsetLossConfig, PersistentPGDState
-    ] = {
-        ppgd_cfg: PersistentPGDState(
-            module_to_c=model.module_to_c,
-            seq_len=batch_dims[-1],
-            device=device,
-            use_delta_component=config.use_delta_component,
-            cfg=ppgd_cfg,
-            batch_size=batch_dims[0],
+    ] = {}
+    if persistent_pgd_configs:
+        sample_batch_raw = next(train_iterator)
+        sample_batch = (
+            sample_batch_raw[0] if isinstance(sample_batch_raw, tuple) else sample_batch_raw
         )
-        for ppgd_cfg in persistent_pgd_configs
-    }
+        batch_dims = (
+            sample_batch.shape[:-1] if reconstruction_loss is recon_loss_mse else sample_batch.shape
+        )
+        ppgd_states = {
+            ppgd_cfg: PersistentPGDState(
+                module_to_c=model.module_to_c,
+                seq_len=batch_dims[-1],
+                device=device,
+                use_delta_component=config.use_delta_component,
+                cfg=ppgd_cfg,
+                batch_size=batch_dims[0],
+            )
+            for ppgd_cfg in persistent_pgd_configs
+        }
 
     for step in tqdm(range(config.steps + 1), ncols=0, disable=not is_main_process()):
         optimizer.zero_grad()
@@ -276,7 +274,8 @@ def optimize(
         }
 
         for _ in range(config.gradient_accumulation_steps):
-            microbatch = extract_batch_data(next(train_iterator)).to(device, non_blocking=True)
+            microbatch_raw = next(train_iterator)
+            microbatch = microbatch_raw[0] if isinstance(microbatch_raw, tuple) else microbatch_raw
 
             with bf16_autocast(enabled=config.autocast_bf16):
                 # NOTE: we need to call the wrapped_model at least once each step in order
@@ -307,7 +306,7 @@ def optimize(
                         cfg: ppgd_states[cfg].get_effective_sources()
                         for cfg in persistent_pgd_configs
                     },
-                    output_loss_type=config.output_loss_type,
+                    reconstruction_loss=reconstruction_loss,
                 )
 
             # Compute total loss and accumulate PPGD grads
@@ -379,14 +378,13 @@ def optimize(
                     else step % config.slow_eval_freq == 0
                 )
 
-                assert batch_dims is not None, "batch_dims is not set"
                 multibatch_pgd_metrics = evaluate_multibatch_pgd(
                     multibatch_pgd_eval_configs=multibatch_pgd_eval_configs,
                     model=component_model,
                     create_data_iter=create_pgd_data_iter,
                     config=config,
-                    batch_dims=batch_dims,
                     device=device,
+                    reconstruction_loss=reconstruction_loss,
                 )
 
                 metrics = evaluate(
@@ -400,8 +398,9 @@ def optimize(
                     device=device,
                     run_config=config,
                     slow_step=slow_step,
-                    n_eval_steps=n_eval_steps,
+                    n_eval_steps=config.n_eval_steps,
                     current_frac_of_training=step / config.steps,
+                    reconstruction_loss=reconstruction_loss,
                 )
 
                 dict_safe_update_(metrics, multibatch_pgd_metrics)

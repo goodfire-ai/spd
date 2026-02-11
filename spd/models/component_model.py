@@ -1,4 +1,5 @@
 import fnmatch
+import re
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -104,7 +105,7 @@ class ComponentModel(LoadableModule):
         module_path_info: list[ModulePathInfo],
         ci_config: CiConfig,
         sigmoid_type: SigmoidType,
-        pretrained_model_output_attr: str | None,
+        extract_tensor_output: str | None = None,
     ):
         super().__init__()
 
@@ -115,7 +116,7 @@ class ComponentModel(LoadableModule):
             )
 
         self.target_model = target_model
-        self.pretrained_model_output_attr = pretrained_model_output_attr
+        self.extract_tensor_output = extract_tensor_output
         self.module_to_c = {info.module_path: info.C for info in module_path_info}
         self.target_module_paths = list(self.module_to_c.keys())
 
@@ -374,67 +375,57 @@ class ComponentModel(LoadableModule):
                     attn_config=ci_config.transition_attn_config,
                 )
 
-    def _extract_output(self, raw_output: Any) -> Tensor:
+    def _extract_output(self, raw_output: Any) -> Any:
         """Extract the desired output from the model's raw output.
 
-        If pretrained_model_output_attr is None, returns the raw output directly.
-        If pretrained_model_output_attr starts with "idx_", returns the index specified by the
-        second part of the string. E.g. "idx_0" returns the first element of the raw output.
-        Otherwise, returns the specified attribute from the raw output.
-
-        Args:
-            raw_output: The raw output from the model.
-
-        Returns:
-            The extracted output.
+        Uses the declarative accessor path in extract_tensor_output:
+        - None: returns the raw output directly
+        - ".logits": attribute access (getattr)
+        - "[0]": index access
+        - ".output[0]": chained attribute + index access
         """
-        if self.pretrained_model_output_attr is None:
-            out = raw_output
-        elif self.pretrained_model_output_attr.startswith("idx_"):
-            idx_val = int(self.pretrained_model_output_attr.split("_")[1])
-            assert isinstance(raw_output, Sequence), (
-                f"raw_output must be a sequence, not {type(raw_output)}"
-            )
-            assert idx_val < len(raw_output), (
-                f"Index {idx_val} out of range for raw_output of length {len(raw_output)}"
-            )
-            out = raw_output[idx_val]
-        else:
-            out = getattr(raw_output, self.pretrained_model_output_attr)
+        if self.extract_tensor_output is None:
+            return raw_output
 
-        assert isinstance(out, Tensor), f"Expected tensor output, got {type(out)}"
-        return out
+        result = raw_output
+        for step in re.findall(r"\.\w+|\[\d+\]", self.extract_tensor_output):
+            if step.startswith("."):
+                result = getattr(result, step[1:])
+            elif step.startswith("["):
+                idx = int(step[1:-1])
+                assert isinstance(result, Sequence), (
+                    f"Expected sequence for index access, got {type(result)}"
+                )
+                result = result[idx]
+        return result
 
     @overload
     def __call__(
         self,
-        *args: Any,
-        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
+        batch: Any,
         cache_type: Literal["component_acts", "input"],
-        **kwargs: Any,
+        mask_infos: dict[str, ComponentsMaskInfo] | None = None,
     ) -> OutputWithCache: ...
 
     @overload
     def __call__(
         self,
-        *args: Any,
+        batch: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["none"] = "none",
-        **kwargs: Any,
-    ) -> Tensor: ...
+    ) -> Any: ...
 
     @override
-    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | OutputWithCache:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any | OutputWithCache:
         return super().__call__(*args, **kwargs)
 
     @override
     def forward(
         self,
-        *args: Any,
+        batch: Any,
         mask_infos: dict[str, ComponentsMaskInfo] | None = None,
         cache_type: Literal["component_acts", "input", "none"] = "none",
-        **kwargs: Any,
-    ) -> Tensor | OutputWithCache:
+    ) -> Any | OutputWithCache:
         """Forward pass with optional component replacement and/or input caching.
 
         This method handles the following 4 cases:
@@ -458,8 +449,7 @@ class ComponentModel(LoadableModule):
             model output tensor.
         """
         if mask_infos is None and cache_type == "none":
-            # No hooks needed. Do a regular forward pass of the target model.
-            return self._extract_output(self.target_model(*args, **kwargs))
+            return self._extract_output(self.target_model(batch))
 
         cache: dict[str, Tensor] = {}
         hooks: dict[str, Callable[..., Any]] = {}
@@ -480,9 +470,8 @@ class ComponentModel(LoadableModule):
             )
 
         with self._attach_forward_hooks(hooks):
-            raw_out = self.target_model(*args, **kwargs)
+            out = self._extract_output(self.target_model(batch))
 
-        out = self._extract_output(raw_out)
         match cache_type:
             case "input" | "component_acts":
                 return OutputWithCache(output=out, cache=cache)
@@ -611,8 +600,8 @@ class ComponentModel(LoadableModule):
             target_model=target_model,
             module_path_info=module_path_info,
             ci_config=config.ci_config,
+            extract_tensor_output=config.extract_tensor_output,
             sigmoid_type=config.sigmoid_type,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
         )
 
         comp_model_weights = torch.load(

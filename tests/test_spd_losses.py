@@ -23,6 +23,7 @@ from spd.metrics import (
     stochastic_recon_loss,
     stochastic_recon_subset_loss,
 )
+from spd.models.batch_and_loss_fns import recon_loss_kl, recon_loss_mse
 from spd.models.component_model import ComponentModel
 from spd.persistent_pgd import PersistentPGDState, persistent_pgd_recon_loss
 from spd.utils.module_utils import ModulePathInfo
@@ -66,7 +67,7 @@ def _make_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentModel
         target_model=target,
         module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -85,7 +86,7 @@ def _make_seq_component_model(weight: Float[Tensor, "d_out d_in"]) -> ComponentM
         target_model=target,
         module_path_info=[ModulePathInfo(module_path="fc", C=1)],
         ci_config=LayerwiseCiConfig(fn_type="mlp", hidden_dims=[2]),
-        pretrained_model_output_attr=None,
+        extract_tensor_output=None,
         sigmoid_type="leaky_hard",
     )
 
@@ -322,7 +323,7 @@ class TestCIMaskedReconLoss:
 
         result = ci_masked_recon_loss(
             model=model,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -347,7 +348,7 @@ class TestCIMaskedReconLoss:
 
         result = ci_masked_recon_loss(
             model=model,
-            output_loss_type="kl",
+            reconstruction_loss=recon_loss_kl,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -367,10 +368,18 @@ class TestCIMaskedReconLoss:
         ci_half = {"fc": torch.tensor([[0.5]], dtype=torch.float32)}
 
         loss_full = ci_masked_recon_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci_full
+            model=model,
+            reconstruction_loss=recon_loss_mse,
+            batch=batch,
+            target_out=target_out,
+            ci=ci_full,
         )
         loss_half = ci_masked_recon_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci_half
+            model=model,
+            reconstruction_loss=recon_loss_mse,
+            batch=batch,
+            target_out=target_out,
+            ci=ci_half,
         )
 
         # Different CI values should produce different losses
@@ -389,7 +398,7 @@ class TestCIMaskedReconLayerwiseLoss:
 
         result = ci_masked_recon_layerwise_loss(
             model=model,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -409,10 +418,18 @@ class TestCIMaskedReconLayerwiseLoss:
         ci = {"fc": torch.tensor([[1.0]], dtype=torch.float32)}
 
         loss_all = ci_masked_recon_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+            model=model,
+            reconstruction_loss=recon_loss_mse,
+            batch=batch,
+            target_out=target_out,
+            ci=ci,
         )
         loss_layerwise = ci_masked_recon_layerwise_loss(
-            model=model, output_loss_type="mse", batch=batch, target_out=target_out, ci=ci
+            model=model,
+            reconstruction_loss=recon_loss_mse,
+            batch=batch,
+            target_out=target_out,
+            ci=ci,
         )
 
         # For single layer, results should be the same
@@ -431,7 +448,7 @@ class TestCIMaskedReconSubsetLoss:
 
         result = ci_masked_recon_subset_loss(
             model=model,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -454,7 +471,7 @@ class TestCIMaskedReconSubsetLoss:
         losses = [
             ci_masked_recon_subset_loss(
                 model=model,
-                output_loss_type="mse",
+                reconstruction_loss=recon_loss_mse,
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
@@ -482,7 +499,7 @@ class TestStochasticReconLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=3,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -505,7 +522,7 @@ class TestStochasticReconLoss:
             model=model,
             sampling="binomial",
             n_mask_samples=3,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -530,7 +547,7 @@ class TestStochasticReconLoss:
                 model=model,
                 sampling="continuous",
                 n_mask_samples=n_samples,
-                output_loss_type="mse",
+                reconstruction_loss=recon_loss_mse,
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
@@ -552,7 +569,7 @@ class TestStochasticReconLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=3,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -563,7 +580,7 @@ class TestStochasticReconLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=3,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -590,7 +607,7 @@ class TestStochasticReconLayerwiseLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=2,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -614,7 +631,7 @@ class TestStochasticReconLayerwiseLoss:
                 model=model,
                 sampling="continuous",
                 n_mask_samples=n_samples,
-                output_loss_type="mse",
+                reconstruction_loss=recon_loss_mse,
                 batch=batch,
                 target_out=target_out,
                 ci=ci,
@@ -638,7 +655,7 @@ class TestStochasticReconSubsetLoss:
             model=model,
             sampling="continuous",
             n_mask_samples=3,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -662,7 +679,7 @@ class TestStochasticReconSubsetLoss:
             model=model,
             sampling="binomial",
             n_mask_samples=3,
-            output_loss_type="mse",
+            reconstruction_loss=recon_loss_mse,
             batch=batch,
             target_out=target_out,
             ci=ci,
@@ -687,7 +704,7 @@ class TestStochasticReconSubsetLoss:
                 model=model,
                 sampling="continuous",
                 n_mask_samples=2,
-                output_loss_type="mse",
+                reconstruction_loss=recon_loss_mse,
                 batch=batch,
                 target_out=target_out,
                 ci=ci,

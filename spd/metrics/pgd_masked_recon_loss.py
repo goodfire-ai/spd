@@ -1,13 +1,14 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import PGDConfig
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.routing import AllLayersRouter
 from spd.utils.distributed_utils import all_reduce
@@ -16,9 +17,9 @@ from spd.utils.distributed_utils import all_reduce
 def pgd_recon_loss(
     *,
     model: ComponentModel,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    batch: Any,
+    target_out: Any,
+    reconstruction_loss: ReconstructionLoss,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
@@ -29,7 +30,7 @@ def pgd_recon_loss(
         ci=ci,
         weight_deltas=weight_deltas,
         target_out=target_out,
-        output_loss_type=output_loss_type,
+        reconstruction_loss=reconstruction_loss,
         router=AllLayersRouter(),
         pgd_config=pgd_config,
     )
@@ -46,13 +47,13 @@ class PGDReconLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl"],
+        reconstruction_loss: ReconstructionLoss,
         pgd_config: PGDConfig,
         use_delta_component: bool,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.reconstruction_loss = reconstruction_loss
         self.use_delta_component: bool = use_delta_component
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
@@ -61,8 +62,8 @@ class PGDReconLoss(Metric):
     def update(
         self,
         *,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
+        batch: Any,
+        target_out: Any,
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
         **_: Any,
@@ -73,7 +74,7 @@ class PGDReconLoss(Metric):
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
             target_out=target_out,
-            output_loss_type=self.output_loss_type,
+            reconstruction_loss=self.reconstruction_loss,
             router=AllLayersRouter(),
             pgd_config=self.pgd_config,
         )

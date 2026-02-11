@@ -744,11 +744,6 @@ class Config(BaseConfig):
             ),
         )
     )
-    output_loss_type: Literal["mse", "kl"] = Field(
-        ...,
-        description="Metric used to measure recon error between model outputs and targets",
-    )
-
     # --- Training ---
     lr_schedule: ScheduleConfig = Field(..., description="Learning rate schedule configuration")
     steps: NonNegativeInt = Field(..., description="Total number of optimisation steps")
@@ -849,9 +844,11 @@ class Config(BaseConfig):
         default=None,
         description="hf model identifier. E.g. 'SimpleStories/SimpleStories-1.25M'",
     )
-    pretrained_model_output_attr: str | None = Field(
+    extract_tensor_output: str | None = Field(
         default=None,
-        description="Name of the attribute on the forward output that contains logits or activations",
+        description="Declarative accessor path for extracting tensor from model output. "
+        "None = raw output is the tensor. Examples: '.logits' for attribute access, "
+        "'[0]' for index access.",
     )
     tokenizer_name: str | None = Field(
         default=None,
@@ -890,6 +887,7 @@ class Config(BaseConfig):
         "lr_exponential_halflife",
         "out_dir",
         "n_examples_until_dead",
+        "output_loss_type",
     ]
     RENAMED_CONFIG_KEYS: ClassVar[dict[str, str]] = {
         "grad_clip_norm": "grad_clip_norm_components",
@@ -933,6 +931,21 @@ class Config(BaseConfig):
             config_dict["pretrained_model_class"] = pmc.replace(
                 "simple_stories_train.models.", "spd.pretrain.models.", 1
             )
+
+        # Migrate old pretrained_model_output_attr to extract_tensor_output
+        if "pretrained_model_output_attr" in config_dict:
+            old_val = config_dict.pop("pretrained_model_output_attr")
+            match old_val:
+                case None:
+                    pass
+                case "idx_0":
+                    config_dict["extract_tensor_output"] = "[0]"
+                case str(attr):
+                    config_dict["extract_tensor_output"] = f".{attr}"
+                case _:
+                    raise AssertionError(
+                        f"Unexpected pretrained_model_output_attr value: {old_val}"
+                    )
 
         if "eval_batch_size" not in config_dict:
             config_dict["eval_batch_size"] = config_dict["batch_size"]

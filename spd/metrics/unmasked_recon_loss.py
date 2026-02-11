@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
@@ -6,17 +6,17 @@ from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.metrics.base import Metric
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import ComponentModel
 from spd.models.components import make_mask_infos
 from spd.utils.distributed_utils import all_reduce
-from spd.utils.general_utils import calc_sum_recon_loss_lm
 
 
 def _unmasked_recon_loss_update(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+    reconstruction_loss: ReconstructionLoss,
+    batch: Any,
+    target_out: Any,
 ) -> tuple[Float[Tensor, ""], int]:
     all_ones_mask_infos = make_mask_infos(
         # (C,) will broadcast to (B, S, C)
@@ -26,9 +26,8 @@ def _unmasked_recon_loss_update(
         }
     )
     out = model(batch, mask_infos=all_ones_mask_infos)
-    loss = calc_sum_recon_loss_lm(pred=out, target=target_out, loss_type=output_loss_type)
-    n_examples = out.shape.numel() if output_loss_type == "mse" else out.shape[:-1].numel()
-    return loss, n_examples
+    loss, count = reconstruction_loss(out, target_out)
+    return loss, count
 
 
 def _unmasked_recon_loss_compute(
@@ -39,13 +38,13 @@ def _unmasked_recon_loss_compute(
 
 def unmasked_recon_loss(
     model: ComponentModel,
-    output_loss_type: Literal["mse", "kl"],
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
+    reconstruction_loss: ReconstructionLoss,
+    batch: Any,
+    target_out: Any,
 ) -> Float[Tensor, ""]:
     sum_loss, n_examples = _unmasked_recon_loss_update(
         model,
-        output_loss_type,
+        reconstruction_loss,
         batch,
         target_out,
     )
@@ -61,10 +60,10 @@ class UnmaskedReconLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl"],
+        reconstruction_loss: ReconstructionLoss,
     ) -> None:
         self.model = model
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.reconstruction_loss = reconstruction_loss
         self.sum_loss = torch.tensor(0.0, device=device)
         self.n_examples = torch.tensor(0, device=device)
 
@@ -72,13 +71,13 @@ class UnmaskedReconLoss(Metric):
     def update(
         self,
         *,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
+        batch: Any,
+        target_out: Any,
         **_: Any,
     ) -> None:
         sum_loss, n_examples = _unmasked_recon_loss_update(
             model=self.model,
-            output_loss_type=self.output_loss_type,
+            reconstruction_loss=self.reconstruction_loss,
             batch=batch,
             target_out=target_out,
         )

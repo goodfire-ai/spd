@@ -13,6 +13,7 @@ from spd.experiments.resid_mlp.models import (
 )
 from spd.experiments.resid_mlp.resid_mlp_dataset import ResidMLPDataset
 from spd.log import logger
+from spd.models.batch_and_loss_fns import recon_loss_mse
 from spd.run_spd import optimize
 from spd.utils.data_utils import DatasetGeneratedDataLoader
 from spd.utils.distributed_utils import get_device
@@ -100,15 +101,13 @@ def main(
         dataset, batch_size=config.eval_batch_size, shuffle=False
     )
 
-    # TODO: Below not needed when TMS supports config.n_eval_steps
-    assert config.n_eval_steps is not None, "n_eval_steps must be set"
     optimize(
         target_model=target_model,
         config=config,
         device=device,
         train_loader=train_loader,
         eval_loader=eval_loader,
-        n_eval_steps=config.n_eval_steps,
+        reconstruction_loss=recon_loss_mse,
         out_dir=out_dir,
     )
 

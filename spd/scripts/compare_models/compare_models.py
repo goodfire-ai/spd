@@ -25,7 +25,7 @@ from spd.configs import Config
 from spd.log import logger
 from spd.models.component_model import ComponentModel, SPDRunInfo
 from spd.utils.distributed_utils import get_device
-from spd.utils.general_utils import extract_batch_data, get_obj_device
+from spd.utils.general_utils import get_obj_device
 from spd.utils.run_utils import save_file
 
 
@@ -250,7 +250,7 @@ class ModelComparator:
         model.eval()
         with torch.no_grad():
             for _step in range(n_steps):
-                batch = extract_batch_data(next(eval_iterator))
+                batch = next(eval_iterator)
                 batch = batch.to(self.device)
                 pre_weight_acts = model(batch, cache_type="input").cache
 

@@ -99,9 +99,8 @@ def app_with_state():
                 ModulePatternInfoConfig(module_pattern=p, C=C) for p in target_module_patterns
             ],
             pretrained_model_class="spd.pretrain.models.gpt2_simple.GPT2Simple",
-            pretrained_model_output_attr="idx_0",
+            extract_tensor_output="[0]",
             tokenizer_name="SimpleStories/test-SimpleStories-gpt2-1.25M",
-            output_loss_type="kl",
             lr_schedule=ScheduleConfig(start_val=1e-3),
             steps=1,
             batch_size=1,
@@ -124,7 +123,7 @@ def app_with_state():
             target_model=target_model,
             module_path_info=module_path_info,
             ci_config=config.ci_config,
-            pretrained_model_output_attr=config.pretrained_model_output_attr,
+            extract_tensor_output=config.extract_tensor_output,
             sigmoid_type=config.sigmoid_type,
         )
         model.eval()

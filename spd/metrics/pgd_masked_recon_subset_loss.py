@@ -1,13 +1,14 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from torch import Tensor
 from torch.distributed import ReduceOp
 
 from spd.configs import PGDConfig, SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import CIOutputs, ComponentModel
 from spd.routing import get_subset_router
 from spd.utils.distributed_utils import all_reduce
@@ -16,9 +17,9 @@ from spd.utils.distributed_utils import all_reduce
 def pgd_recon_subset_loss(
     *,
     model: ComponentModel,
-    batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-    target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    batch: Any,
+    target_out: Any,
+    reconstruction_loss: ReconstructionLoss,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
@@ -30,7 +31,7 @@ def pgd_recon_subset_loss(
         ci=ci,
         weight_deltas=weight_deltas,
         target_out=target_out,
-        output_loss_type=output_loss_type,
+        reconstruction_loss=reconstruction_loss,
         router=get_subset_router(routing, batch.device),
         pgd_config=pgd_config,
     )
@@ -47,14 +48,14 @@ class PGDReconSubsetLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl"],
+        reconstruction_loss: ReconstructionLoss,
         use_delta_component: bool,
         pgd_config: PGDConfig,
         routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.reconstruction_loss = reconstruction_loss
         self.use_delta_component: bool = use_delta_component
         self.router = get_subset_router(routing, device)
 
@@ -65,8 +66,8 @@ class PGDReconSubsetLoss(Metric):
     def update(
         self,
         *,
-        batch: Int[Tensor, "..."] | Float[Tensor, "..."],
-        target_out: Float[Tensor, "... vocab"],
+        batch: Any,
+        target_out: Any,
         ci: CIOutputs,
         weight_deltas: dict[str, Float[Tensor, "d_out d_in"]],
         **_: Any,
@@ -77,7 +78,7 @@ class PGDReconSubsetLoss(Metric):
             ci=ci.lower_leaky,
             weight_deltas=weight_deltas if self.use_delta_component else None,
             target_out=target_out,
-            output_loss_type=self.output_loss_type,
+            reconstruction_loss=self.reconstruction_loss,
             router=self.router,
             pgd_config=self.pgd_config,
         )
