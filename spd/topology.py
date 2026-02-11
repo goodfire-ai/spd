@@ -20,13 +20,24 @@ Examples:
     "output:7:42"       — output, seq 7, token 42
 """
 
+from __future__ import annotations
+
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal, override
 
 from torch import nn
 
 # ── Canonical weight types ──────────────────────────────────────────────
+
+_CANONICAL_RE = re.compile(
+    r"^(?:"
+    r"(?P<wte>wte)"
+    r"|(?P<output>output)"
+    r"|(?P<layer>\d+)\.(?P<sublayer>attn|attn_fused|glu|mlp)\.(?P<proj>[a-z]+)"
+    r")$"
+)
 
 
 class CanonicalWeight(ABC):
@@ -34,52 +45,35 @@ class CanonicalWeight(ABC):
     def canonical_str(self) -> str: ...
 
     @staticmethod
-    def parse(s: str) -> "CanonicalWeight":
+    def parse(s: str) -> CanonicalWeight:
         """Parse a canonical address string into a CanonicalWeight."""
-        if s == "wte":
+        m = _CANONICAL_RE.match(s)
+        assert m is not None, f"Invalid canonical address: {s!r}"
+
+        if m.group("wte"):
             return Embed()
-        if s == "output":
+        if m.group("output"):
             return Unembed()
 
-        parts = s.split(".")
-        assert len(parts) == 3, f"Invalid canonical address: {s!r}"
-        layer_idx = int(parts[0])
-        sublayer = parts[1]
-        projection = parts[2]
+        layer_idx = int(m.group("layer"))
+        sublayer = m.group("sublayer")
+        proj = m.group("proj")
 
-        match sublayer:
-            case "attn":
-                assert projection in ["q", "k", "v", "o"]
-                return LayerWeight(
-                    layer_idx, SeparateAttnWeight(cast(Literal["q", "k", "v", "o"], projection))
-                )
-            case "attn_fused":
-                assert projection in ["qkv", "o"]
-                return LayerWeight(
-                    layer_idx, FusedAttnWeight(cast(Literal["qkv", "o"], projection))
-                )
-            case "glu":
-                assert projection in ["up", "down", "gate"]
-                return LayerWeight(
-                    layer_idx, GLUWeight(cast(Literal["up", "down", "gate"], projection))
-                )
-            case "mlp":
-                assert projection in ["up", "down"]
-                return LayerWeight(
-                    layer_idx, MLPWeight(weight=cast(Literal["up", "down"], projection))
-                )
-            case _:
-                raise ValueError(f"Unknown sublayer type: {sublayer!r} in {s!r}")
+        cls, valid = _SUBLAYER_PROJECTIONS[sublayer]
+        assert proj in valid, f"Invalid projection {proj!r} for {sublayer!r} in {s!r}"
+        return LayerWeight(layer_idx, cls(weight=proj))
 
 
 @dataclass(frozen=True)
 class Embed(CanonicalWeight):
+    @override
     def canonical_str(self) -> str:
         return "wte"
 
 
 @dataclass(frozen=True)
 class Unembed(CanonicalWeight):
+    @override
     def canonical_str(self) -> str:
         return "output"
 
@@ -115,6 +109,7 @@ class LayerWeight(CanonicalWeight):
     layer_idx: int
     name: AttnWeight | FFNWeight
 
+    @override
     def canonical_str(self) -> str:
         match self.name:
             case SeparateAttnWeight(weight=p):
@@ -125,6 +120,14 @@ class LayerWeight(CanonicalWeight):
                 return f"{self.layer_idx}.glu.{p}"
             case MLPWeight(weight=p):
                 return f"{self.layer_idx}.mlp.{p}"
+
+
+_SUBLAYER_PROJECTIONS: dict[str, tuple[type, tuple[str, ...]]] = {
+    "attn": (SeparateAttnWeight, ("q", "k", "v", "o")),
+    "attn_fused": (FusedAttnWeight, ("qkv", "o")),
+    "glu": (GLUWeight, ("up", "down", "gate")),
+    "mlp": (MLPWeight, ("up", "down")),
+}
 
 
 # ── Sublayer path schemas ──────────────────────────────────────────────
@@ -138,30 +141,19 @@ class SeparateAttnPathSchema:
     v: str
     o: str
 
+    def _lookup(self) -> dict[str, Literal["q", "k", "v", "o"]]:
+        return {self.q: "q", self.k: "k", self.v: "v", self.o: "o"}
+
+    def _reverse(self) -> dict[str, str]:
+        return {"q": self.q, "k": self.k, "v": self.v, "o": self.o}
+
     def parse(self, projection_name: str, layer_idx: int) -> LayerWeight:
-        weight: Literal["q", "k", "v", "o"]
-        if projection_name == self.q:
-            weight = "q"
-        elif projection_name == self.k:
-            weight = "k"
-        elif projection_name == self.v:
-            weight = "v"
-        elif projection_name == self.o:
-            weight = "o"
-        else:
-            raise ValueError(f"Unknown attn projection: {projection_name}")
-        return LayerWeight(layer_idx, SeparateAttnWeight(weight))
+        table = self._lookup()
+        assert projection_name in table, f"Unknown attn projection: {projection_name}"
+        return LayerWeight(layer_idx, SeparateAttnWeight(table[projection_name]))
 
     def render(self, w: SeparateAttnWeight) -> str:
-        match w.weight:
-            case "q":
-                return f"{self.base}.{self.q}"
-            case "k":
-                return f"{self.base}.{self.k}"
-            case "v":
-                return f"{self.base}.{self.v}"
-            case "o":
-                return f"{self.base}.{self.o}"
+        return f"{self.base}.{self._reverse()[w.weight]}"
 
 
 @dataclass
@@ -170,22 +162,19 @@ class FusedAttnPathSchema:
     qkv: str
     o: str
 
+    def _lookup(self) -> dict[str, Literal["qkv", "o"]]:
+        return {self.qkv: "qkv", self.o: "o"}
+
+    def _reverse(self) -> dict[str, str]:
+        return {"qkv": self.qkv, "o": self.o}
+
     def parse(self, projection_name: str, layer_idx: int) -> LayerWeight:
-        weight: Literal["qkv", "o"]
-        if projection_name == self.qkv:
-            weight = "qkv"
-        elif projection_name == self.o:
-            weight = "o"
-        else:
-            raise ValueError(f"Unknown fused attn projection: {projection_name}")
-        return LayerWeight(layer_idx, FusedAttnWeight(weight))
+        table = self._lookup()
+        assert projection_name in table, f"Unknown fused attn projection: {projection_name}"
+        return LayerWeight(layer_idx, FusedAttnWeight(table[projection_name]))
 
     def render(self, w: FusedAttnWeight) -> str:
-        match w.weight:
-            case "qkv":
-                return f"{self.base}.{self.qkv}"
-            case "o":
-                return f"{self.base}.{self.o}"
+        return f"{self.base}.{self._reverse()[w.weight]}"
 
 
 @dataclass
@@ -195,26 +184,19 @@ class GLUPathSchema:
     up: str
     down: str
 
+    def _lookup(self) -> dict[str, Literal["up", "down", "gate"]]:
+        return {self.gate: "gate", self.up: "up", self.down: "down"}
+
+    def _reverse(self) -> dict[str, str]:
+        return {"gate": self.gate, "up": self.up, "down": self.down}
+
     def parse(self, projection_name: str, layer_idx: int) -> LayerWeight:
-        weight: Literal["up", "down", "gate"]
-        if projection_name == self.gate:
-            weight = "gate"
-        elif projection_name == self.up:
-            weight = "up"
-        elif projection_name == self.down:
-            weight = "down"
-        else:
-            raise ValueError(f"Unknown GLU projection: {projection_name}")
-        return LayerWeight(layer_idx, GLUWeight(weight))
+        table = self._lookup()
+        assert projection_name in table, f"Unknown GLU projection: {projection_name}"
+        return LayerWeight(layer_idx, GLUWeight(table[projection_name]))
 
     def render(self, w: GLUWeight) -> str:
-        match w.weight:
-            case "gate":
-                return f"{self.base}.{self.gate}"
-            case "up":
-                return f"{self.base}.{self.up}"
-            case "down":
-                return f"{self.base}.{self.down}"
+        return f"{self.base}.{self._reverse()[w.weight]}"
 
 
 @dataclass
@@ -223,25 +205,22 @@ class FFNPathSchema:
     up: str
     down: str
 
+    def _lookup(self) -> dict[str, Literal["up", "down"]]:
+        return {self.up: "up", self.down: "down"}
+
+    def _reverse(self) -> dict[str, str]:
+        return {"up": self.up, "down": self.down}
+
     def parse(self, projection_name: str, layer_idx: int) -> LayerWeight:
-        weight: Literal["up", "down"]
-        if projection_name == self.up:
-            weight = "up"
-        elif projection_name == self.down:
-            weight = "down"
-        else:
-            raise ValueError(f"Unknown MLP projection: {projection_name}")
-        return LayerWeight(layer_idx, MLPWeight(weight))
+        table = self._lookup()
+        assert projection_name in table, f"Unknown MLP projection: {projection_name}"
+        return LayerWeight(layer_idx, MLPWeight(table[projection_name]))
 
     def render(self, w: MLPWeight) -> str:
-        match w.weight:
-            case "up":
-                return f"{self.base}.{self.up}"
-            case "down":
-                return f"{self.base}.{self.down}"
+        return f"{self.base}.{self._reverse()[w.weight]}"
 
 
-# ── Path schema (abstract base + concrete subclasses) ──────────────────
+# ── Path schema (base + concrete subclasses) ──────────────────────────
 
 
 class PathSchema(ABC):
@@ -251,27 +230,36 @@ class PathSchema(ABC):
     mlp: GLUPathSchema | FFNPathSchema
     unembed_path: str
 
-    @abstractmethod
-    def parse_target_path(self, path: str) -> CanonicalWeight: ...
+    def parse_target_path(self, path: str) -> CanonicalWeight:
+        if path == self.embedding_path:
+            return Embed()
+        if path == self.unembed_path:
+            return Unembed()
+        return self._parse_block_path(path)
 
-    @abstractmethod
-    def render_canonical_weight(self, weight: CanonicalWeight) -> str: ...
+    def render_canonical_weight(self, weight: CanonicalWeight) -> str:
+        match weight:
+            case Embed():
+                return self.embedding_path
+            case Unembed():
+                return self.unembed_path
+            case LayerWeight() as lw:
+                return self._render_layer_weight(lw)
+            case _:
+                raise ValueError(f"Unknown canonical weight: {weight!r}")
 
     def _parse_block_path(self, path: str) -> LayerWeight:
         """Parse a block-level path like 'h.3.attn.q_proj' into a LayerWeight."""
         assert path.startswith(self.blocks + ".")
         remainder = path[len(self.blocks) + 1 :]
-        # remainder: "3.attn.q_proj" -> layer_idx=3, sublayer_and_proj="attn.q_proj"
         dot = remainder.index(".")
         layer_idx = int(remainder[:dot])
         sublayer_and_proj = remainder[dot + 1 :]
 
-        # Try attn first
         if sublayer_and_proj.startswith(self.attn.base + "."):
             proj = sublayer_and_proj[len(self.attn.base) + 1 :]
             return self.attn.parse(proj, layer_idx)
 
-        # Then mlp
         assert sublayer_and_proj.startswith(self.mlp.base + ".")
         proj = sublayer_and_proj[len(self.mlp.base) + 1 :]
         return self.mlp.parse(proj, layer_idx)
@@ -301,24 +289,6 @@ class LlamaSimplePathSchema(PathSchema):
     mlp = GLUPathSchema(base="mlp", gate="gate_proj", up="up_proj", down="down_proj")
     unembed_path = "lm_head"
 
-    def parse_target_path(self, path: str) -> CanonicalWeight:
-        if path == self.embedding_path:
-            return Embed()
-        if path == self.unembed_path:
-            return Unembed()
-        return self._parse_block_path(path)
-
-    def render_canonical_weight(self, weight: CanonicalWeight) -> str:
-        match weight:
-            case Embed():
-                return self.embedding_path
-            case Unembed():
-                return self.unembed_path
-            case LayerWeight() as lw:
-                return self._render_layer_weight(lw)
-            case _:
-                raise ValueError(f"Unknown canonical weight: {weight!r}")
-
 
 class LlamaSimpleMLPPathSchema(PathSchema):
     embedding_path = "wte"
@@ -326,24 +296,6 @@ class LlamaSimpleMLPPathSchema(PathSchema):
     attn = SeparateAttnPathSchema(base="attn", q="q_proj", k="k_proj", v="v_proj", o="o_proj")
     mlp = FFNPathSchema(base="mlp", up="c_fc", down="down_proj")
     unembed_path = "lm_head"
-
-    def parse_target_path(self, path: str) -> CanonicalWeight:
-        if path == self.embedding_path:
-            return Embed()
-        if path == self.unembed_path:
-            return Unembed()
-        return self._parse_block_path(path)
-
-    def render_canonical_weight(self, weight: CanonicalWeight) -> str:
-        match weight:
-            case Embed():
-                return self.embedding_path
-            case Unembed():
-                return self.unembed_path
-            case LayerWeight() as lw:
-                return self._render_layer_weight(lw)
-            case _:
-                raise ValueError(f"Unknown canonical weight: {weight!r}")
 
 
 class GPT2SimplePathSchema(PathSchema):
@@ -353,24 +305,6 @@ class GPT2SimplePathSchema(PathSchema):
     mlp = FFNPathSchema(base="mlp", up="c_fc", down="down_proj")
     unembed_path = "lm_head"
 
-    def parse_target_path(self, path: str) -> CanonicalWeight:
-        if path == self.embedding_path:
-            return Embed()
-        if path == self.unembed_path:
-            return Unembed()
-        return self._parse_block_path(path)
-
-    def render_canonical_weight(self, weight: CanonicalWeight) -> str:
-        match weight:
-            case Embed():
-                return self.embedding_path
-            case Unembed():
-                return self.unembed_path
-            case LayerWeight() as lw:
-                return self._render_layer_weight(lw)
-            case _:
-                raise ValueError(f"Unknown canonical weight: {weight!r}")
-
 
 class GPT2PathSchema(PathSchema):
     embedding_path = "wte"
@@ -379,24 +313,6 @@ class GPT2PathSchema(PathSchema):
     mlp = FFNPathSchema(base="mlp", up="c_fc", down="c_proj")
     unembed_path = "lm_head"
 
-    def parse_target_path(self, path: str) -> CanonicalWeight:
-        if path == self.embedding_path:
-            return Embed()
-        if path == self.unembed_path:
-            return Unembed()
-        return self._parse_block_path(path)
-
-    def render_canonical_weight(self, weight: CanonicalWeight) -> str:
-        match weight:
-            case Embed():
-                return self.embedding_path
-            case Unembed():
-                return self.unembed_path
-            case LayerWeight() as lw:
-                return self._render_layer_weight(lw)
-            case _:
-                raise ValueError(f"Unknown canonical weight: {weight!r}")
-
 
 class HFGpt2PathSchema(PathSchema):
     embedding_path = "transformer.wte"
@@ -404,24 +320,6 @@ class HFGpt2PathSchema(PathSchema):
     attn = FusedAttnPathSchema(base="attn", qkv="c_attn", o="c_proj")
     mlp = FFNPathSchema(base="mlp", up="c_fc", down="c_proj")
     unembed_path = "lm_head"
-
-    def parse_target_path(self, path: str) -> CanonicalWeight:
-        if path == self.embedding_path:
-            return Embed()
-        if path == self.unembed_path:
-            return Unembed()
-        return self._parse_block_path(path)
-
-    def render_canonical_weight(self, weight: CanonicalWeight) -> str:
-        match weight:
-            case Embed():
-                return self.embedding_path
-            case Unembed():
-                return self.unembed_path
-            case LayerWeight() as lw:
-                return self._render_layer_weight(lw)
-            case _:
-                raise ValueError(f"Unknown canonical weight: {weight!r}")
 
 
 # ── Schema lookup ──────────────────────────────────────────────────────

@@ -19,11 +19,7 @@ from spd.autointerp.loaders import (
 from spd.autointerp.schemas import InterpretationResult
 from spd.configs import Config
 from spd.dataset_attributions import DatasetAttributionStorage, load_dataset_attributions
-from spd.harvest.loaders import (
-    load_activation_contexts_summary,
-    load_correlations,
-    load_token_stats,
-)
+from spd.harvest.loaders import load_activation_contexts_summary
 from spd.harvest.schemas import ComponentSummary
 from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
 from spd.models.component_model import ComponentModel
@@ -50,19 +46,45 @@ class HarvestCache:
         self._detection_scores = _NOT_LOADED
         self._fuzzing_scores = _NOT_LOADED
 
-    @property
-    def correlations(self) -> CorrelationStorage:
+    def _load_correlations(self) -> CorrelationStorage | None:
         if self._correlations is _NOT_LOADED:
-            self._correlations = load_correlations(self.run_id)
+            from spd.harvest.schemas import get_correlations_dir
+
+            path = get_correlations_dir(self.run_id) / "component_correlations.pt"
+            self._correlations = CorrelationStorage.load(path) if path.exists() else None
+        if self._correlations is None:
+            return None
         assert isinstance(self._correlations, CorrelationStorage)
         return self._correlations
 
+    def has_correlations(self) -> bool:
+        return self._load_correlations() is not None
+
     @property
-    def token_stats(self) -> TokenStatsStorage:
+    def correlations(self) -> CorrelationStorage:
+        result = self._load_correlations()
+        assert result is not None, f"No correlations found for run {self.run_id}"
+        return result
+
+    def _load_token_stats(self) -> TokenStatsStorage | None:
         if self._token_stats is _NOT_LOADED:
-            self._token_stats = load_token_stats(self.run_id)
+            from spd.harvest.schemas import get_correlations_dir
+
+            path = get_correlations_dir(self.run_id) / "token_stats.pt"
+            self._token_stats = TokenStatsStorage.load(path) if path.exists() else None
+        if self._token_stats is None:
+            return None
         assert isinstance(self._token_stats, TokenStatsStorage)
         return self._token_stats
+
+    def has_token_stats(self) -> bool:
+        return self._load_token_stats() is not None
+
+    @property
+    def token_stats(self) -> TokenStatsStorage:
+        result = self._load_token_stats()
+        assert result is not None, f"No token stats found for run {self.run_id}"
+        return result
 
     @property
     def interpretations(self) -> dict[str, InterpretationResult] | None:

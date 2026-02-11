@@ -51,40 +51,43 @@ def get_component_data_bulk(
     This eliminates GIL contention from multiple concurrent requests and reduces
     HTTP roundtrips from 3 to 1.
     """
-    # Fetch all data sequentially (no GIL contention)
-    # Each section returns empty dict if harvest data is unavailable
-    try:
-        activation_contexts = get_activation_contexts_bulk(
+    harvest = loaded.harvest
+
+    activation_contexts: dict[str, SubcomponentActivationContexts] = (
+        get_activation_contexts_bulk(
             BulkActivationContextsRequest(
                 component_keys=request.component_keys,
                 limit=request.activation_contexts_limit,
             ),
             loaded,
         )
-    except (AssertionError, FileNotFoundError):
-        activation_contexts = {}
+        if harvest.has_activation_contexts_summary()
+        else {}
+    )
 
-    try:
-        correlations = get_component_correlations_bulk(
+    correlations: dict[str, ComponentCorrelationsResponse] = (
+        get_component_correlations_bulk(
             BulkCorrelationsRequest(
                 component_keys=request.component_keys,
                 top_k=request.correlations_top_k,
             ),
             loaded,
         )
-    except (AssertionError, FileNotFoundError):
-        correlations = {}
+        if harvest.has_correlations()
+        else {}
+    )
 
-    try:
-        token_stats = get_component_token_stats_bulk(
+    token_stats: dict[str, TokenStatsResponse] = (
+        get_component_token_stats_bulk(
             BulkTokenStatsRequest(
                 component_keys=request.component_keys,
                 top_k=request.token_stats_top_k,
             ),
             loaded,
         )
-    except (AssertionError, FileNotFoundError):
-        token_stats = {}
+        if harvest.has_token_stats()
+        else {}
+    )
 
     return BulkComponentDataResponse(
         activation_contexts=activation_contexts,
