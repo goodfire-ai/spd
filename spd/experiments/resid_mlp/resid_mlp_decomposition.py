@@ -94,11 +94,12 @@ def main(
         synced_inputs=synced_inputs,
     )
 
+    extract_input = lambda batch: batch[0]
     train_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.microbatch_size, shuffle=False
+        dataset, batch_size=config.microbatch_size, shuffle=False, transform=extract_input
     )
     eval_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.eval_batch_size, shuffle=False
+        dataset, batch_size=config.eval_batch_size, shuffle=False, transform=extract_input
     )
 
     optimize(

@@ -119,11 +119,12 @@ def test_ih_transformer_decomposition_happy_path(tmp_path: Path) -> None:
         prefix_window=ih_transformer_config.seq_len - 3,
     )
 
+    extract_input = lambda batch: batch[0]
     train_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.microbatch_size, shuffle=False
+        dataset, batch_size=config.microbatch_size, shuffle=False, transform=extract_input
     )
     eval_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.microbatch_size, shuffle=False
+        dataset, batch_size=config.microbatch_size, shuffle=False, transform=extract_input
     )
 
     # Run optimize function

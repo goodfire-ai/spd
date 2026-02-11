@@ -1,5 +1,5 @@
-from collections.abc import Iterator
-from typing import Literal, override
+from collections.abc import Callable, Iterator
+from typing import Any, Literal, override
 
 import torch
 from jaxtyping import Float
@@ -16,17 +16,19 @@ class DatasetGeneratedDataLoader[Q](DataLoader[Q]):
         batch_size: int = 1,
         shuffle: bool = False,
         num_workers: int = 0,
+        transform: Callable[[Q], Any] | None = None,
     ):
-        # assert that dataset has a generate_batch method
         assert hasattr(dataset, "generate_batch")
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        self._transform = transform
 
     @override
     def __iter__(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
-    ) -> Iterator[Q]:
+    ) -> Iterator[Any]:
         for _ in range(len(self)):
-            yield self.dataset.generate_batch(self.batch_size)  # pyright: ignore[reportAttributeAccessIssue]
+            batch = self.dataset.generate_batch(self.batch_size)  # pyright: ignore[reportAttributeAccessIssue]
+            yield self._transform(batch) if self._transform else batch
 
 
 class BatchedDataLoader[Q](DataLoader[Q]):

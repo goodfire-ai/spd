@@ -91,8 +91,13 @@ def main(
         prefix_window=prefix_window,
         device=device,
     )
-    train_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
-    eval_loader = DatasetGeneratedDataLoader(dataset, batch_size=config.batch_size, shuffle=False)
+    extract_input = lambda batch: batch[0]
+    train_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.batch_size, shuffle=False, transform=extract_input
+    )
+    eval_loader = DatasetGeneratedDataLoader(
+        dataset, batch_size=config.batch_size, shuffle=False, transform=extract_input
+    )
 
     optimize(
         target_model=target_model,

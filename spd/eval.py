@@ -345,8 +345,7 @@ def evaluate(
     weight_deltas = model.calc_weight_deltas()
 
     for _ in range(n_eval_steps):
-        batch_raw = next(eval_iterator)
-        batch = batch_raw[0] if isinstance(batch_raw, tuple) else batch_raw
+        batch: Any = next(eval_iterator)
 
         target_output: OutputWithCache = model(batch, cache_type="input")
         ci = model.calc_causal_importances(

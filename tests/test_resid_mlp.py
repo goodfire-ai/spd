@@ -115,11 +115,12 @@ def test_resid_mlp_decomposition_happy_path(tmp_path: Path) -> None:
         synced_inputs=None,
     )
 
+    extract_input = lambda batch: batch[0]
     train_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.microbatch_size, shuffle=False
+        dataset, batch_size=config.microbatch_size, shuffle=False, transform=extract_input
     )
     eval_loader = DatasetGeneratedDataLoader(
-        dataset, batch_size=config.eval_batch_size, shuffle=False
+        dataset, batch_size=config.eval_batch_size, shuffle=False, transform=extract_input
     )
 
     # Run optimize function

@@ -130,11 +130,13 @@ class ModelComparator:
             value_range=(0.0, 1.0),
             synced_inputs=target_run_info.config.synced_inputs,
         )
+        extract_input = lambda batch: batch[0]
         return iter(
             DatasetGeneratedDataLoader(
                 dataset,
                 batch_size=self.config.eval_batch_size,
                 shuffle=self.config.shuffle_data,
+                transform=extract_input,
             )
         )
 
@@ -164,11 +166,13 @@ class ModelComparator:
             label_fn_seed=None,
             synced_inputs=target_run_info.config.synced_inputs,
         )
+        extract_input = lambda batch: batch[0]
         return iter(
             DatasetGeneratedDataLoader(
                 dataset,
                 batch_size=self.config.eval_batch_size,
                 shuffle=self.config.shuffle_data,
+                transform=extract_input,
             )
         )
 
@@ -224,11 +228,13 @@ class ModelComparator:
             or target_run_info.config.ih_model_config.seq_len - 3,
             device=self.device,
         )
+        extract_input = lambda batch: batch[0]
         return iter(
             DatasetGeneratedDataLoader(
                 dataset,
                 batch_size=self.config.eval_batch_size,
                 shuffle=self.config.shuffle_data,
+                transform=extract_input,
             )
         )
 

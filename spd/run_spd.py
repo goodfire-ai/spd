@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.parallel
 import wandb
 from PIL import Image
-from torch import optim
+from torch import Tensor, optim
 from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -32,7 +32,7 @@ from spd.identity_insertion import insert_identity_operations_
 from spd.log import logger
 from spd.losses import compute_losses
 from spd.metrics import faithfulness_loss
-from spd.models.batch_and_loss_fns import ReconstructionLoss, recon_loss_mse
+from spd.models.batch_and_loss_fns import ReconstructionLoss
 from spd.models.component_model import ComponentModel, OutputWithCache
 from spd.persistent_pgd import PersistentPGDState
 from spd.utils.component_utils import calc_ci_l_zero
@@ -238,20 +238,20 @@ def optimize(
     ] = {}
     if persistent_pgd_configs:
         sample_batch_raw = next(train_iterator)
-        sample_batch = (
-            sample_batch_raw[0] if isinstance(sample_batch_raw, tuple) else sample_batch_raw
-        )
-        batch_dims = (
-            sample_batch.shape[:-1] if reconstruction_loss is recon_loss_mse else sample_batch.shape
-        )
+        assert isinstance(sample_batch_raw, Tensor)
+        assert sample_batch_raw.dtype == torch.long, "sample_batch_raw must be a long tensor"
+        assert sample_batch_raw.dim() == 2, "sample_batch_raw must be a 2D (batch, seq) tensor"
+
+        batch_size, seq_len = sample_batch_raw.shape
+
         ppgd_states = {
             ppgd_cfg: PersistentPGDState(
                 module_to_c=model.module_to_c,
-                seq_len=batch_dims[-1],
+                seq_len=seq_len,
                 device=device,
                 use_delta_component=config.use_delta_component,
                 cfg=ppgd_cfg,
-                batch_size=batch_dims[0],
+                batch_size=batch_size,
             )
             for ppgd_cfg in persistent_pgd_configs
         }
@@ -274,8 +274,7 @@ def optimize(
         }
 
         for _ in range(config.gradient_accumulation_steps):
-            microbatch_raw = next(train_iterator)
-            microbatch = microbatch_raw[0] if isinstance(microbatch_raw, tuple) else microbatch_raw
+            microbatch: Any = next(train_iterator)
 
             with bf16_autocast(enabled=config.autocast_bf16):
                 # NOTE: we need to call the wrapped_model at least once each step in order
