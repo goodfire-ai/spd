@@ -14,10 +14,7 @@ from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
-from spd.harvest.loaders import (
-    load_component_activation_contexts,
-    load_component_activation_contexts_bulk,
-)
+
 from spd.topology import CanonicalWeight
 from spd.utils.distributed_utils import get_device
 
@@ -48,9 +45,9 @@ def get_activation_contexts_summary(
     loaded: DepLoadedRun,
 ) -> dict[str, list[SubcomponentMetadata]]:
     """Return lightweight summary of activation contexts (just idx + mean_ci per component)."""
-    if not loaded.harvest.has_activation_contexts_summary():
+    summary_data = loaded.harvest.get_summary()
+    if summary_data is None:
         raise HTTPException(status_code=404, detail="No activation contexts summary found")
-    summary_data = loaded.harvest.activation_contexts_summary
 
     summary: dict[str, list[SubcomponentMetadata]] = defaultdict(list)
     for comp in summary_data.values():
@@ -88,7 +85,7 @@ def get_activation_context_detail(
     """
     concrete_layer = loaded.topology.get_target_module_path(CanonicalWeight.parse(layer))
     component_key = f"{concrete_layer}:{component_idx}"
-    comp = load_component_activation_contexts(loaded.harvest.run_id, component_key)
+    comp = loaded.harvest.get_component(component_key)
 
     # Apply limit to examples
     examples = comp.activation_examples
@@ -134,7 +131,7 @@ def get_activation_contexts_bulk(
 
     concrete_to_canonical = {_to_concrete_key(k): k for k in request.component_keys}
     concrete_keys = list(concrete_to_canonical.keys())
-    components = load_component_activation_contexts_bulk(loaded.harvest.run_id, concrete_keys)
+    components = loaded.harvest.get_components_bulk(concrete_keys)
 
     # Convert to response format with limit applied, keyed by canonical keys
     result: dict[str, SubcomponentActivationContexts] = {}

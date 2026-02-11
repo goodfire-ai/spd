@@ -11,7 +11,10 @@ from pydantic import BaseModel
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.compute import get_sources_by_target
 from spd.app.backend.dependencies import DepStateManager
-from spd.app.backend.state import HarvestCache, RunState
+from spd.app.backend.state import RunState
+from spd.autointerp.repo import InterpRepo
+from spd.dataset_attributions.repo import AttributionRepo
+from spd.harvest.repo import HarvestRepo
 from spd.app.backend.utils import log_errors
 from spd.configs import LMTaskConfig
 from spd.log import logger
@@ -123,7 +126,9 @@ def load_run(wandb_path: str, context_length: int, manager: DepStateManager):
         sources_by_target=sources_by_target,
         config=spd_config,
         context_length=context_length,
-        harvest=HarvestCache(run_id=run_id),
+        harvest=HarvestRepo(run_id),
+        interp=InterpRepo(run_id),
+        attributions=AttributionRepo(run_id),
     )
 
     logger.info(f"[API] Run {run.id} loaded on {DEVICE}")
@@ -159,7 +164,7 @@ def get_status(manager: DepStateManager) -> LoadedRun | None:
         prompt_count=prompt_count,
         context_length=context_length,
         backend_user=getpass.getuser(),
-        dataset_attributions_available=manager.run_state.harvest.has_dataset_attributions(),
+        dataset_attributions_available=manager.run_state.attributions.has_attributions(),
         dataset_search_enabled=dataset_search_enabled,
     )
 

@@ -110,12 +110,12 @@ def get_all_interpretations(
     Reasoning and prompt are excluded - fetch individually via
     GET /interpretations/{layer}/{component_idx} when needed.
     """
-    interpretations = loaded.harvest.interpretations
+    interpretations = loaded.interp.get_all_interpretations()
     if interpretations is None:
         return {}
 
-    detection_scores = loaded.harvest.detection_scores
-    fuzzing_scores = loaded.harvest.fuzzing_scores
+    detection_scores = loaded.interp.get_detection_scores()
+    fuzzing_scores = loaded.interp.get_fuzzing_scores()
 
     return {
         _concrete_to_canonical_key(key, loaded.topology): InterpretationHeadline(
@@ -140,15 +140,14 @@ def get_interpretation_detail(
     Returns reasoning and prompt for the specified component.
     """
     concrete_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
-    interpretations = loaded.harvest.interpretations or {}
+    result = loaded.interp.get_interpretation(concrete_key)
 
-    if concrete_key not in interpretations:
+    if result is None:
         raise HTTPException(
             status_code=404,
             detail=f"No interpretation found for component {layer}:{component_idx}",
         )
 
-    result = interpretations[concrete_key]
     return InterpretationDetail(reasoning=result.reasoning, prompt=result.prompt)
 
 
@@ -178,19 +177,17 @@ async def request_component_interpretation(
     from spd.autointerp.schemas import get_autointerp_dir
 
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
+    run_id = loaded.harvest.run_id
 
-    interpretations = loaded.harvest.interpretations or {}
-
-    if component_key in interpretations:
-        result = interpretations[component_key]
+    existing = loaded.interp.get_interpretation(component_key)
+    if existing is not None:
         return InterpretationHeadline(
-            label=result.label,
-            confidence=result.confidence,
+            label=existing.label,
+            confidence=existing.confidence,
         )
 
-    component_data = load_component_activation_contexts(loaded.harvest.run_id, component_key)
+    component_data = load_component_activation_contexts(run_id, component_key)
 
-    # Get API key
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise HTTPException(
@@ -198,11 +195,10 @@ async def request_component_interpretation(
             detail="OPENROUTER_API_KEY environment variable not set",
         )
 
-    # Get architecture info and tokenizer
     arch = get_architecture_info(loaded.run.wandb_path)
 
-    # Get token stats
-    token_stats = loaded.harvest.token_stats
+    token_stats = loaded.harvest.get_token_stats()
+    assert token_stats is not None, "Token stats required for interpretation"
 
     input_token_stats = analysis.get_input_token_stats(
         token_stats, component_key, loaded.tokenizer, top_k=20
@@ -216,16 +212,14 @@ async def request_component_interpretation(
             detail=f"Token stats not available for component {component_key}",
         )
 
-    # Interpret the component
     config = CompactSkepticalConfig(
         model="google/gemini-3-flash-preview",
         reasoning_effort=None,
     )
 
-    async with OpenRouter(api_key=api_key) as client:
-        from spd.harvest.loaders import load_harvest_ci_threshold
+    ci_threshold = loaded.harvest.get_ci_threshold()
 
-        ci_threshold = load_harvest_ci_threshold(loaded.harvest.run_id)
+    async with OpenRouter(api_key=api_key) as client:
         res = await interpret_component(
             client=client,
             config=config,
@@ -245,18 +239,11 @@ async def request_component_interpretation(
 
     result, _, _ = res
 
-    # Save to file
-    autointerp_dir = get_autointerp_dir(loaded.harvest.run_id)
+    autointerp_dir = get_autointerp_dir(run_id)
     autointerp_dir.mkdir(parents=True, exist_ok=True)
     output_path = autointerp_dir / "results.jsonl"
     with open(output_path, "a") as f:
         f.write(json.dumps(asdict(result)) + "\n")
-
-    # Update the cache
-    if loaded.harvest._interpretations is None:
-        loaded.harvest._interpretations = {}
-    assert isinstance(loaded.harvest._interpretations, dict)
-    loaded.harvest._interpretations[component_key] = result
 
     logger.info(f"Generated interpretation for {component_key}: {result.label}")
 
@@ -274,7 +261,7 @@ def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
     Returns a dict keyed by component_key (layer:cIdx) → score (0-1).
     Returns empty dict if no intruder scores are available.
     """
-    return loaded.harvest.intruder_scores or {}
+    return loaded.interp.get_intruder_scores() or {}
 
 
 # =============================================================================
@@ -296,7 +283,7 @@ def get_component_token_stats(
     and output tokens (what this component predicts).
     Returns None if token stats haven't been harvested for this run.
     """
-    token_stats = loaded.harvest.token_stats
+    token_stats = loaded.harvest.get_token_stats()
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
     input_stats = analysis.get_input_token_stats(
@@ -351,7 +338,7 @@ def get_component_correlations_bulk(
 
     Returns a dict keyed by component_key. Components not found are omitted.
     """
-    correlations = loaded.harvest.correlations
+    correlations = loaded.harvest.get_correlations()
 
     def to_schema(c: analysis.CorrelatedComponent) -> CorrelatedComponent:
         return CorrelatedComponent(
@@ -420,7 +407,7 @@ def get_component_token_stats_bulk(
 
     Returns a dict keyed by component_key. Components not found are omitted.
     """
-    token_stats = loaded.harvest.token_stats
+    token_stats = loaded.harvest.get_token_stats()
     result: dict[str, TokenStatsResponse] = {}
 
     def to_concrete(canonical_key: str) -> str:
@@ -472,7 +459,7 @@ def get_component_correlations(
     Returns top-k correlations across different metrics (precision, recall, Jaccard, PMI).
     Returns None if correlations haven't been harvested for this run.
     """
-    correlations = loaded.harvest.correlations
+    correlations = loaded.harvest.get_correlations()
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
 
     if not analysis.has_component(correlations, component_key):

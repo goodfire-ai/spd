@@ -1,7 +1,7 @@
 """Application state management for the SPD backend.
 
 Contains:
-- RunState: Runtime state for a loaded run (model, tokenizer, caches)
+- RunState: Runtime state for a loaded run (model, tokenizer, repos)
 - StateManager: Singleton managing app-wide state with proper lifecycle
 """
 
@@ -10,158 +10,12 @@ from typing import Any
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.database import PromptAttrDB, Run
-from spd.autointerp.loaders import (
-    load_detection_scores,
-    load_fuzzing_scores,
-    load_interpretations,
-    load_intruder_scores,
-)
-from spd.autointerp.schemas import InterpretationResult
+from spd.autointerp.repo import InterpRepo
 from spd.configs import Config
-from spd.dataset_attributions import DatasetAttributionStorage, load_dataset_attributions
-from spd.harvest.loaders import load_activation_contexts_summary
-from spd.harvest.schemas import ComponentSummary
-from spd.harvest.storage import CorrelationStorage, TokenStatsStorage
+from spd.dataset_attributions.repo import AttributionRepo
+from spd.harvest.repo import HarvestRepo
 from spd.models.component_model import ComponentModel
 from spd.topology import TransformerTopology
-
-_NOT_LOADED = object()
-
-
-class HarvestCache:
-    """Lazily-loaded harvest data for a run.
-
-    All fields are loaded on first access and cached for the lifetime of the run.
-    Uses a sentinel pattern to distinguish "not loaded" from "loaded but None".
-    """
-
-    def __init__(self, run_id: str) -> None:
-        self.run_id = run_id
-        self._correlations = _NOT_LOADED
-        self._token_stats = _NOT_LOADED
-        self._interpretations = _NOT_LOADED
-        self._activation_contexts_summary = _NOT_LOADED
-        self._dataset_attributions = _NOT_LOADED
-        self._intruder_scores = _NOT_LOADED
-        self._detection_scores = _NOT_LOADED
-        self._fuzzing_scores = _NOT_LOADED
-
-    def _load_correlations(self) -> CorrelationStorage | None:
-        if self._correlations is _NOT_LOADED:
-            from spd.harvest.schemas import get_correlations_dir
-
-            path = get_correlations_dir(self.run_id) / "component_correlations.pt"
-            self._correlations = CorrelationStorage.load(path) if path.exists() else None
-        if self._correlations is None:
-            return None
-        assert isinstance(self._correlations, CorrelationStorage)
-        return self._correlations
-
-    def has_correlations(self) -> bool:
-        return self._load_correlations() is not None
-
-    @property
-    def correlations(self) -> CorrelationStorage:
-        result = self._load_correlations()
-        assert result is not None, f"No correlations found for run {self.run_id}"
-        return result
-
-    def _load_token_stats(self) -> TokenStatsStorage | None:
-        if self._token_stats is _NOT_LOADED:
-            from spd.harvest.schemas import get_correlations_dir
-
-            path = get_correlations_dir(self.run_id) / "token_stats.pt"
-            self._token_stats = TokenStatsStorage.load(path) if path.exists() else None
-        if self._token_stats is None:
-            return None
-        assert isinstance(self._token_stats, TokenStatsStorage)
-        return self._token_stats
-
-    def has_token_stats(self) -> bool:
-        return self._load_token_stats() is not None
-
-    @property
-    def token_stats(self) -> TokenStatsStorage:
-        result = self._load_token_stats()
-        assert result is not None, f"No token stats found for run {self.run_id}"
-        return result
-
-    @property
-    def interpretations(self) -> dict[str, InterpretationResult] | None:
-        if self._interpretations is _NOT_LOADED:
-            self._interpretations = load_interpretations(self.run_id)
-        if self._interpretations is None:
-            return None
-        assert isinstance(self._interpretations, dict)
-        return self._interpretations
-
-    def _load_activation_contexts_summary(self) -> dict[str, ComponentSummary] | None:
-        if self._activation_contexts_summary is _NOT_LOADED:
-            self._activation_contexts_summary = load_activation_contexts_summary(self.run_id)
-        if self._activation_contexts_summary is None:
-            return None
-        assert isinstance(self._activation_contexts_summary, dict)
-        return self._activation_contexts_summary
-
-    def has_activation_contexts_summary(self) -> bool:
-        """Check if activation contexts summary is available."""
-        return self._load_activation_contexts_summary() is not None
-
-    @property
-    def activation_contexts_summary(self) -> dict[str, ComponentSummary]:
-        """Lightweight summary of activation contexts, keyed by component_key (e.g. 'h.0.mlp.c_fc:5')."""
-        result = self._load_activation_contexts_summary()
-        assert result is not None, f"No activation contexts summary found for run {self.run_id}"
-        return result
-
-    def _load_dataset_attributions(self) -> DatasetAttributionStorage | None:
-        if self._dataset_attributions is _NOT_LOADED:
-            self._dataset_attributions = load_dataset_attributions(self.run_id)
-        if self._dataset_attributions is None:
-            return None
-        assert isinstance(self._dataset_attributions, DatasetAttributionStorage)
-        return self._dataset_attributions
-
-    def has_dataset_attributions(self) -> bool:
-        """Check if dataset attributions are available."""
-        return self._load_dataset_attributions() is not None
-
-    @property
-    def dataset_attributions(self) -> DatasetAttributionStorage:
-        """Dataset-aggregated attribution matrix."""
-        result = self._load_dataset_attributions()
-        assert result is not None, (
-            f"No dataset attributions found for run {self.run_id}. "
-            "Run: spd-attributions <wandb_path> --n_batches N"
-        )
-        return result
-
-    @property
-    def intruder_scores(self) -> dict[str, float] | None:
-        if self._intruder_scores is _NOT_LOADED:
-            self._intruder_scores = load_intruder_scores(self.run_id)
-        if self._intruder_scores is None:
-            return None
-        assert isinstance(self._intruder_scores, dict)
-        return self._intruder_scores
-
-    @property
-    def detection_scores(self) -> dict[str, float] | None:
-        if self._detection_scores is _NOT_LOADED:
-            self._detection_scores = load_detection_scores(self.run_id)
-        if self._detection_scores is None:
-            return None
-        assert isinstance(self._detection_scores, dict)
-        return self._detection_scores
-
-    @property
-    def fuzzing_scores(self) -> dict[str, float] | None:
-        if self._fuzzing_scores is _NOT_LOADED:
-            self._fuzzing_scores = load_fuzzing_scores(self.run_id)
-        if self._fuzzing_scores is None:
-            return None
-        assert isinstance(self._fuzzing_scores, dict)
-        return self._fuzzing_scores
 
 
 @dataclass
@@ -175,7 +29,9 @@ class RunState:
     sources_by_target: dict[str, list[str]]
     config: Config
     context_length: int
-    harvest: HarvestCache
+    harvest: HarvestRepo
+    interp: InterpRepo
+    attributions: AttributionRepo
 
 
 @dataclass
