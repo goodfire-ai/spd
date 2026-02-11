@@ -14,7 +14,6 @@ from spd.app.backend.compute import compute_ci_only
 from spd.app.backend.dependencies import DepLoadedRun
 from spd.app.backend.schemas import SubcomponentActivationContexts, SubcomponentMetadata
 from spd.app.backend.utils import log_errors
-
 from spd.topology import CanonicalWeight
 from spd.utils.distributed_utils import get_device
 

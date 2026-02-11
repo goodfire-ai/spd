@@ -115,7 +115,6 @@ export type ComputeGraphOptimizedParams = {
     pnorm: number;
     beta: number;
     normalize: NormalizeType;
-    outputProbThreshold: number;
     ciThreshold: number;
     maskType: MaskType;
     lossType: LossType;
@@ -135,7 +134,6 @@ export async function computeGraphOptimizedStream(
     url.searchParams.set("pnorm", String(params.pnorm));
     url.searchParams.set("beta", String(params.beta));
     url.searchParams.set("normalize", String(params.normalize));
-    url.searchParams.set("output_prob_threshold", String(params.outputProbThreshold));
     url.searchParams.set("ci_threshold", String(params.ciThreshold));
     url.searchParams.set("mask_type", params.maskType);
     url.searchParams.set("loss_type", params.lossType);
