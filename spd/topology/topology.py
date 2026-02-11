@@ -4,6 +4,7 @@ Depends on torch.nn and specific model classes. For pure canonical types
 without torch, use canonical.py directly.
 """
 
+import re
 from abc import ABC
 from dataclasses import dataclass
 from typing import Literal
@@ -118,6 +119,7 @@ class _PathSchema(ABC):
     attn: _SeparateAttnPathSchema | _FusedAttnPathSchema
     mlp: _GLUPathSchema | _FFNPathSchema
     unembed_path: str
+    _block_re: re.Pattern[str] | None = None
 
     def parse_target_path(self, path: str) -> CanonicalWeight:
         if path == self.embedding_path:
@@ -139,19 +141,23 @@ class _PathSchema(ABC):
 
     def _parse_block_path(self, path: str) -> LayerWeight:
         """Parse a block-level path like 'h.3.attn.q_proj' into a LayerWeight."""
-        assert path.startswith(self.blocks + ".")
-        remainder = path[len(self.blocks) + 1 :]
-        dot = remainder.index(".")
-        layer_idx = int(remainder[:dot])
-        sublayer_and_proj = remainder[dot + 1 :]
+        if self._block_re is None:
+            attn_base = re.escape(self.attn.base)
+            mlp_base = re.escape(self.mlp.base)
+            blocks = re.escape(self.blocks)
+            self._block_re = re.compile(
+                rf"^{blocks}\.(?P<idx>\d+)\."
+                rf"(?:(?P<attn>{attn_base})\.(?P<attn_proj>\w+)"
+                rf"|(?P<mlp>{mlp_base})\.(?P<mlp_proj>\w+))$"
+            )
 
-        if sublayer_and_proj.startswith(self.attn.base + "."):
-            proj = sublayer_and_proj[len(self.attn.base) + 1 :]
-            return self.attn.parse(proj, layer_idx)
+        m = self._block_re.match(path)
+        assert m is not None, f"Invalid block path: {path!r}"
 
-        assert sublayer_and_proj.startswith(self.mlp.base + ".")
-        proj = sublayer_and_proj[len(self.mlp.base) + 1 :]
-        return self.mlp.parse(proj, layer_idx)
+        layer_idx = int(m.group("idx"))
+        if m.group("attn"):
+            return self.attn.parse(m.group("attn_proj"), layer_idx)
+        return self.mlp.parse(m.group("mlp_proj"), layer_idx)
 
     def _render_layer_weight(self, w: LayerWeight) -> str:
         """Render a LayerWeight into a concrete path."""
