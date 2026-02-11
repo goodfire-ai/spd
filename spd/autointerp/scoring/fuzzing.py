@@ -7,6 +7,7 @@ Catches labels that are too vague or generic.
 Based on: EleutherAI's sae-auto-interp (https://blog.eleuther.ai/autointerp/).
 """
 
+import asyncio
 import json
 import random
 from dataclasses import asdict, dataclass
@@ -18,13 +19,18 @@ from openrouter import OpenRouter
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.llm_api import (
+    BudgetExceededError,
+    CostTracker,
+    LLMClient,
+    LLMClientConfig,
     RateLimiter,
-    chat_with_retry,
+    get_model_pricing,
     make_response_format,
-    run_scoring_pipeline,
 )
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
+
+MAX_CONCURRENT = 50
 
 N_CORRECT = 5
 N_INCORRECT = 2
@@ -107,12 +113,6 @@ def _build_fuzzing_prompt(
     label: str,
     formatted_examples: list[tuple[str, bool]],
 ) -> str:
-    """Build the fuzzing detection prompt.
-
-    Args:
-        label: The interpretation label for this component.
-        formatted_examples: List of (formatted_text, is_correct) tuples, already shuffled.
-    """
     n_examples = len(formatted_examples)
 
     examples_text = ""
@@ -136,13 +136,12 @@ Respond with the list of correctly-highlighted example numbers and brief reasoni
 
 
 async def score_component(
-    client: OpenRouter,
+    llm: LLMClient,
     model: str,
     component: ComponentData,
     app_tok: AppTokenizer,
     label: str,
     ci_threshold: float,
-    rate_limiter: RateLimiter | None = None,
 ) -> FuzzingResult:
     min_examples = N_CORRECT + N_INCORRECT
     assert len(component.activation_examples) >= min_examples
@@ -167,7 +166,6 @@ async def score_component(
             formatted.append((text, True))
 
         for ex in incorrect_examples:
-            # Count how many tokens would be bolded in the correct version
             _, n_delimited = _delimit_high_ci_tokens(ex, app_tok, ci_threshold)
             n_to_delimit = max(n_delimited, 1)
             text = _delimit_random_low_ci_tokens(ex, app_tok, n_to_delimit, rng, ci_threshold)
@@ -175,7 +173,6 @@ async def score_component(
 
         rng.shuffle(formatted)
 
-        # Track which 1-indexed positions are correct
         correct_positions = {i + 1 for i, (_, is_correct) in enumerate(formatted) if is_correct}
         incorrect_positions = {
             i + 1 for i, (_, is_correct) in enumerate(formatted) if not is_correct
@@ -184,21 +181,17 @@ async def score_component(
         prompt = _build_fuzzing_prompt(label, formatted)
 
         try:
-            response, _, _ = await chat_with_retry(
-                client=client,
+            response = await llm.chat(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=400,
                 context_label=f"{component.component_key}/trial{trial_idx}",
                 response_format=FUZZING_RESPONSE_FORMAT,
-                rate_limiter=rate_limiter,
             )
             parsed = json.loads(response)
             predicted_correct = set(parsed["correct_examples"])
 
-            # True positives: correctly identified as correct
             tp = len(correct_positions & predicted_correct)
-            # True negatives: correctly identified as incorrect (not in predicted)
             tn = len(incorrect_positions - predicted_correct)
 
             total_tp += tp
@@ -220,7 +213,6 @@ async def score_component(
             logger.error(f"{component.component_key}/trial{trial_idx}: {type(e).__name__}: {e}")
             n_errors += 1
 
-    # Balanced accuracy = (TPR + TNR) / 2
     tpr = total_tp / total_pos if total_pos > 0 else 0.0
     tnr = total_tn / total_neg if total_neg > 0 else 0.0
     score = (tpr + tnr) / 2 if (total_pos > 0 and total_neg > 0) else 0.0
@@ -264,21 +256,65 @@ async def run_fuzzing_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    async def _score(
-        client: OpenRouter, component: ComponentData, rate_limiter: RateLimiter
-    ) -> FuzzingResult:
-        return await score_component(
-            client, model, component, app_tok, labels[component.component_key], ci_threshold,
-            rate_limiter,
-        )
-
-    return await run_scoring_pipeline(
-        eligible=eligible,
-        score_fn=_score,
-        serialize_fn=asdict,
-        deserialize_fn=_deserialize_result,
-        model=model,
+    llm_config = LLMClientConfig(
         openrouter_api_key=openrouter_api_key,
-        output_path=output_path,
+        model=model,
         cost_limit_usd=cost_limit_usd,
     )
+
+    results: list[FuzzingResult] = []
+    completed = set[str]()
+
+    if output_path.exists():
+        with open(output_path) as f:
+            for line in f:
+                data = json.loads(line)
+                results.append(_deserialize_result(data))
+                completed.add(data["component_key"])
+        print(f"Resuming: {len(completed)} already scored")
+
+    remaining = [c for c in eligible if c.component_key not in completed]
+    print(f"Scoring {len(remaining)} components")
+
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    output_lock = asyncio.Lock()
+
+    async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
+        async with semaphore:
+            try:
+                result = await score_component(
+                    llm, model, component, app_tok, labels[component.component_key], ci_threshold
+                )
+            except BudgetExceededError:
+                return
+            except Exception as e:
+                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
+                return
+            async with output_lock:
+                results.append(result)
+                with open(output_path, "a") as f:
+                    f.write(json.dumps(asdict(result)) + "\n")
+                if index % 100 == 0:
+                    logger.info(
+                        f"[{index}] scored {len(results)}, ${llm.cost_tracker.cost_usd():.2f}"
+                    )
+
+    async with OpenRouter(api_key=llm_config.openrouter_api_key) as api:
+        input_price, output_price = await get_model_pricing(api, llm_config.model)
+        cost_tracker = CostTracker(
+            input_price_per_token=input_price,
+            output_price_per_token=output_price,
+            limit_usd=llm_config.cost_limit_usd,
+        )
+        llm = LLMClient(
+            api=api,
+            rate_limiter=RateLimiter(llm_config.max_requests_per_minute),
+            cost_tracker=cost_tracker,
+        )
+
+        await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
+
+        print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+
+    print(f"Scored {len(results)} components -> {output_path}")
+    return results

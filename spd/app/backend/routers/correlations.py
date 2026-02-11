@@ -174,6 +174,7 @@ async def request_component_interpretation(
         get_architecture_info,
         interpret_component,
     )
+    from spd.autointerp.llm_api import CostTracker, LLMClient, RateLimiter  # noqa: F811
     from spd.autointerp.schemas import get_autointerp_dir
 
     component_key = _canonical_to_concrete_key(layer, component_idx, loaded.topology)
@@ -219,25 +220,28 @@ async def request_component_interpretation(
 
     ci_threshold = loaded.harvest.get_ci_threshold()
 
-    async with OpenRouter(api_key=api_key) as client:
-        res = await interpret_component(
-            client=client,
-            config=config,
-            component=component_data,
-            arch=arch,
-            app_tok=loaded.tokenizer,
-            input_token_stats=input_token_stats,
-            output_token_stats=output_token_stats,
-            ci_threshold=ci_threshold,
+    async with OpenRouter(api_key=api_key) as api:
+        llm = LLMClient(
+            api=api,
+            rate_limiter=RateLimiter(max_requests=10),
+            cost_tracker=CostTracker(),
         )
-
-    if res is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to generate interpretation",
-        )
-
-    result, _, _ = res
+        try:
+            result = await interpret_component(
+                llm=llm,
+                config=config,
+                component=component_data,
+                arch=arch,
+                app_tok=loaded.tokenizer,
+                input_token_stats=input_token_stats,
+                output_token_stats=output_token_stats,
+                ci_threshold=ci_threshold,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate interpretation: {e}",
+            ) from e
 
     autointerp_dir = get_autointerp_dir(run_id)
     autointerp_dir.mkdir(parents=True, exist_ok=True)

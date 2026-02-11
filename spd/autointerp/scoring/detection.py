@@ -9,6 +9,7 @@ Usage:
     python -m spd.autointerp.scoring.scripts.run_scoring <wandb_path> --scorer detection
 """
 
+import asyncio
 import json
 import random
 from dataclasses import asdict, dataclass
@@ -20,13 +21,18 @@ from openrouter import OpenRouter
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.app.backend.utils import delimit_tokens
 from spd.autointerp.llm_api import (
+    BudgetExceededError,
+    CostTracker,
+    LLMClient,
+    LLMClientConfig,
     RateLimiter,
-    chat_with_retry,
+    get_model_pricing,
     make_response_format,
-    run_scoring_pipeline,
 )
 from spd.harvest.schemas import ActivationExample, ComponentData
 from spd.log import logger
+
+MAX_CONCURRENT = 50
 
 N_ACTIVATING = 5
 N_NON_ACTIVATING = 5
@@ -130,13 +136,6 @@ def _build_detection_prompt(
     label: str,
     examples_with_labels: list[tuple[str, bool]],
 ) -> str:
-    """Build the detection prompt.
-
-    Args:
-        label: The interpretation label for the component.
-        examples_with_labels: List of (formatted_text, is_activating) in shuffled order.
-            The bool is NOT shown to the LLM -- it's used only for scoring.
-    """
     n_total = len(examples_with_labels)
 
     examples_text = ""
@@ -157,13 +156,12 @@ Respond with the list of activating example numbers."""
 
 
 async def score_component(
-    client: OpenRouter,
+    llm: LLMClient,
     model: str,
     component: ComponentData,
     all_components: list[ComponentData],
     app_tok: AppTokenizer,
     label: str,
-    rate_limiter: RateLimiter | None = None,
 ) -> DetectionResult:
     assert len(component.activation_examples) >= N_ACTIVATING
 
@@ -177,39 +175,32 @@ async def score_component(
             component, all_components, N_NON_ACTIVATING, rng
         )
 
-        # Mark the center token for both — harvest windows are centered on firing position,
-        # so non-activating examples (from other components) also have their center as a firing token.
         formatted: list[tuple[str, bool]] = []
         for ex in activating:
             formatted.append((_format_example_with_center_token(ex, app_tok), True))
         for ex in non_activating:
             formatted.append((_format_example_with_center_token(ex, app_tok), False))
 
-        # Shuffle
         rng.shuffle(formatted)
 
         prompt = _build_detection_prompt(label, formatted)
 
         try:
-            response, _, _ = await chat_with_retry(
-                client=client,
+            response = await llm.chat(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=300,
                 context_label=f"{component.component_key}/trial{trial_idx}",
                 response_format=DETECTION_RESPONSE_FORMAT,
-                rate_limiter=rate_limiter,
             )
             parsed = json.loads(response)
             predicted_activating = set(int(x) for x in parsed["activating"])
 
-            # Ground truth: which example numbers are actually activating
             actual_activating = set(i + 1 for i, (_, is_act) in enumerate(formatted) if is_act)
             actual_non_activating = set(
                 i + 1 for i, (_, is_act) in enumerate(formatted) if not is_act
             )
 
-            # Balanced accuracy = (TPR + TNR) / 2
             tp = len(predicted_activating & actual_activating)
             tn = len(actual_non_activating - predicted_activating)
             tpr = tp / len(actual_activating) if actual_activating else 0.0
@@ -268,21 +259,65 @@ async def run_detection_scoring(
     if limit is not None:
         eligible = eligible[:limit]
 
-    async def _score(
-        client: OpenRouter, component: ComponentData, rate_limiter: RateLimiter
-    ) -> DetectionResult:
-        return await score_component(
-            client, model, component, components, app_tok, labels[component.component_key],
-            rate_limiter,
-        )
-
-    return await run_scoring_pipeline(
-        eligible=eligible,
-        score_fn=_score,
-        serialize_fn=asdict,
-        deserialize_fn=_deserialize_result,
-        model=model,
+    llm_config = LLMClientConfig(
         openrouter_api_key=openrouter_api_key,
-        output_path=output_path,
+        model=model,
         cost_limit_usd=cost_limit_usd,
     )
+
+    results: list[DetectionResult] = []
+    completed = set[str]()
+
+    if output_path.exists():
+        with open(output_path) as f:
+            for line in f:
+                data = json.loads(line)
+                results.append(_deserialize_result(data))
+                completed.add(data["component_key"])
+        print(f"Resuming: {len(completed)} already scored")
+
+    remaining = [c for c in eligible if c.component_key not in completed]
+    print(f"Scoring {len(remaining)} components")
+
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    output_lock = asyncio.Lock()
+
+    async def process_one(component: ComponentData, index: int, llm: LLMClient) -> None:
+        async with semaphore:
+            try:
+                result = await score_component(
+                    llm, model, component, components, app_tok, labels[component.component_key]
+                )
+            except BudgetExceededError:
+                return
+            except Exception as e:
+                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
+                return
+            async with output_lock:
+                results.append(result)
+                with open(output_path, "a") as f:
+                    f.write(json.dumps(asdict(result)) + "\n")
+                if index % 100 == 0:
+                    logger.info(
+                        f"[{index}] scored {len(results)}, ${llm.cost_tracker.cost_usd():.2f}"
+                    )
+
+    async with OpenRouter(api_key=llm_config.openrouter_api_key) as api:
+        input_price, output_price = await get_model_pricing(api, llm_config.model)
+        cost_tracker = CostTracker(
+            input_price_per_token=input_price,
+            output_price_per_token=output_price,
+            limit_usd=llm_config.cost_limit_usd,
+        )
+        llm = LLMClient(
+            api=api,
+            rate_limiter=RateLimiter(llm_config.max_requests_per_minute),
+            cost_tracker=cost_tracker,
+        )
+
+        await asyncio.gather(*[process_one(c, i, llm) for i, c in enumerate(remaining)])
+
+        print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
+
+    print(f"Scored {len(results)} components -> {output_path}")
+    return results

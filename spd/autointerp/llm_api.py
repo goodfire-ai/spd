@@ -1,13 +1,10 @@
-"""Shared LLM API utilities: retry logic, rate limiting, cost tracking, pricing, scoring pipeline."""
+"""LLM API client with rate limiting, cost tracking, and retry."""
 
 import asyncio
-import json
 import random
 import time
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import httpx
 from openrouter import OpenRouter
@@ -29,7 +26,6 @@ from openrouter.errors import (
     TooManyRequestsResponseError,
 )
 
-from spd.harvest.schemas import ComponentData
 from spd.log import logger
 
 MAX_RETRIES = 8
@@ -49,6 +45,10 @@ RETRYABLE_ERRORS = (
     OpenRouterDefaultError,
     httpx.TransportError,
 )
+
+
+class BudgetExceededError(Exception):
+    pass
 
 
 @dataclass
@@ -99,7 +99,6 @@ class RateLimiter:
 
                 sleep_time = self.timestamps[0] + self.period - now
 
-            # Sleep OUTSIDE the lock so other coroutines aren't blocked
             if sleep_time > 0:
                 await asyncio.sleep(sleep_time)
 
@@ -114,167 +113,97 @@ def make_response_format(name: str, schema: dict[str, Any]) -> ResponseFormatJSO
     )
 
 
-async def chat_with_retry(
-    client: OpenRouter,
-    model: str,
-    messages: list[MessageTypedDict],
-    max_tokens: int,
-    context_label: str,
-    response_format: ResponseFormatJSONSchema | None = None,
-    reasoning: Reasoning | None = None,
-    rate_limiter: RateLimiter | None = None,
-) -> tuple[str, int, int]:
-    """Send chat request with exponential backoff retry. Returns (content, input_tokens, output_tokens)."""
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        if rate_limiter is not None:
-            await rate_limiter.acquire()
-        try:
-            kwargs: dict[str, Any] = dict(
-                model=model,
-                max_tokens=max_tokens,
-                messages=messages,
-            )
-            if response_format is not None:
-                kwargs["response_format"] = response_format
-            if reasoning is not None:
-                kwargs["reasoning"] = reasoning
-
-            response = await client.chat.send_async(**kwargs)
-            choice = response.choices[0]
-            message = choice.message
-            assert isinstance(message.content, str)
-            assert response.usage is not None
-
-            if choice.finish_reason == "length":
-                logger.warning(f"{context_label}: Response truncated at {max_tokens} tokens")
-
-            return (
-                message.content,
-                int(response.usage.prompt_tokens),
-                int(response.usage.completion_tokens),
-            )
-        except RETRYABLE_ERRORS as e:
-            last_error = e
-            if attempt == MAX_RETRIES - 1:
-                break
-
-            delay = min(BASE_DELAY_S * (2**attempt), MAX_DELAY_S)
-            jitter = delay * JITTER_FACTOR * random.random()
-            total_delay = delay + jitter
-
-            logger.warning(
-                f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
-                f"{type(e).__name__}, backing off {total_delay:.1f}s"
-            )
-            await asyncio.sleep(total_delay)
-
-    assert last_error is not None
-    raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")
-
-
-async def get_model_pricing(client: OpenRouter, model_id: str) -> tuple[float, float]:
+async def get_model_pricing(api: OpenRouter, model_id: str) -> tuple[float, float]:
     """Returns (input_price, output_price) per token."""
-    response = await client.models.list_async()
+    response = await api.models.list_async()
     for model in response.data:
         if model.id == model_id:
             return float(model.pricing.prompt), float(model.pricing.completion)
     raise ValueError(f"Model {model_id} not found")
 
 
-# ---------------------------------------------------------------------------
-# Shared scoring pipeline
-# ---------------------------------------------------------------------------
+@dataclass
+class LLMClientConfig:
+    """Everything needed to construct an LLMClient."""
 
-T = TypeVar("T")
+    openrouter_api_key: str
+    model: str
+    cost_limit_usd: float | None = None
+    max_requests_per_minute: int = 200
 
-MAX_CONCURRENT_REQUESTS = 50
-MAX_REQUESTS_PER_MINUTE = 200
 
+@dataclass
+class LLMClient:
+    """OpenRouter client with rate limiting, cost tracking, and retry.
 
-async def run_scoring_pipeline(
-    *,
-    eligible: list[ComponentData],
-    score_fn: Callable[[OpenRouter, ComponentData, RateLimiter], Awaitable[T]],
-    serialize_fn: Callable[[T], dict[str, Any]],
-    deserialize_fn: Callable[[dict[str, Any]], T],
-    model: str,
-    openrouter_api_key: str,
-    output_path: Path,
-    cost_limit_usd: float | None = None,
-) -> list[T]:
-    """Shared async scoring pipeline with resume, rate limiting, and cost tracking.
-
-    Args:
-        eligible: Components to score (already filtered for eligibility).
-        score_fn: Async function (client, component, rate_limiter) -> result dataclass.
-        serialize_fn: Convert a result to a JSON-serializable dict.
-        deserialize_fn: Construct a result from a JSON dict (for resume).
-        model: OpenRouter model ID (for pricing lookup).
-        openrouter_api_key: API key.
-        output_path: JSONL file for append-only results.
-        cost_limit_usd: Optional budget cap.
+    All API calls go through `chat()`, which enforces budget limits,
+    rate limiting, and retries with exponential backoff.
     """
-    results: list[T] = []
-    completed = set[str]()
 
-    if output_path.exists():
-        with open(output_path) as f:
-            for line in f:
-                data = json.loads(line)
-                results.append(deserialize_fn(data))
-                completed.add(data["component_key"])
-        print(f"Resuming: {len(completed)} already scored")
+    api: OpenRouter
+    rate_limiter: RateLimiter
+    cost_tracker: CostTracker
 
-    remaining = [c for c in eligible if c.component_key not in completed]
-    print(f"Scoring {len(remaining)} components")
+    async def chat(
+        self,
+        model: str,
+        messages: list[MessageTypedDict],
+        max_tokens: int,
+        context_label: str,
+        response_format: ResponseFormatJSONSchema | None = None,
+        reasoning: Reasoning | None = None,
+    ) -> str:
+        """Send a chat request. Returns response content.
 
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-    rate_limiter = RateLimiter(MAX_REQUESTS_PER_MINUTE)
-    output_lock = asyncio.Lock()
+        Raises BudgetExceededError if cost limit is reached.
+        Raises RuntimeError if all retries are exhausted.
+        """
+        if self.cost_tracker.over_budget():
+            raise BudgetExceededError(f"${self.cost_tracker.cost_usd():.2f}")
 
-    async def process_one(
-        component: ComponentData,
-        index: int,
-        client: OpenRouter,
-        cost_tracker: CostTracker,
-    ) -> None:
-        if cost_tracker.over_budget():
-            return
-        async with semaphore:
-            if cost_tracker.over_budget():
-                return
+        last_error: Exception | None = None
+        for attempt in range(MAX_RETRIES):
+            await self.rate_limiter.acquire()
             try:
-                result = await score_fn(client, component, rate_limiter)
-                async with output_lock:
-                    results.append(result)
-                    with open(output_path, "a") as f:
-                        f.write(json.dumps(serialize_fn(result)) + "\n")
-                    if index % 100 == 0:
-                        logger.info(
-                            f"[{index}] scored {len(results)}, ${cost_tracker.cost_usd():.2f}"
-                        )
-            except Exception as e:
-                logger.error(f"Skipping {component.component_key}: {type(e).__name__}: {e}")
+                kwargs: dict[str, Any] = dict(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=messages,
+                )
+                if response_format is not None:
+                    kwargs["response_format"] = response_format
+                if reasoning is not None:
+                    kwargs["reasoning"] = reasoning
 
-    async with OpenRouter(api_key=openrouter_api_key) as client:
-        input_price, output_price = await get_model_pricing(client, model)
-        cost_tracker = CostTracker(
-            input_price_per_token=input_price,
-            output_price_per_token=output_price,
-            limit_usd=cost_limit_usd,
-        )
-        limit_str = f" (limit: ${cost_limit_usd:.2f})" if cost_limit_usd is not None else ""
-        print(
-            f"Pricing: ${input_price * 1e6:.2f}/M input, ${output_price * 1e6:.2f}/M output{limit_str}"
-        )
+                response = await self.api.chat.send_async(**kwargs)
+                choice = response.choices[0]
+                message = choice.message
+                assert isinstance(message.content, str)
+                assert response.usage is not None
 
-        await asyncio.gather(
-            *[process_one(c, i, client, cost_tracker) for i, c in enumerate(remaining)]
-        )
+                if choice.finish_reason == "length":
+                    logger.warning(f"{context_label}: Response truncated at {max_tokens} tokens")
 
-    if cost_tracker.over_budget():
-        print(f"Cost limit reached: ${cost_tracker.cost_usd():.2f}")
-    print(f"Final cost: ${cost_tracker.cost_usd():.2f}")
-    print(f"Scored {len(results)} components -> {output_path}")
-    return results
+                await self.cost_tracker.add(
+                    int(response.usage.prompt_tokens),
+                    int(response.usage.completion_tokens),
+                )
+
+                return message.content
+            except RETRYABLE_ERRORS as e:
+                last_error = e
+                if attempt == MAX_RETRIES - 1:
+                    break
+
+                delay = min(BASE_DELAY_S * (2**attempt), MAX_DELAY_S)
+                jitter = delay * JITTER_FACTOR * random.random()
+                total_delay = delay + jitter
+
+                logger.warning(
+                    f"[retry {attempt + 1}/{MAX_RETRIES}] ({context_label}) "
+                    f"{type(e).__name__}, backing off {total_delay:.1f}s"
+                )
+                await asyncio.sleep(total_delay)
+
+        assert last_error is not None
+        raise RuntimeError(f"Max retries exceeded for {context_label}: {last_error}")
