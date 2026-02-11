@@ -25,9 +25,6 @@ def get_correlations_dir(wandb_run_id: str) -> Path:
     return get_harvest_dir(wandb_run_id) / "correlations"
 
 
-_PAD_SENTINEL = -1
-
-
 @dataclass
 class ActivationExample:
     token_ids: list[int]
@@ -35,8 +32,18 @@ class ActivationExample:
     component_acts: list[float]  # Normalized component activations: (v_i^T @ a) * ||u_i||
 
     def __post_init__(self) -> None:
-        if any(t == _PAD_SENTINEL for t in self.token_ids):
-            mask = [t != _PAD_SENTINEL for t in self.token_ids]
+        self._strip_legacy_padding()
+
+    def _strip_legacy_padding(self) -> None:
+        """Strip -1 padding sentinels from old harvest data.
+
+        Old harvests padded token windows with -1 at sequence boundaries.
+        New harvests strip at write time (harvester.py), but existing data on disk
+        still has them. Remove once all harvest data is regenerated.
+        """
+        PAD = -1
+        if any(t == PAD for t in self.token_ids):
+            mask = [t != PAD for t in self.token_ids]
             self.token_ids = [v for v, k in zip(self.token_ids, mask, strict=True) if k]
             self.ci_values = [v for v, k in zip(self.ci_values, mask, strict=True) if k]
             self.component_acts = [v for v, k in zip(self.component_acts, mask, strict=True) if k]
