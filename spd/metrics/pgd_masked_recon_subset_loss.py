@@ -1,11 +1,11 @@
-from typing import Any, ClassVar, Literal, override
+from typing import Any, ClassVar, override
 
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor
 from torch.distributed import ReduceOp
 
-from spd.configs import PGDConfig, SubsetRoutingType
+from spd.configs import OutputLossType, PGDConfig, SubsetRoutingType
 from spd.metrics.base import Metric
 from spd.metrics.pgd_utils import pgd_masked_recon_loss_update
 from spd.models.component_model import CIOutputs, ComponentModel
@@ -18,7 +18,7 @@ def pgd_recon_subset_loss(
     model: ComponentModel,
     batch: Int[Tensor, "..."] | Float[Tensor, "..."],
     target_out: Float[Tensor, "... vocab"],
-    output_loss_type: Literal["mse", "kl"],
+    output_loss_type: OutputLossType,
     ci: dict[str, Float[Tensor, "... C"]],
     weight_deltas: dict[str, Float[Tensor, "d_out d_in"]] | None,
     pgd_config: PGDConfig,
@@ -47,14 +47,14 @@ class PGDReconSubsetLoss(Metric):
         self,
         model: ComponentModel,
         device: str,
-        output_loss_type: Literal["mse", "kl"],
+        output_loss_type: OutputLossType,
         use_delta_component: bool,
         pgd_config: PGDConfig,
         routing: SubsetRoutingType,
     ) -> None:
         self.model = model
         self.pgd_config: PGDConfig = pgd_config
-        self.output_loss_type: Literal["mse", "kl"] = output_loss_type
+        self.output_loss_type: OutputLossType = output_loss_type
         self.use_delta_component: bool = use_delta_component
         self.router = get_subset_router(routing, device)
 
