@@ -182,32 +182,9 @@ def test_from_run_info():
         save_file(config.model_dump(mode="json"), comp_model_dir / "final_config.yaml")
 
         cm_run_info = SPDRunInfo.from_path(comp_model_dir / "model.pth")
+        cm_loaded = ComponentModel.from_run_info(cm_run_info)
 
         assert config == cm_run_info.config
-
-        # Manually reconstruct component model and load state dict
-        assert cm_run_info.config.pretrained_model_path is not None
-        loaded_target = SimpleTestModel.from_pretrained(cm_run_info.config.pretrained_model_path)
-        loaded_target.eval()
-        loaded_target.requires_grad_(False)
-        if cm_run_info.config.identity_module_info is not None:
-            insert_identity_operations_(
-                loaded_target,
-                identity_module_info=cm_run_info.config.identity_module_info,
-            )
-        loaded_module_path_info = expand_module_patterns(
-            loaded_target, cm_run_info.config.all_module_info
-        )
-        cm_loaded = ComponentModel(
-            target_model=loaded_target,
-            run_batch=run_batch_passthrough,
-            module_path_info=loaded_module_path_info,
-            ci_fn_type=cm_run_info.config.ci_fn_type,
-            ci_fn_hidden_dims=cm_run_info.config.ci_fn_hidden_dims,
-            sigmoid_type=cm_run_info.config.sigmoid_type,
-        )
-        cm_loaded.load_state_dict(torch.load(cm_run_info.checkpoint_path))
-
         for k, v in cm_loaded.state_dict().items():
             torch.testing.assert_close(v, cm.state_dict()[k])
 

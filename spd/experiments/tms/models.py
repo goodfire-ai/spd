@@ -10,9 +10,6 @@ from spd.experiments.tms.configs import TMSModelConfig, TMSTrainConfig
 from spd.interfaces import LoadableModule, RunInfo
 from spd.spd_types import ModelPath
 
-TMSBatch = tuple[Float[Tensor, "... n_features"], Float[Tensor, "... n_features"]]
-TMSOutput = Float[Tensor, "... n_features"]
-
 
 @dataclass
 class TMSTargetRunInfo(RunInfo[TMSTrainConfig]):
@@ -56,9 +53,8 @@ class TMSModel(LoadableModule):
 
     @override
     def forward(
-        self, batch: TMSBatch | Float[Tensor, "... n_features"], **_: Any
+        self, x: Float[Tensor, "... n_features"], **_: Any
     ) -> Float[Tensor, "... n_features"]:
-        x = batch[0] if isinstance(batch, tuple) else batch
         hidden = self.linear1(x)
         if self.hidden_layers is not None:
             for layer in self.hidden_layers:

@@ -320,6 +320,7 @@ def train_loader_and_tokenizer(
         batch_size=batch_size,
         buffer_size=task_config.buffer_size,
         global_seed=config.seed,
+        collate_fn=lm_collate_fn,
     )
 
     assert isinstance(tokenizer, PreTrainedTokenizerBase)

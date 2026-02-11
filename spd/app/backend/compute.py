@@ -7,7 +7,7 @@ to avoid importing script files with global execution.
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, cast, override
+from typing import Any, override
 
 import torch
 from jaxtyping import Bool, Float
@@ -166,9 +166,8 @@ def get_sources_by_target(
         wte_cache["wte_post_detach"] = output
         return output
 
-    wte = cast(Any, model.target_model).wte
-    assert isinstance(wte, nn.Module), "wte is not a module"
-    wte_handle = wte.register_forward_hook(wte_hook, with_kwargs=True)
+    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
+    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
 
     with torch.enable_grad(), bf16_autocast():
         comp_output_with_cache: OutputWithCache = model(
@@ -343,9 +342,8 @@ def compute_edges_from_ci(
 
     # Setup wte hook and run forward pass for gradient computation
     wte_hook, wte_cache = _setup_wte_hook()
-    wte = cast(Any, model.target_model).wte
-    assert isinstance(wte, nn.Module), "wte is not a module"
-    wte_handle = wte.register_forward_hook(wte_hook, with_kwargs=True)
+    assert isinstance(model.target_model.wte, nn.Module), "wte is not a module"
+    wte_handle = model.target_model.wte.register_forward_hook(wte_hook, with_kwargs=True)
 
     weight_deltas = model.calc_weight_deltas()
     weight_deltas_and_masks = {

@@ -127,10 +127,26 @@ class ComponentModel(nn.Module):
 
         model_class = resolve_class(config.pretrained_model_class)
         if config.pretrained_model_name is not None:
-            assert hasattr(model_class, "from_pretrained")
-            target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
+            assert hasattr(model_class, "from_pretrained"), (
+                f"Model class {model_class} should have a `from_pretrained` method"
+            )
+            # Handle spd.pretrain models: patch missing model_type in old pretrain runs
+            if config.pretrained_model_class.startswith("spd.pretrain.models."):
+                from spd.pretrain.run_info import PretrainRunInfo
+
+                pretrain_run_info = PretrainRunInfo.from_path(config.pretrained_model_name)
+                if "model_type" not in pretrain_run_info.model_config_dict:
+                    pretrain_run_info.model_config_dict["model_type"] = (
+                        config.pretrained_model_class.split(".")[-1]
+                    )
+                target_model = model_class.from_run_info(pretrain_run_info)  # pyright: ignore[reportAttributeAccessIssue]
+            else:
+                target_model = model_class.from_pretrained(config.pretrained_model_name)  # pyright: ignore[reportAttributeAccessIssue]
         else:
-            assert issubclass(model_class, LoadableModule)
+            assert issubclass(model_class, LoadableModule), (
+                f"Model class {model_class} should be a subclass of LoadableModule which "
+                "defines a `from_pretrained` method"
+            )
             assert config.pretrained_model_path is not None
             target_model = model_class.from_pretrained(config.pretrained_model_path)
 

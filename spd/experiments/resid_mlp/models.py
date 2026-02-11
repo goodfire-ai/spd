@@ -18,9 +18,6 @@ from spd.interfaces import LoadableModule, RunInfo
 from spd.spd_types import ModelPath
 from spd.utils.module_utils import init_param_
 
-ResidMLPBatch = tuple[Float[Tensor, "... n_features"], Float[Tensor, "... n_features"]]
-ResidMLPOutput = Float[Tensor, "... n_features"]
-
 
 @dataclass
 class ResidMLPTargetRunInfo(RunInfo[ResidMLPTrainConfig]):
@@ -92,10 +89,9 @@ class ResidMLP(LoadableModule):
     @override
     def forward(
         self,
-        batch: ResidMLPBatch | Float[Tensor, "... n_features"],
+        x: Float[Tensor, "... n_features"],
         return_residual: bool = False,
     ) -> Float[Tensor, "... n_features"] | Float[Tensor, "... d_embed"]:
-        x = batch[0] if isinstance(batch, tuple) else batch
         residual = einops.einsum(x, self.W_E, "... n_features, n_features d_embed -> ... d_embed")
         for layer in self.layers:
             out = layer(residual)

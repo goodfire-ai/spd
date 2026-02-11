@@ -29,6 +29,11 @@ def run_batch_passthrough(model: nn.Module, batch: Any) -> Tensor:
     return runtime_cast(Tensor, model(batch))
 
 
+def run_batch_first_element(model: nn.Module, batch: Any) -> Tensor:
+    """Run model on the first element of a batch tuple (e.g. (input, labels) -> model(input))."""
+    return runtime_cast(Tensor, model(batch[0]))
+
+
 def make_run_batch(output_extract: int | str | None) -> RunBatch:
     """Creates a RunBatch function for a given configuration.
 

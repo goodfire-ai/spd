@@ -10,7 +10,7 @@ Uses residual-based storage for scalability:
   Output attributions computed on-the-fly at query time via w_unembed
 """
 
-from typing import Any, cast
+from typing import Any
 
 import torch
 from jaxtyping import Bool, Float, Int
@@ -75,7 +75,7 @@ class AttributionHarvester:
 
         # For output targets: store attributions to output residual dimensions
         assert hasattr(model.target_model, "lm_head"), "Model must have lm_head"
-        lm_head = cast(Any, model.target_model).lm_head
+        lm_head = model.target_model.lm_head
         assert isinstance(lm_head, nn.Linear), f"lm_head must be nn.Linear, got {type(lm_head)}"
         self.d_model = lm_head.in_features
         self.out_residual_accumulator = torch.zeros(self.n_sources, self.d_model, device=device)
@@ -144,7 +144,7 @@ class AttributionHarvester:
             pre_unembed.clear()
             pre_unembed.append(args[0])
 
-        wte = cast(Any, self.model.target_model).wte
+        wte = self.model.target_model.wte
         assert isinstance(wte, nn.Module)
         h1 = wte.register_forward_hook(wte_hook, with_kwargs=True)
         h2 = self.lm_head.register_forward_pre_hook(pre_unembed_hook, with_kwargs=True)

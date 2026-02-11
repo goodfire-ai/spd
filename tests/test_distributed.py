@@ -160,10 +160,6 @@ class TestDistributedDeterminicity:
         new_env = os.environ.copy()
         new_env["CUDA_VISIBLE_DEVICES"] = ""
         new_env["SPD_OUT_DIR"] = str(spd_out_dir)
-        # Force single-threaded execution so that within-rank float32 operations
-        # are deterministic across different machines/CI environments.
-        new_env["OMP_NUM_THREADS"] = "1"
-        new_env["MKL_NUM_THREADS"] = "1"
 
         result = subprocess.run(cmd, env=new_env, capture_output=True, text=True, timeout=300)
 
@@ -230,15 +226,10 @@ class TestDistributedDeterminicity:
         self,
         dp1_out_dir: Path,
         dp2_out_dir: Path,
-        atol: float = 2e-4,
-        rtol: float = 1e-3,
+        atol: float = 1e-6,
+        rtol: float = 1e-5,
     ) -> None:
         """Compare saved model parameters between dp=1 and dp=2 runs.
-
-        Tolerances are relatively loose because CI-masked reconstruction losses use hard
-        masking: tiny allreduce rounding differences can push a CI value across the mask
-        threshold, causing a different gradient path that compounds over training steps.
-        Empirically, across many seeds, max parameter diffs stay below ~1.5e-4.
 
         Args:
             dp1_out_dir: Output directory for dp=1 run
