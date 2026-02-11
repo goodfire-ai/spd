@@ -113,7 +113,8 @@ def submit_autointerp(
             "python -m spd.autointerp.scoring.scripts.run_label_scoring",
             f'"{wandb_path}"',
             f"--scorer {scorer}",
-            f"--model {evals.eval_model}",
+            f"--model {evals.model}",
+            f"--reasoning_effort {evals.reasoning_effort}",
         ]
         if harvest_subrun_id is not None:
             scoring_parts.append(f"--harvest_subrun_id {harvest_subrun_id}")

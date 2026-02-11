@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from openrouter import OpenRouter
+from openrouter.components import Reasoning
 
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.config import AutointerpConfig
@@ -17,11 +18,7 @@ from spd.autointerp.llm_api import (
     make_response_format,
 )
 from spd.autointerp.schemas import ArchitectureInfo, InterpretationResult
-from spd.autointerp.strategies.dispatch import (
-    format_prompt,
-    get_reasoning,
-    get_response_schema,
-)
+from spd.autointerp.strategies.dispatch import format_prompt, get_response_schema
 from spd.configs import LMTaskConfig
 from spd.harvest.analysis import TokenPRLift, get_input_token_stats, get_output_token_stats
 from spd.harvest.repo import HarvestRepo
@@ -59,7 +56,7 @@ async def interpret_component(
         max_tokens=8000,
         context_label=component.component_key,
         response_format=make_response_format("interpretation", get_response_schema(config)),
-        reasoning=get_reasoning(config),
+        reasoning=Reasoning(effort=config.reasoning_effort),
     )
 
     parsed = json.loads(raw)
@@ -102,10 +99,6 @@ def run_interpret(
     eligible = sorted(components, key=lambda c: c.mean_ci, reverse=True)
     if limit is not None:
         eligible = eligible[:limit]
-
-    reasoning = get_reasoning(config)
-    reasoning_str = f"reasoning={reasoning.effort}" if reasoning else "no reasoning"
-    print(f"Model: {config.model}, {reasoning_str}")
 
     llm_config = LLMClientConfig(
         openrouter_api_key=openrouter_api_key,

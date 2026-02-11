@@ -2,8 +2,6 @@
 
 from typing import Any
 
-from openrouter.components import Reasoning
-
 from spd.app.backend.app_tokenizer import AppTokenizer
 from spd.autointerp.config import AutointerpConfig, CompactSkepticalConfig
 from spd.autointerp.schemas import ArchitectureInfo
@@ -37,16 +35,6 @@ def format_prompt(
                 output_token_stats,
                 ci_threshold,
             )
-        case _:  # pyright: ignore[reportUnnecessaryComparison]
-            raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]
-
-
-def get_reasoning(config: AutointerpConfig) -> Reasoning | None:
-    match config:
-        case CompactSkepticalConfig():
-            if config.reasoning_effort is None:
-                return None
-            return Reasoning(effort=config.reasoning_effort.value)
         case _:  # pyright: ignore[reportUnnecessaryComparison]
             raise AssertionError(f"Unhandled config type: {type(config)}")  # pyright: ignore[reportUnreachable]
 
