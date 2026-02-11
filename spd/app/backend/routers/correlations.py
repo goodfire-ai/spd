@@ -257,7 +257,13 @@ def get_intruder_scores(loaded: DepLoadedRun) -> dict[str, float]:
     Returns a dict keyed by component_key (layer:cIdx) → score (0-1).
     Returns empty dict if no intruder scores are available.
     """
-    return loaded.harvest.get_intruder_scores() or {}
+    scores = loaded.harvest.get_intruder_scores()
+    if scores is None:
+        return {}
+    return {
+        _concrete_to_canonical_key(key, loaded.topology): score
+        for key, score in scores.items()
+    }
 
 
 # =============================================================================
@@ -342,7 +348,7 @@ def get_component_correlations_bulk(
 
     def to_schema(c: analysis.CorrelatedComponent) -> CorrelatedComponent:
         return CorrelatedComponent(
-            component_key=c.component_key,
+            component_key=_concrete_to_canonical_key(c.component_key, loaded.topology),
             score=c.score,
             count_i=c.count_i,
             count_j=c.count_j,
@@ -473,7 +479,7 @@ def get_component_correlations(
 
     def to_schema(c: analysis.CorrelatedComponent) -> CorrelatedComponent:
         return CorrelatedComponent(
-            component_key=c.component_key,
+            component_key=_concrete_to_canonical_key(c.component_key, loaded.topology),
             score=c.score,
             count_i=c.count_i,
             count_j=c.count_j,

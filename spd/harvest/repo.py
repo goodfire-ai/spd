@@ -37,12 +37,7 @@ class HarvestRepo:
             [d for d in harvest_dir.iterdir() if d.is_dir() and d.name.startswith("h-")],
             key=lambda d: d.name,
         )
-        if candidates:
-            return candidates[-1]
-        # Legacy fallback: check for old activation_contexts/harvest.db layout
-        if (harvest_dir / "activation_contexts" / "harvest.db").exists():
-            return None
-        return None
+        return candidates[-1] if candidates else None
 
     def _resolve_db_path(self) -> Path | None:
         """Resolve the path to harvest.db, checking sub-run dirs then legacy layout."""
