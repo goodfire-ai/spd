@@ -5,38 +5,24 @@ seed: 0
 autocast_bf16: true
 n_mask_samples: 1
 ci_config:
-  mode: global
-  fn_type: global_shared_transformer
-  hidden_dims: null
-  reader_hidden_dims: null
-  d_resid_ci_fn: null
-  block_groups: null
-  transition_attn_config: null
-  transition_hidden_dim: null
-  simple_transformer_ci_cfg:
-    d_model: 1024
-    n_blocks: 8
-    mlp_hidden_dim:
-    - 8192
-    attn_config:
-      n_heads: 16
-      max_len: 512
-      rope_base: 10000.0
+  mode: layerwise
+  fn_type: shared_mlp
+  hidden_dims: [800]
 sampling: continuous
 sigmoid_type: leaky_hard
 module_info:
 - module_pattern: h.*.mlp.c_fc
-  C: 4096
+  C: 3000
 - module_pattern: h.*.mlp.down_proj
-  C: 3072
+  C: 3000
 - module_pattern: h.*.attn.q_proj
-  C: 512
+  C: 800
 - module_pattern: h.*.attn.k_proj
-  C: 256
+  C: 500
 - module_pattern: h.*.attn.v_proj
-  C: 1024
+  C: 900
 - module_pattern: h.*.attn.o_proj
-  C: 1024
+  C: 1000
 identity_module_info: null
 use_delta_component: true
 loss_metric_configs:
@@ -50,42 +36,36 @@ loss_metric_configs:
   eps: 1.0e-12
 - coeff: 0.5
   classname: StochasticReconSubsetLoss
-  routing:
-    type: uniform_k_subset
 - coeff: 0.5
-  classname: PersistentPGDReconSubsetLoss
-  optimizer:
-    type: adam
-    lr: 0.1
-    beta1: 0.9
-    beta2: 0.99
-    eps: 1.0e-08
-  scope:
-    type: batch_invariant
-    n_masks: 8
-  routing:
-    type: uniform_k_subset
-- coeff: 1000000.0
+  init: random
+  step_size: 0.5
+  n_steps: 4
+  mask_scope: shared_across_batch
+  classname: PGDReconLoss
+  # classname: PGDReconSubsetLoss
+  # routing:
+  #   type: uniform_k_subset
+- coeff: 100000.0 # Note: Lucius has 1M in https://wandb.ai/goodfire/spd/runs/s-275c8f21
   classname: FaithfulnessLoss
 output_loss_type: kl
 lr_schedule:
-  start_val: 1.0e-04
+  start_val: 1e-4
   warmup_pct: 0.0
   final_val_frac: 0.1
   fn_type: cosine
 steps: 400000
-batch_size: 64
+batch_size: 256
 gradient_accumulation_steps: 1
 grad_clip_norm_components: 0.01
 grad_clip_norm_ci_fns: null
-faithfulness_warmup_steps: 400
+faithfulness_warmup_steps: 200
 faithfulness_warmup_lr: 0.001
 faithfulness_warmup_weight_decay: 0.0
 train_log_freq: 200
 eval_freq: 1000
 eval_batch_size: 256
 slow_eval_freq: 10000
-n_eval_steps: 1
+n_eval_steps: 5
 slow_eval_on_first_step: true
 save_freq: null
 eval_metric_configs:
