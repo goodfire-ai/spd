@@ -70,7 +70,7 @@ class HarvestRepo:
         db_path = self._resolve_db_path()
         if db_path is None:
             return None
-        self._db = HarvestDB(db_path)
+        self._db = HarvestDB(db_path, readonly=True)
         return self._db
 
     # -- Activation contexts ---------------------------------------------------
